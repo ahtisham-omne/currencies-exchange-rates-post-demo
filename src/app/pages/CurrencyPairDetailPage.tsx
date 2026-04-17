@@ -102,6 +102,21 @@ function daysForRange(r: TimeRange): number {
   }
 }
 
+function rangeLabel(r: TimeRange, customRange?: { from: string; to: string }): string {
+  switch (r) {
+    case "1D": return "Over last 24 hours";
+    case "5D": return "Over last 5 days";
+    case "1M": return "Over last 30 days";
+    case "1Y": return "Over last year";
+    case "5Y": return "Over last 5 years";
+    case "MAX": return "Over full history";
+    case "CUSTOM":
+      if (customRange?.from && customRange?.to) return `${customRange.from} → ${customRange.to}`;
+      return "Custom range";
+    default: return "";
+  }
+}
+
 // ── Analytics Widget definitions ──
 interface AnalyticsWidgetDef {
   key: string; label: string; description: string; iconName: string; category: string;
@@ -151,13 +166,12 @@ interface ExKpiDef {
 const ALL_KPI_DEFS: ExKpiDef[] = [
   { key: "current_mid", label: "Current Mid-Market Rate", category: "Rates", iconName: "Activity", iconBg: "#F5F3FF", iconColor: "#7C3AED" },
   { key: "current_std", label: "Current Corporate Rate", category: "Rates", iconName: "Star", iconBg: "#FFFBEB", iconColor: "#D97706" },
-  { key: "change_24h", label: "Mid-Market 24h Change", category: "Performance", iconName: "Activity", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Percentage change in mid-market rate over the last 24 hours." },
-  { key: "change_7d", label: "Mid-Market 7-Day Change", category: "Performance", iconName: "TrendingUp", iconBg: "#EDF4FF", iconColor: "#0A77FF" },
-  { key: "change_30d", label: "Mid-Market 30-Day Change", category: "Performance", iconName: "TrendingUp", iconBg: "#ECFDF5", iconColor: "#059669" },
-  { key: "change_ytd", label: "Mid-Market YTD Change", category: "Performance", iconName: "Calendar", iconBg: "#EFF6FF", iconColor: "#2563EB" },
-  { key: "high_low_30d", label: "Mid-Market 30-Day High / Low", category: "Analytics", iconName: "BarChart3", iconBg: "#FFF7ED", iconColor: "#EA580C", tooltip: "Highest and lowest mid-market rates recorded in the last 30 days." },
-  { key: "volatility_30d", label: "Mid-Market 30-Day Volatility", category: "Analytics", iconName: "Zap", iconBg: "#FEF2F2", iconColor: "#DC2626", tooltip: "Standard deviation of daily rate changes over 30 days.\n\nLow: < 0.3% — Stable pair, minimal fluctuation.\nModerate: 0.3–0.8% — Normal market movement.\nHigh: > 0.8% — Elevated risk, consider hedging." },
-  { key: "avg_rate_30d", label: "Mid-Market Average Rate (30d)", category: "Analytics", iconName: "Target", iconBg: "#F0FDF4", iconColor: "#16A34A" },
+  // Consolidated time-range-driven KPIs (Mid-Market). All four respect the selected
+  // range from the selector above the KPI grid (1D / 5D / 1M / 1Y / 5Y / Max / Custom).
+  { key: "range_change", label: "Mid-Market Change", category: "Performance", iconName: "TrendingUp", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Percentage change in the mid-market rate over the currently selected range." },
+  { key: "range_high_low", label: "Mid-Market High / Low", category: "Analytics", iconName: "BarChart3", iconBg: "#FFF7ED", iconColor: "#EA580C", tooltip: "Highest and lowest mid-market rates within the selected range." },
+  { key: "range_volatility", label: "Mid-Market Volatility", category: "Analytics", iconName: "Zap", iconBg: "#FEF2F2", iconColor: "#DC2626", tooltip: "Standard deviation of daily rate changes within the selected range.\n\nLow: < 0.3% — Stable pair.\nModerate: 0.3–0.8% — Normal movement.\nHigh: > 0.8% — Elevated risk." },
+  { key: "range_avg_rate", label: "Mid-Market Average Rate", category: "Analytics", iconName: "Target", iconBg: "#F0FDF4", iconColor: "#16A34A", tooltip: "Average mid-market rate within the selected range." },
   { key: "transactions_30d", label: "Mid-Market Transactions (30d)", category: "Operational", iconName: "FileText", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Number of transactions using this currency pair in the last 30 days." },
   // Corporate-specific KPIs
   { key: "variance", label: "Corporate Variance vs Mid-Market", category: "Rates", iconName: "Target", iconBg: "#FFFBEB", iconColor: "#D97706" },
@@ -169,14 +183,26 @@ const ALL_KPI_DEFS: ExKpiDef[] = [
   { key: "change_count_30d", label: "Corporate Rate Change Count (30d)", category: "Operational", iconName: "Activity", iconBg: "#F5F3FF", iconColor: "#7C3AED" },
 ];
 
-// KPIs relevant per context
-const MID_KPI_KEYS = ["current_mid", "change_24h", "change_7d", "change_30d", "change_ytd", "high_low_30d", "volatility_30d", "avg_rate_30d", "transactions_30d"];
+// KPIs relevant per context.
+// Mid-Market no longer exposes the fixed 24h / 7d / 30d change tiles; that role is
+// handled by range_change plus the shared range selector driving every
+// time-based metric in one place.
+const MID_KPI_KEYS = ["current_mid", "range_change", "range_high_low", "range_volatility", "range_avg_rate", "transactions_30d"];
 const STD_KPI_KEYS = ["current_std", "variance", "days_since_update", "corp_transactions_30d", "fx_exposure_30d", "max_variance_30d", "avg_variance_30d", "change_count_30d"];
 
-const DEFAULT_MID_KPIS = ["current_mid", "change_24h", "change_30d", "high_low_30d", "volatility_30d"];
+const DEFAULT_MID_KPIS = ["current_mid", "range_change", "range_high_low", "range_volatility", "range_avg_rate"];
 const DEFAULT_STD_KPIS = ["current_std", "variance", "days_since_update", "corp_transactions_30d", "fx_exposure_30d"];
 
-function computeKpiValue(key: string, detail: CurrencyPairDetail): { value: string; change?: string; changeColor?: string; sublabel?: string } {
+interface RangeMetrics {
+  change: number;
+  high: number;
+  low: number;
+  avg: number;
+  volatility: number;
+  label: string;
+}
+
+function computeKpiValue(key: string, detail: CurrencyPairDetail, rangeMetrics: RangeMetrics): { value: string; change?: string; changeColor?: string; sublabel?: string } {
   switch (key) {
     case "current_mid": return {
       value: detail.currentMidRate.toFixed(4),
@@ -188,19 +214,31 @@ function computeKpiValue(key: string, detail: CurrencyPairDetail): { value: stri
       value: detail.currentStdRate ? detail.currentStdRate.toFixed(4) : "Not Set",
       sublabel: detail.stdEffectiveDate ? `Effective ${format(new Date(detail.stdEffectiveDate), "dd MMM yyyy")}` : undefined,
     };
-    case "change_24h": return { value: `${detail.change24h > 0 ? "+" : ""}${detail.change24h.toFixed(2)}%` };
-    case "change_7d": return { value: `${detail.change7d > 0 ? "+" : ""}${detail.change7d.toFixed(2)}%` };
-    case "change_30d": return { value: `${detail.change30d > 0 ? "+" : ""}${detail.change30d.toFixed(2)}%` };
-    case "change_ytd": return { value: `${detail.changeYtd > 0 ? "+" : ""}${detail.changeYtd.toFixed(2)}%` };
-    case "high_low_30d": {
-      const spread = (detail.high30d - detail.low30d).toFixed(4);
-      return { value: `${detail.high30d.toFixed(2)} / ${detail.low30d.toFixed(2)}`, sublabel: `Spread: ${spread}` };
+    case "range_change": return {
+      value: `${rangeMetrics.change > 0 ? "+" : ""}${rangeMetrics.change.toFixed(2)}%`,
+      changeColor: rangeMetrics.change >= 0 ? "#059669" : "#EF4444",
+      sublabel: rangeMetrics.label,
+    };
+    case "range_high_low": {
+      const spread = (rangeMetrics.high - rangeMetrics.low).toFixed(4);
+      return {
+        value: `${rangeMetrics.high.toFixed(2)} / ${rangeMetrics.low.toFixed(2)}`,
+        sublabel: `Spread: ${spread} · ${rangeMetrics.label}`,
+      };
     }
-    case "volatility_30d": {
-      const label = detail.volatility30d < 0.3 ? "Low" : detail.volatility30d < 0.8 ? "Moderate" : "High";
-      return { value: `${detail.volatility30d.toFixed(3)}%`, change: label, changeColor: detail.volatility30d < 0.3 ? "#059669" : detail.volatility30d < 0.8 ? "#D97706" : "#EF4444" };
+    case "range_volatility": {
+      const label = rangeMetrics.volatility < 0.3 ? "Low" : rangeMetrics.volatility < 0.8 ? "Moderate" : "High";
+      return {
+        value: `${rangeMetrics.volatility.toFixed(3)}%`,
+        change: label,
+        changeColor: rangeMetrics.volatility < 0.3 ? "#059669" : rangeMetrics.volatility < 0.8 ? "#D97706" : "#EF4444",
+        sublabel: rangeMetrics.label,
+      };
     }
-    case "avg_rate_30d": return { value: detail.avgRate30d.toFixed(4) };
+    case "range_avg_rate": return {
+      value: rangeMetrics.avg.toFixed(4),
+      sublabel: rangeMetrics.label,
+    };
     case "variance":
       return {
         value: detail.variance !== null ? `${detail.variance > 0 ? "+" : ""}${detail.variance.toFixed(2)}%` : "N/A",
@@ -397,8 +435,9 @@ function WidgetCategoryIcon({ category }: { category: string }) {
 }
 
 // ── Customize Widgets Panel (with previews like Partners) ──
-function CustomizeKpiPanel({ open, onOpenChange, activeKpis, onToggleKpi, detail, allowedKeys, allowedWidgetKeys, activeWidgets, onToggleWidget }: {
+function CustomizeKpiPanel({ open, onOpenChange, activeKpis, onToggleKpi, detail, rangeMetrics, allowedKeys, allowedWidgetKeys, activeWidgets, onToggleWidget }: {
   open: boolean; onOpenChange: (open: boolean) => void; activeKpis: string[]; onToggleKpi: (key: string) => void; detail: CurrencyPairDetail;
+  rangeMetrics: RangeMetrics;
   allowedKeys: string[]; allowedWidgetKeys: string[]; activeWidgets: string[]; onToggleWidget: (key: string) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -534,7 +573,7 @@ function CustomizeKpiPanel({ open, onOpenChange, activeKpis, onToggleKpi, detail
                   <div className="grid grid-cols-2 gap-2">
                     {cat.kpis.map((kpi) => {
                       const isActive = activeKpis.includes(kpi.key);
-                      const computed = computeKpiValue(kpi.key, detail);
+                      const computed = computeKpiValue(kpi.key, detail, rangeMetrics);
                       return (
                         <button
                           key={kpi.key}
@@ -685,6 +724,31 @@ export function CurrencyPairDetailPage() {
     const days = daysForRange(timeRange);
     return detail.timeSeries.slice(-days - 1);
   }, [detail, timeRange, customRange]);
+
+  // Range-aware metrics powering the consolidated time-based KPIs. Recomputed
+  // from the current chartData slice so a single selector drives both the
+  // charts and the KPI tiles above them.
+  const rangeMetrics: RangeMetrics = useMemo(() => {
+    const label = rangeLabel(timeRange, customRange);
+    if (!chartData || chartData.length === 0) {
+      return { change: 0, high: 0, low: 0, avg: 0, volatility: 0, label };
+    }
+    const mids = chartData.map(d => d.mid);
+    const start = mids[0];
+    const end = mids[mids.length - 1];
+    const change = start !== 0 ? +((end - start) / start * 100).toFixed(2) : 0;
+    const high = Math.max(...mids);
+    const low = Math.min(...mids);
+    const avg = mids.reduce((s, v) => s + v, 0) / mids.length;
+    const dailyChanges = mids
+      .map((v, i, a) => (i > 0 ? ((v - a[i - 1]) / a[i - 1]) * 100 : 0))
+      .slice(1);
+    const denom = Math.max(1, dailyChanges.length);
+    const mean = dailyChanges.reduce((s, v) => s + v, 0) / denom;
+    const variance = dailyChanges.reduce((s, v) => s + (v - mean) ** 2, 0) / denom;
+    const volatility = Math.sqrt(variance);
+    return { change, high, low, avg, volatility: +volatility.toFixed(3), label };
+  }, [chartData, timeRange, customRange]);
 
   const varianceData = useMemo(() => {
     return chartData.map(d => ({
@@ -964,12 +1028,81 @@ export function CurrencyPairDetailPage() {
             </button>
           </div>
 
+          {/* ══ Unified time-range selector ══
+             Drives all range-aware KPI tiles and every chart below. Positioned
+             above the KPI grid so users see it applies to the whole section. */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center flex-wrap gap-1">
+              {TIME_RANGE_BUTTONS.map(({ key: r, label }) => {
+                const isCustom = r === "CUSTOM";
+                if (isCustom) {
+                  return (
+                    <div key={r} className="relative">
+                      <button
+                        onClick={() => setCustomPopoverOpen(o => !o)}
+                        className={`px-3 py-1 rounded-md text-[12px] transition-all inline-flex items-center gap-1 ${
+                          timeRange === r ? "bg-[#0A77FF] text-white shadow-sm" : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                        }`}
+                        style={{ fontWeight: timeRange === r ? 600 : 500 }}
+                      >
+                        <Calendar className="w-3 h-3" />
+                        {label}
+                        {timeRange === "CUSTOM" && customRange.from && customRange.to && (
+                          <span className="text-[11px]">: {format(new Date(customRange.from), "dd MMM")} – {format(new Date(customRange.to), "dd MMM")}</span>
+                        )}
+                      </button>
+                      {customPopoverOpen && (
+                        <div className="absolute top-full mt-2 left-0 z-30 w-[280px] rounded-xl border border-[#E2E8F0] bg-white shadow-[0_12px_32px_rgba(0,0,0,0.10)] p-3">
+                          <p className="text-[11px] text-muted-foreground mb-2" style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Custom Range</p>
+                          <div className="space-y-2">
+                            <div>
+                              <Label className="text-[11px] text-muted-foreground mb-1">From</Label>
+                              <Input type="date" value={customRange.from} onChange={e => setCustomRange(p => ({ ...p, from: e.target.value }))} className="h-8 text-[12px]" />
+                            </div>
+                            <div>
+                              <Label className="text-[11px] text-muted-foreground mb-1">To</Label>
+                              <Input type="date" value={customRange.to} onChange={e => setCustomRange(p => ({ ...p, to: e.target.value }))} className="h-8 text-[12px]" />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 mt-3">
+                            <Button
+                              size="sm"
+                              className="flex-1 h-8 text-[12px]"
+                              disabled={!customRange.from || !customRange.to}
+                              onClick={() => { setTimeRange("CUSTOM"); setCustomPopoverOpen(false); }}
+                            >
+                              Apply
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-8 text-[12px]" onClick={() => setCustomPopoverOpen(false)}>Cancel</Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <button
+                    key={r}
+                    onClick={() => setTimeRange(r)}
+                    className={`px-3 py-1 rounded-md text-[12px] transition-all ${
+                      timeRange === r ? "bg-[#0A77FF] text-white shadow-sm" : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                    }`}
+                    style={{ fontWeight: timeRange === r ? 600 : 500 }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="text-[11px] text-[#94A3B8]" style={{ fontWeight: 500 }}>{rangeMetrics.label}</span>
+          </div>
+
           {/* KPI Cards — draggable, 5 in a row */}
           {activeKpiDefs.length > 0 && (
             <DndProvider backend={HTML5Backend}>
               <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${Math.min(activeKpiDefs.length, 5)}, 1fr)` }}>
                 {activeKpiDefs.map((kpi, idx) => {
-                  const computed = computeKpiValue(kpi.key, detail);
+                  const computed = computeKpiValue(kpi.key, detail, rangeMetrics);
                   return (
                     <DraggableKpiCard
                       key={kpi.key}
@@ -996,70 +1129,6 @@ export function CurrencyPairDetailPage() {
           {/* ══ Analytics Widgets (Charts) ══ */}
           {activeWidgets.some(w => ["rate_over_time", "variance_trend", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "corp_rate_step", "transaction_volume"].includes(w)) && (
             <div className="space-y-3">
-              {/* Google-pattern time range selector */}
-              <div className="flex items-center flex-wrap gap-1">
-                {TIME_RANGE_BUTTONS.map(({ key: r, label }) => {
-                  const isCustom = r === "CUSTOM";
-                  if (isCustom) {
-                    return (
-                      <div key={r} className="relative">
-                        <button
-                          onClick={() => setCustomPopoverOpen(o => !o)}
-                          className={`px-3 py-1 rounded-md text-[12px] transition-all inline-flex items-center gap-1 ${
-                            timeRange === r ? "bg-[#0A77FF] text-white shadow-sm" : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
-                          }`}
-                          style={{ fontWeight: timeRange === r ? 600 : 500 }}
-                        >
-                          <Calendar className="w-3 h-3" />
-                          {label}
-                          {timeRange === "CUSTOM" && customRange.from && customRange.to && (
-                            <span className="text-[11px]">: {format(new Date(customRange.from), "dd MMM")} – {format(new Date(customRange.to), "dd MMM")}</span>
-                          )}
-                        </button>
-                        {customPopoverOpen && (
-                          <div className="absolute top-full mt-2 left-0 z-30 w-[280px] rounded-xl border border-[#E2E8F0] bg-white shadow-[0_12px_32px_rgba(0,0,0,0.10)] p-3">
-                            <p className="text-[11px] text-muted-foreground mb-2" style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Custom Range</p>
-                            <div className="space-y-2">
-                              <div>
-                                <Label className="text-[11px] text-muted-foreground mb-1">From</Label>
-                                <Input type="date" value={customRange.from} onChange={e => setCustomRange(p => ({ ...p, from: e.target.value }))} className="h-8 text-[12px]" />
-                              </div>
-                              <div>
-                                <Label className="text-[11px] text-muted-foreground mb-1">To</Label>
-                                <Input type="date" value={customRange.to} onChange={e => setCustomRange(p => ({ ...p, to: e.target.value }))} className="h-8 text-[12px]" />
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 mt-3">
-                              <Button
-                                size="sm"
-                                className="flex-1 h-8 text-[12px]"
-                                disabled={!customRange.from || !customRange.to}
-                                onClick={() => { setTimeRange("CUSTOM"); setCustomPopoverOpen(false); }}
-                              >
-                                Apply
-                              </Button>
-                              <Button size="sm" variant="outline" className="h-8 text-[12px]" onClick={() => setCustomPopoverOpen(false)}>Cancel</Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-                  return (
-                    <button
-                      key={r}
-                      onClick={() => setTimeRange(r)}
-                      className={`px-3 py-1 rounded-md text-[12px] transition-all ${
-                        timeRange === r ? "bg-[#0A77FF] text-white shadow-sm" : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
-                      }`}
-                      style={{ fontWeight: timeRange === r ? 600 : 500 }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {activeWidgets.includes("rate_over_time") && (
                   <ContentCard title="Rate Over Time — Mid-Market vs Corporate" icon={TrendingUp} tooltipText={WIDGET_TOOLTIPS.rate_over_time}>
@@ -1343,6 +1412,7 @@ export function CurrencyPairDetailPage() {
         activeKpis={activeKpis}
         onToggleKpi={handleToggleKpi}
         detail={detail}
+        rangeMetrics={rangeMetrics}
         allowedKeys={isStandardDetail ? STD_KPI_KEYS : MID_KPI_KEYS}
         allowedWidgetKeys={isStandardDetail ? STD_WIDGET_KEYS : MID_WIDGET_KEYS}
         activeWidgets={activeWidgets}
