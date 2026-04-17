@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { getFlagUrl } from "../utils/currencyFlags";
+import { getFlagUrl, getFlagUrlByCountry } from "../utils/currencyFlags";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useCurrencies } from "../context/CurrencyContext";
@@ -596,11 +596,12 @@ export function CurrencyListPage() {
             <span>{highlightText(c.country)}</span>
             {extraCount > 0 && (
               <OverflowTooltip
-                category="Countries"
+                category="Countries / Regions"
                 items={extra.map((country, i) => ({
                   id: `${c.code}-country-${i}`,
                   name: country,
                   subtitle: "",
+                  image: getFlagUrlByCountry(country) || undefined,
                 }))}
               >
                 <span
@@ -618,22 +619,22 @@ export function CurrencyListPage() {
       case "inUse":
         return (
           <TableCell key={colKey}>
-            <div className="flex flex-col leading-tight">
+            <div className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"} whitespace-nowrap`}>
               {inUse > 0 ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigate(`/accounting/currencies/${c.code}?tab=documents&filter=open`);
+                    navigate(`/accounting/currencies/${c.code}?tab=documents&filter=active`);
                   }}
-                  className="text-left text-[13px] hover:underline cursor-pointer"
+                  className="hover:underline cursor-pointer"
                   style={{ fontWeight: 600, color: "#0A77FF" }}
                 >
-                  {inUse} in use
+                  {inUse} active
                 </button>
               ) : (
-                <span className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"} text-muted-foreground`} style={{ fontWeight: 500 }}>0 in use</span>
+                <span className="text-muted-foreground" style={{ fontWeight: 500 }}>0 active</span>
               )}
-              <span className="text-[11px] text-muted-foreground/70">{totalDocs} total</span>
+              <span className="text-muted-foreground/70"> · {totalDocs} total</span>
             </div>
           </TableCell>
         );

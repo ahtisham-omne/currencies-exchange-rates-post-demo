@@ -10,6 +10,8 @@ export interface OverflowItem {
   name: string;
   subtitle: string;
   icon?: ReactNode;
+  /** When set, rendered as a rectangular image in place of the icon (e.g. a flag) */
+  image?: string;
   initials?: string;
   avatarBg?: string;
   avatarFg?: string;
@@ -175,6 +177,12 @@ export function OverflowTooltip({ items, category, children, onItemClick }: Over
                     >
                       {item.initials}
                     </div>
+                  ) : item.image ? (
+                    <img
+                      src={item.image}
+                      alt=""
+                      className="w-6 h-[18px] rounded-[2px] object-cover shrink-0 border border-border/30"
+                    />
                   ) : (
                     <div
                       className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"

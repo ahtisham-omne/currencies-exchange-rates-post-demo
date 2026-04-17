@@ -9,6 +9,7 @@ import {
 } from "../ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X, ChevronDown, ChevronUp } from "lucide-react";
+import { Input } from "../ui/input";
 
 /* ─── Filter Types ─── */
 export type InUseFilterMode = "any" | "yes" | "no";
@@ -18,6 +19,8 @@ export interface CurrencyFilters {
   decimalPlaces: string[];
   regions: string[];
   inUseFilter: InUseFilterMode;
+  inUseMin: string;
+  inUseMax: string;
 }
 
 export const DEFAULT_CURRENCY_FILTERS: CurrencyFilters = {
@@ -25,6 +28,8 @@ export const DEFAULT_CURRENCY_FILTERS: CurrencyFilters = {
   decimalPlaces: [],
   regions: [],
   inUseFilter: "any",
+  inUseMin: "",
+  inUseMax: "",
 };
 
 export function countActiveCurrencyFilters(f: CurrencyFilters): number {
@@ -39,8 +44,13 @@ export function countActiveCurrencyFilters(f: CurrencyFilters): number {
 /** Check if a currency matches the In Use filter */
 export function currencyMatchesInUseFilter(c: Currency, f: CurrencyFilters): boolean {
   if (f.inUseFilter === "any") return true;
-  const inUse = countInUse(c) > 0;
-  return f.inUseFilter === "yes" ? inUse : !inUse;
+  const count = countInUse(c);
+  if (f.inUseFilter === "no") return count === 0;
+  // "yes" — require at least one document, optionally within a range
+  if (count === 0) return false;
+  const min = f.inUseMin ? Number(f.inUseMin) : 0;
+  const max = f.inUseMax ? Number(f.inUseMax) : Infinity;
+  return count >= min && count <= max;
 }
 
 /** Check if a currency matches region filters */
@@ -130,9 +140,14 @@ export function CurrencyFiltersModal({
 
   const setInUseFilter = (mode: InUseFilterMode) => {
     if (mode === filters.inUseFilter) {
-      onFiltersChange({ ...filters, inUseFilter: "any" });
+      onFiltersChange({ ...filters, inUseFilter: "any", inUseMin: "", inUseMax: "" });
     } else {
-      onFiltersChange({ ...filters, inUseFilter: mode });
+      onFiltersChange({
+        ...filters,
+        inUseFilter: mode,
+        inUseMin: mode === "yes" ? filters.inUseMin : "",
+        inUseMax: mode === "yes" ? filters.inUseMax : "",
+      });
     }
   };
 
@@ -249,6 +264,27 @@ export function CurrencyFiltersModal({
                   onClick={() => setInUseFilter("no")}
                 />
               </div>
+              {filters.inUseFilter === "yes" && (
+                <div className="flex items-center gap-2 mt-3">
+                  <Input
+                    type="number"
+                    placeholder="Min"
+                    value={filters.inUseMin}
+                    onChange={(e) => onFiltersChange({ ...filters, inUseMin: e.target.value })}
+                    className="w-24 h-8 text-sm"
+                    min={0}
+                  />
+                  <span className="text-muted-foreground text-sm">—</span>
+                  <Input
+                    type="number"
+                    placeholder="Max"
+                    value={filters.inUseMax}
+                    onChange={(e) => onFiltersChange({ ...filters, inUseMax: e.target.value })}
+                    className="w-24 h-8 text-sm"
+                    min={0}
+                  />
+                </div>
+              )}
             </Section>
 
             <Divider />

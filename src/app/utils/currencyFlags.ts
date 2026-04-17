@@ -92,3 +92,48 @@ export function getCountryCode(currencyCode: string): string | null {
 export function getCountryName(currencyCode: string): string {
   return CURRENCY_TO_COUNTRY_NAME[currencyCode.toUpperCase()] || "";
 }
+
+// Country name → ISO 3166-1 alpha-2. Covers every name used in SEED_CURRENCIES
+// primary and additionalCountries arrays so the flag tooltip always resolves.
+const COUNTRY_NAME_TO_ALPHA2: Record<string, string> = {
+  "American Samoa": "AS", "Andorra": "AD", "Antigua and Barbuda": "AG",
+  "Ascension Island": "AC", "Austria": "AT", "Belgium": "BE",
+  "Bhutan": "BT", "Bonaire Sint Eustatius and Saba": "BQ", "Bouvet Island": "BV",
+  "British Indian Ocean Territory": "IO", "British Virgin Islands": "VG",
+  "Bulgaria": "BG", "Burkina Faso": "BF", "Central African Republic": "CF",
+  "Chad": "TD", "Christmas Island": "CX", "Cocos (Keeling) Islands": "CC",
+  "Cook Islands": "CK", "Croatia": "HR", "Cyprus": "CY", "Dominica": "DM",
+  "Ecuador": "EC", "El Salvador": "SV", "Equatorial Guinea": "GQ",
+  "Estonia": "EE", "Eswatini": "SZ", "Faroe Islands": "FO",
+  "Federated States of Micronesia": "FM", "Finland": "FI", "France": "FR",
+  "Gabon": "GA", "Germany": "DE", "Greece": "GR", "Greenland": "GL",
+  "Grenada": "GD", "Guam": "GU", "Guernsey": "GG", "Guinea-Bissau": "GW",
+  "Heard Island and McDonald Islands": "HM", "Ireland": "IE",
+  "Isle of Man": "IM", "Italy": "IT", "Ivory Coast": "CI", "Jersey": "JE",
+  "Kiribati": "KI", "Kosovo": "XK", "Latvia": "LV", "Lesotho": "LS",
+  "Liechtenstein": "LI", "Lithuania": "LT", "Luxembourg": "LU",
+  "Mali": "ML", "Malta": "MT", "Marshall Islands": "MH", "Monaco": "MC",
+  "Montenegro": "ME", "Montserrat": "MS", "Namibia": "NA", "Nauru": "NR",
+  "Netherlands": "NL", "New Caledonia": "NC", "Niger": "NE", "Niue": "NU",
+  "Norfolk Island": "NF", "Northern Mariana Islands": "MP", "Palau": "PW",
+  "Panama": "PA", "Pitcairn Islands": "PN", "Portugal": "PT",
+  "Puerto Rico": "PR", "Republic of the Congo": "CG",
+  "Saint Kitts and Nevis": "KN", "Saint Lucia": "LC",
+  "Saint Vincent and the Grenadines": "VC", "San Marino": "SM",
+  "Senegal": "SN", "Sint Maarten": "SX", "Slovakia": "SK", "Slovenia": "SI",
+  "Spain": "ES", "Svalbard and Jan Mayen": "SJ", "Timor-Leste": "TL",
+  "Togo": "TG", "Tokelau": "TK", "Tristan da Cunha": "SH",
+  "Turks and Caicos Islands": "TC", "Tuvalu": "TV",
+  "US Virgin Islands": "VI", "United States Minor Outlying Islands": "UM",
+  "Vatican City": "VA", "Wallis and Futuna": "WF", "Western Sahara": "EH",
+};
+
+/**
+ * Returns a flagcdn.com URL for a country name (as stored in currency data).
+ * Empty string if the name has no mapping.
+ */
+export function getFlagUrlByCountry(countryName: string, width: number = 40): string {
+  const code = COUNTRY_NAME_TO_ALPHA2[countryName];
+  if (!code) return "";
+  return `https://flagcdn.com/w${width}/${code.toLowerCase()}.png`;
+}

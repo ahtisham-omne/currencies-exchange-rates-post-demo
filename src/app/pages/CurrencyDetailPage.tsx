@@ -1,10 +1,11 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useCurrencies } from "../context/CurrencyContext";
+import { useExchangeRates } from "../context/ExchangeRateContext";
+import { BASE_CURRENCY } from "../data/exchangeRates";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { getFlagUrl } from "../utils/currencyFlags";
-import { countOpenDocuments, hasOpenDocuments } from "../data/currencies";
+import { countOpenDocuments, countInUse, hasOpenDocuments, type Currency } from "../data/currencies";
 import {
-  ChevronDown,
   ChevronLeft,
   AlertTriangle,
   CheckCircle2,
@@ -18,6 +19,8 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  ArrowLeftRight,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
@@ -45,10 +48,291 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "../components/ui/tooltip";
-import { format } from "date-fns";
-import type { OpenTransaction, PaymentTransaction } from "../data/currencies";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import { Switch } from "../components/ui/switch";
+import { format, formatDistanceToNow } from "date-fns";
 
 type DocSortKey = "ref" | "party" | "amount" | "status" | "date" | "type";
+
+/** Rounded chip showing a currency symbol with a hover tooltip resolving the currency. */
+function CurrencySymbolChip({
+  symbol,
+  name,
+  code,
+  size = "md",
+}: {
+  symbol: string;
+  name: string;
+  code: string;
+  size?: "sm" | "md" | "lg";
+}) {
+  const dims =
+    size === "lg"
+      ? "h-8 min-w-8 px-2.5 text-[16px]"
+      : size === "sm"
+      ? "h-5 min-w-[20px] px-1.5 text-[11px]"
+      : "h-6 min-w-6 px-2 text-[13px]";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={`inline-flex items-center justify-center rounded-md border border-[#E2E8F0] bg-[#F1F5F9] text-[#0F172A] cursor-default tabular-nums ${dims}`}
+          style={{ fontWeight: 600 }}
+        >
+          {symbol}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={6}>
+        {name} ({code})
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+interface ConverterProps {
+  detailCurrency: Currency;
+}
+
+/** Live exchange-rate converter between two active currencies. */
+function CurrencyConverter({ detailCurrency }: ConverterProps) {
+  const { currencies } = useCurrencies();
+  const { midMarketRates, standardRates } = useExchangeRates();
+
+  const activeCurrencies = useMemo(
+    () => currencies.filter((c) => c.status === "active"),
+    [currencies]
+  );
+
+  // Rate lookups are relative to BASE_CURRENCY (PKR). "1 X = rate[X] PKR".
+  const midFor = (code: string): number | null => {
+    if (code === BASE_CURRENCY) return 1;
+    return midMarketRates.find((r) => r.sourceCurrency === code)?.rate ?? null;
+  };
+  const stdFor = (code: string): number | null => {
+    if (code === BASE_CURRENCY) return 1;
+    return standardRates.find((r) => r.sourceCurrency === code)?.standardRate ?? null;
+  };
+
+  // Default: from = base, to = detail currency. If detail currency IS base, default to USD when possible.
+  const defaultTo = detailCurrency.code === BASE_CURRENCY
+    ? (activeCurrencies.find((c) => c.code === "USD")?.code ?? detailCurrency.code)
+    : detailCurrency.code;
+
+  const [fromCode, setFromCode] = useState<string>(BASE_CURRENCY);
+  const [toCode, setToCode] = useState<string>(defaultTo);
+  const [useCorporate, setUseCorporate] = useState<boolean>(false);
+  const [lastEdited, setLastEdited] = useState<"from" | "to">("from");
+  const [fromAmount, setFromAmount] = useState<string>("1");
+  const [toAmount, setToAmount] = useState<string>("");
+
+  const fromCurrency = currencies.find((c) => c.code === fromCode) ?? detailCurrency;
+  const toCurrency = currencies.find((c) => c.code === toCode) ?? detailCurrency;
+
+  // The std toggle is only meaningful when a std rate exists for the non-base side(s) involved.
+  const hasCorporate =
+    (fromCode === BASE_CURRENCY || stdFor(fromCode) !== null) &&
+    (toCode === BASE_CURRENCY || stdFor(toCode) !== null) &&
+    !(fromCode === BASE_CURRENCY && toCode === BASE_CURRENCY);
+  const rateMode: "mid" | "std" = useCorporate && hasCorporate ? "std" : "mid";
+
+  // Effective "1 fromCode = rate toCode".
+  const rate: number | null = useMemo(() => {
+    const f = rateMode === "std" ? stdFor(fromCode) : midFor(fromCode);
+    const t = rateMode === "std" ? stdFor(toCode) : midFor(toCode);
+    if (f === null || t === null) return null;
+    // 1 from = f base ; 1 to = t base ; so 1 from = f/t to.
+    return f / t;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromCode, toCode, rateMode, midMarketRates, standardRates]);
+
+  const fmt = (n: number, c: Currency) =>
+    n.toLocaleString(undefined, {
+      minimumFractionDigits: c.decimalPlaces,
+      maximumFractionDigits: c.decimalPlaces,
+    });
+
+  // Recompute whichever side wasn't last edited.
+  useEffect(() => {
+    if (rate === null) {
+      if (lastEdited === "from") setToAmount("");
+      else setFromAmount("");
+      return;
+    }
+    if (lastEdited === "from") {
+      const n = Number(fromAmount.replace(/,/g, ""));
+      if (Number.isFinite(n)) setToAmount(fmt(n * rate, toCurrency));
+      else setToAmount("");
+    } else {
+      const n = Number(toAmount.replace(/,/g, ""));
+      if (Number.isFinite(n)) setFromAmount(fmt(n / rate, fromCurrency));
+      else setFromAmount("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rate, fromCode, toCode]);
+
+  const onFromChange = (v: string) => {
+    setFromAmount(v);
+    setLastEdited("from");
+    if (rate === null) return;
+    const n = Number(v.replace(/,/g, ""));
+    if (Number.isFinite(n) && v.trim() !== "") setToAmount(fmt(n * rate, toCurrency));
+    else setToAmount("");
+  };
+
+  const onToChange = (v: string) => {
+    setToAmount(v);
+    setLastEdited("to");
+    if (rate === null) return;
+    const n = Number(v.replace(/,/g, ""));
+    if (Number.isFinite(n) && v.trim() !== "") setFromAmount(fmt(n / rate, fromCurrency));
+    else setFromAmount("");
+  };
+
+  const swap = () => {
+    setFromCode(toCode);
+    setToCode(fromCode);
+    setFromAmount(toAmount);
+    setToAmount(fromAmount);
+    setLastEdited("from");
+  };
+
+  const CurrencySide = ({
+    side,
+    code,
+    setCode,
+    amount,
+    onAmountChange,
+  }: {
+    side: "From" | "To";
+    code: string;
+    setCode: (c: string) => void;
+    amount: string;
+    onAmountChange: (v: string) => void;
+  }) => {
+    const c = currencies.find((x) => x.code === code);
+    if (!c) return null;
+    return (
+      <div className="flex-1 min-w-0 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
+        <p
+          className="text-[10px] text-[#94A3B8] mb-2"
+          style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}
+        >
+          {side}
+        </p>
+        <div className="flex items-center gap-2 mb-3">
+          <CurrencySymbolChip symbol={c.symbol} name={c.name} code={c.code} />
+          <Select value={code} onValueChange={setCode}>
+            <SelectTrigger className="h-9 bg-white border-[#E2E8F0] text-[13px] flex-1 min-w-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-[320px]">
+              {activeCurrencies.map((cc) => (
+                <SelectItem key={cc.code} value={cc.code}>
+                  <span className="tabular-nums" style={{ fontWeight: 600 }}>{cc.code}</span>
+                  <span className="text-[#64748B] ml-1.5">— {cc.name}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Input
+          type="text"
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => onAmountChange(e.target.value)}
+          placeholder={rate === null ? "No rate available" : "0"}
+          disabled={rate === null}
+          className="h-11 text-[18px] bg-white border-[#E2E8F0] tabular-nums"
+          style={{ fontWeight: 600 }}
+        />
+      </div>
+    );
+  };
+
+  const updatedAt = midMarketRates[0]?.effectiveDate ?? null;
+  const updatedAgo = updatedAt
+    ? (() => {
+        try { return formatDistanceToNow(new Date(updatedAt), { addSuffix: true }); } catch { return updatedAt; }
+      })()
+    : null;
+
+  const rateLabel = rateMode === "std" ? "corporate rate" : "mid-market rate";
+  const rateDisplay = rate !== null
+    ? `1 ${fromCode} = ${rate.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 6,
+      })} ${toCode}`
+    : "rate unavailable";
+
+  return (
+    <div className="bg-white border border-[#E2E8F0] rounded-xl mb-4 shadow-sm">
+      <div className="px-5 py-3.5 border-b border-[#E2E8F0] flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Live Exchange Rate Converter</h3>
+          <p className="text-[12px] text-[#64748B] mt-0.5">Convert any active currency pair in real time.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-[12px] ${hasCorporate ? "text-[#475569]" : "text-[#94A3B8]"}`} style={{ fontWeight: 500 }}>
+            Corporate rate
+          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Switch
+                  checked={rateMode === "std"}
+                  onCheckedChange={setUseCorporate}
+                  disabled={!hasCorporate}
+                />
+              </span>
+            </TooltipTrigger>
+            {!hasCorporate && (
+              <TooltipContent side="top">
+                No corporate rate is defined for this pair.
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </div>
+      </div>
+      <div className="px-5 py-4">
+        <div className="flex items-stretch gap-3">
+          <CurrencySide side="From" code={fromCode} setCode={setFromCode} amount={fromAmount} onAmountChange={onFromChange} />
+          <div className="flex items-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={swap}
+                  className="h-9 w-9 rounded-full border border-[#E2E8F0] bg-white flex items-center justify-center text-[#64748B] hover:text-[#0A77FF] hover:border-[#BFDBFE] transition-colors cursor-pointer shadow-sm"
+                  aria-label="Swap from and to currencies"
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Swap direction</TooltipContent>
+            </Tooltip>
+          </div>
+          <CurrencySide side="To" code={toCode} setCode={setToCode} amount={toAmount} onAmountChange={onToChange} />
+        </div>
+        <div className="mt-3 flex items-center gap-1.5 text-[12px] text-[#64748B]">
+          <RefreshCw className="w-3 h-3 text-[#94A3B8]" />
+          <span>
+            Using <span style={{ fontWeight: 600, color: "#0F172A" }}>{rateLabel}</span>
+            {rate !== null && (
+              <> : <span className="tabular-nums" style={{ fontWeight: 600, color: "#0F172A" }}>{rateDisplay}</span></>
+            )}
+            {updatedAgo && <> · Updated {updatedAgo}</>}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function CurrencyDetailPage() {
   const { code } = useParams<{ code: string }>();
@@ -67,6 +351,7 @@ export function CurrencyDetailPage() {
 
   const openDocs = currency ? hasOpenDocuments(currency) : false;
   const totalOpenDocs = currency ? countOpenDocuments(currency) : 0;
+  const inUseCount = currency ? countInUse(currency) : 0;
 
   useEffect(() => {
     const el = sentinelRef.current;
@@ -117,14 +402,17 @@ export function CurrencyDetailPage() {
   // Strip currency symbol from amount string, keeping only digits, commas, dots, spaces
   const stripSymbol = (amount: string) => amount.replace(/^[^0-9]*/, "");
 
-  // Format preview helper
-  const formatPreview = () => {
-    const amount = (1000).toLocaleString(undefined, {
-      minimumFractionDigits: currency.decimalPlaces,
-      maximumFractionDigits: currency.decimalPlaces,
-    });
-    return `${currency.code} ${amount}`;
+  // Parse a numeric amount out of a formatted currency string (e.g. "$18,500.00" → 18500)
+  const parseAmount = (amount: string): number => {
+    const n = Number(amount.replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? n : 0;
   };
+
+  // Format preview numeric portion (without symbol — symbol is rendered as a chip alongside)
+  const formatPreviewAmount = (1000).toLocaleString(undefined, {
+    minimumFractionDigits: currency.decimalPlaces,
+    maximumFractionDigits: currency.decimalPlaces,
+  });
 
 
 
@@ -223,6 +511,18 @@ export function CurrencyDetailPage() {
     ...payments.map(d => d.date),
   ].filter(Boolean).sort().reverse();
   const lastTransactionDate = allDates[0] ? (() => { try { return format(new Date(allDates[0]), "dd MMM yyyy"); } catch { return allDates[0]; } })() : "N/A";
+
+  // Total value across every active document of this currency
+  const totalValueNumeric =
+    currency.usage.openInvoices.reduce((s, d) => s + parseAmount(d.amount), 0) +
+    currency.usage.openCustomerInvoices.reduce((s, d) => s + parseAmount(d.amount), 0) +
+    currency.usage.openPurchaseOrders.reduce((s, d) => s + parseAmount(d.amount), 0) +
+    currency.usage.openSalesOrders.reduce((s, d) => s + parseAmount(d.amount), 0) +
+    payments.reduce((s, d) => s + parseAmount(d.amount), 0);
+  const totalValueFormatted = totalValueNumeric.toLocaleString(undefined, {
+    minimumFractionDigits: currency.decimalPlaces,
+    maximumFractionDigits: currency.decimalPlaces,
+  });
 
   // Total docs in past 12 months (simulated as totalLifetimeDocuments for demo)
   const docsInPast12Months = currency.usage.totalLifetimeDocuments;
@@ -379,6 +679,7 @@ export function CurrencyDetailPage() {
                       <h1 className="text-[#0F172A] truncate transition-all duration-250" style={{ fontSize: isScrolled ? 13 : 16, fontWeight: isScrolled ? 600 : 700, lineHeight: isScrolled ? "18px" : "22px" }}>
                         {currency.code} — {currency.name}
                       </h1>
+                      <CurrencySymbolChip symbol={currency.symbol} name={currency.name} code={currency.code} size={isScrolled ? "sm" : "md"} />
                       <StatusPill compact={isScrolled} />
                       {currency.isBaseCurrency && (
                         <span className={`inline-flex items-center rounded-full border transition-all duration-250 ${isScrolled ? "px-1.5 py-px text-[10px]" : "px-2 py-0.5 text-[11px]"}`} style={{ fontWeight: 500, color: "#92400E", backgroundColor: "#FEF3C7", borderColor: "#FDE68A" }}>
@@ -413,28 +714,51 @@ export function CurrencyDetailPage() {
               <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Currency Information</h3>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-0">
-              {[
-                { label: "Currency Code", value: currency.code },
-                { label: "Currency Name", value: currency.name },
-                { label: "Symbol", value: currency.symbol },
-                { label: "Format Preview", value: formatPreview() },
-                { label: "Decimal Places", value: String(currency.decimalPlaces) },
-                { label: "Country / Region", value: currency.country },
-              ].map((field) => (
+              {([
+                { label: "Currency Code", kind: "text", value: currency.code },
+                { label: "Currency Name", kind: "text", value: currency.name },
+                { label: "Symbol", kind: "symbol" },
+                { label: "Format Preview", kind: "preview" },
+                { label: "Decimal Places", kind: "text", value: String(currency.decimalPlaces) },
+                { label: "Country / Region", kind: "text", value: currency.country },
+              ] as const).map((field) => (
                 <div key={field.label} className="px-5 py-3.5 border-b border-[#F1F5F9]">
                   <p className="text-[11px] text-[#94A3B8] mb-1" style={{ fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.04em" }}>{field.label}</p>
-                  <p className="text-[13px] text-[#0F172A]" style={{ fontWeight: 500 }}>{field.value}</p>
+                  {field.kind === "symbol" ? (
+                    <CurrencySymbolChip symbol={currency.symbol} name={currency.name} code={currency.code} />
+                  ) : field.kind === "preview" ? (
+                    <div className="flex items-center gap-2">
+                      <CurrencySymbolChip symbol={currency.symbol} name={currency.name} code={currency.code} />
+                      <span className="text-[13px] text-[#0F172A] tabular-nums" style={{ fontWeight: 500 }}>{formatPreviewAmount}</span>
+                    </div>
+                  ) : (
+                    <p className="text-[13px] text-[#0F172A]" style={{ fontWeight: 500 }}>{field.value}</p>
+                  )}
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Linked Documents Section */}
+          {/* Live Exchange Rate Converter */}
+          <CurrencyConverter detailCurrency={currency} />
+
+          {/* In Use Section */}
           <div className="bg-white border border-[#E2E8F0] rounded-xl mb-4 shadow-sm">
             <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
-              <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Linked Documents</h3>
-              <p className="text-[12px] text-[#64748B] mt-1">
-                {totalOpenDocs} open document{totalOpenDocs !== 1 ? "s" : ""} blocking deactivation · Last transaction: {lastTransactionDate} · {docsInPast12Months} documents in the past 12 months
+              <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>In Use</h3>
+                <div className="text-[12px] text-[#64748B]" style={{ fontWeight: 500 }}>
+                  Total value across all documents:{" "}
+                  <span className="inline-flex items-center gap-1.5 ml-0.5 align-middle">
+                    <CurrencySymbolChip symbol={currency.symbol} name={currency.name} code={currency.code} />
+                    <span className="text-[14px] text-[#0F172A] tabular-nums" style={{ fontWeight: 700 }}>{totalValueFormatted}</span>
+                  </span>
+                </div>
+              </div>
+              <p className="text-[12px] text-[#64748B] mt-1.5">
+                {inUseCount} active document{inUseCount !== 1 ? "s" : ""}
+                {totalOpenDocs > 0 && <> · blocking deactivation</>}
+                {" "}· Last transaction: {lastTransactionDate} · {docsInPast12Months} documents in the past 12 months
               </p>
             </div>
 
