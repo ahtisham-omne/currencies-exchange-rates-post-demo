@@ -70,14 +70,37 @@ import {
   Tooltip, TooltipTrigger, TooltipContent, TooltipProvider,
 } from "../components/ui/tooltip";
 import {
-  LineChart, Line, AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as ReTooltip, Legend,
+  LineChart, Line, AreaChart, Area, BarChart, Bar, Cell,
+  XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as ReTooltip, Legend, ReferenceLine,
 } from "recharts";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 
-type TimeRange = "7D" | "30D" | "90D";
+type TimeRange = "1D" | "5D" | "1M" | "1Y" | "5Y" | "MAX" | "CUSTOM";
 const DND_KPI_TYPE = "EXCHANGE_KPI";
+const TIME_RANGE_BUTTONS: { key: TimeRange; label: string }[] = [
+  { key: "1D", label: "1D" },
+  { key: "5D", label: "5D" },
+  { key: "1M", label: "1M" },
+  { key: "1Y", label: "1Y" },
+  { key: "5Y", label: "5Y" },
+  { key: "MAX", label: "Max" },
+  { key: "CUSTOM", label: "Custom" },
+];
+// Map a TimeRange to the number of days to slice from the tail of the time series.
+// The underlying series is 90 daily points, so 1Y / 5Y / Max all resolve to "everything we have".
+function daysForRange(r: TimeRange): number {
+  switch (r) {
+    case "1D": return 1;
+    case "5D": return 5;
+    case "1M": return 30;
+    case "1Y":
+    case "5Y":
+    case "MAX":
+    case "CUSTOM":
+    default: return 90;
+  }
+}
 
 // ── Analytics Widget definitions ──
 interface AnalyticsWidgetDef {
@@ -87,25 +110,37 @@ interface AnalyticsWidgetDef {
 
 const WIDGET_TOOLTIPS: Record<string, string> = {
   rate_over_time: "Shows both rates side by side over time. The market rate is the live line; your corporate rate is the stepped line. Hover any date to see both values and the gap between them.",
-  variance_trend: "Shows how far your corporate rate is from the market each day. Green = close to market, amber = getting stale, red = time to update your rate.",
-  daily_change: "Shows how much the selected rate moved each day — up (green) or down (red). Tall bars mean big moves that day.",
-  cumulative_return: "Shows the total movement of the selected rate since the start of the selected period. Answers: \"how much has this rate moved overall?\"",
-  conversion_trend: "Type an amount in USD to see what it would have converted to in PKR on each day using the selected rate. Useful for seeing how timing would have affected a transaction.",
-  drawdown_from_peak: "Shows how far the selected rate has fallen from its recent high. 0% means it's at a new high; −2% means it's 2% below the highest point in the selected period.",
+  variance_trend: "How far your corporate rate sits from the market each day. Colour bands: green within ±1%, amber 1–3%, red beyond 3%.",
+  daily_change: "Shows how much the mid-market rate moved each day — up (green) or down (red). Tall bars mean big moves that day.",
+  cumulative_return: "Shows the total movement of the mid-market rate since the start of the selected period. Answers: \"how much has this rate moved overall?\"",
+  conversion_trend: "Type an amount in the source currency to see what it would have converted to in the base currency on each day. Useful for seeing how timing would have affected a transaction.",
+  drawdown_from_peak: "Shows how far the mid-market rate has fallen from its recent high. 0% means it's at a new high; −2% means it's 2% below the highest point in the selected period.",
+  corp_rate_step: "Step chart of your corporate rate over time — one step for every change you've made.",
+  transaction_volume: "Bar chart of daily transaction count priced using this corporate rate.",
 };
 
 const ALL_ANALYTICS_WIDGETS: AnalyticsWidgetDef[] = [
   { key: "rate_over_time", label: "Rate Over Time", description: "Mid-Market vs Corporate rate trends", iconName: "TrendingUp", category: "Charts", previewType: "line" },
-  { key: "variance_trend", label: "Variance Trend (Corp vs Mid)", description: "Bar chart of corporate vs mid-market variance", iconName: "BarChart3", category: "Charts", previewType: "bar" },
-  { key: "daily_change", label: "Daily % Change", description: "Area chart of daily percentage changes", iconName: "Activity", category: "Charts", previewType: "area" },
-  { key: "cumulative_return", label: "Cumulative Return", description: "Area chart of cumulative return over time", iconName: "TrendingUp", category: "Charts", previewType: "area" },
+  { key: "variance_trend", label: "Variance Trend — Corporate vs Mid-Market", description: "Bar chart of corporate vs mid-market variance (thresholds at ±1% / ±3%)", iconName: "BarChart3", category: "Charts", previewType: "bar" },
+  { key: "daily_change", label: "Daily % Change (Mid-Market)", description: "Area chart of daily percentage changes in the mid-market rate", iconName: "Activity", category: "Charts", previewType: "area" },
+  { key: "cumulative_return", label: "Cumulative Return (Mid-Market)", description: "Area chart of cumulative return over time", iconName: "TrendingUp", category: "Charts", previewType: "area" },
   { key: "conversion_trend", label: "Conversion Trend (What-If)", description: "What-if conversion with amount input and summary", iconName: "DollarSign", category: "Charts", previewType: "line" },
-  { key: "drawdown_from_peak", label: "Drawdown from Peak", description: "Downward red area chart from all-time high", iconName: "TrendingDown", category: "Charts", previewType: "area-red" },
-  { key: "audit_log", label: "Audit Log", description: "Table of rate change audit trail", iconName: "FileText", category: "Tables" },
+  { key: "drawdown_from_peak", label: "Drawdown from Peak (Mid-Market)", description: "Downward red area chart from all-time high", iconName: "TrendingDown", category: "Charts", previewType: "area-red" },
+  { key: "corp_rate_step", label: "Corporate Rate Change History", description: "Step chart of your corporate rate only", iconName: "Star", category: "Charts", previewType: "line" },
+  { key: "transaction_volume", label: "Transaction Volume in this Pair", description: "Daily transaction count using this corporate rate", iconName: "BarChart3", category: "Charts", previewType: "bar" },
+  { key: "rate_history", label: "Rate History", description: "Table of historical rate values", iconName: "FileText", category: "Tables" },
 ];
 
-const DEFAULT_MID_WIDGETS = ["rate_over_time", "daily_change"];
-const DEFAULT_STD_WIDGETS = ["rate_over_time", "variance_trend", "daily_change", "cumulative_return", "audit_log"];
+// Widgets allowed per mode. Corporate view excludes mid-only market behaviour charts
+// (daily change, cumulative return, drawdown) and excludes audit log because audit
+// is rendered as a fixed section below the charts.
+const MID_WIDGET_KEYS = ["rate_over_time", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "variance_trend", "rate_history"];
+// Corporate mode keeps Rate History locked-visible as a dedicated section, so it
+// does not appear in the Customize Widgets list.
+const STD_WIDGET_KEYS = ["rate_over_time", "variance_trend", "corp_rate_step", "transaction_volume", "conversion_trend"];
+
+const DEFAULT_MID_WIDGETS = ["rate_over_time", "daily_change", "rate_history"];
+const DEFAULT_STD_WIDGETS = ["rate_over_time", "variance_trend"];
 
 // ── KPI definitions ──
 interface ExKpiDef {
@@ -114,7 +149,7 @@ interface ExKpiDef {
 }
 
 const ALL_KPI_DEFS: ExKpiDef[] = [
-  { key: "current_mid", label: "Mid-Market Rate", category: "Rates", iconName: "Activity", iconBg: "#F5F3FF", iconColor: "#7C3AED" },
+  { key: "current_mid", label: "Current Mid-Market Rate", category: "Rates", iconName: "Activity", iconBg: "#F5F3FF", iconColor: "#7C3AED" },
   { key: "current_std", label: "Current Corporate Rate", category: "Rates", iconName: "Star", iconBg: "#FFFBEB", iconColor: "#D97706" },
   { key: "change_24h", label: "Mid-Market 24h Change", category: "Performance", iconName: "Activity", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Percentage change in mid-market rate over the last 24 hours." },
   { key: "change_7d", label: "Mid-Market 7-Day Change", category: "Performance", iconName: "TrendingUp", iconBg: "#EDF4FF", iconColor: "#0A77FF" },
@@ -123,16 +158,23 @@ const ALL_KPI_DEFS: ExKpiDef[] = [
   { key: "high_low_30d", label: "Mid-Market 30-Day High / Low", category: "Analytics", iconName: "BarChart3", iconBg: "#FFF7ED", iconColor: "#EA580C", tooltip: "Highest and lowest mid-market rates recorded in the last 30 days." },
   { key: "volatility_30d", label: "Mid-Market 30-Day Volatility", category: "Analytics", iconName: "Zap", iconBg: "#FEF2F2", iconColor: "#DC2626", tooltip: "Standard deviation of daily rate changes over 30 days.\n\nLow: < 0.3% — Stable pair, minimal fluctuation.\nModerate: 0.3–0.8% — Normal market movement.\nHigh: > 0.8% — Elevated risk, consider hedging." },
   { key: "avg_rate_30d", label: "Mid-Market Average Rate (30d)", category: "Analytics", iconName: "Target", iconBg: "#F0FDF4", iconColor: "#16A34A" },
-  { key: "variance", label: "Variance vs Mid", category: "Rates", iconName: "Target", iconBg: "#FFFBEB", iconColor: "#D97706" },
-  { key: "transactions_30d", label: "Transactions (30d)", category: "Operational", iconName: "FileText", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Number of transactions using this currency pair in the last 30 days." },
+  { key: "transactions_30d", label: "Mid-Market Transactions (30d)", category: "Operational", iconName: "FileText", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Number of transactions using this currency pair in the last 30 days." },
+  // Corporate-specific KPIs
+  { key: "variance", label: "Corporate Variance vs Mid-Market", category: "Rates", iconName: "Target", iconBg: "#FFFBEB", iconColor: "#D97706" },
+  { key: "days_since_update", label: "Days Since Corporate Rate Last Updated", category: "Operational", iconName: "Calendar", iconBg: "#EDF4FF", iconColor: "#0A77FF" },
+  { key: "corp_transactions_30d", label: "Corporate Rate Transactions (30d)", category: "Operational", iconName: "FileText", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Transactions priced using the corporate rate in the last 30 days." },
+  { key: "fx_exposure_30d", label: "FX Exposure (30d)", category: "Operational", iconName: "Globe", iconBg: "#F0FDF4", iconColor: "#16A34A", tooltip: "Total transaction value booked in this currency pair over the last 30 days, expressed in the base currency." },
+  { key: "max_variance_30d", label: "Max Corporate Variance (30d)", category: "Analytics", iconName: "TrendingUp", iconBg: "#FEF2F2", iconColor: "#DC2626" },
+  { key: "avg_variance_30d", label: "Average Corporate Variance (30d)", category: "Analytics", iconName: "Target", iconBg: "#FFFBEB", iconColor: "#D97706" },
+  { key: "change_count_30d", label: "Corporate Rate Change Count (30d)", category: "Operational", iconName: "Activity", iconBg: "#F5F3FF", iconColor: "#7C3AED" },
 ];
 
 // KPIs relevant per context
 const MID_KPI_KEYS = ["current_mid", "change_24h", "change_7d", "change_30d", "change_ytd", "high_low_30d", "volatility_30d", "avg_rate_30d", "transactions_30d"];
-const STD_KPI_KEYS = ["current_std", "variance", "change_24h", "change_30d", "high_low_30d", "volatility_30d", "avg_rate_30d", "transactions_30d"];
+const STD_KPI_KEYS = ["current_std", "variance", "days_since_update", "corp_transactions_30d", "fx_exposure_30d", "max_variance_30d", "avg_variance_30d", "change_count_30d"];
 
 const DEFAULT_MID_KPIS = ["current_mid", "change_24h", "change_30d", "high_low_30d", "volatility_30d"];
-const DEFAULT_STD_KPIS = ["current_std", "variance", "change_24h", "high_low_30d", "transactions_30d"];
+const DEFAULT_STD_KPIS = ["current_std", "variance", "days_since_update", "corp_transactions_30d", "fx_exposure_30d"];
 
 function computeKpiValue(key: string, detail: CurrencyPairDetail): { value: string; change?: string; changeColor?: string; sublabel?: string } {
   switch (key) {
@@ -142,7 +184,10 @@ function computeKpiValue(key: string, detail: CurrencyPairDetail): { value: stri
       changeColor: detail.change24h >= 0 ? "#059669" : "#EF4444",
       sublabel: `as of ${format(new Date(LAST_SYNC), "dd MMM yyyy, HH:mm")} today`,
     };
-    case "current_std": return { value: detail.currentStdRate ? detail.currentStdRate.toFixed(4) : "Not Set" };
+    case "current_std": return {
+      value: detail.currentStdRate ? detail.currentStdRate.toFixed(4) : "Not Set",
+      sublabel: detail.stdEffectiveDate ? `Effective ${format(new Date(detail.stdEffectiveDate), "dd MMM yyyy")}` : undefined,
+    };
     case "change_24h": return { value: `${detail.change24h > 0 ? "+" : ""}${detail.change24h.toFixed(2)}%` };
     case "change_7d": return { value: `${detail.change7d > 0 ? "+" : ""}${detail.change7d.toFixed(2)}%` };
     case "change_30d": return { value: `${detail.change30d > 0 ? "+" : ""}${detail.change30d.toFixed(2)}%` };
@@ -156,8 +201,36 @@ function computeKpiValue(key: string, detail: CurrencyPairDetail): { value: stri
       return { value: `${detail.volatility30d.toFixed(3)}%`, change: label, changeColor: detail.volatility30d < 0.3 ? "#059669" : detail.volatility30d < 0.8 ? "#D97706" : "#EF4444" };
     }
     case "avg_rate_30d": return { value: detail.avgRate30d.toFixed(4) };
-    case "variance": return { value: detail.variance !== null ? `${detail.variance > 0 ? "+" : ""}${detail.variance.toFixed(2)}%` : "N/A" };
+    case "variance":
+      return {
+        value: detail.variance !== null ? `${detail.variance > 0 ? "+" : ""}${detail.variance.toFixed(2)}%` : "N/A",
+        changeColor: detail.variance !== null ? (Math.abs(detail.variance) <= 1 ? "#059669" : Math.abs(detail.variance) <= 3 ? "#D97706" : "#EF4444") : undefined,
+      };
     case "transactions_30d": return { value: String(detail.transactions30d) };
+    case "corp_transactions_30d": return { value: String(Math.floor(detail.transactions30d * 0.7)) };
+    case "days_since_update": {
+      if (!detail.stdEffectiveDate) return { value: "N/A" };
+      const days = Math.max(0, Math.floor((Date.now() - new Date(detail.stdEffectiveDate).getTime()) / 86400000));
+      return { value: `${days} days`, sublabel: `Since ${format(new Date(detail.stdEffectiveDate), "dd MMM yyyy")}` };
+    }
+    case "fx_exposure_30d": {
+      const exposure = detail.transactions30d * detail.avgRate30d * 1200; // rough value estimation
+      return {
+        value: `${BASE_CURRENCY} ${exposure.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+        sublabel: `${detail.transactions30d} transactions`,
+      };
+    }
+    case "max_variance_30d": {
+      // Approximate: largest variance seen over the series window
+      if (detail.variance === null) return { value: "N/A" };
+      const max = Math.max(Math.abs(detail.variance) * 1.5, Math.abs(detail.variance));
+      return { value: `${max.toFixed(2)}%` };
+    }
+    case "avg_variance_30d": {
+      if (detail.variance === null) return { value: "N/A" };
+      return { value: `${detail.variance.toFixed(2)}%` };
+    }
+    case "change_count_30d": return { value: String(detail.auditLog.length) };
     default: return { value: "–" };
   }
 }
@@ -324,9 +397,9 @@ function WidgetCategoryIcon({ category }: { category: string }) {
 }
 
 // ── Customize Widgets Panel (with previews like Partners) ──
-function CustomizeKpiPanel({ open, onOpenChange, activeKpis, onToggleKpi, detail, allowedKeys, activeWidgets, onToggleWidget, isStandardDetail }: {
+function CustomizeKpiPanel({ open, onOpenChange, activeKpis, onToggleKpi, detail, allowedKeys, allowedWidgetKeys, activeWidgets, onToggleWidget }: {
   open: boolean; onOpenChange: (open: boolean) => void; activeKpis: string[]; onToggleKpi: (key: string) => void; detail: CurrencyPairDetail;
-  allowedKeys: string[]; activeWidgets: string[]; onToggleWidget: (key: string) => void; isStandardDetail: boolean;
+  allowedKeys: string[]; allowedWidgetKeys: string[]; activeWidgets: string[]; onToggleWidget: (key: string) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"kpis" | "widgets">("kpis");
@@ -354,8 +427,9 @@ function CustomizeKpiPanel({ open, onOpenChange, activeKpis, onToggleKpi, detail
 
   const widgetCategories = useMemo(() => {
     const available = ALL_ANALYTICS_WIDGETS.filter(w => {
-      if (w.key === "variance_trend" && !isStandardDetail) return false;
-      if (w.key === "audit_log" && !isStandardDetail) return false;
+      if (!allowedWidgetKeys.includes(w.key)) return false;
+      // Variance Trend only surfaces when a corporate rate exists for this pair
+      if (w.key === "variance_trend" && !detail.currentStdRate) return false;
       if (searchQuery && !w.label.toLowerCase().includes(searchQuery.toLowerCase()) && !w.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
@@ -365,7 +439,7 @@ function CustomizeKpiPanel({ open, onOpenChange, activeKpis, onToggleKpi, detail
       catMap.get(w.category)!.push(w);
     }
     return { categories: Array.from(catMap.entries()).map(([name, widgets]) => ({ name, widgets })), available };
-  }, [searchQuery, isStandardDetail]);
+  }, [searchQuery, allowedWidgetKeys, detail.currentStdRate]);
 
   if (!mounted) return null;
 
@@ -586,8 +660,9 @@ export function CurrencyPairDetailPage() {
 
   const rateType = searchParams.get("type") || "mid";
 
-  const [timeRange, setTimeRange] = useState<TimeRange>("30D");
-  const [auditOpen, setAuditOpen] = useState(false);
+  const [timeRange, setTimeRange] = useState<TimeRange>("1M");
+  const [customRange, setCustomRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
+  const [customPopoverOpen, setCustomPopoverOpen] = useState(false);
   const [customizePanelOpen, setCustomizePanelOpen] = useState(false);
   const [activeKpis, setActiveKpis] = useState<string[]>(rateType === "std" ? [...DEFAULT_STD_KPIS] : [...DEFAULT_MID_KPIS]);
   const [activeWidgets, setActiveWidgets] = useState<string[]>(rateType === "std" ? [...DEFAULT_STD_WIDGETS] : [...DEFAULT_MID_WIDGETS]);
@@ -604,9 +679,12 @@ export function CurrencyPairDetailPage() {
 
   const chartData = useMemo(() => {
     if (!detail) return [];
-    const days = timeRange === "7D" ? 7 : timeRange === "30D" ? 30 : 90;
+    if (timeRange === "CUSTOM" && customRange.from && customRange.to) {
+      return detail.timeSeries.filter(p => p.date >= customRange.from && p.date <= customRange.to);
+    }
+    const days = daysForRange(timeRange);
     return detail.timeSeries.slice(-days - 1);
-  }, [detail, timeRange]);
+  }, [detail, timeRange, customRange]);
 
   const varianceData = useMemo(() => {
     return chartData.map(d => ({
@@ -622,6 +700,16 @@ export function CurrencyPairDetailPage() {
       if (d.mid > peak) peak = d.mid;
       const drawdown = peak > 0 ? -((peak - d.mid) / peak * 100) : 0;
       return { date: d.date, drawdown: +drawdown.toFixed(3) };
+    });
+  }, [chartData]);
+
+  // Daily transaction volume (deterministic pseudo-data keyed off the date string)
+  const transactionVolumeData = useMemo(() => {
+    return chartData.map(d => {
+      let h = 0;
+      for (let i = 0; i < d.date.length; i++) h = ((h << 5) - h + d.date.charCodeAt(i)) | 0;
+      const count = 3 + (Math.abs(h) % 20); // 3..22 txns per day
+      return { date: d.date, count };
     });
   }, [chartData]);
 
@@ -826,17 +914,10 @@ export function CurrencyPairDetailPage() {
                   </div>
                 </div>
 
-                {/* Right: Actions — Export only for mid-market, Export + Edit for corporate */}
+                {/* Right: Actions — Edit Rate lives only on the corporate detail page.
+                   Mid-market data comes from the API and isn't owned by the company,
+                   so there is no Export/Edit affordance on this page. */}
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => toast.info("Export feature coming soon")}
-                    className={`rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#334155] inline-flex items-center gap-1.5 transition-all duration-200 cursor-pointer shadow-sm ${isScrolled ? "h-8 px-3 text-[12px]" : "h-9 px-3.5 text-[13px]"}`}
-                    style={{ fontWeight: 500 }}
-                  >
-                    <Download className={isScrolled ? "w-3 h-3" : "w-3.5 h-3.5"} />
-                    {!isScrolled && "Export Rate History"}
-                  </button>
-
                   {isStandardDetail && stdRecord && (
                     <button
                       onClick={openEditModal}
@@ -913,21 +994,70 @@ export function CurrencyPairDetailPage() {
           )}
 
           {/* ══ Analytics Widgets (Charts) ══ */}
-          {(activeWidgets.includes("rate_over_time") || activeWidgets.includes("variance_trend") || activeWidgets.includes("daily_change") || activeWidgets.includes("cumulative_return") || activeWidgets.includes("conversion_trend") || activeWidgets.includes("drawdown_from_peak")) && (
+          {activeWidgets.some(w => ["rate_over_time", "variance_trend", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "corp_rate_step", "transaction_volume"].includes(w)) && (
             <div className="space-y-3">
-              <div className="flex items-center gap-1">
-                {(["7D", "30D", "90D"] as TimeRange[]).map(r => (
-                  <button
-                    key={r}
-                    onClick={() => setTimeRange(r)}
-                    className={`px-3 py-1 rounded-md text-[12px] transition-all ${
-                      timeRange === r ? "bg-[#0A77FF] text-white shadow-sm" : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
-                    }`}
-                    style={{ fontWeight: timeRange === r ? 600 : 400 }}
-                  >
-                    {r}
-                  </button>
-                ))}
+              {/* Google-pattern time range selector */}
+              <div className="flex items-center flex-wrap gap-1">
+                {TIME_RANGE_BUTTONS.map(({ key: r, label }) => {
+                  const isCustom = r === "CUSTOM";
+                  if (isCustom) {
+                    return (
+                      <div key={r} className="relative">
+                        <button
+                          onClick={() => setCustomPopoverOpen(o => !o)}
+                          className={`px-3 py-1 rounded-md text-[12px] transition-all inline-flex items-center gap-1 ${
+                            timeRange === r ? "bg-[#0A77FF] text-white shadow-sm" : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                          }`}
+                          style={{ fontWeight: timeRange === r ? 600 : 500 }}
+                        >
+                          <Calendar className="w-3 h-3" />
+                          {label}
+                          {timeRange === "CUSTOM" && customRange.from && customRange.to && (
+                            <span className="text-[11px]">: {format(new Date(customRange.from), "dd MMM")} – {format(new Date(customRange.to), "dd MMM")}</span>
+                          )}
+                        </button>
+                        {customPopoverOpen && (
+                          <div className="absolute top-full mt-2 left-0 z-30 w-[280px] rounded-xl border border-[#E2E8F0] bg-white shadow-[0_12px_32px_rgba(0,0,0,0.10)] p-3">
+                            <p className="text-[11px] text-muted-foreground mb-2" style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Custom Range</p>
+                            <div className="space-y-2">
+                              <div>
+                                <Label className="text-[11px] text-muted-foreground mb-1">From</Label>
+                                <Input type="date" value={customRange.from} onChange={e => setCustomRange(p => ({ ...p, from: e.target.value }))} className="h-8 text-[12px]" />
+                              </div>
+                              <div>
+                                <Label className="text-[11px] text-muted-foreground mb-1">To</Label>
+                                <Input type="date" value={customRange.to} onChange={e => setCustomRange(p => ({ ...p, to: e.target.value }))} className="h-8 text-[12px]" />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 mt-3">
+                              <Button
+                                size="sm"
+                                className="flex-1 h-8 text-[12px]"
+                                disabled={!customRange.from || !customRange.to}
+                                onClick={() => { setTimeRange("CUSTOM"); setCustomPopoverOpen(false); }}
+                              >
+                                Apply
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-8 text-[12px]" onClick={() => setCustomPopoverOpen(false)}>Cancel</Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <button
+                      key={r}
+                      onClick={() => setTimeRange(r)}
+                      className={`px-3 py-1 rounded-md text-[12px] transition-all ${
+                        timeRange === r ? "bg-[#0A77FF] text-white shadow-sm" : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                      }`}
+                      style={{ fontWeight: timeRange === r ? 600 : 500 }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -949,8 +1079,8 @@ export function CurrencyPairDetailPage() {
                   </ContentCard>
                 )}
 
-                {activeWidgets.includes("variance_trend") && isStandardDetail && detail.currentStdRate && (
-                  <ContentCard title="Variance Trend (Std vs Mid)" icon={BarChart3} tooltipText={WIDGET_TOOLTIPS.variance_trend}>
+                {activeWidgets.includes("variance_trend") && detail.currentStdRate && (
+                  <ContentCard title="Variance Trend — Corporate vs Mid-Market" icon={BarChart3} tooltipText={WIDGET_TOOLTIPS.variance_trend}>
                     <div style={{ height: 250 }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={varianceData}>
@@ -958,7 +1088,17 @@ export function CurrencyPairDetailPage() {
                           <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
                           <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} unit="%" />
                           <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} />
-                          <Bar dataKey="variance" name="Variance %" fill="#D97706" radius={[4, 4, 0, 0]} />
+                          <ReferenceLine y={1} stroke="#94A3B8" strokeDasharray="2 3" />
+                          <ReferenceLine y={-1} stroke="#94A3B8" strokeDasharray="2 3" />
+                          <ReferenceLine y={3} stroke="#DC2626" strokeDasharray="2 3" />
+                          <ReferenceLine y={-3} stroke="#DC2626" strokeDasharray="2 3" />
+                          <Bar dataKey="variance" name="Variance %" radius={[4, 4, 0, 0]}>
+                            {varianceData.map((d, i) => {
+                              const abs = Math.abs(d.variance);
+                              const color = abs <= 1 ? "#059669" : abs <= 3 ? "#D97706" : "#DC2626";
+                              return <Cell key={i} fill={color} />;
+                            })}
+                          </Bar>
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -1059,7 +1199,7 @@ export function CurrencyPairDetailPage() {
                 )}
 
                 {activeWidgets.includes("drawdown_from_peak") && (
-                  <ContentCard title="Drawdown from Peak" icon={ArrowDownRight} tooltipText={WIDGET_TOOLTIPS.drawdown_from_peak}>
+                  <ContentCard title="Drawdown from Peak (Mid-Market)" icon={ArrowDownRight} tooltipText={WIDGET_TOOLTIPS.drawdown_from_peak}>
                     <div style={{ height: 250 }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={drawdownData}>
@@ -1074,12 +1214,47 @@ export function CurrencyPairDetailPage() {
                     </div>
                   </ContentCard>
                 )}
+
+                {activeWidgets.includes("corp_rate_step") && detail.currentStdRate && (
+                  <ContentCard title="Corporate Rate Change History" icon={Star} tooltipText={WIDGET_TOOLTIPS.corp_rate_step}>
+                    <div style={{ height: 250 }} className="-ml-2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
+                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} domain={["auto", "auto"]} />
+                          <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} />
+                          <Line type="stepAfter" dataKey="std" name="Corporate Rate" stroke="#D97706" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </ContentCard>
+                )}
+
+                {activeWidgets.includes("transaction_volume") && (
+                  <ContentCard title="Transaction Volume in this Pair" icon={BarChart3} tooltipText={WIDGET_TOOLTIPS.transaction_volume}>
+                    <div style={{ height: 250 }} className="-ml-2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={transactionVolumeData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
+                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} />
+                          <Bar dataKey="count" name="Transactions" fill="#0A77FF" radius={[3, 3, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </ContentCard>
+                )}
               </div>
             </div>
           )}
 
 
-          {/* ══ Rate History — always visible, not a widget ══ */}
+          {/* ══ Rate History ══
+             Corporate view: always visible, rendered after the charts.
+             Mid-Market view: rendered only when the widget is active (user can hide via Customize Widgets). */}
+          {(isStandardDetail || activeWidgets.includes("rate_history")) && (
           <div>
             <h2 className="text-[15px] mb-3" style={{ fontWeight: 600 }}>Rate History</h2>
             <div className="rounded-xl border border-[#E2E8F0] bg-white overflow-clip shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
@@ -1120,45 +1295,42 @@ export function CurrencyPairDetailPage() {
               </Table>
             </div>
           </div>
+          )}
 
-          {activeWidgets.includes("audit_log") && isStandardDetail && detail.auditLog.length > 0 && (
+          {/* ══ Audit Log — always visible and expanded on the corporate detail page ══ */}
+          {isStandardDetail && detail.auditLog.length > 0 && (
             <div className="pb-4">
-              <button onClick={() => setAuditOpen(!auditOpen)} className="flex items-center gap-2 mb-3 cursor-pointer">
-                <h2 className="text-[15px]" style={{ fontWeight: 600 }}>Audit Log</h2>
-                {auditOpen ? <ChevronUp className="w-4 h-4 text-[#94A3B8]" /> : <ChevronDown className="w-4 h-4 text-[#94A3B8]" />}
-              </button>
-              {auditOpen && (
-                <div className="rounded-xl border border-[#E2E8F0] bg-white overflow-clip shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-[#F8FAFC] hover:bg-[#F8FAFC]">
-                        <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Date & Time</span></TableHead>
-                        <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Action</span></TableHead>
-                        <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>User</span></TableHead>
-                        <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Old Value</span></TableHead>
-                        <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>New Value</span></TableHead>
-                        <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Reason</span></TableHead>
+              <h2 className="text-[15px] mb-3" style={{ fontWeight: 600 }}>Audit Log</h2>
+              <div className="rounded-xl border border-[#E2E8F0] bg-white overflow-clip shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-[#F8FAFC] hover:bg-[#F8FAFC]">
+                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Date & Time</span></TableHead>
+                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Action</span></TableHead>
+                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>User</span></TableHead>
+                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Old Value</span></TableHead>
+                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>New Value</span></TableHead>
+                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Reason</span></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.auditLog.map(entry => (
+                      <TableRow key={entry.id} className="hover:bg-[#F0F7FF]">
+                        <TableCell className="text-[12px]">{format(new Date(entry.dateTime), "dd MMM yyyy, HH:mm")}</TableCell>
+                        <TableCell>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF]" style={{ fontWeight: 500 }}>
+                            {entry.action}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-[12px]">{entry.user}</TableCell>
+                        <TableCell className="text-[12px] tabular-nums text-[#64748B]">{entry.oldValue?.toFixed(4) || "—"}</TableCell>
+                        <TableCell className="text-[12px] tabular-nums" style={{ fontWeight: 600 }}>{entry.newValue?.toFixed(4) || "—"}</TableCell>
+                        <TableCell className="text-[12px] text-[#64748B]">{entry.reason}</TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {detail.auditLog.map(entry => (
-                        <TableRow key={entry.id} className="hover:bg-[#F0F7FF]">
-                          <TableCell className="text-[12px]">{format(new Date(entry.dateTime), "dd MMM yyyy, HH:mm")}</TableCell>
-                          <TableCell>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF]" style={{ fontWeight: 500 }}>
-                              {entry.action}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-[12px]">{entry.user}</TableCell>
-                          <TableCell className="text-[12px] tabular-nums text-[#64748B]">{entry.oldValue?.toFixed(4) || "—"}</TableCell>
-                          <TableCell className="text-[12px] tabular-nums" style={{ fontWeight: 600 }}>{entry.newValue?.toFixed(4) || "—"}</TableCell>
-                          <TableCell className="text-[12px] text-[#64748B]">{entry.reason}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </div>
@@ -1172,20 +1344,30 @@ export function CurrencyPairDetailPage() {
         onToggleKpi={handleToggleKpi}
         detail={detail}
         allowedKeys={isStandardDetail ? STD_KPI_KEYS : MID_KPI_KEYS}
+        allowedWidgetKeys={isStandardDetail ? STD_WIDGET_KEYS : MID_WIDGET_KEYS}
         activeWidgets={activeWidgets}
         onToggleWidget={handleToggleWidget}
-        isStandardDetail={isStandardDetail}
       />
 
-      {/* Edit Corporate Rate Modal */}
+      {/* Edit Corporate Rate Modal — Archive-pattern */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
-        <DialogContent className="sm:max-w-[480px] p-0 gap-0 overflow-hidden rounded-2xl bg-white" hideCloseButton>
-          <div className="px-6 py-4 border-b border-border bg-white">
-            <DialogTitle className="text-[16px]" style={{ fontWeight: 600 }}>
-              Edit Corporate Rate
+        <DialogContent className="sm:max-w-[480px] p-0 gap-0 overflow-hidden rounded-2xl border-0 bg-white shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)]" hideCloseButton>
+          <div className="relative flex flex-col items-center pt-10 pb-6 text-center" style={{ background: "linear-gradient(180deg, #EFF6FF 0%, rgba(239,246,255,0.3) 70%, transparent 100%)" }}>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[180px] h-[80px] rounded-full blur-[50px] opacity-25" style={{ backgroundColor: "#3B82F6" }} />
+            <div className="relative w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: "#DBEAFE" }}>
+              <Pencil className="w-7 h-7" style={{ color: "#2563EB" }} />
+            </div>
+            <span
+              className="mt-4 px-3 py-1 rounded-full text-[11px]"
+              style={{ fontWeight: 600, backgroundColor: "#EFF6FF", color: "#1E40AF", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}
+            >
+              Update Rate
+            </span>
+            <DialogTitle className="mt-3 text-[18px] tracking-[-0.02em]" style={{ fontWeight: 600, color: "#0F172A" }}>
+              Edit Corporate Rate — {code}
             </DialogTitle>
-            <DialogDescription className="text-[12px] text-muted-foreground mt-1">
-              Update the corporate rate for {code}.
+            <DialogDescription className="text-[13px] mt-1.5 max-w-[320px] mx-auto" style={{ color: "#475569", lineHeight: "1.65" }}>
+              Update the corporate rate for {code} / {BASE_CURRENCY}.
             </DialogDescription>
           </div>
           <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto bg-white">
@@ -1252,21 +1434,21 @@ export function CurrencyPairDetailPage() {
               <p className="text-[10px] text-muted-foreground mt-1 text-right">{editForm.notes.length}/500</p>
             </div>
           </div>
-          <div className="px-6 py-4 border-t border-border flex items-center gap-2.5 justify-end bg-white">
+          <div className="px-8 py-5 border-t border-border flex flex-col gap-2.5 bg-white">
             <Button
-              variant="outline"
-              className="h-11 px-6 text-[14px] rounded-xl"
-              style={{ fontWeight: 500 }}
-              onClick={() => setEditModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              className="h-11 px-6 text-[14px] rounded-xl"
-              style={{ fontWeight: 600 }}
+              className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors hover:opacity-90"
+              style={{ fontWeight: 600, backgroundColor: "#0A77FF", color: "#fff" }}
               onClick={handleEditSave}
             >
               Update Rate
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors"
+              style={{ fontWeight: 500, backgroundColor: "#F1F5F9", color: "#334155" }}
+              onClick={() => setEditModalOpen(false)}
+            >
+              Cancel
             </Button>
           </div>
         </DialogContent>

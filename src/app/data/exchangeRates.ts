@@ -1,4 +1,5 @@
 // ─── Exchange Rate Library — Data Model & Seed Data ───
+import { SEED_CURRENCIES } from "./currencies";
 
 export interface MidMarketRate {
   id: string;
@@ -159,8 +160,10 @@ function generateAuditLog(stdRate: number | null): AuditEntry[] {
 }
 
 // ─── Mid-Market Rates Seed Data ───
-// All rates are relative to PKR (base), so USD/PKR = 278.52 means 1 USD = 278.52 PKR
-export const SEED_MID_MARKET_RATES: MidMarketRate[] = [
+// All rates are relative to PKR (base), so USD/PKR = 278.52 means 1 USD = 278.52 PKR.
+// Hand-seeded rates below cover real quotable currencies; the rest are filled in
+// deterministically from the Currency Library so every active currency has a rate.
+const HAND_SEEDED_MID_RATES: MidMarketRate[] = [
   { id: "mm-usd", baseCurrency: "PKR", sourceCurrency: "USD", sourceCurrencyName: "United States Dollar", rate: 278.5200, change24h: 0.12, effectiveDate: "2026-04-10", source: "API", status: "active" },
   { id: "mm-eur", baseCurrency: "PKR", sourceCurrency: "EUR", sourceCurrencyName: "Euro", rate: 304.8150, change24h: -0.23, effectiveDate: "2026-04-10", source: "API", status: "active" },
   { id: "mm-gbp", baseCurrency: "PKR", sourceCurrency: "GBP", sourceCurrencyName: "British Pound Sterling", rate: 355.4200, change24h: 0.35, effectiveDate: "2026-04-10", source: "API", status: "active" },
@@ -186,6 +189,65 @@ export const SEED_MID_MARKET_RATES: MidMarketRate[] = [
   { id: "mm-brl", baseCurrency: "PKR", sourceCurrency: "BRL", sourceCurrencyName: "Brazilian Real", rate: 48.9000, change24h: -0.34, effectiveDate: "2026-04-10", source: "API", status: "active" },
   { id: "mm-mxn", baseCurrency: "PKR", sourceCurrency: "MXN", sourceCurrencyName: "Mexican Peso", rate: 16.4300, change24h: 0.19, effectiveDate: "2026-04-10", source: "API", status: "active" },
 ];
+
+// Deterministic string hash so generated rates are stable across reloads.
+function _hash(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function _generatedMidRate(code: string): number {
+  const h = _hash(code);
+  // Produce a rate in a plausible range. Exponent ∈ {-2,-1,0,1,2} spreads values
+  // from ~0.01 up to ~1000 PKR per source unit.
+  const exp = (h % 5) - 2;
+  const base = 1 + ((h >> 3) % 999) / 100; // 1.00 .. 10.99
+  return +(base * Math.pow(10, exp)).toFixed(4);
+}
+
+function _generatedChange24h(code: string): number {
+  const h = _hash(code + "#c24");
+  return +(((h % 401) - 200) / 100).toFixed(2); // -2.00 .. +2.00
+}
+
+/** Full mid-market rate list derived from the Currency Library. */
+export const SEED_MID_MARKET_RATES: MidMarketRate[] = (() => {
+  const seeded = new Map(HAND_SEEDED_MID_RATES.map((r) => [r.sourceCurrency, r]));
+  const out: MidMarketRate[] = [];
+  // Base currency against itself — always 1.0000
+  out.push({
+    id: `mm-${BASE_CURRENCY.toLowerCase()}`,
+    baseCurrency: BASE_CURRENCY,
+    sourceCurrency: BASE_CURRENCY,
+    sourceCurrencyName: BASE_CURRENCY_NAME,
+    rate: 1.0000,
+    change24h: 0.00,
+    effectiveDate: "2026-04-10",
+    source: "API",
+    status: "active",
+  });
+  for (const c of SEED_CURRENCIES) {
+    if (c.code === BASE_CURRENCY) continue;
+    const existing = seeded.get(c.code);
+    if (existing) {
+      out.push(existing);
+      continue;
+    }
+    out.push({
+      id: `mm-${c.code.toLowerCase()}`,
+      baseCurrency: BASE_CURRENCY,
+      sourceCurrency: c.code,
+      sourceCurrencyName: c.name,
+      rate: _generatedMidRate(c.code),
+      change24h: _generatedChange24h(c.code),
+      effectiveDate: "2026-04-10",
+      source: "API",
+      status: "active",
+    });
+  }
+  return out.sort((a, b) => a.sourceCurrency.localeCompare(b.sourceCurrency));
+})();
 
 // ─── Standard (Corporate) Rates Seed Data ───
 export const SEED_STANDARD_RATES: StandardRate[] = [

@@ -171,7 +171,13 @@ const MID_DEFAULT_ORDER = MID_COLUMN_DEFS.map(c => c.key);
 const STD_DEFAULT_ORDER = STD_COLUMN_DEFS.map(c => c.key);
 const MID_DEFAULT_VIS: Record<string, boolean> = Object.fromEntries(MID_COLUMN_DEFS.map(c => [c.key, true]));
 const STD_DEFAULT_VIS: Record<string, boolean> = Object.fromEntries(STD_COLUMN_DEFS.map(c => [c.key, true]));
+const MID_DEFAULT_WIDTHS: Record<string, number> = Object.fromEntries(MID_COLUMN_DEFS.map(c => [c.key, parseInt(c.minWidth, 10)]));
+const STD_DEFAULT_WIDTHS: Record<string, number> = Object.fromEntries(STD_COLUMN_DEFS.map(c => [c.key, parseInt(c.minWidth, 10)]));
 const LOCKED_COLUMNS = ["sourceCurrency"];
+const MIN_COL_WIDTH = 1;
+const CHEVRON_COL_WIDTH = 36;
+const CHECKBOX_COL_WIDTH = 40;
+const ACTIONS_COL_WIDTH = 60;
 
 export function ExchangeRateLibraryPage() {
   const navigate = useNavigate();
@@ -192,9 +198,16 @@ export function ExchangeRateLibraryPage() {
   /* Column management */
   const [midColOrder, setMidColOrder] = useState([...MID_DEFAULT_ORDER]);
   const [midColVis, setMidColVis] = useState({ ...MID_DEFAULT_VIS });
+  const [midColWidths, setMidColWidths] = useState<Record<string, number>>({ ...MID_DEFAULT_WIDTHS });
   const [stdColOrder, setStdColOrder] = useState([...STD_DEFAULT_ORDER]);
   const [stdColVis, setStdColVis] = useState({ ...STD_DEFAULT_VIS });
+  const [stdColWidths, setStdColWidths] = useState<Record<string, number>>({ ...STD_DEFAULT_WIDTHS });
   const [columnDrawerOpen, setColumnDrawerOpen] = useState(false);
+
+  /* Column resize */
+  const resizeRef = useRef<{ columnKey: string; startX: number; startWidth: number } | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizingColumnKey, setResizingColumnKey] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   /* Expanded row inversion state — tracks which expanded rows are showing inverted view */
@@ -398,12 +411,12 @@ export function ExchangeRateLibraryPage() {
 
   const sorted = useMemo(() => {
     const list = [...currentList];
-    list.sort((a: any, b: any) => {
+    list.sort((a, b) => {
       let cmp = 0;
-      const valA = a[sortKey];
-      const valB = b[sortKey];
-      if (typeof valA === "string") cmp = valA.localeCompare(valB);
-      else if (typeof valA === "number") cmp = valA - valB;
+      const valA = (a as Record<string, unknown>)[sortKey];
+      const valB = (b as Record<string, unknown>)[sortKey];
+      if (typeof valA === "string" && typeof valB === "string") cmp = valA.localeCompare(valB);
+      else if (typeof valA === "number" && typeof valB === "number") cmp = valA - valB;
       return sortDir === "desc" ? -cmp : cmp;
     });
     return list;
@@ -568,9 +581,45 @@ export function ExchangeRateLibraryPage() {
   const colDefs = activeTab === "mid-market" ? MID_COLUMN_DEFS : STD_COLUMN_DEFS;
   const colOrder = activeTab === "mid-market" ? midColOrder : stdColOrder;
   const colVis = activeTab === "mid-market" ? midColVis : stdColVis;
+  const colWidths = activeTab === "mid-market" ? midColWidths : stdColWidths;
   const setColOrder = activeTab === "mid-market" ? setMidColOrder : setStdColOrder;
   setColOrderRef.current = setColOrder;
   const setColVis = activeTab === "mid-market" ? setMidColVis : setStdColVis;
+  const setColWidths = activeTab === "mid-market" ? setMidColWidths : setStdColWidths;
+
+  // Mirrors CurrencyListPage.handleResizeStart exactly — captures the setter from
+  // the active-tab closure, reads startWidth from the current widths, and commits
+  // via the setter's functional form so it stays correct under rapid state updates.
+  const handleResizeStart = useCallback((e: React.MouseEvent, columnKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startWidth = colWidths[columnKey] ?? parseInt(colDefs.find(c => c.key === columnKey)?.minWidth ?? "160", 10);
+    resizeRef.current = { columnKey, startX: e.clientX, startWidth };
+    setIsResizing(true);
+    setResizingColumnKey(columnKey);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const delta = moveEvent.clientX - resizeRef.current.startX;
+      const newWidth = Math.max(MIN_COL_WIDTH, resizeRef.current.startWidth + delta);
+      setColWidths(prev => ({ ...prev, [resizeRef.current!.columnKey]: newWidth }));
+    };
+
+    const handleMouseUp = () => {
+      resizeRef.current = null;
+      setIsResizing(false);
+      setResizingColumnKey(null);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [colWidths, colDefs, setColWidths]);
 
   const visibleColumns = useMemo(() => {
     const validKeys = new Set(colDefs.map(c => c.key));
@@ -977,8 +1026,8 @@ export function ExchangeRateLibraryPage() {
                 </div>
               ) : (
                 /* Table View */
-                <div className="min-h-0 overflow-auto flex-1" style={{ scrollbarWidth: "none" }}>
-                  <Table>
+                <div className={`min-h-0 overflow-auto flex-1 ${isResizing || draggingColumnKey ? "select-none" : ""}`} style={{ scrollbarWidth: "none" }}>
+                  <Table style={{ tableLayout: "fixed", minWidth: `${CHEVRON_COL_WIDTH + (activeTab === "standard" ? CHECKBOX_COL_WIDTH : 0) + visibleColumns.reduce((sum, key) => sum + (colWidths[key] ?? parseInt(colDef(key).minWidth, 10)), 0) + ACTIONS_COL_WIDTH}px`, width: "100%" }}>
                     <TableHeader className="sticky top-0 z-20 bg-card">
                       <TableRow className={`bg-muted/30 hover:bg-muted/30 ${
                         density === "condensed" ? "[&>th]:h-8" : "[&>th]:h-9"
@@ -1001,6 +1050,7 @@ export function ExchangeRateLibraryPage() {
                           const currentColSort: "asc" | "desc" | null = sortKey === key ? sortDir : null;
                           const isDraggable = !LOCKED_COLUMNS.includes(key);
                           const isBeingDragged = draggingColumnKey === key;
+                          const width = colWidths[key] ?? parseInt(def.minWidth, 10);
                           return (
                             <TableHead
                               key={key}
@@ -1010,7 +1060,7 @@ export function ExchangeRateLibraryPage() {
                                 if (suppressNextClickRef.current) { e.stopPropagation(); e.preventDefault(); return; }
                               } : undefined}
                               className={`whitespace-nowrap select-none hover:bg-muted/30 transition-colors group/colheader relative ${def.align === "right" ? "text-right" : ""} ${isDraggable ? "cursor-grab" : "cursor-default"} ${isBeingDragged ? "opacity-30" : ""}`}
-                              style={{ minWidth: def.minWidth }}
+                              style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px`, overflow: "hidden" }}
                               onClick={() => def.sortable && !suppressNextClickRef.current && handleSort(key)}
                             >
                               {isDraggable && (
@@ -1058,6 +1108,19 @@ export function ExchangeRateLibraryPage() {
                                   <ArrowUpDown className="w-3 h-3 shrink-0 text-muted-foreground opacity-0 group-hover/colheader:opacity-100 transition-opacity" />
                                 )}
                               </div>
+                              {/* Resize handle */}
+                              <div
+                                onMouseDown={(e) => { e.stopPropagation(); handleResizeStart(e, key); }}
+                                onClick={(e) => e.stopPropagation()}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  setColWidths(prev => ({ ...prev, [key]: parseInt(def.minWidth, 10) }));
+                                }}
+                                className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize z-10 group/resize"
+                                style={{ touchAction: "none" }}
+                              >
+                                <div className={`absolute right-0 top-1 bottom-1 w-[2px] rounded-full transition-colors ${resizingColumnKey === key ? "bg-primary" : "bg-transparent group-hover/resize:bg-primary/40"}`} />
+                              </div>
                             </TableHead>
                           );
                         })}
@@ -1094,14 +1157,15 @@ export function ExchangeRateLibraryPage() {
                             } ${isExpanded ? "bg-[#F8FBFF]" : ""}`}
                             onClick={() => navigate(`/accounting/exchange-rates/${r.sourceCurrency}?type=mid`)}
                           >
-                            {/* Chevron */}
-                            <TableCell className="w-[36px] min-w-[36px] max-w-[36px] !pl-2 !pr-0">
+                            {/* Chevron — separate click target with its own hover */}
+                            <TableCell className="w-[36px] min-w-[36px] max-w-[36px] !pl-2 !pr-0" onClick={e => e.stopPropagation()}>
                               <button
                                 type="button"
                                 onClick={(e) => toggleRowExpand(r.id, e)}
-                                className="inline-flex items-center justify-center w-6 h-6 rounded-md hover:bg-muted/60 transition-colors cursor-pointer"
+                                aria-label={isExpanded ? "Collapse row" : "Expand row"}
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-transparent text-muted-foreground hover:bg-slate-100 hover:text-foreground hover:border-slate-200 transition-colors cursor-pointer"
                               >
-                                <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`} />
+                                <ChevronRight className={`w-4 h-4 transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`} />
                               </button>
                             </TableCell>
                             {visibleColumns.map(key => {
@@ -1153,14 +1217,18 @@ export function ExchangeRateLibraryPage() {
                                   return <TableCell key={key}>—</TableCell>;
                               }
                             })}
-                            <TableCell>
+                            <TableCell onClick={e => e.stopPropagation()}>
                               <DropdownMenu>
-                                <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
-                                  <button type="button" className="inline-flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors cursor-pointer">
+                                <DropdownMenuTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-label="Row actions"
+                                    className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-transparent text-muted-foreground hover:bg-slate-100 hover:text-foreground hover:border-slate-200 data-[state=open]:bg-slate-100 data-[state=open]:border-slate-200 transition-colors cursor-pointer"
+                                  >
                                     <MoreHorizontal className="w-4 h-4" />
                                   </button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-[200px]" onClick={e => e.stopPropagation()}>
+                                <DropdownMenuContent align="end" className="w-[200px]">
                                   <DropdownMenuItem onClick={() => navigate(`/accounting/exchange-rates/${r.sourceCurrency}?type=mid`)}>
                                     <Eye className="w-4 h-4 mr-2" /> View Details
                                   </DropdownMenuItem>
@@ -1236,14 +1304,15 @@ export function ExchangeRateLibraryPage() {
                             } ${isExpanded ? "bg-[#F8FBFF]" : ""}`}
                             onClick={() => navigate(`/accounting/exchange-rates/${r.sourceCurrency}?type=std`)}
                           >
-                            {/* Chevron */}
-                            <TableCell className="w-[36px] min-w-[36px] max-w-[36px] !pl-2 !pr-0">
+                            {/* Chevron — separate click target with its own hover */}
+                            <TableCell className="w-[36px] min-w-[36px] max-w-[36px] !pl-2 !pr-0" onClick={e => e.stopPropagation()}>
                               <button
                                 type="button"
                                 onClick={(e) => toggleRowExpand(r.id, e)}
-                                className="inline-flex items-center justify-center w-6 h-6 rounded-md hover:bg-muted/60 transition-colors cursor-pointer"
+                                aria-label={isExpanded ? "Collapse row" : "Expand row"}
+                                className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-transparent text-muted-foreground hover:bg-slate-100 hover:text-foreground hover:border-slate-200 transition-colors cursor-pointer"
                               >
-                                <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`} />
+                                <ChevronRight className={`w-4 h-4 transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`} />
                               </button>
                             </TableCell>
                             <TableCell className="w-[40px] min-w-[40px] max-w-[40px] !pl-2 !pr-0 bg-card group-hover:bg-[#F0F7FF]">
@@ -1318,11 +1387,15 @@ export function ExchangeRateLibraryPage() {
                                   return <TableCell key={key}>—</TableCell>;
                               }
                             })}
-                            <TableCell>
-                              <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                            <TableCell onClick={e => e.stopPropagation()}>
+                              <div className="flex items-center gap-1">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                    <button type="button" className="inline-flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors cursor-pointer">
+                                    <button
+                                      type="button"
+                                      aria-label="Row actions"
+                                      className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-transparent text-muted-foreground hover:bg-slate-100 hover:text-foreground hover:border-slate-200 data-[state=open]:bg-slate-100 data-[state=open]:border-slate-200 transition-colors cursor-pointer"
+                                    >
                                       <MoreHorizontal className="w-4 h-4" />
                                     </button>
                                   </DropdownMenuTrigger>
@@ -1463,15 +1536,25 @@ export function ExchangeRateLibraryPage() {
         </div>
       </div>
 
-      {/* Add/Edit Corporate Rate — Modal Dialog */}
+      {/* Add/Edit Corporate Rate — Archive-pattern Modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="sm:max-w-[480px] p-0 gap-0 overflow-hidden rounded-2xl" hideCloseButton>
-          <div className="px-6 py-4 border-b border-border">
-            <DialogTitle className="text-[16px]" style={{ fontWeight: 600 }}>
-              {editingRate ? "Update Corporate Rate" : "Add Corporate Rate"}
+        <DialogContent className="sm:max-w-[480px] p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)]" hideCloseButton>
+          <div className="relative flex flex-col items-center pt-10 pb-6 text-center" style={{ background: "linear-gradient(180deg, #EFF6FF 0%, rgba(239,246,255,0.3) 70%, transparent 100%)" }}>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[180px] h-[80px] rounded-full blur-[50px] opacity-25" style={{ backgroundColor: "#3B82F6" }} />
+            <div className="relative w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: "#DBEAFE" }}>
+              {editingRate ? <Pencil className="w-7 h-7" style={{ color: "#2563EB" }} /> : <Plus className="w-8 h-8" style={{ color: "#2563EB" }} />}
+            </div>
+            <span
+              className="mt-4 px-3 py-1 rounded-full text-[11px]"
+              style={{ fontWeight: 600, backgroundColor: "#EFF6FF", color: "#1E40AF", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}
+            >
+              {editingRate ? "Update Rate" : "Add Rate"}
+            </span>
+            <DialogTitle className="mt-3 text-[18px] tracking-[-0.02em]" style={{ fontWeight: 600, color: "#0F172A" }}>
+              {editingRate ? `Update Corporate Rate — ${editingRate.sourceCurrency}` : "Add Corporate Rate"}
             </DialogTitle>
-            <DialogDescription className="text-[12px] text-muted-foreground mt-1">
-              {editingRate ? `Update the corporate rate for ${editingRate.sourceCurrency}.` : "Define a new corporate rate for a currency pair."}
+            <DialogDescription className="text-[13px] mt-1.5 max-w-[360px] mx-auto" style={{ color: "#475569", lineHeight: "1.65" }}>
+              {editingRate ? `Update the corporate rate for ${editingRate.sourceCurrency} / ${BASE_CURRENCY}.` : "Define a new corporate rate for a currency pair."}
             </DialogDescription>
           </div>
           <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto">
@@ -1634,22 +1717,22 @@ export function ExchangeRateLibraryPage() {
             )}
           </div>
           {!existingRateForSelected && (
-            <div className="px-6 py-4 border-t border-border flex items-center gap-2.5 justify-end">
+            <div className="px-8 py-5 border-t border-border flex flex-col gap-2.5">
               <Button
-                variant="outline"
-                className="h-11 px-6 text-[14px] rounded-xl"
-                style={{ fontWeight: 500 }}
-                onClick={() => setModalOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                className="h-11 px-6 text-[14px] rounded-xl"
-                style={{ fontWeight: 600 }}
+                className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors hover:opacity-90"
+                style={{ fontWeight: 600, backgroundColor: "#0A77FF", color: "#fff" }}
                 onClick={handleModalSave}
                 disabled={effectiveDateWarning?.type === "block"}
               >
                 {editingRate ? "Update Rate" : "Save Rate"}
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors"
+                style={{ fontWeight: 500, backgroundColor: "#F1F5F9", color: "#334155" }}
+                onClick={() => setModalOpen(false)}
+              >
+                Cancel
               </Button>
             </div>
           )}
