@@ -1,0 +1,264 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-size: 16px;
+
+    /* Surfaces */
+    --background: 218 20% 97%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary — #0A77FF */
+    --primary: 212 100% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary */
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    /* Muted */
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 19% 35%;
+
+    /* Accent — tints of primary */
+    --accent: 214 100% 96%;
+    --accent-foreground: 213 89% 33%;
+
+    /* Destructive */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders & inputs */
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 212 100% 74%;
+
+    /* Charts */
+    --chart-1: 212 100% 52%;
+    --chart-2: 160 84% 39%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 263 70% 50%;
+    --chart-5: 0 84% 60%;
+
+    /* Radius */
+    --radius: 0.5rem;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 212 100% 52%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 214 100% 96%;
+    --sidebar-accent-foreground: 213 94% 41%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 212 100% 74%;
+  }
+
+  .dark {
+    --background: 222 47% 9%;
+    --foreground: 210 40% 96%;
+    --card: 220 38% 15%;
+    --card-foreground: 210 40% 96%;
+    --popover: 220 38% 15%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 212 100% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 25% 63%;
+    --accent: 212 89% 19%;
+    --accent-foreground: 212 100% 74%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 26% 24%;
+    --input: 215 26% 24%;
+    --ring: 212 100% 62%;
+    --chart-1: 212 100% 62%;
+    --chart-2: 160 72% 51%;
+    --chart-3: 43 96% 56%;
+    --chart-4: 263 83% 76%;
+    --chart-5: 0 91% 71%;
+    --sidebar-background: 220 38% 15%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 212 100% 62%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 212 89% 19%;
+    --sidebar-accent-foreground: 212 100% 74%;
+    --sidebar-border: 215 26% 24%;
+    --sidebar-ring: 212 100% 62%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-optical-sizing: auto;
+    font-feature-settings: 'cv01', 'cv02', 'cv03', 'cv04', 'cv11', 'ss01', 'ss03';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  html {
+    font-size: var(--font-size);
+  }
+
+  h1 { font-size: 1.5rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.025em; }
+  h2 { font-size: 1.25rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.02em; }
+  h3 { font-size: 1.125rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.015em; }
+  h4 { font-size: 1rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.01em; }
+  label { font-size: 1rem; font-weight: 500; line-height: 1.5; }
+  button { font-size: 1rem; font-weight: 500; line-height: 1.5; }
+  input { font-size: 1rem; font-weight: 400; line-height: 1.5; }
+
+  table td, table th, .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ─── Utility: hide scrollbar ─── */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide number input spinners globally */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ─── Modal pop-up animation ─── */
+@keyframes modal-pop-in {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.92); }
+  40% { opacity: 1; }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes modal-pop-out {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.92); }
+}
+@keyframes modal-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+[data-slot="dialog-overlay"][data-state="open"],
+[data-slot="alert-dialog-overlay"][data-state="open"] {
+  animation: modal-overlay-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+[data-slot="dialog-overlay"][data-state="closed"],
+[data-slot="alert-dialog-overlay"][data-state="closed"] {
+  animation: modal-overlay-out 0.15s ease-in forwards;
+}
+
+[data-slot="dialog-content"][data-state="open"],
+[data-slot="alert-dialog-content"][data-state="open"] {
+  animation: modal-pop-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+[data-slot="dialog-content"][data-state="closed"],
+[data-slot="alert-dialog-content"][data-state="closed"] {
+  animation: modal-pop-out 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* ─── Flex-centered modal pop (no translate offset) ─── */
+@keyframes modal-pop-center {
+  0% { opacity: 0; transform: scale(0.92); }
+  40% { opacity: 1; }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-modal-pop {
+  animation: modal-pop-center 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.animate-modal-overlay {
+  animation: modal-overlay-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Animations ─── */
+@keyframes overflowTooltipIn {
+  from { opacity: 0; transform: scale(0.96) translateY(2px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes quickViewIn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes row-flash {
+  0% { background-color: rgba(10, 119, 255, 0.12); }
+  100% { background-color: transparent; }
+}
+.animate-row-flash { animation: row-flash 1.5s ease-out forwards; }
+
+@keyframes highlight-pulse {
+  0% { box-shadow: 0 0 0 2px rgba(10, 119, 255, 0.25), 0 8px 24px -8px rgba(10, 119, 255, 0.25); }
+  50% { box-shadow: 0 0 0 4px rgba(10, 119, 255, 0.15), 0 12px 32px -8px rgba(10, 119, 255, 0.30); }
+  100% { box-shadow: 0 0 0 2px rgba(10, 119, 255, 0.25), 0 8px 24px -8px rgba(10, 119, 255, 0.25); }
+}
+
+@keyframes comingSoonFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes comingSoonPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+@keyframes comingSoonShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes comingSoonOrbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-coming-soon-in { animation: comingSoonFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-coming-soon-pulse { animation: comingSoonPulse 2s ease-in-out infinite; }
+.animate-coming-soon-shimmer { background-size: 200% auto; animation: comingSoonShimmer 3s linear infinite; }
+.animate-coming-soon-orbit { animation: comingSoonOrbit 8s linear infinite; }
+
+/* ─── Elevated z-index context for nested modals ─── */
+/* When PartnerItemsTab is inside a high-z modal (e.g. pricing rule detail z-220),
+   all portalled radix content (dropdowns, popovers, tooltips, dialogs) needs z > 220 */
+.elevated-z [data-radix-popper-content-wrapper] {
+  z-index: 230 !important;
+}
+.elevated-z [data-slot="dialog-overlay"] {
+  z-index: 225 !important;
+}
+.elevated-z [data-slot="dialog-content"] {
+  z-index: 230 !important;
+}
+.elevated-z [data-slot="alert-dialog-overlay"] {
+  z-index: 235 !important;
+}
+.elevated-z [data-slot="alert-dialog-content"] {
+  z-index: 240 !important;
+}
