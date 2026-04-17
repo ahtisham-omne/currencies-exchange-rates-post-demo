@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import type { ReactNode } from "react";
 import type { Currency } from "../../data/currencies";
-import { REGION_LIST, getRegionForCountry, countOpenDocuments } from "../../data/currencies";
+import { REGION_LIST, getRegionForCountry, countInUse } from "../../data/currencies";
 import {
   Dialog,
   DialogPortal,
@@ -9,27 +9,22 @@ import {
 } from "../ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X, ChevronDown, ChevronUp } from "lucide-react";
-import { Input } from "../ui/input";
 
 /* ─── Filter Types ─── */
-export type DocFilterMode = "any" | "has_open" | "no_open";
+export type InUseFilterMode = "any" | "yes" | "no";
 
 export interface CurrencyFilters {
   statuses: string[];
   decimalPlaces: string[];
   regions: string[];
-  docFilter: DocFilterMode;
-  docMin: string;
-  docMax: string;
+  inUseFilter: InUseFilterMode;
 }
 
 export const DEFAULT_CURRENCY_FILTERS: CurrencyFilters = {
   statuses: [],
   decimalPlaces: [],
   regions: [],
-  docFilter: "any",
-  docMin: "",
-  docMax: "",
+  inUseFilter: "any",
 };
 
 export function countActiveCurrencyFilters(f: CurrencyFilters): number {
@@ -37,39 +32,15 @@ export function countActiveCurrencyFilters(f: CurrencyFilters): number {
   if (f.statuses.length > 0) count++;
   if (f.decimalPlaces.length > 0) count++;
   if (f.regions.length > 0) count++;
-  if (f.docFilter !== "any") count++;
+  if (f.inUseFilter !== "any") count++;
   return count;
 }
 
-/** Build a display label for the Documents filter pill */
-export function getDocFilterLabel(f: CurrencyFilters): string | null {
-  switch (f.docFilter) {
-    case "has_open": {
-      const min = f.docMin;
-      const max = f.docMax;
-      if (min || max) {
-        return `Documents: ${min || "0"} — ${max || "∞"}`;
-      }
-      return "Documents: has open";
-    }
-    case "no_open": return "Documents: no active";
-    default: return null;
-  }
-}
-
-/** Check if a currency matches the documents filter */
-export function currencyMatchesDocFilter(c: Currency, f: CurrencyFilters): boolean {
-  const open = countOpenDocuments(c);
-  switch (f.docFilter) {
-    case "has_open": {
-      if (open === 0) return false;
-      const min = f.docMin ? Number(f.docMin) : 0;
-      const max = f.docMax ? Number(f.docMax) : Infinity;
-      return open >= min && open <= max;
-    }
-    case "no_open": return open === 0;
-    default: return true;
-  }
+/** Check if a currency matches the In Use filter */
+export function currencyMatchesInUseFilter(c: Currency, f: CurrencyFilters): boolean {
+  if (f.inUseFilter === "any") return true;
+  const inUse = countInUse(c) > 0;
+  return f.inUseFilter === "yes" ? inUse : !inUse;
 }
 
 /** Check if a currency matches region filters */
@@ -157,17 +128,11 @@ export function CurrencyFiltersModal({
     });
   };
 
-  const setDocFilter = (mode: DocFilterMode) => {
-    if (mode === filters.docFilter) {
-      // Toggle off
-      onFiltersChange({ ...filters, docFilter: "any", docMin: "", docMax: "" });
+  const setInUseFilter = (mode: InUseFilterMode) => {
+    if (mode === filters.inUseFilter) {
+      onFiltersChange({ ...filters, inUseFilter: "any" });
     } else {
-      onFiltersChange({
-        ...filters,
-        docFilter: mode,
-        docMin: mode === "has_open" ? filters.docMin : "",
-        docMax: mode === "has_open" ? filters.docMax : "",
-      });
+      onFiltersChange({ ...filters, inUseFilter: mode });
     }
   };
 
@@ -270,41 +235,20 @@ export function CurrencyFiltersModal({
 
             <Divider />
 
-            {/* Documents */}
-            <Section title="Documents" subtitle="Filter by open document count">
+            {/* In Use */}
+            <Section title="In Use" subtitle="Filter by whether the currency is referenced on any document">
               <div className="flex flex-wrap gap-1.5">
                 <Pill
-                  label="Has open documents"
-                  selected={filters.docFilter === "has_open"}
-                  onClick={() => setDocFilter("has_open")}
+                  label="Yes"
+                  selected={filters.inUseFilter === "yes"}
+                  onClick={() => setInUseFilter("yes")}
                 />
                 <Pill
-                  label="No active documents"
-                  selected={filters.docFilter === "no_open"}
-                  onClick={() => setDocFilter("no_open")}
+                  label="No"
+                  selected={filters.inUseFilter === "no"}
+                  onClick={() => setInUseFilter("no")}
                 />
               </div>
-              {filters.docFilter === "has_open" && (
-                <div className="flex items-center gap-2 mt-3">
-                  <Input
-                    type="number"
-                    placeholder="Min"
-                    value={filters.docMin}
-                    onChange={(e) => onFiltersChange({ ...filters, docMin: e.target.value })}
-                    className="w-24 h-8 text-sm"
-                    min={0}
-                  />
-                  <span className="text-muted-foreground text-sm">—</span>
-                  <Input
-                    type="number"
-                    placeholder="Max"
-                    value={filters.docMax}
-                    onChange={(e) => onFiltersChange({ ...filters, docMax: e.target.value })}
-                    className="w-24 h-8 text-sm"
-                    min={0}
-                  />
-                </div>
-              )}
             </Section>
 
             <Divider />

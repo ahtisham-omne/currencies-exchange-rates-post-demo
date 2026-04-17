@@ -4,13 +4,8 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useCurrencies } from "../context/CurrencyContext";
 import type { Currency } from "../data/currencies";
-import { countOpenDocuments, hasOpenDocuments } from "../data/currencies";
-import {
-  Dialog,
-  DialogPortal,
-  DialogOverlay,
-} from "../components/ui/dialog";
-import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { hasOpenDocuments, countInUse } from "../data/currencies";
+import { OverflowTooltip } from "../components/vendors/OverflowTooltip";
 import { currencyMatchesRegionFilter } from "../components/vendors/CurrencyFiltersModal";
 import {
   ColumnSelector,
@@ -21,8 +16,7 @@ import {
   CurrencyFiltersModal,
   DEFAULT_CURRENCY_FILTERS,
   countActiveCurrencyFilters,
-  currencyMatchesDocFilter,
-  getDocFilterLabel,
+  currencyMatchesInUseFilter,
   type CurrencyFilters,
 } from "../components/vendors/CurrencyFiltersModal";
 import {
@@ -117,9 +111,9 @@ const COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align
   { key: "symbol", label: "Symbol", minWidth: "100px" },
   { key: "decimalPlaces", label: "Decimals", minWidth: "120px", sortable: true },
   { key: "country", label: "Country / Region", minWidth: "220px", sortable: true },
-  { key: "documents", label: "Documents", minWidth: "160px", sortable: true },
+  { key: "inUse", label: "In Use", minWidth: "140px", sortable: true },
   { key: "status", label: "Status", minWidth: "130px", sortable: true },
-  { key: "numericCode", label: "ISO Numeric Code", minWidth: "160px", sortable: true },
+  { key: "numericCode", label: "Numeric Code", minWidth: "160px", sortable: true },
 ];
 
 const DEFAULT_COLUMN_ORDER = COLUMN_DEFS.map((c) => c.key);
@@ -152,9 +146,9 @@ export function CurrencyListPage() {
   const [recordsPerPage, setRecordsPerPage] = useState(25);
   
 
-  /* ─── Sort state ─── */
-  const [sortKey, setSortKey] = useState<SortKey>("code");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  /* ─── Sort state — usage-based default (highest In Use first) ─── */
+  const [sortKey, setSortKey] = useState<SortKey>("inUse");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   /* ─── Advanced Filters ─── */
   const [advFilters, setAdvFilters] = useState<CurrencyFilters>({ ...DEFAULT_CURRENCY_FILTERS });
@@ -189,7 +183,6 @@ export function CurrencyListPage() {
   const [errorDialog, setErrorDialog] = useState<{ open: boolean; code: string }>({ open: false, code: "" });
   const [openDocsErrorDialog, setOpenDocsErrorDialog] = useState<{ open: boolean; currency: Currency | null }>({ open: false, currency: null });
   const [bulkDeactivateResultDialog, setBulkDeactivateResultDialog] = useState<{ open: boolean; skippedCodes: string[] }>({ open: false, skippedCodes: [] });
-  const [countriesModal, setCountriesModal] = useState<{ open: boolean; currency: Currency | null }>({ open: false, currency: null });
 
   // Debounced search
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -356,7 +349,7 @@ export function CurrencyListPage() {
     if (advFilters.statuses.length > 0) list = list.filter((c) => advFilters.statuses.includes(c.status));
     if (advFilters.decimalPlaces.length > 0) list = list.filter((c) => advFilters.decimalPlaces.includes(String(c.decimalPlaces)));
     if (advFilters.regions.length > 0) list = list.filter((c) => currencyMatchesRegionFilter(c, advFilters.regions));
-    if (advFilters.docFilter !== "any") list = list.filter((c) => currencyMatchesDocFilter(c, advFilters));
+    if (advFilters.inUseFilter !== "any") list = list.filter((c) => currencyMatchesInUseFilter(c, advFilters));
 
     if (debouncedSearch) {
       const q = debouncedSearch.toLowerCase();
@@ -382,7 +375,7 @@ export function CurrencyListPage() {
         case "decimalPlaces": cmp = a.decimalPlaces - b.decimalPlaces; break;
         case "country": cmp = a.country.localeCompare(b.country); break;
         case "status": cmp = a.status.localeCompare(b.status); break;
-        case "documents": cmp = countOpenDocuments(a) - countOpenDocuments(b); break;
+        case "inUse": cmp = countInUse(a) - countInUse(b); break;
         default: cmp = 0;
       }
       return sortDir === "desc" ? -cmp : cmp;
@@ -430,7 +423,7 @@ export function CurrencyListPage() {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      setSortDir(key === "documents" ? "desc" : "asc");
+      setSortDir(key === "inUse" ? "desc" : "asc");
     }
     setCurrentPage(1);
   };
@@ -571,7 +564,7 @@ export function CurrencyListPage() {
   const isRelaxed = density === "comfort";
 
   const renderCell = (c: Currency, colKey: string) => {
-    const openDocs = countOpenDocuments(c);
+    const inUse = countInUse(c);
     const totalDocs = c.usage.totalLifetimeDocuments;
     switch (colKey) {
       case "code":
@@ -596,28 +589,37 @@ export function CurrencyListPage() {
       case "decimalPlaces":
         return <TableCell key={colKey} className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"} tabular-nums`}>{c.decimalPlaces}</TableCell>;
       case "country": {
-        const extra = c.additionalCountries;
-        const extraCount = extra ? extra.length : 0;
+        const extra = c.additionalCountries ?? [];
+        const extraCount = extra.length;
         return (
           <TableCell key={colKey} className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"} overflow-hidden whitespace-nowrap max-w-0`}>
             <span>{highlightText(c.country)}</span>
             {extraCount > 0 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setCountriesModal({ open: true, currency: c }); }}
-                className="ml-1.5 text-[12px] hover:underline cursor-pointer"
-                style={{ color: "#0A77FF", fontWeight: 500 }}
+              <OverflowTooltip
+                category="Countries"
+                items={extra.map((country, i) => ({
+                  id: `${c.code}-country-${i}`,
+                  name: country,
+                  subtitle: "",
+                }))}
               >
-                +{extraCount} more
-              </button>
+                <span
+                  onClick={(e) => e.stopPropagation()}
+                  className="ml-1.5 text-[12px] cursor-default"
+                  style={{ color: "#0A77FF", fontWeight: 500 }}
+                >
+                  +{extraCount} more
+                </span>
+              </OverflowTooltip>
             )}
           </TableCell>
         );
       }
-      case "documents":
+      case "inUse":
         return (
           <TableCell key={colKey}>
             <div className="flex flex-col leading-tight">
-              {openDocs > 0 ? (
+              {inUse > 0 ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -626,10 +628,10 @@ export function CurrencyListPage() {
                   className="text-left text-[13px] hover:underline cursor-pointer"
                   style={{ fontWeight: 600, color: "#0A77FF" }}
                 >
-                  {openDocs} open
+                  {inUse} in use
                 </button>
               ) : (
-                <span className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"} text-muted-foreground`} style={{ fontWeight: 500 }}>0 open</span>
+                <span className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"} text-muted-foreground`} style={{ fontWeight: 500 }}>0 in use</span>
               )}
               <span className="text-[11px] text-muted-foreground/70">{totalDocs} total</span>
             </div>
@@ -1290,48 +1292,87 @@ export function CurrencyListPage() {
         filteredCount={filtered.length}
       />
 
-      {/* Deactivation Confirmation Dialog (no open docs) */}
+      {/* Deactivation Confirmation — destructive (Archive-modal pattern) */}
       <AlertDialog open={deactivateDialog.open} onOpenChange={(o) => !o && setDeactivateDialog({ open: false, currency: null })}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Deactivate {deactivateDialog.currency?.code} — {deactivateDialog.currency?.name}
-            </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-3">
-                <p className="text-[13px]">
-                  Are you sure you want to deactivate <strong>{deactivateDialog.currency?.code}</strong>? It will no longer be available for new transactions across the system.
-                </p>
-                <p className="text-[12px] text-muted-foreground">
-                  This action will take effect immediately. You can re-activate this currency at any time.
-                </p>
-              </div>
+        <AlertDialogContent
+          className="sm:max-w-[400px] p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)]"
+          onInteractOutside={() => setDeactivateDialog({ open: false, currency: null })}
+        >
+          <div className="relative flex flex-col items-center pt-10 pb-6" style={{ background: "linear-gradient(180deg, #FEF2F2 0%, rgba(254,242,242,0.3) 70%, transparent 100%)" }}>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[180px] h-[80px] rounded-full blur-[50px] opacity-25" style={{ backgroundColor: "#EF4444" }} />
+            <div className="relative w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: "#FEE2E2" }}>
+              <CircleSlash className="w-8 h-8" style={{ color: "#DC2626" }} />
+            </div>
+            <span
+              className="mt-4 px-3 py-1 rounded-full text-[11px]"
+              style={{ fontWeight: 600, backgroundColor: "#FEF2F2", color: "#991B1B", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}
+            >
+              Caution
+            </span>
+          </div>
+          <div className="flex flex-col items-center text-center px-8 pb-8">
+            <AlertDialogHeader className="p-0 gap-0 text-center">
+              <AlertDialogTitle className="text-[18px] tracking-[-0.02em]" style={{ fontWeight: 600, color: "#0F172A" }}>
+                Deactivate {deactivateDialog.currency?.code}?
+              </AlertDialogTitle>
+            </AlertDialogHeader>
+            <AlertDialogDescription className="text-[13px] mt-2 max-w-[300px] mx-auto" style={{ color: "#475569", lineHeight: "1.65" }}>
+              <span style={{ fontWeight: 600, color: "#1E293B" }}>
+                {deactivateDialog.currency?.name ?? "This currency"}
+              </span>{" "}
+              will no longer be available for new transactions. Historical records are preserved and you can re-activate it at any time.
             </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeactivate} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Deactivate
-            </AlertDialogAction>
-          </AlertDialogFooter>
+            <div className="w-full mt-7 flex flex-col gap-2.5">
+              <AlertDialogAction
+                onClick={confirmDeactivate}
+                className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors hover:opacity-90"
+                style={{ fontWeight: 600, backgroundColor: "#DC2626", color: "#fff" }}
+              >
+                Deactivate Currency
+              </AlertDialogAction>
+              <AlertDialogCancel
+                className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors"
+                style={{ fontWeight: 500, backgroundColor: "#F1F5F9", color: "#334155" }}
+              >
+                Cancel
+              </AlertDialogCancel>
+            </div>
+          </div>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Deactivation BLOCKED Dialog (open docs exist) */}
+      {/* Deactivation BLOCKED — open docs exist (amber informational, Archive-modal pattern) */}
       <AlertDialog open={openDocsErrorDialog.open} onOpenChange={(o) => !o && setOpenDocsErrorDialog({ open: false, currency: null })}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-destructive" />
-              Cannot Deactivate Currency
-            </AlertDialogTitle>
+        <AlertDialogContent
+          className="sm:max-w-[400px] p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)]"
+          onInteractOutside={() => setOpenDocsErrorDialog({ open: false, currency: null })}
+        >
+          <div className="relative flex flex-col items-center pt-10 pb-6" style={{ background: "linear-gradient(180deg, #FFFBEB 0%, rgba(255,251,235,0.3) 70%, transparent 100%)" }}>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[180px] h-[80px] rounded-full blur-[50px] opacity-25" style={{ backgroundColor: "#F59E0B" }} />
+            <div className="relative w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: "#FEF3C7" }}>
+              <AlertTriangle className="w-8 h-8" style={{ color: "#D97706" }} />
+            </div>
+            <span
+              className="mt-4 px-3 py-1 rounded-full text-[11px]"
+              style={{ fontWeight: 600, backgroundColor: "#FFFBEB", color: "#92400E", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}
+            >
+              Warning
+            </span>
+          </div>
+          <div className="flex flex-col items-center text-center px-8 pb-8">
+            <AlertDialogHeader className="p-0 gap-0 text-center">
+              <AlertDialogTitle className="text-[18px] tracking-[-0.02em]" style={{ fontWeight: 600, color: "#0F172A" }}>
+                Cannot Deactivate Currency
+              </AlertDialogTitle>
+            </AlertDialogHeader>
             <AlertDialogDescription asChild>
-              <div className="space-y-3">
-                <p className="text-[13px]">
-                  This currency has open documents that must be resolved before deactivation.
+              <div className="text-[13px] mt-2 max-w-[320px] mx-auto text-center" style={{ color: "#475569", lineHeight: "1.65" }}>
+                <p>
+                  <span style={{ fontWeight: 600, color: "#1E293B" }}>{openDocsErrorDialog.currency?.code}</span>{" "}
+                  has open documents that must be resolved before deactivation.
                 </p>
                 {openDocsErrorDialog.currency && (
-                  <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3 space-y-1.5">
+                  <div className="mt-3 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3 space-y-1.5 text-left">
                     {openDocsErrorDialog.currency.usage.openInvoices.length > 0 && (
                       <div className="flex items-center justify-between text-[13px]">
                         <span className="text-[#64748B]">Open Vendor Invoices:</span>
@@ -1360,45 +1401,86 @@ export function CurrencyListPage() {
                 )}
               </div>
             </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Understood</AlertDialogCancel>
-          </AlertDialogFooter>
+            <div className="w-full mt-7 flex flex-col gap-2.5">
+              <AlertDialogCancel
+                className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors hover:opacity-90 mt-0"
+                style={{ fontWeight: 600, backgroundColor: "#D97706", color: "#fff" }}
+              >
+                Understood
+              </AlertDialogCancel>
+            </div>
+          </div>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Base Currency Error Dialog */}
+      {/* Base Currency Error — amber informational (Archive-modal pattern) */}
       <AlertDialog open={errorDialog.open} onOpenChange={(o) => !o && setErrorDialog({ open: false, code: "" })}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-destructive" />
-              Cannot Deactivate Base Currency
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              <strong>{errorDialog.code}</strong> is set as the base currency and cannot be deactivated. Change your base currency in Company Settings first.
+        <AlertDialogContent
+          className="sm:max-w-[400px] p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)]"
+          onInteractOutside={() => setErrorDialog({ open: false, code: "" })}
+        >
+          <div className="relative flex flex-col items-center pt-10 pb-6" style={{ background: "linear-gradient(180deg, #FFFBEB 0%, rgba(255,251,235,0.3) 70%, transparent 100%)" }}>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[180px] h-[80px] rounded-full blur-[50px] opacity-25" style={{ backgroundColor: "#F59E0B" }} />
+            <div className="relative w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: "#FEF3C7" }}>
+              <AlertTriangle className="w-8 h-8" style={{ color: "#D97706" }} />
+            </div>
+            <span
+              className="mt-4 px-3 py-1 rounded-full text-[11px]"
+              style={{ fontWeight: 600, backgroundColor: "#FFFBEB", color: "#92400E", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}
+            >
+              Warning
+            </span>
+          </div>
+          <div className="flex flex-col items-center text-center px-8 pb-8">
+            <AlertDialogHeader className="p-0 gap-0 text-center">
+              <AlertDialogTitle className="text-[18px] tracking-[-0.02em]" style={{ fontWeight: 600, color: "#0F172A" }}>
+                Cannot Deactivate Base Currency
+              </AlertDialogTitle>
+            </AlertDialogHeader>
+            <AlertDialogDescription className="text-[13px] mt-2 max-w-[320px] mx-auto" style={{ color: "#475569", lineHeight: "1.65" }}>
+              <span style={{ fontWeight: 600, color: "#1E293B" }}>{errorDialog.code}</span>{" "}
+              is set as the base currency and cannot be deactivated. Change your base currency in Company Settings first.
             </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>OK</AlertDialogCancel>
-          </AlertDialogFooter>
+            <div className="w-full mt-7 flex flex-col gap-2.5">
+              <AlertDialogCancel
+                className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors hover:opacity-90 mt-0"
+                style={{ fontWeight: 600, backgroundColor: "#D97706", color: "#fff" }}
+              >
+                OK
+              </AlertDialogCancel>
+            </div>
+          </div>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Bulk Deactivate Result Dialog */}
+      {/* Bulk Deactivate Result — amber informational (Archive-modal pattern) */}
       <AlertDialog open={bulkDeactivateResultDialog.open} onOpenChange={(o) => !o && setBulkDeactivateResultDialog({ open: false, skippedCodes: [] })}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
-              Some Currencies Could Not Be Deactivated
-            </AlertDialogTitle>
+        <AlertDialogContent
+          className="sm:max-w-[440px] p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)]"
+          onInteractOutside={() => setBulkDeactivateResultDialog({ open: false, skippedCodes: [] })}
+        >
+          <div className="relative flex flex-col items-center pt-10 pb-6" style={{ background: "linear-gradient(180deg, #FFFBEB 0%, rgba(255,251,235,0.3) 70%, transparent 100%)" }}>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[180px] h-[80px] rounded-full blur-[50px] opacity-25" style={{ backgroundColor: "#F59E0B" }} />
+            <div className="relative w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: "#FEF3C7" }}>
+              <AlertTriangle className="w-8 h-8" style={{ color: "#D97706" }} />
+            </div>
+            <span
+              className="mt-4 px-3 py-1 rounded-full text-[11px]"
+              style={{ fontWeight: 600, backgroundColor: "#FFFBEB", color: "#92400E", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}
+            >
+              Warning
+            </span>
+          </div>
+          <div className="flex flex-col items-center text-center px-8 pb-8">
+            <AlertDialogHeader className="p-0 gap-0 text-center">
+              <AlertDialogTitle className="text-[18px] tracking-[-0.02em]" style={{ fontWeight: 600, color: "#0F172A" }}>
+                Some Currencies Could Not Be Deactivated
+              </AlertDialogTitle>
+            </AlertDialogHeader>
             <AlertDialogDescription asChild>
-              <div className="space-y-3">
-                <p className="text-[13px]">
-                  The following currencies were skipped because they have open documents:
-                </p>
-                <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3 space-y-2">
+              <div className="text-[13px] mt-2 max-w-[360px] mx-auto text-center" style={{ color: "#475569", lineHeight: "1.65" }}>
+                <p>The following currencies were skipped because they have open documents:</p>
+                <div className="mt-3 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3 space-y-2 text-left max-h-[220px] overflow-y-auto">
                   {bulkDeactivateResultDialog.skippedCodes.map(code => {
                     const c = currencies.find(x => x.code === code);
                     if (!c) return null;
@@ -1417,53 +1499,18 @@ export function CurrencyListPage() {
                 </div>
               </div>
             </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Close</AlertDialogCancel>
-          </AlertDialogFooter>
+            <div className="w-full mt-7 flex flex-col gap-2.5">
+              <AlertDialogCancel
+                className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors hover:opacity-90 mt-0"
+                style={{ fontWeight: 600, backgroundColor: "#D97706", color: "#fff" }}
+              >
+                Close
+              </AlertDialogCancel>
+            </div>
+          </div>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Countries Modal */}
-      {countriesModal.open && countriesModal.currency && (
-        <Dialog open={countriesModal.open} onOpenChange={(o) => !o && setCountriesModal({ open: false, currency: null })}>
-          <DialogPortal>
-            <DialogOverlay className="fixed inset-0 z-[200] bg-black/50" />
-            <DialogPrimitive.Content
-              className="fixed top-[50%] left-[50%] z-[200] translate-x-[-50%] translate-y-[-50%] w-full max-w-[420px] max-h-[70vh] rounded-2xl border bg-white shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)] flex flex-col overflow-hidden"
-            >
-              <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-                <div>
-                  <h3 className="text-[16px]" style={{ fontWeight: 600 }}>Country / Region</h3>
-                  <p className="text-[13px] text-muted-foreground mt-0.5">{countriesModal.currency.name} ({countriesModal.currency.code})</p>
-                </div>
-                <button
-                  onClick={() => setCountriesModal({ open: false, currency: null })}
-                  className="p-1.5 rounded-md hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto px-6 py-4">
-                <p className="text-[12px] text-muted-foreground mb-3" style={{ fontWeight: 500 }}>Countries & Territories</p>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-[13px]">
-                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: "#0A77FF" }} />
-                    <span style={{ fontWeight: 500 }}>{countriesModal.currency.country}</span>
-                    <span className="text-[11px] text-muted-foreground">(primary)</span>
-                  </div>
-                  {countriesModal.currency.additionalCountries?.map((country) => (
-                    <div key={country} className="flex items-center gap-2 text-[13px]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 shrink-0" />
-                      <span>{country}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </DialogPrimitive.Content>
-          </DialogPortal>
-        </Dialog>
-      )}
     </div>
   );
 }

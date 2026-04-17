@@ -49,7 +49,7 @@ export interface Currency {
   auditLog: AuditLogEntry[];
 }
 
-/** Helper to count all open documents for a currency */
+/** Helper to count all open documents for a currency (excludes payments — used for deactivation guard) */
 export function countOpenDocuments(c: Currency): number {
   return (
     c.usage.openInvoices.length +
@@ -62,6 +62,17 @@ export function countOpenDocuments(c: Currency): number {
 /** Check if a currency has any open documents */
 export function hasOpenDocuments(c: Currency): boolean {
   return countOpenDocuments(c) > 0;
+}
+
+/** Total "In Use" count across Vendor Invoices, Customer Invoices, Purchase Orders, Sales Orders, Payments */
+export function countInUse(c: Currency): number {
+  return (
+    c.usage.openInvoices.length +
+    c.usage.openCustomerInvoices.length +
+    c.usage.openPurchaseOrders.length +
+    c.usage.openSalesOrders.length +
+    c.usage.openPayments.length
+  );
 }
 
 /* ─── Region mapping ─── */

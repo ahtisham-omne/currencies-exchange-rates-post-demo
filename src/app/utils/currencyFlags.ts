@@ -3,7 +3,7 @@
 
 const CURRENCY_TO_COUNTRY: Record<string, string> = {
   AED: "AE", AFN: "AF", ALL: "AL", AMD: "AM", AOA: "AO",
-  ARS: "AR", AUD: "AU", AZN: "AZ", BAM: "BA", BBD: "BB",
+  ARS: "AR", AUD: "AU", AWG: "AW", AZN: "AZ", BAM: "BA", BBD: "BB",
   BDT: "BD", BGN: "BG", BHD: "BH", BIF: "BI", BMD: "BM",
   BND: "BN", BOB: "BO", BRL: "BR", BSD: "BS", BTN: "BT",
   BWP: "BW", BYN: "BY", BZD: "BZ", CAD: "CA", CDF: "CD",
@@ -37,7 +37,7 @@ const CURRENCY_TO_COUNTRY: Record<string, string> = {
 
 const CURRENCY_TO_COUNTRY_NAME: Record<string, string> = {
   AED: "United Arab Emirates", AFN: "Afghanistan", ALL: "Albania", AMD: "Armenia", AOA: "Angola",
-  ARS: "Argentina", AUD: "Australia", AZN: "Azerbaijan", BAM: "Bosnia & Herzegovina", BBD: "Barbados",
+  ARS: "Argentina", AUD: "Australia", AWG: "Aruba", AZN: "Azerbaijan", BAM: "Bosnia & Herzegovina", BBD: "Barbados",
   BDT: "Bangladesh", BGN: "Bulgaria", BHD: "Bahrain", BIF: "Burundi", BMD: "Bermuda",
   BND: "Brunei", BOB: "Bolivia", BRL: "Brazil", BSD: "Bahamas", BTN: "Bhutan",
   BWP: "Botswana", BYN: "Belarus", BZD: "Belize", CAD: "Canada", CDF: "DR Congo",
