@@ -119,12 +119,13 @@ function CurrencyConverter({ detailCurrency }: ConverterProps) {
     return standardRates.find((r) => r.sourceCurrency === code)?.standardRate ?? null;
   };
 
-  // Default: from = base, to = detail currency. If detail currency IS base, default to USD when possible.
+  // Default: from = detail currency, to = base. If detail currency IS base, default "to" to USD when possible.
+  const defaultFrom = detailCurrency.code;
   const defaultTo = detailCurrency.code === BASE_CURRENCY
-    ? (activeCurrencies.find((c) => c.code === "USD")?.code ?? detailCurrency.code)
-    : detailCurrency.code;
+    ? (activeCurrencies.find((c) => c.code === "USD")?.code ?? BASE_CURRENCY)
+    : BASE_CURRENCY;
 
-  const [fromCode, setFromCode] = useState<string>(BASE_CURRENCY);
+  const [fromCode, setFromCode] = useState<string>(defaultFrom);
   const [toCode, setToCode] = useState<string>(defaultTo);
   const [useCorporate, setUseCorporate] = useState<boolean>(false);
   const [lastEdited, setLastEdited] = useState<"from" | "to">("from");
@@ -217,19 +218,43 @@ function CurrencyConverter({ detailCurrency }: ConverterProps) {
   }) => {
     const c = currencies.find((x) => x.code === code);
     if (!c) return null;
+    const flag = getFlagUrl(c.code, 80);
     return (
       <div className="flex-1 min-w-0 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
-        <p
-          className="text-[10px] text-[#94A3B8] mb-2"
-          style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}
-        >
-          {side}
-        </p>
-        <div className="flex items-center gap-2 mb-3">
-          <CurrencySymbolChip symbol={c.symbol} name={c.name} code={c.code} />
+        <div className="flex items-center gap-3">
+          {/* Left: flag + code/name (also acts as the currency selector) */}
           <Select value={code} onValueChange={setCode}>
-            <SelectTrigger className="h-9 bg-white border-[#E2E8F0] text-[13px] flex-1 min-w-0">
-              <SelectValue />
+            <SelectTrigger
+              className="h-auto min-h-0 flex-1 min-w-0 border-0 bg-transparent p-0 shadow-none hover:bg-[#EEF2F7] rounded-lg px-2 py-1.5 -mx-2 -my-1.5 [&>svg]:text-[#94A3B8]"
+              aria-label={`Change ${side.toLowerCase()} currency`}
+            >
+              <div className="flex items-center gap-3 min-w-0 flex-1 text-left">
+                <div
+                  className="rounded-full overflow-hidden shrink-0 border border-white shadow-[0_0_0_1px_#E2E8F0]"
+                  style={{ width: 36, height: 36 }}
+                >
+                  {flag ? (
+                    <img src={flag} alt={`${c.code} flag`} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-[#F1F5F9]" />
+                  )}
+                </div>
+                <div className="min-w-0 flex flex-col">
+                  <span
+                    className="text-[14px] text-[#0F172A] tabular-nums leading-tight"
+                    style={{ fontWeight: 700 }}
+                  >
+                    {c.code}
+                  </span>
+                  <span
+                    className="text-[11px] text-[#64748B] leading-tight truncate"
+                    style={{ fontWeight: 500 }}
+                    title={c.name}
+                  >
+                    {c.name}
+                  </span>
+                </div>
+              </div>
             </SelectTrigger>
             <SelectContent className="max-h-[320px]">
               {activeCurrencies.map((cc) => (
@@ -240,17 +265,28 @@ function CurrencyConverter({ detailCurrency }: ConverterProps) {
               ))}
             </SelectContent>
           </Select>
+
+          {/* Right: amount label + input */}
+          <div className="flex flex-col items-end shrink-0 min-w-[140px]">
+            <span
+              className="text-[10px] text-[#94A3B8] mb-1"
+              style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}
+            >
+              Amount
+            </span>
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => onAmountChange(e.target.value)}
+              placeholder={rate === null ? "No rate" : "0"}
+              disabled={rate === null}
+              aria-label={`${side} amount`}
+              className="h-10 text-[16px] bg-white border-[#E2E8F0] tabular-nums text-right"
+              style={{ fontWeight: 600 }}
+            />
+          </div>
         </div>
-        <Input
-          type="text"
-          inputMode="decimal"
-          value={amount}
-          onChange={(e) => onAmountChange(e.target.value)}
-          placeholder={rate === null ? "No rate available" : "0"}
-          disabled={rate === null}
-          className="h-11 text-[18px] bg-white border-[#E2E8F0] tabular-nums"
-          style={{ fontWeight: 600 }}
-        />
       </div>
     );
   };
@@ -512,17 +548,34 @@ export function CurrencyDetailPage() {
   ].filter(Boolean).sort().reverse();
   const lastTransactionDate = allDates[0] ? (() => { try { return format(new Date(allDates[0]), "dd MMM yyyy"); } catch { return allDates[0]; } })() : "N/A";
 
-  // Total value across every active document of this currency
+  // Per-document-type totals
+  const fmtMoney = (n: number) =>
+    n.toLocaleString(undefined, {
+      minimumFractionDigits: currency.decimalPlaces,
+      maximumFractionDigits: currency.decimalPlaces,
+    });
+
+  const totalVendorInvoices = currency.usage.openInvoices.reduce((s, d) => s + parseAmount(d.amount), 0);
+  const totalCustomerInvoices = currency.usage.openCustomerInvoices.reduce((s, d) => s + parseAmount(d.amount), 0);
+  const totalPurchaseOrders = currency.usage.openPurchaseOrders.reduce((s, d) => s + parseAmount(d.amount), 0);
+  const totalSalesOrders = currency.usage.openSalesOrders.reduce((s, d) => s + parseAmount(d.amount), 0);
+  const totalPayments = payments.reduce((s, d) => s + parseAmount(d.amount), 0);
+
   const totalValueNumeric =
-    currency.usage.openInvoices.reduce((s, d) => s + parseAmount(d.amount), 0) +
-    currency.usage.openCustomerInvoices.reduce((s, d) => s + parseAmount(d.amount), 0) +
-    currency.usage.openPurchaseOrders.reduce((s, d) => s + parseAmount(d.amount), 0) +
-    currency.usage.openSalesOrders.reduce((s, d) => s + parseAmount(d.amount), 0) +
-    payments.reduce((s, d) => s + parseAmount(d.amount), 0);
-  const totalValueFormatted = totalValueNumeric.toLocaleString(undefined, {
-    minimumFractionDigits: currency.decimalPlaces,
-    maximumFractionDigits: currency.decimalPlaces,
-  });
+    totalVendorInvoices +
+    totalCustomerInvoices +
+    totalPurchaseOrders +
+    totalSalesOrders +
+    totalPayments;
+  const totalValueFormatted = fmtMoney(totalValueNumeric);
+
+  const perTypeTotals: Array<{ key: string; label: string; amount: number; count: number }> = [
+    { key: "vendorInvoices", label: "Vendor Invoices", amount: totalVendorInvoices, count: currency.usage.openInvoices.length },
+    { key: "customerInvoices", label: "Customer Invoices", amount: totalCustomerInvoices, count: currency.usage.openCustomerInvoices.length },
+    { key: "purchaseOrders", label: "Purchase Orders", amount: totalPurchaseOrders, count: currency.usage.openPurchaseOrders.length },
+    { key: "salesOrders", label: "Sales Orders", amount: totalSalesOrders, count: currency.usage.openSalesOrders.length },
+    { key: "payments", label: "Payments", amount: totalPayments, count: payments.length },
+  ];
 
   // Total docs in past 12 months (simulated as totalLifetimeDocuments for demo)
   const docsInPast12Months = currency.usage.totalLifetimeDocuments;
@@ -760,6 +813,43 @@ export function CurrencyDetailPage() {
                 {totalOpenDocs > 0 && <> · blocking deactivation</>}
                 {" "}· Last transaction: {lastTransactionDate} · {docsInPast12Months} documents in the past 12 months
               </p>
+
+              {/* Per-document-type totals */}
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                {perTypeTotals.map((t) => {
+                  const dim = t.count === 0;
+                  return (
+                    <div
+                      key={t.key}
+                      className={`rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 ${dim ? "opacity-70" : ""}`}
+                    >
+                      <p
+                        className="text-[10px] text-[#94A3B8]"
+                        style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+                      >
+                        {t.label}
+                      </p>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <CurrencySymbolChip
+                          symbol={currency.symbol}
+                          name={currency.name}
+                          code={currency.code}
+                          size="sm"
+                        />
+                        <span
+                          className="text-[13px] text-[#0F172A] tabular-nums"
+                          style={{ fontWeight: 700 }}
+                        >
+                          {fmtMoney(t.amount)}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-[#94A3B8]" style={{ fontWeight: 500 }}>
+                        {t.count} {t.count === 1 ? "document" : "documents"}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="border-b border-[#E2E8F0] px-5">

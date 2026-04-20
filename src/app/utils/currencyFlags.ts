@@ -26,13 +26,13 @@ const CURRENCY_TO_COUNTRY: Record<string, string> = {
   PKR: "PK", PLN: "PL", PYG: "PY", QAR: "QA", RON: "RO",
   RSD: "RS", RUB: "RU", RWF: "RW", SAR: "SA", SBD: "SB",
   SCR: "SC", SDG: "SD", SEK: "SE", SGD: "SG", SHP: "SH",
-  SLL: "SL", SOS: "SO", SRD: "SR", SSP: "SS", STN: "ST",
-  SYP: "SY", SZL: "SZ", THB: "TH", TJS: "TJ", TMT: "TM",
+  SLE: "SL", SLL: "SL", SOS: "SO", SRD: "SR", SSP: "SS", STN: "ST",
+  SVC: "SV", SYP: "SY", SZL: "SZ", THB: "TH", TJS: "TJ", TMT: "TM",
   TND: "TN", TOP: "TO", TRY: "TR", TTD: "TT", TWD: "TW",
   TZS: "TZ", UAH: "UA", UGX: "UG", USD: "US", UYU: "UY",
-  UZS: "UZ", VES: "VE", VND: "VN", VUV: "VU", WST: "WS",
-  XAF: "CM", XCD: "AG", XOF: "SN", XPF: "PF", YER: "YE",
-  ZAR: "ZA", ZMW: "ZM", ZWL: "ZW",
+  UZS: "UZ", VED: "VE", VES: "VE", VND: "VN", VUV: "VU", WST: "WS",
+  XAF: "CM", XCD: "AG", XCG: "CW", XOF: "SN", XPF: "PF", YER: "YE",
+  ZAR: "ZA", ZMW: "ZM", ZWG: "ZW", ZWL: "ZW",
 };
 
 const CURRENCY_TO_COUNTRY_NAME: Record<string, string> = {
@@ -60,13 +60,13 @@ const CURRENCY_TO_COUNTRY_NAME: Record<string, string> = {
   PKR: "Pakistan", PLN: "Poland", PYG: "Paraguay", QAR: "Qatar", RON: "Romania",
   RSD: "Serbia", RUB: "Russia", RWF: "Rwanda", SAR: "Saudi Arabia", SBD: "Solomon Islands",
   SCR: "Seychelles", SDG: "Sudan", SEK: "Sweden", SGD: "Singapore", SHP: "Saint Helena",
-  SLL: "Sierra Leone", SOS: "Somalia", SRD: "Suriname", SSP: "South Sudan", STN: "São Tomé",
-  SYP: "Syria", SZL: "Eswatini", THB: "Thailand", TJS: "Tajikistan", TMT: "Turkmenistan",
+  SLE: "Sierra Leone", SLL: "Sierra Leone", SOS: "Somalia", SRD: "Suriname", SSP: "South Sudan", STN: "São Tomé",
+  SVC: "El Salvador", SYP: "Syria", SZL: "Eswatini", THB: "Thailand", TJS: "Tajikistan", TMT: "Turkmenistan",
   TND: "Tunisia", TOP: "Tonga", TRY: "Turkey", TTD: "Trinidad & Tobago", TWD: "Taiwan",
   TZS: "Tanzania", UAH: "Ukraine", UGX: "Uganda", USD: "United States", UYU: "Uruguay",
-  UZS: "Uzbekistan", VES: "Venezuela", VND: "Vietnam", VUV: "Vanuatu", WST: "Samoa",
-  XAF: "Central Africa", XCD: "East Caribbean", XOF: "West Africa", XPF: "French Pacific", YER: "Yemen",
-  ZAR: "South Africa", ZMW: "Zambia", ZWL: "Zimbabwe",
+  UZS: "Uzbekistan", VED: "Venezuela", VES: "Venezuela", VND: "Vietnam", VUV: "Vanuatu", WST: "Samoa",
+  XAF: "Central Africa", XCD: "East Caribbean", XCG: "Curaçao", XOF: "West Africa", XPF: "French Pacific", YER: "Yemen",
+  ZAR: "South Africa", ZMW: "Zambia", ZWG: "Zimbabwe", ZWL: "Zimbabwe",
 };
 
 /**

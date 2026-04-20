@@ -619,22 +619,29 @@ export function CurrencyListPage() {
       case "inUse":
         return (
           <TableCell key={colKey}>
-            <div className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"} whitespace-nowrap`}>
+            <div className="flex flex-col leading-tight whitespace-nowrap">
               {inUse > 0 ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     navigate(`/accounting/currencies/${c.code}?tab=documents&filter=active`);
                   }}
-                  className="hover:underline cursor-pointer"
+                  className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"} hover:underline cursor-pointer text-left w-fit`}
                   style={{ fontWeight: 600, color: "#0A77FF" }}
                 >
                   {inUse} active
                 </button>
               ) : (
-                <span className="text-muted-foreground" style={{ fontWeight: 500 }}>0 active</span>
+                <span
+                  className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"} text-muted-foreground`}
+                  style={{ fontWeight: 500 }}
+                >
+                  0 active
+                </span>
               )}
-              <span className="text-muted-foreground/70"> · {totalDocs} total</span>
+              <span className="text-[11px] text-muted-foreground/70 mt-0.5">
+                {totalDocs} total
+              </span>
             </div>
           </TableCell>
         );
