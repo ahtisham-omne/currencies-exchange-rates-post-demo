@@ -1,12 +1,18 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useCurrencies } from "../context/CurrencyContext";
 import { useExchangeRates } from "../context/ExchangeRateContext";
-import { BASE_CURRENCY } from "../data/exchangeRates";
+import { BASE_CURRENCY, API_PROVIDER } from "../data/exchangeRates";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { getFlagUrl } from "../utils/currencyFlags";
 import { countOpenDocuments, countInUse, hasOpenDocuments, type Currency } from "../data/currencies";
 import {
+  CONVERTER_SUBTITLE,
+  CONVERTER_TOGGLE_TOOLTIPS,
+  RATE_TOOLTIPS,
+} from "../utils/rateCopy";
+import {
   ChevronLeft,
+  ChevronDown,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -20,7 +26,9 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowLeftRight,
-  RefreshCw,
+  Plus,
+  Check,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
@@ -48,15 +56,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "../components/ui/tooltip";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
-import { Switch } from "../components/ui/switch";
-import { format, formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
 
 type DocSortKey = "ref" | "party" | "amount" | "status" | "date" | "type";
 
@@ -74,10 +74,10 @@ function CurrencySymbolChip({
 }) {
   const dims =
     size === "lg"
-      ? "h-8 min-w-8 px-2.5 text-[16px]"
+      ? "h-7 min-w-7 px-2 text-[14px]"
       : size === "sm"
-      ? "h-5 min-w-[20px] px-1.5 text-[11px]"
-      : "h-6 min-w-6 px-2 text-[13px]";
+      ? "h-[18px] min-w-[18px] px-1 text-[10px]"
+      : "h-5 min-w-5 px-1.5 text-[12px]";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -95,12 +95,198 @@ function CurrencySymbolChip({
   );
 }
 
+/** Compact dropdown that doubles as a currency picker AND a search box.
+ * Looks like an input field so it lines up with the amount field on the
+ * right. Opening the dropdown reveals a search input and a filterable list. */
+function CurrencyComboBox({
+  value,
+  onChange,
+  currencies,
+  ariaLabel,
+  compact = false,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  currencies: Currency[];
+  ariaLabel?: string;
+  compact?: boolean;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const selected = useMemo(
+    () => currencies.find(c => c.code === value) ?? null,
+    [currencies, value]
+  );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return currencies;
+    return currencies.filter(c =>
+      c.code.toLowerCase().includes(q) ||
+      c.name.toLowerCase().includes(q) ||
+      (c.country?.toLowerCase().includes(q) ?? false)
+    );
+  }, [currencies, query]);
+
+  useEffect(() => {
+    if (!open) return;
+    // Focus the search input the moment the popover opens.
+    const t = requestAnimationFrame(() => searchRef.current?.focus());
+    const onDoc = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      cancelAnimationFrame(t);
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Reset the search query whenever the popover closes so the next open
+  // starts fresh.
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+
+  const handleSelect = (code: string) => {
+    onChange(code);
+    setOpen(false);
+  };
+
+  const flag = selected ? getFlagUrl(selected.code, 80) : "";
+  const flagSize = compact ? 22 : 28;
+  const inputH = compact ? "h-8" : "h-10";
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex items-center gap-2 w-full ${inputH} px-2.5 rounded-md border bg-white text-left transition-colors ${
+          open ? "border-primary/40 ring-2 ring-primary/10" : "border-[#E2E8F0] hover:border-[#CBD5E1]"
+        }`}
+      >
+        {selected && (
+          <div
+            className="rounded-full overflow-hidden shrink-0 border border-white shadow-[0_0_0_1px_#E2E8F0]"
+            style={{ width: flagSize, height: flagSize }}
+          >
+            {flag ? (
+              <img src={flag} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-[#F1F5F9]" />
+            )}
+          </div>
+        )}
+        <div className="min-w-0 flex-1 flex flex-col leading-tight">
+          {selected ? (
+            <>
+              <span
+                className={`text-[#0F172A] tabular-nums truncate ${compact ? "text-[12px]" : "text-[13px]"}`}
+                style={{ fontWeight: 700 }}
+              >
+                {selected.code}
+              </span>
+              {!compact && (
+                <span
+                  className="text-[11px] text-[#64748B] truncate"
+                  style={{ fontWeight: 500 }}
+                  title={selected.name}
+                >
+                  {selected.name}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-[12px] text-[#94A3B8]">Select currency</span>
+          )}
+        </div>
+        <ChevronDown className={`w-3.5 h-3.5 text-[#94A3B8] shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 left-0 right-0 top-full mt-1 rounded-lg border border-[#E2E8F0] bg-white shadow-[0_8px_24px_-4px_rgba(0,0,0,0.12)] overflow-hidden min-w-[260px]">
+          <div className="relative border-b border-[#F1F5F9]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#94A3B8] pointer-events-none" />
+            <input
+              ref={searchRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search currency, code, or country..."
+              className="w-full h-9 pl-8 pr-8 text-[12.5px] outline-none placeholder:text-[#94A3B8]"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => { setQuery(""); searchRef.current?.focus(); }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#0F172A] transition-colors"
+                aria-label="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <div className="max-h-[260px] overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-6 text-center text-[12.5px] text-[#94A3B8]">No currencies match your search.</p>
+            ) : (
+              filtered.map(c => {
+                const f = getFlagUrl(c.code, 80);
+                const isActive = c.code === value;
+                return (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => handleSelect(c.code)}
+                    className={`w-full flex items-center gap-2 px-2.5 py-2 text-left text-[12.5px] transition-colors ${
+                      isActive ? "bg-primary/[0.06] text-primary" : "hover:bg-[#F8FAFC]"
+                    }`}
+                  >
+                    <div
+                      className="rounded-full overflow-hidden shrink-0 border border-white shadow-[0_0_0_1px_#E2E8F0]"
+                      style={{ width: 20, height: 20 }}
+                    >
+                      {f ? (
+                        <img src={f} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-[#F1F5F9]" />
+                      )}
+                    </div>
+                    <span className="tabular-nums shrink-0" style={{ fontWeight: 600 }}>{c.code}</span>
+                    <span className="text-[#64748B] truncate min-w-0">{c.name}</span>
+                    {isActive && <Check className="w-3.5 h-3.5 ml-auto text-primary shrink-0" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ConverterProps {
   detailCurrency: Currency;
+  /** Compact variant for the page header — drops the title row, tightens padding. */
+  compact?: boolean;
 }
 
 /** Live exchange-rate converter between two active currencies. */
-function CurrencyConverter({ detailCurrency }: ConverterProps) {
+function CurrencyConverter({ detailCurrency, compact = false }: ConverterProps) {
+  const navigate = useNavigate();
   const { currencies } = useCurrencies();
   const { midMarketRates, standardRates } = useExchangeRates();
 
@@ -116,8 +302,11 @@ function CurrencyConverter({ detailCurrency }: ConverterProps) {
   };
   const stdFor = (code: string): number | null => {
     if (code === BASE_CURRENCY) return 1;
-    return standardRates.find((r) => r.sourceCurrency === code)?.standardRate ?? null;
+    const r = standardRates.find((rr) => rr.sourceCurrency === code && rr.status === "active");
+    return r?.standardRate ?? null;
   };
+  const stdRecordFor = (code: string) =>
+    standardRates.find((rr) => rr.sourceCurrency === code && rr.status === "active") ?? null;
 
   // Default: from = detail currency, to = base. If detail currency IS base, default "to" to USD when possible.
   const defaultFrom = detailCurrency.code;
@@ -127,7 +316,12 @@ function CurrencyConverter({ detailCurrency }: ConverterProps) {
 
   const [fromCode, setFromCode] = useState<string>(defaultFrom);
   const [toCode, setToCode] = useState<string>(defaultTo);
-  const [useCorporate, setUseCorporate] = useState<boolean>(false);
+  // Explicit segmented selection — defaults to mid-market.
+  const [rateMode, setRateMode] = useState<"mid" | "std">("mid");
+  // Tracks whether the user has flipped direction via the swap button so the
+  // footer can call out the inverse view and the swap button can show an
+  // active state. Resets when either side changes via the dropdown.
+  const [isSwapped, setIsSwapped] = useState(false);
   const [lastEdited, setLastEdited] = useState<"from" | "to">("from");
   const [fromAmount, setFromAmount] = useState<string>("1");
   const [toAmount, setToAmount] = useState<string>("");
@@ -135,28 +329,46 @@ function CurrencyConverter({ detailCurrency }: ConverterProps) {
   const fromCurrency = currencies.find((c) => c.code === fromCode) ?? detailCurrency;
   const toCurrency = currencies.find((c) => c.code === toCode) ?? detailCurrency;
 
-  // The std toggle is only meaningful when a std rate exists for the non-base side(s) involved.
+  // The corporate option is only meaningful when a std rate exists for the
+  // non-base side(s) involved.
   const hasCorporate =
     (fromCode === BASE_CURRENCY || stdFor(fromCode) !== null) &&
     (toCode === BASE_CURRENCY || stdFor(toCode) !== null) &&
     !(fromCode === BASE_CURRENCY && toCode === BASE_CURRENCY);
-  const rateMode: "mid" | "std" = useCorporate && hasCorporate ? "std" : "mid";
 
-  // Effective "1 fromCode = rate toCode".
+  // Effective "1 fromCode = rate toCode". When corporate is selected but no
+  // corp rate exists for the pair we silently fall back to mid so the cards
+  // still convert; the empty state below the cards prompts the user to add one.
+  const effectiveMode: "mid" | "std" = rateMode === "std" && hasCorporate ? "std" : "mid";
   const rate: number | null = useMemo(() => {
-    const f = rateMode === "std" ? stdFor(fromCode) : midFor(fromCode);
-    const t = rateMode === "std" ? stdFor(toCode) : midFor(toCode);
+    const f = effectiveMode === "std" ? stdFor(fromCode) : midFor(fromCode);
+    const t = effectiveMode === "std" ? stdFor(toCode) : midFor(toCode);
     if (f === null || t === null) return null;
-    // 1 from = f base ; 1 to = t base ; so 1 from = f/t to.
     return f / t;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromCode, toCode, rateMode, midMarketRates, standardRates]);
+  }, [fromCode, toCode, effectiveMode, midMarketRates, standardRates]);
 
-  const fmt = (n: number, c: Currency) =>
-    n.toLocaleString(undefined, {
-      minimumFractionDigits: c.decimalPlaces,
-      maximumFractionDigits: c.decimalPlaces,
+  // Format an amount in a currency. Normally we use the currency's natural
+  // decimal precision (e.g. 2 for USD), but for sub-unit values that would
+  // round to "0.00" we expand precision so the user can read the real number
+  // (e.g. inverse rates like 0.003590 USD).
+  const fmt = (n: number, c: Currency) => {
+    const baseDp = c.decimalPlaces;
+    const abs = Math.abs(n);
+    const naturalThreshold = Math.pow(10, -baseDp); // 0.01 for USD, 1 for JPY
+    if (abs > 0 && abs < naturalThreshold) {
+      const leadingZeros = Math.floor(-Math.log10(abs));
+      const dp = Math.min(8, leadingZeros + 4);
+      return n.toLocaleString(undefined, {
+        minimumFractionDigits: dp,
+        maximumFractionDigits: dp,
+      });
+    }
+    return n.toLocaleString(undefined, {
+      minimumFractionDigits: baseDp,
+      maximumFractionDigits: baseDp,
     });
+  };
 
   // Recompute whichever side wasn't last edited.
   useEffect(() => {
@@ -195,12 +407,75 @@ function CurrencyConverter({ detailCurrency }: ConverterProps) {
     else setFromAmount("");
   };
 
+  const handleSetFromCode = (c: string) => {
+    setFromCode(c);
+    setIsSwapped(false);
+  };
+  const handleSetToCode = (c: string) => {
+    setToCode(c);
+    setIsSwapped(false);
+  };
+
+  // The swap button keeps the currencies in their visual positions and only
+  // flips which side anchors the "1". Default: From = 1, To = rate. Inverse:
+  // To = 1, From = 1/rate. This mirrors how an inverse rate is read.
   const swap = () => {
-    setFromCode(toCode);
-    setToCode(fromCode);
-    setFromAmount(toAmount);
-    setToAmount(fromAmount);
-    setLastEdited("from");
+    setIsSwapped(prev => {
+      const next = !prev;
+      if (rate === null) return next;
+      if (next) {
+        setToAmount("1");
+        setFromAmount(fmt(1 / rate, fromCurrency));
+        setLastEdited("to");
+      } else {
+        setFromAmount("1");
+        setToAmount(fmt(rate, toCurrency));
+        setLastEdited("from");
+      }
+      return next;
+    });
+  };
+
+  // The non-base side identifies the relevant currency pair for footer copy.
+  const pairCode =
+    fromCode === BASE_CURRENCY
+      ? toCode
+      : toCode === BASE_CURRENCY
+      ? fromCode
+      : fromCode; // cross-pair: fall back to the from side
+  const stdRecord = stdRecordFor(pairCode);
+  const midRecord = midMarketRates.find(r => r.sourceCurrency === pairCode) ?? null;
+
+  const fmtTimestamp = (iso: string | null | undefined) => {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      const tz = Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+        .formatToParts(d)
+        .find(p => p.type === "timeZoneName")?.value ?? "";
+      return `${format(d, "dd MMM yyyy")} at ${format(d, "HH:mm")}${tz ? ` ${tz}` : ""}`;
+    } catch {
+      return iso;
+    }
+  };
+
+  const rateDisplay = rate !== null
+    ? (isSwapped
+        ? `1 ${toCode} = ${(1 / rate).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 6,
+          })} ${fromCode}`
+        : `1 ${fromCode} = ${rate.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 6,
+          })} ${toCode}`)
+    : "rate unavailable";
+
+  // True empty state: user explicitly picked Corporate but no corp rate exists.
+  const showCorporateEmptyState = rateMode === "std" && !hasCorporate;
+
+  const handleSetCorporate = () => {
+    navigate(`/accounting/exchange-rates?addCorp=${encodeURIComponent(pairCode)}`);
   };
 
   const CurrencySide = ({
@@ -218,62 +493,38 @@ function CurrencyConverter({ detailCurrency }: ConverterProps) {
   }) => {
     const c = currencies.find((x) => x.code === code);
     if (!c) return null;
-    const flag = getFlagUrl(c.code, 80);
     return (
-      <div className="flex-1 min-w-0 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
-        <div className="flex items-center gap-3">
-          {/* Left: flag + code/name (also acts as the currency selector) */}
-          <Select value={code} onValueChange={setCode}>
-            <SelectTrigger
-              className="h-auto min-h-0 flex-1 min-w-0 border-0 bg-transparent p-0 shadow-none hover:bg-[#EEF2F7] rounded-lg px-2 py-1.5 -mx-2 -my-1.5 [&>svg]:text-[#94A3B8]"
-              aria-label={`Change ${side.toLowerCase()} currency`}
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1 text-left">
-                <div
-                  className="rounded-full overflow-hidden shrink-0 border border-white shadow-[0_0_0_1px_#E2E8F0]"
-                  style={{ width: 36, height: 36 }}
-                >
-                  {flag ? (
-                    <img src={flag} alt={`${c.code} flag`} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-[#F1F5F9]" />
-                  )}
-                </div>
-                <div className="min-w-0 flex flex-col">
-                  <span
-                    className="text-[14px] text-[#0F172A] tabular-nums leading-tight"
-                    style={{ fontWeight: 700 }}
-                  >
-                    {c.code}
-                  </span>
-                  <span
-                    className="text-[11px] text-[#64748B] leading-tight truncate"
-                    style={{ fontWeight: 500 }}
-                    title={c.name}
-                  >
-                    {c.name}
-                  </span>
-                </div>
-              </div>
-            </SelectTrigger>
-            <SelectContent className="max-h-[320px]">
-              {activeCurrencies.map((cc) => (
-                <SelectItem key={cc.code} value={cc.code}>
-                  <span className="tabular-nums" style={{ fontWeight: 600 }}>{cc.code}</span>
-                  <span className="text-[#64748B] ml-1.5">— {cc.name}</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <div className={`flex-1 min-w-0 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] ${compact ? "p-2.5" : "p-4"}`}>
+        <div className={`flex items-end ${compact ? "gap-2" : "gap-3"}`}>
+          {/* Currency selector — left, fills available width */}
+          <div className="flex-1 min-w-0 flex flex-col">
+            {!compact && (
+              <span
+                className="text-[10px] text-[#94A3B8] mb-1"
+                style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}
+              >
+                Currency
+              </span>
+            )}
+            <CurrencyComboBox
+              value={code}
+              onChange={setCode}
+              currencies={activeCurrencies}
+              ariaLabel={`Change ${side.toLowerCase()} currency`}
+              compact={compact}
+            />
+          </div>
 
-          {/* Right: amount label + input */}
-          <div className="flex flex-col items-end shrink-0 min-w-[140px]">
-            <span
-              className="text-[10px] text-[#94A3B8] mb-1"
-              style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}
-            >
-              Amount
-            </span>
+          {/* Amount input — right */}
+          <div className={`flex flex-col shrink-0 ${compact ? "min-w-[110px]" : "min-w-[160px]"}`}>
+            {!compact && (
+              <span
+                className="text-[10px] text-[#94A3B8] mb-1"
+                style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}
+              >
+                Amount
+              </span>
+            )}
             <Input
               type="text"
               inputMode="decimal"
@@ -282,7 +533,7 @@ function CurrencyConverter({ detailCurrency }: ConverterProps) {
               placeholder={rate === null ? "No rate" : "0"}
               disabled={rate === null}
               aria-label={`${side} amount`}
-              className="h-10 text-[16px] bg-white border-[#E2E8F0] tabular-nums text-right"
+              className={`bg-white border-[#E2E8F0] tabular-nums text-right ${compact ? "h-8 text-[13px]" : "h-10 text-[16px]"}`}
               style={{ fontWeight: 600 }}
             />
           </div>
@@ -291,81 +542,207 @@ function CurrencyConverter({ detailCurrency }: ConverterProps) {
     );
   };
 
-  const updatedAt = midMarketRates[0]?.effectiveDate ?? null;
-  const updatedAgo = updatedAt
-    ? (() => {
-        try { return formatDistanceToNow(new Date(updatedAt), { addSuffix: true }); } catch { return updatedAt; }
-      })()
-    : null;
-
-  const rateLabel = rateMode === "std" ? "corporate rate" : "mid-market rate";
-  const rateDisplay = rate !== null
-    ? `1 ${fromCode} = ${rate.toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 6,
-      })} ${toCode}`
-    : "rate unavailable";
-
   return (
-    <div className="bg-white border border-[#E2E8F0] rounded-xl mb-4 shadow-sm">
-      <div className="px-5 py-3.5 border-b border-[#E2E8F0] flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Live Exchange Rate Converter</h3>
-          <p className="text-[12px] text-[#64748B] mt-0.5">Convert any active currency pair in real time.</p>
+    <div className={compact ? "" : "bg-white border border-[#E2E8F0] rounded-xl shadow-sm mb-4"}>
+      {!compact && (
+        <div className="px-5 py-3.5 border-b border-[#E2E8F0] flex items-start justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Live Exchange Rate Converter</h3>
+            <p className="text-[12px] text-[#64748B] mt-0.5 max-w-[640px]">{CONVERTER_SUBTITLE}</p>
+          </div>
+          <RateSegmentedToggle
+            mode={rateMode}
+            onChange={setRateMode}
+            corporateAvailable={hasCorporate}
+          />
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`text-[12px] ${hasCorporate ? "text-[#475569]" : "text-[#94A3B8]"}`} style={{ fontWeight: 500 }}>
-            Corporate rate
-          </span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Switch
-                  checked={rateMode === "std"}
-                  onCheckedChange={setUseCorporate}
-                  disabled={!hasCorporate}
-                />
-              </span>
-            </TooltipTrigger>
-            {!hasCorporate && (
-              <TooltipContent side="top">
-                No corporate rate is defined for this pair.
-              </TooltipContent>
-            )}
-          </Tooltip>
-        </div>
-      </div>
-      <div className="px-5 py-4">
-        <div className="flex items-stretch gap-3">
-          <CurrencySide side="From" code={fromCode} setCode={setFromCode} amount={fromAmount} onAmountChange={onFromChange} />
+      )}
+
+      <div className={compact ? "px-3 py-3 space-y-2" : "px-5 py-4"}>
+        {compact && (
+          <div className="flex items-center justify-end">
+            <RateSegmentedToggle
+              mode={rateMode}
+              onChange={setRateMode}
+              corporateAvailable={hasCorporate}
+              compact
+            />
+          </div>
+        )}
+
+        <div className={`flex items-stretch ${compact ? "gap-2" : "gap-3"}`}>
+          <CurrencySide side="From" code={fromCode} setCode={handleSetFromCode} amount={fromAmount} onAmountChange={onFromChange} />
           <div className="flex items-center">
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   type="button"
                   onClick={swap}
-                  className="h-9 w-9 rounded-full border border-[#E2E8F0] bg-white flex items-center justify-center text-[#64748B] hover:text-[#0A77FF] hover:border-[#BFDBFE] transition-colors cursor-pointer shadow-sm"
+                  aria-pressed={isSwapped}
                   aria-label="Swap from and to currencies"
+                  className={`rounded-full flex items-center justify-center transition-colors cursor-pointer shadow-sm ${
+                    compact ? "h-7 w-7" : "h-9 w-9"
+                  } ${
+                    isSwapped
+                      ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
+                      : "bg-white text-[#64748B] border border-[#E2E8F0] hover:text-[#0A77FF] hover:border-[#BFDBFE]"
+                  }`}
                 >
-                  <ArrowLeftRight className="w-4 h-4" />
+                  <ArrowLeftRight className={compact ? "w-3.5 h-3.5" : "w-4 h-4"} />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="top">Swap direction</TooltipContent>
+              <TooltipContent side="top">
+                {isSwapped ? "Inverse direction — click to restore" : "Swap direction"}
+              </TooltipContent>
             </Tooltip>
           </div>
-          <CurrencySide side="To" code={toCode} setCode={setToCode} amount={toAmount} onAmountChange={onToChange} />
+          <CurrencySide side="To" code={toCode} setCode={handleSetToCode} amount={toAmount} onAmountChange={onToChange} />
         </div>
-        <div className="mt-3 flex items-center gap-1.5 text-[12px] text-[#64748B]">
-          <RefreshCw className="w-3 h-3 text-[#94A3B8]" />
+
+        {/* Corporate empty state — shown when user explicitly picked Corporate
+           but no corp rate exists for this pair. Mid-market keeps converting. */}
+        {showCorporateEmptyState && (
+          <div className={`mt-3 rounded-lg border border-dashed border-[#FDE68A] bg-[#FFFBEB] flex items-start gap-3 ${compact ? "p-2.5" : "p-3"}`}>
+            <div className="w-7 h-7 rounded-md bg-white flex items-center justify-center shrink-0 border border-[#FDE68A]">
+              <Info className="w-3.5 h-3.5" style={{ color: "#D97706" }} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[12px] text-[#92400E]" style={{ fontWeight: 600 }}>
+                No corporate rate has been set for this currency pair yet.
+              </p>
+              <p className="text-[11.5px] text-[#92400E]/85 mt-0.5">
+                The mid-market rate is being used by default.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleSetCorporate}
+              className="shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-md bg-[#D97706] hover:bg-[#B45309] text-white text-[12px] transition-colors cursor-pointer"
+              style={{ fontWeight: 600 }}
+            >
+              <Plus className="w-3 h-3" />
+              Set Corporate Rate
+            </button>
+          </div>
+        )}
+
+        {/* Adaptive footer — precise timestamp, attribution, inverse tag. */}
+        <div className={`mt-3 flex items-center gap-1.5 text-[12px] text-[#64748B] flex-wrap`}>
           <span>
-            Using <span style={{ fontWeight: 600, color: "#0F172A" }}>{rateLabel}</span>
+            Using{" "}
+            <span style={{ fontWeight: 600, color: "#0F172A" }}>
+              {effectiveMode === "std" ? "corporate rate" : "mid-market rate"}
+            </span>
             {rate !== null && (
-              <> : <span className="tabular-nums" style={{ fontWeight: 600, color: "#0F172A" }}>{rateDisplay}</span></>
+              <>
+                {" · "}
+                <span className="tabular-nums" style={{ fontWeight: 600, color: "#0F172A" }}>{rateDisplay}</span>
+              </>
             )}
-            {updatedAgo && <> · Updated {updatedAgo}</>}
+            {effectiveMode === "mid" && midRecord && (
+              <>
+                {" · "}Auto-synced from {API_PROVIDER}
+                {" · "}Last updated {fmtTimestamp(midRecord.effectiveDate)}
+              </>
+            )}
+            {effectiveMode === "std" && stdRecord && (
+              <>
+                {" · "}Manually set by {stdRecord.createdBy}
+                {" on "}{fmtTimestamp(stdRecord.updatedAt || stdRecord.effectiveDate)}
+              </>
+            )}
           </span>
+          {isSwapped && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF] cursor-help"
+                  style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+                  tabIndex={0}
+                >
+                  <ArrowLeftRight className="w-2.5 h-2.5" />
+                  Inverse rate
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">
+                {RATE_TOOLTIPS.inverse}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Segmented Mid-market / Corporate selector with per-side info tooltips. */
+function RateSegmentedToggle({
+  mode,
+  onChange,
+  corporateAvailable,
+  compact = false,
+}: {
+  mode: "mid" | "std";
+  onChange: (m: "mid" | "std") => void;
+  corporateAvailable: boolean;
+  compact?: boolean;
+}) {
+  const segBase = `inline-flex items-center gap-1 transition-colors cursor-pointer ${
+    compact ? "h-7 px-2.5 text-[11.5px]" : "h-8 px-3 text-[12px]"
+  }`;
+  const active = "bg-white text-[#0F172A] shadow-sm";
+  const inactive = "text-[#64748B] hover:text-[#0F172A]";
+  return (
+    <div
+      className={`inline-flex items-center bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg p-0.5 shrink-0`}
+      role="tablist"
+      aria-label="Rate type"
+    >
+      <button
+        type="button"
+        onClick={() => onChange("mid")}
+        className={`${segBase} rounded-md ${mode === "mid" ? active : inactive}`}
+        style={{ fontWeight: mode === "mid" ? 600 : 500 }}
+        role="tab"
+        aria-selected={mode === "mid"}
+      >
+        Mid-market rate
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="inline-flex"
+              tabIndex={-1}
+              onClick={e => e.stopPropagation()}
+            >
+              <Info className="w-3 h-3 text-[#94A3B8]" />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6} className="max-w-[260px] text-[11.5px]">
+            {CONVERTER_TOGGLE_TOOLTIPS.midMarket}
+          </TooltipContent>
+        </Tooltip>
+      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={() => onChange("std")}
+            disabled={!corporateAvailable}
+            className={`${segBase} rounded-md ${mode === "std" && corporateAvailable ? active : inactive} ${!corporateAvailable ? "opacity-60 cursor-not-allowed" : ""}`}
+            style={{ fontWeight: mode === "std" ? 600 : 500 }}
+            role="tab"
+            aria-selected={mode === "std"}
+          >
+            Corporate rate
+            <Info className="w-3 h-3 text-[#94A3B8]" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" sideOffset={6} className="max-w-[260px] text-[11.5px]">
+          {corporateAvailable
+            ? CONVERTER_TOGGLE_TOOLTIPS.corporate
+            : "No corporate rate is defined for this pair."}
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -462,7 +839,7 @@ export function CurrencyDetailPage() {
 
   const payments = currency.usage.openPayments || [];
 
-  const allDocTabs: DocSection[] = [
+  const allDocTabsRaw: DocSection[] = [
     {
       key: "vendorInvoices",
       label: "Vendor Invoices",
@@ -537,6 +914,13 @@ export function CurrencyDetailPage() {
     },
   ];
 
+  // Per-tab totals — surfaced inline under each tab label so the page no
+  // longer needs the five separate summary cards.
+  const allDocTabs = allDocTabsRaw.map(t => ({
+    ...t,
+    totalAmount: t.data.reduce((s, d) => s + parseAmount(d.amount), 0),
+  }));
+
 
   // Last transaction date
   const allDates = [
@@ -568,14 +952,6 @@ export function CurrencyDetailPage() {
     totalSalesOrders +
     totalPayments;
   const totalValueFormatted = fmtMoney(totalValueNumeric);
-
-  const perTypeTotals: Array<{ key: string; label: string; amount: number; count: number }> = [
-    { key: "vendorInvoices", label: "Vendor Invoices", amount: totalVendorInvoices, count: currency.usage.openInvoices.length },
-    { key: "customerInvoices", label: "Customer Invoices", amount: totalCustomerInvoices, count: currency.usage.openCustomerInvoices.length },
-    { key: "purchaseOrders", label: "Purchase Orders", amount: totalPurchaseOrders, count: currency.usage.openPurchaseOrders.length },
-    { key: "salesOrders", label: "Sales Orders", amount: totalSalesOrders, count: currency.usage.openSalesOrders.length },
-    { key: "payments", label: "Payments", amount: totalPayments, count: payments.length },
-  ];
 
   // Total docs in past 12 months (simulated as totalLifetimeDocuments for demo)
   const docsInPast12Months = currency.usage.totalLifetimeDocuments;
@@ -713,11 +1089,11 @@ export function CurrencyDetailPage() {
       {/* Sentinel */}
       <div ref={sentinelRef} className="shrink-0 h-px" />
 
-      {/* STICKY HEADER */}
+      {/* STICKY HEADER — title row + always-visible compact converter */}
       <div className="shrink-0 sticky top-[44px] z-20 bg-[#F8FAFC]">
         <div style={{ paddingTop: isScrolled ? "8px" : "12px", paddingBottom: "4px", transition: "padding-top 250ms ease" }}>
           <div className="mx-auto px-4 lg:px-6 xl:px-8 max-w-[1440px] 2xl:max-w-[1600px]">
-            <div className={`bg-white border border-[#E2E8F0] rounded-xl overflow-hidden transition-shadow duration-250 ${isScrolled ? "shadow-[0_1px_3px_0_rgba(0,0,0,0.04),0_4px_12px_-4px_rgba(0,0,0,0.05)]" : "shadow-sm"}`}>
+            <div className={`bg-white border border-[#E2E8F0] rounded-xl transition-shadow duration-250 ${isScrolled ? "shadow-[0_1px_3px_0_rgba(0,0,0,0.04),0_4px_12px_-4px_rgba(0,0,0,0.05)]" : "shadow-sm"}`}>
               <div className="flex items-center justify-between gap-4 px-4 lg:px-5 transition-all duration-250 ease-in-out" style={{ padding: isScrolled ? "6px 16px" : "12px 16px" }}>
                 {/* Left */}
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -800,8 +1176,18 @@ export function CurrencyDetailPage() {
             <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
               <div className="flex items-baseline justify-between gap-3 flex-wrap">
                 <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>In Use</h3>
-                <div className="text-[12px] text-[#64748B]" style={{ fontWeight: 500 }}>
-                  Total value across all documents:{" "}
+                <div className="text-[12px] text-[#64748B] inline-flex items-center gap-1.5" style={{ fontWeight: 500 }}>
+                  <span>Total value across all documents:</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex" tabIndex={-1}>
+                        <Info className="w-3 h-3 text-[#94A3B8] cursor-help" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[280px] text-[11.5px]">
+                      {RATE_TOOLTIPS.totalValueAllDocs}
+                    </TooltipContent>
+                  </Tooltip>
                   <span className="inline-flex items-center gap-1.5 ml-0.5 align-middle">
                     <CurrencySymbolChip symbol={currency.symbol} name={currency.name} code={currency.code} />
                     <span className="text-[14px] text-[#0F172A] tabular-nums" style={{ fontWeight: 700 }}>{totalValueFormatted}</span>
@@ -813,76 +1199,47 @@ export function CurrencyDetailPage() {
                 {totalOpenDocs > 0 && <> · blocking deactivation</>}
                 {" "}· Last transaction: {lastTransactionDate} · {docsInPast12Months} documents in the past 12 months
               </p>
-
-              {/* Per-document-type totals */}
-              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-                {perTypeTotals.map((t) => {
-                  const dim = t.count === 0;
-                  return (
-                    <div
-                      key={t.key}
-                      className={`rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 ${dim ? "opacity-70" : ""}`}
-                    >
-                      <p
-                        className="text-[10px] text-[#94A3B8]"
-                        style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
-                      >
-                        {t.label}
-                      </p>
-                      <div className="mt-1 flex items-center gap-1.5">
-                        <CurrencySymbolChip
-                          symbol={currency.symbol}
-                          name={currency.name}
-                          code={currency.code}
-                          size="sm"
-                        />
-                        <span
-                          className="text-[13px] text-[#0F172A] tabular-nums"
-                          style={{ fontWeight: 700 }}
-                        >
-                          {fmtMoney(t.amount)}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-[11px] text-[#94A3B8]" style={{ fontWeight: 500 }}>
-                        {t.count} {t.count === 1 ? "document" : "documents"}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
 
             <div className="border-b border-[#E2E8F0] px-5">
               <div className="flex gap-0 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-                {allDocTabs.map((tab) => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setActiveDocTab(tab.key)}
-                    className={`relative px-3 py-2.5 text-[13px] whitespace-nowrap transition-colors cursor-pointer ${
-                      activeDocTab === tab.key
-                        ? "text-[#0A77FF]"
-                        : "text-[#64748B] hover:text-[#0F172A]"
-                    }`}
-                    style={{ fontWeight: activeDocTab === tab.key ? 600 : 500 }}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      {tab.label}
-                      <span
-                        className="text-[10px] px-1.5 py-0.5 rounded-full min-w-[20px] text-center"
-                        style={{
-                          fontWeight: 600,
-                          backgroundColor: activeDocTab === tab.key ? "#EDF4FF" : "#F1F5F9",
-                          color: activeDocTab === tab.key ? "#0A77FF" : "#94A3B8",
-                        }}
-                      >
-                        {tab.data.length}
+                {allDocTabs.map((tab) => {
+                  const isActive = activeDocTab === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveDocTab(tab.key)}
+                      className={`relative px-3 py-2 text-left whitespace-nowrap transition-colors cursor-pointer ${
+                        isActive ? "text-[#0A77FF]" : "text-[#64748B] hover:text-[#0F172A]"
+                      }`}
+                      style={{ fontWeight: isActive ? 600 : 500 }}
+                    >
+                      <span className="flex items-center gap-1.5 text-[13px] leading-tight">
+                        {tab.label}
+                        <span
+                          className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full text-[10px] tabular-nums"
+                          style={{
+                            fontWeight: 600,
+                            backgroundColor: isActive ? "#EDF4FF" : "#F1F5F9",
+                            color: isActive ? "#0A77FF" : "#94A3B8",
+                          }}
+                        >
+                          {tab.data.length}
+                        </span>
                       </span>
-                    </span>
-                    {activeDocTab === tab.key && (
-                      <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#0A77FF] rounded-full" />
-                    )}
-                  </button>
-                ))}
+                      <span
+                        className="block text-[11px] mt-1 leading-tight tabular-nums"
+                        style={{ color: isActive ? "rgba(10,119,255,0.75)" : "#94A3B8", fontWeight: 500 }}
+                      >
+                        {currency.symbol}
+                        {fmtMoney(tab.totalAmount)}
+                      </span>
+                      {isActive && (
+                        <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#0A77FF] rounded-full" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

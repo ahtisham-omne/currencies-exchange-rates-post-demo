@@ -1,4 +1,8 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { format } from "date-fns";
 import { getFlagUrl, getFlagUrlByCountry } from "../utils/currencyFlags";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -26,6 +30,8 @@ import {
   ToggleLeft,
   ToggleRight,
   Download,
+  FileSpreadsheet,
+  FileText,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -84,6 +90,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/ui/tooltip";
+import { RATE_TOOLTIPS } from "../utils/rateCopy";
 
 /* ─── Density / View mode ─── */
 type DensityOption = "condensed" | "comfort" | "card";
@@ -478,37 +491,80 @@ export function CurrencyListPage() {
     setSelectedRows(new Set());
   };
 
-  const handleBulkExport = () => {
-    const codes = Array.from(selectedRows);
-    const selected = currencies.filter(c => codes.includes(c.code));
-    const header = "Code,Name,ISO Numeric Code,Symbol,Decimal Places,Country,Status\n";
-    const rows = selected
-      .map((c) => `${c.code},${c.name},${c.numericCode},${c.symbol},${c.decimalPlaces},${c.country},${c.status}`)
-      .join("\n");
-    const blob = new Blob([header + rows], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "currencies_selected.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(`${selected.length} currencies exported`);
+  type ExportFormat = "csv" | "xlsx" | "pdf";
+  const exportRows = (rows: Currency[], baseName: string, fmt: ExportFormat) => {
+    const headers = ["Code", "Name", "ISO Numeric Code", "Symbol", "Decimal Places", "Country", "Status"];
+    const data = rows.map((c) => [
+      c.code,
+      c.name,
+      c.numericCode,
+      c.symbol,
+      String(c.decimalPlaces),
+      c.country,
+      c.status,
+    ]);
+
+    if (fmt === "csv") {
+      // Quote any field containing commas, quotes, or newlines per RFC 4180.
+      const esc = (v: string) =>
+        /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+      const text = [headers.map(esc).join(","), ...data.map(r => r.map(esc).join(","))].join("\n");
+      const blob = new Blob(["\uFEFF" + text], { type: "text/csv;charset=utf-8" });
+      triggerDownload(blob, `${baseName}.csv`);
+      return;
+    }
+
+    if (fmt === "xlsx") {
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+      // Reasonable column widths per header.
+      ws["!cols"] = [
+        { wch: 8 }, { wch: 32 }, { wch: 14 }, { wch: 8 },
+        { wch: 14 }, { wch: 28 }, { wch: 10 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Currencies");
+      XLSX.writeFile(wb, `${baseName}.xlsx`);
+      return;
+    }
+
+    // PDF
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    doc.setFontSize(14);
+    doc.text("Currency Library", 40, 40);
+    doc.setFontSize(10);
+    doc.setTextColor(120);
+    doc.text(`${rows.length} currencies · Exported ${format(new Date(), "dd MMM yyyy, HH:mm")}`, 40, 56);
+    autoTable(doc, {
+      head: [headers],
+      body: data,
+      startY: 72,
+      styles: { fontSize: 9, cellPadding: 4 },
+      headStyles: { fillColor: [10, 119, 255], textColor: 255, fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 40, right: 40 },
+    });
+    doc.save(`${baseName}.pdf`);
   };
 
-  /* ─── CSV export (all) ─── */
-  const handleExport = () => {
-    const header = "Code,Name,ISO Numeric Code,Symbol,Decimal Places,Country,Status\n";
-    const rows = filtered
-      .map((c) => `${c.code},${c.name},${c.numericCode},${c.symbol},${c.decimalPlaces},${c.country},${c.status}`)
-      .join("\n");
-    const blob = new Blob([header + rows], { type: "text/csv" });
+  const triggerDownload = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "currencies.csv";
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success("CSV exported");
+  };
+
+  const handleBulkExport = (fmt: ExportFormat = "csv") => {
+    const codes = Array.from(selectedRows);
+    const selected = currencies.filter(c => codes.includes(c.code));
+    exportRows(selected, "currencies_selected", fmt);
+    toast.success(`${selected.length} currencies exported as ${fmt.toUpperCase()}`);
+  };
+
+  const handleExport = (fmt: ExportFormat = "csv") => {
+    exportRows(filtered, "currencies", fmt);
+    toast.success(`${fmt.toUpperCase()} exported`);
   };
 
   const hasAnyFilter = !!searchQuery || quickFilter !== "all" || activeFilterCount > 0;
@@ -570,12 +626,21 @@ export function CurrencyListPage() {
       case "code":
         return (
           <TableCell key={colKey}>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
               {(() => { const flag = getFlagUrl(c.code); return flag ? <img src={flag} alt={c.code} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" /> : null; })()}
-              <span className={`text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary ${isRelaxed ? "" : ""}`} style={{ fontWeight: 600 }}>{highlightText(c.code)}</span>
-              <span className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"}`}>{highlightText(c.name)}</span>
+              <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary shrink-0" style={{ fontWeight: 600 }}>{highlightText(c.code)}</span>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className={`${isRelaxed ? "text-[13.5px]" : "text-[13px]"} truncate min-w-0`}>
+                      {highlightText(c.name)}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-[11.5px]">{c.name}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               {c.isBaseCurrency && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ fontWeight: 600, color: "#92400E", backgroundColor: "#FEF3C7" }}>Base</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" style={{ fontWeight: 600, color: "#92400E", backgroundColor: "#FEF3C7" }}>Base</span>
               )}
             </div>
           </TableCell>
@@ -713,10 +778,26 @@ export function CurrencyListPage() {
                 </p>
               </div>
             </div>
-            <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={handleExport}>
-              <Download className="w-4 h-4" />
-              Export CSV
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="shrink-0 gap-1.5">
+                  <Download className="w-4 h-4" />
+                  Export
+                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/70" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[180px]">
+                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleExport("csv"); }}>
+                  <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleExport("xlsx"); }}>
+                  <FileSpreadsheet className="w-4 h-4 mr-2 text-muted-foreground" /> Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleExport("pdf"); }}>
+                  <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Unified Table Container */}
@@ -886,14 +967,29 @@ export function CurrencyListPage() {
                         <CircleSlash className="w-3.5 h-3.5" />
                         Deactivate
                       </button>
-                      <button
-                        onClick={handleBulkExport}
-                        className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[13px] transition-colors whitespace-nowrap shrink-0 cursor-pointer border-border bg-white text-foreground hover:bg-muted/50"
-                        style={{ fontWeight: 500 }}
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        Export Selected
-                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[13px] transition-colors whitespace-nowrap shrink-0 cursor-pointer border-border bg-white text-foreground hover:bg-muted/50"
+                            style={{ fontWeight: 500 }}
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            Export Selected
+                            <ChevronDown className="w-3 h-3 text-muted-foreground/70" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-[160px]">
+                          <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleBulkExport("csv"); }}>
+                            <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> CSV
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleBulkExport("xlsx"); }}>
+                            <FileSpreadsheet className="w-4 h-4 mr-2 text-muted-foreground" /> Excel
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleBulkExport("pdf"); }}>
+                            <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> PDF
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       <button
                         onClick={() => setSelectedRows(new Set())}
                         className="inline-flex items-center gap-1 h-8 px-2 rounded-md text-[13px] transition-colors whitespace-nowrap shrink-0 cursor-pointer text-muted-foreground hover:text-foreground hover:bg-muted/50"

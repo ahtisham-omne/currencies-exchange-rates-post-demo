@@ -1109,6 +1109,28 @@ export function CurrencyPairDetailPage() {
             <span className="text-[11px] text-[#94A3B8]" style={{ fontWeight: 500 }}>{rangeMetrics.label}</span>
           </div>
 
+          {/* ══ Dashboard empty state ══
+             Pinned at the top so the dashboard's status is the first thing
+             users see when every KPI and chart has been removed. Rate History
+             still renders below this card so the page is never fully blank. */}
+          {dashboardEmpty && (
+            <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-white flex flex-col items-center text-center px-6 py-10">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: "#F1F5F9" }}>
+                <BarChart3 className="w-6 h-6" style={{ color: "#94A3B8" }} />
+              </div>
+              <h3 className="text-[15px]" style={{ fontWeight: 600, color: "#0F172A" }}>Your dashboard is empty</h3>
+              <p className="text-[13px] text-[#64748B] mt-1 max-w-[320px]">Add widgets to monitor item performance</p>
+              <button
+                onClick={restoreDashboardDefaults}
+                className="mt-4 inline-flex items-center gap-1.5 h-9 px-4 rounded-lg bg-[#0A77FF] hover:bg-[#0862D0] text-white text-[13px] shadow-sm transition-colors cursor-pointer"
+                style={{ fontWeight: 600 }}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Restore Defaults
+              </button>
+            </div>
+          )}
+
           {/* KPI Cards — draggable, 5 in a row */}
           {activeKpiDefs.length > 0 && (
             <DndProvider backend={HTML5Backend}>
@@ -1233,9 +1255,13 @@ export function CurrencyPairDetailPage() {
 
                 {activeWidgets.includes("conversion_trend") && (
                   <ContentCard
-                    title="Conversion Trend (What-If)"
+                    title={isStandardDetail ? "Corporate Rate Conversion Trend" : "Mid-Market Rate Conversion Trend"}
                     icon={DollarSign}
-                    tooltipText={WIDGET_TOOLTIPS.conversion_trend}
+                    tooltipText={
+                      isStandardDetail
+                        ? "Historical trend of corporate rates set by your team for this currency pair."
+                        : "Historical mid-market rate movement sourced from your configured provider."
+                    }
                     action={
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] text-[#64748B]" style={{ fontWeight: 500 }}>Amount:</span>
@@ -1361,27 +1387,6 @@ export function CurrencyPairDetailPage() {
               </Table>
             </div>
           </div>
-
-          {/* ══ Dashboard empty state ══
-             Shown only when the user has cleared every KPI and chart. Rate
-             History renders above this card so the page is never fully blank. */}
-          {dashboardEmpty && (
-            <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-white flex flex-col items-center text-center px-6 py-12">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: "#F1F5F9" }}>
-                <BarChart3 className="w-6 h-6" style={{ color: "#94A3B8" }} />
-              </div>
-              <h3 className="text-[15px]" style={{ fontWeight: 600, color: "#0F172A" }}>Your dashboard is empty</h3>
-              <p className="text-[13px] text-[#64748B] mt-1 max-w-[320px]">Add widgets to monitor item performance</p>
-              <button
-                onClick={restoreDashboardDefaults}
-                className="mt-4 inline-flex items-center gap-1.5 h-9 px-4 rounded-lg bg-[#0A77FF] hover:bg-[#0862D0] text-white text-[13px] shadow-sm transition-colors cursor-pointer"
-                style={{ fontWeight: 600 }}
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Restore Defaults
-              </button>
-            </div>
-          )}
 
           {/* ══ Audit Log — always visible and expanded on the corporate detail page ══ */}
           {isStandardDetail && detail.auditLog.length > 0 && (

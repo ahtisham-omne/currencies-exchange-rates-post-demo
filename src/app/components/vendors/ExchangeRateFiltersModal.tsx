@@ -111,11 +111,13 @@ export function ExchangeRateFiltersModal({
       const region = getRegionForCountry(country);
       if (region) counts.set(region, (counts.get(region) || 0) + 1);
     });
+    // Always render every region (Mid-Market parity). Counts reflect the
+    // active tab's data; zero is shown as a muted hint rather than hidden.
     return REGION_LIST.map((r) => ({
       value: r,
       label: r,
       count: counts.get(r) || 0,
-    })).filter((r) => r.count > 0);
+    }));
   }, [currencyCodes]);
 
   const activeCount = countActiveExchangeRateFilters(filters);

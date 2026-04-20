@@ -26,7 +26,9 @@ export interface StandardRate {
   createdAt: string;
   updatedAt: string;
   notes: string;
-  status: "active" | "inactive" | "archived";
+  // Corporate rates only have two valid states — they either exist (active)
+  // or have been retired (archived). "Inactive" was ambiguous and removed.
+  status: "active" | "archived";
   isStale: boolean; // not updated in 30+ days
 }
 

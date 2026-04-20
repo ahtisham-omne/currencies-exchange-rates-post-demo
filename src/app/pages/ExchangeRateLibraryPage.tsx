@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useExchangeRates } from "../context/ExchangeRateContext";
 import {
   BASE_CURRENCY,
@@ -12,6 +12,7 @@ import {
 } from "../data/exchangeRates";
 import { ColumnSelector, ColumnSelectorTrigger, type ColumnConfig } from "../components/vendors/ColumnSelector";
 import { getFlagUrl, getCountryName } from "../utils/currencyFlags";
+import { EXPLANATORY_BLOCKS, RATE_TOOLTIPS } from "../utils/rateCopy";
 import {
   ExchangeRateFiltersModal,
   DEFAULT_EXCHANGE_RATE_FILTERS,
@@ -56,6 +57,8 @@ import {
   Archive,
   Copy,
   Link2,
+  FileSpreadsheet,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -102,19 +105,6 @@ import {
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "../components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "../components/ui/popover";
-import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -141,10 +131,12 @@ const DENSITY_CONFIG: {
 
 const QUICK_FILTERS_MID: { key: QuickFilter; label: string; showCount: boolean }[] = [];
 
+// A corporate rate either exists (active) or it's been retired (archived).
+// Inactive was ambiguous and has been removed from filters, badges, and the
+// Add/Update modal.
 const QUICK_FILTERS_STD: { key: QuickFilter; label: string; showCount: boolean }[] = [
   { key: "all", label: "Show All", showCount: false },
   { key: "active", label: "Active", showCount: true },
-  { key: "inactive", label: "Inactive", showCount: true },
   { key: "archived", label: "Archived", showCount: true },
 ];
 
@@ -180,8 +172,127 @@ const CHEVRON_COL_WIDTH = 36;
 const CHECKBOX_COL_WIDTH = 40;
 const ACTIONS_COL_WIDTH = 60;
 
+/** Single combined search-and-trigger picker for the Add Corporate Rate modal.
+ * Replaces the previous trigger-button + popover-search pair. The input
+ * itself is the search field — opens a dropdown directly below as the user
+ * types or focuses it. */
+function SourceCurrencyPicker({
+  value,
+  onChange,
+  midMarketRates,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  midMarketRates: MidMarketRate[];
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selected = useMemo(
+    () => midMarketRates.find(r => r.sourceCurrency === value) ?? null,
+    [midMarketRates, value]
+  );
+
+  // Show all currencies (not just those with existing rates). The input
+  // doubles as the trigger — focusing or typing opens the dropdown.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = [...midMarketRates].sort((a, b) =>
+      a.sourceCurrency.localeCompare(b.sourceCurrency)
+    );
+    if (!q) return list;
+    return list.filter(r =>
+      r.sourceCurrency.toLowerCase().includes(q) ||
+      r.sourceCurrencyName.toLowerCase().includes(q)
+    );
+  }, [midMarketRates, query]);
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const handleSelect = (code: string) => {
+    onChange(code);
+    setOpen(false);
+    setQuery("");
+    inputRef.current?.blur();
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div
+        className={`flex items-center gap-2 h-9 px-3 rounded-md border bg-white text-[13px] transition-colors ${
+          open ? "border-primary/40 ring-2 ring-primary/10 rounded-b-none" : "border-border"
+        }`}
+      >
+        {selected && !query && (() => {
+          const flag = getFlagUrl(selected.sourceCurrency);
+          return flag ? (
+            <img src={flag} alt={selected.sourceCurrency} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" />
+          ) : null;
+        })()}
+        <input
+          ref={inputRef}
+          type="text"
+          value={query !== "" ? query : selected ? `${selected.sourceCurrency} — ${selected.sourceCurrencyName}` : ""}
+          onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder="Search currency code or name..."
+          className="flex-1 outline-none bg-transparent placeholder:text-muted-foreground/60 min-w-0"
+        />
+        {(selected || query) && (
+          <button
+            type="button"
+            onClick={() => { onChange(""); setQuery(""); inputRef.current?.focus(); setOpen(true); }}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Clear selection"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </div>
+      {open && (
+        <div className="absolute z-30 left-0 right-0 top-full -mt-px border border-primary/40 border-t-0 rounded-b-md bg-white shadow-lg max-h-[280px] overflow-y-auto">
+          {filtered.length === 0 ? (
+            <p className="px-3 py-6 text-center text-[12.5px] text-muted-foreground">No currencies match your search.</p>
+          ) : (
+            filtered.map(r => {
+              const flag = getFlagUrl(r.sourceCurrency);
+              const isActive = value === r.sourceCurrency;
+              return (
+                <button
+                  key={r.sourceCurrency}
+                  type="button"
+                  onClick={() => handleSelect(r.sourceCurrency)}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-left text-[12.5px] transition-colors ${
+                    isActive ? "bg-primary/[0.06] text-primary" : "hover:bg-muted/50"
+                  }`}
+                >
+                  {flag && <img src={flag} alt={r.sourceCurrency} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" />}
+                  <span style={{ fontWeight: 600 }}>{r.sourceCurrency}</span>
+                  <span className="text-muted-foreground truncate">{r.sourceCurrencyName}</span>
+                  {isActive && <Check className="w-4 h-4 ml-auto text-primary shrink-0" />}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ExchangeRateLibraryPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { midMarketRates, standardRates, addStandardRate, updateStandardRate, deleteStandardRate } = useExchangeRates();
 
   const [activeTab, setActiveTab] = useState<ActiveTab>("mid-market");
@@ -250,9 +361,6 @@ export function ExchangeRateLibraryPage() {
     effectiveDate: format(new Date(), "yyyy-MM-dd"),
     notes: "",
   });
-  /* Searchable currency picker open state */
-  const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
-
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; rate: StandardRate | null }>({ open: false, rate: null });
 
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -373,7 +481,6 @@ export function ExchangeRateLibraryPage() {
     } else {
       switch (filter) {
         case "active": return standardRates.filter(r => r.status === "active").length;
-        case "inactive": return standardRates.filter(r => r.status === "inactive").length;
         case "archived": return standardRates.filter(r => r.status === "archived").length;
         // "Show All" excludes archived — archived rates only surface via the Archived pill
         default: return standardRates.filter(r => r.status !== "archived").length;
@@ -399,10 +506,10 @@ export function ExchangeRateLibraryPage() {
 
   const filteredStd = useMemo(() => {
     let list = [...standardRates];
-    // Archived rates surface only when explicitly requested via the Archived pill
+    // Archived rates surface only when explicitly requested via the Archived pill.
+    // Inactive is no longer a valid corporate-rate state — only Active/Archived.
     if (quickFilter === "archived") list = list.filter(r => r.status === "archived");
     else if (quickFilter === "active") list = list.filter(r => r.status === "active");
-    else if (quickFilter === "inactive") list = list.filter(r => r.status === "inactive");
     else list = list.filter(r => r.status !== "archived");
     if (debouncedSearch) {
       const q = debouncedSearch.toLowerCase();
@@ -509,7 +616,7 @@ export function ExchangeRateLibraryPage() {
   }, [modalForm.sourceCurrency, standardRates, editingRate]);
 
   /* ─── Modal handlers ─── */
-  const openAddModal = (prefillCurrency?: string) => {
+  const openAddModal = useCallback((prefillCurrency?: string) => {
     setEditingRate(null);
     setModalForm({
       sourceCurrency: prefillCurrency || "",
@@ -518,7 +625,20 @@ export function ExchangeRateLibraryPage() {
       notes: "",
     });
     setModalOpen(true);
-  };
+  }, []);
+
+  // Pre-fill the Add Corporate Rate modal when arriving with ?addCorp=CODE.
+  // The Currency Detail converter's "Set Corporate Rate" CTA points here so
+  // users can drop straight into the right form.
+  useEffect(() => {
+    const code = searchParams.get("addCorp");
+    if (!code) return;
+    setActiveTab("standard");
+    openAddModal(code.toUpperCase());
+    const next = new URLSearchParams(searchParams);
+    next.delete("addCorp");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, openAddModal]);
 
   const openEditModal = (rate: StandardRate) => {
     setEditingRate(rate);
@@ -573,6 +693,33 @@ export function ExchangeRateLibraryPage() {
     deleteStandardRate(deleteDialog.rate.id);
     toast.success(`Corporate rate for ${deleteDialog.rate.sourceCurrency} archived`);
     setDeleteDialog({ open: false, rate: null });
+  };
+
+  type ExportFormat = "csv" | "xlsx" | "pdf";
+  const exportStandardRates = (
+    rows: StandardRate[],
+    baseName: string,
+    fmt: ExportFormat
+  ) => {
+    const header = "Base Currency,Source Currency,Corporate Exchange Rate,Mid-Market Exchange Rate,Variance,Effective Date,Created By\n";
+    const body = rows
+      .map(r => `${r.baseCurrency},${r.sourceCurrency},${r.standardRate},${r.midMarketRate},${r.variance}%,${r.effectiveDate},${r.createdBy}`)
+      .join("\n");
+    const mime =
+      fmt === "xlsx"
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : fmt === "pdf"
+        ? "application/pdf"
+        : "text/csv";
+    const ext = fmt === "xlsx" ? "xlsx" : fmt === "pdf" ? "pdf" : "csv";
+    const blob = new Blob([header + body], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${baseName}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`${fmt.toUpperCase()} exported`);
   };
 
   const liveVariance = useMemo(() => {
@@ -705,18 +852,26 @@ export function ExchangeRateLibraryPage() {
               <div className="flex items-center gap-2">
                 {activeTab === "standard" && (
                   <>
-                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => {
-                      const header = "Base Currency,Source Currency,Corporate Exchange Rate,Mid-Market Exchange Rate,Variance,Effective Date,Created By\n";
-                      const rows = standardRates.map(r => `${r.baseCurrency},${r.sourceCurrency},${r.standardRate},${r.midMarketRate},${r.variance}%,${r.effectiveDate},${r.createdBy}`).join("\n");
-                      const blob = new Blob([header + rows], { type: "text/csv" });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a"); a.href = url; a.download = "standard_rates.csv"; a.click();
-                      URL.revokeObjectURL(url);
-                      toast.success("CSV exported");
-                    }}>
-                      <Download className="w-3.5 h-3.5" />
-                      Export
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="gap-1.5">
+                          <Download className="w-3.5 h-3.5" />
+                          Export
+                          <ChevronDown className="w-3 h-3 text-muted-foreground/70" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-[160px]">
+                        <DropdownMenuItem onClick={() => exportStandardRates(standardRates, "standard_rates", "csv")}>
+                          <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> CSV
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => exportStandardRates(standardRates, "standard_rates", "xlsx")}>
+                          <FileSpreadsheet className="w-4 h-4 mr-2 text-muted-foreground" /> Excel
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => exportStandardRates(standardRates, "standard_rates", "pdf")}>
+                          <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> PDF
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button className="bg-primary text-primary-foreground shrink-0" onClick={() => openAddModal()}>
                       <Plus className="w-4 h-4 mr-1.5" />
                       Add Corporate Rate
@@ -726,7 +881,7 @@ export function ExchangeRateLibraryPage() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-              Manage all exchange rates for your company. Mid-Market Rates are automatically synced from {API_PROVIDER} at your configured frequency. Corporate Rates are manually defined fixed rates your team controls — useful when you need stable, predictable rates applied consistently across documents.
+              Manage all exchange rates for your company.
             </p>
           </div>
 
@@ -742,6 +897,21 @@ export function ExchangeRateLibraryPage() {
               >
                 <Cloud className="w-4 h-4" />
                 Mid-Market Rates
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="inline-flex"
+                        onClick={e => { e.stopPropagation(); }}
+                      >
+                        <Info className="w-3 h-3 text-muted-foreground/60 cursor-help" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[280px] text-[11.5px]">
+                      {RATE_TOOLTIPS.midMarket}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <span className={`ml-1 min-w-[20px] h-5 rounded-full text-[11px] flex items-center justify-center px-1.5 ${
                   activeTab === "mid-market" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                 }`} style={{ fontWeight: 600 }}>
@@ -760,6 +930,21 @@ export function ExchangeRateLibraryPage() {
               >
                 <Star className="w-4 h-4" />
                 Corporate Rates
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="inline-flex"
+                        onClick={e => { e.stopPropagation(); }}
+                      >
+                        <Info className="w-3 h-3 text-muted-foreground/60 cursor-help" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[280px] text-[11.5px]">
+                      {RATE_TOOLTIPS.corporate}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <span className={`ml-1 min-w-[20px] h-5 rounded-full text-[11px] flex items-center justify-center px-1.5 ${
                   activeTab === "standard" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                 }`} style={{ fontWeight: 600 }}>
@@ -769,6 +954,46 @@ export function ExchangeRateLibraryPage() {
                   <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-t-full" />
                 )}
               </button>
+            </div>
+          </div>
+
+          {/* Tab-specific explanatory block — soft background, left accent.
+             Swaps copy based on the active tab and uses the shared standard
+             phrasing from rateCopy so wording stays in sync everywhere. */}
+          <div
+            className="mt-3 rounded-lg border-l-[3px] flex items-start gap-3 px-4 py-3"
+            style={{
+              backgroundColor: activeTab === "mid-market" ? "#F5F3FF" : "#FFFBEB",
+              borderLeftColor: activeTab === "mid-market" ? "#7C3AED" : "#D97706",
+            }}
+          >
+            <div
+              className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
+              style={{ backgroundColor: activeTab === "mid-market" ? "#EDE9FE" : "#FEF3C7" }}
+            >
+              {activeTab === "mid-market" ? (
+                <Cloud className="w-4 h-4" style={{ color: "#7C3AED" }} />
+              ) : (
+                <Star className="w-4 h-4" style={{ color: "#D97706" }} />
+              )}
+            </div>
+            <div className="min-w-0 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-[12px] leading-snug">
+              <div>
+                <span className="text-[#0F172A]" style={{ fontWeight: 600 }}>What this is: </span>
+                <span className="text-[#475569]">
+                  {activeTab === "mid-market"
+                    ? EXPLANATORY_BLOCKS.midMarket.whatThisIs
+                    : EXPLANATORY_BLOCKS.corporate.whatThisIs}
+                </span>
+              </div>
+              <div>
+                <span className="text-[#0F172A]" style={{ fontWeight: 600 }}>When it's used: </span>
+                <span className="text-[#475569]">
+                  {activeTab === "mid-market"
+                    ? EXPLANATORY_BLOCKS.midMarket.whenItsUsed
+                    : EXPLANATORY_BLOCKS.corporate.whenItsUsed}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1094,41 +1319,45 @@ export function ExchangeRateLibraryPage() {
                                 <GripVertical className={`absolute left-1 top-1/2 -translate-y-1/2 w-3 h-3 transition-opacity z-[5] pointer-events-none ${isBeingDragged ? "opacity-100 text-primary" : "opacity-0 group-hover/colheader:opacity-100 text-muted-foreground/40"}`} />
                               )}
                               <div className={`flex items-center gap-1 ${def.align === "right" ? "justify-end" : ""}`}>
-                                {key === "inverseRate" || key === "inverseStdRate" ? (
-                                  <>
-                                    <span className="text-[13px]" style={currentColSort ? { color: "#0A77FF" } : undefined}>
-                                      {def.label}
-                                    </span>
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild onClick={e => e.stopPropagation()}>
-                                          <Info className="w-3 h-3 text-muted-foreground/60 shrink-0 cursor-help" />
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="max-w-[260px] text-xs">
-                                          1 {BASE_CURRENCY} = [inverse rate] [source currency]. Example: 1 PKR = 0.0036 USD.
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  </>
-                                ) : (
-                                  <span className="text-[13px]" style={currentColSort ? { color: "#0A77FF" } : undefined}>
-                                    {def.label}
-                                  </span>
-                                )}
-                                {key === "change24h" && (
-                                  <>
+                                <span className="text-[13px] truncate" style={currentColSort ? { color: "#0A77FF" } : undefined}>
+                                  {def.label}
+                                </span>
+                                {(() => {
+                                  const tip =
+                                    key === "inverseRate" || key === "inverseStdRate"
+                                      ? RATE_TOOLTIPS.inverse
+                                      : key === "rate" || key === "midMarketRate"
+                                      ? RATE_TOOLTIPS.midMarket
+                                      : key === "standardRate"
+                                      ? RATE_TOOLTIPS.corporate
+                                      : key === "baseCurrency"
+                                      ? RATE_TOOLTIPS.baseCurrency
+                                      : key === "sourceCurrency"
+                                      ? RATE_TOOLTIPS.sourceCurrency
+                                      : key === "change24h"
+                                      ? RATE_TOOLTIPS.change24h
+                                      : key === "effectiveDate"
+                                      ? RATE_TOOLTIPS.effectiveDate
+                                      : null;
+                                  if (!tip) return null;
+                                  return (
                                     <TooltipProvider delayDuration={200}>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
-                                          <Info className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0 cursor-help" />
+                                          <span
+                                            className="inline-flex shrink-0"
+                                            onClick={e => e.stopPropagation()}
+                                          >
+                                            <Info className="w-3 h-3 text-muted-foreground/60 cursor-help" />
+                                          </span>
                                         </TooltipTrigger>
-                                        <TooltipContent side="top" className="max-w-[300px] text-xs">
-                                          Percentage change in the mid-market rate over the last 24 hours. Updated as of {format(new Date(LAST_SYNC), "dd MMM yyyy")} at {format(new Date(LAST_SYNC), "HH:mm")} PKT.
+                                        <TooltipContent side="top" className="max-w-[300px] text-[11.5px] whitespace-pre-line">
+                                          {tip}
                                         </TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
-                                  </>
-                                )}
+                                  );
+                                })()}
                                 {def.sortable && (
                                   currentColSort === "asc" ? <ArrowUp className="w-3 h-3 shrink-0" style={{ color: "#0A77FF" }} /> :
                                   currentColSort === "desc" ? <ArrowDown className="w-3 h-3 shrink-0" style={{ color: "#0A77FF" }} /> :
@@ -1219,10 +1448,19 @@ export function ExchangeRateLibraryPage() {
                                 case "sourceCurrency":
                                   return (
                                     <TableCell key={key}>
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-2 min-w-0">
                                         {flagUrl && <img src={flagUrl} alt={r.sourceCurrency} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" />}
-                                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary" style={{ fontWeight: 600 }}>{highlightText(r.sourceCurrency)}</span>
-                                        <span className={`${isRelaxed ? "text-[13.5px]" : "text-[12px]"}`}>{highlightText(r.sourceCurrencyName)}</span>
+                                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary shrink-0" style={{ fontWeight: 600 }}>{highlightText(r.sourceCurrency)}</span>
+                                        <TooltipProvider delayDuration={300}>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <span className={`${isRelaxed ? "text-[13.5px]" : "text-[12px]"} truncate min-w-0`}>
+                                                {highlightText(r.sourceCurrencyName)}
+                                              </span>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="text-[11.5px]">{r.sourceCurrencyName}</TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
                                       </div>
                                     </TableCell>
                                   );
@@ -1292,13 +1530,19 @@ export function ExchangeRateLibraryPage() {
                                       </div>
                                     </div>
                                   </div>
-                                  {/* Swap icon */}
+                                  {/* Swap icon — accent fill when inverse view is active */}
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); toggleRowInvert(r.id); }}
-                                    className="flex items-center justify-center w-8 h-8 rounded-full border border-border bg-white shrink-0 mt-5 hover:bg-muted/60 transition-colors cursor-pointer"
+                                    aria-pressed={isInverted}
+                                    aria-label={isInverted ? "Restore default direction" : "Swap direction"}
+                                    className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-colors cursor-pointer ${
+                                      isInverted
+                                        ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
+                                        : "bg-white text-muted-foreground border border-border hover:bg-muted/60"
+                                    }`}
                                   >
-                                    <ArrowLeftRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <ArrowLeftRight className="w-3.5 h-3.5" />
                                   </button>
                                   {/* To card — always base currency */}
                                   <div>
@@ -1316,6 +1560,17 @@ export function ExchangeRateLibraryPage() {
                                     </div>
                                   </div>
                                 </div>
+                                {isInverted && (
+                                  <div className="pl-10 mt-2">
+                                    <span
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF]"
+                                      style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+                                    >
+                                      <ArrowLeftRight className="w-2.5 h-2.5" />
+                                      Inverse rate
+                                    </span>
+                                  </div>
+                                )}
                               </TableCell>
                             </TableRow>
                           )}
@@ -1388,10 +1643,19 @@ export function ExchangeRateLibraryPage() {
                                         boxShadow: "inset -1px 0 0 0 rgba(0,0,0,0.08), 3px 0 6px -2px rgba(0,0,0,0.06)",
                                       }}
                                     >
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-2 min-w-0">
                                         {flagUrl && <img src={flagUrl} alt={r.sourceCurrency} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" />}
-                                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary" style={{ fontWeight: 600 }}>{highlightText(r.sourceCurrency)}</span>
-                                        <span className={`${isRelaxed ? "text-[13.5px]" : "text-[12px]"}`}>{highlightText(r.sourceCurrencyName)}</span>
+                                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary shrink-0" style={{ fontWeight: 600 }}>{highlightText(r.sourceCurrency)}</span>
+                                        <TooltipProvider delayDuration={300}>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <span className={`${isRelaxed ? "text-[13.5px]" : "text-[12px]"} truncate min-w-0`}>
+                                                {highlightText(r.sourceCurrencyName)}
+                                              </span>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="text-[11.5px]">{r.sourceCurrencyName}</TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
                                       </div>
                                     </TableCell>
                                   );
@@ -1429,7 +1693,7 @@ export function ExchangeRateLibraryPage() {
                                 case "effectiveDate":
                                   return (
                                     <TableCell key={key} className="text-[12px] text-muted-foreground">
-                                      From {formatDate(r.effectiveDate)}
+                                      {formatDate(r.effectiveDate)}
                                     </TableCell>
                                   );
                                 case "createdBy":
@@ -1490,13 +1754,19 @@ export function ExchangeRateLibraryPage() {
                                       </div>
                                     </div>
                                   </div>
-                                  {/* Swap icon */}
+                                  {/* Swap icon — accent fill when inverse view is active */}
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); toggleRowInvert(r.id); }}
-                                    className="flex items-center justify-center w-8 h-8 rounded-full border border-border bg-white shrink-0 mt-5 hover:bg-muted/60 transition-colors cursor-pointer"
+                                    aria-pressed={isInverted}
+                                    aria-label={isInverted ? "Restore default direction" : "Swap direction"}
+                                    className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-colors cursor-pointer ${
+                                      isInverted
+                                        ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
+                                        : "bg-white text-muted-foreground border border-border hover:bg-muted/60"
+                                    }`}
                                   >
-                                    <ArrowLeftRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                    <ArrowLeftRight className="w-3.5 h-3.5" />
                                   </button>
                                   {/* To card — always base currency */}
                                   <div>
@@ -1514,6 +1784,17 @@ export function ExchangeRateLibraryPage() {
                                     </div>
                                   </div>
                                 </div>
+                                {isInverted && (
+                                  <div className="pl-16 mt-2">
+                                    <span
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF]"
+                                      style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+                                    >
+                                      <ArrowLeftRight className="w-2.5 h-2.5" />
+                                      Inverse rate
+                                    </span>
+                                  </div>
+                                )}
                               </TableCell>
                             </TableRow>
                           )}
@@ -1622,52 +1903,11 @@ export function ExchangeRateLibraryPage() {
                   <span style={{ fontWeight: 600 }}>{modalForm.sourceCurrency}</span>
                 </div>
               ) : (
-                <Popover open={currencyPickerOpen} onOpenChange={setCurrencyPickerOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex items-center justify-between w-full h-9 px-3 rounded-md border border-border bg-white text-[13px] hover:bg-muted/20 transition-colors cursor-pointer"
-                    >
-                      {modalForm.sourceCurrency ? (
-                        <span style={{ fontWeight: 500 }}>
-                          {modalForm.sourceCurrency} — {midMarketRates.find(r => r.sourceCurrency === modalForm.sourceCurrency)?.sourceCurrencyName || modalForm.sourceCurrency}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">Search and select currency...</span>
-                      )}
-                      <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[400px] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search currency code or name..." />
-                      <CommandList>
-                        <CommandEmpty>No currency found.</CommandEmpty>
-                        <CommandGroup>
-                          {midMarketRates.filter(r => r.status === "active").map(r => {
-                            const flag = getFlagUrl(r.sourceCurrency);
-                            return (
-                              <CommandItem
-                                key={r.sourceCurrency}
-                                value={`${r.sourceCurrency} ${r.sourceCurrencyName}`}
-                                onSelect={() => {
-                                  setModalForm(p => ({ ...p, sourceCurrency: r.sourceCurrency }));
-                                  setCurrencyPickerOpen(false);
-                                }}
-                                className="flex items-center gap-2 cursor-pointer"
-                              >
-                                {flag && <img src={flag} alt={r.sourceCurrency} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" />}
-                                <span style={{ fontWeight: 600 }} className="text-[12px]">{r.sourceCurrency}</span>
-                                <span className="text-[12px] text-muted-foreground">{r.sourceCurrencyName}</span>
-                                {modalForm.sourceCurrency === r.sourceCurrency && <Check className="w-4 h-4 ml-auto text-primary" />}
-                              </CommandItem>
-                            );
-                          })}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <SourceCurrencyPicker
+                  value={modalForm.sourceCurrency}
+                  onChange={(code) => setModalForm(p => ({ ...p, sourceCurrency: code }))}
+                  midMarketRates={midMarketRates}
+                />
               )}
             </div>
 
