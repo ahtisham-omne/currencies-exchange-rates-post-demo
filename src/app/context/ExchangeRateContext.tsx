@@ -39,7 +39,9 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const deleteStandardRate = useCallback((id: string) => {
-    setStandardRates(prev => prev.filter(r => r.id !== id));
+    setStandardRates(prev =>
+      prev.map(r => r.id === id ? { ...r, status: "archived", updatedAt: new Date().toISOString() } : r)
+    );
   }, []);
 
   return (

@@ -26,7 +26,7 @@ export interface StandardRate {
   createdAt: string;
   updatedAt: string;
   notes: string;
-  status: "active" | "inactive";
+  status: "active" | "inactive" | "archived";
   isStale: boolean; // not updated in 30+ days
 }
 

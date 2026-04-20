@@ -122,7 +122,7 @@ import {
 } from "../components/ui/tooltip";
 
 type ActiveTab = "mid-market" | "standard";
-type QuickFilter = "all" | "active" | "inactive";
+type QuickFilter = "all" | "active" | "inactive" | "archived";
 type SortKey = string;
 type SortDir = "asc" | "desc";
 type DensityOption = "condensed" | "comfort" | "card";
@@ -144,14 +144,15 @@ const QUICK_FILTERS_MID: { key: QuickFilter; label: string; showCount: boolean }
 const QUICK_FILTERS_STD: { key: QuickFilter; label: string; showCount: boolean }[] = [
   { key: "all", label: "Show All", showCount: false },
   { key: "active", label: "Active", showCount: true },
-  { key: "inactive", label: "Archived", showCount: true },
+  { key: "inactive", label: "Inactive", showCount: true },
+  { key: "archived", label: "Archived", showCount: true },
 ];
 
 /* ─── Column definitions for Mid-Market table ─── */
 const MID_COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align?: "left" | "right" })[] = [
   { key: "baseCurrency", label: "Base Currency", minWidth: "160px", sortable: true },
   { key: "sourceCurrency", label: "Source Currency", minWidth: "200px", sortable: true },
-  { key: "rate", label: "Exchange Rate", minWidth: "160px", sortable: true, align: "right" },
+  { key: "rate", label: "Mid-Market Exchange Rate", minWidth: "200px", sortable: true, align: "right" },
   { key: "inverseRate", label: "Inverse Rate", minWidth: "160px", sortable: true, align: "right" },
   { key: "change24h", label: "Change (24h)", minWidth: "140px", sortable: true, align: "right" },
 ];
@@ -159,9 +160,9 @@ const MID_COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; a
 const STD_COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align?: "left" | "right" })[] = [
   { key: "baseCurrency", label: "Base Currency", minWidth: "160px", sortable: true },
   { key: "sourceCurrency", label: "Source Currency", minWidth: "200px", sortable: true },
-  { key: "standardRate", label: "Corporate Rate", minWidth: "160px", sortable: true, align: "right" },
+  { key: "standardRate", label: "Corporate Exchange Rate", minWidth: "200px", sortable: true, align: "right" },
   { key: "inverseStdRate", label: "Inverse Rate", minWidth: "160px", sortable: true, align: "right" },
-  { key: "midMarketRate", label: "Mid-Market Rate", minWidth: "160px", sortable: true, align: "right" },
+  { key: "midMarketRate", label: "Mid-Market Exchange Rate", minWidth: "200px", sortable: true, align: "right" },
   { key: "variance", label: "Variance", minWidth: "120px", sortable: true, align: "right" },
   { key: "effectiveDate", label: "Effective Date", minWidth: "150px", sortable: true },
   { key: "createdBy", label: "Created By", minWidth: "180px" },
@@ -366,13 +367,16 @@ export function ExchangeRateLibraryPage() {
       switch (filter) {
         case "active": return midMarketRates.filter(r => r.status === "active").length;
         case "inactive": return midMarketRates.filter(r => r.status === "inactive").length;
+        case "archived": return 0;
         default: return midMarketRates.length;
       }
     } else {
       switch (filter) {
         case "active": return standardRates.filter(r => r.status === "active").length;
         case "inactive": return standardRates.filter(r => r.status === "inactive").length;
-        default: return standardRates.length;
+        case "archived": return standardRates.filter(r => r.status === "archived").length;
+        // "Show All" excludes archived — archived rates only surface via the Archived pill
+        default: return standardRates.filter(r => r.status !== "archived").length;
       }
     }
   }, [activeTab, midMarketRates, standardRates]);
@@ -385,7 +389,8 @@ export function ExchangeRateLibraryPage() {
       const q = debouncedSearch.toLowerCase();
       list = list.filter(r =>
         r.sourceCurrency.toLowerCase().includes(q) ||
-        r.sourceCurrencyName.toLowerCase().includes(q)
+        r.sourceCurrencyName.toLowerCase().includes(q) ||
+        getCountryName(r.sourceCurrency).toLowerCase().includes(q)
       );
     }
     if (advFilters.regions.length > 0) list = list.filter(r => currencyMatchesExchangeRateRegionFilter(r.sourceCurrency, advFilters.regions));
@@ -394,13 +399,17 @@ export function ExchangeRateLibraryPage() {
 
   const filteredStd = useMemo(() => {
     let list = [...standardRates];
-    if (quickFilter === "active") list = list.filter(r => r.status === "active");
-    if (quickFilter === "inactive") list = list.filter(r => r.status === "inactive");
+    // Archived rates surface only when explicitly requested via the Archived pill
+    if (quickFilter === "archived") list = list.filter(r => r.status === "archived");
+    else if (quickFilter === "active") list = list.filter(r => r.status === "active");
+    else if (quickFilter === "inactive") list = list.filter(r => r.status === "inactive");
+    else list = list.filter(r => r.status !== "archived");
     if (debouncedSearch) {
       const q = debouncedSearch.toLowerCase();
       list = list.filter(r =>
         r.sourceCurrency.toLowerCase().includes(q) ||
-        r.sourceCurrencyName.toLowerCase().includes(q)
+        r.sourceCurrencyName.toLowerCase().includes(q) ||
+        getCountryName(r.sourceCurrency).toLowerCase().includes(q)
       );
     }
     if (advFilters.regions.length > 0) list = list.filter(r => currencyMatchesExchangeRateRegionFilter(r.sourceCurrency, advFilters.regions));
@@ -697,7 +706,7 @@ export function ExchangeRateLibraryPage() {
                 {activeTab === "standard" && (
                   <>
                     <Button variant="outline" size="sm" className="gap-1.5" onClick={() => {
-                      const header = "Base Currency,Source Currency,Corporate Rate,Mid-Market Rate,Variance,Effective Date,Created By\n";
+                      const header = "Base Currency,Source Currency,Corporate Exchange Rate,Mid-Market Exchange Rate,Variance,Effective Date,Created By\n";
                       const rows = standardRates.map(r => `${r.baseCurrency},${r.sourceCurrency},${r.standardRate},${r.midMarketRate},${r.variance}%,${r.effectiveDate},${r.createdBy}`).join("\n");
                       const blob = new Blob([header + rows], { type: "text/csv" });
                       const url = URL.createObjectURL(blob);
@@ -992,7 +1001,7 @@ export function ExchangeRateLibraryPage() {
                             </div>
                             <div className="space-y-1.5 text-xs text-muted-foreground">
                               <div className="flex justify-between">
-                                <span>{isMid ? "Exchange Rate" : "Corporate Rate"}</span>
+                                <span>{isMid ? "Mid-Market Exchange Rate" : "Corporate Exchange Rate"}</span>
                                 <span className="text-foreground tabular-nums" style={{ fontWeight: 600 }}>
                                   {isMid ? (r as MidMarketRate).rate.toFixed(4) : (r as StandardRate).standardRate.toFixed(4)}
                                 </span>
@@ -1032,11 +1041,15 @@ export function ExchangeRateLibraryPage() {
                       <TableRow className={`bg-muted/30 hover:bg-muted/30 ${
                         density === "condensed" ? "[&>th]:h-8" : "[&>th]:h-9"
                       }`}>
-                        {/* Expand chevron column */}
-                        <TableHead className="w-[36px] min-w-[36px] max-w-[36px] !pl-2 !pr-0" />
-                        {/* Checkbox column — corporate rates only */}
+                        {/* Expand chevron column — sticky leftmost on Corporate tab */}
+                        <TableHead
+                          className={`w-[36px] min-w-[36px] max-w-[36px] !pl-2 !pr-0 ${
+                            activeTab === "standard" ? "sticky left-0 z-30 bg-[#F4F6F9]" : ""
+                          }`}
+                        />
+                        {/* Checkbox column — corporate rates only; sticky after chevron */}
                         {activeTab === "standard" && (
-                        <TableHead className="w-[40px] min-w-[40px] max-w-[40px] !pl-2 !pr-0">
+                        <TableHead className="w-[40px] min-w-[40px] max-w-[40px] !pl-2 !pr-0 sticky left-[36px] z-30 bg-[#F4F6F9]">
                           <Checkbox
                             checked={allPageSelected ? true : somePageSelected ? "indeterminate" : false}
                             onCheckedChange={handleSelectAll}
@@ -1051,6 +1064,9 @@ export function ExchangeRateLibraryPage() {
                           const isDraggable = !LOCKED_COLUMNS.includes(key);
                           const isBeingDragged = draggingColumnKey === key;
                           const width = colWidths[key] ?? parseInt(def.minWidth, 10);
+                          // On the Corporate tab, the first data column (sourceCurrency) stays
+                          // frozen after the chevron (36px) and checkbox (40px) sticky columns.
+                          const isFrozenLeftHeader = activeTab === "standard" && key === "sourceCurrency";
                           return (
                             <TableHead
                               key={key}
@@ -1059,8 +1075,19 @@ export function ExchangeRateLibraryPage() {
                               onClickCapture={isDraggable ? (e) => {
                                 if (suppressNextClickRef.current) { e.stopPropagation(); e.preventDefault(); return; }
                               } : undefined}
-                              className={`whitespace-nowrap select-none hover:bg-muted/30 transition-colors group/colheader relative ${def.align === "right" ? "text-right" : ""} ${isDraggable ? "cursor-grab" : "cursor-default"} ${isBeingDragged ? "opacity-30" : ""}`}
-                              style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px`, overflow: "hidden" }}
+                              className={`whitespace-nowrap select-none hover:bg-muted/30 transition-colors group/colheader relative ${def.align === "right" ? "text-right" : ""} ${isDraggable ? "cursor-grab" : "cursor-default"} ${isBeingDragged ? "opacity-30" : ""} ${isFrozenLeftHeader ? "sticky z-30 bg-[#F4F6F9]" : ""}`}
+                              style={{
+                                width: `${width}px`,
+                                minWidth: `${width}px`,
+                                maxWidth: `${width}px`,
+                                overflow: "hidden",
+                                ...(isFrozenLeftHeader
+                                  ? {
+                                      left: `${CHEVRON_COL_WIDTH + CHECKBOX_COL_WIDTH}px`,
+                                      boxShadow: "inset -1px 0 0 0 rgba(0,0,0,0.08), 3px 0 6px -2px rgba(0,0,0,0.06)",
+                                    }
+                                  : {}),
+                              }}
                               onClick={() => def.sortable && !suppressNextClickRef.current && handleSort(key)}
                             >
                               {isDraggable && (
@@ -1124,7 +1151,16 @@ export function ExchangeRateLibraryPage() {
                             </TableHead>
                           );
                         })}
-                        <TableHead className="whitespace-nowrap w-[60px] !pl-2 !pr-2">
+                        <TableHead
+                          className={`whitespace-nowrap w-[60px] !pl-2 !pr-2 ${
+                            activeTab === "standard" ? "sticky right-0 z-30 bg-[#F4F6F9]" : ""
+                          }`}
+                          style={
+                            activeTab === "standard"
+                              ? { boxShadow: "inset 1px 0 0 0 rgba(0,0,0,0.08), -3px 0 6px -2px rgba(0,0,0,0.06)" }
+                              : undefined
+                          }
+                        >
                           <span className="text-[13px]">Actions</span>
                         </TableHead>
                       </TableRow>
@@ -1304,8 +1340,11 @@ export function ExchangeRateLibraryPage() {
                             } ${isExpanded ? "bg-[#F8FBFF]" : ""}`}
                             onClick={() => navigate(`/accounting/exchange-rates/${r.sourceCurrency}?type=std`)}
                           >
-                            {/* Chevron — separate click target with its own hover */}
-                            <TableCell className="w-[36px] min-w-[36px] max-w-[36px] !pl-2 !pr-0" onClick={e => e.stopPropagation()}>
+                            {/* Chevron — sticky leftmost */}
+                            <TableCell
+                              className="w-[36px] min-w-[36px] max-w-[36px] !pl-2 !pr-0 sticky left-0 z-10 bg-card group-hover:bg-[#F0F7FF]"
+                              onClick={e => e.stopPropagation()}
+                            >
                               <button
                                 type="button"
                                 onClick={(e) => toggleRowExpand(r.id, e)}
@@ -1315,7 +1354,7 @@ export function ExchangeRateLibraryPage() {
                                 <ChevronRight className={`w-4 h-4 transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`} />
                               </button>
                             </TableCell>
-                            <TableCell className="w-[40px] min-w-[40px] max-w-[40px] !pl-2 !pr-0 bg-card group-hover:bg-[#F0F7FF]">
+                            <TableCell className="w-[40px] min-w-[40px] max-w-[40px] !pl-2 !pr-0 sticky left-[36px] z-10 bg-card group-hover:bg-[#F0F7FF]">
                               <Checkbox
                                 checked={selectedRows.has(r.id)}
                                 onCheckedChange={() => handleSelectRow(r.id)}
@@ -1335,9 +1374,20 @@ export function ExchangeRateLibraryPage() {
                                       </div>
                                     </TableCell>
                                   );
-                                case "sourceCurrency":
+                                case "sourceCurrency": {
+                                  const width = colWidths["sourceCurrency"] ?? parseInt(colDef("sourceCurrency").minWidth, 10);
                                   return (
-                                    <TableCell key={key}>
+                                    <TableCell
+                                      key={key}
+                                      className="sticky z-10 bg-card group-hover:bg-[#F0F7FF]"
+                                      style={{
+                                        left: `${CHEVRON_COL_WIDTH + CHECKBOX_COL_WIDTH}px`,
+                                        width: `${width}px`,
+                                        minWidth: `${width}px`,
+                                        maxWidth: `${width}px`,
+                                        boxShadow: "inset -1px 0 0 0 rgba(0,0,0,0.08), 3px 0 6px -2px rgba(0,0,0,0.06)",
+                                      }}
+                                    >
                                       <div className="flex items-center gap-2">
                                         {flagUrl && <img src={flagUrl} alt={r.sourceCurrency} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" />}
                                         <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary" style={{ fontWeight: 600 }}>{highlightText(r.sourceCurrency)}</span>
@@ -1345,6 +1395,7 @@ export function ExchangeRateLibraryPage() {
                                       </div>
                                     </TableCell>
                                   );
+                                }
                                 case "standardRate":
                                   return (
                                     <TableCell key={key} className="text-right tabular-nums">
@@ -1387,7 +1438,11 @@ export function ExchangeRateLibraryPage() {
                                   return <TableCell key={key}>—</TableCell>;
                               }
                             })}
-                            <TableCell onClick={e => e.stopPropagation()}>
+                            <TableCell
+                              onClick={e => e.stopPropagation()}
+                              className="sticky right-0 z-10 bg-card group-hover:bg-[#F0F7FF]"
+                              style={{ boxShadow: "inset 1px 0 0 0 rgba(0,0,0,0.08), -3px 0 6px -2px rgba(0,0,0,0.06)" }}
+                            >
                               <div className="flex items-center gap-1">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
@@ -1538,26 +1593,20 @@ export function ExchangeRateLibraryPage() {
 
       {/* Add/Edit Corporate Rate — Archive-pattern Modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="sm:max-w-[480px] p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)]" hideCloseButton>
-          <div className="relative flex flex-col items-center pt-10 pb-6 text-center" style={{ background: "linear-gradient(180deg, #EFF6FF 0%, rgba(239,246,255,0.3) 70%, transparent 100%)" }}>
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[180px] h-[80px] rounded-full blur-[50px] opacity-25" style={{ backgroundColor: "#3B82F6" }} />
-            <div className="relative w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: "#DBEAFE" }}>
-              {editingRate ? <Pencil className="w-7 h-7" style={{ color: "#2563EB" }} /> : <Plus className="w-8 h-8" style={{ color: "#2563EB" }} />}
+        <DialogContent className="sm:max-w-[420px] p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)]" hideCloseButton>
+          <div className="relative flex flex-col items-center pt-6 pb-4 text-center" style={{ background: "linear-gradient(180deg, #EFF6FF 0%, rgba(239,246,255,0.3) 70%, transparent 100%)" }}>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[160px] h-[60px] rounded-full blur-[50px] opacity-25" style={{ backgroundColor: "#3B82F6" }} />
+            <div className="relative w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: "#DBEAFE" }}>
+              {editingRate ? <Pencil className="w-5 h-5" style={{ color: "#2563EB" }} /> : <Plus className="w-6 h-6" style={{ color: "#2563EB" }} />}
             </div>
-            <span
-              className="mt-4 px-3 py-1 rounded-full text-[11px]"
-              style={{ fontWeight: 600, backgroundColor: "#EFF6FF", color: "#1E40AF", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}
-            >
-              {editingRate ? "Update Rate" : "Add Rate"}
-            </span>
-            <DialogTitle className="mt-3 text-[18px] tracking-[-0.02em]" style={{ fontWeight: 600, color: "#0F172A" }}>
+            <DialogTitle className="mt-3 text-[16px] tracking-[-0.01em]" style={{ fontWeight: 600, color: "#0F172A" }}>
               {editingRate ? `Update Corporate Rate — ${editingRate.sourceCurrency}` : "Add Corporate Rate"}
             </DialogTitle>
-            <DialogDescription className="text-[13px] mt-1.5 max-w-[360px] mx-auto" style={{ color: "#475569", lineHeight: "1.65" }}>
+            <DialogDescription className="text-[12px] mt-1 max-w-[320px] mx-auto" style={{ color: "#475569", lineHeight: "1.5" }}>
               {editingRate ? `Update the corporate rate for ${editingRate.sourceCurrency} / ${BASE_CURRENCY}.` : "Define a new corporate rate for a currency pair."}
             </DialogDescription>
           </div>
-          <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto">
+          <div className="px-5 py-4 space-y-3.5 max-h-[56vh] overflow-y-auto">
             <div>
               <Label className="text-[12px] text-muted-foreground mb-1.5">Base Currency</Label>
               <div className="h-9 px-3 rounded-md border border-border bg-muted/30 flex items-center text-[13px]">
@@ -1666,7 +1715,7 @@ export function ExchangeRateLibraryPage() {
             {!existingRateForSelected && (
               <>
                 <div>
-                  <Label className="text-[12px] text-muted-foreground mb-1.5">Corporate Rate *</Label>
+                  <Label className="text-[12px] text-muted-foreground mb-1.5">Corporate Exchange Rate *</Label>
                   <Input
                     type="number"
                     step="0.0001"
@@ -1717,22 +1766,22 @@ export function ExchangeRateLibraryPage() {
             )}
           </div>
           {!existingRateForSelected && (
-            <div className="px-8 py-5 border-t border-border flex flex-col gap-2.5">
+            <div className="px-5 py-3.5 border-t border-border flex items-center justify-end gap-2">
               <Button
-                className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors hover:opacity-90"
+                variant="outline"
+                className="h-9 text-[13px] rounded-lg border-0 cursor-pointer transition-colors"
+                style={{ fontWeight: 500, backgroundColor: "#F1F5F9", color: "#334155" }}
+                onClick={() => setModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="h-9 text-[13px] rounded-lg border-0 cursor-pointer transition-colors hover:opacity-90"
                 style={{ fontWeight: 600, backgroundColor: "#0A77FF", color: "#fff" }}
                 onClick={handleModalSave}
                 disabled={effectiveDateWarning?.type === "block"}
               >
                 {editingRate ? "Update Rate" : "Save Rate"}
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors"
-                style={{ fontWeight: 500, backgroundColor: "#F1F5F9", color: "#334155" }}
-                onClick={() => setModalOpen(false)}
-              >
-                Cancel
               </Button>
             </div>
           )}

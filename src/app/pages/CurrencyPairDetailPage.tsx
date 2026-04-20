@@ -130,31 +130,27 @@ const WIDGET_TOOLTIPS: Record<string, string> = {
   cumulative_return: "Shows the total movement of the mid-market rate since the start of the selected period. Answers: \"how much has this rate moved overall?\"",
   conversion_trend: "Type an amount in the source currency to see what it would have converted to in the base currency on each day. Useful for seeing how timing would have affected a transaction.",
   drawdown_from_peak: "Shows how far the mid-market rate has fallen from its recent high. 0% means it's at a new high; −2% means it's 2% below the highest point in the selected period.",
-  corp_rate_step: "Step chart of your corporate rate over time — one step for every change you've made.",
   transaction_volume: "Bar chart of daily transaction count priced using this corporate rate.",
 };
 
 const ALL_ANALYTICS_WIDGETS: AnalyticsWidgetDef[] = [
   { key: "rate_over_time", label: "Rate Over Time", description: "Mid-Market vs Corporate rate trends", iconName: "TrendingUp", category: "Charts", previewType: "line" },
-  { key: "variance_trend", label: "Variance Trend — Corporate vs Mid-Market", description: "Bar chart of corporate vs mid-market variance (thresholds at ±1% / ±3%)", iconName: "BarChart3", category: "Charts", previewType: "bar" },
+  { key: "variance_trend", label: "Corporate Variance Trend vs Mid-Market", description: "Bar chart of corporate vs mid-market variance (thresholds at ±1% / ±3%)", iconName: "BarChart3", category: "Charts", previewType: "bar" },
   { key: "daily_change", label: "Daily % Change (Mid-Market)", description: "Area chart of daily percentage changes in the mid-market rate", iconName: "Activity", category: "Charts", previewType: "area" },
   { key: "cumulative_return", label: "Cumulative Return (Mid-Market)", description: "Area chart of cumulative return over time", iconName: "TrendingUp", category: "Charts", previewType: "area" },
   { key: "conversion_trend", label: "Conversion Trend (What-If)", description: "What-if conversion with amount input and summary", iconName: "DollarSign", category: "Charts", previewType: "line" },
   { key: "drawdown_from_peak", label: "Drawdown from Peak (Mid-Market)", description: "Downward red area chart from all-time high", iconName: "TrendingDown", category: "Charts", previewType: "area-red" },
-  { key: "corp_rate_step", label: "Corporate Rate Change History", description: "Step chart of your corporate rate only", iconName: "Star", category: "Charts", previewType: "line" },
-  { key: "transaction_volume", label: "Transaction Volume in this Pair", description: "Daily transaction count using this corporate rate", iconName: "BarChart3", category: "Charts", previewType: "bar" },
-  { key: "rate_history", label: "Rate History", description: "Table of historical rate values", iconName: "FileText", category: "Tables" },
+  { key: "transaction_volume", label: "Corporate Rate Transaction Volume", description: "Daily transaction count using this corporate rate", iconName: "BarChart3", category: "Charts", previewType: "bar" },
 ];
 
-// Widgets allowed per mode. Corporate view excludes mid-only market behaviour charts
-// (daily change, cumulative return, drawdown) and excludes audit log because audit
-// is rendered as a fixed section below the charts.
-const MID_WIDGET_KEYS = ["rate_over_time", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "variance_trend", "rate_history"];
-// Corporate mode keeps Rate History locked-visible as a dedicated section, so it
-// does not appear in the Customize Widgets list.
-const STD_WIDGET_KEYS = ["rate_over_time", "variance_trend", "corp_rate_step", "transaction_volume", "conversion_trend"];
+// Widgets allowed per mode. Mid-Market view keeps Rate History locked-visible as a
+// dedicated section below the charts, so it is NOT exposed in Customize Widgets.
+const MID_WIDGET_KEYS = ["rate_over_time", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "variance_trend"];
+// Corporate mode: Rate History is a locked-visible section. The legacy
+// "Corporate Rate Change History" step chart duplicated the table, so it's removed.
+const STD_WIDGET_KEYS = ["rate_over_time", "variance_trend", "transaction_volume", "conversion_trend"];
 
-const DEFAULT_MID_WIDGETS = ["rate_over_time", "daily_change", "rate_history"];
+const DEFAULT_MID_WIDGETS = ["rate_over_time", "daily_change"];
 const DEFAULT_STD_WIDGETS = ["rate_over_time", "variance_trend"];
 
 // ── KPI definitions ──
@@ -172,12 +168,11 @@ const ALL_KPI_DEFS: ExKpiDef[] = [
   { key: "range_high_low", label: "Mid-Market High / Low", category: "Analytics", iconName: "BarChart3", iconBg: "#FFF7ED", iconColor: "#EA580C", tooltip: "Highest and lowest mid-market rates within the selected range." },
   { key: "range_volatility", label: "Mid-Market Volatility", category: "Analytics", iconName: "Zap", iconBg: "#FEF2F2", iconColor: "#DC2626", tooltip: "Standard deviation of daily rate changes within the selected range.\n\nLow: < 0.3% — Stable pair.\nModerate: 0.3–0.8% — Normal movement.\nHigh: > 0.8% — Elevated risk." },
   { key: "range_avg_rate", label: "Mid-Market Average Rate", category: "Analytics", iconName: "Target", iconBg: "#F0FDF4", iconColor: "#16A34A", tooltip: "Average mid-market rate within the selected range." },
-  { key: "transactions_30d", label: "Mid-Market Transactions (30d)", category: "Operational", iconName: "FileText", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Number of transactions using this currency pair in the last 30 days." },
   // Corporate-specific KPIs
   { key: "variance", label: "Corporate Variance vs Mid-Market", category: "Rates", iconName: "Target", iconBg: "#FFFBEB", iconColor: "#D97706" },
   { key: "days_since_update", label: "Days Since Corporate Rate Last Updated", category: "Operational", iconName: "Calendar", iconBg: "#EDF4FF", iconColor: "#0A77FF" },
   { key: "corp_transactions_30d", label: "Corporate Rate Transactions (30d)", category: "Operational", iconName: "FileText", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Transactions priced using the corporate rate in the last 30 days." },
-  { key: "fx_exposure_30d", label: "FX Exposure (30d)", category: "Operational", iconName: "Globe", iconBg: "#F0FDF4", iconColor: "#16A34A", tooltip: "Total transaction value booked in this currency pair over the last 30 days, expressed in the base currency." },
+  { key: "fx_exposure_30d", label: "FX Exposure (30d)", category: "Operational", iconName: "Globe", iconBg: "#F0FDF4", iconColor: "#16A34A", tooltip: "Total absolute value of all transactions denominated in this currency pair over the last 30 days, expressed in the base currency." },
   { key: "max_variance_30d", label: "Max Corporate Variance (30d)", category: "Analytics", iconName: "TrendingUp", iconBg: "#FEF2F2", iconColor: "#DC2626" },
   { key: "avg_variance_30d", label: "Average Corporate Variance (30d)", category: "Analytics", iconName: "Target", iconBg: "#FFFBEB", iconColor: "#D97706" },
   { key: "change_count_30d", label: "Corporate Rate Change Count (30d)", category: "Operational", iconName: "Activity", iconBg: "#F5F3FF", iconColor: "#7C3AED" },
@@ -186,11 +181,12 @@ const ALL_KPI_DEFS: ExKpiDef[] = [
 // KPIs relevant per context.
 // Mid-Market no longer exposes the fixed 24h / 7d / 30d change tiles; that role is
 // handled by range_change plus the shared range selector driving every
-// time-based metric in one place.
-const MID_KPI_KEYS = ["current_mid", "range_change", "range_high_low", "range_volatility", "range_avg_rate", "transactions_30d"];
+// time-based metric in one place. FX Exposure replaces the old transaction count
+// tile so the default Mid-Market dashboard shows operational exposure at a glance.
+const MID_KPI_KEYS = ["current_mid", "range_change", "range_high_low", "range_volatility", "range_avg_rate", "fx_exposure_30d"];
 const STD_KPI_KEYS = ["current_std", "variance", "days_since_update", "corp_transactions_30d", "fx_exposure_30d", "max_variance_30d", "avg_variance_30d", "change_count_30d"];
 
-const DEFAULT_MID_KPIS = ["current_mid", "range_change", "range_high_low", "range_volatility", "range_avg_rate"];
+const DEFAULT_MID_KPIS = ["current_mid", "range_change", "range_high_low", "range_volatility", "fx_exposure_30d"];
 const DEFAULT_STD_KPIS = ["current_std", "variance", "days_since_update", "corp_transactions_30d", "fx_exposure_30d"];
 
 interface RangeMetrics {
@@ -255,7 +251,7 @@ function computeKpiValue(key: string, detail: CurrencyPairDetail, rangeMetrics: 
       const exposure = detail.transactions30d * detail.avgRate30d * 1200; // rough value estimation
       return {
         value: `${BASE_CURRENCY} ${exposure.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
-        sublabel: `${detail.transactions30d} transactions`,
+        sublabel: `Across ${detail.transactions30d} documents`,
       };
     }
     case "max_variance_30d": {
@@ -798,10 +794,26 @@ export function CurrencyPairDetailPage() {
     setActiveKpis(prev => { const next = [...prev]; const [moved] = next.splice(fromIndex, 1); next.splice(toIndex, 0, moved); return next; });
   }, []);
 
+  const restoreDashboardDefaults = useCallback(() => {
+    if (rateType === "std") {
+      setActiveKpis([...DEFAULT_STD_KPIS]);
+      setActiveWidgets([...DEFAULT_STD_WIDGETS]);
+    } else {
+      setActiveKpis([...DEFAULT_MID_KPIS]);
+      setActiveWidgets([...DEFAULT_MID_WIDGETS]);
+    }
+  }, [rateType]);
+
   const activeKpiDefs = useMemo(
     () => activeKpis.map(k => ALL_KPI_DEFS.find(d => d.key === k)).filter(Boolean) as ExKpiDef[],
     [activeKpis]
   );
+
+  const hasActiveCharts = useMemo(
+    () => activeWidgets.some(w => ["rate_over_time", "variance_trend", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "transaction_volume"].includes(w)),
+    [activeWidgets]
+  );
+  const dashboardEmpty = activeKpiDefs.length === 0 && !hasActiveCharts;
 
   // Scrolled state for compact header
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -978,9 +990,9 @@ export function CurrencyPairDetailPage() {
                   </div>
                 </div>
 
-                {/* Right: Actions — Edit Rate lives only on the corporate detail page.
+                {/* Right: Actions — Update Rate lives only on the corporate detail page.
                    Mid-market data comes from the API and isn't owned by the company,
-                   so there is no Export/Edit affordance on this page. */}
+                   so there is no Export/Update affordance on this page. */}
                 <div className="flex items-center gap-2 shrink-0">
                   {isStandardDetail && stdRecord && (
                     <button
@@ -989,7 +1001,7 @@ export function CurrencyPairDetailPage() {
                       style={{ fontWeight: 600 }}
                     >
                       <Pencil className={isScrolled ? "w-3 h-3" : "w-3.5 h-3.5"} />
-                      Edit Rate
+                      Update Rate
                     </button>
                   )}
                 </div>
@@ -1127,11 +1139,11 @@ export function CurrencyPairDetailPage() {
           )}
 
           {/* ══ Analytics Widgets (Charts) ══ */}
-          {activeWidgets.some(w => ["rate_over_time", "variance_trend", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "corp_rate_step", "transaction_volume"].includes(w)) && (
+          {activeWidgets.some(w => ["rate_over_time", "variance_trend", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "transaction_volume"].includes(w)) && (
             <div className="space-y-3">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {activeWidgets.includes("rate_over_time") && (
-                  <ContentCard title="Rate Over Time — Mid-Market vs Corporate" icon={TrendingUp} tooltipText={WIDGET_TOOLTIPS.rate_over_time}>
+                  <ContentCard title={isStandardDetail ? "Corporate Rate Over Time vs Mid-Market" : "Rate Over Time — Mid-Market vs Corporate"} icon={TrendingUp} tooltipText={WIDGET_TOOLTIPS.rate_over_time}>
                     <div style={{ height: 250 }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={chartData}>
@@ -1149,7 +1161,7 @@ export function CurrencyPairDetailPage() {
                 )}
 
                 {activeWidgets.includes("variance_trend") && detail.currentStdRate && (
-                  <ContentCard title="Variance Trend — Corporate vs Mid-Market" icon={BarChart3} tooltipText={WIDGET_TOOLTIPS.variance_trend}>
+                  <ContentCard title="Corporate Variance Trend vs Mid-Market" icon={BarChart3} tooltipText={WIDGET_TOOLTIPS.variance_trend}>
                     <div style={{ height: 250 }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={varianceData}>
@@ -1284,24 +1296,8 @@ export function CurrencyPairDetailPage() {
                   </ContentCard>
                 )}
 
-                {activeWidgets.includes("corp_rate_step") && detail.currentStdRate && (
-                  <ContentCard title="Corporate Rate Change History" icon={Star} tooltipText={WIDGET_TOOLTIPS.corp_rate_step}>
-                    <div style={{ height: 250 }} className="-ml-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
-                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} domain={["auto", "auto"]} />
-                          <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} />
-                          <Line type="stepAfter" dataKey="std" name="Corporate Rate" stroke="#D97706" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </ContentCard>
-                )}
-
                 {activeWidgets.includes("transaction_volume") && (
-                  <ContentCard title="Transaction Volume in this Pair" icon={BarChart3} tooltipText={WIDGET_TOOLTIPS.transaction_volume}>
+                  <ContentCard title={isStandardDetail ? "Corporate Rate Transaction Volume" : "Transaction Volume in this Pair"} icon={BarChart3} tooltipText={WIDGET_TOOLTIPS.transaction_volume}>
                     <div style={{ height: 250 }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={transactionVolumeData}>
@@ -1321,9 +1317,10 @@ export function CurrencyPairDetailPage() {
 
 
           {/* ══ Rate History ══
-             Corporate view: always visible, rendered after the charts.
-             Mid-Market view: rendered only when the widget is active (user can hide via Customize Widgets). */}
-          {(isStandardDetail || activeWidgets.includes("rate_history")) && (
+             Always visible on both Mid-Market and Corporate detail pages.
+             It is never a customisable widget — removing all KPIs and charts
+             collapses the dashboard into an empty-state card below, but
+             Rate History stays put. */}
           <div>
             <h2 className="text-[15px] mb-3" style={{ fontWeight: 600 }}>Rate History</h2>
             <div className="rounded-xl border border-[#E2E8F0] bg-white overflow-clip shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
@@ -1364,6 +1361,26 @@ export function CurrencyPairDetailPage() {
               </Table>
             </div>
           </div>
+
+          {/* ══ Dashboard empty state ══
+             Shown only when the user has cleared every KPI and chart. Rate
+             History renders above this card so the page is never fully blank. */}
+          {dashboardEmpty && (
+            <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-white flex flex-col items-center text-center px-6 py-12">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: "#F1F5F9" }}>
+                <BarChart3 className="w-6 h-6" style={{ color: "#94A3B8" }} />
+              </div>
+              <h3 className="text-[15px]" style={{ fontWeight: 600, color: "#0F172A" }}>Your dashboard is empty</h3>
+              <p className="text-[13px] text-[#64748B] mt-1 max-w-[320px]">Add widgets to monitor item performance</p>
+              <button
+                onClick={restoreDashboardDefaults}
+                className="mt-4 inline-flex items-center gap-1.5 h-9 px-4 rounded-lg bg-[#0A77FF] hover:bg-[#0862D0] text-white text-[13px] shadow-sm transition-colors cursor-pointer"
+                style={{ fontWeight: 600 }}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Restore Defaults
+              </button>
+            </div>
           )}
 
           {/* ══ Audit Log — always visible and expanded on the corporate detail page ══ */}
@@ -1434,7 +1451,7 @@ export function CurrencyPairDetailPage() {
               Update Rate
             </span>
             <DialogTitle className="mt-3 text-[18px] tracking-[-0.02em]" style={{ fontWeight: 600, color: "#0F172A" }}>
-              Edit Corporate Rate — {code}
+              Update Corporate Rate — {code}
             </DialogTitle>
             <DialogDescription className="text-[13px] mt-1.5 max-w-[320px] mx-auto" style={{ color: "#475569", lineHeight: "1.65" }}>
               Update the corporate rate for {code} / {BASE_CURRENCY}.
@@ -1466,7 +1483,7 @@ export function CurrencyPairDetailPage() {
             )}
 
             <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5">Corporate Rate *</Label>
+              <Label className="text-[12px] text-muted-foreground mb-1.5">Corporate Exchange Rate *</Label>
               <Input
                 type="number"
                 step="0.0001"
