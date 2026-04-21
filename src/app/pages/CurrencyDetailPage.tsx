@@ -8,6 +8,7 @@ import { countOpenDocuments, countInUse, hasOpenDocuments, type Currency } from 
 import {
   CONVERTER_SUBTITLE,
   CONVERTER_TOGGLE_TOOLTIPS,
+  INVERSE_BADGE_TOOLTIP,
   RATE_TOOLTIPS,
 } from "../utils/rateCopy";
 import {
@@ -664,8 +665,8 @@ function CurrencyConverter({ detailCurrency, compact = false }: ConverterProps) 
                   Inverse rate
                 </span>
               </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">
-                {RATE_TOOLTIPS.inverse}
+              <TooltipContent side="top" className="max-w-[320px] text-[11.5px]">
+                {INVERSE_BADGE_TOOLTIP}
               </TooltipContent>
             </Tooltip>
           )}
@@ -1168,7 +1169,7 @@ export function CurrencyDetailPage() {
             </div>
           </div>
 
-          {/* Live Exchange Rate Converter */}
+          {/* Live Exchange Rate Converter — section below Currency Information */}
           <CurrencyConverter detailCurrency={currency} />
 
           {/* In Use Section */}

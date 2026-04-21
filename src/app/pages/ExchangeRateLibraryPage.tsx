@@ -12,7 +12,7 @@ import {
 } from "../data/exchangeRates";
 import { ColumnSelector, ColumnSelectorTrigger, type ColumnConfig } from "../components/vendors/ColumnSelector";
 import { getFlagUrl, getCountryName } from "../utils/currencyFlags";
-import { EXPLANATORY_BLOCKS, RATE_TOOLTIPS } from "../utils/rateCopy";
+import { EXPLANATORY_BLOCKS, INVERSE_BADGE_TOOLTIP, RATE_TOOLTIPS } from "../utils/rateCopy";
 import {
   ExchangeRateFiltersModal,
   DEFAULT_EXCHANGE_RATE_FILTERS,
@@ -897,21 +897,6 @@ export function ExchangeRateLibraryPage() {
               >
                 <Cloud className="w-4 h-4" />
                 Mid-Market Rates
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        className="inline-flex"
-                        onClick={e => { e.stopPropagation(); }}
-                      >
-                        <Info className="w-3 h-3 text-muted-foreground/60 cursor-help" />
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[280px] text-[11.5px]">
-                      {RATE_TOOLTIPS.midMarket}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
                 <span className={`ml-1 min-w-[20px] h-5 rounded-full text-[11px] flex items-center justify-center px-1.5 ${
                   activeTab === "mid-market" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                 }`} style={{ fontWeight: 600 }}>
@@ -930,21 +915,6 @@ export function ExchangeRateLibraryPage() {
               >
                 <Star className="w-4 h-4" />
                 Corporate Rates
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        className="inline-flex"
-                        onClick={e => { e.stopPropagation(); }}
-                      >
-                        <Info className="w-3 h-3 text-muted-foreground/60 cursor-help" />
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[280px] text-[11.5px]">
-                      {RATE_TOOLTIPS.corporate}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
                 <span className={`ml-1 min-w-[20px] h-5 rounded-full text-[11px] flex items-center justify-center px-1.5 ${
                   activeTab === "standard" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                 }`} style={{ fontWeight: 600 }}>
@@ -977,23 +947,10 @@ export function ExchangeRateLibraryPage() {
                 <Star className="w-4 h-4" style={{ color: "#D97706" }} />
               )}
             </div>
-            <div className="min-w-0 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-[12px] leading-snug">
-              <div>
-                <span className="text-[#0F172A]" style={{ fontWeight: 600 }}>What this is: </span>
-                <span className="text-[#475569]">
-                  {activeTab === "mid-market"
-                    ? EXPLANATORY_BLOCKS.midMarket.whatThisIs
-                    : EXPLANATORY_BLOCKS.corporate.whatThisIs}
-                </span>
-              </div>
-              <div>
-                <span className="text-[#0F172A]" style={{ fontWeight: 600 }}>When it's used: </span>
-                <span className="text-[#475569]">
-                  {activeTab === "mid-market"
-                    ? EXPLANATORY_BLOCKS.midMarket.whenItsUsed
-                    : EXPLANATORY_BLOCKS.corporate.whenItsUsed}
-                </span>
-              </div>
+            <div className="min-w-0 text-[12px] leading-snug text-[#475569]">
+              {activeTab === "mid-market"
+                ? EXPLANATORY_BLOCKS.midMarket
+                : EXPLANATORY_BLOCKS.corporate}
             </div>
           </div>
 
@@ -1336,6 +1293,8 @@ export function ExchangeRateLibraryPage() {
                                       ? RATE_TOOLTIPS.sourceCurrency
                                       : key === "change24h"
                                       ? RATE_TOOLTIPS.change24h
+                                      : key === "variance"
+                                      ? RATE_TOOLTIPS.variance
                                       : key === "effectiveDate"
                                       ? RATE_TOOLTIPS.effectiveDate
                                       : null;
@@ -1561,14 +1520,24 @@ export function ExchangeRateLibraryPage() {
                                   </div>
                                 </div>
                                 {isInverted && (
-                                  <div className="pl-10 mt-2">
-                                    <span
-                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF]"
-                                      style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
-                                    >
-                                      <ArrowLeftRight className="w-2.5 h-2.5" />
-                                      Inverse rate
-                                    </span>
+                                  <div className="pl-10 mt-2" onClick={e => e.stopPropagation()}>
+                                    <TooltipProvider delayDuration={200}>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF] cursor-help"
+                                            style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+                                            tabIndex={0}
+                                          >
+                                            <ArrowLeftRight className="w-2.5 h-2.5" />
+                                            Inverse rate
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="max-w-[320px] text-[11.5px]">
+                                          {INVERSE_BADGE_TOOLTIP}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
                                   </div>
                                 )}
                               </TableCell>
@@ -1785,14 +1754,24 @@ export function ExchangeRateLibraryPage() {
                                   </div>
                                 </div>
                                 {isInverted && (
-                                  <div className="pl-16 mt-2">
-                                    <span
-                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF]"
-                                      style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
-                                    >
-                                      <ArrowLeftRight className="w-2.5 h-2.5" />
-                                      Inverse rate
-                                    </span>
+                                  <div className="pl-16 mt-2" onClick={e => e.stopPropagation()}>
+                                    <TooltipProvider delayDuration={200}>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF] cursor-help"
+                                            style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+                                            tabIndex={0}
+                                          >
+                                            <ArrowLeftRight className="w-2.5 h-2.5" />
+                                            Inverse rate
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="max-w-[320px] text-[11.5px]">
+                                          {INVERSE_BADGE_TOOLTIP}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
                                   </div>
                                 )}
                               </TableCell>
@@ -1889,7 +1868,17 @@ export function ExchangeRateLibraryPage() {
           </div>
           <div className="px-5 py-4 space-y-3.5 max-h-[56vh] overflow-y-auto">
             <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5">Base Currency</Label>
+              <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
+                Base Currency
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.baseCurrency}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </Label>
               <div className="h-9 px-3 rounded-md border border-border bg-muted/30 flex items-center text-[13px]">
                 <span style={{ fontWeight: 600 }}>{BASE_CURRENCY}</span>
                 <span className="ml-1.5 text-muted-foreground">— {BASE_CURRENCY_NAME}</span>
@@ -1897,7 +1886,17 @@ export function ExchangeRateLibraryPage() {
             </div>
 
             <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5">Source Currency *</Label>
+              <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
+                Source Currency *
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.sourceCurrency}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </Label>
               {editingRate ? (
                 <div className="h-9 px-3 rounded-md border border-border bg-muted/30 flex items-center text-[13px]">
                   <span style={{ fontWeight: 600 }}>{modalForm.sourceCurrency}</span>
@@ -1946,7 +1945,17 @@ export function ExchangeRateLibraryPage() {
 
             {midRef && !existingRateForSelected && (
               <div className="rounded-lg border border-border bg-muted/20 p-3">
-                <p className="text-[11px] text-muted-foreground mb-1" style={{ fontWeight: 500 }}>Mid-Market Reference</p>
+                <p className="text-[11px] text-muted-foreground mb-1 inline-flex items-center gap-1" style={{ fontWeight: 500 }}>
+                  Mid-Market Reference
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.midMarket}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </p>
                 <p className="text-[15px] tabular-nums" style={{ fontWeight: 700 }}>{midRef.rate.toFixed(4)}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">As of {format(new Date(midRef.effectiveDate), "dd MMM yyyy")}</p>
               </div>
@@ -1955,7 +1964,17 @@ export function ExchangeRateLibraryPage() {
             {!existingRateForSelected && (
               <>
                 <div>
-                  <Label className="text-[12px] text-muted-foreground mb-1.5">Corporate Exchange Rate *</Label>
+                  <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
+                    Corporate Exchange Rate *
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.corporate}</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </Label>
                   <Input
                     type="number"
                     step="0.0001"
@@ -1972,7 +1991,17 @@ export function ExchangeRateLibraryPage() {
                 </div>
 
                 <div>
-                  <Label className="text-[12px] text-muted-foreground mb-1.5">Effective Date *</Label>
+                  <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
+                    Effective Date *
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.effectiveDate}</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </Label>
                   <Input
                     type="date"
                     value={modalForm.effectiveDate}

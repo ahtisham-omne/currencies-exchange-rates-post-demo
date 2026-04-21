@@ -5,25 +5,33 @@
 import { API_PROVIDER } from "../data/exchangeRates";
 
 export const RATE_TOOLTIPS = {
-  midMarket:
-    "The live exchange rate sourced from your configured rate provider. Auto-synced every 24 hours and used as the default rate across documents.",
-  corporate:
-    "A fixed exchange rate manually set by your team for a specific currency pair. Overrides the mid-market rate wherever it applies and only changes when someone on your team updates it.",
-  inverse:
-    "The reverse of the displayed exchange rate — what one unit of the target currency is worth in the source currency. For example, if 1 USD = 278.52 PKR, the inverse rate is 1 PKR = 0.003590 USD.",
-  baseCurrency:
-    "The currency your books are kept in. Every exchange rate is expressed relative to this currency.",
   sourceCurrency:
-    "The foreign currency being priced against your base currency.",
+    "The currency being valued. Each row shows how much one unit of this currency is worth in the base currency.",
+  baseCurrency:
+    "The reference currency configured for your company. All exchange rates in the system are expressed relative to this currency.",
+  midMarket:
+    "The live interbank rate sourced from your configured rate provider. Represents the midpoint between the global buy and sell prices of the source currency against the base currency.",
+  corporate:
+    "A fixed exchange rate manually set by your team for this currency pair.",
+  inverse:
+    "How much one unit of the base currency buys in the source currency. The mathematical inverse of the exchange rate.",
   change24h:
-    "Percentage change in the mid-market rate over the last 24 hours.",
+    "The percentage change in the mid-market exchange rate over the last 24 hours, compared against the previous day's synced value.",
+  variance:
+    "The percentage difference between the corporate rate and the current mid-market rate. Indicates how far the corporate rate has drifted from live market value.",
   effectiveDate:
-    "The date this rate becomes (or became) the active rate for new transactions.",
+    "The date the current corporate rate took effect. The rate remains active until manually updated by a team member.",
   totalValueAllDocs:
     "Sum of every active document booked in this currency, expressed in the currency's own units.",
   documentTypeTotal:
     "Sum of all active documents of this type, in this currency.",
 } as const;
+
+// Longer, example-driven tooltip used specifically on the "Inverse rate" badge
+// that appears below the converter when the user swaps direction. Shorter
+// column-header copy lives in RATE_TOOLTIPS.inverse.
+export const INVERSE_BADGE_TOOLTIP =
+  "The inverse rate shows how much 1 unit of the base currency buys in the source currency. For example, if 1 AED equals 75.84 PKR, the inverse rate is 1 PKR equals 0.013186 AED.";
 
 export const CONVERTER_SUBTITLE =
   "See how this currency converts against your base currency or any other active currency. Switch between mid-market and corporate rates to compare.";
@@ -36,15 +44,7 @@ export const CONVERTER_TOGGLE_TOOLTIPS = {
 } as const;
 
 export const EXPLANATORY_BLOCKS = {
-  midMarket: {
-    whatThisIs: `Live market rates sourced from ${API_PROVIDER}, auto-synced every 24 hours.`,
-    whenItsUsed:
-      "Default rate across all documents unless a corporate rate is set for the specific pair.",
-  },
-  corporate: {
-    whatThisIs:
-      "Fixed rates manually defined by your team for specific currency pairs.",
-    whenItsUsed:
-      "Overrides the mid-market rate wherever it exists. Useful for contracts, internal reporting, or agreed pricing with partners.",
-  },
+  midMarket: `Live interbank rates sourced from ${API_PROVIDER} and synced automatically every 24 hours. The mid-market rate represents the midpoint between the global buy and sell prices of a currency pair. It contains no markup, spread, or margin, making it the most accurate and unbiased reference value available for any currency.`,
+  corporate:
+    "Fixed rates manually set by your team for specific currency pairs. A corporate rate stays in effect until someone on your team updates it, giving you a stable and predictable value for budgeting, intercompany transfers, and consistent reporting across documents — independent of daily market movement.",
 } as const;

@@ -11,7 +11,8 @@ import {
   SEED_MID_MARKET_RATES,
   type CurrencyPairDetail,
 } from "../data/exchangeRates";
-import { getFlagUrl } from "../utils/currencyFlags";
+import { getFlagUrl, getCountryName } from "../utils/currencyFlags";
+import { INVERSE_BADGE_TOOLTIP, RATE_TOOLTIPS } from "../utils/rateCopy";
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -707,6 +708,10 @@ export function CurrencyPairDetailPage() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ standardRate: "", effectiveDate: "", notes: "" });
 
+  // Header pair-converter — same widget that appears in the Exchange Rate
+  // Library expanded row, lifted into the right side of the detail header.
+  const [headerInverted, setHeaderInverted] = useState(false);
+
   const detail = useMemo(() => {
     if (!code) return null;
     return generatePairDetail(code);
@@ -990,10 +995,88 @@ export function CurrencyPairDetailPage() {
                   </div>
                 </div>
 
-                {/* Right: Actions — Update Rate lives only on the corporate detail page.
-                   Mid-market data comes from the API and isn't owned by the company,
-                   so there is no Export/Update affordance on this page. */}
-                <div className="flex items-center gap-2 shrink-0">
+                {/* Right: Live pair converter + Actions. The converter mirrors
+                   the expanded-row widget on the Exchange Rate Library and is
+                   hidden when the header collapses on scroll to keep the
+                   sticky bar lean. Update Rate stays on corporate detail only. */}
+                <div className="flex items-center gap-3 shrink-0">
+                  {!isScrolled && (() => {
+                    const headerRate = isStandardDetail
+                      ? (stdRecord?.standardRate ?? null)
+                      : (midRecord?.rate ?? null);
+                    if (headerRate === null) return null;
+                    const sourceFlag = getFlagUrl(detail.sourceCurrency);
+                    const baseFlag = getFlagUrl(BASE_CURRENCY);
+                    const fromAmount = headerInverted ? 1 / headerRate : 1;
+                    const toAmount = headerInverted ? 1 : headerRate;
+                    const fmt = (n: number, dp: number) =>
+                      n.toFixed(dp).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+                    return (
+                      <div className="flex items-center gap-2">
+                        {/* From card */}
+                        <div className="flex items-center gap-2 bg-white rounded-lg border border-[#E2E8F0] pl-2.5 pr-2 py-1.5 min-w-[200px] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                          {sourceFlag && (
+                            <img src={sourceFlag} alt={detail.sourceCurrency} className="w-6 h-[16px] rounded-[2px] object-cover shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11.5px] truncate" style={{ fontWeight: 600 }}>
+                              {detail.sourceCurrency}{" "}
+                              <span className="text-[#64748B]" style={{ fontWeight: 400 }}>{detail.sourceCurrencyName}</span>
+                            </p>
+                            <p className="text-[10px] text-[#94A3B8] truncate">{getCountryName(detail.sourceCurrency)}</p>
+                          </div>
+                          <div className="border-l border-[#E2E8F0] pl-2 ml-1">
+                            <p key={headerInverted ? "inv-from" : "std-from"} className="text-[12.5px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>
+                              {fmt(fromAmount, headerInverted ? 6 : 0)}
+                            </p>
+                          </div>
+                        </div>
+                        {/* Swap button — accent fill when inverse view is active.
+                           When inverted, hovering reveals the inverse-rate
+                           explanation that previously lived on the pill below. */}
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => setHeaderInverted(v => !v)}
+                                aria-pressed={headerInverted}
+                                aria-label={headerInverted ? "Restore default direction" : "Swap direction"}
+                                className={`flex items-center justify-center w-7 h-7 rounded-full shrink-0 transition-colors cursor-pointer ${
+                                  headerInverted
+                                    ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
+                                    : "bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]"
+                                }`}
+                              >
+                                <ArrowLeftRight className="w-3 h-3" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-[320px] text-[11.5px]">
+                              {headerInverted ? INVERSE_BADGE_TOOLTIP : "Swap direction"}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        {/* To card */}
+                        <div className="flex items-center gap-2 bg-white rounded-lg border border-[#E2E8F0] pl-2.5 pr-2 py-1.5 min-w-[200px] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                          {baseFlag && (
+                            <img src={baseFlag} alt={BASE_CURRENCY} className="w-6 h-[16px] rounded-[2px] object-cover shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11.5px] truncate" style={{ fontWeight: 600 }}>
+                              {BASE_CURRENCY}{" "}
+                              <span className="text-[#64748B]" style={{ fontWeight: 400 }}>{BASE_CURRENCY_NAME}</span>
+                            </p>
+                            <p className="text-[10px] text-[#94A3B8] truncate">{getCountryName(BASE_CURRENCY)}</p>
+                          </div>
+                          <div className="border-l border-[#E2E8F0] pl-2 ml-1">
+                            <p key={headerInverted ? "inv-to" : "std-to"} className="text-[12.5px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>
+                              {fmt(toAmount, headerInverted ? 0 : 4)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {isStandardDetail && stdRecord && (
                     <button
                       onClick={openEditModal}
@@ -1353,10 +1436,36 @@ export function CurrencyPairDetailPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-[#F8FAFC] hover:bg-[#F8FAFC]">
-                    <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Effective Date</span></TableHead>
+                    <TableHead>
+                      <span className="inline-flex items-center gap-1 text-[12px]" style={{ fontWeight: 600 }}>
+                        Effective Date
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.effectiveDate}</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </span>
+                    </TableHead>
                     <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Rate Type</span></TableHead>
                     <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Rate Value</span></TableHead>
-                    {isStandardDetail && <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Variance vs Mid</span></TableHead>}
+                    {isStandardDetail && (
+                      <TableHead>
+                        <span className="inline-flex items-center gap-1 text-[12px]" style={{ fontWeight: 600 }}>
+                          Variance vs Mid
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.variance}</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </span>
+                      </TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1464,7 +1573,17 @@ export function CurrencyPairDetailPage() {
           </div>
           <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto bg-white">
             <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5">Base Currency</Label>
+              <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
+                Base Currency
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.baseCurrency}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </Label>
               <div className="h-9 px-3 rounded-md border border-border bg-muted/30 flex items-center text-[13px]">
                 <span style={{ fontWeight: 600 }}>{BASE_CURRENCY}</span>
                 <span className="ml-1.5 text-muted-foreground">— {BASE_CURRENCY_NAME}</span>
@@ -1472,7 +1591,17 @@ export function CurrencyPairDetailPage() {
             </div>
 
             <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5">Source Currency</Label>
+              <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
+                Source Currency
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.sourceCurrency}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </Label>
               <div className="h-9 px-3 rounded-md border border-border bg-muted/30 flex items-center text-[13px]">
                 <span style={{ fontWeight: 600 }}>{code}</span>
                 <span className="ml-1.5 text-muted-foreground">— {detail.sourceCurrencyName}</span>
@@ -1481,14 +1610,34 @@ export function CurrencyPairDetailPage() {
 
             {midRecord && (
               <div className="rounded-lg border border-border bg-muted/20 p-3">
-                <p className="text-[11px] text-muted-foreground mb-1" style={{ fontWeight: 500 }}>Mid-Market Reference</p>
+                <p className="text-[11px] text-muted-foreground mb-1 inline-flex items-center gap-1" style={{ fontWeight: 500 }}>
+                  Mid-Market Reference
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.midMarket}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </p>
                 <p className="text-[15px] tabular-nums" style={{ fontWeight: 700 }}>{midRecord.rate.toFixed(4)}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">As of {format(new Date(midRecord.effectiveDate), "dd MMM yyyy")}</p>
               </div>
             )}
 
             <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5">Corporate Exchange Rate *</Label>
+              <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
+                Corporate Exchange Rate *
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.corporate}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </Label>
               <Input
                 type="number"
                 step="0.0001"
@@ -1505,7 +1654,17 @@ export function CurrencyPairDetailPage() {
             </div>
 
             <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5">Effective Date *</Label>
+              <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
+                Effective Date *
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.effectiveDate}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </Label>
               <Input
                 type="date"
                 value={editForm.effectiveDate}
