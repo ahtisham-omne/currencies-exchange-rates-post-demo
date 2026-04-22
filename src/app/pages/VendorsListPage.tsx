@@ -134,8 +134,22 @@ import {
 import { CreatePartnerModal } from "../components/vendors/CreatePartnerModal";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
-import type { PartnerType } from "../data/vendors";
+import type { PartnerType, Vendor } from "../data/vendors";
 import { CATEGORY_LABELS } from "../data/vendors";
+import { CurrencyAmount } from "../components/ui/CurrencyAmount";
+import { CurrencyFlag } from "../components/ui/CurrencyFlag";
+import { InfoTooltip } from "../components/ui/info-tooltip";
+import { BASE_CURRENCY, convertToBase, getLibraryCurrency } from "../data/currencyLibrary";
+
+/**
+ * Net profit for a vendor in their own default transaction currency.
+ * The seeded `netProfitMargin` field doubles as the partner-currency profit
+ * amount for mock purposes — keeps the data model unchanged while letting
+ * the listing display and sort it as a real currency value.
+ */
+function netProfitOf(vendor: Vendor): number {
+  return vendor.netProfitMargin ?? 0;
+}
 
 const DND_LIST_KPI = "LIST_KPI_CARD";
 
@@ -174,9 +188,9 @@ const COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align
   { key: "partner_locations", label: "Partner Locations", minWidth: "260px", sortable: true },
   { key: "global_contacts", label: "Points of Contact", minWidth: "280px" },
   { key: "partner_group", label: "Partner Group", minWidth: "150px" },
-  { key: "net_profit", label: "Net Profit ($)", minWidth: "150px", sortable: true, align: "right" },
-  { key: "credit_limit", label: "Credit Limit ($)", minWidth: "160px", sortable: true, align: "right" },
-  { key: "credit_utilization", label: "Credit Util. ($)", minWidth: "160px", sortable: true, align: "right" },
+  { key: "net_profit", label: "Net Profit", minWidth: "150px", sortable: true, align: "right" },
+  { key: "credit_limit", label: "Credit Limit", minWidth: "160px", sortable: true, align: "right" },
+  { key: "credit_utilization", label: "Credit Utilization", minWidth: "180px", sortable: true, align: "right" },
   { key: "services", label: "Services", minWidth: "200px" },
   { key: "carrier_vendor", label: "Carrier (Vendor)", minWidth: "240px" },
   { key: "carrier_customer", label: "Carrier (Customer)", minWidth: "240px" },
@@ -841,9 +855,9 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
           case "partner_type": aVal = (a.partnerTypes || []).join(","); bVal = (b.partnerTypes || []).join(","); break;
           case "num_items": aVal = (a.itemCodes || []).length; bVal = (b.itemCodes || []).length; break;
           case "partner_locations": aVal = (a.partnerLocations || []).length; bVal = (b.partnerLocations || []).length; break;
-          case "net_profit": aVal = a.netProfitMargin ?? 0; bVal = b.netProfitMargin ?? 0; break;
-          case "credit_limit": aVal = a.creditLimit ?? 0; bVal = b.creditLimit ?? 0; break;
-          case "credit_utilization": aVal = a.creditUtilization ?? 0; bVal = b.creditUtilization ?? 0; break;
+          case "net_profit": aVal = convertToBase(netProfitOf(a), a.defaultTransactionCurrency); bVal = convertToBase(netProfitOf(b), b.defaultTransactionCurrency); break;
+          case "credit_limit": aVal = convertToBase(a.creditLimit ?? 0, a.defaultTransactionCurrency); bVal = convertToBase(b.creditLimit ?? 0, b.defaultTransactionCurrency); break;
+          case "credit_utilization": aVal = convertToBase(a.creditUtilization ?? 0, a.defaultTransactionCurrency); bVal = convertToBase(b.creditUtilization ?? 0, b.defaultTransactionCurrency); break;
           case "created_on": aVal = new Date(a.createdAt).getTime(); bVal = new Date(b.createdAt).getTime(); break;
           default: aVal = (a as any)[key] || ""; bVal = (b as any)[key] || "";
         }
@@ -1264,47 +1278,94 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
             {/* KPI Cards — draggable responsive grid */}
             <DndProvider backend={HTML5Backend}>
               <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
-                {activeKpiDefs.map((kpi, idx) => {
-                  const value = computeKpiValue(kpi.key, vendors);
-                  // Populate rich tooltip breakdowns with live data (only for complex KPIs)
-                  const tooltipData = KPI_TOOLTIP_DATA[kpi.key];
-                  if (tooltipData) {
-                    const totalCredit = vendors.reduce((s, v) => s + (v.creditLimit || 0), 0);
-                    const totalUtil = vendors.reduce((s, v) => s + (v.creditUtilization || 0), 0);
-                    const totalOutstanding = vendors.reduce((s, v) => s + (v.outstandingBalance || 0), 0);
-                    const fmt = (n: number) => n >= 1_000_000 ? `$${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n/1_000).toFixed(0)}K` : `$${n.toFixed(0)}`;
-                    if (kpi.key === "total_credit_utilization") {
-                      tooltipData.breakdown = [
-                        { label: "Total Credit Limit", value: fmt(totalCredit) },
-                        { label: "Currently Utilized", value: fmt(totalUtil) },
-                        { label: "Available Credit", value: fmt(totalCredit - totalUtil), isResult: true },
-                      ];
-                    } else if (kpi.key === "total_outstanding") {
-                      const pending = Math.round(totalOutstanding * 0.55);
-                      const overdue = Math.round(totalOutstanding * 0.30);
-                      const scheduled = totalOutstanding - pending - overdue;
-                      tooltipData.breakdown = [
-                        { label: "Pending Invoices", value: fmt(pending) },
-                        { label: "Overdue Payments", value: fmt(overdue) },
-                        { label: "Scheduled Payments", value: fmt(scheduled) },
-                        { label: "Total Outstanding", value: fmt(totalOutstanding), isResult: true },
-                      ];
-                    }
+                {(() => {
+                  // Per-currency partner counts for the aggregated-base hover.
+                  const breakdownMap = new Map<string, number>();
+                  for (const v of vendors) {
+                    const code = (v.defaultTransactionCurrency || BASE_CURRENCY).toUpperCase();
+                    breakdownMap.set(code, (breakdownMap.get(code) ?? 0) + 1);
                   }
-                  return (
-                    <DraggableListKpiCard
-                      key={kpi.key}
-                      index={idx}
-                      kpiKey={kpi.key}
-                      label={kpi.label}
-                      value={value}
-                      iconName={kpi.iconName}
-                      tooltip={kpi.tooltip}
-                      moveCard={moveKpi}
-                      onRemove={() => handleToggleKpi(kpi.key)}
+                  const partnerBreakdown = Array.from(breakdownMap, ([code, partnerCount]) => ({ code, partnerCount }));
+                  const sumInBase = (pick: (v: Vendor) => number) =>
+                    vendors.reduce((s, v) => s + convertToBase(pick(v) || 0, v.defaultTransactionCurrency), 0);
+
+                  const CURRENCY_KPI_KEYS = new Set([
+                    "total_credit_limit",
+                    "avg_credit_limit",
+                    "total_credit_utilization",
+                    "total_outstanding",
+                    "total_spent",
+                    "avg_net_profit",
+                  ]);
+                  const aggregatedBase = (total: number): React.ReactNode => (
+                    <CurrencyAmount
+                      mode="aggregated-base"
+                      value={total}
+                      currency={BASE_CURRENCY}
+                      partnerBreakdown={partnerBreakdown}
                     />
                   );
-                })}
+                  const currencyValueFor = (key: string): React.ReactNode | null => {
+                    switch (key) {
+                      case "total_credit_limit": return aggregatedBase(sumInBase((v) => v.creditLimit));
+                      case "avg_credit_limit": return aggregatedBase(vendors.length > 0 ? sumInBase((v) => v.creditLimit) / vendors.length : 0);
+                      case "total_credit_utilization": return aggregatedBase(sumInBase((v) => v.creditUtilization));
+                      case "total_outstanding": return aggregatedBase(sumInBase((v) => v.outstandingBalance));
+                      case "total_spent": return aggregatedBase(sumInBase((v) => v.totalSpent));
+                      case "avg_net_profit": return aggregatedBase(vendors.length > 0 ? sumInBase((v) => v.netProfitMargin ?? 0) / vendors.length : 0);
+                      default: return null;
+                    }
+                  };
+                  const baseNote = `Shown in base currency (${BASE_CURRENCY}). Individual partner amounts may be in different currencies — converted at transaction-date exchange rate.`;
+
+                  return activeKpiDefs.map((kpi, idx) => {
+                    const isCurrencyKpi = CURRENCY_KPI_KEYS.has(kpi.key);
+                    const value: React.ReactNode = isCurrencyKpi
+                      ? currencyValueFor(kpi.key) ?? computeKpiValue(kpi.key, vendors)
+                      : computeKpiValue(kpi.key, vendors);
+                    // Populate rich tooltip breakdowns with live data (only for complex KPIs).
+                    const tooltipData = KPI_TOOLTIP_DATA[kpi.key];
+                    if (tooltipData) {
+                      const totalCredit = sumInBase((v) => v.creditLimit);
+                      const totalUtil = sumInBase((v) => v.creditUtilization);
+                      const totalOutstanding = sumInBase((v) => v.outstandingBalance);
+                      const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
+                      const fmt = (n: number) => n >= 1_000_000 ? `${baseSym} ${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${baseSym} ${(n/1_000).toFixed(0)}K` : `${baseSym} ${n.toFixed(0)}`;
+                      if (kpi.key === "total_credit_utilization") {
+                        tooltipData.breakdown = [
+                          { label: "Total Credit Limit", value: fmt(totalCredit) },
+                          { label: "Currently Utilized", value: fmt(totalUtil) },
+                          { label: "Available Credit", value: fmt(totalCredit - totalUtil), isResult: true },
+                        ];
+                      } else if (kpi.key === "total_outstanding") {
+                        const pending = Math.round(totalOutstanding * 0.55);
+                        const overdue = Math.round(totalOutstanding * 0.30);
+                        const scheduled = totalOutstanding - pending - overdue;
+                        tooltipData.breakdown = [
+                          { label: "Pending Invoices", value: fmt(pending) },
+                          { label: "Overdue Payments", value: fmt(overdue) },
+                          { label: "Scheduled Payments", value: fmt(scheduled) },
+                          { label: "Total Outstanding", value: fmt(totalOutstanding), isResult: true },
+                        ];
+                      }
+                    }
+                    // Currency KPIs without a rich tooltip get the base-currency note via the simple tooltip.
+                    const tooltip = isCurrencyKpi && !tooltipData ? baseNote : kpi.tooltip;
+                    return (
+                      <DraggableListKpiCard
+                        key={kpi.key}
+                        index={idx}
+                        kpiKey={kpi.key}
+                        label={kpi.label}
+                        value={value}
+                        iconName={kpi.iconName}
+                        tooltip={tooltip}
+                        moveCard={moveKpi}
+                        onRemove={() => handleToggleKpi(kpi.key)}
+                      />
+                    );
+                  });
+                })()}
               </div>
             </DndProvider>
           </div>
@@ -1661,7 +1722,13 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                               <div className="flex justify-between">
                                 <span>Credit Limit</span>
                                 <span className="text-foreground" style={{ fontWeight: 500 }}>
-                                  $ {formatCurrency(vendor.creditLimit)}
+                                  <CurrencyAmount
+                                    mode="listing-base"
+                                    value={convertToBase(vendor.creditLimit ?? 0, vendor.defaultTransactionCurrency)}
+                                    currency={BASE_CURRENCY}
+                                    partnerDefaultCurrency={vendor.defaultTransactionCurrency}
+                                    partnerDefaultValue={vendor.creditLimit ?? 0}
+                                  />
                                 </span>
                               </div>
                               <div className="flex justify-between">
@@ -1833,13 +1900,28 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                           const isRelaxed = density === "comfort";
                           const renderCell = (colKey: string) => {
                             switch (colKey) {
-                              case "partner_name":
+                              case "partner_name": {
+                                const partnerCur = getLibraryCurrency(vendor.defaultTransactionCurrency);
                                 return (
                                   <TableCell key={colKey}>
                                     <div className={`flex items-center ${isRelaxed ? "gap-3" : "gap-2.5"}`}>
                                       <LogoAvatar logoUrl={icon.logoUrl} initials={icon.initials} bg={icon.bg} size={isRelaxed ? "lg" : "md"} />
                                       <div className="min-w-0 flex-1">
-                                        <span className={`${isRelaxed ? "text-[13.5px]" : "text-sm"} block truncate`} style={{ fontWeight: 500, color: '#1E293B' }}>{highlightText(vendor.displayName)}</span>
+                                        <div className="flex items-center gap-1.5">
+                                          {partnerCur && (
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <span className="shrink-0 inline-flex items-center cursor-help">
+                                                  <CurrencyFlag currency={partnerCur} size={14} />
+                                                </span>
+                                              </TooltipTrigger>
+                                              <TooltipContent side="top">
+                                                Default transaction currency: {partnerCur.name} ({partnerCur.code})
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          )}
+                                          <span className={`${isRelaxed ? "text-[13.5px]" : "text-sm"} block truncate`} style={{ fontWeight: 500, color: '#1E293B' }}>{highlightText(vendor.displayName)}</span>
+                                        </div>
                                         {isRelaxed && vendor.emailAddress && (
                                           <span className="text-xs text-muted-foreground/60 truncate block">{vendor.emailAddress}</span>
                                         )}
@@ -1847,6 +1929,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                     </div>
                                   </TableCell>
                                 );
+                              }
                               case "partner_type":
                                 return (
                                   <TableCell key={colKey}>
@@ -2217,11 +2300,47 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                               case "partner_group":
                                 return (<TableCell key={colKey}><span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>{vendor.partnerGroup}</span></TableCell>);
                               case "net_profit":
-                                return (<TableCell key={colKey} className="text-right tabular-nums"><span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>{(vendor.netProfitMargin ?? 0).toFixed(2)}</span></TableCell>);
+                                return (
+                                  <TableCell key={colKey} className="text-right tabular-nums">
+                                    <span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>
+                                      <CurrencyAmount
+                                        mode="listing-base"
+                                        value={convertToBase(netProfitOf(vendor), vendor.defaultTransactionCurrency)}
+                                        currency={BASE_CURRENCY}
+                                        partnerDefaultCurrency={vendor.defaultTransactionCurrency}
+                                        partnerDefaultValue={netProfitOf(vendor)}
+                                      />
+                                    </span>
+                                  </TableCell>
+                                );
                               case "credit_limit":
-                                return (<TableCell key={colKey} className="text-right tabular-nums"><span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>$ {formatCurrency(vendor.creditLimit)}</span></TableCell>);
+                                return (
+                                  <TableCell key={colKey} className="text-right tabular-nums">
+                                    <span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>
+                                      <CurrencyAmount
+                                        mode="listing-base"
+                                        value={convertToBase(vendor.creditLimit ?? 0, vendor.defaultTransactionCurrency)}
+                                        currency={BASE_CURRENCY}
+                                        partnerDefaultCurrency={vendor.defaultTransactionCurrency}
+                                        partnerDefaultValue={vendor.creditLimit ?? 0}
+                                      />
+                                    </span>
+                                  </TableCell>
+                                );
                               case "credit_utilization":
-                                return (<TableCell key={colKey} className="text-right tabular-nums"><span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>{formatCurrency(vendor.creditUtilization)}</span></TableCell>);
+                                return (
+                                  <TableCell key={colKey} className="text-right tabular-nums">
+                                    <span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>
+                                      <CurrencyAmount
+                                        mode="listing-base"
+                                        value={convertToBase(vendor.creditUtilization ?? 0, vendor.defaultTransactionCurrency)}
+                                        currency={BASE_CURRENCY}
+                                        partnerDefaultCurrency={vendor.defaultTransactionCurrency}
+                                        partnerDefaultValue={vendor.creditUtilization ?? 0}
+                                      />
+                                    </span>
+                                  </TableCell>
+                                );
                               case "services":
                                 return (
                                   <TableCell key={colKey}>
@@ -2978,11 +3097,13 @@ interface KpiTooltipData {
   formula: string;
 }
 
+const BASE_CURRENCY_NOTE = `Shown in base currency (${BASE_CURRENCY}). Individual partner amounts may be in different currencies — converted at transaction-date exchange rate.`;
+
 // Only complex/calculated KPIs get the rich tooltip — simple counts use plain tooltips
 const KPI_TOOLTIP_DATA: Record<string, KpiTooltipData> = {
   total_credit_utilization: {
     title: "CREDIT UTILIZATION",
-    description: "Sum of all credit currently being used across the partner portfolio. High utilization relative to the total limit indicates elevated financial risk.",
+    description: `Sum of all credit currently being used across the partner portfolio. High utilization relative to the total limit indicates elevated financial risk. ${BASE_CURRENCY_NOTE}`,
     breakdown: [
       { label: "Total Credit Limit", value: "—" },
       { label: "Currently Utilized", value: "—" },
@@ -2992,7 +3113,7 @@ const KPI_TOOLTIP_DATA: Record<string, KpiTooltipData> = {
   },
   total_outstanding: {
     title: "OUTSTANDING BALANCE",
-    description: "Total unpaid amount across all partners. Includes pending invoices, overdue payments, and scheduled disbursements.",
+    description: `Total unpaid amount across all partners. Includes pending invoices, overdue payments, and scheduled disbursements. ${BASE_CURRENCY_NOTE}`,
     breakdown: [
       { label: "Pending Invoices", value: "—" },
       { label: "Overdue Payments", value: "—" },
@@ -3002,13 +3123,13 @@ const KPI_TOOLTIP_DATA: Record<string, KpiTooltipData> = {
     formula: "Outstanding = Pending + Overdue + Scheduled",
   },
   avg_net_profit: {
-    title: "AVERAGE NET MARGIN",
-    description: "Average net profit margin calculated across all partner transactions. Factors in revenue, cost of goods, and operational expenses.",
+    title: "AVERAGE NET PROFIT",
+    description: `Average net profit per partner across the portfolio. ${BASE_CURRENCY_NOTE}`,
     breakdown: [
       { label: "Gross Revenue", value: "—" },
       { label: "Cost of Goods", value: "—" },
       { label: "Operational Costs", value: "—" },
-      { label: "Net Margin", value: "—", isResult: true },
+      { label: "Net Profit", value: "—", isResult: true },
     ],
     formula: "Margin = (Revenue – COGS – Costs) ÷ Revenue × 100",
   },
@@ -3130,7 +3251,7 @@ function CarrierIcon({ carrier, large }: { carrier: string; large?: boolean }) {
 
 /* ── Draggable KPI Card for partner listing page ── */
 function DraggableListKpiCard({ index, kpiKey, label, value, iconName, tooltip, moveCard, onRemove }: {
-  index: number; kpiKey: string; label: string; value: string; iconName?: string; tooltip?: string;
+  index: number; kpiKey: string; label: string; value: React.ReactNode; iconName?: string; tooltip?: string;
   moveCard: (from: number, to: number) => void; onRemove?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);

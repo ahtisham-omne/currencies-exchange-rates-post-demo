@@ -189,3 +189,107 @@ export function flagUrlFor(country: string | null): string | null {
   if (!country) return null;
   return `https://flagcdn.com/w40/${country}.png`;
 }
+
+/**
+ * Company-wide base currency used for cross-partner aggregations and
+ * comparable values in the listing table.
+ */
+export const BASE_CURRENCY = "PKR";
+
+/**
+ * Mock mid-market rates expressed in BASE_CURRENCY per 1 unit of foreign
+ * currency. Covers every currency referenced from seeded vendor countries
+ * and the most active majors. Unknown codes fall through unconverted.
+ */
+export const EXCHANGE_RATES: Record<string, number> = {
+  PKR: 1,
+  USD: 278,
+  EUR: 305,
+  GBP: 355,
+  JPY: 1.85,
+  CHF: 320,
+  CAD: 205,
+  AUD: 182,
+  CNY: 39,
+  INR: 3.35,
+  KRW: 0.21,
+  SGD: 207,
+  HKD: 35.6,
+  TWD: 8.7,
+  THB: 7.8,
+  MYR: 62,
+  IDR: 0.017,
+  PHP: 4.9,
+  VND: 0.011,
+  NZD: 168,
+  BDT: 2.5,
+  LKR: 0.92,
+  MXN: 14.2,
+  BRL: 55,
+  ARS: 0.29,
+  CLP: 0.29,
+  COP: 0.068,
+  PEN: 74.3,
+  SEK: 26.5,
+  NOK: 26.1,
+  DKK: 40.9,
+  PLN: 70.3,
+  CZK: 12.2,
+  HUF: 0.78,
+  RON: 61.4,
+  BGN: 156,
+  TRY: 8.6,
+  RUB: 2.9,
+  UAH: 6.8,
+  ISK: 2.0,
+  AED: 75.7,
+  SAR: 74.1,
+  QAR: 76.4,
+  KWD: 905,
+  BHD: 738,
+  OMR: 722,
+  JOD: 392,
+  ILS: 75.2,
+  EGP: 5.7,
+  ZAR: 15.1,
+  NGN: 0.19,
+  KES: 2.15,
+  KZT: 0.58,
+  GEL: 103,
+  RSD: 2.6,
+};
+
+/** Convert any amount from `fromCode` to base currency. */
+export function convertToBase(value: number, fromCode: string | undefined | null): number {
+  if (!fromCode) return value;
+  const rate = EXCHANGE_RATES[fromCode.toUpperCase()];
+  if (rate === undefined) return value;
+  return value * rate;
+}
+
+/** Map ISO 3166 country names from `partnerConstants.COUNTRY_CURRENCY_MAP` to ISO 4217 fallbacks. */
+export function inferDefaultCurrency(country: string | undefined | null): string {
+  if (!country) return BASE_CURRENCY;
+  const lookup: Record<string, string> = {
+    USA: "USD", "United States": "USD",
+    UK: "GBP", "United Kingdom": "GBP",
+    Germany: "EUR", France: "EUR", Italy: "EUR", Spain: "EUR", Netherlands: "EUR",
+    Belgium: "EUR", Austria: "EUR", Ireland: "EUR", Portugal: "EUR", Greece: "EUR",
+    Finland: "EUR", Estonia: "EUR", Slovenia: "EUR",
+    Japan: "JPY", Switzerland: "CHF", Canada: "CAD", Australia: "AUD",
+    China: "CNY", India: "INR", "South Korea": "KRW", Singapore: "SGD",
+    Taiwan: "TWD", Thailand: "THB", Malaysia: "MYR", Indonesia: "IDR",
+    Philippines: "PHP", Vietnam: "VND", "New Zealand": "NZD",
+    Pakistan: "PKR", Bangladesh: "BDT", "Sri Lanka": "LKR",
+    Mexico: "MXN", Brazil: "BRL", Argentina: "ARS", Chile: "CLP", Colombia: "COP", Peru: "PEN",
+    Sweden: "SEK", Norway: "NOK", Denmark: "DKK", Poland: "PLN", "Czech Republic": "CZK",
+    Hungary: "HUF", Romania: "RON", Bulgaria: "BGN",
+    Russia: "RUB", Ukraine: "UAH", Iceland: "ISK", Turkey: "TRY", Serbia: "RSD",
+    UAE: "AED", "Saudi Arabia": "SAR", Qatar: "QAR", Kuwait: "KWD", Bahrain: "BHD",
+    Oman: "OMR", Jordan: "JOD", Israel: "ILS", Egypt: "EGP",
+    "South Africa": "ZAR", Nigeria: "NGN", Kenya: "KES",
+    Kazakhstan: "KZT", Georgia: "GEL", Armenia: "AMD",
+  };
+  return lookup[country] ?? BASE_CURRENCY;
+}
+

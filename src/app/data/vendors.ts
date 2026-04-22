@@ -1,3 +1,5 @@
+import { inferDefaultCurrency } from "./currencyLibrary";
+
 export type VendorStatus = "active" | "inactive" | "archived";
 export type PartnerType = "vendor" | "customer";
 export type VendorCategory =
@@ -150,6 +152,8 @@ export interface Vendor {
   outstandingBalance: number;
   totalOrders: number;
   totalSpent: number;
+  /** ISO 4217 alpha-3 (uppercase). Pre-populates the currency on every transaction with this partner. */
+  defaultTransactionCurrency: string;
   rating: number;
   website: string;
   notes: string;
@@ -255,6 +259,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 2000,
     totalOrders: 156,
     totalSpent: 1245000,
+    defaultTransactionCurrency: "USD",
     rating: 4.8,
     website: "toyota.inter.com",
     notes: "Major automotive partner. Preferred vendor for vehicle parts and equipment.",
@@ -315,6 +320,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 3410,
     totalOrders: 289,
     totalSpent: 890000,
+    defaultTransactionCurrency: "CNY",
     rating: 4.5,
     website: "fordmotorcompany.com",
     notes: "Primary logistics and shipping partner.",
@@ -378,6 +384,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 3410,
     totalOrders: 98,
     totalSpent: 2500000,
+    defaultTransactionCurrency: "MXN",
     rating: 4.2,
     website: "toyota.inter.com",
     notes: "Major automotive customer. Large volume orders.",
@@ -449,6 +456,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 3000,
     totalOrders: 67,
     totalSpent: 1850000,
+    defaultTransactionCurrency: "MYR",
     rating: 4.7,
     website: "toyota.inter.com",
     notes: "EV technology partner. Battery and powertrain components.",
@@ -509,6 +517,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 20000,
     totalOrders: 42,
     totalSpent: 980000,
+    defaultTransactionCurrency: "EUR",
     rating: 4.1,
     website: "toyota.inter.com",
     notes: "Stellantis group partner. Supplies automotive parts.",
@@ -567,6 +576,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 5000,
     totalOrders: 34,
     totalSpent: 456000,
+    defaultTransactionCurrency: "EUR",
     rating: 4.3,
     website: "toyota.inter.com",
     notes: "EV manufacturer customer. Growing partnership.",
@@ -633,6 +643,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 10000,
     totalOrders: 56,
     totalSpent: 780000,
+    defaultTransactionCurrency: "EUR",
     rating: 4.4,
     website: "toyota.inter.com",
     notes: "Luxury EV partner. Premium vehicle components supplier.",
@@ -711,6 +722,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 8000,
     totalOrders: 312,
     totalSpent: 1560000,
+    defaultTransactionCurrency: "LKR",
     rating: 4.6,
     website: "toyota.inter.com",
     notes: "Primary express shipping carrier. Priority delivery services.",
@@ -784,6 +796,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 5000,
     totalOrders: 87,
     totalSpent: 920000,
+    defaultTransactionCurrency: "RUB",
     rating: 4.0,
     website: "toyota.inter.com",
     notes: "Automotive manufacturer partner. Parts and components.",
@@ -852,6 +865,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 5000,
     totalOrders: 78,
     totalSpent: 1340000,
+    defaultTransactionCurrency: "GEL",
     rating: 4.5,
     website: "toyota.inter.com",
     notes: "Premium automotive brand customer. High-value components.",
@@ -905,6 +919,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 3410,
     totalOrders: 134,
     totalSpent: 2100000,
+    defaultTransactionCurrency: "USD",
     rating: 4.3,
     website: "toyota.inter.com",
     notes: "Toyota's China division. Major manufacturing partner.",
@@ -956,6 +971,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 8000,
     totalOrders: 203,
     totalSpent: 3200000,
+    defaultTransactionCurrency: "RSD",
     rating: 4.7,
     website: "toyota.inter.com",
     notes: "Both vendor and customer. Major automotive conglomerate.",
@@ -1012,6 +1028,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 3410,
     totalOrders: 145,
     totalSpent: 2800000,
+    defaultTransactionCurrency: "USD",
     rating: 4.4,
     website: "toyota.inter.com",
     notes: "GM vendor division. Supplies automotive components.",
@@ -1074,6 +1091,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 20000,
     totalOrders: 89,
     totalSpent: 1950000,
+    defaultTransactionCurrency: "SGD",
     rating: 4.6,
     website: "toyota.inter.com",
     notes: "Tesla customer division. Major EV manufacturer.",
@@ -1127,6 +1145,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 8000,
     totalOrders: 76,
     totalSpent: 1100000,
+    defaultTransactionCurrency: "USD",
     rating: 4.2,
     website: "toyota.inter.com",
     notes: "Stellantis group vendor. Multi-service provider.",
@@ -1192,6 +1211,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 10000,
     totalOrders: 56,
     totalSpent: 670000,
+    defaultTransactionCurrency: "USD",
     rating: 4.1,
     website: "toyota.inter.com",
     notes: "Rivian vendor division. Carrier services.",
@@ -1265,6 +1285,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 8000,
     totalOrders: 43,
     totalSpent: 520000,
+    defaultTransactionCurrency: "USD",
     rating: 4.0,
     website: "toyota.inter.com",
     notes: "Lucid Motors in-store vendor. Retail operations.",
@@ -1329,6 +1350,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 20000,
     totalOrders: 167,
     totalSpent: 2450000,
+    defaultTransactionCurrency: "USD",
     rating: 4.8,
     website: "toyota.inter.com",
     notes: "Honda USA division. Comprehensive automotive partnership.",
@@ -1395,6 +1417,7 @@ const _manualVendors: Vendor[] = [
     outstandingBalance: 3410,
     totalOrders: 92,
     totalSpent: 870000,
+    defaultTransactionCurrency: "AUD",
     rating: 4.2,
     website: "toyota.inter.com",
     notes: "Nissan vendor. Automotive parts and assembly components.",
@@ -1632,6 +1655,7 @@ function generateAdditionalVendors(): Vendor[] {
       outstandingBalance: creditUtil,
       totalOrders: Math.floor(rand() * 300) + 10,
       totalSpent: Math.floor(rand() * 5000000) + 100000,
+      defaultTransactionCurrency: inferDefaultCurrency(co.country),
       rating: Math.round((3.5 + rand() * 1.5) * 10) / 10,
       website: co.website,
       notes: `${co.name} partner. Key automotive industry supplier.`,
