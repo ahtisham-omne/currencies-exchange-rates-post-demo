@@ -45,8 +45,11 @@ import { OverflowTooltip } from "../components/vendors/OverflowTooltip";
 import { CurrencyAmount } from "../components/ui/CurrencyAmount";
 import { CurrencyFlag } from "../components/ui/CurrencyFlag";
 import {
+  BASE_CURRENCY,
+  convertToBase,
   getLibraryCurrency,
   renderPartnerAmount,
+  renderProfileAmount,
   shortAxisFormatter,
 } from "../data/currencyLibrary";
 import {
@@ -259,6 +262,15 @@ export function VendorDetailsPage() {
   const [dashActiveWidgets, setDashActiveWidgets] = useState<string[]>(["spend_trend", "order_activity", "spend_by_category", "credit_health", "delivery_perf", "invoice_aging", "primary_contact", "return_rate", "top_items", "recent_orders", "payment_history", "compliance_docs", "notes"]);
   const [dashWidgetSizes, setDashWidgetSizes] = useState<Record<string, "sm" | "md" | "lg">>({});
   const [customizePanelOpen, setCustomizePanelOpen] = useState(false);
+  /**
+   * Currency view for this profile's financial surfaces (KPI bar, charts,
+   * widgets, Financial Summary, Credit Limits).
+   * - "base": values in the company base currency (PKR), hover shows the
+   *   partner's default-currency amount. Default, matches the listing page.
+   * - "partner": values in the partner's default transaction currency;
+   *   multi-currency partners get the rolled-up breakdown on hover.
+   */
+  const [profileCurrencyMode, setProfileCurrencyMode] = useState<"base" | "partner">("base");
   const [lastRefreshed, setLastRefreshed] = useState(() => new Date());
   const [dashDateRange, setDashDateRange] = useState("last_30");
 
@@ -1008,6 +1020,37 @@ export function VendorDetailsPage() {
                     <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
                     Reset
                   </button>
+                  {/* Currency view toggle — base (PKR) vs. partner default */}
+                  <div className="inline-flex items-center gap-0.5 h-8 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setProfileCurrencyMode("base")}
+                      aria-pressed={profileCurrencyMode === "base"}
+                      title="Show amounts in base currency (PKR)"
+                      className={`inline-flex items-center h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                        profileCurrencyMode === "base"
+                          ? "bg-accent text-primary"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      }`}
+                      style={{ fontWeight: profileCurrencyMode === "base" ? 600 : 500 }}
+                    >
+                      Base ({BASE_CURRENCY})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProfileCurrencyMode("partner")}
+                      aria-pressed={profileCurrencyMode === "partner"}
+                      title="Show amounts in the partner's default currency"
+                      className={`inline-flex items-center h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                        profileCurrencyMode === "partner"
+                          ? "bg-accent text-primary"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      }`}
+                      style={{ fontWeight: profileCurrencyMode === "partner" ? 600 : 500 }}
+                    >
+                      Partner default
+                    </button>
+                  </div>
                   <button
                     onClick={() => setCustomizePanelOpen(true)}
                     className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border bg-white hover:bg-slate-50 text-slate-700 text-[12px] shadow-sm transition-all cursor-pointer"
@@ -1024,7 +1067,7 @@ export function VendorDetailsPage() {
                 <DndProvider backend={HTML5Backend}>
                   <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
                     {activeKpiDefs.map((kpi, idx) => {
-                      const computed = computeDashKpiValue(kpi.key, vendor, formatCurrency, formatDate);
+                      const computed = computeDashKpiValue(kpi.key, vendor, formatCurrency, formatDate, profileCurrencyMode);
                       return (
                         <DraggableKpiCard
                           key={kpi.key}
@@ -1094,7 +1137,7 @@ export function VendorDetailsPage() {
             {/* ── LEFT PANEL ── */}
             <div className="flex-1 min-w-0">
               {activeTab === "dashboard" && (
-                <DashboardTab vendor={vendor} cfg={cfg} formatCurrency={formatCurrency} formatDate={formatDate} activeWidgets={dashActiveWidgets} widgetSizes={dashWidgetSizes} onWidgetSizeChange={handleWidgetSizeChange} onRemoveWidget={handleToggleWidget} moveWidget={moveWidget} />
+                <DashboardTab vendor={vendor} cfg={cfg} formatCurrency={formatCurrency} formatDate={formatDate} activeWidgets={dashActiveWidgets} widgetSizes={dashWidgetSizes} onWidgetSizeChange={handleWidgetSizeChange} onRemoveWidget={handleToggleWidget} moveWidget={moveWidget} currencyMode={profileCurrencyMode} />
               )}
               {activeTab === "partner_locations" && (
                 <PartnerLocationsTab vendor={vendor} cfg={cfg} formatDate={formatDate} initialLocationIdx={initialLocationIdx} onInitialLocationConsumed={() => {
@@ -1166,7 +1209,7 @@ export function VendorDetailsPage() {
               <SidebarCard title="QUICK STATS">
                 <div className="grid grid-cols-2 gap-2.5">
                   <StatBox label="Total Orders" value={String(vendor.totalOrders)} icon={ShoppingCart} />
-                  <StatBox label="Total Spent" value={<CurrencyAmount {...renderPartnerAmount(vendor, vendor.totalSpent)} />} icon={TrendingUp} />
+                  <StatBox label="Total Spent" value={<CurrencyAmount {...renderProfileAmount(vendor, vendor.totalSpent, profileCurrencyMode)} />} icon={TrendingUp} />
                   <StatBox label="Rating" value={vendor.rating > 0 ? `${vendor.rating}/5` : "N/A"} icon={Star} color="#F59E0B" />
                   <StatBox label="Credit Used" value={`${creditUtilization}%`} icon={DollarSign} color={creditUtilization > 80 ? "hsl(var(--destructive))" : creditUtilization > 50 ? "hsl(var(--warning))" : "hsl(var(--success))"} />
                 </div>
@@ -1290,6 +1333,7 @@ export function VendorDetailsPage() {
           vendor={vendor}
           formatCurrency={formatCurrency}
           formatDate={formatDate}
+          currencyMode={profileCurrencyMode}
         />
       )}
 
@@ -2085,11 +2129,12 @@ function computeDashKpiValue(
   vendor: Vendor,
   _formatCurrency: (v: number) => string,
   formatDate: (d: string) => string,
+  currencyMode: "base" | "partner" = "base",
 ): { value: React.ReactNode; change?: string; changeColor?: string } {
   const creditPct = vendor.creditLimit > 0
     ? Math.round((vendor.creditUtilization / vendor.creditLimit) * 100)
     : 0;
-  const money = (v: number) => <CurrencyAmount {...renderPartnerAmount(vendor, v)} />;
+  const money = (v: number) => <CurrencyAmount {...renderProfileAmount(vendor, v, currencyMode)} />;
   switch (key) {
     case "total_orders": return { value: String(vendor.totalOrders) };
     case "total_spent": return { value: money(vendor.totalSpent) };
@@ -2275,7 +2320,7 @@ function PartnerWidgetVisual({ type, isActive }: { type: PartnerWidgetVisualType
 }
 
 // ----- Dashboard Customize Widget Panel -----
-function DashboardCustomizePanel({ open, onOpenChange, activeKpis, onToggleKpi, activeWidgets, onToggleWidget, widgetSizes, onWidgetSizeChange, vendor, formatCurrency, formatDate }: {
+function DashboardCustomizePanel({ open, onOpenChange, activeKpis, onToggleKpi, activeWidgets, onToggleWidget, widgetSizes, onWidgetSizeChange, vendor, formatCurrency, formatDate, currencyMode }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activeKpis: string[];
@@ -2287,6 +2332,7 @@ function DashboardCustomizePanel({ open, onOpenChange, activeKpis, onToggleKpi, 
   vendor: Vendor;
   formatCurrency: (v: number) => string;
   formatDate: (d: string) => string;
+  currencyMode: "base" | "partner";
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [panelTab, setPanelTab] = useState<"kpis" | "widgets">("kpis");
@@ -2457,7 +2503,7 @@ function DashboardCustomizePanel({ open, onOpenChange, activeKpis, onToggleKpi, 
                   <div className="grid grid-cols-2 gap-2">
                     {cat.kpis.map((kpi) => {
                       const isActive = activeKpis.includes(kpi.key);
-                      const computed = computeDashKpiValue(kpi.key, vendor, formatCurrency, formatDate);
+                      const computed = computeDashKpiValue(kpi.key, vendor, formatCurrency, formatDate, currencyMode);
                       return (
                         <button
                           key={kpi.key}
@@ -2569,7 +2615,7 @@ function DashboardCustomizePanel({ open, onOpenChange, activeKpis, onToggleKpi, 
 }
 
 // ----- DASHBOARD TAB (was Overview) -----
-function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, widgetSizes, onWidgetSizeChange, onRemoveWidget, moveWidget }: {
+function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, widgetSizes, onWidgetSizeChange, onRemoveWidget, moveWidget, currencyMode }: {
   vendor: Vendor;
   cfg?: VendorConfigData;
   formatCurrency: (val: number) => string;
@@ -2579,6 +2625,8 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
   onWidgetSizeChange: (key: string, size: "sm" | "md" | "lg") => void;
   onRemoveWidget: (key: string) => void;
   moveWidget: (from: number, to: number) => void;
+  /** "base" (default) shows PKR, "partner" shows the partner's default currency. */
+  currencyMode: "base" | "partner";
 }) {
   const creditPct = getCreditUtilizationPct(vendor);
   const available = vendor.creditLimit - vendor.creditUtilization;
@@ -2646,12 +2694,22 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                 {stats.map((s, i) => (<div key={i}><p className={`${compact ? "text-[9px]" : "text-[10px]"} text-slate-400`} style={{ fontWeight: 500 }}>{s.label}</p><p className={compact ? "text-[11px]" : "text-[13px]"} style={{ fontWeight: 700, color: s.color || "#334155" }}>{s.value}</p></div>))}
               </div>
             );
-            const money = (v: number) => <CurrencyAmount {...renderPartnerAmount(vendor, v)} />;
-            const partnerCurInfo = getLibraryCurrency(vendor.defaultTransactionCurrency);
-            const partnerAxisFormatter = shortAxisFormatter(vendor.defaultTransactionCurrency);
+            // Values flowing through <CurrencyAmount> via renderProfileAmount are
+            // still passed in the partner's default currency — the helper converts
+            // to base when currencyMode === "base" and picks the right display mode.
+            const money = (v: number) => <CurrencyAmount {...renderProfileAmount(vendor, v, currencyMode)} />;
+            const displayCode = currencyMode === "base" ? BASE_CURRENCY : vendor.defaultTransactionCurrency;
+            const partnerCurInfo = getLibraryCurrency(displayCode);
+            const axisInDisplay = shortAxisFormatter(displayCode);
+            // Chart tick + tooltip values come straight from the raw (partner-currency)
+            // data arrays; convert to base in the formatter when the toggle is on so
+            // the axis labels and tooltip match the cells above.
+            const toDisplayValue = (v: number) =>
+              currencyMode === "base" ? convertToBase(v, vendor.defaultTransactionCurrency) : v;
+            const partnerAxisFormatter = (v: number) => axisInDisplay(toDisplayValue(v));
             const chartMoneyFormatter = (val: number): [string, string] => {
-              const sym = partnerCurInfo?.symbol ?? vendor.defaultTransactionCurrency;
-              return [`${sym} ${val.toLocaleString()}`, "Spend"];
+              const sym = partnerCurInfo?.symbol ?? displayCode;
+              return [`${sym} ${toDisplayValue(val).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, "Spend"];
             };
             const ttStyle = { borderRadius: 8, border: "1px solid #E2E8F0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 };
 
@@ -2829,8 +2887,8 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                     <XAxis dataKey="range" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={partnerAxisFormatter} />
                     <ReTooltip contentStyle={ttStyle} formatter={(v: number): [string, string] => {
-                      const sym = partnerCurInfo?.symbol ?? vendor.defaultTransactionCurrency;
-                      return [`${sym} ${v.toLocaleString()}`, "Amount"];
+                      const sym = partnerCurInfo?.symbol ?? displayCode;
+                      return [`${sym} ${toDisplayValue(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, "Amount"];
                     }} />
                     <Bar dataKey="amount" radius={[4, 4, 0, 0]} barSize={sz === "sm" ? 20 : 36}>
                       {[0, 1, 2, 3].map((i) => (<Cell key={i} fill={["hsl(var(--primary))", "#3B82F6", "hsl(var(--warning))", "hsl(var(--destructive))"][i]} />))}
@@ -2980,8 +3038,8 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                     <XAxis dataKey="po" tick={{ fontSize: 9, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `PO-${v}`} />
                     <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={partnerAxisFormatter} />
                     <ReTooltip contentStyle={ttStyle} formatter={(v: number): [string, string] => {
-                      const sym = partnerCurInfo?.symbol ?? vendor.defaultTransactionCurrency;
-                      return [`${sym} ${v.toLocaleString()}`, "Amount"];
+                      const sym = partnerCurInfo?.symbol ?? displayCode;
+                      return [`${sym} ${toDisplayValue(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, "Amount"];
                     }} />
                     <Bar dataKey="amount" radius={[4, 4, 0, 0]} barSize={sz === "sm" ? 16 : 24}>
                       {[0, 1, 2, 3, 4].map((i) => (<Cell key={i} fill={[1, 2, 4].includes(i) ? "hsl(var(--success))" : i === 3 ? "hsl(var(--primary))" : "hsl(var(--warning))"} />))}
@@ -3013,8 +3071,8 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={partnerAxisFormatter} />
                     <ReTooltip contentStyle={ttStyle} formatter={(v: number): [string, string] => {
-                      const sym = partnerCurInfo?.symbol ?? vendor.defaultTransactionCurrency;
-                      return [`${sym} ${v.toLocaleString()}`, ""];
+                      const sym = partnerCurInfo?.symbol ?? displayCode;
+                      return [`${sym} ${toDisplayValue(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, ""];
                     }} />
                     <Area type="monotone" dataKey="paid" stroke="hsl(var(--success))" strokeWidth={2} fill="url(#paidGrad)" name="Paid" />
                     <Area type="monotone" dataKey="pending" stroke="hsl(var(--warning))" strokeWidth={1.5} fill="none" strokeDasharray="4 4" name="Pending" />
@@ -3285,13 +3343,13 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
               <div className="min-w-0">
                 <DashInfoLabel tooltip="Total payments received from or on behalf of this partner.">Cash Inflow</DashInfoLabel>
                 <p className="text-[15px] text-success" style={{ fontWeight: 700 }}>
-                  <CurrencyAmount {...renderPartnerAmount(vendor, totalCashIn)} />
+                  <CurrencyAmount {...renderProfileAmount(vendor, totalCashIn, profileCurrencyMode)} />
                 </p>
               </div>
               <div className="min-w-0">
                 <DashInfoLabel tooltip="Total disbursements made to this partner.">Cash Outflow</DashInfoLabel>
                 <p className="text-[15px] text-destructive" style={{ fontWeight: 700 }}>
-                  <CurrencyAmount {...renderPartnerAmount(vendor, totalCashOut)} />
+                  <CurrencyAmount {...renderProfileAmount(vendor, totalCashOut, profileCurrencyMode)} />
                 </p>
               </div>
             </div>
@@ -3313,7 +3371,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
             </div>
             <div className="flex items-baseline gap-2">
               <p className="text-[15px] text-slate-700" style={{ fontWeight: 700 }}>
-                <CurrencyAmount {...renderPartnerAmount(vendor, vendor.outstandingBalance)} />
+                <CurrencyAmount {...renderProfileAmount(vendor, vendor.outstandingBalance, profileCurrencyMode)} />
               </p>
               <button className="text-[11px] text-primary hover:underline cursor-pointer" style={{ fontWeight: 500 }}>Invoice Details</button>
             </div>
@@ -3340,13 +3398,13 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                 </DetailRichTooltip>
               </div>
               <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>
-                <CurrencyAmount {...renderPartnerAmount(vendor, vendor.creditLimit)} />
+                <CurrencyAmount {...renderProfileAmount(vendor, vendor.creditLimit, profileCurrencyMode)} />
               </p>
             </div>
             <div className="min-w-0">
               <DashInfoLabel tooltip="Amount of credit currently in use. Calculated as sum of open orders and pending invoices against the credit limit.">Utilization</DashInfoLabel>
               <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>
-                <CurrencyAmount {...renderPartnerAmount(vendor, vendor.creditUtilization)} />
+                <CurrencyAmount {...renderProfileAmount(vendor, vendor.creditUtilization, profileCurrencyMode)} />
               </p>
             </div>
           </div>

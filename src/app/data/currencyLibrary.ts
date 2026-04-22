@@ -299,6 +299,37 @@ export function renderPartnerAmount(
   };
 }
 
+/**
+ * Build `<CurrencyAmount>` props for the partner profile dashboard. The
+ * dashboard toggles between showing values in the company base currency
+ * (default) and in the partner's default transaction currency — this helper
+ * picks the right mode + value for each case.
+ */
+export function renderProfileAmount(
+  partner: { defaultTransactionCurrency: string; currencyBreakdown?: { code: string; txCount: number; amount: number }[] },
+  /** Amount in the partner's default transaction currency. */
+  value: number,
+  mode: "base" | "partner",
+): {
+  value: number;
+  currency: string;
+  mode: "single" | "partner-rolled-up" | "listing-base";
+  rollupBreakdown?: { code: string; txCount: number; amount: number }[];
+  partnerDefaultCurrency?: string;
+  partnerDefaultValue?: number;
+} {
+  if (mode === "base") {
+    return {
+      mode: "listing-base",
+      value: convertToBase(value, partner.defaultTransactionCurrency),
+      currency: BASE_CURRENCY,
+      partnerDefaultCurrency: partner.defaultTransactionCurrency,
+      partnerDefaultValue: value,
+    };
+  }
+  return renderPartnerAmount(partner, value);
+}
+
 /** Short-form Y-axis tick labels for charts (e.g. `$ 35k`, `¥ 1.2M`). */
 export function shortAxisFormatter(code: string | undefined | null): (value: number) => string {
   const cur = getLibraryCurrency(code) ?? getLibraryCurrency(BASE_CURRENCY)!;
