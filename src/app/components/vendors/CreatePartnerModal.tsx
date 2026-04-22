@@ -4839,7 +4839,14 @@ function ConfigPageContent({
                       )}
                     </div>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[340px] p-0 rounded-xl border border-border shadow-lg z-[250]" align="start" sideOffset={4}>
+                  <PopoverContent
+                    className="w-[340px] p-0 rounded-xl border border-border shadow-lg z-[250] flex flex-col overflow-hidden"
+                    align="start"
+                    sideOffset={4}
+                    style={{ maxHeight: "min(440px, var(--radix-popover-content-available-height))" }}
+                    onWheel={(e) => e.stopPropagation()}
+                    onTouchMove={(e) => e.stopPropagation()}
+                  >
                     <div className="p-3 shrink-0">
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -4852,7 +4859,19 @@ function ConfigPageContent({
                         />
                       </div>
                     </div>
-                    <div className="border-t border-muted" style={{ maxHeight: 340, overflowY: "auto" }}>
+                    <div
+                      className="border-t border-muted flex-1 min-h-0 overflow-y-auto overscroll-contain"
+                      // Radix Dialog's scroll-lock blocks real wheel events on portaled
+                      // popovers; manually translate them into scrollTop changes so the
+                      // currency list still scrolls inside the open Configure dialog.
+                      onWheelCapture={(e) => {
+                        const el = e.currentTarget;
+                        if (el.scrollHeight <= el.clientHeight) return;
+                        el.scrollTop += e.deltaY;
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                    >
                       {currencyFiltered.length === 0 ? (
                         <div className="py-6 text-center text-xs text-slate-400">No currencies match "{currencyPopoverSearch}"</div>
                       ) : (
