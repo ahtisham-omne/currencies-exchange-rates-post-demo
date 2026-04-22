@@ -154,6 +154,12 @@ export interface Vendor {
   totalSpent: number;
   /** ISO 4217 alpha-3 (uppercase). Pre-populates the currency on every transaction with this partner. */
   defaultTransactionCurrency: string;
+  /**
+   * Per-currency transaction streams for multi-currency partners. Optional —
+   * absent or single-entry means the partner is single-currency and amounts
+   * roll up trivially to `defaultTransactionCurrency`.
+   */
+  currencyBreakdown?: { code: string; txCount: number; amount: number }[];
   rating: number;
   website: string;
   notes: string;
@@ -260,6 +266,11 @@ const _manualVendors: Vendor[] = [
     totalOrders: 156,
     totalSpent: 1245000,
     defaultTransactionCurrency: "USD",
+    currencyBreakdown: [
+      { code: "USD", txCount: 96, amount: 800000 },
+      { code: "EUR", txCount: 42, amount: 300000 },
+      { code: "JPY", txCount: 18, amount: 24000000 },
+    ],
     rating: 4.8,
     website: "toyota.inter.com",
     notes: "Major automotive partner. Preferred vendor for vehicle parts and equipment.",
@@ -385,6 +396,11 @@ const _manualVendors: Vendor[] = [
     totalOrders: 98,
     totalSpent: 2500000,
     defaultTransactionCurrency: "MXN",
+    currencyBreakdown: [
+      { code: "MXN", txCount: 64, amount: 1800000 },
+      { code: "USD", txCount: 26, amount: 35000 },
+      { code: "CAD", txCount: 8, amount: 12000 },
+    ],
     rating: 4.2,
     website: "toyota.inter.com",
     notes: "Major automotive customer. Large volume orders.",

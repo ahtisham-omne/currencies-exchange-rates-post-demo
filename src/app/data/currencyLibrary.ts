@@ -267,6 +267,51 @@ export function convertToBase(value: number, fromCode: string | undefined | null
   return value * rate;
 }
 
+/** Convert an amount from one currency to another via the base currency. */
+export function convertBetween(value: number, fromCode: string, toCode: string): number {
+  const inBase = convertToBase(value, fromCode);
+  const toRate = EXCHANGE_RATES[toCode.toUpperCase()];
+  if (!toRate) return inBase;
+  return inBase / toRate;
+}
+
+/**
+ * Build the props for a `<CurrencyAmount>` rendered inside a partner profile.
+ * Picks `single` mode when the partner has no breakdown (or only one currency
+ * stream), and `partner-rolled-up` when there are multiple streams so the
+ * hover reveals the per-currency rollup.
+ */
+export function renderPartnerAmount(
+  partner: { defaultTransactionCurrency: string; currencyBreakdown?: { code: string; txCount: number; amount: number }[] },
+  value: number,
+): {
+  value: number;
+  currency: string;
+  mode: "single" | "partner-rolled-up";
+  rollupBreakdown?: { code: string; txCount: number; amount: number }[];
+} {
+  const isMulti = (partner.currencyBreakdown?.length ?? 0) > 1;
+  return {
+    value,
+    currency: partner.defaultTransactionCurrency,
+    mode: isMulti ? "partner-rolled-up" : "single",
+    rollupBreakdown: isMulti ? partner.currencyBreakdown : undefined,
+  };
+}
+
+/** Short-form Y-axis tick labels for charts (e.g. `$ 35k`, `¥ 1.2M`). */
+export function shortAxisFormatter(code: string | undefined | null): (value: number) => string {
+  const cur = getLibraryCurrency(code) ?? getLibraryCurrency(BASE_CURRENCY)!;
+  const symbol = cur.symbol ?? cur.code;
+  return (value: number) => {
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000_000) return `${symbol} ${(value / 1_000_000_000).toFixed(1)}B`;
+    if (abs >= 1_000_000) return `${symbol} ${(value / 1_000_000).toFixed(1)}M`;
+    if (abs >= 1_000) return `${symbol} ${Math.round(value / 1_000)}k`;
+    return `${symbol} ${Math.round(value)}`;
+  };
+}
+
 /** Map ISO 3166 country names from `partnerConstants.COUNTRY_CURRENCY_MAP` to ISO 4217 fallbacks. */
 export function inferDefaultCurrency(country: string | undefined | null): string {
   if (!country) return BASE_CURRENCY;

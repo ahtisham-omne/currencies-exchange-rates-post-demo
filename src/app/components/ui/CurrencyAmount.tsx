@@ -4,11 +4,22 @@ import { cn } from "./utils";
 import { CurrencyFlag } from "./CurrencyFlag";
 import {
   BASE_CURRENCY,
+  convertBetween,
   getLibraryCurrency,
   type LibraryCurrency,
 } from "@/app/data/currencyLibrary";
 
-export type CurrencyAmountMode = "single" | "listing-base" | "aggregated-base";
+export type CurrencyAmountMode = "single" | "listing-base" | "aggregated-base" | "partner-rolled-up";
+
+/** Per-currency transaction stream for a multi-currency partner. */
+export interface PartnerBreakdownEntry {
+  /** ISO 4217 alpha-3 of the foreign currency. */
+  code: string;
+  /** Number of transactions in this currency. */
+  txCount: number;
+  /** Total amount in this currency. */
+  amount: number;
+}
 
 export interface CurrencyAmountProps {
   /** Numeric value already expressed in `currency`. */
@@ -23,6 +34,8 @@ export interface CurrencyAmountProps {
   partnerDefaultValue?: number;
   /** Required when `mode="aggregated-base"` — per-currency partner counts. */
   partnerBreakdown?: { code: string; partnerCount: number }[];
+  /** Required when `mode="partner-rolled-up"` — per-currency transaction streams. */
+  rollupBreakdown?: PartnerBreakdownEntry[];
   /** Render negative values with a leading minus + space (default true when value < 0). */
   signed?: boolean;
   className?: string;
@@ -95,6 +108,10 @@ function shouldShowHover(props: CurrencyAmountProps): boolean {
   if (props.mode === "single") {
     return props.currency.toUpperCase() !== BASE_CURRENCY;
   }
+  if (props.mode === "partner-rolled-up") {
+    // Always useful — the breakdown is the whole point of this mode.
+    return (props.rollupBreakdown?.length ?? 0) > 1;
+  }
   // aggregated-base always reveals useful breakdown context.
   return true;
 }
@@ -135,6 +152,31 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
         <div className="text-[12px] text-slate-700">
           Partner default: {partnerSymbol} {formatNumber(props.partnerDefaultValue ?? 0, partner.code)} {partner.code}
         </div>
+        <div className="text-[11px] text-slate-400 mt-1.5">At today&apos;s mid-market rate</div>
+      </>
+    );
+  }
+
+  if (props.mode === "partner-rolled-up") {
+    const rows = props.rollupBreakdown ?? [];
+    const partnerSym = c.symbol ?? c.code;
+    return (
+      <>
+        <HeaderLine flag={flag} name={c.name} code={c.code} tail="— rolled up" />
+        <div className="border-t border-slate-100 my-2" />
+        <div className="text-[12px] text-slate-500 mb-1.5">
+          Aggregated across {rows.length} {rows.length === 1 ? "currency" : "currencies"}
+        </div>
+        {rows.map((r) => {
+          const inPartner = convertBetween(r.amount, r.code, c.code);
+          const sameAsPartner = r.code.toUpperCase() === c.code.toUpperCase();
+          return (
+            <div key={r.code} className="text-[12px] text-slate-700 leading-5">
+              {r.code.toUpperCase()} · {r.txCount} transactions · {sameAsPartner ? "" : "≈ "}
+              {partnerSym} {formatNumber(inPartner, c.code)}
+            </div>
+          );
+        })}
         <div className="text-[11px] text-slate-400 mt-1.5">At today&apos;s mid-market rate</div>
       </>
     );

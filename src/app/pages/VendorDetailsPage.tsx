@@ -42,6 +42,13 @@ import {
   type SortConfig,
 } from "../components/vendors/ColumnHeaderMenu";
 import { OverflowTooltip } from "../components/vendors/OverflowTooltip";
+import { CurrencyAmount } from "../components/ui/CurrencyAmount";
+import { CurrencyFlag } from "../components/ui/CurrencyFlag";
+import {
+  getLibraryCurrency,
+  renderPartnerAmount,
+  shortAxisFormatter,
+} from "../data/currencyLibrary";
 import {
   HoverCard,
   HoverCardTrigger,
@@ -1159,7 +1166,7 @@ export function VendorDetailsPage() {
               <SidebarCard title="QUICK STATS">
                 <div className="grid grid-cols-2 gap-2.5">
                   <StatBox label="Total Orders" value={String(vendor.totalOrders)} icon={ShoppingCart} />
-                  <StatBox label="Total Spent" value={formatCurrency(vendor.totalSpent)} icon={TrendingUp} />
+                  <StatBox label="Total Spent" value={<CurrencyAmount {...renderPartnerAmount(vendor, vendor.totalSpent)} />} icon={TrendingUp} />
                   <StatBox label="Rating" value={vendor.rating > 0 ? `${vendor.rating}/5` : "N/A"} icon={Star} color="#F59E0B" />
                   <StatBox label="Credit Used" value={`${creditUtilization}%`} icon={DollarSign} color={creditUtilization > 80 ? "hsl(var(--destructive))" : creditUtilization > 50 ? "hsl(var(--warning))" : "hsl(var(--success))"} />
                 </div>
@@ -1660,7 +1667,7 @@ function SidebarRow({ icon: Icon, label, value, isLink, isAddress }: { icon: Rea
   );
 }
 
-function StatBox({ label, value, icon: Icon, color }: { label: string; value: string; icon: React.ElementType; color?: string }) {
+function StatBox({ label, value, icon: Icon, color }: { label: string; value: React.ReactNode; icon: React.ElementType; color?: string }) {
   return (
     <div className="rounded-lg bg-slate-50 border border-muted p-2.5">
       <div className="flex items-center gap-1.5 mb-1">
@@ -2076,23 +2083,24 @@ const DEFAULT_DASH_KPIS = [
 function computeDashKpiValue(
   key: string,
   vendor: Vendor,
-  formatCurrency: (v: number) => string,
+  _formatCurrency: (v: number) => string,
   formatDate: (d: string) => string,
-): { value: string; change?: string; changeColor?: string } {
+): { value: React.ReactNode; change?: string; changeColor?: string } {
   const creditPct = vendor.creditLimit > 0
     ? Math.round((vendor.creditUtilization / vendor.creditLimit) * 100)
     : 0;
+  const money = (v: number) => <CurrencyAmount {...renderPartnerAmount(vendor, v)} />;
   switch (key) {
     case "total_orders": return { value: String(vendor.totalOrders) };
-    case "total_spent": return { value: formatCurrency(vendor.totalSpent) };
-    case "outstanding": return { value: formatCurrency(vendor.outstandingBalance) };
+    case "total_spent": return { value: money(vendor.totalSpent) };
+    case "outstanding": return { value: money(vendor.outstandingBalance) };
     case "avg_order_value": return {
-      value: formatCurrency(vendor.totalOrders > 0 ? vendor.totalSpent / vendor.totalOrders : 0),
-      change: "↘ $240", changeColor: "#EF4444",
+      value: money(vendor.totalOrders > 0 ? vendor.totalSpent / vendor.totalOrders : 0),
+      change: "↘ 240", changeColor: "#EF4444",
     };
     case "days_payable": return { value: "23 Days" };
     case "net_margin": return { value: `${(vendor.netProfitMargin ?? 0).toFixed(2)}%` };
-    case "credit_limit": return { value: formatCurrency(vendor.creditLimit) };
+    case "credit_limit": return { value: money(vendor.creditLimit) };
     case "last_order_date": return { value: formatDate(vendor.updatedAt) };
     case "payment_status": return { value: "—" };
     case "credit_utilization": return { value: `${creditPct}%`, change: "↗ 3.7%", changeColor: "hsl(var(--success))" };
@@ -2633,11 +2641,18 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
             const chartBox = (h: number, chart: React.ReactNode) => (
               <div style={{ height: h }} className="-ml-2"><ResponsiveContainer width="100%" height="100%">{chart as any}</ResponsiveContainer></div>
             );
-            const statRow = (stats: { label: string; value: string; color?: string }[], compact?: boolean) => (
+            const statRow = (stats: { label: string; value: React.ReactNode; color?: string }[], compact?: boolean) => (
               <div className={`flex items-center ${compact ? "gap-3 mt-1.5 pt-1.5" : "gap-4 mt-2 pt-2"} border-t border-muted`}>
                 {stats.map((s, i) => (<div key={i}><p className={`${compact ? "text-[9px]" : "text-[10px]"} text-slate-400`} style={{ fontWeight: 500 }}>{s.label}</p><p className={compact ? "text-[11px]" : "text-[13px]"} style={{ fontWeight: 700, color: s.color || "#334155" }}>{s.value}</p></div>))}
               </div>
             );
+            const money = (v: number) => <CurrencyAmount {...renderPartnerAmount(vendor, v)} />;
+            const partnerCurInfo = getLibraryCurrency(vendor.defaultTransactionCurrency);
+            const partnerAxisFormatter = shortAxisFormatter(vendor.defaultTransactionCurrency);
+            const chartMoneyFormatter = (val: number): [string, string] => {
+              const sym = partnerCurInfo?.symbol ?? vendor.defaultTransactionCurrency;
+              return [`${sym} ${val.toLocaleString()}`, "Spend"];
+            };
             const ttStyle = { borderRadius: 8, border: "1px solid #E2E8F0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 };
 
             if (wKey === "spend_trend") {
@@ -2653,24 +2668,24 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                     <defs><linearGradient id="spendGradientUniq" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.15} /><stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.01} /></linearGradient></defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" vertical={false} />
                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                    <ReTooltip contentStyle={ttStyle} formatter={(val: number) => [`$${val.toLocaleString()}`, "Spend"]} />
+                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={partnerAxisFormatter} />
+                    <ReTooltip contentStyle={ttStyle} formatter={chartMoneyFormatter} />
                     <Area type="monotone" dataKey="amount" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#spendGradientUniq)" />
                   </AreaChart>
                 ))}
                 {sz === "sm" && statRow([
-                  { label: "YTD", value: formatCurrency(totalYTD) },
-                  { label: "Avg/mo", value: formatCurrency(avgMonthly) },
+                  { label: "YTD", value: money(totalYTD) },
+                  { label: "Avg/mo", value: money(avgMonthly) },
                 ], true)}
                 {sz === "md" && statRow([
-                  { label: "YTD Total", value: formatCurrency(totalYTD) },
-                  { label: "Monthly Avg", value: formatCurrency(avgMonthly) },
+                  { label: "YTD Total", value: money(totalYTD) },
+                  { label: "Monthly Avg", value: money(avgMonthly) },
                 ])}
                 {sz === "lg" && statRow([
-                  { label: "YTD Total", value: formatCurrency(totalYTD) },
-                  { label: "Monthly Avg", value: formatCurrency(avgMonthly) },
-                  { label: "Peak Month", value: `${peakMonth.month} · ${formatCurrency(peakMonth.amount)}`, color: "hsl(var(--primary))" },
-                  { label: "Lowest", value: `${lowMonth.month} · ${formatCurrency(lowMonth.amount)}`, color: "#94A3B8" },
+                  { label: "YTD Total", value: money(totalYTD) },
+                  { label: "Monthly Avg", value: money(avgMonthly) },
+                  { label: "Peak Month", value: <span>{peakMonth.month} · {money(peakMonth.amount)}</span>, color: "hsl(var(--primary))" },
+                  { label: "Lowest", value: <span>{lowMonth.month} · {money(lowMonth.amount)}</span>, color: "#94A3B8" },
                 ])}
                 <div className="flex items-center justify-end mt-1.5"><span className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>This Year</span></div>
               </>
@@ -2727,7 +2742,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                       </Pie>
                     </RePieChart>
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-[11px] text-slate-700" style={{ fontWeight: 700 }}>{formatCurrency(vendor.totalSpent)}</span>
+                      <span className="text-[11px] text-slate-700" style={{ fontWeight: 700 }}>{money(vendor.totalSpent)}</span>
                     </div>
                   </div>
                   <div className="flex-1 min-w-0 space-y-1.5">
@@ -2739,9 +2754,9 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                     ))}
                   </div>
                 </div>
-                {sz === "sm" && statRow(spendCategories.slice(0, 2).map(c => ({ label: c.name, value: formatCurrency(c.value) })), true)}
-                {sz === "md" && statRow(spendCategories.slice(0, 3).map(c => ({ label: c.name, value: formatCurrency(c.value) })))}
-                {sz === "lg" && statRow(spendCategories.map(c => ({ label: c.name, value: formatCurrency(c.value) })))}
+                {sz === "sm" && statRow(spendCategories.slice(0, 2).map(c => ({ label: c.name, value: money(c.value) })), true)}
+                {sz === "md" && statRow(spendCategories.slice(0, 3).map(c => ({ label: c.name, value: money(c.value) })))}
+                {sz === "lg" && statRow(spendCategories.map(c => ({ label: c.name, value: money(c.value) })))}
               </>
             );
           } else if (wKey === "credit_health") {
@@ -2750,20 +2765,20 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
               <>
                 <div className="flex items-center justify-between mb-2"><span className="text-[12px] text-muted-foreground" style={{ fontWeight: 500 }}>Credit Utilization</span><span className="text-[13px] text-slate-700" style={{ fontWeight: 700 }}>{creditPct}%</span></div>
                 <div className="w-full h-3 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${Math.min(creditPct, 100)}%`, backgroundColor: creditPct > 80 ? "hsl(var(--destructive))" : creditPct > 50 ? "hsl(var(--warning))" : "hsl(var(--success))" }} /></div>
-                <div className="flex items-center justify-between mt-1.5"><span className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>$0</span><span className="text-[10px]" style={{ fontWeight: 500, color: creditStatusColor }}>{creditStatusLabel}</span><span className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{formatCurrency(vendor.creditLimit)}</span></div>
+                <div className="flex items-center justify-between mt-1.5"><span className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{money(0)}</span><span className="text-[10px]" style={{ fontWeight: 500, color: creditStatusColor }}>{creditStatusLabel}</span><span className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{money(vendor.creditLimit)}</span></div>
                 {sz === "sm" && statRow([
-                  { label: "Available", value: formatCurrency(Math.max(available, 0)), color: "hsl(var(--success))" },
-                  { label: "Limit", value: formatCurrency(vendor.creditLimit) },
+                  { label: "Available", value: money(Math.max(available, 0)), color: "hsl(var(--success))" },
+                  { label: "Limit", value: money(vendor.creditLimit) },
                 ], true)}
                 {sz === "md" && statRow([
-                  { label: "Available", value: formatCurrency(Math.max(available, 0)), color: "hsl(var(--success))" },
-                  { label: "Used", value: formatCurrency(vendor.creditUtilization) },
-                  { label: "Limit", value: formatCurrency(vendor.creditLimit) },
+                  { label: "Available", value: money(Math.max(available, 0)), color: "hsl(var(--success))" },
+                  { label: "Used", value: money(vendor.creditUtilization) },
+                  { label: "Limit", value: money(vendor.creditLimit) },
                 ])}
                 {sz === "lg" && statRow([
-                  { label: "Available", value: formatCurrency(Math.max(available, 0)), color: "hsl(var(--success))" },
-                  { label: "Used", value: formatCurrency(vendor.creditUtilization) },
-                  { label: "Limit", value: formatCurrency(vendor.creditLimit) },
+                  { label: "Available", value: money(Math.max(available, 0)), color: "hsl(var(--success))" },
+                  { label: "Used", value: money(vendor.creditUtilization) },
+                  { label: "Limit", value: money(vendor.creditLimit) },
                   { label: "Status", value: creditStatusLabel, color: creditStatusColor },
                 ])}
               </>
@@ -2812,24 +2827,27 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                   ]} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" vertical={false} />
                     <XAxis dataKey="range" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, "Amount"]} />
+                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={partnerAxisFormatter} />
+                    <ReTooltip contentStyle={ttStyle} formatter={(v: number): [string, string] => {
+                      const sym = partnerCurInfo?.symbol ?? vendor.defaultTransactionCurrency;
+                      return [`${sym} ${v.toLocaleString()}`, "Amount"];
+                    }} />
                     <Bar dataKey="amount" radius={[4, 4, 0, 0]} barSize={sz === "sm" ? 20 : 36}>
                       {[0, 1, 2, 3].map((i) => (<Cell key={i} fill={["hsl(var(--primary))", "#3B82F6", "hsl(var(--warning))", "hsl(var(--destructive))"][i]} />))}
                     </Bar>
                   </BarChart>
                 ))}
                 {sz === "sm" && statRow([
-                  { label: "Overdue", value: formatCurrency(Math.round(vendor.outstandingBalance * 0.35)), color: "hsl(var(--destructive))" },
+                  { label: "Overdue", value: money(Math.round(vendor.outstandingBalance * 0.35)), color: "hsl(var(--destructive))" },
                   { label: "Avg Days", value: "42", color: "hsl(var(--warning))" },
                 ], true)}
                 {sz === "md" && statRow([
-                  { label: "Total Overdue", value: formatCurrency(Math.round(vendor.outstandingBalance * 0.35)), color: "hsl(var(--destructive))" },
+                  { label: "Total Overdue", value: money(Math.round(vendor.outstandingBalance * 0.35)), color: "hsl(var(--destructive))" },
                   { label: "Invoices", value: "11" },
                   { label: "Avg Days", value: "42", color: "hsl(var(--warning))" },
                 ])}
                 {sz === "lg" && statRow([
-                  { label: "Total Overdue", value: formatCurrency(Math.round(vendor.outstandingBalance * 0.35)), color: "hsl(var(--destructive))" },
+                  { label: "Total Overdue", value: money(Math.round(vendor.outstandingBalance * 0.35)), color: "hsl(var(--destructive))" },
                   { label: "Open Invoices", value: "11" },
                   { label: "Avg Days", value: "42", color: "hsl(var(--warning))" },
                   { label: "Oldest", value: "98 days", color: "hsl(var(--destructive))" },
@@ -2935,17 +2953,17 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                 {chartBox(CH[sz], (
                   <BarChart layout="vertical" data={topItemsData} margin={{ top: 5, right: 30, left: 5, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                    <XAxis type="number" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={partnerAxisFormatter} />
                     <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "#64748B" }} axisLine={false} tickLine={false} width={90} />
-                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, "Spend"]} />
+                    <ReTooltip contentStyle={ttStyle} formatter={chartMoneyFormatter} />
                     <Bar dataKey="spend" radius={[0, 4, 4, 0]} barSize={sz === "sm" ? 10 : 16}>
                       {topItemsData.map((_, i) => (<Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />))}
                     </Bar>
                   </BarChart>
                 ))}
-                {sz === "sm" && statRow([{ label: "#1", value: "Steel Alloy A" }, { label: "Top 5", value: formatCurrency(topItemsData.reduce((s, d) => s + d.spend, 0)) }], true)}
-                {sz === "md" && statRow([{ label: "Top Item", value: "Steel Alloy A" }, { label: "Total (Top 5)", value: formatCurrency(topItemsData.reduce((s, d) => s + d.spend, 0)) }])}
-                {sz === "lg" && statRow([{ label: "Top Item", value: "Steel Alloy A" }, { label: "Top 5 Total", value: formatCurrency(topItemsData.reduce((s, d) => s + d.spend, 0)) }, { label: "% of Spend", value: "59%" }, { label: "Unique SKUs", value: "5" }])}
+                {sz === "sm" && statRow([{ label: "#1", value: "Steel Alloy A" }, { label: "Top 5", value: money(topItemsData.reduce((s, d) => s + d.spend, 0)) }], true)}
+                {sz === "md" && statRow([{ label: "Top Item", value: "Steel Alloy A" }, { label: "Total (Top 5)", value: money(topItemsData.reduce((s, d) => s + d.spend, 0)) }])}
+                {sz === "lg" && statRow([{ label: "Top Item", value: "Steel Alloy A" }, { label: "Top 5 Total", value: money(topItemsData.reduce((s, d) => s + d.spend, 0)) }, { label: "% of Spend", value: "59%" }, { label: "Unique SKUs", value: "5" }])}
               </>
             );
           } else if (wKey === "recent_orders") {
@@ -2960,8 +2978,11 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                   ]} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" vertical={false} />
                     <XAxis dataKey="po" tick={{ fontSize: 9, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `PO-${v}`} />
-                    <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, "Amount"]} />
+                    <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={partnerAxisFormatter} />
+                    <ReTooltip contentStyle={ttStyle} formatter={(v: number): [string, string] => {
+                      const sym = partnerCurInfo?.symbol ?? vendor.defaultTransactionCurrency;
+                      return [`${sym} ${v.toLocaleString()}`, "Amount"];
+                    }} />
                     <Bar dataKey="amount" radius={[4, 4, 0, 0]} barSize={sz === "sm" ? 16 : 24}>
                       {[0, 1, 2, 3, 4].map((i) => (<Cell key={i} fill={[1, 2, 4].includes(i) ? "hsl(var(--success))" : i === 3 ? "hsl(var(--primary))" : "hsl(var(--warning))"} />))}
                     </Bar>
@@ -2969,7 +2990,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                 ))}
                 {sz === "sm" && statRow([{ label: "Delivered", value: "3", color: "hsl(var(--success))" }, { label: "Pending", value: "1", color: "hsl(var(--warning))" }], true)}
                 {sz === "md" && statRow([{ label: "Delivered", value: "3", color: "hsl(var(--success))" }, { label: "In Transit", value: "1", color: "hsl(var(--primary))" }, { label: "Pending", value: "1", color: "hsl(var(--warning))" }])}
-                {sz === "lg" && statRow([{ label: "Delivered", value: "3", color: "hsl(var(--success))" }, { label: "In Transit", value: "1", color: "hsl(var(--primary))" }, { label: "Pending", value: "1", color: "hsl(var(--warning))" }, { label: "Total Value", value: formatCurrency(Math.round(vendor.totalSpent * 0.3)) }])}
+                {sz === "lg" && statRow([{ label: "Delivered", value: "3", color: "hsl(var(--success))" }, { label: "In Transit", value: "1", color: "hsl(var(--primary))" }, { label: "Pending", value: "1", color: "hsl(var(--warning))" }, { label: "Total Value", value: money(Math.round(vendor.totalSpent * 0.3)) }])}
               </>
             );
           } else if (wKey === "payment_history") {
@@ -2990,15 +3011,18 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                     <defs><linearGradient id="paidGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="hsl(var(--success))" stopOpacity={0.12} /><stop offset="100%" stopColor="hsl(var(--success))" stopOpacity={0.01} /></linearGradient></defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" vertical={false} />
                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, ""]} />
+                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={partnerAxisFormatter} />
+                    <ReTooltip contentStyle={ttStyle} formatter={(v: number): [string, string] => {
+                      const sym = partnerCurInfo?.symbol ?? vendor.defaultTransactionCurrency;
+                      return [`${sym} ${v.toLocaleString()}`, ""];
+                    }} />
                     <Area type="monotone" dataKey="paid" stroke="hsl(var(--success))" strokeWidth={2} fill="url(#paidGrad)" name="Paid" />
                     <Area type="monotone" dataKey="pending" stroke="hsl(var(--warning))" strokeWidth={1.5} fill="none" strokeDasharray="4 4" name="Pending" />
                   </AreaChart>
                 ))}
-                {sz === "sm" && statRow([{ label: "Paid", value: formatCurrency(paidTotal), color: "hsl(var(--success))" }, { label: "Pending", value: formatCurrency(pendTotal), color: "hsl(var(--warning))" }], true)}
-                {sz === "md" && statRow([{ label: "Total Paid", value: formatCurrency(paidTotal), color: "hsl(var(--success))" }, { label: "Pending", value: formatCurrency(pendTotal), color: "hsl(var(--warning))" }])}
-                {sz === "lg" && statRow([{ label: "Total Paid", value: formatCurrency(paidTotal), color: "hsl(var(--success))" }, { label: "Pending", value: formatCurrency(pendTotal), color: "hsl(var(--warning))" }, { label: "Transactions", value: "24" }, { label: "Avg Payment", value: formatCurrency(Math.round(paidTotal / 24)) }])}
+                {sz === "sm" && statRow([{ label: "Paid", value: money(paidTotal), color: "hsl(var(--success))" }, { label: "Pending", value: money(pendTotal), color: "hsl(var(--warning))" }], true)}
+                {sz === "md" && statRow([{ label: "Total Paid", value: money(paidTotal), color: "hsl(var(--success))" }, { label: "Pending", value: money(pendTotal), color: "hsl(var(--warning))" }])}
+                {sz === "lg" && statRow([{ label: "Total Paid", value: money(paidTotal), color: "hsl(var(--success))" }, { label: "Pending", value: money(pendTotal), color: "hsl(var(--warning))" }, { label: "Transactions", value: "24" }, { label: "Avg Payment", value: money(Math.round(paidTotal / 24)) }])}
               </>
             );
           } else if (wKey === "compliance_docs") {
@@ -3220,8 +3244,18 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
         <DashInfoCard title="Financial Summary" icon={Wallet} tooltip="Financial overview including currency, cash flow, and outstanding obligations for this partner.">
           <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 mb-3">
             <div className="min-w-0">
-              <DashInfoLabel>Currency</DashInfoLabel>
-              <p className="text-[12.5px] text-slate-700" style={{ fontWeight: 600 }}>USD ($)</p>
+              <DashInfoLabel>Default Transaction Currency</DashInfoLabel>
+              {(() => {
+                const pc = getLibraryCurrency(vendor.defaultTransactionCurrency);
+                if (!pc) return <p className="text-[12.5px] text-slate-700" style={{ fontWeight: 600 }}>—</p>;
+                const sym = pc.symbol ?? pc.code;
+                return (
+                  <p className="text-[12.5px] text-slate-700 flex items-center gap-1.5" style={{ fontWeight: 600 }}>
+                    <CurrencyFlag currency={pc} size={16} />
+                    <span>{pc.name} ({sym})</span>
+                  </p>
+                );
+              })()}
             </div>
             <div className="min-w-0">
               <DashInfoLabel>Rating</DashInfoLabel>
@@ -3250,11 +3284,15 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
             <div className="grid grid-cols-2 gap-x-4">
               <div className="min-w-0">
                 <DashInfoLabel tooltip="Total payments received from or on behalf of this partner.">Cash Inflow</DashInfoLabel>
-                <p className="text-[15px] text-success" style={{ fontWeight: 700 }}>{formatCurrency(totalCashIn)}</p>
+                <p className="text-[15px] text-success" style={{ fontWeight: 700 }}>
+                  <CurrencyAmount {...renderPartnerAmount(vendor, totalCashIn)} />
+                </p>
               </div>
               <div className="min-w-0">
                 <DashInfoLabel tooltip="Total disbursements made to this partner.">Cash Outflow</DashInfoLabel>
-                <p className="text-[15px] text-destructive" style={{ fontWeight: 700 }}>{formatCurrency(totalCashOut)}</p>
+                <p className="text-[15px] text-destructive" style={{ fontWeight: 700 }}>
+                  <CurrencyAmount {...renderPartnerAmount(vendor, totalCashOut)} />
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-1 mb-px">
@@ -3274,7 +3312,9 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
               </DetailRichTooltip>
             </div>
             <div className="flex items-baseline gap-2">
-              <p className="text-[15px] text-slate-700" style={{ fontWeight: 700 }}>{formatCurrency(vendor.outstandingBalance)}</p>
+              <p className="text-[15px] text-slate-700" style={{ fontWeight: 700 }}>
+                <CurrencyAmount {...renderPartnerAmount(vendor, vendor.outstandingBalance)} />
+              </p>
               <button className="text-[11px] text-primary hover:underline cursor-pointer" style={{ fontWeight: 500 }}>Invoice Details</button>
             </div>
           </div>
@@ -3299,11 +3339,15 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                   <span className="inline-flex shrink-0"><Info className="w-2.5 h-2.5 text-[#D1D5DB] hover:text-slate-400 transition-colors cursor-help" /></span>
                 </DetailRichTooltip>
               </div>
-              <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>{formatCurrency(vendor.creditLimit)}</p>
+              <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>
+                <CurrencyAmount {...renderPartnerAmount(vendor, vendor.creditLimit)} />
+              </p>
             </div>
             <div className="min-w-0">
               <DashInfoLabel tooltip="Amount of credit currently in use. Calculated as sum of open orders and pending invoices against the credit limit.">Utilization</DashInfoLabel>
-              <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>{formatCurrency(vendor.creditUtilization)}</p>
+              <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>
+                <CurrencyAmount {...renderPartnerAmount(vendor, vendor.creditUtilization)} />
+              </p>
             </div>
           </div>
           <div className="w-full h-3 rounded-full overflow-hidden flex" style={{ backgroundColor: "hsl(var(--muted))" }}>
@@ -3692,7 +3736,7 @@ function LocKpiInsightsDrawer({ open, onOpenChange, activeKpis, onToggleKpi, all
 }
 
 function DraggableKpiCard({ index, kpiKey, label, value, subtitle, iconName, tooltip, change, changeColor, moveCard, onRemove }: {
-  index: number; kpiKey: string; label: string; value: string; subtitle?: string; iconName?: string; tooltip?: string;
+  index: number; kpiKey: string; label: string; value: React.ReactNode; subtitle?: string; iconName?: string; tooltip?: string;
   change?: string; changeColor?: string; moveCard: (from: number, to: number) => void; onRemove?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
