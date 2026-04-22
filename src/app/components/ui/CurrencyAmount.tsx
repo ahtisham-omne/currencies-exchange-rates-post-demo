@@ -9,7 +9,7 @@ import {
   type LibraryCurrency,
 } from "@/app/data/currencyLibrary";
 
-export type CurrencyAmountMode = "single" | "listing-base" | "aggregated-base" | "partner-rolled-up";
+export type CurrencyAmountMode = "single" | "listing-base" | "listing-partner" | "aggregated-base" | "partner-rolled-up";
 
 /** Per-currency transaction stream for a multi-currency partner. */
 export interface PartnerBreakdownEntry {
@@ -91,7 +91,12 @@ export function CurrencyAmount(props: CurrencyAmountProps) {
       <HoverCardContent
         side="top"
         align="start"
-        className="w-auto min-w-[260px] max-w-[320px] p-3 rounded-lg border border-slate-200 shadow-lg bg-white"
+        className={cn(
+          "rounded-lg border border-slate-200 shadow-lg bg-white",
+          props.mode === "aggregated-base"
+            ? "w-[280px] p-0 overflow-hidden"
+            : "w-auto min-w-[260px] max-w-[320px] p-3",
+        )}
       >
         <TooltipBody {...props} currencyRecord={c} />
       </HoverCardContent>
@@ -104,6 +109,10 @@ function shouldShowHover(props: CurrencyAmountProps): boolean {
   if (props.mode === "listing-base") {
     const partner = props.partnerDefaultCurrency?.toUpperCase();
     return !!partner && partner !== BASE_CURRENCY;
+  }
+  if (props.mode === "listing-partner") {
+    // No useful conversion to reveal when the partner already uses the base currency.
+    return props.currency.toUpperCase() !== BASE_CURRENCY;
   }
   if (props.mode === "single") {
     return props.currency.toUpperCase() !== BASE_CURRENCY;
@@ -157,6 +166,22 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
     );
   }
 
+  if (props.mode === "listing-partner") {
+    const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
+    const baseSymbol = baseCur.symbol ?? baseCur.code;
+    const baseValue = convertBetween(props.value, c.code, BASE_CURRENCY);
+    return (
+      <>
+        <HeaderLine flag={flag} name={c.name} code={c.code} tail="— partner default" />
+        <div className="border-t border-slate-100 my-2" />
+        <div className="text-[12px] text-slate-700">
+          Base equivalent: {baseSymbol} {formatNumber(baseValue, BASE_CURRENCY)} {baseCur.code}
+        </div>
+        <div className="text-[11px] text-slate-400 mt-1.5">At today&apos;s mid-market rate</div>
+      </>
+    );
+  }
+
   if (props.mode === "partner-rolled-up") {
     const rows = props.rollupBreakdown ?? [];
     const partnerSym = c.symbol ?? c.code;
@@ -183,22 +208,64 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
   }
 
   if (props.mode === "aggregated-base") {
-    const rows = props.partnerBreakdown ?? [];
+    const rows = [...(props.partnerBreakdown ?? [])].sort((a, b) => b.partnerCount - a.partnerCount);
     const totalPartners = rows.reduce((acc, r) => acc + r.partnerCount, 0);
+    const scrollable = rows.length > 5;
     return (
-      <>
-        <HeaderLine flag={flag} name={c.name} code={c.code} tail="— base currency" />
-        <div className="border-t border-slate-100 my-2" />
-        <div className="text-[12px] text-slate-500 mb-1.5">
-          Across {totalPartners} {totalPartners === 1 ? "partner" : "partners"} in {rows.length}{" "}
-          {rows.length === 1 ? "currency" : "currencies"}
+      <div className="w-full">
+        {/* Header — category label + count, styled like OverflowTooltip */}
+        <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between">
+          <span className="text-[11px] tracking-wide uppercase text-muted-foreground/70" style={{ fontWeight: 600 }}>Currencies</span>
+          <span className="text-[10px] text-muted-foreground/50 tabular-nums">{rows.length}</span>
         </div>
-        {rows.map((r) => (
-          <div key={r.code} className="text-[12px] text-slate-700 leading-5">
-            {r.code} · {r.partnerCount} {r.partnerCount === 1 ? "partner" : "partners"}
-          </div>
-        ))}
-      </>
+        {/* Rows — flag + code / full name + partner count */}
+        <div
+          className={cn("px-1.5 pb-1.5", scrollable && "overflow-y-auto overscroll-contain")}
+          style={{ maxHeight: scrollable ? 5 * 44 : undefined }}
+          // Radix Dialog's scroll-lock (react-remove-scroll) blocks wheel events
+          // on portaled popovers; translate them manually so the flag list still
+          // scrolls when the Add-Insights modal is open.
+          onWheelCapture={scrollable ? (e) => {
+            const el = e.currentTarget;
+            if (el.scrollHeight <= el.clientHeight) return;
+            el.scrollTop += e.deltaY;
+            e.preventDefault();
+            e.stopPropagation();
+          } : undefined}
+        >
+          {rows.map((r) => {
+            const cur = getLibraryCurrency(r.code);
+            const name = cur?.name ?? r.code;
+            const isBase = r.code.toUpperCase() === BASE_CURRENCY;
+            return (
+              <div key={r.code} className="flex items-center gap-2.5 px-2.5 py-2 rounded-md">
+                <div className="shrink-0 w-7 h-7 rounded-md overflow-hidden bg-muted border border-[#E8ECF1] flex items-center justify-center">
+                  {cur ? <CurrencyFlag currency={cur} size={22} /> : <span className="text-[10px] text-slate-500">{r.code}</span>}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-[12px] truncate block text-foreground" style={{ fontWeight: 600 }}>
+                    {r.code}
+                    {isBase && <span className="ml-1 text-[10px] text-muted-foreground/70" style={{ fontWeight: 500 }}>· base</span>}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground/70 block truncate">{name}</span>
+                </div>
+                <span className="text-[11px] text-slate-600 tabular-nums shrink-0" style={{ fontWeight: 500 }}>
+                  {r.partnerCount} {r.partnerCount === 1 ? "partner" : "partners"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        {/* Footer — summary */}
+        <div className="px-3 py-2 border-t border-slate-100 flex items-center gap-1.5">
+          <span className="text-[10px] text-muted-foreground/70">
+            Across {totalPartners} {totalPartners === 1 ? "partner" : "partners"} · Base {BASE_CURRENCY}
+          </span>
+          {scrollable && (
+            <span className="ml-auto text-[10px] text-muted-foreground/40 italic">Scroll for more</span>
+          )}
+        </div>
+      </div>
     );
   }
 

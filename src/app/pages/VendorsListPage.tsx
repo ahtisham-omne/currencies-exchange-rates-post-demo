@@ -255,6 +255,13 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
 
   const [searchQuery, setSearchQuery] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
+  /**
+   * Currency view for the table's financial columns.
+   * - "base": values shown in the company base currency (PKR), cross-partner comparable.
+   * - "partner": values shown in each partner's default transaction currency; hover
+   *   reveals the base-currency equivalent.
+   */
+  const [tableCurrencyMode, setTableCurrencyMode] = useState<"base" | "partner">("base");
   const [density, setDensity] = useState<DensityOption>(embeddedDefaultDensity ?? "condensed");
   const [cardSize, setCardSize] = useState<CardSize>("medium");
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
@@ -1601,6 +1608,41 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                     </button>
                   );
                 })}
+
+                {/* Spacer pushes the currency-view toggle to the far right */}
+                <div className="flex-1" />
+
+                {/* Currency view toggle — base (PKR) vs. each partner's default currency */}
+                <div className="inline-flex items-center gap-1 rounded-full border border-border p-0.5 shrink-0 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => setTableCurrencyMode("base")}
+                    aria-pressed={tableCurrencyMode === "base"}
+                    title="Show financial columns in base currency (PKR)"
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                      tableCurrencyMode === "base"
+                        ? "bg-accent text-primary"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    }`}
+                    style={{ fontWeight: tableCurrencyMode === "base" ? 600 : 500 }}
+                  >
+                    Base ({BASE_CURRENCY})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTableCurrencyMode("partner")}
+                    aria-pressed={tableCurrencyMode === "partner"}
+                    title="Show financial columns in each partner's default currency"
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                      tableCurrencyMode === "partner"
+                        ? "bg-accent text-primary"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    }`}
+                    style={{ fontWeight: tableCurrencyMode === "partner" ? 600 : 500 }}
+                  >
+                    Partner default
+                  </button>
+                </div>
               </div>
 
               {/* Active Column Filters Bar (Notion-style) */}
@@ -1722,13 +1764,21 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                               <div className="flex justify-between">
                                 <span>Credit Limit</span>
                                 <span className="text-foreground" style={{ fontWeight: 500 }}>
-                                  <CurrencyAmount
-                                    mode="listing-base"
-                                    value={convertToBase(vendor.creditLimit ?? 0, vendor.defaultTransactionCurrency)}
-                                    currency={BASE_CURRENCY}
-                                    partnerDefaultCurrency={vendor.defaultTransactionCurrency}
-                                    partnerDefaultValue={vendor.creditLimit ?? 0}
-                                  />
+                                  {tableCurrencyMode === "partner" ? (
+                                    <CurrencyAmount
+                                      mode="listing-partner"
+                                      value={vendor.creditLimit ?? 0}
+                                      currency={vendor.defaultTransactionCurrency}
+                                    />
+                                  ) : (
+                                    <CurrencyAmount
+                                      mode="listing-base"
+                                      value={convertToBase(vendor.creditLimit ?? 0, vendor.defaultTransactionCurrency)}
+                                      currency={BASE_CURRENCY}
+                                      partnerDefaultCurrency={vendor.defaultTransactionCurrency}
+                                      partnerDefaultValue={vendor.creditLimit ?? 0}
+                                    />
+                                  )}
                                 </span>
                               </div>
                               <div className="flex justify-between">
@@ -2299,48 +2349,78 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                 );
                               case "partner_group":
                                 return (<TableCell key={colKey}><span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>{vendor.partnerGroup}</span></TableCell>);
-                              case "net_profit":
+                              case "net_profit": {
+                                const raw = netProfitOf(vendor);
                                 return (
                                   <TableCell key={colKey} className="text-right tabular-nums">
                                     <span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>
-                                      <CurrencyAmount
-                                        mode="listing-base"
-                                        value={convertToBase(netProfitOf(vendor), vendor.defaultTransactionCurrency)}
-                                        currency={BASE_CURRENCY}
-                                        partnerDefaultCurrency={vendor.defaultTransactionCurrency}
-                                        partnerDefaultValue={netProfitOf(vendor)}
-                                      />
+                                      {tableCurrencyMode === "partner" ? (
+                                        <CurrencyAmount
+                                          mode="listing-partner"
+                                          value={raw}
+                                          currency={vendor.defaultTransactionCurrency}
+                                        />
+                                      ) : (
+                                        <CurrencyAmount
+                                          mode="listing-base"
+                                          value={convertToBase(raw, vendor.defaultTransactionCurrency)}
+                                          currency={BASE_CURRENCY}
+                                          partnerDefaultCurrency={vendor.defaultTransactionCurrency}
+                                          partnerDefaultValue={raw}
+                                        />
+                                      )}
                                     </span>
                                   </TableCell>
                                 );
-                              case "credit_limit":
+                              }
+                              case "credit_limit": {
+                                const raw = vendor.creditLimit ?? 0;
                                 return (
                                   <TableCell key={colKey} className="text-right tabular-nums">
                                     <span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>
-                                      <CurrencyAmount
-                                        mode="listing-base"
-                                        value={convertToBase(vendor.creditLimit ?? 0, vendor.defaultTransactionCurrency)}
-                                        currency={BASE_CURRENCY}
-                                        partnerDefaultCurrency={vendor.defaultTransactionCurrency}
-                                        partnerDefaultValue={vendor.creditLimit ?? 0}
-                                      />
+                                      {tableCurrencyMode === "partner" ? (
+                                        <CurrencyAmount
+                                          mode="listing-partner"
+                                          value={raw}
+                                          currency={vendor.defaultTransactionCurrency}
+                                        />
+                                      ) : (
+                                        <CurrencyAmount
+                                          mode="listing-base"
+                                          value={convertToBase(raw, vendor.defaultTransactionCurrency)}
+                                          currency={BASE_CURRENCY}
+                                          partnerDefaultCurrency={vendor.defaultTransactionCurrency}
+                                          partnerDefaultValue={raw}
+                                        />
+                                      )}
                                     </span>
                                   </TableCell>
                                 );
-                              case "credit_utilization":
+                              }
+                              case "credit_utilization": {
+                                const raw = vendor.creditUtilization ?? 0;
                                 return (
                                   <TableCell key={colKey} className="text-right tabular-nums">
                                     <span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>
-                                      <CurrencyAmount
-                                        mode="listing-base"
-                                        value={convertToBase(vendor.creditUtilization ?? 0, vendor.defaultTransactionCurrency)}
-                                        currency={BASE_CURRENCY}
-                                        partnerDefaultCurrency={vendor.defaultTransactionCurrency}
-                                        partnerDefaultValue={vendor.creditUtilization ?? 0}
-                                      />
+                                      {tableCurrencyMode === "partner" ? (
+                                        <CurrencyAmount
+                                          mode="listing-partner"
+                                          value={raw}
+                                          currency={vendor.defaultTransactionCurrency}
+                                        />
+                                      ) : (
+                                        <CurrencyAmount
+                                          mode="listing-base"
+                                          value={convertToBase(raw, vendor.defaultTransactionCurrency)}
+                                          currency={BASE_CURRENCY}
+                                          partnerDefaultCurrency={vendor.defaultTransactionCurrency}
+                                          partnerDefaultValue={raw}
+                                        />
+                                      )}
                                     </span>
                                   </TableCell>
                                 );
+                              }
                               case "services":
                                 return (
                                   <TableCell key={colKey}>

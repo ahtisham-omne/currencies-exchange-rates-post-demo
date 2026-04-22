@@ -26,6 +26,7 @@ import {
   Sliders,
 } from "lucide-react";
 import type { Vendor } from "../../data/vendors";
+import { BASE_CURRENCY, convertToBase, getLibraryCurrency } from "../../data/currencyLibrary";
 
 /* ─── KPI definition type ─── */
 export interface KpiDefinition {
@@ -188,11 +189,17 @@ export const DEFAULT_ACTIVE_KPIS = [
 
 /* ─── Compute KPI value from vendors data ─── */
 export function computeKpiValue(key: string, vendors: Vendor[]): string {
+  const baseCur = getLibraryCurrency(BASE_CURRENCY);
+  const baseSym = baseCur?.symbol ?? BASE_CURRENCY;
   const formatCompact = (val: number): string => {
-    if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`;
-    if (val >= 1_000) return `$${(val / 1_000).toFixed(0)}K`;
-    return `$${val.toFixed(0)}`;
+    if (val >= 1_000_000) return `${baseSym} ${(val / 1_000_000).toFixed(1)}M`;
+    if (val >= 1_000) return `${baseSym} ${(val / 1_000).toFixed(0)}K`;
+    return `${baseSym} ${val.toFixed(0)}`;
   };
+  // Financial KPIs aggregate across partners with different default currencies.
+  // Sum in base currency so the displayed total is comparable.
+  const sumInBase = (pick: (v: Vendor) => number) =>
+    vendors.reduce((s, v) => s + convertToBase(pick(v) || 0, v.defaultTransactionCurrency), 0);
 
   switch (key) {
     case "total_partners":
@@ -202,20 +209,20 @@ export function computeKpiValue(key: string, vendors: Vendor[]): string {
     case "total_customers":
       return String(vendors.filter((v) => v.partnerTypes?.includes("customer")).length);
     case "total_credit_limit":
-      return formatCompact(vendors.reduce((s, v) => s + (v.creditLimit || 0), 0));
+      return formatCompact(sumInBase((v) => v.creditLimit));
     case "avg_credit_limit": {
-      const total = vendors.reduce((s, v) => s + (v.creditLimit || 0), 0);
+      const total = sumInBase((v) => v.creditLimit);
       return formatCompact(vendors.length > 0 ? total / vendors.length : 0);
     }
     case "total_credit_utilization":
-      return formatCompact(vendors.reduce((s, v) => s + (v.creditUtilization || 0), 0));
+      return formatCompact(sumInBase((v) => v.creditUtilization));
     case "total_outstanding":
-      return formatCompact(vendors.reduce((s, v) => s + (v.outstandingBalance || 0), 0));
+      return formatCompact(sumInBase((v) => v.outstandingBalance));
     case "total_spent":
-      return formatCompact(vendors.reduce((s, v) => s + (v.totalSpent || 0), 0));
+      return formatCompact(sumInBase((v) => v.totalSpent));
     case "avg_net_profit": {
-      const total = vendors.reduce((s, v) => s + (v.netProfitMargin || 0), 0);
-      return vendors.length > 0 ? `${(total / vendors.length).toFixed(1)}%` : "0%";
+      const total = sumInBase((v) => v.netProfitMargin || 0);
+      return formatCompact(vendors.length > 0 ? total / vendors.length : 0);
     }
     case "active_partners":
       return String(vendors.filter((v) => v.status === "active").length);
