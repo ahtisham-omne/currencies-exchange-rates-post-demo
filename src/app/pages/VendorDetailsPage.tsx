@@ -3343,13 +3343,13 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
               <div className="min-w-0">
                 <DashInfoLabel tooltip="Total payments received from or on behalf of this partner.">Cash Inflow</DashInfoLabel>
                 <p className="text-[15px] text-success" style={{ fontWeight: 700 }}>
-                  <CurrencyAmount {...renderProfileAmount(vendor, totalCashIn, profileCurrencyMode)} />
+                  <CurrencyAmount {...renderProfileAmount(vendor, totalCashIn, currencyMode)} />
                 </p>
               </div>
               <div className="min-w-0">
                 <DashInfoLabel tooltip="Total disbursements made to this partner.">Cash Outflow</DashInfoLabel>
                 <p className="text-[15px] text-destructive" style={{ fontWeight: 700 }}>
-                  <CurrencyAmount {...renderProfileAmount(vendor, totalCashOut, profileCurrencyMode)} />
+                  <CurrencyAmount {...renderProfileAmount(vendor, totalCashOut, currencyMode)} />
                 </p>
               </div>
             </div>
@@ -3371,7 +3371,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
             </div>
             <div className="flex items-baseline gap-2">
               <p className="text-[15px] text-slate-700" style={{ fontWeight: 700 }}>
-                <CurrencyAmount {...renderProfileAmount(vendor, vendor.outstandingBalance, profileCurrencyMode)} />
+                <CurrencyAmount {...renderProfileAmount(vendor, vendor.outstandingBalance, currencyMode)} />
               </p>
               <button className="text-[11px] text-primary hover:underline cursor-pointer" style={{ fontWeight: 500 }}>Invoice Details</button>
             </div>
@@ -3398,13 +3398,13 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                 </DetailRichTooltip>
               </div>
               <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>
-                <CurrencyAmount {...renderProfileAmount(vendor, vendor.creditLimit, profileCurrencyMode)} />
+                <CurrencyAmount {...renderProfileAmount(vendor, vendor.creditLimit, currencyMode)} />
               </p>
             </div>
             <div className="min-w-0">
               <DashInfoLabel tooltip="Amount of credit currently in use. Calculated as sum of open orders and pending invoices against the credit limit.">Utilization</DashInfoLabel>
               <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>
-                <CurrencyAmount {...renderProfileAmount(vendor, vendor.creditUtilization, profileCurrencyMode)} />
+                <CurrencyAmount {...renderProfileAmount(vendor, vendor.creditUtilization, currencyMode)} />
               </p>
             </div>
           </div>
