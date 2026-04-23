@@ -1,0 +1,277 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-size: 16px;
+
+    /* Typography scale */
+    --text-h1: 2rem;       /* 32px */
+    --text-h2: 1.5rem;     /* 24px */
+    --text-h3: 1.25rem;    /* 20px */
+    --text-h4: 1.125rem;   /* 18px */
+    --text-base: 0.875rem; /* 14px */
+    --text-label: 0.8125rem; /* 13px */
+    --text-sm: 0.75rem;    /* 12px */
+    --text-xs: 0.6875rem;  /* 11px */
+    --text-2xs: 0.625rem;  /* 10px */
+    --text-3xs: 0.5625rem; /* 9px */
+
+    /* Font weights */
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+
+    /* Core color tokens */
+    --background: rgba(255, 255, 255, 1);
+    --foreground: rgba(0, 0, 0, 1);
+    --card: rgba(255, 255, 255, 1);
+    --card-foreground: rgba(0, 0, 0, 1);
+    --popover: rgba(255, 255, 255, 1);
+    --popover-foreground: rgba(0, 0, 0, 1);
+    --primary: rgba(10, 119, 255, 1);
+    --primary-foreground: rgba(255, 255, 255, 1);
+    --secondary: rgba(247, 247, 248, 1);
+    --secondary-foreground: rgba(0, 0, 0, 1);
+    --muted: rgba(247, 247, 248, 1);
+    --muted-foreground: rgba(113, 113, 122, 1);
+    --accent: rgba(39, 185, 115, 1);
+    --accent-foreground: rgba(255, 255, 255, 1);
+    --destructive: rgba(255, 69, 58, 1);
+    --destructive-foreground: rgba(255, 255, 255, 1);
+    --border: rgba(234, 235, 240, 1);
+    --input: rgba(255, 255, 255, 1);
+    --input-background: rgba(255, 255, 255, 1);
+    --ring: rgba(10, 119, 255, 1);
+    --radius: 10px;
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+
+    /* Chart tokens */
+    --chart-1: rgba(10, 119, 255, 1);
+    --chart-2: rgba(39, 185, 115, 1);
+    --chart-3: rgba(239, 162, 47, 1);
+    --chart-4: rgba(87, 78, 250, 1);
+    --chart-5: rgba(255, 69, 58, 1);
+
+    /* Sidebar tokens */
+    --sidebar: rgba(255, 255, 255, 1);
+    --sidebar-foreground: rgba(0, 0, 0, 1);
+    --sidebar-primary: rgba(10, 119, 255, 1);
+    --sidebar-primary-foreground: rgba(255, 255, 255, 1);
+    --sidebar-accent: rgba(39, 185, 115, 1);
+    --sidebar-accent-foreground: rgba(255, 255, 255, 1);
+    --sidebar-border: rgba(234, 235, 240, 1);
+    --sidebar-ring: rgba(10, 119, 255, 1);
+
+    /* Module-specific semantic colors */
+    --primary-tint: rgba(237, 244, 255, 1);
+    --success: rgba(5, 150, 105, 1);
+    --success-tint: rgba(236, 253, 245, 1);
+    --warning: rgba(234, 88, 12, 1);
+    --warning-tint: rgba(255, 247, 237, 1);
+    --danger: rgba(225, 29, 72, 1);
+
+    /* Elevation / shadows */
+    --elevation-sm: 0px 2px 8px 0px rgba(0, 0, 0, 0.16);
+    --elevation-md: 0px 16px 48px -8px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--border);
+    --elevation-lg: 0px 24px 48px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px var(--border);
+    --elevation-drag: 0 12px 28px rgba(0, 0, 0, 0.15), 0 4px 10px rgba(0, 0, 0, 0.08);
+    --elevation-card: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+
+    /* Status badge semantic colors — single source of truth */
+    /* Draft — neutral gray */
+    --status-draft-bg: #f3f4f6;
+    --status-draft-text: #4b5563;
+    --status-draft-border: #e5e7eb;
+    /* Sent — blue, waiting on vendor */
+    --status-sent-bg: #eff6ff;
+    --status-sent-text: #1d4ed8;
+    --status-sent-border: #bfdbfe;
+    /* Confirmed — stronger blue, vendor acknowledged */
+    --status-confirmed-bg: #dbeafe;
+    --status-confirmed-text: #1e40af;
+    --status-confirmed-border: #93c5fd;
+    /* Partially Received — amber, in progress */
+    --status-partial-bg: #fffbeb;
+    --status-partial-text: #b45309;
+    --status-partial-border: #fde68a;
+    /* Fully Received — green, success */
+    --status-received-bg: #f0fdf4;
+    --status-received-text: #15803d;
+    --status-received-border: #bbf7d0;
+    /* Cancelled — red, terminal */
+    --status-cancelled-bg: #fef2f2;
+    --status-cancelled-text: #b91c1c;
+    --status-cancelled-border: #fecaca;
+    /* Active with Cancellation — orange, warning */
+    --status-active-cancel-bg: #fff7ed;
+    --status-active-cancel-text: #c2410c;
+    --status-active-cancel-border: #fed7aa;
+    /* Closed with Cancellations — slate, archived */
+    --status-closed-cancel-bg: #f1f5f9;
+    --status-closed-cancel-text: #475569;
+    --status-closed-cancel-border: #cbd5e1;
+
+    /* Avatar palette */
+    --avatar-1-bg: rgba(10, 119, 255, 0.22);
+    --avatar-1-text: var(--primary);
+    --avatar-2-bg: rgba(39, 185, 115, 0.22);
+    --avatar-2-text: var(--accent);
+    --avatar-3-bg: rgba(239, 162, 47, 0.22);
+    --avatar-3-text: rgba(180, 110, 10, 1);
+    --avatar-4-bg: rgba(87, 78, 250, 0.22);
+    --avatar-4-text: rgba(87, 78, 250, 1);
+    --avatar-5-bg: rgba(255, 69, 58, 0.20);
+    --avatar-5-text: var(--destructive);
+    --avatar-6-bg: rgba(0, 180, 180, 0.22);
+    --avatar-6-text: rgba(0, 140, 140, 1);
+    --avatar-7-bg: rgba(180, 60, 200, 0.22);
+    --avatar-7-text: rgba(140, 30, 160, 1);
+
+    /* Version badge colors */
+    --version-1-bg: rgba(39, 185, 115, 0.12);
+    --version-1-text: rgba(20, 140, 80, 1);
+    --version-2-bg: rgba(239, 162, 47, 0.12);
+    --version-2-text: rgba(180, 110, 10, 1);
+    --version-3-bg: rgba(87, 78, 250, 0.12);
+    --version-3-text: rgba(87, 78, 250, 1);
+    --version-4-bg: rgba(10, 119, 255, 0.12);
+    --version-4-text: var(--primary);
+    --version-5-bg: rgba(255, 69, 58, 0.10);
+    --version-5-text: var(--destructive);
+
+    /* Subtle primary tints */
+    --primary-tint-subtle: rgba(10, 119, 255, 0.04);
+    --primary-tint-faint: rgba(10, 119, 255, 0.03);
+  }
+
+  .dark {
+    --background: rgba(23, 23, 23, 1);
+    --foreground: rgba(255, 255, 255, 1);
+    --card: rgba(23, 23, 23, 1);
+    --card-foreground: rgba(255, 255, 255, 1);
+    --popover: rgba(23, 23, 23, 1);
+    --popover-foreground: rgba(255, 255, 255, 1);
+    --primary: rgba(10, 119, 255, 1);
+    --primary-foreground: rgba(255, 255, 255, 1);
+    --secondary: rgba(39, 39, 42, 1);
+    --secondary-foreground: rgba(255, 255, 255, 1);
+    --muted: rgba(39, 39, 42, 1);
+    --muted-foreground: rgba(161, 161, 170, 1);
+    --accent: rgba(39, 185, 115, 1);
+    --accent-foreground: rgba(255, 255, 255, 1);
+    --destructive: rgba(255, 69, 58, 1);
+    --destructive-foreground: rgba(255, 255, 255, 1);
+    --border: rgba(39, 39, 42, 1);
+    --input: rgba(39, 39, 42, 1);
+    --ring: rgba(10, 119, 255, 1);
+    --chart-1: rgba(10, 119, 255, 1);
+    --chart-2: rgba(39, 185, 115, 1);
+    --chart-3: rgba(239, 162, 47, 1);
+    --chart-4: rgba(87, 78, 250, 1);
+    --chart-5: rgba(255, 69, 58, 1);
+    --sidebar: rgba(23, 23, 23, 1);
+    --sidebar-foreground: rgba(255, 255, 255, 1);
+    --sidebar-primary: rgba(10, 119, 255, 1);
+    --sidebar-primary-foreground: rgba(255, 255, 255, 1);
+    --sidebar-accent: rgba(39, 185, 115, 1);
+    --sidebar-accent-foreground: rgba(255, 255, 255, 1);
+    --sidebar-border: rgba(39, 39, 42, 1);
+    --sidebar-ring: rgba(10, 119, 255, 1);
+
+    --primary-tint: rgba(10, 119, 255, 0.12);
+    --success: rgba(52, 211, 153, 1);
+    --success-tint: rgba(5, 150, 105, 0.12);
+    --warning: rgba(251, 146, 60, 1);
+    --warning-tint: rgba(234, 88, 12, 0.12);
+    --danger: rgba(251, 113, 133, 1);
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+/* Base typography */
+:where(:not(:has([class*=" text-"]), :not(:has([class^="text-"])))) {
+  h1 {
+    font-size: var(--text-h1);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.5;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h2 {
+    font-size: var(--text-h2);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.5;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h3 {
+    font-size: var(--text-h3);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.5;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h4 {
+    font-size: var(--text-h4);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.5;
+    font-family: 'Inter', sans-serif;
+  }
+
+  p {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.5;
+    font-family: 'Inter', sans-serif;
+  }
+
+  label {
+    font-size: var(--text-label);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+    font-family: 'Inter', sans-serif;
+  }
+
+  button {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+    font-family: 'Inter', sans-serif;
+  }
+
+  input {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.5;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+html {
+  font-size: var(--font-size);
+  font-family: 'Inter', sans-serif;
+}
+
+/* Utility: no-scrollbar */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
