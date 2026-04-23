@@ -43,6 +43,8 @@ import {
 } from "../components/vendors/ColumnHeaderMenu";
 import { OverflowTooltip } from "../components/vendors/OverflowTooltip";
 import { InfoTooltip } from "../components/ui/info-tooltip";
+import { MarketCorporateToggle } from "../components/vendors/MarketCorporateToggle";
+import { useRateContext } from "../context/RateContext";
 import { CurrencyAmount } from "../components/ui/CurrencyAmount";
 import { CurrencyFlag } from "../components/ui/CurrencyFlag";
 import {
@@ -240,6 +242,10 @@ export function VendorDetailsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { getVendor, archiveVendor, restoreVendor, updateVendor } = useVendors();
+  // Subscribe to rate provider so profile KPIs + tooltip rates react to
+  // the Market/Corporate toggle.
+  const { rateType } = useRateContext();
+  void rateType;
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const initialTab = (searchParams.get("tab") as TabId | null) ?? "dashboard";
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
@@ -969,6 +975,8 @@ export function VendorDetailsPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-[12px] text-slate-500">
                   <span className="text-sm text-muted-foreground" style={{ fontWeight: 500 }}>Dashboard</span>
+                  {/* Market vs. Corporate rate selector */}
+                  <MarketCorporateToggle variant="inline" />
                   {/* Currency view toggle — base vs. this partner's own currency */}
                   <div className="inline-flex items-center gap-0.5 h-7 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
                     <button

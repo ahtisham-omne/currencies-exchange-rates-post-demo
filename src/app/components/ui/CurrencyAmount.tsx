@@ -4,10 +4,13 @@ import { cn } from "./utils";
 import { CurrencyFlag } from "./CurrencyFlag";
 import {
   BASE_CURRENCY,
+  activeRateSnapshot,
   convertBetween,
   getLibraryCurrency,
+  rateToBase,
   type LibraryCurrency,
 } from "@/app/data/currencyLibrary";
+import { useRateContext } from "@/app/context/RateContext";
 
 export type CurrencyAmountMode = "single" | "listing-base" | "listing-partner" | "aggregated-base" | "partner-rolled-up";
 
@@ -50,6 +53,9 @@ export interface CurrencyAmountProps {
  */
 export function CurrencyAmount(props: CurrencyAmountProps) {
   const { value, currency, mode, signed, className } = props;
+  // Subscribe so the tooltip / converted values re-render when the
+  // Market/Corporate toggle flips.
+  useRateContext();
   const c = getLibraryCurrency(currency) ?? getLibraryCurrency(BASE_CURRENCY)!;
   const showHover = shouldShowHover(props);
 
@@ -147,6 +153,31 @@ function HeaderLine({
   );
 }
 
+function RateLine({ partnerCode }: { partnerCode: string }) {
+  const snap = activeRateSnapshot();
+  const rate = rateToBase(partnerCode);
+  const baseCur = getLibraryCurrency(BASE_CURRENCY);
+  const baseSym = baseCur?.symbol ?? BASE_CURRENCY;
+  const typeLabel = snap.type === "market" ? "Market" : "Corporate";
+  const hex = snap.type === "market" ? "#7c3aed" : "#d97706";
+  const sameAsBase = partnerCode.toUpperCase() === BASE_CURRENCY;
+  return (
+    <div className="mt-1.5 px-2 py-1.5 rounded-md bg-slate-50 border border-slate-100">
+      {!sameAsBase && (
+        <div className="text-[11px] text-slate-700 tabular-nums leading-4">
+          1 {partnerCode.toUpperCase()} = {baseSym} {formatNumber(rate, BASE_CURRENCY)} {BASE_CURRENCY}
+        </div>
+      )}
+      <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: hex }} />
+        <span style={{ color: hex, fontWeight: 600 }}>{typeLabel}</span>
+        <span className="text-slate-400">· {snap.source}</span>
+      </div>
+      <div className="text-[10px] text-slate-400 mt-0.5">As of {snap.asOfDate}</div>
+    </div>
+  );
+}
+
 function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurrency }) {
   const c = props.currencyRecord;
   const flag = <CurrencyFlag currency={c} size={18} />;
@@ -161,7 +192,7 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
         <div className="text-[12px] text-slate-700">
           Partner currency: {partnerSymbol} {formatNumber(props.partnerDefaultValue ?? 0, partner.code)} {partner.code}
         </div>
-        <div className="text-[11px] text-slate-400 mt-1.5">At today&apos;s mid-market rate</div>
+        <RateLine partnerCode={partner.code} />
       </>
     );
   }
@@ -177,7 +208,7 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
         <div className="text-[12px] text-slate-700">
           Base equivalent: {baseSymbol} {formatNumber(baseValue, BASE_CURRENCY)} {baseCur.code}
         </div>
-        <div className="text-[11px] text-slate-400 mt-1.5">At today&apos;s mid-market rate</div>
+        <RateLine partnerCode={c.code} />
       </>
     );
   }
@@ -185,6 +216,8 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
   if (props.mode === "partner-rolled-up") {
     const rows = props.rollupBreakdown ?? [];
     const partnerSym = c.symbol ?? c.code;
+    const snap = activeRateSnapshot();
+    const typeLabel = snap.type === "market" ? "Market" : "Corporate";
     return (
       <>
         <HeaderLine flag={flag} name={c.name} code={c.code} tail="— rolled up" />
@@ -202,7 +235,9 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
             </div>
           );
         })}
-        <div className="text-[11px] text-slate-400 mt-1.5">At today&apos;s mid-market rate</div>
+        <div className="text-[10px] text-slate-400 mt-1.5">
+          Converted via {typeLabel.toLowerCase()} rates · {snap.source}
+        </div>
       </>
     );
   }
@@ -282,15 +317,26 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
             );
           })}
         </div>
-        {/* Footer — summary */}
-        <div className="px-3 py-2 border-t border-slate-100 flex items-center gap-1.5">
+        {/* Footer — summary + active rate type */}
+        <div className="px-3 py-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
           <span className="text-[10px] text-muted-foreground/70">
             Across {totalPartners} {totalPartners === 1 ? "partner" : "partners"}
             <span className="mx-1 text-muted-foreground/40">·</span>
             Base <span className="text-foreground" style={{ fontWeight: 600 }}>{baseSym} {BASE_CURRENCY}</span>
           </span>
+          {(() => {
+            const snap = activeRateSnapshot();
+            const hex = snap.type === "market" ? "#7c3aed" : "#d97706";
+            const label = snap.type === "market" ? "Market" : "Corporate";
+            return (
+              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70 ml-auto">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: hex }} />
+                <span style={{ color: hex, fontWeight: 600 }}>{label}</span>
+              </span>
+            );
+          })()}
           {scrollable && (
-            <span className="ml-auto text-[10px] text-muted-foreground/40 italic">Scroll for more</span>
+            <span className="basis-full text-[10px] text-muted-foreground/40 italic text-right">Scroll for more</span>
           )}
         </div>
       </div>

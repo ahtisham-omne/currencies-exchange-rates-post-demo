@@ -190,7 +190,10 @@ import {
   type LibraryCurrency,
   BASE_CURRENCY,
   convertBetween,
+  convertToBase,
 } from "@/app/data/currencyLibrary";
+import { CurrencySymbol } from "../ui/CurrencySymbol";
+import { useRateContext } from "../../context/RateContext";
 
 function CurrencyFlagOrGlobe({ currency, size = 20 }: { currency: LibraryCurrency; size?: number }) {
   const url = flagUrlForCurrency(currency);
@@ -232,6 +235,10 @@ interface CreatePartnerModalProps {
 }
 
 export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initialProfile, editMode = false, editVendor }: CreatePartnerModalProps) {
+  // Subscribe so fixed-amount symbol adornments and fx helpers re-render when
+  // the Market/Corporate toggle flips.
+  const { rateType: _activeRateType } = useRateContext();
+  void _activeRateType;
   // Steps: 1 = Partner Group Selection, 2 = Partner Form, 3 = Configuration Sub-page
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [configType, setConfigType] = useState<"vendor" | "customer">("vendor");
@@ -3606,6 +3613,7 @@ function ConfigPageContent({
   const [billingType, setBillingType] = useState("domestic");
   const [shippingPref, setShippingPref] = useState("same_as_billing");
   const [enforcement, setEnforcement] = useState("none");
+  const [creditLimitInput, setCreditLimitInput] = useState("");
   const [thresholdAlertRecipients, setThresholdAlertRecipients] = useState<Set<string>>(new Set());
   const [softWarningRecipients, setSoftWarningRecipients] = useState<Set<string>>(new Set());
   const [hardBlockRecipients, setHardBlockRecipients] = useState<Set<string>>(new Set());
@@ -5138,6 +5146,7 @@ function ConfigPageContent({
         savePaymentEntry={savePaymentEntry}
         removePaymentEntry={removePaymentEntry}
         country={selectedGroup?.country}
+        currency={currency}
       />
     );
   }
@@ -5638,8 +5647,28 @@ function ConfigPageContent({
                     </div>
                   </TooltipContent>
                 </Tooltip>
-                <Input placeholder="50,000.00" className="pl-14 rounded-lg border-border !h-10 bg-white text-sm placeholder:text-slate-400" />
+                <Input
+                  value={creditLimitInput}
+                  onChange={(e) => setCreditLimitInput(e.target.value)}
+                  placeholder="50,000.00"
+                  className="pl-14 rounded-lg border-border !h-10 bg-white text-sm placeholder:text-slate-400"
+                  inputMode="decimal"
+                />
               </div>
+              {(() => {
+                const n = parseFloat(creditLimitInput);
+                if (!Number.isFinite(n) || n === 0) return null;
+                if ((currencyLabel || BASE_CURRENCY).toUpperCase() === BASE_CURRENCY) return null;
+                const base = convertToBase(n, currencyLabel);
+                const baseCur = getLibraryCurrency(BASE_CURRENCY);
+                const baseSym = baseCur?.symbol ?? BASE_CURRENCY;
+                const formatted = base.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                return (
+                  <p className="text-[10.5px] text-slate-500 mt-1 tabular-nums" style={{ fontWeight: 400 }}>
+                    ≈ {baseSym} {formatted} {BASE_CURRENCY} <span className="text-slate-300">· at today's rate</span>
+                  </p>
+                );
+              })()}
               <p className="text-[10px] text-muted-foreground mt-1">Leave empty for unlimited credit</p>
             </div>
           </div>
@@ -7601,13 +7630,14 @@ function ConfigPageContent({
                                 </div>
                                 <div className="relative">
                                   {tier.fixRate && (
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                    <CurrencySymbol code={createPtInputCurrencyCode} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                   )}
                                   <Input value={tier.discount} onChange={(e) => updateCpmTier(idx, { discount: e.target.value })} placeholder={tier.fixRate ? "e.g. 25.00" : "e.g. 50"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-7 pr-3" : "pr-8"}`} />
                                   {!tier.fixRate && (
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                                   )}
                                 </div>
+                                {tier.fixRate && renderPtFxHelper(tier.discount)}
                               </div>
 
                               {/* Quantity limits toggle */}

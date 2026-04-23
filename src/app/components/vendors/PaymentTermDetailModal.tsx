@@ -34,6 +34,7 @@ import {
   CREATE_PT_TYPES,
 } from "./partnerConstants";
 import { CurrencyAmount } from "../ui/CurrencyAmount";
+import { CurrencySymbol } from "../ui/CurrencySymbol";
 import { BASE_CURRENCY } from "../../data/currencyLibrary";
 
 /* ─── Tab config ─── */
@@ -444,7 +445,10 @@ function PaymentTermDetailModal({ term, open, onClose, mode = "create", onDisabl
                           {fixed ? (
                             <CurrencyAmount value={fixed.value} currency={fixed.currency} mode="single" />
                           ) : isFixed ? (
-                            <span>${term.discountPercent || "2"}</span>
+                            <span className="inline-flex items-baseline gap-0.5">
+                              <CurrencySymbol code={currencyMode === "base" ? BASE_CURRENCY : (partnerCurrency || BASE_CURRENCY)} />
+                              {term.discountPercent || "2"}
+                            </span>
                           ) : (
                             <span>{term.discountPercent || "2"}%</span>
                           )}

@@ -21,6 +21,24 @@ import {
   PAYMENT_TYPE_CARDS,
 } from "./partnerConstants";
 import { createEmptyPaymentEntry } from "./config-helpers";
+import { CurrencySymbol } from "../ui/CurrencySymbol";
+import { BASE_CURRENCY, convertToBase, getLibraryCurrency } from "@/app/data/currencyLibrary";
+
+/** Helper: live base-currency preview under a fixed-amount input. */
+function BaseCurrencyPreview({ raw, fromCode }: { raw: string; fromCode: string }) {
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n) || n === 0) return null;
+  if (fromCode.toUpperCase() === BASE_CURRENCY) return null;
+  const base = convertToBase(n, fromCode);
+  const baseCur = getLibraryCurrency(BASE_CURRENCY);
+  const baseSym = baseCur?.symbol ?? BASE_CURRENCY;
+  const formatted = base.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <p className="text-[10.5px] text-slate-400 mt-1 tabular-nums" style={{ fontWeight: 400 }}>
+      ≈ {baseSym} {formatted} {BASE_CURRENCY} <span className="text-slate-300">· at today's rate</span>
+    </p>
+  );
+}
 
 const inputCls = "mt-1.5 rounded-lg border-border !h-10 bg-white text-sm text-foreground placeholder:text-slate-300 focus:border-primary focus:ring-1 focus:ring-primary/20";
 
@@ -293,12 +311,16 @@ function PaymentFormFields({
   e,
   updateEntry,
   countryFormat,
+  currency,
 }: {
   e: PaymentMethodEntry;
   updateEntry: (id: string, updates: Partial<PaymentMethodEntry>) => void;
   countryFormat?: CountryBankFormat;
+  /** ISO 4217 code driving the fixed-amount symbol & base-currency preview. */
+  currency?: string;
 }) {
   const fmt = countryFormat || DEFAULT_FORMAT;
+  const activeCurrency = (currency || BASE_CURRENCY).toUpperCase();
   return (
     <>
       {/* Nickname */}
@@ -503,13 +525,14 @@ function PaymentFormFields({
             </div>
             <div className="relative mt-1.5">
               {(e.discountMode ?? "percent") === "fixed" && (
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
+                <CurrencySymbol code={activeCurrency} className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" />
               )}
               <Input value={e.discountPercent} onChange={(ev) => updateEntry(e.id, { discountPercent: ev.target.value })} placeholder={`e.g. ${(e.discountMode ?? "percent") === "percent" ? "5" : "25.00"}`} className={`rounded-lg border-border !h-10 bg-white text-sm text-foreground placeholder:text-slate-300 focus:border-primary focus:ring-1 focus:ring-primary/20 ${(e.discountMode ?? "percent") === "fixed" ? "pl-7 pr-3" : "pr-8"}`} />
               {(e.discountMode ?? "percent") === "percent" && (
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
               )}
             </div>
+            {(e.discountMode ?? "percent") === "fixed" && <BaseCurrencyPreview raw={e.discountPercent} fromCode={activeCurrency} />}
           </div>
           <div>
             <div className="flex items-center justify-between">
@@ -518,18 +541,19 @@ function PaymentFormFields({
                 isFixed={(e.additionalChargesMode ?? "percent") === "fixed"}
                 onChange={(fixed) => updateEntry(e.id, { additionalChargesMode: fixed ? "fixed" : "percent" })}
                 percentTooltip="Additional charges added as a percentage of the transaction amount."
-                amountTooltip="Additional charges added as a fixed dollar amount."
+                amountTooltip={`Additional charges added as a fixed amount in ${activeCurrency}.`}
               />
             </div>
             <div className="relative mt-1.5">
               {(e.additionalChargesMode ?? "percent") === "fixed" && (
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
+                <CurrencySymbol code={activeCurrency} className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" />
               )}
               <Input value={e.additionalCharges} onChange={(ev) => updateEntry(e.id, { additionalCharges: ev.target.value })} placeholder={`e.g. ${(e.additionalChargesMode ?? "percent") === "percent" ? "2" : "50.00"}`} className={`rounded-lg border-border !h-10 bg-white text-sm text-foreground placeholder:text-slate-300 focus:border-primary focus:ring-1 focus:ring-primary/20 ${(e.additionalChargesMode ?? "percent") === "fixed" ? "pl-7 pr-3" : "pr-8"}`} />
               {(e.additionalChargesMode ?? "percent") === "percent" && (
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
               )}
             </div>
+            {(e.additionalChargesMode ?? "percent") === "fixed" && <BaseCurrencyPreview raw={e.additionalCharges} fromCode={activeCurrency} />}
           </div>
         </div>
       )}
@@ -731,6 +755,7 @@ export function PaymentMethodsSection({
   savePaymentEntry,
   removePaymentEntry,
   country,
+  currency,
 }: {
   configType: "vendor" | "customer";
   paymentEntries: PaymentMethodEntry[];
@@ -740,6 +765,8 @@ export function PaymentMethodsSection({
   savePaymentEntry: (id: string) => void;
   removePaymentEntry: (id: string) => void;
   country?: string;
+  /** Partner currency (ISO 4217). Drives the $-field symbol & base preview. */
+  currency?: string;
 }) {
   const countryFormat = getCountryFormat(country);
   const [pmModalOpen, setPmModalOpen] = useState(false);
@@ -980,7 +1007,7 @@ export function PaymentMethodsSection({
                 </div>
               ) : modalEntry ? (
                 <div className="space-y-3">
-                  <PaymentFormFields e={modalEntry} updateEntry={updatePaymentEntry} countryFormat={countryFormat} />
+                  <PaymentFormFields e={modalEntry} updateEntry={updatePaymentEntry} countryFormat={countryFormat} currency={currency} />
                 </div>
               ) : null}
             </div>

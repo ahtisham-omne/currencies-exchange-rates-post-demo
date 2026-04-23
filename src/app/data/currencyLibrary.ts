@@ -206,73 +206,212 @@ export function flagUrlForCurrency(currency: LibraryCurrency): string | null {
  */
 export const BASE_CURRENCY = "PKR";
 
+/** Selects which rate table is used for display-side conversions. */
+export type RateType = "market" | "corporate";
+
 /**
- * Mock mid-market rates expressed in BASE_CURRENCY per 1 unit of foreign
- * currency. Covers every currency referenced from seeded vendor countries
- * and the most active majors. Unknown codes fall through unconverted.
+ * A complete FX snapshot: the conversion table plus the metadata we need to
+ * show users where the numbers come from (source, cadence, freshness).
  */
-export const EXCHANGE_RATES: Record<string, number> = {
-  PKR: 1,
-  USD: 278,
-  EUR: 305,
-  GBP: 355,
-  JPY: 1.85,
-  CHF: 320,
-  CAD: 205,
-  AUD: 182,
-  CNY: 39,
-  INR: 3.35,
-  KRW: 0.21,
-  SGD: 207,
-  HKD: 35.6,
-  TWD: 8.7,
-  THB: 7.8,
-  MYR: 62,
-  IDR: 0.017,
-  PHP: 4.9,
-  VND: 0.011,
-  NZD: 168,
-  BDT: 2.5,
-  LKR: 0.92,
-  MXN: 14.2,
-  BRL: 55,
-  ARS: 0.29,
-  CLP: 0.29,
-  COP: 0.068,
-  PEN: 74.3,
-  SEK: 26.5,
-  NOK: 26.1,
-  DKK: 40.9,
-  PLN: 70.3,
-  CZK: 12.2,
-  HUF: 0.78,
-  RON: 61.4,
-  BGN: 156,
-  TRY: 8.6,
-  RUB: 2.9,
-  UAH: 6.8,
-  ISK: 2.0,
-  AED: 75.7,
-  SAR: 74.1,
-  QAR: 76.4,
-  KWD: 905,
-  BHD: 738,
-  OMR: 722,
-  JOD: 392,
-  ILS: 75.2,
-  EGP: 5.7,
-  ZAR: 15.1,
-  NGN: 0.19,
-  KES: 2.15,
-  KZT: 0.58,
-  GEL: 103,
-  RSD: 2.6,
+export interface RateSnapshot {
+  type: RateType;
+  /** Human-readable source (vendor name / book). Shown in the rate strip. */
+  source: string;
+  /** Frequency copy (e.g. "Every 15 min", "Quarterly — manual"). */
+  syncFrequency: string;
+  /** ISO timestamp the rates were last refreshed. */
+  lastSyncAt: string;
+  /** Effective-as-of date for this snapshot (what partners should see). */
+  asOfDate: string;
+  /** rate[CODE] = BASE_CURRENCY units per 1 unit of CODE. */
+  rates: Record<string, number>;
+}
+
+/** Mid-market rates — refreshed continuously from an FX data feed. */
+export const MARKET_RATES: RateSnapshot = {
+  type: "market",
+  source: "Open Exchange Rates",
+  syncFrequency: "Every 15 minutes",
+  lastSyncAt: new Date(Date.now() - 7 * 60 * 1000).toISOString(),
+  asOfDate: new Date().toISOString().slice(0, 10),
+  rates: {
+    PKR: 1,
+    USD: 278,
+    EUR: 305,
+    GBP: 355,
+    JPY: 1.85,
+    CHF: 320,
+    CAD: 205,
+    AUD: 182,
+    CNY: 39,
+    INR: 3.35,
+    KRW: 0.21,
+    SGD: 207,
+    HKD: 35.6,
+    TWD: 8.7,
+    THB: 7.8,
+    MYR: 62,
+    IDR: 0.017,
+    PHP: 4.9,
+    VND: 0.011,
+    NZD: 168,
+    BDT: 2.5,
+    LKR: 0.92,
+    MXN: 14.2,
+    BRL: 55,
+    ARS: 0.29,
+    CLP: 0.29,
+    COP: 0.068,
+    PEN: 74.3,
+    SEK: 26.5,
+    NOK: 26.1,
+    DKK: 40.9,
+    PLN: 70.3,
+    CZK: 12.2,
+    HUF: 0.78,
+    RON: 61.4,
+    BGN: 156,
+    TRY: 8.6,
+    RUB: 2.9,
+    UAH: 6.8,
+    ISK: 2.0,
+    AED: 75.7,
+    SAR: 74.1,
+    QAR: 76.4,
+    KWD: 905,
+    BHD: 738,
+    OMR: 722,
+    JOD: 392,
+    ILS: 75.2,
+    EGP: 5.7,
+    ZAR: 15.1,
+    NGN: 0.19,
+    KES: 2.15,
+    KZT: 0.58,
+    GEL: 103,
+    RSD: 2.6,
+  },
 };
 
-/** Convert any amount from `fromCode` to base currency. */
+/**
+ * Corporate (book) rates — locked by Treasury for the current quarter. Values
+ * are deliberately close to but distinct from the market table so you can see
+ * the toggle take effect across KPIs and converted cells.
+ */
+export const CORPORATE_RATES: RateSnapshot = {
+  type: "corporate",
+  source: "Corporate Treasury (Q1 FY26)",
+  syncFrequency: "Quarterly — manual",
+  lastSyncAt: "2026-01-05T09:00:00.000Z",
+  asOfDate: "2026-01-01",
+  rates: {
+    PKR: 1,
+    USD: 280,
+    EUR: 302,
+    GBP: 350,
+    JPY: 1.90,
+    CHF: 316,
+    CAD: 210,
+    AUD: 185,
+    CNY: 40,
+    INR: 3.40,
+    KRW: 0.22,
+    SGD: 210,
+    HKD: 36.0,
+    TWD: 9.0,
+    THB: 8.0,
+    MYR: 63,
+    IDR: 0.018,
+    PHP: 5.0,
+    VND: 0.012,
+    NZD: 170,
+    BDT: 2.6,
+    LKR: 0.95,
+    MXN: 14.5,
+    BRL: 56,
+    ARS: 0.30,
+    CLP: 0.30,
+    COP: 0.070,
+    PEN: 75.0,
+    SEK: 27.0,
+    NOK: 26.5,
+    DKK: 41.5,
+    PLN: 71.0,
+    CZK: 12.5,
+    HUF: 0.80,
+    RON: 62.0,
+    BGN: 158,
+    TRY: 8.8,
+    RUB: 3.0,
+    UAH: 7.0,
+    ISK: 2.1,
+    AED: 76.0,
+    SAR: 74.5,
+    QAR: 77.0,
+    KWD: 910,
+    BHD: 740,
+    OMR: 725,
+    JOD: 395,
+    ILS: 76.0,
+    EGP: 6.0,
+    ZAR: 15.5,
+    NGN: 0.20,
+    KES: 2.20,
+    KZT: 0.60,
+    GEL: 105,
+    RSD: 2.7,
+  },
+};
+
+const RATE_SNAPSHOTS: Record<RateType, RateSnapshot> = {
+  market: MARKET_RATES,
+  corporate: CORPORATE_RATES,
+};
+
+/**
+ * Module-level pointer to the active rate snapshot. `RateProvider` keeps this
+ * in sync with the React state during render so plain `convertToBase` /
+ * `convertBetween` calls (which have no access to React context) read the
+ * freshly selected snapshot on every render that subscribes to the provider.
+ */
+let _activeRateType: RateType = "market";
+
+export function setActiveRateType(type: RateType): void {
+  _activeRateType = type;
+}
+
+export function getActiveRateType(): RateType {
+  return _activeRateType;
+}
+
+export function activeRateSnapshot(): RateSnapshot {
+  return RATE_SNAPSHOTS[_activeRateType];
+}
+
+export function rateSnapshotFor(type: RateType): RateSnapshot {
+  return RATE_SNAPSHOTS[type];
+}
+
+/**
+ * Back-compat alias — a plain `rates` table, resolved against the currently
+ * active snapshot. Existing call sites keep working; any render subscribed to
+ * the rate provider re-runs when the toggle flips.
+ */
+export const EXCHANGE_RATES: Record<string, number> = new Proxy({} as Record<string, number>, {
+  get: (_t, prop: string) => activeRateSnapshot().rates[prop],
+  has: (_t, prop: string) => prop in activeRateSnapshot().rates,
+  ownKeys: () => Object.keys(activeRateSnapshot().rates),
+  getOwnPropertyDescriptor: (_t, prop: string) => {
+    const value = activeRateSnapshot().rates[prop];
+    if (value === undefined) return undefined;
+    return { value, enumerable: true, configurable: true, writable: false };
+  },
+});
+
+/** Convert any amount from `fromCode` to base currency using the active snapshot. */
 export function convertToBase(value: number, fromCode: string | undefined | null): number {
   if (!fromCode) return value;
-  const rate = EXCHANGE_RATES[fromCode.toUpperCase()];
+  const rate = activeRateSnapshot().rates[fromCode.toUpperCase()];
   if (rate === undefined) return value;
   return value * rate;
 }
@@ -280,9 +419,15 @@ export function convertToBase(value: number, fromCode: string | undefined | null
 /** Convert an amount from one currency to another via the base currency. */
 export function convertBetween(value: number, fromCode: string, toCode: string): number {
   const inBase = convertToBase(value, fromCode);
-  const toRate = EXCHANGE_RATES[toCode.toUpperCase()];
+  const toRate = activeRateSnapshot().rates[toCode.toUpperCase()];
   if (!toRate) return inBase;
   return inBase / toRate;
+}
+
+/** The raw rate used to convert 1 unit of `code` into base (0 if unknown). */
+export function rateToBase(code: string | undefined | null): number {
+  if (!code) return 1;
+  return activeRateSnapshot().rates[code.toUpperCase()] ?? 0;
 }
 
 /**

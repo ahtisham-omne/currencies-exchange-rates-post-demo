@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import type { PaymentTermPreset, PaymentTermInstallment } from "./partnerConstants";
 import { CurrencyAmount } from "../ui/CurrencyAmount";
+import { CurrencySymbol } from "../ui/CurrencySymbol";
 import { BASE_CURRENCY } from "../../data/currencyLibrary";
 
 interface PaymentTermCardProps {
@@ -334,7 +335,10 @@ export function PaymentTermCard({
                 {discountFixed ? (
                   <CurrencyAmount value={discountFixed.value} currency={discountFixed.currency} mode="single" />
                 ) : (term.discountMode ?? "percent") === "fixed" ? (
-                  <span>${term.discountPercent || "2"}</span>
+                  <span className="inline-flex items-baseline gap-0.5">
+                    <CurrencySymbol code={currencyMode === "base" ? BASE_CURRENCY : (partnerCurrency || BASE_CURRENCY)} />
+                    {term.discountPercent || "2"}
+                  </span>
                 ) : (
                   <span>{term.discountPercent || "2"}%</span>
                 )}

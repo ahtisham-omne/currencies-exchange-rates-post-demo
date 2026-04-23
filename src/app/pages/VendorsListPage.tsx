@@ -220,6 +220,8 @@ import { getAvatarTint } from "../utils/avatarTints";
 import { usePersonLightbox } from "../components/vendors/PersonAvatarLightbox";
 
 import { CONTACT_DICTIONARY, VENDOR_SUB_TYPES, CUSTOMER_SUB_TYPES } from "../components/vendors/partnerConstants";
+import { RateContextStrip } from "../components/vendors/RateContextStrip";
+import { useRateContext } from "../context/RateContext";
 
 /* ─── Name → Contact ID resolver ─── */
 const _cbNameMap: Record<string, string> = {};
@@ -249,6 +251,12 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const ctx = useVendors();
+  // Subscribing to the rate provider so aggregations (KPIs, sums in cells) and
+  // hover tooltips re-run when the Market/Corporate toggle flips.
+  const { rateType } = useRateContext();
+  // Referenced so React tracks the dependency — value is read via module-level
+  // `convertToBase` / `convertBetween` during render.
+  void rateType;
   const { getVendor, addVendor, updateVendor, archiveVendor, restoreVendor, deleteVendor } = ctx;
   // When embedded, prefer the supplied vendors subset; otherwise use the full context list.
   const vendors = embeddedVendors ?? ctx.vendors;
@@ -1229,6 +1237,13 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
               Create New Partner
             </Button>
           </div>
+          )}
+
+          {/* Exchange-rate context strip — persistent across the listing */}
+          {!embedded && (
+            <div className="mb-3 shrink-0">
+              <RateContextStrip />
+            </div>
           )}
 
           {/* KPI Insights -- collapsible section (hidden when embedded) */}
