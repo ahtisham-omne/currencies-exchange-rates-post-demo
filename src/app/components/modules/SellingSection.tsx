@@ -9,9 +9,11 @@
  * partnerRules, plus togglePartner & updatePartnerRules callbacks.
  */
 import React, { useState } from 'react';
-import { Plus, Search, Check, ChevronDown, X, Trash2, Users, Store } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, Search, Check, ChevronDown, X, Trash2, Users, Store, DollarSign } from 'lucide-react';
 import { RadioOption, CheckboxControl } from './configAtoms';
 import { ConfigCard, MOCK_PARTNERS, PRICING_RULES } from './CreateItemModal';
+import { CurrencySymbol } from './CurrencySymbol';
 import type { AdvancedConfig } from './ItemConfigurationMaster';
 
 const FONT = 'Inter, system-ui, sans-serif';
@@ -27,6 +29,23 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
   const [partnerSearch, setPartnerSearch] = useState('');
   const [partnerPopoverOpen, setPartnerPopoverOpen] = useState(false);
   const [rulesPopoverPartner, setRulesPopoverPartner] = useState<string | null>(null);
+
+  const pricing = config.pricing || [];
+  const PRICE_UOMS = ['Each', 'Box', 'Case', 'Pallet', 'kg', 'm'];
+  const [openUomId, setOpenUomId] = useState<string | null>(null);
+  const [uomSearch, setUomSearch] = useState('');
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
+
+  const addPriceRow = () => {
+    const newId = Math.random().toString(36).substr(2, 9);
+    onConfigChange('pricing', [...pricing, { id: newId, price: '', uom: '' }]);
+  };
+  const removePriceRow = (id: string) => {
+    onConfigChange('pricing', pricing.filter((p: any) => p.id !== id));
+  };
+  const updatePriceField = (id: string, field: string, val: string) => {
+    onConfigChange('pricing', pricing.map((p: any) => p.id === id ? { ...p, [field]: val } : p));
+  };
 
   const addRule = (partnerId: string, ruleId: string) => {
     const current = config.partnerRules?.[partnerId] || [];
@@ -48,7 +67,6 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
         tooltip="Control which partners can sell this item. Choose between making it available to all partners or restricting it to a specific list."
       >
         <div className="flex flex-col gap-4">
-          {/* Scope options — Category-literal RadioOption cards */}
           <div className="flex flex-col gap-3">
             <RadioOption
               selected={sellingScope === 'all'}
@@ -64,7 +82,6 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
             />
           </div>
 
-          {/* Specific partners config */}
           {sellingScope === 'specific' && (
             <div className="mt-2">
               {specificPartners.length > 0 ? (
@@ -166,6 +183,130 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
           )}
         </div>
       </ConfigCard>
+
+      {/* Custom Price Per Unit — manual card to allow dropdown overflow */}
+      <div style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+        {/* Card header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', borderRadius: '8px 8px 0 0' }}>
+          <div style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: '#EDF4FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <DollarSign style={{ width: 13, height: 13, color: '#3B82F6' }} />
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B', fontFamily: FONT }}>Custom Price Per Unit</span>
+        </div>
+        {/* Card body */}
+        <div style={{ padding: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.8px', textTransform: 'uppercase', color: '#9CA3AF', fontFamily: FONT }}>
+              Defined Prices
+            </span>
+            <button
+              onClick={addPriceRow}
+              disabled={pricing.length >= PRICE_UOMS.length}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', cursor: pricing.length >= PRICE_UOMS.length ? 'not-allowed' : 'pointer', opacity: pricing.length >= PRICE_UOMS.length ? 0.4 : 1 }}
+            >
+              <Plus style={{ width: 12, height: 12 }} />
+            </button>
+          </div>
+
+          {pricing.length === 0 ? (
+            <div style={{ padding: '20px 0', textAlign: 'center', color: '#9CA3AF', fontSize: 13, fontFamily: FONT }}>
+              No prices defined. Click + to add one.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {pricing.map((row: any) => {
+                const usedUoms = pricing.filter((p: any) => p.id !== row.id).map((p: any) => p.uom);
+                const availableUoms = PRICE_UOMS.filter(u => !usedUoms.includes(u));
+                return (
+                  <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <CurrencySymbol
+                        style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF', fontSize: 13, fontFamily: FONT, fontWeight: 500 }}
+                      />
+                      <input
+                        value={row.price}
+                        onChange={(e) => { const v = e.target.value; if (/^\d*\.?\d*$/.test(v)) updatePriceField(row.id, 'price', v); }}
+                        placeholder="0.00"
+                        style={{ width: '100%', paddingLeft: 34, paddingRight: 8, height: 36, border: '1px solid #E2E8F0', borderRadius: 6, background: '#fff', fontSize: 13, fontFamily: FONT, outline: 'none', color: 'var(--foreground)' }}
+                      />
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        if (openUomId === row.id) { setOpenUomId(null); return; }
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setDropdownPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                        setUomSearch('');
+                        setOpenUomId(row.id);
+                      }}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, height: 36, paddingLeft: 10, paddingRight: 8, border: '1px solid #E2E8F0', borderRadius: 6, background: '#fff', fontSize: 13, fontFamily: FONT, minWidth: 110, cursor: 'pointer', color: 'var(--foreground)', flexShrink: 0 }}
+                    >
+                      <span>{row.uom || 'Select unit'}</span>
+                      <ChevronDown style={{ width: 12, height: 12, opacity: 0.5, flexShrink: 0 }} />
+                    </button>
+                    <button
+                      onClick={() => removePriceRow(row.id)}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', flexShrink: 0 }}
+                    >
+                      <Trash2 style={{ width: 13, height: 13, color: '#9CA3AF' }} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* UOM dropdown — portaled to document.body so position:fixed anchors to
+          the viewport, not a transformed ancestor (framer-motion wrappers in
+          the create-item modal leave residual transforms that otherwise
+          hijack the containing block). */}
+      {openUomId !== null && typeof document !== 'undefined' && (() => {
+        const row = pricing.find((p: any) => p.id === openUomId);
+        if (!row) return null;
+        const usedUoms = pricing.filter((p: any) => p.id !== openUomId).map((p: any) => p.uom);
+        const availableUoms = PRICE_UOMS.filter(u => !usedUoms.includes(u));
+        const filteredUoms = availableUoms.filter(u => u.toLowerCase().includes(uomSearch.toLowerCase()));
+        return createPortal(
+          <>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => setOpenUomId(null)} />
+            <div style={{ position: 'fixed', top: dropdownPos.top, right: dropdownPos.right, zIndex: 9999, width: 150, background: 'var(--card)', border: '0.75px solid var(--border)', borderRadius: 10, boxShadow: '0 4px 24px -4px rgba(0,0,0,0.15)', overflow: 'hidden' }}>
+              <div style={{ padding: '6px 10px', borderBottom: '0.75px solid var(--border)' }}>
+                <div style={{ position: 'relative' }}>
+                  <Search style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', width: 12, height: 12, color: '#9CA3AF' }} />
+                  <input
+                    value={uomSearch}
+                    onChange={e => setUomSearch(e.target.value)}
+                    placeholder="Search..."
+                    autoFocus
+                    style={{ width: '100%', paddingLeft: 22, height: 28, border: 'none', outline: 'none', background: 'transparent', fontSize: 12, fontFamily: FONT }}
+                  />
+                </div>
+              </div>
+              <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                {filteredUoms.length === 0 ? (
+                  <div style={{ padding: '10px 12px', fontSize: 12, color: '#9CA3AF', fontFamily: FONT }}>No results.</div>
+                ) : (
+                  filteredUoms.map(uom => (
+                    <div
+                      key={uom}
+                      onClick={() => { updatePriceField(openUomId, 'uom', uom); setOpenUomId(null); setUomSearch(''); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', fontSize: 13, fontFamily: FONT, color: 'var(--foreground)' }}
+                      onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'var(--secondary)')}
+                      onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
+                    >
+                      <Check style={{ width: 12, height: 12, color: 'var(--primary)', opacity: row.uom === uom ? 1 : 0, flexShrink: 0 }} />
+                      {uom}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </>,
+          document.body
+        );
+      })()}
+
     </div>
   );
 }

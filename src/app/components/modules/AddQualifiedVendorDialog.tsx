@@ -38,6 +38,7 @@ import {
 import { Checkbox } from '../ui/checkbox';
 import { Badge } from '../ui/badge';
 import { cn } from '../../../lib/utils';
+import { CurrencySymbol } from './CurrencySymbol';
 
 // Mock vendor data
 const MOCK_VENDORS = [
@@ -295,14 +296,16 @@ export function AddQualifiedVendorDialog({
                   </Label>
                   <div className="flex items-center gap-3">
                     <div className="relative flex-1">
-                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <CurrencySymbol
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold"
+                      />
                       <Input
                         type="number"
                         step="0.01"
                         placeholder="0.00"
                         value={formData.pricePerUom}
                         onChange={(e) => handleFieldChange('pricePerUom', e.target.value)}
-                        className="pl-10 h-11 text-base border-[1.5px] border-[var(--border)]"
+                        className="pl-12 h-11 text-base border-[1.5px] border-[var(--border)]"
                       />
                     </div>
                     <div className="text-sm text-muted-foreground font-medium min-w-[60px]">per {formData.uom}</div>

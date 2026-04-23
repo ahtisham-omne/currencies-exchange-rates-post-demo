@@ -38,7 +38,8 @@ import {
   MapPin,
   Search,
   Filter,
-  MoreHorizontal
+  MoreHorizontal,
+  ChevronsUpDown
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -80,6 +81,15 @@ import {
   DialogClose
 } from "../ui/dialog";
 import { Checkbox } from "../ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import {
   Table,
   TableBody,
@@ -88,6 +98,7 @@ import {
   TableHeader,
   TableRow,
 } from "../ui/table";
+import { CurrencySymbol } from './CurrencySymbol';
 
 // Types
 interface Category {
@@ -278,6 +289,7 @@ export function ItemCreation({ onCancel, onSave }: ItemCreationProps) {
       sellingScope: 'all',
       customPrice: '',
       priceUom: 'Each',
+      customPriceRows: [{ unit: 'Each', price: '' }] as Array<{ unit: string; price: string }>,
       
       // 7. Valuation
       valuationMethod: 'FIFO',
@@ -308,6 +320,26 @@ export function ItemCreation({ onCancel, onSave }: ItemCreationProps) {
 
   const updateConfig = (key: string, value: any) => {
       setAdvancedConfig(prev => ({ ...prev, [key]: value }));
+  };
+
+  const CUSTOM_PRICE_UOMS = ['Each', 'Box', 'Case', 'Pallet', 'kg', 'm'];
+  const [openUomIndex, setOpenUomIndex] = useState<number | null>(null);
+
+  const addPriceRow = () => {
+      const rows = advancedConfig.customPriceRows;
+      updateConfig('customPriceRows', [...rows, { unit: '', price: '' }]);
+  };
+
+  const removePriceRow = (idx: number) => {
+      const rows = advancedConfig.customPriceRows.filter((_, i) => i !== idx);
+      updateConfig('customPriceRows', rows.length === 0 ? [{ unit: 'Each', price: '' }] : rows);
+  };
+
+  const updatePriceRow = (idx: number, field: 'unit' | 'price', value: string) => {
+      const rows = advancedConfig.customPriceRows.map((row, i) =>
+          i === idx ? { ...row, [field]: value } : row
+      );
+      updateConfig('customPriceRows', rows);
   };
 
   if (viewMode === 'advanced') {
@@ -754,7 +786,7 @@ export function ItemCreation({ onCancel, onSave }: ItemCreationProps) {
                                                  <p className="text-sm text-muted-foreground mt-1 leading-relaxed">Item is available in the public catalog for all customers.</p>
                                              </div>
                                          </div>
-                                         
+
                                          <div className={cn(
                                              "flex items-start space-x-4 rounded-xl border-2 p-6 transition-all cursor-pointer shadow-sm hover:shadow-md",
                                              advancedConfig.sellingScope === 'specific' ? "border-primary bg-primary/5" : "border-border hover:bg-card"
@@ -768,14 +800,109 @@ export function ItemCreation({ onCancel, onSave }: ItemCreationProps) {
                                               </div>
                                           </div>
                                      </div>
+
+                                     {/* Custom Price per Unit */}
+                                     <div className="space-y-3 pt-2">
+                                         <div>
+                                             <h4 className="text-base font-semibold">Custom Price per Unit</h4>
+                                             <p className="text-sm text-muted-foreground mt-0.5">Override pricing for specific units of measure.</p>
+                                         </div>
+                                         <Separator />
+                                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Defined Prices</p>
+                                         <div className="space-y-2">
+                                             {advancedConfig.customPriceRows.map((row, idx) => {
+                                                 const usedUnits = advancedConfig.customPriceRows
+                                                     .filter((_, i) => i !== idx)
+                                                     .map(r => r.unit)
+                                                     .filter(Boolean);
+                                                 const availableUnits = CUSTOM_PRICE_UOMS.filter(u => !usedUnits.includes(u));
+                                                 return (
+                                                     <div key={idx} className="flex items-center gap-2">
+                                                         <div className="relative flex-1">
+                                                             <CurrencySymbol
+                                                                 className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium text-sm"
+                                                             />
+                                                             <Input
+                                                                 className="pl-10 h-10 bg-background"
+                                                                 placeholder="0.00"
+                                                                 value={row.price}
+                                                                 onChange={(e) => {
+                                                                     const val = e.target.value;
+                                                                     if (/^\d*\.?\d*$/.test(val)) updatePriceRow(idx, 'price', val);
+                                                                 }}
+                                                             />
+                                                         </div>
+                                                         <Popover open={openUomIndex === idx} onOpenChange={(open) => setOpenUomIndex(open ? idx : null)}>
+                                                             <PopoverTrigger asChild>
+                                                                 <button
+                                                                     role="combobox"
+                                                                     className={cn(
+                                                                         "flex h-10 w-[130px] items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background",
+                                                                         "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                                                                         "hover:bg-accent hover:text-accent-foreground"
+                                                                     )}
+                                                                 >
+                                                                     <span className="truncate">{row.unit || 'Unit'}</span>
+                                                                     <ChevronsUpDown className="ml-1 h-3.5 w-3.5 opacity-50 shrink-0" />
+                                                                 </button>
+                                                             </PopoverTrigger>
+                                                             <PopoverContent className="w-[130px] p-0" align="start" side="bottom" sideOffset={4}>
+                                                                 <Command>
+                                                                     <CommandInput placeholder="Search..." className="h-8" />
+                                                                     <CommandList>
+                                                                         <CommandEmpty>Not found.</CommandEmpty>
+                                                                         <CommandGroup>
+                                                                             {availableUnits.map(unit => (
+                                                                                 <CommandItem
+                                                                                     key={unit}
+                                                                                     value={unit}
+                                                                                     onSelect={() => {
+                                                                                         updatePriceRow(idx, 'unit', unit);
+                                                                                         setOpenUomIndex(null);
+                                                                                     }}
+                                                                                 >
+                                                                                     <Check className={cn("mr-2 h-4 w-4", row.unit === unit ? "opacity-100" : "opacity-0")} />
+                                                                                     {unit}
+                                                                                 </CommandItem>
+                                                                             ))}
+                                                                         </CommandGroup>
+                                                                     </CommandList>
+                                                                 </Command>
+                                                             </PopoverContent>
+                                                         </Popover>
+                                                         <Button
+                                                             variant="ghost"
+                                                             size="icon"
+                                                             className="h-10 w-10 text-muted-foreground hover:text-destructive shrink-0"
+                                                             onClick={() => removePriceRow(idx)}
+                                                         >
+                                                             <Trash2 className="h-4 w-4" />
+                                                         </Button>
+                                                     </div>
+                                                 );
+                                             })}
+                                         </div>
+                                         <Button
+                                             variant="outline"
+                                             size="sm"
+                                             className="gap-1.5 text-muted-foreground"
+                                             onClick={addPriceRow}
+                                             disabled={advancedConfig.customPriceRows.length >= CUSTOM_PRICE_UOMS.length}
+                                         >
+                                             <Plus className="h-3.5 w-3.5" />
+                                             Add Price
+                                         </Button>
+                                     </div>
                                  </div>
-                                 
+
                                  <div className="space-y-6">
                                      <Label className="text-base font-semibold">Base Price</Label>
                                      <div className="flex gap-4 p-8 bg-card rounded-xl border border-border shadow-sm">
                                          <div className="relative flex-1">
-                                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold text-xl">$</span>
-                                             <Input className="h-16 pl-10 text-2xl font-bold bg-background shadow-sm" placeholder="0.00" value={advancedConfig.customPrice} onChange={(e) => updateConfig('customPrice', e.target.value)} />
+                                             <CurrencySymbol
+                                                 className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold text-xl"
+                                             />
+                                             <Input className="h-16 pl-16 text-2xl font-bold bg-background shadow-sm" placeholder="0.00" value={advancedConfig.customPrice} onChange={(e) => updateConfig('customPrice', e.target.value)} />
                                          </div>
                                          <Select value={advancedConfig.priceUom} onValueChange={(v) => updateConfig('priceUom', v)}>
                                              <SelectTrigger className="h-16 w-[140px] bg-background shadow-sm text-lg"><SelectValue /></SelectTrigger>
