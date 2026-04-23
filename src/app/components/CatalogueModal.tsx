@@ -70,6 +70,7 @@ import {
   getVendorContacts,
   getItemImages,
   getAllSystemVendorOffersForItem,
+  getVendorCurrency,
   VENDOR_CONTACTS,
 } from "./catalogData";
 import type { CatalogItem, ItemVendorOffer } from "./catalogData";
@@ -78,6 +79,9 @@ import TruncatedItemName from "./TruncatedItemName";
 import ImageLightbox from "./ImageLightbox";
 import { toast } from "sonner";
 import QuantityStepperInput from "./QuantityStepperInput";
+import { POPriceDisplay } from "./currency/POPriceDisplay";
+import { CartAggregatedAmount, type CartBreakdownEntry } from "./currency/CartAggregatedAmount";
+import { CurrencySymbol } from "./ui/CurrencySymbol";
 import {
   formatQuantityValue,
   getDraftQuantityValue,
@@ -1112,11 +1116,13 @@ export default function ItemsCatalogueModal({
                                   </div>
                                   <div className="flex items-center gap-3 mt-0.5">
                                     <span className="text-muted-foreground" style={{ fontSize: "12px", fontWeight: "var(--font-weight-normal)", lineHeight: "16px", fontFamily: FONT }}>
-                                      Subtotal: <span className="text-foreground" style={{ fontWeight: "var(--font-weight-semibold)", fontFamily: FONT }}>${group.checkedTotal.toFixed(2)}</span>
+                                      Subtotal: <span className="text-foreground" style={{ fontWeight: "var(--font-weight-semibold)", fontFamily: FONT }}>
+                                        <POPriceDisplay nativePrice={group.checkedTotal} vendorName={group.vendor} />
+                                      </span>
                                     </span>
                                     {group.checkedDiscount > 0 && (
                                       <span style={{ fontSize: "12px", fontWeight: "var(--font-weight-normal)", lineHeight: "16px", fontFamily: FONT, color: "var(--accent)" }}>
-                                        Discount ${group.checkedDiscount.toFixed(2)}
+                                        Discount <POPriceDisplay nativePrice={group.checkedDiscount} vendorName={group.vendor} />
                                       </span>
                                     )}
                                   </div>
@@ -1204,7 +1210,9 @@ export default function ItemsCatalogueModal({
                                               </div>
                                               <span style={{ color: "var(--border)", fontSize: "10px" }}>·</span>
                                               <div className="flex items-baseline gap-1">
-                                                <span className="text-foreground" style={{ fontSize: "12px", fontWeight: "var(--font-weight-semibold)", lineHeight: "18px", fontFamily: FONT }}>${effectivePrice.toFixed(2)}</span>
+                                                <span className="text-foreground" style={{ fontSize: "12px", fontWeight: "var(--font-weight-semibold)", lineHeight: "18px", fontFamily: FONT }}>
+                                                  <POPriceDisplay nativePrice={effectivePrice} vendorName={cat.partnerLocation || ""} />
+                                                </span>
                                                 <span className="text-muted-foreground" style={{ fontSize: "10px", fontWeight: "var(--font-weight-normal)", lineHeight: "14px", fontFamily: FONT }}>/ {cat.vendorUOM}</span>
                                               </div>
                                             </div>
@@ -1261,6 +1269,24 @@ export default function ItemsCatalogueModal({
                         const checkedSubtotal = checkedCart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
                         const checkedTotalDiscount = checkedCart.reduce((s, i) => s + i.unitPrice * i.quantity * (i.discount / 100), 0);
                         const checkedGrandTotal = checkedSubtotal - checkedTotalDiscount;
+                        const breakdownMap = new Map<string, { itemCount: number; subtotal: number; discount: number }>();
+                        checkedCart.forEach((ci) => {
+                          const cur = getVendorCurrency(ci.catalogItem.partnerLocation).toUpperCase();
+                          const line = ci.unitPrice * ci.quantity;
+                          const disc = line * (ci.discount / 100);
+                          const prev = breakdownMap.get(cur) ?? { itemCount: 0, subtotal: 0, discount: 0 };
+                          breakdownMap.set(cur, {
+                            itemCount: prev.itemCount + 1,
+                            subtotal: prev.subtotal + line,
+                            discount: prev.discount + disc,
+                          });
+                        });
+                        const breakdownEntries = Array.from(breakdownMap.entries()).map(([currency, v]) => ({
+                          currency, itemCount: v.itemCount, subtotal: v.subtotal, discount: v.discount, net: v.subtotal - v.discount,
+                        }));
+                        const subtotalBreakdown: CartBreakdownEntry[] = breakdownEntries.map((e) => ({ currency: e.currency, itemCount: e.itemCount, nativeAmount: e.subtotal }));
+                        const discountBreakdown: CartBreakdownEntry[] = breakdownEntries.map((e) => ({ currency: e.currency, itemCount: e.itemCount, nativeAmount: e.discount }));
+                        const netBreakdown: CartBreakdownEntry[] = breakdownEntries.map((e) => ({ currency: e.currency, itemCount: e.itemCount, nativeAmount: e.net }));
                         return (
                       <div className="lg:w-[320px] shrink-0">
                         <div className="lg:sticky lg:top-0">
@@ -1279,7 +1305,9 @@ export default function ItemsCatalogueModal({
                                     <span className="text-foreground truncate block" style={{ fontSize: "12px", fontWeight: "var(--font-weight-medium)", lineHeight: "16px", fontFamily: FONT }}>{g.vendor}</span>
                                     <span className="text-muted-foreground" style={{ fontSize: "11px", fontWeight: "var(--font-weight-normal)", lineHeight: "15px", fontFamily: FONT }}>{g.checkedCount} of {g.items.length} selected</span>
                                   </div>
-                                  <span className="text-foreground shrink-0" style={{ fontSize: "12px", fontWeight: "var(--font-weight-medium)", lineHeight: "16px", fontFamily: FONT }}>${g.checkedTotal.toFixed(2)}</span>
+                                  <span className="text-foreground shrink-0" style={{ fontSize: "12px", fontWeight: "var(--font-weight-medium)", lineHeight: "16px", fontFamily: FONT }}>
+                                    <POPriceDisplay nativePrice={g.checkedTotal} vendorName={g.vendor} />
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -1287,18 +1315,24 @@ export default function ItemsCatalogueModal({
                             <div className="px-5 py-3 flex flex-col gap-2">
                               <div className="flex items-center justify-between">
                                 <span className="text-muted-foreground" style={{ fontSize: "var(--text-label)", fontWeight: "var(--font-weight-normal)", lineHeight: "20px", fontFamily: FONT }}>Subtotal ({checkedItemCount} units)</span>
-                                <span className="text-foreground" style={{ fontSize: "var(--text-label)", fontWeight: "var(--font-weight-semibold)", lineHeight: "20px", fontFamily: FONT }}>${checkedSubtotal.toFixed(2)}</span>
+                                <span className="text-foreground" style={{ fontSize: "var(--text-label)", fontWeight: "var(--font-weight-semibold)", lineHeight: "20px", fontFamily: FONT }}>
+                                  <CartAggregatedAmount breakdown={subtotalBreakdown} />
+                                </span>
                               </div>
                               {checkedTotalDiscount > 0 && (
                                 <div className="flex items-center justify-between">
                                   <span style={{ fontSize: "var(--text-label)", fontWeight: "var(--font-weight-normal)", lineHeight: "20px", fontFamily: FONT, color: "var(--accent)" }}>Discounts</span>
-                                  <span style={{ fontSize: "var(--text-label)", fontWeight: "var(--font-weight-semibold)", lineHeight: "20px", fontFamily: FONT, color: "var(--accent)" }}>-${checkedTotalDiscount.toFixed(2)}</span>
+                                  <span style={{ fontSize: "var(--text-label)", fontWeight: "var(--font-weight-semibold)", lineHeight: "20px", fontFamily: FONT, color: "var(--accent)" }}>
+                                    <CartAggregatedAmount breakdown={discountBreakdown} signed />
+                                  </span>
                                 </div>
                               )}
                               <div className="h-px mt-1" style={{ backgroundColor: "var(--border)" }} />
                               <div className="flex items-center justify-between pt-1">
                                 <span className="text-foreground" style={{ fontSize: "var(--text-base)", fontWeight: "var(--font-weight-semibold)", lineHeight: "22px", fontFamily: FONT }}>Total</span>
-                                <span className="text-foreground" style={{ fontSize: "var(--text-h4)", fontWeight: "var(--font-weight-semibold)", lineHeight: "28px", fontFamily: FONT }}>${checkedGrandTotal.toFixed(2)}</span>
+                                <span className="text-foreground" style={{ fontSize: "var(--text-h4)", fontWeight: "var(--font-weight-semibold)", lineHeight: "28px", fontFamily: FONT }}>
+                                  <CartAggregatedAmount breakdown={netBreakdown} />
+                                </span>
                               </div>
                             </div>
 
@@ -1630,7 +1664,10 @@ export default function ItemsCatalogueModal({
                                     </>
                                   )}
                                   <span className="text-foreground whitespace-nowrap" style={{ fontSize: "var(--text-sm)", fontWeight: "var(--font-weight-semibold)", lineHeight: "18px" }}>
-                                    ${(item.unitPrice * (1 - item.discount / 100)).toFixed(2)}
+                                    <POPriceDisplay
+                                      nativePrice={item.unitPrice * (1 - item.discount / 100)}
+                                      vendorName={item.partnerLocation}
+                                    />
                                   </span>
                                   <span className="text-muted-foreground whitespace-nowrap" style={{ fontSize: "9px", fontWeight: "var(--font-weight-normal)", lineHeight: "13px" }}>
                                     per {formatUOM(item.defaultUOM)}

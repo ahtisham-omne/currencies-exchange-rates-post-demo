@@ -29,6 +29,7 @@ import {
   EMPTY_FILTERS,
 } from "./POFilterBar";
 import InsightsDrawer from "./InsightsDrawer";
+import { BaseCurrencyKPI } from "./currency/BaseCurrencyKPI";
 import ImageLightbox from "./ImageLightbox";
 import { getItemImages } from "./catalogData";
 import PODataTable from "./PODataTable";
@@ -975,18 +976,28 @@ export default function PurchaseOrdersListing() {
     const total = MOCK_DATA.length;
     const draft = MOCK_DATA.filter((d) => d.status === "Draft").length;
     const overdue = MOCK_DATA.filter((d) => d.status === "Partially Received" || d.status === "Active with Cancellation").length;
-    const totalValue = "$2.4M";
+    const totalValuePKR = MOCK_DATA.reduce((sum, d) => sum + (d.quoteValue || 0), 0);
+    const avgOrderValuePKR = total > 0 ? totalValuePKR / total : 0;
+    const outstandingPKR = MOCK_DATA
+      .filter((d) => d.status !== "Fully Received" && d.status !== "Cancelled" && d.status !== "Closed" && d.status !== "Closed with Cancellations")
+      .reduce((sum, d) => sum + (d.quoteValue || 0), 0);
+    const totalSpentPKR = MOCK_DATA
+      .filter((d) => d.status === "Fully Received" || d.status === "Partially Received" || d.status === "Closed")
+      .reduce((sum, d) => sum + (d.quoteValue || 0), 0);
+    const discountTotalPKR = totalValuePKR * 0.019;
     return [
       { id: "total-orders",      label: "TOTAL ORDERS",      value: String(total), sub: "+8% from last month",   icon: FileText,       iconClass: "text-primary bg-primary/8" },
       { id: "pending-approval",  label: "PENDING APPROVAL",   value: String(draft), sub: "Awaiting confirmation",  icon: Clock,          iconClass: "text-chart-3 bg-chart-3/8" },
       { id: "overdue-deliveries",label: "OVERDUE DELIVERIES", value: String(overdue), sub: "Requires attention",   icon: AlertTriangle,  iconClass: "text-destructive bg-destructive/8" },
-      { id: "total-value",       label: "TOTAL VALUE",        value: totalValue,    sub: "Order valuation",        icon: TrendingUp,     iconClass: "text-accent bg-accent/8" },
-      { id: "avg-order-value",   label: "AVG ORDER VALUE",    value: "$120K",       sub: "Per order average",      icon: TrendingUp,     iconClass: "text-accent bg-accent/8" },
-      { id: "outstanding-balance",label: "OUTSTANDING",       value: "$890K",       sub: "Unpaid balance",         icon: AlertTriangle,  iconClass: "text-chart-3 bg-chart-3/8" },
+      { id: "total-value",       label: "TOTAL VALUE",        value: "",    pkrValue: totalValuePKR,     financial: true, sub: "Order valuation",        icon: TrendingUp,     iconClass: "text-accent bg-accent/8" },
+      { id: "avg-order-value",   label: "AVG ORDER VALUE",    value: "",    pkrValue: avgOrderValuePKR,  financial: true, sub: "Per order average",      icon: TrendingUp,     iconClass: "text-accent bg-accent/8" },
+      { id: "outstanding-balance",label: "OUTSTANDING",       value: "",    pkrValue: outstandingPKR,    financial: true, sub: "Unpaid balance",         icon: AlertTriangle,  iconClass: "text-chart-3 bg-chart-3/8" },
+      { id: "total-spent",       label: "TOTAL SPENT",        value: "",    pkrValue: totalSpentPKR,     financial: true, sub: "Received to date",        icon: TrendingUp,     iconClass: "text-accent bg-accent/8" },
+      { id: "discount-total",    label: "TOTAL DISCOUNTS",    value: "",    pkrValue: discountTotalPKR,  financial: true, sub: "Savings captured",        icon: TrendingUp,     iconClass: "text-accent bg-accent/8" },
       { id: "active-orders",     label: "ACTIVE ORDERS",      value: String(total - draft), sub: "Currently active", icon: FileText,     iconClass: "text-primary bg-primary/8" },
       { id: "completed-orders",  label: "COMPLETED",          value: "12",          sub: "Fully delivered",         icon: FileText,       iconClass: "text-accent bg-accent/8" },
       { id: "cancelled-orders",  label: "CANCELLED",          value: "2",           sub: "Cancelled orders",        icon: AlertTriangle,  iconClass: "text-destructive bg-destructive/8" },
-    ];
+    ] as Array<{ id: string; label: string; value: string; pkrValue?: number; financial?: boolean; sub: string; icon: React.ElementType; iconClass: string }>;
   }, []);
 
   /* ── Tab counts — reflect all non-status filters so users see accurate per-tab totals ── */
@@ -1240,7 +1251,11 @@ export default function PurchaseOrdersListing() {
                          className="text-foreground"
                          style={{ fontSize: "var(--text-h3)", fontWeight: "var(--font-weight-semibold)", lineHeight: "32px", fontFamily: FONT }}
                        >
-                         {kpi.value}
+                         {kpi.financial && typeof kpi.pkrValue === "number" ? (
+                           <BaseCurrencyKPI valuePKR={kpi.pkrValue} />
+                         ) : (
+                           kpi.value
+                         )}
                        </span>
                        <span className="text-foreground/40 mt-0.5" style={s.uiCaption}>{kpi.sub}</span>
                      </div>

@@ -33,6 +33,7 @@ import type { CatalogItem, ItemVendorOffer } from "./catalogData";
 import { FONT, typography as s } from "./designTokens";
 import TruncatedItemName from "./TruncatedItemName";
 import VendorSelector from "./VendorSelector";
+import { POPriceDisplay } from "./currency/POPriceDisplay";
 
 /* ═══════════════════════════════════════════════════════════════
    TYPOGRAPHY — CSS variable-bound, Inter only
@@ -661,17 +662,11 @@ function ItemResultRow({
               >
                 Price per unit
               </span>
-              <span
+              <POPriceDisplay
+                nativePrice={item.unitPrice * (1 - item.discount / 100)}
+                vendorName={item.partnerLocation}
                 className="text-foreground"
-                style={{
-                  fontSize: "12px",
-                  fontWeight: "var(--font-weight-semibold)",
-                  lineHeight: "18px",
-                  fontFamily: FONT,
-                }}
-              >
-                ${(item.unitPrice * (1 - item.discount / 100)).toFixed(2)}
-              </span>
+              />
               <span
                 className="text-muted-foreground"
                 style={{

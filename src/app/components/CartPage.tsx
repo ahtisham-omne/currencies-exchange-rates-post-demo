@@ -37,7 +37,7 @@ import PurchaseSearchModal from "./PurchaseSearchModal";
 import ItemsCatalogueModal from "./CatalogueModal";
 import OrderFlow from "./OrderFlow";
 import type { OrderFlowItem, OrderFlowResult, OrderFlowMode, OrderFlowPrefill } from "./OrderFlow";
-import { CATALOG, getVendorOffersForItem, getItemImages } from "./catalogData";
+import { CATALOG, getVendorOffersForItem, getItemImages, getVendorCurrency } from "./catalogData";
 import type { CatalogItem } from "./catalogData";
 import {
   getCart,
@@ -54,6 +54,10 @@ import { FONT } from "./designTokens";
 import TruncatedItemName from "./TruncatedItemName";
 import ImageLightbox from "./ImageLightbox";
 import QuantityStepperInput from "./QuantityStepperInput";
+import { POPriceDisplay } from "./currency/POPriceDisplay";
+import { CartAggregatedAmount, type CartBreakdownEntry } from "./currency/CartAggregatedAmount";
+import { CurrencyAmount } from "./ui/CurrencyAmount";
+import { BASE_CURRENCY, convertBetween } from "@/app/data/currencyLibrary";
 
 /* ══════════════════���════════════════════════════════════════
    TYPOGRAPHY — CSS variable-bound, Inter only
@@ -223,6 +227,34 @@ export default function CartPage() {
   const subtotal = checkedCart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
   const totalDiscount = checkedCart.reduce((s, i) => s + i.unitPrice * i.quantity * (i.discount / 100), 0);
   const grandTotal = subtotal - totalDiscount;
+
+  /* ── Per-currency breakdown of checked items, for aggregated hover totals ── */
+  const checkedBreakdown = useMemo(() => {
+    const map = new Map<string, { itemCount: number; subtotal: number; discount: number }>();
+    checkedCart.forEach((ci) => {
+      const cur = getVendorCurrency(ci.catalogItem.partnerLocation).toUpperCase();
+      const line = ci.unitPrice * ci.quantity;
+      const disc = line * (ci.discount / 100);
+      const prev = map.get(cur) ?? { itemCount: 0, subtotal: 0, discount: 0 };
+      map.set(cur, {
+        itemCount: prev.itemCount + 1,
+        subtotal: prev.subtotal + line,
+        discount: prev.discount + disc,
+      });
+    });
+    const entries = Array.from(map.entries()).map(([currency, v]) => ({
+      currency,
+      itemCount: v.itemCount,
+      subtotal: v.subtotal,
+      discount: v.discount,
+      net: v.subtotal - v.discount,
+    }));
+    return {
+      subtotal: entries.map((e): CartBreakdownEntry => ({ currency: e.currency, itemCount: e.itemCount, nativeAmount: e.subtotal })),
+      discount: entries.map((e): CartBreakdownEntry => ({ currency: e.currency, itemCount: e.itemCount, nativeAmount: e.discount })),
+      net: entries.map((e): CartBreakdownEntry => ({ currency: e.currency, itemCount: e.itemCount, nativeAmount: e.net })),
+    };
+  }, [checkedCart]);
 
   /* ── Suggestions: items from vendors already in cart + same categories ── */
   const suggestions = useMemo(() => {
@@ -587,11 +619,13 @@ export default function CartPage() {
                           </div>
                           <div className="flex items-center gap-3 mt-0.5">
                             <span className="text-muted-foreground" style={T.vendorMeta}>
-                              Subtotal: <span className="text-foreground" style={{ fontWeight: "var(--font-weight-semibold)", fontFamily: FONT }}>${group.checkedTotal.toFixed(2)}</span>
+                              Subtotal: <span className="text-foreground" style={{ fontWeight: "var(--font-weight-semibold)", fontFamily: FONT }}>
+                                <POPriceDisplay nativePrice={group.checkedTotal} vendorName={group.vendor} />
+                              </span>
                             </span>
                             {group.checkedDiscount > 0 && (
                               <span className="text-accent" style={T.vendorMeta}>
-                                Discount ${group.checkedDiscount.toFixed(2)}
+                                Discount <POPriceDisplay nativePrice={group.checkedDiscount} vendorName={group.vendor} />
                               </span>
                             )}
                           </div>
@@ -693,7 +727,9 @@ export default function CartPage() {
                             <span className="text-foreground truncate block" style={T.uiLabel}>{g.vendor}</span>
                             <span className="text-muted-foreground" style={T.meta}>{g.checkedCount} of {g.items.length} selected</span>
                           </div>
-                          <span className="text-foreground shrink-0" style={T.uiLabel}>${g.checkedTotal.toFixed(2)}</span>
+                          <span className="text-foreground shrink-0" style={T.uiLabel}>
+                            <POPriceDisplay nativePrice={g.checkedTotal} vendorName={g.vendor} />
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -702,18 +738,24 @@ export default function CartPage() {
                     <div className="px-5 py-3 flex flex-col gap-2">
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground" style={T.summaryLabel}>Subtotal ({itemCount} units)</span>
-                        <span className="text-foreground" style={T.summaryValue}>${subtotal.toFixed(2)}</span>
+                        <span className="text-foreground" style={T.summaryValue}>
+                          <CartAggregatedAmount breakdown={checkedBreakdown.subtotal} />
+                        </span>
                       </div>
                       {totalDiscount > 0 && (
                         <div className="flex items-center justify-between">
                           <span className="text-accent" style={T.summaryLabel}>Discounts</span>
-                          <span className="text-accent" style={T.summaryValue}>-${totalDiscount.toFixed(2)}</span>
+                          <span className="text-accent" style={T.summaryValue}>
+                            <CartAggregatedAmount breakdown={checkedBreakdown.discount} signed />
+                          </span>
                         </div>
                       )}
                       <div className="h-px mt-1" style={{ backgroundColor: "var(--border)" }} />
                       <div className="flex items-center justify-between pt-1">
                         <span className="text-foreground" style={T.totalLabel}>Total</span>
-                        <span className="text-foreground" style={T.totalValue}>${grandTotal.toFixed(2)}</span>
+                        <span className="text-foreground" style={T.totalValue}>
+                          <CartAggregatedAmount breakdown={checkedBreakdown.net} />
+                        </span>
                       </div>
                     </div>
 
@@ -833,7 +875,26 @@ export default function CartPage() {
                             <span className="text-muted-foreground truncate" style={T.meta}>{po.vendor}</span>
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-foreground" style={T.priceUnit}>${po.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span className="text-foreground" style={T.priceUnit}>
+                              {(() => {
+                                const vCur = getVendorCurrency(po.vendor).toUpperCase();
+                                if (vCur === BASE_CURRENCY) {
+                                  return (
+                                    <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={po.total} />
+                                  );
+                                }
+                                const nativeValue = convertBetween(po.total, BASE_CURRENCY, vCur);
+                                return (
+                                  <CurrencyAmount
+                                    mode="listing-base"
+                                    currency={BASE_CURRENCY}
+                                    value={po.total}
+                                    partnerDefaultCurrency={vCur}
+                                    partnerDefaultValue={nativeValue}
+                                  />
+                                );
+                              })()}
+                            </span>
                             <span className="text-muted-foreground" style={T.meta}>{po.itemCount} item{po.itemCount !== 1 ? "s" : ""}</span>
                           </div>
                         </div>
@@ -980,7 +1041,9 @@ function CartLineItemCard({
             </div>
             <span style={{ color: "var(--border)", fontSize: "10px" }}>·</span>
             <div className="flex items-baseline gap-1">
-              <span className="text-foreground" style={T.priceUnit}>${effectivePrice.toFixed(2)}</span>
+              <span className="text-foreground" style={T.priceUnit}>
+                <POPriceDisplay nativePrice={effectivePrice} vendorName={cat.partnerLocation || ""} />
+              </span>
               <span className="text-muted-foreground" style={{ fontSize: "10px", fontWeight: "var(--font-weight-normal)", lineHeight: "14px", fontFamily: FONT }}>/ {cat.vendorUOM}</span>
             </div>
           </div>
@@ -1089,7 +1152,7 @@ function RecentlyOrderedCard({
         {/* Price + unit */}
         <div className="flex items-baseline gap-1 mt-1.5">
           <span className="text-foreground" style={T.priceUnit}>
-            ${effectivePrice.toFixed(2)}
+            <POPriceDisplay nativePrice={effectivePrice} vendorName={item.partnerLocation || ""} />
           </span>
           <span className="text-muted-foreground" style={{ fontSize: "10px", fontWeight: "var(--font-weight-normal)", lineHeight: "14px", fontFamily: FONT }}>
             / {item.defaultUOM}

@@ -10,6 +10,7 @@ import {
   SheetTitle,
 } from "./ui/sheet";
 import { FONT, typography as s } from "./designTokens";
+import { BaseCurrencyKPI } from "./currency/BaseCurrencyKPI";
 
 /* ═══════════════════════════════════════════════════════════════
    INSIGHTS DRAWER — Add/remove KPI insight cards
@@ -23,6 +24,8 @@ export interface InsightCard {
   label: string;
   value: string;
   section: string;
+  financial?: boolean;
+  pkrValue?: number;
 }
 
 interface InsightSection {
@@ -45,12 +48,12 @@ const INSIGHT_SECTIONS: InsightSection[] = [
     title: "FINANCIAL",
     icon: DollarSign,
     items: [
-      { id: "total-value", label: "Total Value", value: "$2.4M", section: "FINANCIAL" },
-      { id: "avg-order-value", label: "Avg Order Value", value: "$120K", section: "FINANCIAL" },
-      { id: "outstanding-balance", label: "Outstanding Balance", value: "$890K", section: "FINANCIAL" },
-      { id: "total-spent", label: "Total Spent", value: "$1.8M", section: "FINANCIAL" },
+      { id: "total-value", label: "Total Value", value: "", financial: true, pkrValue: 6_120_800, section: "FINANCIAL" },
+      { id: "avg-order-value", label: "Avg Order Value", value: "", financial: true, pkrValue: 306_040, section: "FINANCIAL" },
+      { id: "outstanding-balance", label: "Outstanding Balance", value: "", financial: true, pkrValue: 2_270_500, section: "FINANCIAL" },
+      { id: "total-spent", label: "Total Spent", value: "", financial: true, pkrValue: 4_590_200, section: "FINANCIAL" },
       { id: "avg-line-items", label: "Avg Line Items", value: "3.2", section: "FINANCIAL" },
-      { id: "discount-total", label: "Total Discounts", value: "$45K", section: "FINANCIAL" },
+      { id: "discount-total", label: "Total Discounts", value: "", financial: true, pkrValue: 116_295, section: "FINANCIAL" },
     ],
   },
   {
@@ -251,7 +254,13 @@ export default function InsightsDrawer({
                             fontFamily: FONT,
                           }}
                         >
-                          {item.value}
+                          {item.financial && typeof item.pkrValue === "number" ? (
+                            <span onClick={(e) => e.stopPropagation()}>
+                              <BaseCurrencyKPI valuePKR={item.pkrValue} />
+                            </span>
+                          ) : (
+                            item.value
+                          )}
                         </span>
                       </button>
                     );

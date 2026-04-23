@@ -134,6 +134,58 @@ const EXTENDED_VENDOR_NAMES = [
   "Cummins Inc.", "Timken Company", "SKF Group", "Flex-N-Gate",
 ];
 
+/**
+ * Default transaction currency per vendor (ISO 4217). Vendors not listed here
+ * fall back to PKR (the company base currency). Used by the PO module to:
+ *   - default `PurchaseOrderData.vendorAmountCurrency` on PO creation
+ *   - derive the `originalCurrency` for a catalog item shown in the Add Items
+ *     modal (items inherit their vendor's currency unless overridden)
+ *   - power the Base/Partner toggle on PO detail pages
+ */
+export const VENDOR_CURRENCIES: Record<string, string> = {
+  // North American OEMs
+  "General Motors (GM)": "USD",
+  "Ford Motor Company": "USD",
+  "Tesla, Inc.": "USD",
+  "Rivian Automotive": "USD",
+  "Lucid Motors": "USD",
+  "Chrysler (Stellantis N.V.)": "EUR",
+  // Japanese OEMs
+  "Toyota Technical Center (TTC)": "JPY",
+  "Honda Motor Co., Ltd. (USA)": "JPY",
+  "Nissan North America": "JPY",
+  // European OEMs
+  "BMW of North America": "EUR",
+  // Tier-1 suppliers — extended network
+  "Bosch Rexroth": "EUR",
+  "Continental AG": "EUR",
+  "ZF Friedrichshafen": "EUR",
+  "Valeo SA": "EUR",
+  "Denso Corporation": "JPY",
+  "Aisin Corporation": "JPY",
+  "Schaeffler Group": "EUR",
+  "BorgWarner Inc.": "USD",
+  "Dana Incorporated": "USD",
+  "Magna International": "CAD",
+  "Aptiv PLC": "USD",
+  "Hyundai Mobis": "KRW",
+  "Sensata Technologies": "USD",
+  "Eaton Corporation": "USD",
+  "Parker Hannifin": "USD",
+  "Cummins Inc.": "USD",
+  "Timken Company": "USD",
+  "SKF Group": "EUR",
+  "Flex-N-Gate": "USD",
+  // Domestic PKR supplier (so the toggle-hidden branch is reachable)
+  "Karachi Industrial Works": "PKR",
+};
+
+/** Default currency for a vendor — falls back to PKR (base) when unknown. */
+export function getVendorCurrency(vendorName: string | undefined | null): string {
+  if (!vendorName) return "PKR";
+  return VENDOR_CURRENCIES[vendorName] ?? "PKR";
+}
+
 /** Unique partner locations sorted (excluding unassigned) — includes all vendors from catalog + extended network */
 export const PARTNER_LOCATIONS = [...new Set([
   ...CATALOG.map((c) => c.partnerLocation).filter(Boolean),

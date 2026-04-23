@@ -155,6 +155,12 @@ import type { POVersionEntry as POVersionEntryType } from "./poStore";
 import { getItemImages } from "./catalogData";
 import PONotesSection, { LineItemNoteIndicator } from "./PONotesSection";
 import UserHoverCard from "./UserHoverCard";
+import { POMoneyCell } from "./currency/POMoneyCell";
+import { POCurrencyHeaderControls } from "./currency/POCurrencyHeaderControls";
+import POCurrencyConfigModal from "./currency/POCurrencyConfigModal";
+import { POLockedRateHelper } from "./currency/POLockedRateHelper";
+import { poVendorCurrencyIsBase, getPOVendorCurrency } from "./poStore";
+import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from "@/app/data/currencyLibrary";
 
 /* ═════════════════════���═══════�������═════������════════════════════��═════
    TYPOGRAPHY — CSS variable-bound, Inter only
@@ -1085,18 +1091,40 @@ function LineItemsPanel({
     setEditingQtyId(null);
   };
 
-  /* Inline price editing */
+  /* Inline price editing — stored in PKR (base); input reflects active viewMode */
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [editingPriceValue, setEditingPriceValue] = useState<string>("");
 
+  const poVendorCurrency = getPOVendorCurrency(po);
+  const poVendorIsBase = poVendorCurrencyIsBase(po);
+  const priceEditMode: "base" | "partner" =
+    !poVendorIsBase && (po.viewMode ?? "base") === "partner" ? "partner" : "base";
+  const priceEditCurrency = priceEditMode === "partner" ? poVendorCurrency : BASE_CURRENCY;
+  const priceEditSymbol =
+    getLibraryCurrency(priceEditCurrency)?.symbol ?? priceEditCurrency;
+
+  const displayPriceInEditCurrency = (li: POLineItem): number => {
+    const effectivePricePKR = li.unitPrice * (1 - li.discount / 100);
+    if (priceEditMode === "base") return effectivePricePKR;
+    if (li.lockedRate && li.lockedRate > 0) return effectivePricePKR / li.lockedRate;
+    return convertBetween(effectivePricePKR, BASE_CURRENCY, priceEditCurrency);
+  };
+
   const startPriceEdit = (li: POLineItem) => {
     setEditingPriceId(li.id);
-    const effectivePrice = li.unitPrice * (1 - li.discount / 100);
-    setEditingPriceValue(effectivePrice.toFixed(2));
+    setEditingPriceValue(displayPriceInEditCurrency(li).toFixed(2));
   };
 
   const commitPriceEdit = (li: POLineItem) => {
-    const newPrice = Math.max(0.01, parseFloat(editingPriceValue) || li.unitPrice);
+    const parsed = parseFloat(editingPriceValue);
+    const safeInputValue = Number.isFinite(parsed) && parsed > 0 ? parsed : displayPriceInEditCurrency(li);
+    const valueInBase =
+      priceEditMode === "base"
+        ? safeInputValue
+        : li.lockedRate && li.lockedRate > 0
+          ? safeInputValue * li.lockedRate
+          : convertBetween(safeInputValue, priceEditCurrency, BASE_CURRENCY);
+    const newPrice = Math.max(0.01, valueInBase);
     onUpdatePrice(li, newPrice);
     setEditingPriceId(null);
   };
@@ -1336,12 +1364,12 @@ function LineItemsPanel({
               <div className="text-right pt-0.5">
                 {canEdit ? (
                   <div className="relative inline-flex items-center">
-                    <span className="absolute left-2 text-muted-foreground pointer-events-none" style={{ fontSize: "var(--text-label)", fontWeight: "var(--font-weight-normal)", lineHeight: "18px", fontFamily: FONT }}>$</span>
+                    <span className="absolute left-2 text-muted-foreground pointer-events-none" style={{ fontSize: "var(--text-label)", fontWeight: "var(--font-weight-normal)", lineHeight: "18px", fontFamily: FONT }}>{priceEditSymbol}</span>
                     <input
                       type="number"
                       min={0.01}
                       step={0.01}
-                      value={editingPriceId === li.id ? editingPriceValue : effectivePrice.toFixed(2)}
+                      value={editingPriceId === li.id ? editingPriceValue : displayPriceInEditCurrency(li).toFixed(2)}
                       onChange={(e) => {
                         if (!freeEdit) return;
                         if (editingPriceId !== li.id) startPriceEdit(li);
@@ -1372,7 +1400,12 @@ function LineItemsPanel({
                     className="text-foreground"
                     style={{ fontSize: "var(--text-label)", fontWeight: "var(--font-weight-normal)", lineHeight: "18px", fontFamily: FONT }}
                   >
-                    ${effectivePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <POMoneyCell
+                      valuePKR={effectivePrice}
+                      po={po}
+                      lockedRate={li.lockedRate}
+                      lockedAt={li.lockedAt}
+                    />
                   </span>
                 )}
               </div>
@@ -1383,7 +1416,12 @@ function LineItemsPanel({
                   className="text-foreground"
                   style={{ fontSize: "var(--text-label)", fontWeight: "var(--font-weight-semibold)", lineHeight: "18px", fontFamily: FONT }}
                 >
-                  ${(isEditingQty ? previewLineTotal : li.lineTotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <POMoneyCell
+                    valuePKR={isEditingQty ? previewLineTotal : li.lineTotal}
+                    po={po}
+                    lockedRate={li.lockedRate}
+                    lockedAt={li.lockedAt}
+                  />
                 </span>
                 {li.discount > 0 && (
                   <span
@@ -1760,7 +1798,7 @@ function DuplicatePODialog({
   po: PurchaseOrderData;
   onDuplicate: (newPo: PurchaseOrderData) => void;
 }) {
-  const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const handleDuplicate = () => {
     const newPo = duplicatePO(po.id);
@@ -2115,6 +2153,7 @@ export default function PurchaseOrderDraft() {
   const [payToDialogOpen, setPayToDialogOpen] = useState(false);
   const [shipToDialogOpen, setShipToDialogOpen] = useState(false);
   const [fundedByDialogOpen, setFundedByDialogOpen] = useState(false);
+  const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("items");
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [description, setDescription] = useState("");
@@ -2742,7 +2781,7 @@ export default function PurchaseOrderDraft() {
                 <div className="flex items-center gap-1.5">
                   <CircleDollarSign style={{ width: '12px', height: '12px', color: isClosed ? 'color-mix(in srgb, var(--muted-foreground) 50%, transparent)' : 'var(--muted-foreground)', flexShrink: 0 }} />
                   <span style={{ fontSize: 'var(--text-label)', fontFamily: FONT, fontWeight: 'var(--font-weight-semibold)', color: isClosed ? 'color-mix(in srgb, var(--muted-foreground) 75%, transparent)' : 'var(--foreground)', lineHeight: 1.3 }}>
-                    ${po.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <POMoneyCell valuePKR={po.total} po={po} />
                   </span>
                   <span style={{ fontSize: 'var(--text-label)', fontFamily: FONT, color: isClosed ? 'color-mix(in srgb, var(--muted-foreground) 50%, transparent)' : 'var(--muted-foreground)', lineHeight: 1.3 }}>
                     · {po.lineItems.length} item{po.lineItems.length !== 1 ? 's' : ''}
@@ -2768,6 +2807,10 @@ export default function PurchaseOrderDraft() {
                     </span>
                   </div>
                 </UserHoverCard>
+                {/* Currency controls — pushed right. Toggle hides for PKR-native vendors; configurator always visible. */}
+                <div className="ml-auto flex items-center">
+                  <POCurrencyHeaderControls po={po} onOpenConfig={() => setCurrencyConfigOpen(true)} />
+                </div>
               </div>
             </div>
 
@@ -3114,7 +3157,9 @@ export default function PurchaseOrderDraft() {
                   {/* Grand Total — compact centered */}
                   <div className="px-4 pt-2.5 pb-2 flex flex-col items-center gap-0.5 border-b border-border">
                     <span className="text-muted-foreground" style={st.fieldLabel}>Total Amount</span>
-                    <span className="text-foreground" style={st.grandTotal}>${po.total.toFixed(2)}</span>
+                    <span className="text-foreground" style={st.grandTotal}>
+                      <POMoneyCell valuePKR={po.total} po={po} />
+                    </span>
                     <span className="text-foreground/30" style={st.tiny}>
                       {po.lineItems.filter((li) => !li.cancelled).length} active item{po.lineItems.filter((li) => !li.cancelled).length !== 1 ? "s" : ""}
                       {hasCancelledItems && <> · {po.lineItems.filter((li) => li.cancelled).length} cancelled</>}
@@ -3126,23 +3171,36 @@ export default function PurchaseOrderDraft() {
                   <div className="px-4 py-2 flex flex-col gap-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-foreground/55" style={st.summaryLabel}>Subtotal</span>
-                      <span className="text-foreground" style={st.summaryValue}>${po.subtotal.toFixed(2)}</span>
+                      <span className="text-foreground" style={st.summaryValue}>
+                        <POMoneyCell valuePKR={po.subtotal} po={po} />
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-foreground/55" style={st.summaryLabel}>Shipping &amp; Handling</span>
-                      <span className="text-foreground" style={st.summaryValue}>${po.shippingFee.toFixed(2)}</span>
+                      <span className="text-foreground" style={st.summaryValue}>
+                        <POMoneyCell valuePKR={po.shippingFee} po={po} />
+                      </span>
                     </div>
                     {po.discountTotal > 0 && (
                       <div className="flex items-center justify-between">
                         <span className="text-accent" style={st.summaryLabel}>Discount</span>
-                        <span className="text-accent" style={st.summaryValue}>-${po.discountTotal.toFixed(2)}</span>
+                        <span className="text-accent" style={st.summaryValue}>
+                          −<POMoneyCell valuePKR={po.discountTotal} po={po} />
+                        </span>
                       </div>
                     )}
                     <Separator />
                     <div className="flex items-center justify-between">
                       <span className="text-foreground" style={st.totalLabel}>Grand Total</span>
-                      <span className="text-foreground" style={st.totalLabel}>${po.total.toFixed(2)}</span>
+                      <span className="text-foreground" style={st.totalLabel}>
+                        <POMoneyCell valuePKR={po.total} po={po} />
+                      </span>
                     </div>
+                    {!poVendorCurrencyIsBase(po) && (
+                      <div className="flex items-center justify-end pt-0.5">
+                        <POLockedRateHelper po={po} />
+                      </div>
+                    )}
                   </div>
                 </CollapsibleSection>
 
@@ -3174,8 +3232,12 @@ export default function PurchaseOrderDraft() {
                     <div className="relative">
                       <Progress value={creditUsedPercent} className="h-2 bg-border rounded-full" />
                       <div className="flex items-center justify-between mt-1.5">
-                        <span className="text-primary" style={st.tiny}>${po.total.toFixed(0)} used</span>
-                        <span className="text-accent" style={st.tiny}>${creditRemaining.toFixed(0)} remaining</span>
+                        <span className="text-primary" style={st.tiny}>
+                          <POMoneyCell valuePKR={po.total} po={po} /> used
+                        </span>
+                        <span className="text-accent" style={st.tiny}>
+                          <POMoneyCell valuePKR={creditRemaining} po={po} /> remaining
+                        </span>
                       </div>
                     </div>
 
@@ -3184,18 +3246,25 @@ export default function PurchaseOrderDraft() {
                     {/* Breakdown — smaller fonts */}
                     <div className="flex flex-col gap-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-foreground/45" style={st.tiny}>Credit Limit</span>
+                        <span className="text-foreground/45 inline-flex items-center gap-1.5" style={st.tiny}>
+                          Credit Limit
+                          {!poVendorCurrencyIsBase(po) && <POLockedRateHelper po={po} dense />}
+                        </span>
                         <span className="text-foreground" style={st.uiSmall}>
-                          ${creditLimit.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          <POMoneyCell valuePKR={creditLimit} po={po} />
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-foreground/45" style={st.tiny}>This PO</span>
-                        <span className="text-primary" style={{ ...st.uiSmall, fontWeight: "var(--font-weight-medium)" as string }}>${po.total.toFixed(2)}</span>
+                        <span className="text-primary" style={{ ...st.uiSmall, fontWeight: "var(--font-weight-medium)" as string }}>
+                          <POMoneyCell valuePKR={po.total} po={po} />
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-foreground/45" style={st.tiny}>Available After</span>
-                        <span className="text-accent" style={{ ...st.uiSmall, fontWeight: "var(--font-weight-medium)" as string }}>${creditRemaining.toFixed(2)}</span>
+                        <span className="text-accent" style={{ ...st.uiSmall, fontWeight: "var(--font-weight-medium)" as string }}>
+                          <POMoneyCell valuePKR={creditRemaining} po={po} />
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -3983,6 +4052,13 @@ export default function PurchaseOrderDraft() {
           setDuplicateDialogOpen(false);
           navigate(`/purchase-orders/${newPo.id}`);
         }}
+      />
+
+      {/* ── Currency Configuration Modal ── */}
+      <POCurrencyConfigModal
+        open={currencyConfigOpen}
+        onOpenChange={setCurrencyConfigOpen}
+        po={po}
       />
 
       {/* ── Cancel PO Dialog ── */}

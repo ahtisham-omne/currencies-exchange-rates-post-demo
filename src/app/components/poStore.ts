@@ -3,7 +3,8 @@
    No external dependencies. Works as an in-memory singleton.
    ═══════════════════════════════════════════════════════════════ */
 
-import { getVendorContacts } from "./catalogData";
+import { getVendorContacts, getVendorCurrency } from "./catalogData";
+import { MARKET_RATES, BASE_CURRENCY } from "../data/currencyLibrary";
 
 export type POStatus = "Draft" | "Sent" | "Confirmed" | "Partially Received" | "Fully Received" | "Cancelled" | "Active with Cancellations" | "Fully Received with Cancellations";
 
@@ -36,6 +37,11 @@ export interface POLineItem {
   descriptiveName: string;
   description?: string;
   image: string;
+  /**
+   * Unit price in the PO's base-currency equivalent (always PKR). For native
+   * display, use `originalPrice` + `originalCurrency`. Subtotal/total math
+   * continues to work off this field so existing summation logic is unchanged.
+   */
   unitPrice: number;
   vendorQty: number;
   vendorUOM: string;
@@ -52,6 +58,14 @@ export interface POLineItem {
   shipByDate?: string;
   cancelled?: boolean;
   cancelledDate?: string;
+  /** Vendor-quoted price in `originalCurrency`. Frozen at add-to-cart time. */
+  originalPrice?: number;
+  /** ISO 4217 code of the vendor's quote. Frozen at add-to-cart time. */
+  originalCurrency?: string;
+  /** base-units-per-1-foreign-unit at the moment this item entered the cart. */
+  lockedRate?: number;
+  /** ISO timestamp when the rate was locked. */
+  lockedAt?: string;
 }
 
 export interface POVendor {
@@ -163,6 +177,7 @@ export interface PurchaseOrderData {
   secondaryContactNames: string[];
   lineItems: POLineItem[];
   payment: POPaymentDelivery;
+  /** All totals are expressed in base currency (PKR). */
   subtotal: number;
   shippingFee: number;
   discountTotal: number;
@@ -179,6 +194,20 @@ export interface PurchaseOrderData {
   cancellationReason?: string;
   cancellationDate?: string;
   reactivationReason?: string;
+  /**
+   * Currency the vendor invoices in for this PO. Defaults to the vendor's
+   * profile default. Can only be overridden via the Currency Config modal
+   * while the PO is empty (no line items yet).
+   */
+  vendorAmountCurrency?: string;
+  /** Currency the buyer settles in. Defaults to `vendorAmountCurrency`. */
+  settlementCurrency?: string;
+  /** `settlementCurrency`-denominated total, frozen at Currency Config save. */
+  settlementAmountSnapshot?: number;
+  /** `settlementCurrency`-per-PKR rate, frozen at Currency Config save. */
+  settlementRateAtSave?: number;
+  /** Header toggle state for this PO detail view. */
+  viewMode?: "base" | "partner";
 }
 
 /* ── Vendor defaults (pulled from "system") ── */
@@ -278,6 +307,47 @@ const SHIPMENT_METHOD_LABELS: Record<string, string> = {
   "air-standard": "Air - Standard",
   "air-express": "Air - Express",
 };
+
+/**
+ * Look up today's market rate for a currency. Used at add-to-cart / seed time
+ * to lock a rate onto each line item. Falls back to 1 for unknown currencies
+ * (treat as already in PKR).
+ */
+export function marketRateToBase(currency: string): number {
+  const r = MARKET_RATES.rates[currency.toUpperCase()];
+  return r && r > 0 ? r : 1;
+}
+
+/**
+ * Apply locked-at-cart FX fields to a line item. Call this at add-to-cart
+ * time and at seed time. `nativePrice` is what the vendor quoted in their
+ * own currency; this fn computes the PKR-equivalent unitPrice, lineTotal,
+ * and stamps `originalPrice`, `originalCurrency`, `lockedRate`, `lockedAt`.
+ */
+export function lockLineItemFX<T extends {
+  quantity: number;
+  discount: number;
+}>(
+  item: T,
+  nativePrice: number,
+  vendorCurrency: string,
+  rate?: number,
+  at?: string,
+): T & { unitPrice: number; lineTotal: number; originalPrice: number; originalCurrency: string; lockedRate: number; lockedAt: string } {
+  const resolvedRate = rate ?? marketRateToBase(vendorCurrency);
+  const resolvedAt = at ?? new Date().toISOString();
+  const unitPrice = nativePrice * resolvedRate; // PKR equivalent
+  const lineTotal = unitPrice * item.quantity * (1 - item.discount / 100);
+  return {
+    ...item,
+    unitPrice,
+    lineTotal,
+    originalPrice: nativePrice,
+    originalCurrency: vendorCurrency.toUpperCase(),
+    lockedRate: resolvedRate,
+    lockedAt: resolvedAt,
+  };
+}
 
 function toVersionStatus(status: POStatus): POVersionStatus {
   if (status === "Draft") return "draft";
@@ -613,9 +683,15 @@ export function createPOFromVendorCheckout(
     payment.shippedTo = items[0].inboundLocation;
   }
 
+  const vendorCurrency = getVendorCurrency(vendorName);
+  const rate = marketRateToBase(vendorCurrency);
+  const lockedAt = new Date().toISOString();
+
   const lineItems: POLineItem[] = items.map((item) => {
-    const lineTotal = item.unitPrice * item.quantity * (1 - item.discount / 100);
-    return { ...item, lineTotal, receivedQuantity: 0 };
+    // Incoming item.unitPrice is treated as the vendor's native-currency price
+    // (what they quoted). We lock the rate and store a PKR-equivalent unitPrice.
+    const locked = lockLineItemFX(item, item.unitPrice, vendorCurrency, rate, lockedAt);
+    return { ...locked, receivedQuantity: 0 };
   });
 
   const subtotal = lineItems.reduce((s, li) => s + li.unitPrice * li.quantity, 0);
@@ -650,6 +726,9 @@ export function createPOFromVendorCheckout(
     receivingRecords: [],
     currentVersion: 1,
     versions: [],
+    vendorAmountCurrency: vendorCurrency,
+    settlementCurrency: vendorCurrency,
+    viewMode: "base",
   };
 
   purchaseOrders.set(id, initVersioning(po));
@@ -695,30 +774,38 @@ export function createPOFromBuyNow(
   const payment = { ...(PAYMENT_DEFAULTS[vendorName] || DEFAULT_PAYMENT) };
   if (orderDetails.inboundLocation) payment.shippedTo = orderDetails.inboundLocation;
 
-  const lineTotal = item.unitPrice * orderDetails.quantity * (1 - item.discount / 100);
+  const vendorCurrency = getVendorCurrency(vendorName);
+  const rate = marketRateToBase(vendorCurrency);
+  const lockedAt = new Date().toISOString();
+
+  const basePKR = item.unitPrice * rate;
 
   const lineItem: POLineItem = {
     id: item.id,
     itemNumber: item.itemNumber,
     descriptiveName: item.descriptiveName,
     image: item.image,
-    unitPrice: item.unitPrice,
+    unitPrice: basePKR,
     vendorQty: orderDetails.vendorQty,
     vendorUOM: item.vendorUOM,
     vendorUOMQty: item.vendorUOMQty,
     quantity: orderDetails.quantity,
     defaultUOM: item.defaultUOM,
     discount: item.discount,
-    lineTotal,
+    lineTotal: basePKR * orderDetails.quantity * (1 - item.discount / 100),
     shipByDate: orderDetails.shipByDate,
     shipmentMethod: orderDetails.shipmentMethod,
     dueDeliveryDate: orderDetails.dueDeliveryDate,
     inboundLocation: orderDetails.inboundLocation,
     category: item.category,
     receivedQuantity: 0,
+    originalPrice: item.unitPrice,
+    originalCurrency: vendorCurrency,
+    lockedRate: rate,
+    lockedAt,
   };
 
-  const subtotal = item.unitPrice * orderDetails.quantity;
+  const subtotal = basePKR * orderDetails.quantity;
   const discountTotal = subtotal * (item.discount / 100);
   const shippingFee = 12.5;
   const total = subtotal - discountTotal + shippingFee;
@@ -756,6 +843,9 @@ export function createPOFromBuyNow(
     receivingRecords: [],
     currentVersion: 1,
     versions: [],
+    vendorAmountCurrency: vendorCurrency,
+    settlementCurrency: vendorCurrency,
+    viewMode: "base",
   };
 
   purchaseOrders.set(id, initVersioning(po));
@@ -996,6 +1086,79 @@ export function updatePODeliveryDate(poId: string, deliveryDate: string): void {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   PO CURRENCY HELPERS
+   ═══════════════════════════════════════════════════════════════ */
+
+/** Effective vendor-amount currency for a PO — explicit override, then vendor default, then PKR. */
+export function getPOVendorCurrency(po: PurchaseOrderData): string {
+  return po.vendorAmountCurrency ?? getVendorCurrency(po.vendor.name) ?? BASE_CURRENCY;
+}
+
+/** Effective settlement currency for a PO — falls back to the vendor-amount currency. */
+export function getPOSettlementCurrency(po: PurchaseOrderData): string {
+  return po.settlementCurrency ?? getPOVendorCurrency(po);
+}
+
+/**
+ * True when the PO's vendor-amount currency is already the base (PKR). UI
+ * elements tied to the Base/Partner toggle should hide themselves in this
+ * case — there's nothing to toggle between.
+ */
+export function poVendorCurrencyIsBase(po: PurchaseOrderData): boolean {
+  return getPOVendorCurrency(po).toUpperCase() === BASE_CURRENCY;
+}
+
+/** Flip / set the header Base ↔ Partner view mode. */
+export function setPOViewMode(poId: string, mode: "base" | "partner"): void {
+  const po = purchaseOrders.get(poId);
+  if (!po) return;
+  po.viewMode = mode;
+  purchaseOrders.set(poId, { ...po });
+  notify();
+}
+
+/**
+ * Override the vendor-amount currency for this PO only. Guarded:
+ *   - No-op once the PO has any line items (data-model rule).
+ *   - No-op once the PO is sent to the vendor.
+ */
+export function updatePOVendorAmountCurrency(poId: string, currency: string): void {
+  const po = purchaseOrders.get(poId);
+  if (!po) return;
+  if (po.status !== "Draft") return;
+  if (po.lineItems.length > 0) return;
+  po.vendorAmountCurrency = currency.toUpperCase();
+  // If settlement was auto-following vendor, keep them aligned when the user
+  // hasn't yet customised settlement.
+  if (!po.settlementCurrency || po.settlementCurrency === po.vendorAmountCurrency) {
+    po.settlementCurrency = currency.toUpperCase();
+  }
+  purchaseOrders.set(poId, { ...po });
+  notify();
+}
+
+/**
+ * Save the "You Pay" settlement currency + live-computed snapshot. Freezes
+ * the settlement amount at today's rate so downstream modules (invoices /
+ * payments) can read a stable number.
+ */
+export function updatePOSettlementConfig(
+  poId: string,
+  settlementCurrency: string,
+  settlementAmountSnapshot: number,
+  settlementRateAtSave: number,
+): void {
+  const po = purchaseOrders.get(poId);
+  if (!po) return;
+  if (po.status !== "Draft") return;
+  po.settlementCurrency = settlementCurrency.toUpperCase();
+  po.settlementAmountSnapshot = settlementAmountSnapshot;
+  po.settlementRateAtSave = settlementRateAtSave;
+  purchaseOrders.set(poId, { ...po });
+  notify();
+}
+
+/* ═══════════════════════════════════════════════════════════════
    PO NOTES CRUD
    ═══════════════════════════════════════════════════════════════ */
 
@@ -1126,11 +1289,20 @@ export function addLineItemToPO(
   // Prevent duplicates by itemNumber
   if (po.lineItems.some((li) => li.itemNumber === item.itemNumber)) return;
 
-  const lineTotal = item.unitPrice * item.quantity * (1 - item.discount / 100);
-  const newItem: POLineItem = { ...item, lineTotal, receivedQuantity: 0 };
+  let newItem: POLineItem;
+  if (item.originalPrice !== undefined && item.originalCurrency && item.lockedRate !== undefined) {
+    // Caller already locked the FX (e.g. Add Items modal) — trust it.
+    const lineTotal = item.unitPrice * item.quantity * (1 - item.discount / 100);
+    newItem = { ...item, lineTotal, receivedQuantity: 0 };
+  } else {
+    // Lock the rate now against the PO's vendor currency.
+    const vendorCurrency = po.vendorAmountCurrency ?? getVendorCurrency(po.vendor.name);
+    const locked = lockLineItemFX(item, item.unitPrice, vendorCurrency);
+    newItem = { ...locked, receivedQuantity: 0 };
+  }
   po.lineItems.push(newItem);
 
-  // Recalculate totals
+  // Recalculate totals (PKR)
   po.subtotal = po.lineItems.reduce((s, li) => s + li.unitPrice * li.quantity, 0);
   po.discountTotal = po.lineItems.reduce((s, li) => s + li.unitPrice * li.quantity * (li.discount / 100), 0);
   po.shippingFee = Math.round(po.lineItems.length * 12.5 * 100) / 100;
@@ -1341,10 +1513,24 @@ function seedDemoPO(): void {
   const vendorInfo = VENDOR_DETAILS[vendorName]!;
   const payment = { ...PAYMENT_DEFAULTS[vendorName]! };
 
-  const lineItems: POLineItem[] = DEMO_LINE_ITEMS.map((li) => ({
-    ...li,
-    lineTotal: li.unitPrice * li.quantity * (1 - li.discount / 100),
-  }));
+  const vendorCurrency = getVendorCurrency(vendorName);
+  const rate = marketRateToBase(vendorCurrency);
+  const lockedAt = "2026-02-20T10:00:00.000Z";
+
+  // Treat the fixture `unitPrice` as the vendor's native-currency quote;
+  // scale to PKR for the stored unitPrice and line math.
+  const lineItems: POLineItem[] = DEMO_LINE_ITEMS.map((li) => {
+    const basePKR = li.unitPrice * rate;
+    return {
+      ...li,
+      unitPrice: basePKR,
+      lineTotal: basePKR * li.quantity * (1 - li.discount / 100),
+      originalPrice: li.unitPrice,
+      originalCurrency: vendorCurrency,
+      lockedRate: rate,
+      lockedAt,
+    };
+  });
 
   const subtotal = lineItems.reduce((s, li) => s + li.unitPrice * li.quantity, 0);
   const discountTotal = lineItems.reduce((s, li) => s + li.unitPrice * li.quantity * (li.discount / 100), 0);
@@ -1380,9 +1566,12 @@ function seedDemoPO(): void {
     receivingRecords: [],
     currentVersion: 1,
     versions: [],
+    vendorAmountCurrency: vendorCurrency,
+    settlementCurrency: vendorCurrency,
+    viewMode: "base",
   };
 
-  const seeded = initVersioning(po, "Initial PO created — 6 items, $15,580.36 total");
+  const seeded = initVersioning(po, "Initial PO created — 6 items");
 
   // Build distinct snapshots per version so comparisons show actual diffs
   const v1LineItems: POLineItemSnapshot[] = [
@@ -1598,6 +1787,10 @@ function seedListingPOs(): void {
     const creator = createdByList[i % 6];
     const shipTo = shipLocations[i % 10];
 
+    const vendorCurrency = getVendorCurrency(vendorName);
+    const rate = marketRateToBase(vendorCurrency);
+    const lockedAt = new Date(2024, 11, 20 - i).toISOString();
+
     const itemCount = (i % 4) + 2;
     const lineItems: POLineItem[] = [];
     for (let j = 0; j < itemCount; j++) {
@@ -1607,24 +1800,30 @@ function seedListingPOs(): void {
       const uomQty = p[5];
       const vQty = Math.max(1, Math.ceil(qty / Math.max(1, uomQty)));
       const disc = p[7];
+      const nativePrice = p[2];
+      const basePKR = nativePrice * rate;
       lineItems.push({
         id: `${id}-li-${j + 1}`,
         itemNumber: p[0],
         descriptiveName: p[1],
         image: imgs[(i + j) % imgs.length],
-        unitPrice: p[2],
+        unitPrice: basePKR,
         vendorQty: vQty,
         vendorUOM: p[4],
         vendorUOMQty: uomQty,
         quantity: qty,
         defaultUOM: "Unit",
         discount: disc,
-        lineTotal: p[2] * qty * (1 - disc / 100),
+        lineTotal: basePKR * qty * (1 - disc / 100),
         shipmentMethod: "fedex-ground",
         dueDeliveryDate: "2026-03-18",
         inboundLocation: shipTo,
         category: p[6],
         receivedQuantity: 0,
+        originalPrice: nativePrice,
+        originalCurrency: vendorCurrency,
+        lockedRate: rate,
+        lockedAt,
       });
     }
 
@@ -1718,6 +1917,9 @@ function seedListingPOs(): void {
       preCancellationStatus,
       cancellationReason,
       cancellationDate,
+      vendorAmountCurrency: vendorCurrency,
+      settlementCurrency: vendorCurrency,
+      viewMode: "base",
     };
 
     purchaseOrders.set(id, initVersioning(po));

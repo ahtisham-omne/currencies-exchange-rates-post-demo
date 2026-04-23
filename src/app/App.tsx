@@ -2,13 +2,16 @@ import { RouterProvider } from "react-router-dom";
 import { router } from "./routes";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { RateProvider } from "./context/RateContext";
 
 function App() {
   return (
-    <TooltipProvider>
-      <RouterProvider router={router} />
-      <Toaster position="bottom-right" richColors />
-    </TooltipProvider>
+    <RateProvider>
+      <TooltipProvider>
+        <RouterProvider router={router} />
+        <Toaster position="bottom-right" richColors />
+      </TooltipProvider>
+    </RateProvider>
   );
 }
 

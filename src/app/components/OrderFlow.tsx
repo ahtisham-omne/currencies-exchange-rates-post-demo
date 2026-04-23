@@ -60,8 +60,12 @@ import { ImageWithFallback } from "./figma/ImageWithFallback";
 import {
   getAllSystemVendorOffersForItem,
   getVendorContacts,
+  getVendorCurrency,
   getVendorOffersForItem,
 } from "./catalogData";
+import { CurrencyAmount } from "./ui/CurrencyAmount";
+import { InfoTooltip } from "./ui/info-tooltip";
+import { BASE_CURRENCY, convertBetween, convertToBase, getLibraryCurrency } from "@/app/data/currencyLibrary";
 import type { VendorContactInfo, ItemVendorOffer } from "./catalogData";
 import VendorSelector, { VendorSelectorContent } from "./VendorSelector";
 import {
@@ -383,6 +387,9 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
     unit: string;
   }
 
+  // Currency view mode — base (PKR) or partner (active vendor's currency). Toggle lives in the top bar.
+  const [viewMode, setViewMode] = useState<"base" | "partner">("partner");
+
   const [assignedVendors, setAssignedVendors] = useState<AssignedVendor[]>([]);
   const [vendorPriceMap, setVendorPriceMap] = useState<Record<string, VendorPriceEntry>>({});
   const vendorPriceMapRef = useRef<Record<string, VendorPriceEntry>>({});
@@ -615,6 +622,70 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
       usage: Math.max(2, Math.round(10 + Math.sin(i * 0.5 + h) * 5 + (h % 3) * 2)),
     }));
   }, [item?.id]);
+
+  // Active vendor's currency — drives the Base ↔ Partner currency toggle. Declared before the early return so hook order stays stable when `item` is null.
+  const activeVendorCurrency = React.useMemo(() => {
+    if (!activeVendor) return BASE_CURRENCY;
+    return getVendorCurrency(activeVendor).toUpperCase();
+  }, [activeVendor]);
+  const isVendorBase = activeVendorCurrency === BASE_CURRENCY;
+  const effectiveViewMode: "base" | "partner" = isVendorBase ? "base" : viewMode;
+
+  // PO line items arrive with unitPrice in PKR (base); catalog-sourced flows arrive with unitPrice in the vendor's native currency.
+  const inputValuesArePKR = mode === "edit-po";
+
+  const MoneyCell = React.useCallback(
+    ({ nativeValue, signed, className }: { nativeValue: number; signed?: boolean; className?: string }) => {
+      const signPrefix = signed && nativeValue > 0 ? "-" : "";
+      const basePKR = inputValuesArePKR
+        ? nativeValue
+        : convertToBase(nativeValue, activeVendorCurrency);
+      const nativeAmount = inputValuesArePKR
+        ? (isVendorBase ? nativeValue : convertBetween(nativeValue, BASE_CURRENCY, activeVendorCurrency))
+        : nativeValue;
+
+      if (isVendorBase) {
+        return (
+          <>
+            {signPrefix}
+            <CurrencyAmount
+              mode="single"
+              currency={BASE_CURRENCY}
+              value={basePKR}
+              className={className}
+            />
+          </>
+        );
+      }
+      if (effectiveViewMode === "partner") {
+        return (
+          <>
+            {signPrefix}
+            <CurrencyAmount
+              mode="listing-partner"
+              currency={activeVendorCurrency}
+              value={nativeAmount}
+              className={className}
+            />
+          </>
+        );
+      }
+      return (
+        <>
+          {signPrefix}
+          <CurrencyAmount
+            mode="listing-base"
+            currency={BASE_CURRENCY}
+            value={basePKR}
+            partnerDefaultCurrency={activeVendorCurrency}
+            partnerDefaultValue={nativeAmount}
+            className={className}
+          />
+        </>
+      );
+    },
+    [activeVendorCurrency, isVendorBase, effectiveViewMode, inputValuesArePKR],
+  );
 
   if (!item) return null;
 
@@ -868,13 +939,51 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
           <div className="flex items-center gap-1.5">
             <span className="text-muted-foreground" style={S.small}>{mode === "add-to-po" ? "Add Item to Purchase Order" : "Item Detail"}</span>
           </div>
-          <button
-            onClick={() => onOpenChange(false)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius)] border border-border text-muted-foreground hover:text-foreground hover:bg-secondary cursor-pointer transition-all"
-          >
-            <X className="size-3.5" />
-            <span style={S.small}>Close</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {!isVendorBase && (
+              <div className="inline-flex items-center gap-0.5 h-8 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("base")}
+                  aria-pressed={effectiveViewMode === "base"}
+                  className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                    effectiveViewMode === "base"
+                      ? "bg-[var(--primary-tint)] text-primary"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                  style={{ fontWeight: effectiveViewMode === "base" ? 600 : 500 }}
+                >
+                  Base Currency
+                  <InfoTooltip side="bottom" iconClassName="w-3 h-3">
+                    Show amounts in the company's base currency ({BASE_CURRENCY}). Values stay comparable across all purchase orders regardless of the transaction currency.
+                  </InfoTooltip>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("partner")}
+                  aria-pressed={effectiveViewMode === "partner"}
+                  className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                    effectiveViewMode === "partner"
+                      ? "bg-[var(--primary-tint)] text-primary"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                  style={{ fontWeight: effectiveViewMode === "partner" ? 600 : 500 }}
+                >
+                  Partner Currency
+                  <InfoTooltip side="bottom" iconClassName="w-3 h-3">
+                    Show amounts in this partner's own default transaction currency ({activeVendorCurrency || BASE_CURRENCY}). The base-currency equivalent remains available on hover for reporting.
+                  </InfoTooltip>
+                </button>
+              </div>
+            )}
+            <button
+              onClick={() => onOpenChange(false)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius)] border border-border text-muted-foreground hover:text-foreground hover:bg-secondary cursor-pointer transition-all"
+            >
+              <X className="size-3.5" />
+              <span style={S.small}>Close</span>
+            </button>
+          </div>
         </div>
 
         {/* ═══════ TWO‑COLUMN BODY ═══════ */}
@@ -1011,7 +1120,9 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
                               </div>
                               <div className="flex items-center gap-2 mt-0.5">
                                 {cardPriceConfirmed ? (
-                                  <span className="text-primary" style={{ ...S.small, fontWeight: "var(--font-weight-semibold)" }}>${cardPrice.toFixed(2)} / {item.vendorUOM}</span>
+                                  <span className="text-primary" style={{ ...S.small, fontWeight: "var(--font-weight-semibold)" }}>
+                                    <MoneyCell nativeValue={cardPrice} /> / {item.vendorUOM}
+                                  </span>
                                 ) : (
                                   <span className="text-muted-foreground" style={S.small}>Price not set</span>
                                 )}
@@ -1087,7 +1198,9 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
                 <span className="text-muted-foreground block mb-1" style={S.fieldLabel}>Unit Price</span>
                 {hasOriginalVendor && activeUnitPrice > 0 ? (
                   <div className="flex items-baseline gap-1 flex-wrap">
-                    <span className="text-foreground" style={S.price}>${effectivePrice.toFixed(2)}</span>
+                    <span className="text-foreground" style={S.price}>
+                      <MoneyCell nativeValue={effectivePrice} />
+                    </span>
                     <span className="text-muted-foreground" style={S.small}>/ {item.vendorUOM}</span>
                     {effectiveDiscount > 0 && (
                       <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded-full ml-1" style={{ backgroundColor: "var(--success-tint)", color: "var(--success)", ...S.badge }}>
@@ -1101,7 +1214,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
                     <span className="text-muted-foreground" style={S.small}>Enter unit price for this vendor</span>
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="flex items-center rounded-[var(--radius)] border border-border overflow-hidden focus-within:border-primary focus-within:ring-1 focus-within:ring-ring/15" style={{ backgroundColor: "var(--input-background)" }}>
-                        <span className="pl-2.5 text-muted-foreground" style={S.body}>$</span>
+                        <span className="pl-2.5 text-muted-foreground" style={S.body}>{getLibraryCurrency(activeVendorCurrency)?.symbol ?? activeVendorCurrency}</span>
                         <input
                           type="number" min={0} step="0.01"
                           value={editPriceValue}
@@ -1165,7 +1278,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
                     <span className="text-muted-foreground" style={S.small}>Enter unit price for this vendor</span>
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="flex items-center rounded-[var(--radius)] border border-border overflow-hidden focus-within:border-primary focus-within:ring-1 focus-within:ring-ring/15" style={{ backgroundColor: "var(--input-background)" }}>
-                        <span className="pl-2.5 text-muted-foreground" style={S.body}>$</span>
+                        <span className="pl-2.5 text-muted-foreground" style={S.body}>{getLibraryCurrency(activeVendorCurrency)?.symbol ?? activeVendorCurrency}</span>
                         <input
                           type="number" min={0} step="0.01"
                           value={editPriceValue}
@@ -1209,7 +1322,9 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
                   </div>
                 ) : (
                   <div className="flex items-baseline gap-1 flex-wrap">
-                    <span className="text-foreground" style={S.price}>${effectivePrice.toFixed(2)}</span>
+                    <span className="text-foreground" style={S.price}>
+                      <MoneyCell nativeValue={effectivePrice} />
+                    </span>
                     <span className="text-muted-foreground" style={S.small}>/ {item.vendorUOM}</span>
                   </div>
                 )}
@@ -1416,18 +1531,24 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
                   <>
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-muted-foreground" style={S.small}>Subtotal</span>
-                      <span className="text-foreground" style={S.bodyMed}>${subtotal.toFixed(2)}</span>
+                      <span className="text-foreground" style={S.bodyMed}>
+                        <MoneyCell nativeValue={subtotal} />
+                      </span>
                     </div>
                     {effectiveDiscount > 0 && (
                       <div className="flex items-center justify-between mb-0.5">
                         <span style={{ color: "var(--success)", ...S.small }}>Volume ({effectiveDiscount}%)</span>
-                        <span style={{ color: "var(--success)", ...S.bodyMed }}>-${discountAmount.toFixed(2)}</span>
+                        <span style={{ color: "var(--success)", ...S.bodyMed }}>
+                          <MoneyCell nativeValue={discountAmount} signed />
+                        </span>
                       </div>
                     )}
                     <div className="h-px my-2" style={{ backgroundColor: "var(--border)" }} />
                     <div className="flex items-center justify-between">
                       <span className="text-foreground" style={S.bodyMed}>Total</span>
-                      <span className="text-primary" style={S.total}>${totalPrice.toFixed(2)}</span>
+                      <span className="text-primary" style={S.total}>
+                        <MoneyCell nativeValue={totalPrice} />
+                      </span>
                     </div>
                   </>
                 )}
