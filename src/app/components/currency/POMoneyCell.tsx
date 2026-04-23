@@ -50,27 +50,33 @@ export function POMoneyCell({ valuePKR, po, lockedRate, lockedAt, className, for
     );
   }
 
+  // When no explicit locked rate is supplied (aggregate totals, summary cells),
+  // fall back to the PO's representative locked rate so the hover still shows
+  // the PO reference rate rather than the live market rate.
+  const effectiveLockedRate = lockedRate ?? derivePOReferenceRate(po);
+  const effectiveLockedAt = lockedAt ?? derivePOReferenceLockedAt(po);
+
   const showingPartner = forcePartner || po.viewMode === "partner";
 
   if (showingPartner) {
-    const partnerValue = lockedRate !== undefined
-      ? valuePKR / lockedRate
+    const partnerValue = effectiveLockedRate !== undefined
+      ? valuePKR / effectiveLockedRate
       : convertBetween(valuePKR, BASE_CURRENCY, partnerCurrency);
     return (
       <CurrencyAmount
         mode="listing-partner"
         currency={partnerCurrency}
         value={partnerValue}
-        lockedRate={lockedRate}
-        lockedAt={lockedAt}
+        lockedRate={effectiveLockedRate}
+        lockedAt={effectiveLockedAt}
         className={className}
       />
     );
   }
 
   // "base" view — show PKR; hover reveals partner-currency equivalent.
-  const partnerValue = lockedRate !== undefined
-    ? valuePKR / lockedRate
+  const partnerValue = effectiveLockedRate !== undefined
+    ? valuePKR / effectiveLockedRate
     : convertBetween(valuePKR, BASE_CURRENCY, partnerCurrency);
   return (
     <CurrencyAmount
@@ -79,9 +85,22 @@ export function POMoneyCell({ valuePKR, po, lockedRate, lockedAt, className, for
       value={valuePKR}
       partnerDefaultCurrency={partnerCurrency}
       partnerDefaultValue={partnerValue}
-      lockedRate={lockedRate}
-      lockedAt={lockedAt}
+      lockedRate={effectiveLockedRate}
+      lockedAt={effectiveLockedAt}
       className={className}
     />
   );
+}
+
+/** Most common locked rate across the PO's active line items — treated as the PO reference rate. */
+function derivePOReferenceRate(po: PurchaseOrderData): number | undefined {
+  const rates = po.lineItems
+    .filter((li) => !li.cancelled && typeof li.lockedRate === "number")
+    .map((li) => li.lockedRate as number);
+  return rates[0];
+}
+
+function derivePOReferenceLockedAt(po: PurchaseOrderData): string | undefined {
+  const item = po.lineItems.find((li) => !li.cancelled && li.lockedAt);
+  return item?.lockedAt;
 }

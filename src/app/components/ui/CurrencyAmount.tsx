@@ -8,8 +8,10 @@ import {
   convertBetween,
   getLibraryCurrency,
   rateToBase,
+  rateTypeLabel,
   type LibraryCurrency,
 } from "@/app/data/currencyLibrary";
+import { formatRateUpdatedAs } from "@/app/data/rateDateFormat";
 import { useRateContext } from "@/app/context/RateContext";
 
 export type CurrencyAmountMode = "single" | "listing-base" | "listing-partner" | "aggregated-base" | "partner-rolled-up";
@@ -156,26 +158,30 @@ function RateLine({
   const baseCur = getLibraryCurrency(BASE_CURRENCY);
   const baseSym = baseCur?.symbol ?? BASE_CURRENCY;
   const locked = lockedRate !== undefined;
-  const typeLabel = locked ? "Locked" : (snap.type === "market" ? "Market" : "Corporate");
-  const hex = locked ? "#0f766e" : (snap.type === "market" ? "#7c3aed" : "#d97706");
+  const typeLabelText = rateTypeLabel(snap.type);
+  const hex = snap.type === "market" ? "#7c3aed" : "#d97706";
   const sameAsBase = partnerCode.toUpperCase() === BASE_CURRENCY;
-  const sourceText = locked ? "Frozen at add-to-cart" : snap.source;
-  const dateText = locked && lockedAt
-    ? new Date(lockedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    : snap.asOfDate;
+  const updatedAs = formatRateUpdatedAs(locked ? lockedAt : snap.lastSyncAt);
+  const rateLabel = locked ? "PO reference rate" : "Current rate";
   return (
     <div className="mt-1.5 px-2 py-1.5 rounded-md bg-slate-50 border border-slate-100">
       {!sameAsBase && (
         <div className="text-[11px] text-slate-700 tabular-nums leading-4">
+          <span className="text-slate-500" style={{ fontWeight: 500 }}>{rateLabel}: </span>
           1 {partnerCode.toUpperCase()} = {baseSym} {formatNumber(rate, BASE_CURRENCY)} {BASE_CURRENCY}
         </div>
       )}
       <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
         <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: hex }} />
-        <span style={{ color: hex, fontWeight: 600 }}>{typeLabel}</span>
-        <span className="text-slate-400">· {sourceText}</span>
+        <span style={{ color: hex, fontWeight: 600 }}>{typeLabelText}</span>
+        <span className="text-slate-400">· Source: {snap.source}</span>
       </div>
-      <div className="text-[10px] text-slate-400 mt-0.5">{locked ? "Locked on " : "As of "}{dateText}</div>
+      {updatedAs && (
+        <div className="text-[10px] text-slate-400 mt-0.5">Updated as of {updatedAs}</div>
+      )}
+      <div className="text-[10px] text-slate-400 mt-0.5 italic">
+        Invoice posting will use the rate at its own date.
+      </div>
     </div>
   );
 }

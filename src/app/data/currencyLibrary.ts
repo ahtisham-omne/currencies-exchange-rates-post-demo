@@ -209,6 +209,11 @@ export const BASE_CURRENCY = "PKR";
 /** Selects which rate table is used for display-side conversions. */
 export type RateType = "market" | "corporate";
 
+/** Human-readable label for a rate type — shown in rate tooltips across the app. */
+export function rateTypeLabel(type: RateType): string {
+  return type === "market" ? "Mid-market rate" : "Corporate rate";
+}
+
 /**
  * A complete FX snapshot: the conversion table plus the metadata we need to
  * show users where the numbers come from (source, cadence, freshness).

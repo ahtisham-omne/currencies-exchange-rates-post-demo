@@ -6,7 +6,9 @@ import {
   BASE_CURRENCY,
   activeRateSnapshot,
   getLibraryCurrency,
+  rateTypeLabel,
 } from "@/app/data/currencyLibrary";
+import { formatRateUpdatedAs } from "@/app/data/rateDateFormat";
 
 interface Props {
   valuePKR: number;
@@ -25,8 +27,9 @@ export function BaseCurrencyKPI({ valuePKR, compact = true, className }: Props) 
   const baseSym = baseCur.symbol ?? BASE_CURRENCY;
   const displayValue = compact ? formatCompact(valuePKR) : formatFull(valuePKR);
   const snap = activeRateSnapshot();
-  const typeLabel = snap.type === "market" ? "Market" : "Corporate";
+  const typeLabel = rateTypeLabel(snap.type);
   const typeHex = snap.type === "market" ? "#7c3aed" : "#d97706";
+  const updatedAs = formatRateUpdatedAs(snap.lastSyncAt);
 
   return (
     <HoverCard openDelay={150} closeDelay={80}>
@@ -61,9 +64,14 @@ export function BaseCurrencyKPI({ valuePKR, compact = true, className }: Props) 
           <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
             <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: typeHex }} />
             <span style={{ color: typeHex, fontWeight: 600 }}>{typeLabel}</span>
-            <span className="text-slate-400">· {snap.source}</span>
+            <span className="text-slate-400">· Source: {snap.source}</span>
           </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">As of {snap.asOfDate}</div>
+          {updatedAs && (
+            <div className="text-[10px] text-slate-400 mt-0.5">Updated as of {updatedAs}</div>
+          )}
+          <div className="text-[10px] text-slate-400 mt-0.5 italic">
+            Invoice posting will use the rate at its own date.
+          </div>
         </div>
       </HoverCardContent>
     </HoverCard>
