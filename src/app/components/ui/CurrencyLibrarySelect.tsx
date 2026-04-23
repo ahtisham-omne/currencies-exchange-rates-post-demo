@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { cn } from "./utils";
 import {
   CURRENCY_LIBRARY,
-  flagUrlFor,
+  flagUrlForCurrency,
   getLibraryCurrency,
   type LibraryCurrency,
 } from "@/app/data/currencyLibrary";
@@ -146,7 +146,7 @@ export function CurrencyLibrarySelect({
 }
 
 function FlagOrGlobe({ currency, size = 20 }: { currency: LibraryCurrency; size?: number }) {
-  const url = flagUrlFor(currency.country);
+  const url = flagUrlForCurrency(currency);
   const height = Math.round((size * 3) / 4);
   if (!url) {
     return (

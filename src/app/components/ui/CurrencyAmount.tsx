@@ -159,7 +159,7 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
         <HeaderLine flag={flag} name={c.name} code={c.code} tail="— base currency" />
         <div className="border-t border-slate-100 my-2" />
         <div className="text-[12px] text-slate-700">
-          Partner default: {partnerSymbol} {formatNumber(props.partnerDefaultValue ?? 0, partner.code)} {partner.code}
+          Partner currency: {partnerSymbol} {formatNumber(props.partnerDefaultValue ?? 0, partner.code)} {partner.code}
         </div>
         <div className="text-[11px] text-slate-400 mt-1.5">At today&apos;s mid-market rate</div>
       </>
@@ -172,7 +172,7 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
     const baseValue = convertBetween(props.value, c.code, BASE_CURRENCY);
     return (
       <>
-        <HeaderLine flag={flag} name={c.name} code={c.code} tail="— partner default" />
+        <HeaderLine flag={flag} name={c.name} code={c.code} tail="— partner currency" />
         <div className="border-t border-slate-100 my-2" />
         <div className="text-[12px] text-slate-700">
           Base equivalent: {baseSymbol} {formatNumber(baseValue, BASE_CURRENCY)} {baseCur.code}
@@ -208,9 +208,17 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
   }
 
   if (props.mode === "aggregated-base") {
-    const rows = [...(props.partnerBreakdown ?? [])].sort((a, b) => b.partnerCount - a.partnerCount);
+    // Pin the base-currency row at the top, then sort the rest by partner count.
+    const raw = [...(props.partnerBreakdown ?? [])];
+    const baseRow = raw.find((r) => r.code.toUpperCase() === BASE_CURRENCY);
+    const otherRows = raw
+      .filter((r) => r.code.toUpperCase() !== BASE_CURRENCY)
+      .sort((a, b) => b.partnerCount - a.partnerCount);
+    const rows = baseRow ? [baseRow, ...otherRows] : otherRows;
     const totalPartners = rows.reduce((acc, r) => acc + r.partnerCount, 0);
     const scrollable = rows.length > 5;
+    const baseCur = getLibraryCurrency(BASE_CURRENCY);
+    const baseSym = baseCur?.symbol ?? BASE_CURRENCY;
     return (
       <div className="w-full">
         {/* Header — category label + count, styled like OverflowTooltip */}
@@ -238,14 +246,32 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
             const name = cur?.name ?? r.code;
             const isBase = r.code.toUpperCase() === BASE_CURRENCY;
             return (
-              <div key={r.code} className="flex items-center gap-2.5 px-2.5 py-2 rounded-md">
-                <div className="shrink-0 w-7 h-7 rounded-md overflow-hidden bg-muted border border-[#E8ECF1] flex items-center justify-center">
+              <div
+                key={r.code}
+                className={cn(
+                  "flex items-center gap-2.5 px-2.5 py-2 rounded-md",
+                  isBase && "bg-primary/5 ring-1 ring-inset ring-primary/15",
+                )}
+              >
+                <div
+                  className={cn(
+                    "shrink-0 w-7 h-7 rounded-md overflow-hidden border flex items-center justify-center",
+                    isBase ? "bg-white border-primary/25" : "bg-muted border-[#E8ECF1]",
+                  )}
+                >
                   {cur ? <CurrencyFlag currency={cur} size={22} /> : <span className="text-[10px] text-slate-500">{r.code}</span>}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-[12px] truncate block text-foreground" style={{ fontWeight: 600 }}>
+                  <span className="text-[12px] truncate flex items-center gap-1.5 text-foreground" style={{ fontWeight: 600 }}>
                     {r.code}
-                    {isBase && <span className="ml-1 text-[10px] text-muted-foreground/70" style={{ fontWeight: 500 }}>· base</span>}
+                    {isBase && (
+                      <span
+                        className="inline-flex items-center px-1.5 py-[1px] rounded-full bg-primary text-white text-[9px] tracking-wide uppercase leading-none"
+                        style={{ fontWeight: 700 }}
+                      >
+                        Base
+                      </span>
+                    )}
                   </span>
                   <span className="text-[10px] text-muted-foreground/70 block truncate">{name}</span>
                 </div>
@@ -259,7 +285,9 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
         {/* Footer — summary */}
         <div className="px-3 py-2 border-t border-slate-100 flex items-center gap-1.5">
           <span className="text-[10px] text-muted-foreground/70">
-            Across {totalPartners} {totalPartners === 1 ? "partner" : "partners"} · Base {BASE_CURRENCY}
+            Across {totalPartners} {totalPartners === 1 ? "partner" : "partners"}
+            <span className="mx-1 text-muted-foreground/40">·</span>
+            Base <span className="text-foreground" style={{ fontWeight: 600 }}>{baseSym} {BASE_CURRENCY}</span>
           </span>
           {scrollable && (
             <span className="ml-auto text-[10px] text-muted-foreground/40 italic">Scroll for more</span>

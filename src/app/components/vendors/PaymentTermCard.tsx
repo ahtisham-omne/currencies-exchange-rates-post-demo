@@ -15,7 +15,9 @@ import {
   TooltipContent,
 } from "../ui/tooltip";
 import { toast } from "sonner";
-import type { PaymentTermPreset } from "./partnerConstants";
+import type { PaymentTermPreset, PaymentTermInstallment } from "./partnerConstants";
+import { CurrencyAmount } from "../ui/CurrencyAmount";
+import { BASE_CURRENCY } from "../../data/currencyLibrary";
 
 interface PaymentTermCardProps {
   term: PaymentTermPreset;
@@ -37,6 +39,31 @@ interface PaymentTermCardProps {
   searchText?: string;
   /** Show preset/custom badge */
   showPresetBadge?: boolean;
+  /** Which currency to render fixed amounts in. Mirrors the partner-details toggle. */
+  currencyMode?: "base" | "partner";
+  /** Partner's default transaction currency — required when `currencyMode` is set. */
+  partnerCurrency?: string;
+}
+
+/**
+ * Pick the right stored fixed amount for the selected currency view, falling
+ * back to the partner-side value when a base pair wasn't saved (legacy or
+ * partner-currency = base).
+ */
+function pickFixedAmount(
+  mode: "base" | "partner",
+  amountBase: number | undefined,
+  amountPartner: number | undefined,
+  partnerCurrency: string | undefined,
+): { value: number; currency: string } | null {
+  if (mode === "base") {
+    if (amountBase != null) return { value: amountBase, currency: BASE_CURRENCY };
+    if (amountPartner != null) return { value: amountPartner, currency: partnerCurrency ?? BASE_CURRENCY };
+    return null;
+  }
+  if (amountPartner != null) return { value: amountPartner, currency: partnerCurrency ?? BASE_CURRENCY };
+  if (amountBase != null) return { value: amountBase, currency: BASE_CURRENCY };
+  return null;
 }
 
 function highlightMatch(text: string, query?: string) {
@@ -64,28 +91,53 @@ function parseSplits(desc: string): { pct: string; label: string }[] {
   });
 }
 
-// Interactive split tier display — matches pricing rules T1/T2/T3 pattern
-function SplitTierDisplay({ term }: { term: PaymentTermPreset }) {
-  const splits = parseSplits(term.description);
-  const isMulti = splits.length > 1;
+// Interactive split tier display — matches pricing rules T1/T2/T3 pattern.
+// When the term has structured `splitInstallments`, use those (fixed-mode rows
+// render an amount in the toggled currency); otherwise parse percentages from
+// the description for legacy presets.
+function SplitTierDisplay({
+  term,
+  currencyMode = "base",
+}: {
+  term: PaymentTermPreset;
+  currencyMode?: "base" | "partner";
+}) {
+  const structured = term.splitInstallments;
+  const legacySplits = structured ? [] : parseSplits(term.description);
+  const rows: {
+    label: string;
+    percent?: string;
+    fixed?: { value: number; currency: string };
+  }[] = structured
+    ? structured.map((inst) => {
+        const label = inst.event?.replace(/_/g, " ") || "Event";
+        if (inst.mode === "fixed") {
+          const picked = pickFixedAmount(currencyMode, inst.amountBase, inst.amountPartner, inst.partnerCurrency);
+          return { label, fixed: picked ?? undefined };
+        }
+        return { label, percent: inst.percent };
+      })
+    : legacySplits.map((s) => ({ label: s.label, percent: s.pct }));
+
+  const isMulti = rows.length > 1;
   const [activeIdx, setActiveIdx] = useState(0);
-  const shown = splits[isMulti ? activeIdx : 0];
+  const shown = rows[isMulti ? activeIdx : 0];
   const splitColor =
     term.category === "net" ? "#0A77FF"
     : term.category === "prepayment" ? "#6D28D9"
     : "#B45309";
 
-  if (splits.length === 0) return null;
+  if (rows.length === 0) return null;
 
   return (
     <>
       {/* Hero value */}
       <div className="flex items-baseline gap-2 shrink-0">
         <span className="text-[22px] text-foreground tabular-nums leading-none tracking-tight" style={{ fontWeight: 600 }}>
-          {splits.length}
+          {rows.length}
         </span>
         <span className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>
-          {splits.length === 1 ? "split" : "splits"}
+          {rows.length === 1 ? "split" : "splits"}
         </span>
       </div>
 
@@ -93,7 +145,7 @@ function SplitTierDisplay({ term }: { term: PaymentTermPreset }) {
       <div className="mt-auto pt-2 shrink-0" onClick={(e) => e.stopPropagation()}>
         {/* Split selector strip */}
         <div className={`h-[24px] mb-1.5 ${isMulti ? "flex items-center gap-[3px]" : ""}`}>
-          {isMulti && splits.map((s, i) => {
+          {isMulti && rows.map((r, i) => {
             const isActive = activeIdx === i;
             const typeColor = splitColor;
             return (
@@ -113,7 +165,7 @@ function SplitTierDisplay({ term }: { term: PaymentTermPreset }) {
                 S{i + 1}
                 {isActive && (
                   <span className="ml-1 text-[9px] opacity-60" style={{ fontWeight: 400 }}>
-                    {s.pct}%
+                    {r.percent != null ? `${r.percent}%` : ""}
                   </span>
                 )}
               </button>
@@ -124,7 +176,11 @@ function SplitTierDisplay({ term }: { term: PaymentTermPreset }) {
         {shown && (
           <div className="flex items-center justify-between px-3 py-[6px] rounded-lg border border-[#E8ECF1] bg-[#FAFBFC] text-[11px] tabular-nums min-w-0">
             <span className="text-slate-500 capitalize truncate" style={{ fontWeight: 400 }}>{shown.label}</span>
-            <span className="shrink-0 ml-2 text-foreground" style={{ fontWeight: 600 }}>{shown.pct}%</span>
+            <span className="shrink-0 ml-2 text-foreground" style={{ fontWeight: 600 }}>
+              {shown.fixed
+                ? <CurrencyAmount value={shown.fixed.value} currency={shown.fixed.currency} mode="single" />
+                : `${shown.percent ?? ""}%`}
+            </span>
           </div>
         )}
       </div>
@@ -143,7 +199,13 @@ export function PaymentTermCard({
   readOnly = false,
   searchText,
   showPresetBadge = false,
+  currencyMode = "base",
+  partnerCurrency,
 }: PaymentTermCardProps) {
+  const discountFixed =
+    term.discountMode === "fixed"
+      ? pickFixedAmount(currencyMode, term.discountAmountBase, term.discountAmountPartner, term.discountPartnerCurrency ?? partnerCurrency)
+      : null;
   const ptDays = term.duration || (term.name.match(/\d+/) ? term.name.match(/\d+/)![0] : "30");
   const pill =
     term.category === "net"
@@ -248,7 +310,7 @@ export function PaymentTermCard({
 
         {/* Row 4: Hero value + split tier selector */}
         {term.category === "split" ? (
-          <SplitTierDisplay term={term} />
+          <SplitTierDisplay term={term} currencyMode={currencyMode} />
         ) : (
           <div className="flex items-baseline justify-between shrink-0">
             <div className="flex items-baseline gap-2">
@@ -267,8 +329,16 @@ export function PaymentTermCard({
         {(term.applyDiscount || term.discountPercent) && (
           <div className="pt-1.5 shrink-0">
             <div className="flex items-center px-2.5 py-[5px] rounded-lg border border-[#E8ECF1] bg-[#FAFBFC] text-[11px] tabular-nums">
-              <span className="text-slate-500" style={{ fontWeight: 400 }}>
-                Early pay {(term.discountMode ?? "percent") === "fixed" ? "$" : ""}{term.discountPercent || "2"}{(term.discountMode ?? "percent") === "percent" ? "%" : ""} within {term.discountPeriod || "10"} days
+              <span className="text-slate-500 inline-flex items-baseline gap-1 flex-wrap" style={{ fontWeight: 400 }}>
+                Early pay
+                {discountFixed ? (
+                  <CurrencyAmount value={discountFixed.value} currency={discountFixed.currency} mode="single" />
+                ) : (term.discountMode ?? "percent") === "fixed" ? (
+                  <span>${term.discountPercent || "2"}</span>
+                ) : (
+                  <span>{term.discountPercent || "2"}%</span>
+                )}
+                within {term.discountPeriod || "10"} days
               </span>
             </div>
           </div>

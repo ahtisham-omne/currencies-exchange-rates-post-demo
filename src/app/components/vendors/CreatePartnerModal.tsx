@@ -151,6 +151,7 @@ import {
   type PaymentMethodType,
   type PaymentTypeCategory,
   type PaymentTermPreset,
+  type PaymentTermInstallment,
   type PaymentTermCategory,
   type PricingRuleCategory,
   type PricingRuleBasis,
@@ -184,13 +185,15 @@ import { SearchableUserPicker } from "./SearchableUserPicker";
 import { Globe as GlobeIcon } from "lucide-react";
 import {
   CURRENCY_LIBRARY,
-  flagUrlFor,
+  flagUrlForCurrency,
   getLibraryCurrency,
   type LibraryCurrency,
+  BASE_CURRENCY,
+  convertBetween,
 } from "@/app/data/currencyLibrary";
 
 function CurrencyFlagOrGlobe({ currency, size = 20 }: { currency: LibraryCurrency; size?: number }) {
-  const url = flagUrlFor(currency.country);
+  const url = flagUrlForCurrency(currency);
   const height = Math.round((size * 3) / 4);
   if (!url) {
     return (
@@ -3650,6 +3653,13 @@ function ConfigPageContent({
     { event: "order_confirmation", percent: "", fixRate: false },
     { event: "", percent: "", fixRate: false },
   ]);
+  // Which side of the partner-details currency toggle the Create-PT form is
+  // entering fixed amounts in. Default to partner-currency so entry feels
+  // natural when the partner isn't on the base currency. The companion
+  // helpers (`createPtInputCurrencyCode`, `renderPtFxHelper`) live further
+  // down because they depend on the `currency` state that hasn't been
+  // declared yet at this point in the render body.
+  const [createPtCurrencyMode, setCreatePtCurrencyMode] = useState<"base" | "partner">("partner");
 
   // Shipping Methods section states (must be at top level, not inside conditional)
   const [carrierSectionOpen, setCarrierSectionOpen] = useState(true);
@@ -3701,6 +3711,7 @@ function ConfigPageContent({
       { event: "order_confirmation", percent: "", fixRate: false },
       { event: "", percent: "", fixRate: false },
     ]);
+    setCreatePtCurrencyMode("partner");
   }
 
   function handleDuplicatePaymentTerm(term: PaymentTermPreset) {
@@ -3753,6 +3764,44 @@ function ConfigPageContent({
       }
     }
 
+    // Freeze the dual-currency pair for a fixed amount at the exchange rate
+    // captured right now. Both sides are stored so the partner-details toggle
+    // can render either side without re-converting later (and without drifting
+    // if FX moves after save).
+    const pairFixed = (
+      raw: string,
+    ): { amountBase: number; amountPartner: number; partnerCurrency: string } | undefined => {
+      const n = parseFloat(raw);
+      if (!Number.isFinite(n)) return undefined;
+      const partnerCcy = currency || BASE_CURRENCY;
+      if (createPtCurrencyMode === "partner") {
+        return { amountBase: convertBetween(n, partnerCcy, BASE_CURRENCY), amountPartner: n, partnerCurrency: partnerCcy };
+      }
+      return { amountBase: n, amountPartner: convertBetween(n, BASE_CURRENCY, partnerCcy), partnerCurrency: partnerCcy };
+    };
+
+    const discountPair =
+      createPtApplyDiscount && createPtDiscountMode === "fixed" ? pairFixed(createPtDiscountPercent) : undefined;
+
+    const prepaymentPair =
+      createPtType === "prepayment" && createPtPrepayMode === "fixed" ? pairFixed(createPtCustomDuration || "") : undefined;
+
+    const splitInstallments = createPtType === "split"
+      ? createPtSplitEvents.map<PaymentTermInstallment>((evt) => {
+          if (evt.fixRate) {
+            const pair = pairFixed(evt.percent);
+            return {
+              event: evt.event,
+              mode: "fixed",
+              amountBase: pair?.amountBase,
+              amountPartner: pair?.amountPartner,
+              partnerCurrency: pair?.partnerCurrency,
+            };
+          }
+          return { event: evt.event, mode: "percent", percent: evt.percent };
+        })
+      : undefined;
+
     const newPreset: PaymentTermPreset = {
       id: `pt-custom-${Date.now()}`,
       name: createPtName,
@@ -3767,6 +3816,16 @@ function ConfigPageContent({
       discountPercent: createPtApplyDiscount ? createPtDiscountPercent : undefined,
       discountMode: createPtApplyDiscount ? createPtDiscountMode : undefined,
       discountPeriod: createPtApplyDiscount ? (createPtDiscountPeriod === "custom" ? createPtCustomDiscountPeriod : createPtDiscountPeriod) : undefined,
+      discountAmountBase: discountPair?.amountBase,
+      discountAmountPartner: discountPair?.amountPartner,
+      discountPartnerCurrency: discountPair?.partnerCurrency,
+      prepaymentMode: createPtType === "prepayment" ? createPtPrepayMode : undefined,
+      prepaymentPercent: createPtType === "prepayment" && createPtPrepayMode === "percent" ? createPtCustomDuration : undefined,
+      prepaymentAmountBase: prepaymentPair?.amountBase,
+      prepaymentAmountPartner: prepaymentPair?.amountPartner,
+      prepaymentPartnerCurrency: prepaymentPair?.partnerCurrency,
+      prepaymentTrigger: createPtType === "prepayment" ? createPtTrigger : undefined,
+      splitInstallments,
     };
     setSelectedPaymentTermId(newPreset.id);
     // We store a reference to show the selected card
@@ -4128,6 +4187,31 @@ function ConfigPageContent({
       if (mapped) setCurrency(mapped.toUpperCase());
     }
   }, [selectedGroup?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Create-PT modal input affordances — symbol to show on the left of fixed
+  // inputs, and the live "≈ X CODE" helper shown beneath them. Placed here
+  // because both read from the `currency` state declared just above.
+  const createPtInputCurrencyCode =
+    createPtCurrencyMode === "base" ? BASE_CURRENCY : (currency || BASE_CURRENCY);
+  const createPtInputCurrencySymbol =
+    getLibraryCurrency(createPtInputCurrencyCode)?.symbol ?? createPtInputCurrencyCode;
+
+  const renderPtFxHelper = (raw: string): React.ReactNode => {
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n === 0) return null;
+    const partnerCcy = currency || BASE_CURRENCY;
+    if (partnerCcy.toUpperCase() === BASE_CURRENCY) return null;
+    const otherCode = createPtCurrencyMode === "base" ? partnerCcy : BASE_CURRENCY;
+    const fromCode = createPtCurrencyMode === "base" ? BASE_CURRENCY : partnerCcy;
+    const converted = convertBetween(n, fromCode, otherCode);
+    const sym = getLibraryCurrency(otherCode)?.symbol ?? otherCode;
+    const formatted = converted.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return (
+      <p className="text-[10.5px] text-slate-400 mt-1 tabular-nums" style={{ fontWeight: 400 }}>
+        ≈ {sym} {formatted} {otherCode} <span className="text-slate-300">· at today’s rate</span>
+      </p>
+    );
+  };
   // Perspective-aware defaults.
   // Vendor: we receive from vendor → Ship To = our location (pl-1), Pay To = vendor (pl-3), Funded By = us (pl-7).
   // Customer: we deliver to customer → Ship To = customer location (pl-2), Pay To = us (pl-7), Funded By = customer (pl-3).
@@ -4369,6 +4453,17 @@ function ConfigPageContent({
       id: ptPreset.id, name: ptPreset.name, type: ptPreset.typeBadge, trigger: ptPreset.trigger,
       description: ptPreset.description, duration: ptPreset.duration,
       discountPercent: ptPreset.discountPercent, discountPeriod: ptPreset.discountPeriod,
+      discountMode: ptPreset.discountMode,
+      discountAmountBase: ptPreset.discountAmountBase,
+      discountAmountPartner: ptPreset.discountAmountPartner,
+      discountPartnerCurrency: ptPreset.discountPartnerCurrency,
+      prepaymentMode: ptPreset.prepaymentMode,
+      prepaymentPercent: ptPreset.prepaymentPercent,
+      prepaymentAmountBase: ptPreset.prepaymentAmountBase,
+      prepaymentAmountPartner: ptPreset.prepaymentAmountPartner,
+      prepaymentPartnerCurrency: ptPreset.prepaymentPartnerCurrency,
+      prepaymentTrigger: ptPreset.prepaymentTrigger,
+      splitInstallments: ptPreset.splitInstallments,
     } : undefined;
     const allPricingRules = selectedPricingRuleIds.map((id) => {
       const preset = PRICING_RULE_PRESETS.find((p) => p.id === id) || customPricingRulesRef.current.find((p) => p.id === id);
@@ -5529,9 +5624,20 @@ function ConfigPageContent({
             <div>
               <Label className="text-xs text-foreground" style={{ fontWeight: 600 }}>Maximum credit limit</Label>
               <div className="relative mt-1.5">
-                <div className="absolute left-0 top-0 bottom-0 min-w-10 px-2 rounded-l-lg bg-muted/60 border-r border-border flex items-center justify-center">
-                  <span className="text-xs text-muted-foreground font-medium">{currencySymbol}</span>
-                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="absolute left-0 top-0 bottom-0 min-w-10 px-2 rounded-l-lg bg-muted/60 border-r border-border flex items-center justify-center cursor-help">
+                      <span className="text-xs text-muted-foreground font-medium">{currencySymbol}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={6} className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {currencyObj && <CurrencyFlagOrGlobe currency={currencyObj} size={18} />}
+                      <span style={{ fontWeight: 700 }}>{currencyLabel}</span>
+                      {currencyName && <span className="text-slate-500">— {currencyName}</span>}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
                 <Input placeholder="50,000.00" className="pl-14 rounded-lg border-border !h-10 bg-white text-sm placeholder:text-slate-400" />
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">Leave empty for unlimited credit</p>
@@ -5782,6 +5888,42 @@ function ConfigPageContent({
                   </p>
                 </div>
                 <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                  {/* Currency view toggle — mirrors the partner-details toggle. Drives which
+                      currency fixed-amount inputs are entered in; both values are stored. */}
+                  <div className="inline-flex items-center gap-0.5 h-8 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setCreatePtCurrencyMode("base")}
+                      aria-pressed={createPtCurrencyMode === "base"}
+                      className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                        createPtCurrencyMode === "base"
+                          ? "bg-accent text-primary"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      }`}
+                      style={{ fontWeight: createPtCurrencyMode === "base" ? 600 : 500 }}
+                    >
+                      Base Currency
+                      <InfoTooltip side="top" iconClassName="w-3 h-3">
+                        Enter fixed amounts in the company's base currency ({BASE_CURRENCY}). Values stay comparable across all partners regardless of the transaction currency.
+                      </InfoTooltip>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreatePtCurrencyMode("partner")}
+                      aria-pressed={createPtCurrencyMode === "partner"}
+                      className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                        createPtCurrencyMode === "partner"
+                          ? "bg-accent text-primary"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      }`}
+                      style={{ fontWeight: createPtCurrencyMode === "partner" ? 600 : 500 }}
+                    >
+                      Partner Currency
+                      <InfoTooltip side="top" iconClassName="w-3 h-3">
+                        Enter fixed amounts in this partner's own default transaction currency ({currency || BASE_CURRENCY}). The base-currency equivalent is stored alongside for reporting.
+                      </InfoTooltip>
+                    </button>
+                  </div>
                   <button
                     onClick={() => setCreatePtFullscreen(!createPtFullscreen)}
                     className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-white text-xs text-muted-foreground hover:bg-slate-50 hover:border-slate-300 transition-all cursor-pointer"
@@ -6106,18 +6248,19 @@ function ConfigPageContent({
                               </div>
                               <div className="relative">
                                 {createPtPrepayMode === "fixed" && (
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{createPtInputCurrencySymbol}</span>
                                 )}
                                 <Input
                                   value={createPtCustomDuration || ""}
                                   onChange={(e) => setCreatePtCustomDuration(e.target.value)}
                                   placeholder={createPtPrepayMode === "percent" ? "e.g. 50" : "e.g. 5000.00"}
-                                  className={`rounded-lg border-border bg-white text-[13px] h-9 placeholder:text-slate-400 ${createPtPrepayMode === "fixed" ? "pl-7 pr-3" : "pr-8"}`}
+                                  className={`rounded-lg border-border bg-white text-[13px] h-9 placeholder:text-slate-400 ${createPtPrepayMode === "fixed" ? "pl-8 pr-3" : "pr-8"}`}
                                 />
                                 {createPtPrepayMode === "percent" && (
                                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                                 )}
                               </div>
+                              {createPtPrepayMode === "fixed" && renderPtFxHelper(createPtCustomDuration || "")}
                             </div>
                             {/* Trigger */}
                             <div>
@@ -6185,15 +6328,16 @@ function ConfigPageContent({
                                       />
                                     </div>
                                     <div className="relative">
-                                      {evt.fixRate && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>}
+                                      {evt.fixRate && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{createPtInputCurrencySymbol}</span>}
                                       <Input
                                         value={evt.percent}
                                         onChange={(e) => { const u = [...createPtSplitEvents]; u[idx] = { ...u[idx], percent: e.target.value }; setCreatePtSplitEvents(u); }}
                                         placeholder={evt.fixRate ? "e.g. 5000.00" : "e.g. 50"}
-                                        className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 ${evt.fixRate ? "pl-7 pr-3" : "pr-8"}`}
+                                        className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 ${evt.fixRate ? "pl-8 pr-3" : "pr-8"}`}
                                       />
                                       {!evt.fixRate && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>}
                                     </div>
+                                    {evt.fixRate && renderPtFxHelper(evt.percent)}
                                   </div>
                                   {/* Trigger Event dropdown */}
                                   <div>
@@ -6296,18 +6440,19 @@ function ConfigPageContent({
                               </div>
                               <div className="relative mt-1">
                                 {createPtDiscountMode === "fixed" && (
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">{createPtInputCurrencySymbol}</span>
                                 )}
                                 <Input
                                   value={createPtDiscountPercent}
                                   onChange={(e) => setCreatePtDiscountPercent(e.target.value)}
                                   placeholder={createPtDiscountMode === "percent" ? "e.g. 5" : "e.g. 25.00"}
-                                  className={`rounded-lg border-border bg-white !h-10 text-sm placeholder:text-slate-400 ${createPtDiscountMode === "fixed" ? "pl-7 pr-3" : "pr-8"}`}
+                                  className={`rounded-lg border-border bg-white !h-10 text-sm placeholder:text-slate-400 ${createPtDiscountMode === "fixed" ? "pl-8 pr-3" : "pr-8"}`}
                                 />
                                 {createPtDiscountMode === "percent" && (
                                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
                                 )}
                               </div>
+                              {createPtDiscountMode === "fixed" && renderPtFxHelper(createPtDiscountPercent)}
                             </div>
                             <div>
                               <div className="flex items-center gap-1">

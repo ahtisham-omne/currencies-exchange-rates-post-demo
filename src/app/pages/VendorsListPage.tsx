@@ -219,7 +219,7 @@ const CHECKBOX_COL_WIDTH = 40; // width of the checkbox column in px
 import { getAvatarTint } from "../utils/avatarTints";
 import { usePersonLightbox } from "../components/vendors/PersonAvatarLightbox";
 
-import { CONTACT_DICTIONARY } from "../components/vendors/partnerConstants";
+import { CONTACT_DICTIONARY, VENDOR_SUB_TYPES, CUSTOMER_SUB_TYPES } from "../components/vendors/partnerConstants";
 
 /* ─── Name → Contact ID resolver ─── */
 const _cbNameMap: Record<string, string> = {};
@@ -314,9 +314,18 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
       const phone = (data.partnerPhone as string) || "";
       const website = (data.website as string) || "";
       const address = (data.address as string) || "";
+      const profileImage = (data.profileImage as string | null) ?? null;
       const partnerTypes = (data.partnerTypes as ("vendor" | "customer")[]) || ["vendor"];
       const vendorType = (data.vendorType as string) || "Seller";
       const partnerGroup = (data.partnerGroup as string) || "";
+
+      // Map sub-type IDs \u2192 human labels so the profile page displays them consistently
+      const vendorSubTypeIds = (data.vendorSubTypes as string[]) || [];
+      const customerSubTypeIds = (data.customerSubTypes as string[]) || [];
+      const vendorSubTypeLabels = vendorSubTypeIds
+        .map((id) => VENDOR_SUB_TYPES.find((s) => s.id === id)?.label ?? id);
+      const customerSubTypeLabels = customerSubTypeIds
+        .map((id) => CUSTOMER_SUB_TYPES.find((s) => s.id === id)?.label ?? id);
 
       // Extract config data from Step 3
       const configPaymentMethods = data.configPaymentMethods as any[] | undefined;
@@ -325,12 +334,6 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
       const configPointsOfContact = data.configPointsOfContact as any[] | undefined;
       const configCreditLimit = data.configCreditLimit as Record<string, unknown> | undefined;
       const configShipping = data.configShipping as Record<string, unknown> | undefined;
-
-      // Build initials from partner name
-      const nameParts = name.split(" ").filter(Boolean);
-      const initials = nameParts.length >= 2
-        ? `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase()
-        : name.substring(0, 2).toUpperCase();
 
       // Map POCs to globalPointOfContacts format
       const globalPOCs = (configPointsOfContact || []).map((c: any) => ({
@@ -344,9 +347,11 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
         displayName: name,
         partnerTypes,
         vendorType,
+        vendorSubTypes: vendorSubTypeLabels,
+        customerSubTypes: customerSubTypeLabels,
         itemCodes: [],
         partnerLocations: [],
-        globalPointOfContacts: globalPOCs.length > 0 ? globalPOCs : [],
+        globalPointOfContacts: globalPOCs,
         partnerGroup,
         netProfitMargin: 0,
         creditUtilization: 0,
@@ -357,6 +362,8 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
         countryFlag: "\u{1F1FA}\u{1F1F8}",
         emailAddress: "",
         createdByContact: { initials: "AA", name: "Ahtisham Ahmad", bgColor: "#6366f1" },
+        profileImage,
+        description: address || "",
         category: "services",
         status: "active",
         primaryContact: {
@@ -375,8 +382,9 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
         taxId: "",
         paymentTerms: "net_30",
         creditLimit: 0,
-        website: website,
+        website,
         notes: "",
+        defaultTransactionCurrency: "USD",
         configData: {
           paymentMethods: configPaymentMethods as any,
           paymentTermConfig: configPaymentTerm as any,
@@ -384,24 +392,21 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
           pointsOfContact: configPointsOfContact as any,
           creditLimitConfig: configCreditLimit as any,
           shippingConfig: configShipping as any,
-          vendorSubTypes: (data.vendorSubTypes as string[]) || [],
-          customerSubTypes: (data.customerSubTypes as string[]) || [],
+          vendorSubTypes: vendorSubTypeLabels,
+          customerSubTypes: customerSubTypeLabels,
           description: address || "",
         },
       });
 
-      // Reset to page 1 so the new vendor appears at top
+      // Reset list view so the new vendor lands at the top when the user returns
       setCurrentPage(1);
       setSearchQuery("");
       setQuickFilter("all");
+      setNewlyCreatedId(newVendor.id);
 
-      // Navigate directly to the new partner's details page
       navigate(`/vendors/${newVendor.id}`);
 
-      // Show success toast
-      toast.success(`Partner "${name}" created successfully`, {
-        duration: 5000,
-      });
+      toast.success(`Partner "${name}" created successfully`, { duration: 5000 });
     },
     [addVendor, navigate]
   );
@@ -1612,13 +1617,12 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                 {/* Spacer pushes the currency-view toggle to the far right */}
                 <div className="flex-1" />
 
-                {/* Currency view toggle — base (PKR) vs. each partner's default currency */}
+                {/* Currency view toggle — base vs. each partner's own currency */}
                 <div className="inline-flex items-center gap-1 rounded-full border border-border p-0.5 shrink-0 bg-white">
                   <button
                     type="button"
                     onClick={() => setTableCurrencyMode("base")}
                     aria-pressed={tableCurrencyMode === "base"}
-                    title="Show financial columns in base currency (PKR)"
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
                       tableCurrencyMode === "base"
                         ? "bg-accent text-primary"
@@ -1626,13 +1630,15 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                     }`}
                     style={{ fontWeight: tableCurrencyMode === "base" ? 600 : 500 }}
                   >
-                    Base ({BASE_CURRENCY})
+                    Base Currency
+                    <InfoTooltip side="top" iconClassName="w-3 h-3">
+                      Shows every partner's financials converted into the company's base currency ({BASE_CURRENCY}) so values are directly comparable across the list.
+                    </InfoTooltip>
                   </button>
                   <button
                     type="button"
                     onClick={() => setTableCurrencyMode("partner")}
                     aria-pressed={tableCurrencyMode === "partner"}
-                    title="Show financial columns in each partner's default currency"
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
                       tableCurrencyMode === "partner"
                         ? "bg-accent text-primary"
@@ -1640,7 +1646,10 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                     }`}
                     style={{ fontWeight: tableCurrencyMode === "partner" ? 600 : 500 }}
                   >
-                    Partner default
+                    Partner Currency
+                    <InfoTooltip side="top" iconClassName="w-3 h-3">
+                      Shows each partner's financials in their own default transaction currency. Hover a cell to see the base-currency ({BASE_CURRENCY}) equivalent.
+                    </InfoTooltip>
                   </button>
                 </div>
               </div>

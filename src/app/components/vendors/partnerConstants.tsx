@@ -813,6 +813,22 @@ export const PAYMENT_TYPE_CARDS: { id: PaymentMethodType; label: string; descrip
 // ── Payment Terms Presets ──
 export type PaymentTermCategory = "all" | "net" | "prepayment" | "split";
 
+/**
+ * One scheduled payment inside a split-term or a prepayment term.
+ * When `mode === "fixed"`, the value is stored in *both* the company base
+ * currency and the partner's configured currency at the time of entry — so
+ * the UI can render either side of the currency toggle without re-converting
+ * (the stored pair is frozen at the exchange rate captured on save).
+ */
+export interface PaymentTermInstallment {
+  event: string;
+  mode: "percent" | "fixed";
+  percent?: string;
+  amountBase?: number;
+  amountPartner?: number;
+  partnerCurrency?: string;
+}
+
 export interface PaymentTermPreset {
   id: string;
   name: string;
@@ -827,6 +843,21 @@ export interface PaymentTermPreset {
   discountPercent?: string;
   discountMode?: "percent" | "fixed";
   discountPeriod?: string;
+  /* Dual-currency persistence for a fixed early-payment discount. Only
+     populated when `discountMode === "fixed"`; `Base` is in BASE_CURRENCY,
+     `Partner` is in `discountPartnerCurrency`. */
+  discountAmountBase?: number;
+  discountAmountPartner?: number;
+  discountPartnerCurrency?: string;
+  /* Prepayment configuration (used when `category === "prepayment"`). */
+  prepaymentMode?: "percent" | "fixed";
+  prepaymentPercent?: string;
+  prepaymentAmountBase?: number;
+  prepaymentAmountPartner?: number;
+  prepaymentPartnerCurrency?: string;
+  prepaymentTrigger?: string;
+  /* Structured split installments (used when `category === "split"`). */
+  splitInstallments?: PaymentTermInstallment[];
 }
 
 export const PAYMENT_TERM_PRESETS: PaymentTermPreset[] = [

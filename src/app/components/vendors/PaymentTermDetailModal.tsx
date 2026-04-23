@@ -33,6 +33,8 @@ import {
   type PaymentTermPreset,
   CREATE_PT_TYPES,
 } from "./partnerConstants";
+import { CurrencyAmount } from "../ui/CurrencyAmount";
+import { BASE_CURRENCY } from "../../data/currencyLibrary";
 
 /* ─── Tab config ─── */
 const PT_DETAIL_TABS = [
@@ -89,9 +91,13 @@ interface PaymentTermDetailModalProps {
   onDisable?: (term: PaymentTermPreset) => void;
   onApply?: (term: PaymentTermPreset) => void;
   onDuplicate?: (term: PaymentTermPreset) => void;
+  /** Which side of the partner-details currency toggle to render fixed amounts in. */
+  currencyMode?: "base" | "partner";
+  /** Partner's default transaction currency — required when `currencyMode` is set. */
+  partnerCurrency?: string;
 }
 
-function PaymentTermDetailModal({ term, open, onClose, mode = "create", onDisable, onApply, onDuplicate }: PaymentTermDetailModalProps) {
+function PaymentTermDetailModal({ term, open, onClose, mode = "create", onDisable, onApply, onDuplicate, currencyMode = "base", partnerCurrency }: PaymentTermDetailModalProps) {
   const [tab, setTab] = useState("vendors");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [itemFilter, setItemFilter] = useState("all");
@@ -416,14 +422,37 @@ function PaymentTermDetailModal({ term, open, onClose, mode = "create", onDisabl
                   </div>
 
                   {/* Early Payment Discount */}
-                  {(term.applyDiscount || term.discountPercent) && (
-                    <div className="pt-2.5 border-t border-muted">
-                      <PTInfoLabel>Early Payment Discount</PTInfoLabel>
-                      <p className="text-[12px] text-slate-700 mt-0.5" style={{ fontWeight: 500 }}>
-                        {(term.discountMode ?? "percent") === "fixed" ? "$" : ""}{term.discountPercent || "2"}{(term.discountMode ?? "percent") === "percent" ? "%" : ""} if paid within {term.discountPeriod || "10"} days
-                      </p>
-                    </div>
-                  )}
+                  {(term.applyDiscount || term.discountPercent) && (() => {
+                    const isFixed = (term.discountMode ?? "percent") === "fixed";
+                    const pickFixed = (): { value: number; currency: string } | null => {
+                      if (!isFixed) return null;
+                      const partnerCcy = term.discountPartnerCurrency ?? partnerCurrency;
+                      if (currencyMode === "base") {
+                        if (term.discountAmountBase != null) return { value: term.discountAmountBase, currency: BASE_CURRENCY };
+                        if (term.discountAmountPartner != null) return { value: term.discountAmountPartner, currency: partnerCcy ?? BASE_CURRENCY };
+                      } else {
+                        if (term.discountAmountPartner != null) return { value: term.discountAmountPartner, currency: partnerCcy ?? BASE_CURRENCY };
+                        if (term.discountAmountBase != null) return { value: term.discountAmountBase, currency: BASE_CURRENCY };
+                      }
+                      return null;
+                    };
+                    const fixed = pickFixed();
+                    return (
+                      <div className="pt-2.5 border-t border-muted">
+                        <PTInfoLabel>Early Payment Discount</PTInfoLabel>
+                        <p className="text-[12px] text-slate-700 mt-0.5 inline-flex items-baseline gap-1 flex-wrap" style={{ fontWeight: 500 }}>
+                          {fixed ? (
+                            <CurrencyAmount value={fixed.value} currency={fixed.currency} mode="single" />
+                          ) : isFixed ? (
+                            <span>${term.discountPercent || "2"}</span>
+                          ) : (
+                            <span>{term.discountPercent || "2"}%</span>
+                          )}
+                          <span>if paid within {term.discountPeriod || "10"} days</span>
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   {/* Created By + Last Updated */}
                   <div className="grid grid-cols-2 gap-x-4 pt-2.5 border-t border-muted">

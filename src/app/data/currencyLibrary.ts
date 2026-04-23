@@ -191,6 +191,16 @@ export function flagUrlFor(country: string | null): string | null {
 }
 
 /**
+ * Flag URL for a specific currency. Prefers the currency's country flag, but
+ * supplies a representative flag for known multi-country currencies — e.g. the
+ * EU flag for EUR — so the card doesn't fall back to a generic globe.
+ */
+export function flagUrlForCurrency(currency: LibraryCurrency): string | null {
+  if (currency.code === "EUR") return "https://flagcdn.com/w40/eu.png";
+  return flagUrlFor(currency.country);
+}
+
+/**
  * Company-wide base currency used for cross-partner aggregations and
  * comparable values in the listing table.
  */

@@ -84,6 +84,7 @@ export function VendorForm({ initialData, onSubmit, isEdit = false }: VendorForm
     creditLimit: initialData?.creditLimit ?? 0,
     website: initialData?.website ?? "",
     notes: initialData?.notes ?? "",
+    defaultTransactionCurrency: initialData?.defaultTransactionCurrency ?? "USD",
   });
 
   const updateField = (path: string, value: string | number) => {

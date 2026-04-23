@@ -42,6 +42,7 @@ import {
   type SortConfig,
 } from "../components/vendors/ColumnHeaderMenu";
 import { OverflowTooltip } from "../components/vendors/OverflowTooltip";
+import { InfoTooltip } from "../components/ui/info-tooltip";
 import { CurrencyAmount } from "../components/ui/CurrencyAmount";
 import { CurrencyFlag } from "../components/ui/CurrencyFlag";
 import {
@@ -968,6 +969,41 @@ export function VendorDetailsPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-[12px] text-slate-500">
                   <span className="text-sm text-muted-foreground" style={{ fontWeight: 500 }}>Dashboard</span>
+                  {/* Currency view toggle — base vs. this partner's own currency */}
+                  <div className="inline-flex items-center gap-0.5 h-7 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setProfileCurrencyMode("base")}
+                      aria-pressed={profileCurrencyMode === "base"}
+                      className={`inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                        profileCurrencyMode === "base"
+                          ? "bg-accent text-primary"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      }`}
+                      style={{ fontWeight: profileCurrencyMode === "base" ? 600 : 500 }}
+                    >
+                      Base Currency
+                      <InfoTooltip side="top" iconClassName="w-3 h-3">
+                        Shows this profile's financials converted into the company's base currency ({BASE_CURRENCY}) so it compares cleanly with the rest of the portfolio.
+                      </InfoTooltip>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProfileCurrencyMode("partner")}
+                      aria-pressed={profileCurrencyMode === "partner"}
+                      className={`inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                        profileCurrencyMode === "partner"
+                          ? "bg-accent text-primary"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      }`}
+                      style={{ fontWeight: profileCurrencyMode === "partner" ? 600 : 500 }}
+                    >
+                      Partner Currency
+                      <InfoTooltip side="top" iconClassName="w-3 h-3">
+                        Shows amounts in this partner's own default transaction currency. Hover any value to see the base-currency ({BASE_CURRENCY}) equivalent.
+                      </InfoTooltip>
+                    </button>
+                  </div>
                   {/* Date Range Filter */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -1020,37 +1056,6 @@ export function VendorDetailsPage() {
                     <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
                     Reset
                   </button>
-                  {/* Currency view toggle — base (PKR) vs. partner default */}
-                  <div className="inline-flex items-center gap-0.5 h-8 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setProfileCurrencyMode("base")}
-                      aria-pressed={profileCurrencyMode === "base"}
-                      title="Show amounts in base currency (PKR)"
-                      className={`inline-flex items-center h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
-                        profileCurrencyMode === "base"
-                          ? "bg-accent text-primary"
-                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                      }`}
-                      style={{ fontWeight: profileCurrencyMode === "base" ? 600 : 500 }}
-                    >
-                      Base ({BASE_CURRENCY})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setProfileCurrencyMode("partner")}
-                      aria-pressed={profileCurrencyMode === "partner"}
-                      title="Show amounts in the partner's default currency"
-                      className={`inline-flex items-center h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
-                        profileCurrencyMode === "partner"
-                          ? "bg-accent text-primary"
-                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                      }`}
-                      style={{ fontWeight: profileCurrencyMode === "partner" ? 600 : 500 }}
-                    >
-                      Partner default
-                    </button>
-                  </div>
                   <button
                     onClick={() => setCustomizePanelOpen(true)}
                     className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border bg-white hover:bg-slate-50 text-slate-700 text-[12px] shadow-sm transition-all cursor-pointer"
@@ -3452,6 +3457,8 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                 term={termPreset}
                 readOnly
                 onClick={() => { setPtDetailTerm(termPreset); setPtDetailOpen(true); }}
+                currencyMode={currencyMode}
+                partnerCurrency={vendor.defaultTransactionCurrency}
               />
             );
           })()}
@@ -3546,6 +3553,8 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
       onClose={() => { setPtDetailOpen(false); setPtDetailTerm(null); }}
       mode="view"
       onDisable={(t) => toast.success(`"${t.name}" disabled for this partner`)}
+      currencyMode={currencyMode}
+      partnerCurrency={vendor.defaultTransactionCurrency}
     />
     </>
   );
@@ -6559,7 +6568,16 @@ function PaymentMethodsTab({ cfg, PAYMENT_TYPE_ICONS }: { cfg?: VendorConfigData
 }
 
 // ----- PAYMENT TERMS TAB -----
-function PaymentTermsTab({ vendor, cfg }: { vendor: Vendor; cfg?: VendorConfigData }) {
+function PaymentTermsTab({
+  vendor,
+  cfg,
+  currencyMode = "base",
+}: {
+  vendor: Vendor;
+  cfg?: VendorConfigData;
+  /** Which currency to render fixed amounts in — inherits the partner-details toggle. */
+  currencyMode?: "base" | "partner";
+}) {
   const hasPaymentTerm = !!cfg?.paymentTermConfig;
 
   return (
@@ -6624,8 +6642,21 @@ function PaymentTermsTab({ vendor, cfg }: { vendor: Vendor; cfg?: VendorConfigDa
               duration: cfg!.paymentTermConfig!.duration,
               discountPercent: cfg!.paymentTermConfig!.discountPercent,
               discountPeriod: cfg!.paymentTermConfig!.discountPeriod,
+              discountMode: cfg!.paymentTermConfig!.discountMode,
+              discountAmountBase: cfg!.paymentTermConfig!.discountAmountBase,
+              discountAmountPartner: cfg!.paymentTermConfig!.discountAmountPartner,
+              discountPartnerCurrency: cfg!.paymentTermConfig!.discountPartnerCurrency,
+              prepaymentMode: cfg!.paymentTermConfig!.prepaymentMode,
+              prepaymentPercent: cfg!.paymentTermConfig!.prepaymentPercent,
+              prepaymentAmountBase: cfg!.paymentTermConfig!.prepaymentAmountBase,
+              prepaymentAmountPartner: cfg!.paymentTermConfig!.prepaymentAmountPartner,
+              prepaymentPartnerCurrency: cfg!.paymentTermConfig!.prepaymentPartnerCurrency,
+              prepaymentTrigger: cfg!.paymentTermConfig!.prepaymentTrigger,
+              splitInstallments: cfg!.paymentTermConfig!.splitInstallments,
             }}
             readOnly
+            currencyMode={currencyMode}
+            partnerCurrency={vendor.defaultTransactionCurrency}
           />
         </ContentCard>
       ) : (

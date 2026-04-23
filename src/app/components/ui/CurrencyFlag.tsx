@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Globe } from "lucide-react";
-import { flagUrlFor, type LibraryCurrency } from "@/app/data/currencyLibrary";
+import { flagUrlForCurrency, type LibraryCurrency } from "@/app/data/currencyLibrary";
 
 /**
  * Country flag for a currency from flagcdn.com. Multi-country currencies
@@ -14,7 +14,7 @@ export function CurrencyFlag({
   currency: LibraryCurrency;
   size?: number;
 }) {
-  const url = flagUrlFor(currency.country);
+  const url = flagUrlForCurrency(currency);
   const height = Math.round((size * 3) / 4);
   if (!url) {
     return (

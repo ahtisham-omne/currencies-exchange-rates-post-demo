@@ -61,6 +61,15 @@ export interface SavedPaymentMethod {
   isSaved: boolean;
 }
 
+export interface SavedPaymentTermInstallment {
+  event: string;
+  mode: "percent" | "fixed";
+  percent?: string;
+  amountBase?: number;
+  amountPartner?: number;
+  partnerCurrency?: string;
+}
+
 export interface SavedPaymentTermConfig {
   id: string;
   name: string;
@@ -70,6 +79,20 @@ export interface SavedPaymentTermConfig {
   duration?: string;
   discountPercent?: string;
   discountPeriod?: string;
+  /* Dual-currency fixed-amount persistence — values are frozen at the
+     exchange rate captured when the term was saved; they do NOT re-compute
+     when FX moves. Transaction time re-converts via the invoice currency. */
+  discountMode?: "percent" | "fixed";
+  discountAmountBase?: number;
+  discountAmountPartner?: number;
+  discountPartnerCurrency?: string;
+  prepaymentMode?: "percent" | "fixed";
+  prepaymentPercent?: string;
+  prepaymentAmountBase?: number;
+  prepaymentAmountPartner?: number;
+  prepaymentPartnerCurrency?: string;
+  prepaymentTrigger?: string;
+  splitInstallments?: SavedPaymentTermInstallment[];
 }
 
 export interface SavedPricingRule {
@@ -1686,14 +1709,16 @@ const _additionalVendors = generateAdditionalVendors();
 export const mockVendors: Vendor[] = [..._manualVendors, ..._additionalVendors];
 
 let vendorIdCounter = 120;
+let pendingSeq: number | null = null;
 
 export function generateVendorCode(): string {
-  const code = `VND-${String(vendorIdCounter).padStart(3, "0")}`;
-  return code;
+  const seq = pendingSeq ?? vendorIdCounter;
+  return `VND-${String(seq).padStart(3, "0")}`;
 }
 
 export function generateVendorId(): string {
-  const id = `v-${String(vendorIdCounter).padStart(3, "0")}`;
+  const seq = vendorIdCounter;
+  pendingSeq = seq;
   vendorIdCounter++;
-  return id;
+  return `v-${String(seq).padStart(3, "0")}`;
 }
