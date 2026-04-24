@@ -227,12 +227,21 @@ export interface RateSnapshot {
   rates: Record<string, number>;
 }
 
-/** Mid-market rates — refreshed continuously from an FX data feed. */
+/** Mid-market rates — refreshed automatically each day at 19:30 PKT. */
 export const MARKET_RATES: RateSnapshot = {
   type: "market",
   source: "Open Exchange Rates",
-  syncFrequency: "Every 15 minutes",
-  lastSyncAt: new Date(Date.now() - 7 * 60 * 1000).toISOString(),
+  syncFrequency: "Daily at 19:30 PKT",
+  lastSyncAt: (() => {
+    // Snap to today's most recent 19:30 (or yesterday's if we're earlier in the day).
+    const now = new Date();
+    const today1930 = new Date(now);
+    today1930.setHours(19, 30, 0, 0);
+    if (today1930.getTime() > now.getTime()) {
+      today1930.setDate(today1930.getDate() - 1);
+    }
+    return today1930.toISOString();
+  })(),
   asOfDate: new Date().toISOString().slice(0, 10),
   rates: {
     PKR: 1,
@@ -294,102 +303,16 @@ export const MARKET_RATES: RateSnapshot = {
 };
 
 /**
- * Corporate (book) rates — locked by Treasury for the current quarter. Values
- * are deliberately close to but distinct from the market table so you can see
- * the toggle take effect across KPIs and converted cells.
+ * Active rate snapshot accessor. Rates are always mid-market — they refresh
+ * automatically each day at 19:30 PKT, so there is no display-time toggle.
  */
-export const CORPORATE_RATES: RateSnapshot = {
-  type: "corporate",
-  source: "Corporate Treasury (Q1 FY26)",
-  syncFrequency: "Quarterly — manual",
-  lastSyncAt: "2026-01-05T09:00:00.000Z",
-  asOfDate: "2026-01-01",
-  rates: {
-    PKR: 1,
-    USD: 280,
-    EUR: 302,
-    GBP: 350,
-    JPY: 1.90,
-    CHF: 316,
-    CAD: 210,
-    AUD: 185,
-    CNY: 40,
-    INR: 3.40,
-    KRW: 0.22,
-    SGD: 210,
-    HKD: 36.0,
-    TWD: 9.0,
-    THB: 8.0,
-    MYR: 63,
-    IDR: 0.018,
-    PHP: 5.0,
-    VND: 0.012,
-    NZD: 170,
-    BDT: 2.6,
-    LKR: 0.95,
-    MXN: 14.5,
-    BRL: 56,
-    ARS: 0.30,
-    CLP: 0.30,
-    COP: 0.070,
-    PEN: 75.0,
-    SEK: 27.0,
-    NOK: 26.5,
-    DKK: 41.5,
-    PLN: 71.0,
-    CZK: 12.5,
-    HUF: 0.80,
-    RON: 62.0,
-    BGN: 158,
-    TRY: 8.8,
-    RUB: 3.0,
-    UAH: 7.0,
-    ISK: 2.1,
-    AED: 76.0,
-    SAR: 74.5,
-    QAR: 77.0,
-    KWD: 910,
-    BHD: 740,
-    OMR: 725,
-    JOD: 395,
-    ILS: 76.0,
-    EGP: 6.0,
-    ZAR: 15.5,
-    NGN: 0.20,
-    KES: 2.20,
-    KZT: 0.60,
-    GEL: 105,
-    RSD: 2.7,
-  },
-};
-
-const RATE_SNAPSHOTS: Record<RateType, RateSnapshot> = {
-  market: MARKET_RATES,
-  corporate: CORPORATE_RATES,
-};
-
-/**
- * Module-level pointer to the active rate snapshot. `RateProvider` keeps this
- * in sync with the React state during render so plain `convertToBase` /
- * `convertBetween` calls (which have no access to React context) read the
- * freshly selected snapshot on every render that subscribes to the provider.
- */
-let _activeRateType: RateType = "market";
-
-export function setActiveRateType(type: RateType): void {
-  _activeRateType = type;
-}
-
-export function getActiveRateType(): RateType {
-  return _activeRateType;
-}
-
 export function activeRateSnapshot(): RateSnapshot {
-  return RATE_SNAPSHOTS[_activeRateType];
+  return MARKET_RATES;
 }
 
-export function rateSnapshotFor(type: RateType): RateSnapshot {
-  return RATE_SNAPSHOTS[type];
+/** No-op kept for back-compat with the old toggle-driven API. */
+export function setActiveRateType(_type: RateType): void {
+  // Mid-market is the only supported rate table.
 }
 
 /**

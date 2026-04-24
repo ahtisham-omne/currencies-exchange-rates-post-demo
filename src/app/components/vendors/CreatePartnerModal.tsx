@@ -4995,7 +4995,7 @@ function ConfigPageContent({
                   </PopoverContent>
                 </Popover>
                 <p className="text-[11px] text-slate-500 leading-snug">
-                  Default transaction currency for this vendor. All invoices, payments, and credit limits will use this currency unless changed.
+                  Default transaction currency for this vendor.
                 </p>
               </div>
 
@@ -5655,21 +5655,6 @@ function ConfigPageContent({
                   inputMode="decimal"
                 />
               </div>
-              {(() => {
-                const n = parseFloat(creditLimitInput);
-                if (!Number.isFinite(n) || n === 0) return null;
-                if ((currencyLabel || BASE_CURRENCY).toUpperCase() === BASE_CURRENCY) return null;
-                const base = convertToBase(n, currencyLabel);
-                const baseCur = getLibraryCurrency(BASE_CURRENCY);
-                const baseSym = baseCur?.symbol ?? BASE_CURRENCY;
-                const formatted = base.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                return (
-                  <p className="text-[10.5px] text-slate-500 mt-1 tabular-nums" style={{ fontWeight: 400 }}>
-                    ≈ {baseSym} {formatted} {BASE_CURRENCY} <span className="text-slate-300">· at today's rate</span>
-                  </p>
-                );
-              })()}
-              <p className="text-[10px] text-muted-foreground mt-1">Leave empty for unlimited credit</p>
             </div>
           </div>
         </div>

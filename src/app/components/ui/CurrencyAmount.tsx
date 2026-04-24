@@ -10,7 +10,6 @@ import {
   rateToBase,
   type LibraryCurrency,
 } from "@/app/data/currencyLibrary";
-import { useRateContext } from "@/app/context/RateContext";
 
 export type CurrencyAmountMode = "single" | "listing-base" | "listing-partner" | "aggregated-base" | "partner-rolled-up";
 
@@ -52,10 +51,7 @@ export interface CurrencyAmountProps {
  * matches the base currency).
  */
 export function CurrencyAmount(props: CurrencyAmountProps) {
-  const { value, currency, mode, signed, className } = props;
-  // Subscribe so the tooltip / converted values re-render when the
-  // Market/Corporate toggle flips.
-  useRateContext();
+  const { value, currency, signed, className } = props;
   const c = getLibraryCurrency(currency) ?? getLibraryCurrency(BASE_CURRENCY)!;
   const showHover = shouldShowHover(props);
 
@@ -158,8 +154,6 @@ function RateLine({ partnerCode }: { partnerCode: string }) {
   const rate = rateToBase(partnerCode);
   const baseCur = getLibraryCurrency(BASE_CURRENCY);
   const baseSym = baseCur?.symbol ?? BASE_CURRENCY;
-  const typeLabel = snap.type === "market" ? "Market" : "Corporate";
-  const hex = snap.type === "market" ? "#7c3aed" : "#d97706";
   const sameAsBase = partnerCode.toUpperCase() === BASE_CURRENCY;
   return (
     <div className="mt-1.5 px-2 py-1.5 rounded-md bg-slate-50 border border-slate-100">
@@ -169,11 +163,11 @@ function RateLine({ partnerCode }: { partnerCode: string }) {
         </div>
       )}
       <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
-        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: hex }} />
-        <span style={{ color: hex, fontWeight: 600 }}>{typeLabel}</span>
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#7c3aed]" />
+        <span className="text-[#7c3aed]" style={{ fontWeight: 600 }}>Mid-market</span>
         <span className="text-slate-400">· {snap.source}</span>
       </div>
-      <div className="text-[10px] text-slate-400 mt-0.5">As of {snap.asOfDate}</div>
+      <div className="text-[10px] text-slate-400 mt-0.5">Updated as of {snap.asOfDate}</div>
     </div>
   );
 }
@@ -217,7 +211,6 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
     const rows = props.rollupBreakdown ?? [];
     const partnerSym = c.symbol ?? c.code;
     const snap = activeRateSnapshot();
-    const typeLabel = snap.type === "market" ? "Market" : "Corporate";
     return (
       <>
         <HeaderLine flag={flag} name={c.name} code={c.code} tail="— rolled up" />
@@ -236,7 +229,7 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
           );
         })}
         <div className="text-[10px] text-slate-400 mt-1.5">
-          Converted via {typeLabel.toLowerCase()} rates · {snap.source}
+          Converted via mid-market rates · {snap.source}
         </div>
       </>
     );
@@ -324,17 +317,10 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
             <span className="mx-1 text-muted-foreground/40">·</span>
             Base <span className="text-foreground" style={{ fontWeight: 600 }}>{baseSym} {BASE_CURRENCY}</span>
           </span>
-          {(() => {
-            const snap = activeRateSnapshot();
-            const hex = snap.type === "market" ? "#7c3aed" : "#d97706";
-            const label = snap.type === "market" ? "Market" : "Corporate";
-            return (
-              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70 ml-auto">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: hex }} />
-                <span style={{ color: hex, fontWeight: 600 }}>{label}</span>
-              </span>
-            );
-          })()}
+          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70 ml-auto">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#7c3aed]" />
+            <span className="text-[#7c3aed]" style={{ fontWeight: 600 }}>Mid-market</span>
+          </span>
           {scrollable && (
             <span className="basis-full text-[10px] text-muted-foreground/40 italic text-right">Scroll for more</span>
           )}

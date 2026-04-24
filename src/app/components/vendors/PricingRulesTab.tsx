@@ -103,6 +103,36 @@ import {
   type PricingRulePreset,
   type PricingRuleBasis,
 } from "./partnerConstants";
+import {
+  BASE_CURRENCY,
+  convertBetween,
+  getLibraryCurrency,
+} from "../../data/currencyLibrary";
+
+type CurrencyMode = "base" | "partner";
+
+/**
+ * Re-express a tier value string in the active currency. Tier values authored
+ * in USD (e.g. "$ 2,300", "$50") are converted to either the company base
+ * currency or the partner's default transaction currency. Non-monetary values
+ * like quantities ("100 EA") and percentages ("5%") pass through unchanged.
+ */
+function formatTierValue(v: string | undefined, mode: CurrencyMode, partnerCode: string | undefined): string {
+  if (!v) return "—";
+  const match = v.match(/^\$\s*([\d,]+(?:\.\d+)?)(.*)$/);
+  if (!match) return v;
+  const num = parseFloat(match[1].replace(/,/g, ""));
+  if (!Number.isFinite(num)) return v;
+  const targetCode = (mode === "base" ? BASE_CURRENCY : (partnerCode ?? "USD")).toUpperCase();
+  if (targetCode === "USD") return v;
+  const converted = convertBetween(num, "USD", targetCode);
+  const targetCur = getLibraryCurrency(targetCode);
+  const sym = targetCur?.symbol ?? targetCode;
+  const decimals = Math.abs(converted) < 100 ? 2 : 0;
+  const formatted = converted.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  const tail = match[2] ?? "";
+  return `${sym} ${formatted}${tail}`;
+}
 
 // ──────────────────────────────────────────────
 // Types
@@ -671,13 +701,24 @@ function generatePricingRules(vendor: Vendor, cfg?: VendorConfigData): PricingRu
 // Compact Pricing Rule Card (v1-style reimagined)
 // ──────────────────────────────────────────────
 
-function PricingRuleCard({ rule, onClick }: { rule: PricingRule; onClick: () => void }) {
+function PricingRuleCard({
+  rule,
+  onClick,
+  currencyMode,
+  partnerCurrency,
+}: {
+  rule: PricingRule;
+  onClick: () => void;
+  currencyMode: CurrencyMode;
+  partnerCurrency: string;
+}) {
   const [activeTier, setActiveTier] = useState(0);
   const isDis = rule.category === "discount";
   const isMulti = rule.tierType === "multiple" && rule.tiers.length > 1;
   const t0 = rule.tiers[0];
   const shownTier = rule.tiers[isMulti ? activeTier : 0];
   const isPreset = rule.isPreset;
+  const fmt = (v: string | undefined) => formatTierValue(v, currencyMode, partnerCurrency);
 
   // Color ONLY for the type pill — card body stays neutral
   const pill = isDis
@@ -777,7 +818,7 @@ function PricingRuleCard({ rule, onClick }: { rule: PricingRule; onClick: () => 
         {/* Row 4: Hero value */}
         <div className="flex items-baseline gap-2 shrink-0">
           <span className="text-[22px] text-slate-700 tabular-nums leading-none tracking-tight" style={{ fontWeight: 600 }}>
-            {t0?.discount ?? "—"}
+            {fmt(t0?.discount)}
           </span>
           <span className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>
             {isDis ? "off" : "markup"}
@@ -817,7 +858,7 @@ function PricingRuleCard({ rule, onClick }: { rule: PricingRule; onClick: () => 
                   T{i + 1}
                   {isActive && (
                     <span className="ml-1 text-[9px] opacity-60" style={{ fontWeight: 400 }}>
-                      {shownTier.discount}
+                      {fmt(shownTier.discount)}
                     </span>
                   )}
                 </button>
@@ -827,11 +868,11 @@ function PricingRuleCard({ rule, onClick }: { rule: PricingRule; onClick: () => 
           {/* Tier detail row */}
           <div className="flex items-center justify-between px-3 py-[6px] rounded-lg border border-[#E8ECF1] bg-[#FAFBFC] text-[11px] tabular-nums min-w-0">
             <div className="flex items-center gap-1.5 text-slate-500 min-w-0">
-              <span style={{ fontWeight: 400 }}>{shownTier?.minQty}</span>
+              <span style={{ fontWeight: 400 }}>{fmt(shownTier?.minQty)}</span>
               <span className="text-slate-300">–</span>
-              <span style={{ fontWeight: 400 }}>{shownTier?.maxQty}</span>
+              <span style={{ fontWeight: 400 }}>{fmt(shownTier?.maxQty)}</span>
             </div>
-            <span className="shrink-0 ml-2 text-slate-700" style={{ fontWeight: 600 }}>{shownTier?.discount}</span>
+            <span className="shrink-0 ml-2 text-slate-700" style={{ fontWeight: 600 }}>{fmt(shownTier?.discount)}</span>
           </div>
         </div>
       </div>
@@ -974,6 +1015,7 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
   const [catSearch, setCatSearch] = useState("");
   const [partnerSearch, setPartnerSearch] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [currencyMode, setCurrencyMode] = useState<CurrencyMode>("base");
 
   // Category management state
   const [addedCats, setAddedCats] = useState<(AssociatedCategory & Record<string, unknown>)[]>([]);
@@ -1024,6 +1066,8 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
 
   // Use provided vendor or fallback to first vendor from context
   const effectiveVendor = vendor || ctxVendors[0] || null;
+  const partnerCurrency = effectiveVendor?.defaultTransactionCurrency || BASE_CURRENCY;
+  const fmt = (v: string | undefined) => formatTierValue(v, currencyMode, partnerCurrency);
 
   // All categories = rule's original + user-added
   const allCats = [...addedCats, ...rule.categories];
@@ -1165,6 +1209,41 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
               >
                 <CircleSlash className="w-3.5 h-3.5" /> Disable
               </button>
+              {/* Currency view toggle — base vs. partner currency, mirrors the dashboard control */}
+              <div className="hidden sm:inline-flex items-center gap-0.5 h-8 rounded-lg border border-border p-0.5 bg-white shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setCurrencyMode("base")}
+                  aria-pressed={currencyMode === "base"}
+                  className={`inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                    currencyMode === "base"
+                      ? "bg-accent text-primary"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                  style={{ fontWeight: currencyMode === "base" ? 600 : 500 }}
+                >
+                  Base Currency
+                  <InfoTooltip side="top" iconClassName="w-3 h-3">
+                    Shows tier thresholds in the company's base currency ({BASE_CURRENCY}).
+                  </InfoTooltip>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrencyMode("partner")}
+                  aria-pressed={currencyMode === "partner"}
+                  className={`inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                    currencyMode === "partner"
+                      ? "bg-accent text-primary"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                  style={{ fontWeight: currencyMode === "partner" ? 600 : 500 }}
+                >
+                  Partner Currency
+                  <InfoTooltip side="top" iconClassName="w-3 h-3">
+                    Shows tier thresholds in this partner's default transaction currency ({partnerCurrency}).
+                  </InfoTooltip>
+                </button>
+              </div>
               <button onClick={() => setIsFullscreen(!isFullscreen)} className="w-8 h-8 rounded-lg border border-border bg-white flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-all cursor-pointer">
                 {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
               </button>
@@ -1766,7 +1845,7 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
                     <div className="min-w-0">
                       <p className="text-[10px] text-slate-400 mb-px" style={{ fontWeight: 500 }}>{isDis ? "Discount" : "Premium"}</p>
-                      <p className="text-[16px] text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>{rule.tiers[0]?.discount || "—"}</p>
+                      <p className="text-[16px] text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>{fmt(rule.tiers[0]?.discount)}</p>
                     </div>
                     <div className="min-w-0">
                       <p className="text-[10px] text-slate-400 mb-px" style={{ fontWeight: 500 }}>Tiers</p>
@@ -1809,11 +1888,11 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                       <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-[#E8ECF1] bg-[#FAFBFC] text-[11px] tabular-nums">
                         <div className="flex items-center gap-1.5 text-slate-500">
                           <span className="w-4 h-4 rounded flex items-center justify-center text-[9px]" style={{ backgroundColor: theme.pillBg, color: theme.text, fontWeight: 700 }}>{idx + 1}</span>
-                          <span>{tier.minQty}</span>
+                          <span>{fmt(tier.minQty)}</span>
                           <span className="text-slate-300">–</span>
-                          <span>{tier.maxQty}</span>
+                          <span>{fmt(tier.maxQty)}</span>
                         </div>
-                        <span className="text-slate-700" style={{ fontWeight: 600 }}>{tier.discount}</span>
+                        <span className="text-slate-700" style={{ fontWeight: 600 }}>{fmt(tier.discount)}</span>
                       </div>
                     ))}
                   </div>
@@ -2526,6 +2605,8 @@ export function PricingRulesTabNew({ vendor, cfg }: { vendor: Vendor; cfg?: Vend
 
   const [subTab, setSubTab] = useState<SubTab>("vendor");
   const [categoryView, setCategoryView] = useState<CategoryView>("discount");
+  const [currencyMode, setCurrencyMode] = useState<CurrencyMode>("base");
+  const partnerCurrency = vendor.defaultTransactionCurrency || BASE_CURRENCY;
   const [searchQuery, setSearchQuery] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -2604,6 +2685,29 @@ export function PricingRulesTabNew({ vendor, cfg }: { vendor: Vendor; cfg?: Vend
   const [createValidTo, setCreateValidTo] = useState("");
   const [createStep, setCreateStep] = useState<1 | 2>(1);
   const [createItemsTab, setCreateItemsTab] = useState<"items" | "categories" | "attachments">("items");
+  // Drives which currency fixed-amount tier inputs are entered in inside the
+  // create modal. Mirrors the Create-Payment-Term modal pattern.
+  const [createCurrencyMode, setCreateCurrencyMode] = useState<CurrencyMode>("partner");
+  const createInputCurrencyCode =
+    createCurrencyMode === "base" ? BASE_CURRENCY : (partnerCurrency || BASE_CURRENCY);
+  const createInputCurrencySymbol =
+    getLibraryCurrency(createInputCurrencyCode)?.symbol ?? createInputCurrencyCode;
+  const renderCreateFxHelper = (raw: string): React.ReactNode => {
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n === 0) return null;
+    const partnerCcy = partnerCurrency || BASE_CURRENCY;
+    if (partnerCcy.toUpperCase() === BASE_CURRENCY) return null;
+    const otherCode = createCurrencyMode === "base" ? partnerCcy : BASE_CURRENCY;
+    const fromCode = createCurrencyMode === "base" ? BASE_CURRENCY : partnerCcy;
+    const converted = convertBetween(n, fromCode, otherCode);
+    const sym = getLibraryCurrency(otherCode)?.symbol ?? otherCode;
+    const formatted = converted.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return (
+      <p className="text-[10.5px] text-slate-400 mt-1 tabular-nums" style={{ fontWeight: 400 }}>
+        ≈ {sym} {formatted} {otherCode} <span className="text-slate-300">· at today's rate</span>
+      </p>
+    );
+  };
 
   interface CreateTierState {
     discount: string;
@@ -2626,6 +2730,7 @@ export function PricingRulesTabNew({ vendor, cfg }: { vendor: Vendor; cfg?: Vend
     setCreateBasis("value"); setCreateLimitDate(false); setCreateValidFrom("");
     setCreateValidTo(""); setCreateStep(1); setCreateItemsTab("items");
     setCreateTiers([makeTier()]);
+    setCreateCurrencyMode("partner");
   }
   function handleSaveRule() {
     if (!createName.trim()) return;
@@ -2831,6 +2936,42 @@ export function PricingRulesTabNew({ vendor, cfg }: { vendor: Vendor; cfg?: Vend
             })}
           </div>
         </div>
+
+        {/* Currency view toggle — base vs. partner currency, mirrors the dashboard control */}
+        <div className="inline-flex items-center gap-0.5 h-7 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
+          <button
+            type="button"
+            onClick={() => setCurrencyMode("base")}
+            aria-pressed={currencyMode === "base"}
+            className={`inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+              currencyMode === "base"
+                ? "bg-accent text-primary"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            }`}
+            style={{ fontWeight: currencyMode === "base" ? 600 : 500 }}
+          >
+            Base Currency
+            <InfoTooltip side="top" iconClassName="w-3 h-3">
+              Shows tier thresholds in the company's base currency ({BASE_CURRENCY}) so they line up with the rest of the portfolio.
+            </InfoTooltip>
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrencyMode("partner")}
+            aria-pressed={currencyMode === "partner"}
+            className={`inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+              currencyMode === "partner"
+                ? "bg-accent text-primary"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            }`}
+            style={{ fontWeight: currencyMode === "partner" ? 600 : 500 }}
+          >
+            Partner Currency
+            <InfoTooltip side="top" iconClassName="w-3 h-3">
+              Shows tier thresholds in this partner's default transaction currency ({partnerCurrency}).
+            </InfoTooltip>
+          </button>
+        </div>
       </div>
 
       {/* Quick Filter Pills */}
@@ -2890,7 +3031,7 @@ export function PricingRulesTabNew({ vendor, cfg }: { vendor: Vendor; cfg?: Vend
                       <div className="@container/prpresets">
                       <div className="grid grid-cols-1 @[400px]/prpresets:grid-cols-2 @[750px]/prpresets:grid-cols-3 gap-3">
                         {presets.map((rule) => (
-                          <PricingRuleCard key={rule.id} rule={rule} onClick={() => openDetail(rule)} />
+                          <PricingRuleCard key={rule.id} rule={rule} onClick={() => openDetail(rule)} currencyMode={currencyMode} partnerCurrency={partnerCurrency} />
                         ))}
                       </div>
                       </div>
@@ -2908,7 +3049,7 @@ export function PricingRulesTabNew({ vendor, cfg }: { vendor: Vendor; cfg?: Vend
                       <div className="@container/prcustom">
                       <div className="grid grid-cols-1 @[400px]/prcustom:grid-cols-2 @[750px]/prcustom:grid-cols-3 gap-3">
                         {custom.map((rule) => (
-                          <PricingRuleCard key={rule.id} rule={rule} onClick={() => openDetail(rule)} />
+                          <PricingRuleCard key={rule.id} rule={rule} onClick={() => openDetail(rule)} currencyMode={currencyMode} partnerCurrency={partnerCurrency} />
                         ))}
                       </div>
                       </div>
@@ -2990,6 +3131,42 @@ export function PricingRulesTabNew({ vendor, cfg }: { vendor: Vendor; cfg?: Vend
                 </p>
               </div>
               <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                {/* Currency view toggle — drives which currency fixed-amount tier
+                    inputs are entered in. Mirrors the Create Payment Term pattern. */}
+                <div className="hidden sm:inline-flex items-center gap-0.5 h-8 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setCreateCurrencyMode("base")}
+                    aria-pressed={createCurrencyMode === "base"}
+                    className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                      createCurrencyMode === "base"
+                        ? "bg-accent text-primary"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    }`}
+                    style={{ fontWeight: createCurrencyMode === "base" ? 600 : 500 }}
+                  >
+                    Base Currency
+                    <InfoTooltip side="top" iconClassName="w-3 h-3">
+                      Enter fixed-amount tier values in the company's base currency ({BASE_CURRENCY}). Values stay comparable across all partners regardless of the transaction currency.
+                    </InfoTooltip>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreateCurrencyMode("partner")}
+                    aria-pressed={createCurrencyMode === "partner"}
+                    className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                      createCurrencyMode === "partner"
+                        ? "bg-accent text-primary"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    }`}
+                    style={{ fontWeight: createCurrencyMode === "partner" ? 600 : 500 }}
+                  >
+                    Partner Currency
+                    <InfoTooltip side="top" iconClassName="w-3 h-3">
+                      Enter fixed-amount tier values in this partner's own default transaction currency ({partnerCurrency}). The base-currency equivalent is shown alongside for reporting.
+                    </InfoTooltip>
+                  </button>
+                </div>
                 <button
                   onClick={() => setCreateFullscreen(!createFullscreen)}
                   className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-white text-xs text-muted-foreground hover:bg-slate-50 hover:border-slate-300 transition-all cursor-pointer"
@@ -3291,18 +3468,19 @@ export function PricingRulesTabNew({ vendor, cfg }: { vendor: Vendor; cfg?: Vend
                                 </div>
                                 <div className="relative">
                                   {tier.fixRate && (
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{createInputCurrencySymbol}</span>
                                   )}
                                   <Input
                                     value={tier.discount}
                                     onChange={(e) => updateTier(idx, { discount: e.target.value })}
                                     placeholder={tier.fixRate ? "e.g. 25.00" : "e.g. 50"}
-                                    className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-7 pr-3" : "pr-8"}`}
+                                    className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-8 pr-3" : "pr-8"}`}
                                   />
                                   {!tier.fixRate && (
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                                   )}
                                 </div>
+                                {tier.fixRate && renderCreateFxHelper(tier.discount)}
                               </div>
 
                               {/* Quantity limits toggle */}
@@ -3323,34 +3501,49 @@ export function PricingRulesTabNew({ vendor, cfg }: { vendor: Vendor; cfg?: Vend
                             </div>
 
                             {/* Expanded qty fields */}
-                            {tier.qtyLimits && (
-                              <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-muted">
-                                <div>
-                                  <div className="flex items-center gap-1 mb-1.5">
-                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>Min Qty</label>
-                                    <InfoTooltip>The smallest order quantity at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment.</InfoTooltip>
+                            {tier.qtyLimits && (() => {
+                              const isValue = createBasis === "value";
+                              return (
+                                <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-muted">
+                                  <div>
+                                    <div className="flex items-center gap-1 mb-1.5">
+                                      <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{isValue ? "Min Value" : "Min Qty"}</label>
+                                      <InfoTooltip>The smallest order {isValue ? "value" : "quantity"} at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment.</InfoTooltip>
+                                    </div>
+                                    <div className="relative">
+                                      {isValue && (
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{createInputCurrencySymbol}</span>
+                                      )}
+                                      <Input
+                                        value={tier.minQty}
+                                        onChange={(e) => updateTier(idx, { minQty: e.target.value })}
+                                        placeholder={isValue ? "e.g. 500.00" : "e.g. 100"}
+                                        className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${isValue ? "pl-8 pr-3" : ""}`}
+                                      />
+                                    </div>
+                                    {isValue && renderCreateFxHelper(tier.minQty)}
                                   </div>
-                                  <Input
-                                    value={tier.minQty}
-                                    onChange={(e) => updateTier(idx, { minQty: e.target.value })}
-                                    placeholder="e.g. 100"
-                                    className="rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20"
-                                  />
-                                </div>
-                                <div>
-                                  <div className="flex items-center gap-1 mb-1.5">
-                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>Max Qty</label>
-                                    <InfoTooltip>The largest order quantity this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment.</InfoTooltip>
+                                  <div>
+                                    <div className="flex items-center gap-1 mb-1.5">
+                                      <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{isValue ? "Max Value" : "Max Qty"}</label>
+                                      <InfoTooltip>The largest order {isValue ? "value" : "quantity"} this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment.</InfoTooltip>
+                                    </div>
+                                    <div className="relative">
+                                      {isValue && (
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{createInputCurrencySymbol}</span>
+                                      )}
+                                      <Input
+                                        value={tier.maxQty}
+                                        onChange={(e) => updateTier(idx, { maxQty: e.target.value })}
+                                        placeholder={isValue ? "e.g. 2,500.00" : "e.g. 500"}
+                                        className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${isValue ? "pl-8 pr-3" : ""}`}
+                                      />
+                                    </div>
+                                    {isValue && renderCreateFxHelper(tier.maxQty)}
                                   </div>
-                                  <Input
-                                    value={tier.maxQty}
-                                    onChange={(e) => updateTier(idx, { maxQty: e.target.value })}
-                                    placeholder="e.g. 500"
-                                    className="rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20"
-                                  />
                                 </div>
-                              </div>
-                            )}
+                              );
+                            })()}
                           </div>
                         </div>
                         );
