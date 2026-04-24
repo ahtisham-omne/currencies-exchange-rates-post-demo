@@ -1,6 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { format as formatDate } from "date-fns";
 import { useExchangeRates } from "../context/ExchangeRateContext";
 import {
   BASE_CURRENCY,
@@ -701,24 +705,66 @@ export function ExchangeRateLibraryPage() {
     baseName: string,
     fmt: ExportFormat
   ) => {
-    const header = "Base Currency,Source Currency,Corporate Exchange Rate,Mid-Market Exchange Rate,Variance,Effective Date,Created By\n";
-    const body = rows
-      .map(r => `${r.baseCurrency},${r.sourceCurrency},${r.standardRate},${r.midMarketRate},${r.variance}%,${r.effectiveDate},${r.createdBy}`)
-      .join("\n");
-    const mime =
-      fmt === "xlsx"
-        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        : fmt === "pdf"
-        ? "application/pdf"
-        : "text/csv";
-    const ext = fmt === "xlsx" ? "xlsx" : fmt === "pdf" ? "pdf" : "csv";
-    const blob = new Blob([header + body], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${baseName}.${ext}`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const headers = [
+      "Base Currency",
+      "Source Currency",
+      "Corporate Exchange Rate",
+      "Mid-Market Exchange Rate",
+      "Variance",
+      "Effective Date",
+      "Created By",
+    ];
+    const data = rows.map(r => [
+      r.baseCurrency,
+      r.sourceCurrency,
+      String(r.standardRate),
+      String(r.midMarketRate),
+      `${r.variance}%`,
+      r.effectiveDate,
+      r.createdBy,
+    ]);
+
+    if (fmt === "csv") {
+      const esc = (v: string) =>
+        /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+      const text = [headers.map(esc).join(","), ...data.map(r => r.map(esc).join(","))].join("\n");
+      const blob = new Blob(["\uFEFF" + text], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${baseName}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (fmt === "xlsx") {
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+      ws["!cols"] = [
+        { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 24 }, { wch: 10 }, { wch: 14 }, { wch: 18 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Corporate Rates");
+      XLSX.writeFile(wb, `${baseName}.xlsx`);
+    } else {
+      const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+      doc.setFontSize(14);
+      doc.text("Corporate Exchange Rates", 40, 40);
+      doc.setFontSize(10);
+      doc.setTextColor(120);
+      doc.text(
+        `${rows.length} rates · Exported ${formatDate(new Date(), "dd MMM yyyy, HH:mm")}`,
+        40,
+        56,
+      );
+      autoTable(doc, {
+        head: [headers],
+        body: data,
+        startY: 72,
+        styles: { fontSize: 9, cellPadding: 4 },
+        headStyles: { fillColor: [10, 119, 255], textColor: 255, fontStyle: "bold" },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 40, right: 40 },
+      });
+      doc.save(`${baseName}.pdf`);
+    }
     toast.success(`${fmt.toUpperCase()} exported`);
   };
 
