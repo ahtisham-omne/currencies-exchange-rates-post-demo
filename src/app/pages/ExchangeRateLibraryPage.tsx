@@ -4,7 +4,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { format as formatDate } from "date-fns";
 import { useExchangeRates } from "../context/ExchangeRateContext";
 import {
   BASE_CURRENCY,
@@ -750,7 +749,7 @@ export function ExchangeRateLibraryPage() {
       doc.setFontSize(10);
       doc.setTextColor(120);
       doc.text(
-        `${rows.length} rates · Exported ${formatDate(new Date(), "dd MMM yyyy, HH:mm")}`,
+        `${rows.length} rates · Exported ${format(new Date(), "dd MMM yyyy, HH:mm")}`,
         40,
         56,
       );
