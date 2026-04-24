@@ -30,6 +30,9 @@ import {
 } from "./POFilterBar";
 import InsightsDrawer from "./InsightsDrawer";
 import { BaseCurrencyKPI } from "./currency/BaseCurrencyKPI";
+import { CurrencyAmount } from "./ui/CurrencyAmount";
+import { BASE_CURRENCY, convertBetween } from "@/app/data/currencyLibrary";
+import { getVendorCurrency } from "./catalogData";
 import ImageLightbox from "./ImageLightbox";
 import { getItemImages } from "./catalogData";
 import PODataTable from "./PODataTable";
@@ -1523,7 +1526,24 @@ export default function PurchaseOrdersListing() {
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-foreground" style={{ fontSize: "12px", fontWeight: "var(--font-weight-semibold)", lineHeight: "16px", fontFamily: FONT }}>
-                          ${po.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {(() => {
+                            const vCur = getVendorCurrency(po.vendor).toUpperCase();
+                            if (vCur === BASE_CURRENCY) {
+                              return (
+                                <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={po.total} />
+                              );
+                            }
+                            const nativeValue = convertBetween(po.total, BASE_CURRENCY, vCur);
+                            return (
+                              <CurrencyAmount
+                                mode="listing-base"
+                                currency={BASE_CURRENCY}
+                                value={po.total}
+                                partnerDefaultCurrency={vCur}
+                                partnerDefaultValue={nativeValue}
+                              />
+                            );
+                          })()}
                         </span>
                         <span className="text-muted-foreground" style={{ fontSize: "11px", fontFamily: FONT }}>
                           {po.itemCount} item{po.itemCount !== 1 ? "s" : ""}

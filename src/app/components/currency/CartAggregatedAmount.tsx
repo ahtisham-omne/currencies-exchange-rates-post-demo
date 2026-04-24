@@ -126,9 +126,6 @@ export function CartAggregatedAmount({ breakdown, signed, className }: Props) {
           {updatedAs && (
             <div className="text-[10px] text-slate-400 mt-0.5">Updated as of {updatedAs}</div>
           )}
-          <div className="text-[10px] text-slate-400 mt-0.5 italic">
-            Invoice posting will use the rate at its own date.
-          </div>
         </div>
       </HoverCardContent>
     </HoverCard>

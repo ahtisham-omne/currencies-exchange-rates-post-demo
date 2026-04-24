@@ -1936,7 +1936,10 @@ export default function ItemsCatalogueModal({
                                     {/* Price */}
                                     <div className="flex flex-col items-end shrink-0 gap-0">
                                       <span className="text-foreground" style={{ fontSize: "12px", fontWeight: "var(--font-weight-semibold)", lineHeight: "16px" }}>
-                                        ${offer.unitPrice.toFixed(2)}
+                                        <POPriceDisplay
+                                          nativePrice={offer.unitPrice}
+                                          vendorName={offer.vendorName}
+                                        />
                                       </span>
                                       <span className="text-muted-foreground" style={{ fontSize: "9px", fontWeight: "var(--font-weight-normal)", lineHeight: "13px" }}>
                                         per {offer.uom}

@@ -1,14 +1,17 @@
 import * as React from "react";
 import { useMemo, useState } from "react";
+import { Check, ChevronDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../ui/dialog";
 import { Button } from "../ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "../ui/command";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "../ui/hover-card";
 import { toast } from "sonner";
 import { CurrencyFlag } from "../ui/CurrencyFlag";
@@ -29,6 +32,7 @@ import {
   getPOSettlementCurrency,
   updatePOVendorAmountCurrency,
   updatePOSettlementConfig,
+  setPOViewMode,
 } from "../poStore";
 
 interface Props {
@@ -96,10 +100,16 @@ export default function POCurrencyConfigModal({ open, onOpenChange, po }: Props)
       onOpenChange(false);
       return;
     }
-    if (po.lineItems.length === 0 && vendorCurrency !== getPOVendorCurrency(po)) {
+    const vendorCurrencyChanged = vendorCurrency !== getPOVendorCurrency(po);
+    if (po.lineItems.length === 0 && vendorCurrencyChanged) {
       updatePOVendorAmountCurrency(po.id, vendorCurrency);
     }
     updatePOSettlementConfig(po.id, settlementCurrency, settlementAmount, settlementRateAtSave);
+    // Sync Order Summary to the chosen vendor currency so the user immediately
+    // sees the effect of the Vendor Amount selection. Flip to partner view when
+    // a non-base vendor currency is in play, otherwise stay on base.
+    const nextViewMode = vendorCurrency.toUpperCase() === BASE_CURRENCY ? "base" : "partner";
+    setPOViewMode(po.id, nextViewMode);
     toast.success("Currency configuration saved", { description: `This PO will settle in ${settlementCurrency}` });
     onOpenChange(false);
   };
@@ -227,32 +237,70 @@ function CurrencySelect({
   onChange: (v: string) => void;
   disabled?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
   const cur = getLibraryCurrency(value);
+
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger
-        className="h-12 min-w-[128px] rounded-none rounded-r-xl border-0 px-3.5 text-[13px] bg-transparent"
-        style={{ fontWeight: 600 }}
-      >
-        <SelectValue>
-          <span className="inline-flex items-center gap-2">
-            {cur && <CurrencyFlag currency={cur} size={16} />}
-            <span className="text-slate-800" style={{ fontWeight: 600 }}>{value.toUpperCase()}</span>
+    <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
+      <PopoverTrigger asChild disabled={disabled}>
+        <button
+          type="button"
+          disabled={disabled}
+          className={`h-12 min-w-[140px] rounded-none rounded-r-xl border-0 px-3.5 text-[13px] bg-transparent outline-none flex items-center justify-center gap-2 w-full ${
+            disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-slate-50"
+          }`}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+        >
+          {cur && <CurrencyFlag currency={cur} size={22} />}
+          <span className="text-slate-800 leading-none" style={{ fontWeight: 600 }}>
+            {value.toUpperCase()}
           </span>
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent className="max-h-[300px]">
-        {CURRENCY_LIBRARY.map((c) => (
-          <SelectItem key={c.code} value={c.code} className="text-[13px]">
-            <span className="inline-flex items-center gap-2">
-              <CurrencyFlag currency={c} size={14} />
-              <span style={{ fontWeight: 600 }}>{c.code}</span>
-              <span className="text-slate-500">— {c.name}</span>
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={4}
+        className="p-0 w-[280px] rounded-lg border border-slate-200 shadow-lg"
+      >
+        <Command
+          filter={(itemValue, search) => {
+            const q = search.trim().toLowerCase();
+            if (!q) return 1;
+            return itemValue.toLowerCase().includes(q) ? 1 : 0;
+          }}
+        >
+          <CommandInput placeholder="Search currency..." className="h-10 text-[13px]" />
+          <CommandList className="max-h-[260px] overflow-y-auto">
+            <CommandEmpty className="py-4 text-center text-[12px] text-slate-500">
+              No currencies found.
+            </CommandEmpty>
+            <CommandGroup>
+              {CURRENCY_LIBRARY.map((c) => {
+                const selected = c.code.toUpperCase() === value.toUpperCase();
+                return (
+                  <CommandItem
+                    key={c.code}
+                    value={`${c.code} ${c.name}`}
+                    onSelect={() => {
+                      onChange(c.code);
+                      setOpen(false);
+                    }}
+                    className="text-[13px] flex items-center gap-2 py-2"
+                  >
+                    <CurrencyFlag currency={c} size={20} />
+                    <span className="text-slate-800" style={{ fontWeight: 600 }}>{c.code}</span>
+                    <span className="text-slate-500 truncate">— {c.name}</span>
+                    {selected && <Check className="ml-auto w-3.5 h-3.5 text-primary" />}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
