@@ -380,6 +380,7 @@ export function CurrencyListPage() {
   const sorted = useMemo(() => {
     const list = [...filtered];
     list.sort((a, b) => {
+      if (a.isBaseCurrency !== b.isBaseCurrency) return a.isBaseCurrency ? -1 : 1;
       let cmp = 0;
       switch (sortKey) {
         case "code": cmp = a.code.localeCompare(b.code); break;

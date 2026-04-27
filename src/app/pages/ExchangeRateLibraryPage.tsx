@@ -145,7 +145,6 @@ const QUICK_FILTERS_STD: { key: QuickFilter; label: string; showCount: boolean }
 
 /* ─── Column definitions for Mid-Market table ─── */
 const MID_COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align?: "left" | "right" })[] = [
-  { key: "baseCurrency", label: "Base Currency", minWidth: "160px", sortable: true },
   { key: "sourceCurrency", label: "Source Currency", minWidth: "200px", sortable: true },
   { key: "rate", label: "Mid-Market Exchange Rate", minWidth: "200px", sortable: true, align: "right" },
   { key: "inverseRate", label: "Inverse Rate", minWidth: "160px", sortable: true, align: "right" },
@@ -153,7 +152,6 @@ const MID_COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; a
 ];
 
 const STD_COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align?: "left" | "right" })[] = [
-  { key: "baseCurrency", label: "Base Currency", minWidth: "160px", sortable: true },
   { key: "sourceCurrency", label: "Source Currency", minWidth: "200px", sortable: true },
   { key: "standardRate", label: "Corporate Exchange Rate", minWidth: "200px", sortable: true, align: "right" },
   { key: "inverseStdRate", label: "Inverse Rate", minWidth: "160px", sortable: true, align: "right" },
@@ -925,9 +923,30 @@ export function ExchangeRateLibraryPage() {
                 )}
               </div>
             </div>
-            <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-              Manage all exchange rates for your company.
-            </p>
+            <div className="flex items-center justify-between gap-3 flex-wrap mt-1">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Manage all exchange rates for your company.
+              </p>
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center gap-1.5 h-6 pl-1 pr-2 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] cursor-help">
+                      {(() => {
+                        const baseFlag = getFlagUrl(BASE_CURRENCY);
+                        return baseFlag ? (
+                          <img src={baseFlag} alt={BASE_CURRENCY} className="w-4 h-[11px] rounded-[1px] object-cover shrink-0" />
+                        ) : null;
+                      })()}
+                      <span className="text-[10.5px] text-[#64748B]" style={{ fontWeight: 500 }}>Rates quoted against</span>
+                      <span className="text-[10.5px] text-[#0F172A]" style={{ fontWeight: 700 }}>{BASE_CURRENCY}</span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-[260px] text-[11.5px]">
+                    All exchange rates are quoted against {BASE_CURRENCY} ({BASE_CURRENCY_NAME}), your workspace base currency. Change the base currency in Settings.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
 
           {/* Tab Bar */}
@@ -1439,16 +1458,6 @@ export function ExchangeRateLibraryPage() {
                             </TableCell>
                             {visibleColumns.map(key => {
                               switch (key) {
-                                case "baseCurrency":
-                                  return (
-                                    <TableCell key={key}>
-                                      <div className="flex items-center gap-2">
-                                        {baseFlagUrl && <img src={baseFlagUrl} alt={r.baseCurrency} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" />}
-                                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground" style={{ fontWeight: 600 }}>{r.baseCurrency}</span>
-                                        {isRelaxed && <span className="text-[12px] text-muted-foreground">{BASE_CURRENCY_NAME}</span>}
-                                      </div>
-                                    </TableCell>
-                                  );
                                 case "sourceCurrency":
                                   return (
                                     <TableCell key={key}>
@@ -1633,16 +1642,6 @@ export function ExchangeRateLibraryPage() {
                             </TableCell>
                             {visibleColumns.map(key => {
                               switch (key) {
-                                case "baseCurrency":
-                                  return (
-                                    <TableCell key={key}>
-                                      <div className="flex items-center gap-2">
-                                        {baseFlagUrl && <img src={baseFlagUrl} alt={r.baseCurrency} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" />}
-                                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground" style={{ fontWeight: 600 }}>{r.baseCurrency}</span>
-                                        {isRelaxed && <span className="text-[12px] text-muted-foreground">{BASE_CURRENCY_NAME}</span>}
-                                      </div>
-                                    </TableCell>
-                                  );
                                 case "sourceCurrency": {
                                   const width = colWidths["sourceCurrency"] ?? parseInt(colDef("sourceCurrency").minWidth, 10);
                                   return (

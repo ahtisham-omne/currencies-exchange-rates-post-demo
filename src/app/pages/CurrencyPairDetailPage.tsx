@@ -51,6 +51,9 @@ import {
   Globe,
   Eye,
   ArrowDownRight,
+  MessageSquare,
+  Paperclip,
+  ClipboardList,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -655,19 +658,42 @@ function CustomizeKpiPanel({ open, onOpenChange, activeKpis, onToggleKpi, detail
 const ttStyle = { borderRadius: 8, border: "1px solid #E2E8F0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 };
 
 // ── ContentCard ──
-function ContentCard({ title, icon: Icon, children, action, tooltipText }: {
-  title: string; icon?: React.ElementType; children: React.ReactNode; action?: React.ReactNode; tooltipText?: string;
+function ContentCard({ title, icon: Icon, children, action, tooltipText, dragRef, isDragging, currentSize, onSizeChange, onRemove }: {
+  title: string;
+  icon?: React.ElementType;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+  tooltipText?: string;
+  dragRef?: (node: HTMLElement | null) => void;
+  isDragging?: boolean;
+  currentSize?: "sm" | "md" | "lg";
+  onSizeChange?: (size: "sm" | "md" | "lg") => void;
+  onRemove?: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-[#E2E8F0] bg-white overflow-hidden h-full flex flex-col shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)] transition-shadow">
-      <div className="px-4 py-2.5 border-b border-[#F1F5F9] flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
+    <div
+      className="group rounded-xl border border-[#E2E8F0] bg-white overflow-hidden h-full flex flex-col shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)] transition-shadow"
+      style={{ opacity: isDragging ? 0.4 : 1 }}
+    >
+      <div className="px-4 py-2.5 border-b border-[#F1F5F9] flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {dragRef && (
+            <button
+              type="button"
+              ref={dragRef as React.Ref<HTMLButtonElement>}
+              className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 rounded hover:bg-[#F1F5F9] transition-colors opacity-0 group-hover:opacity-100"
+              aria-label="Drag widget"
+              onClick={(e) => e.preventDefault()}
+            >
+              <GripVertical className="w-3.5 h-3.5 text-[#94A3B8]" />
+            </button>
+          )}
           {Icon && (
             <div className="w-7 h-7 rounded-lg bg-[#EDF4FF] flex items-center justify-center shrink-0">
               <Icon className="w-3.5 h-3.5 text-[#0A77FF]" />
             </div>
           )}
-          <span className="text-[13px] text-[#0F172A]" style={{ fontWeight: 600 }}>{title}</span>
+          <span className="text-[13px] text-[#0F172A] truncate" style={{ fontWeight: 600 }}>{title}</span>
           {tooltipText && (
             <TooltipProvider>
               <Tooltip>
@@ -681,9 +707,110 @@ function ContentCard({ title, icon: Icon, children, action, tooltipText }: {
             </TooltipProvider>
           )}
         </div>
-        {action && <div>{action}</div>}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {action && <div>{action}</div>}
+          {onSizeChange && currentSize && (
+            <div className="flex items-center gap-px p-0.5 rounded-md bg-[#F1F5F9] opacity-0 group-hover:opacity-100 transition-opacity">
+              {(["sm", "md", "lg"] as const).map((s) => {
+                const fullLabel = s === "sm" ? "Small" : s === "md" ? "Medium" : "Large";
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => onSizeChange(s)}
+                    className={`px-2 py-0.5 rounded text-[10.5px] transition-all duration-100 cursor-pointer ${
+                      currentSize === s ? "bg-white text-[#0F172A] shadow-sm" : "text-[#94A3B8] hover:text-[#64748B]"
+                    }`}
+                    style={{ fontWeight: currentSize === s ? 600 : 500 }}
+                    aria-label={`Set widget size ${fullLabel}`}
+                    aria-pressed={currentSize === s}
+                  >
+                    {fullLabel}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[#94A3B8] hover:text-[#DC2626] hover:bg-[#FEF2F2] transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
+              aria-label={`Remove ${title} widget`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex-1 p-4">{children}</div>
+    </div>
+  );
+}
+
+// ── Draggable Widget wrapper ──
+const DND_WIDGET_TYPE = "PAIR_DASHBOARD_WIDGET";
+
+function DraggableWidgetCard({ widgetKey, index, moveWidget, children }: {
+  widgetKey: string;
+  index: number;
+  moveWidget: (from: number, to: number) => void;
+  children: (dragRef: (node: HTMLElement | null) => void, isDragging: boolean) => React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [{ isDragging }, drag] = useDrag({
+    type: DND_WIDGET_TYPE,
+    item: () => ({ key: widgetKey, index }),
+    collect: (monitor) => ({ isDragging: monitor.isDragging() }),
+  });
+  const [{ isOver }, drop] = useDrop({
+    accept: DND_WIDGET_TYPE,
+    drop(item: { key: string; index: number }) {
+      if (item.index !== index) {
+        moveWidget(item.index, index);
+        item.index = index;
+      }
+    },
+    collect: (monitor) => ({ isOver: monitor.isOver() }),
+  });
+  drop(ref);
+  return (
+    <div
+      ref={ref}
+      className={`transition-all duration-150 rounded-xl h-full ${isOver && !isDragging ? "ring-2 ring-[#0A77FF]/20 ring-offset-2" : ""}`}
+    >
+      {children((node) => { drag(node); }, isDragging)}
+    </div>
+  );
+}
+
+// ── Tab definitions ──
+const PAIR_TABS = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "communications", label: "Communications" },
+  { id: "attachments", label: "Attachments" },
+  { id: "audit_log", label: "Audit Log" },
+] as const;
+
+type PairTabId = (typeof PAIR_TABS)[number]["id"];
+
+function PairTabEmptyState({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center" style={{ animation: "csFade 0.4s ease-out both" }}>
+      <div className="relative mb-3">
+        <div
+          className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#F8FAFC] to-[#F1F5F9] border border-[#E2E8F0] flex items-center justify-center shadow-sm"
+          style={{ animation: "csFloat 4s ease-in-out infinite" }}
+        >
+          <Icon className="w-5 h-5 text-[#94A3B8]" />
+        </div>
+      </div>
+      <p className="text-[13px] text-[#334155] mb-0.5" style={{ fontWeight: 600 }}>{title}</p>
+      <p className="text-[12px] text-[#94A3B8] max-w-xs leading-relaxed">{description}</p>
+      <style>{`
+        @keyframes csFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+        @keyframes csFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
     </div>
   );
 }
@@ -696,6 +823,7 @@ export function CurrencyPairDetailPage() {
 
   const rateType = searchParams.get("type") || "mid";
 
+  const [activeTab, setActiveTab] = useState<PairTabId>("dashboard");
   const [timeRange, setTimeRange] = useState<TimeRange>("1M");
   const [customRange, setCustomRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
   const [customPopoverOpen, setCustomPopoverOpen] = useState(false);
@@ -799,6 +927,15 @@ export function CurrencyPairDetailPage() {
     setActiveKpis(prev => { const next = [...prev]; const [moved] = next.splice(fromIndex, 1); next.splice(toIndex, 0, moved); return next; });
   }, []);
 
+  const moveWidget = useCallback((fromIndex: number, toIndex: number) => {
+    setActiveWidgets(prev => { const next = [...prev]; const [moved] = next.splice(fromIndex, 1); next.splice(toIndex, 0, moved); return next; });
+  }, []);
+
+  const [widgetSizes, setWidgetSizes] = useState<Record<string, "sm" | "md" | "lg">>({});
+  const handleWidgetSizeChange = useCallback((key: string, size: "sm" | "md" | "lg") => {
+    setWidgetSizes(prev => ({ ...prev, [key]: size }));
+  }, []);
+
   const restoreDashboardDefaults = useCallback(() => {
     if (rateType === "std") {
       setActiveKpis([...DEFAULT_STD_KPIS]);
@@ -807,6 +944,7 @@ export function CurrencyPairDetailPage() {
       setActiveKpis([...DEFAULT_MID_KPIS]);
       setActiveWidgets([...DEFAULT_MID_WIDGETS]);
     }
+    setWidgetSizes({});
   }, [rateType]);
 
   const activeKpiDefs = useMemo(
@@ -906,7 +1044,7 @@ export function CurrencyPairDetailPage() {
             <span className="text-[#CBD5E1]">/</span>
             <button onClick={() => navigate("/accounting/exchange-rates")} className="hover:text-[#0F172A] transition-colors cursor-pointer" style={{ fontWeight: 500 }}>Exchange Rate Library</button>
             <span className="text-[#CBD5E1]">/</span>
-            <span className="text-[#0F172A]" style={{ fontWeight: 500 }}>{detail.pairCode}</span>
+            <span className="text-[#0F172A]" style={{ fontWeight: 500 }}>{detail.sourceCurrency}</span>
           </div>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden border-2 border-[#E2E8F0]" style={{ backgroundColor: '#0A77FF' }}>
@@ -961,7 +1099,7 @@ export function CurrencyPairDetailPage() {
                         className="text-[#0F172A] truncate transition-all duration-250"
                         style={{ fontSize: isScrolled ? 13 : 16, fontWeight: isScrolled ? 600 : 700, lineHeight: isScrolled ? "18px" : "22px" }}
                       >
-                        {detail.pairCode}
+                        {detail.sourceCurrency} — {detail.sourceCurrencyName}
                       </h1>
 
                       <span
@@ -971,26 +1109,67 @@ export function CurrencyPairDetailPage() {
                         {statusConfig.label}
                       </span>
 
-                      {isStandardDetail ? (
-                        <span
-                          className="inline-flex items-center gap-1 rounded-md border transition-all duration-250 border-[#FDE68A] bg-[#FFFBEB] text-[#D97706]"
-                          style={{ padding: isScrolled ? "1px 6px" : "2px 8px", fontSize: isScrolled ? 10 : 11, fontWeight: 600 }}
-                        >
-                          <Star className="transition-all duration-250" style={{ width: isScrolled ? 10 : 12, height: isScrolled ? 10 : 12 }} />
-                          Corporate Rate
-                        </span>
-                      ) : (
-                        <span
-                          className="inline-flex items-center gap-1 rounded-md border transition-all duration-250 border-[#DDD6FE] bg-[#F5F3FF] text-[#7C3AED]"
-                          style={{ padding: isScrolled ? "1px 6px" : "2px 8px", fontSize: isScrolled ? 10 : 11, fontWeight: 600 }}
-                        >
-                          <Activity className="transition-all duration-250" style={{ width: isScrolled ? 10 : 12, height: isScrolled ? 10 : 12 }} />
-                          Mid-Market Rate
-                        </span>
-                      )}
+                      {(() => {
+                        const hasBothRates = !!midRecord && !!stdRecord;
+                        const styleStd = "border-[#FDE68A] bg-[#FFFBEB] text-[#D97706] hover:bg-[#FEF3C7]";
+                        const styleMid = "border-[#DDD6FE] bg-[#F5F3FF] text-[#7C3AED] hover:bg-[#EDE9FE]";
+                        const padding = isScrolled ? "1px 6px" : "2px 8px";
+                        const fontSize = isScrolled ? 10 : 11;
+                        const iconSize = isScrolled ? 10 : 12;
+                        const ActiveIcon = isStandardDetail ? Star : Activity;
+                        const activeLabel = isStandardDetail ? "Corporate Rate" : "Mid-Market Rate";
+                        const activeStyle = isStandardDetail ? styleStd : styleMid;
+
+                        if (!hasBothRates) {
+                          return (
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-md border transition-all duration-250 ${activeStyle.replace(/ hover:[^\s]+/g, "")}`}
+                              style={{ padding, fontSize, fontWeight: 600 }}
+                            >
+                              <ActiveIcon className="transition-all duration-250" style={{ width: iconSize, height: iconSize }} />
+                              {activeLabel}
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className={`inline-flex items-center gap-1 rounded-md border transition-all duration-250 cursor-pointer ${activeStyle}`}
+                                style={{ padding, fontSize, fontWeight: 600 }}
+                                aria-label="Switch rate type"
+                              >
+                                <ActiveIcon className="transition-all duration-250" style={{ width: iconSize, height: iconSize }} />
+                                {activeLabel}
+                                <ChevronDown className="transition-all duration-250" style={{ width: iconSize, height: iconSize, marginLeft: 1 }} />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-[180px]">
+                              <DropdownMenuItem
+                                onClick={() => navigate(`/accounting/exchange-rates/${code}?type=mid`)}
+                                className="text-[12.5px] cursor-pointer"
+                              >
+                                <Activity className="w-3.5 h-3.5 mr-2 text-[#7C3AED]" />
+                                Mid-Market Rate
+                                {!isStandardDetail && <Check className="w-3.5 h-3.5 ml-auto text-[#0A77FF]" />}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => navigate(`/accounting/exchange-rates/${code}?type=std`)}
+                                className="text-[12.5px] cursor-pointer"
+                              >
+                                <Star className="w-3.5 h-3.5 mr-2 text-[#D97706]" />
+                                Corporate Rate
+                                {isStandardDetail && <Check className="w-3.5 h-3.5 ml-auto text-[#0A77FF]" />}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        );
+                      })()}
                     </div>
                     {!isScrolled && (
-                      <p className="text-[12px] text-[#64748B] mt-0.5">{detail.sourceCurrencyName} → {BASE_CURRENCY_NAME}</p>
+                      <p className="text-[12px] text-[#64748B] mt-0.5">Quoted against {BASE_CURRENCY} ({BASE_CURRENCY_NAME})</p>
                     )}
                   </div>
                 </div>
@@ -1089,6 +1268,32 @@ export function CurrencyPairDetailPage() {
                   )}
                 </div>
               </div>
+
+              {/* Tab bar — always visible at the bottom of the card */}
+              <div className="flex items-center gap-0 overflow-x-auto scrollbar-hide border-t border-[#F1F5F9] px-4 lg:px-5">
+                {PAIR_TABS.map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex items-center px-3.5 border-b-2 transition-all duration-200 whitespace-nowrap cursor-pointer ${
+                        isActive
+                          ? "border-[#0A77FF] text-[#0A77FF]"
+                          : "border-transparent text-[#64748B] hover:text-[#334155] hover:border-[#CBD5E1]"
+                      }`}
+                      style={{
+                        padding: isScrolled ? "8px 14px" : "10px 14px",
+                        fontSize: isScrolled ? 12 : 13,
+                        fontWeight: isActive ? 600 : 400,
+                        transition: "padding 250ms ease, font-size 250ms ease",
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -1107,6 +1312,8 @@ export function CurrencyPairDetailPage() {
       {/* ══ BODY ══ */}
       <div className="flex-1">
         <div className="mx-auto px-4 lg:px-6 xl:px-8 pt-3 pb-5 space-y-4 max-w-[1440px] 2xl:max-w-[1600px]">
+          {activeTab === "dashboard" && (
+            <>
           {/* Info bar */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-[12px] text-[#64748B]">
@@ -1114,13 +1321,26 @@ export function CurrencyPairDetailPage() {
                 Synced every 24h from {API_PROVIDER} · Updated as of {format(new Date(LAST_SYNC), "dd MMM yyyy")} at {format(new Date(LAST_SYNC), "HH:mm")} PKT
               </span>
             </div>
-            <button
-              onClick={() => setCustomizePanelOpen(true)}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#334155] text-[12px] shadow-sm transition-all cursor-pointer"
-              style={{ fontWeight: 500 }}
-            >
-              <Sliders className="w-3.5 h-3.5 text-[#94A3B8]" /> Customize Widgets
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  restoreDashboardDefaults();
+                  toast.success("Dashboard reset to defaults");
+                }}
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#334155] text-[12px] shadow-sm transition-all cursor-pointer"
+                style={{ fontWeight: 500 }}
+                aria-label="Reset KPIs and widgets to defaults"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-[#94A3B8]" /> Reset
+              </button>
+              <button
+                onClick={() => setCustomizePanelOpen(true)}
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#334155] text-[12px] shadow-sm transition-all cursor-pointer"
+                style={{ fontWeight: 500 }}
+              >
+                <Sliders className="w-3.5 h-3.5 text-[#94A3B8]" /> Customize Widgets
+              </button>
+            </div>
           </div>
 
           {/* ══ Unified time-range selector ══
@@ -1243,13 +1463,25 @@ export function CurrencyPairDetailPage() {
             </DndProvider>
           )}
 
-          {/* ══ Analytics Widgets (Charts) ══ */}
-          {activeWidgets.some(w => ["rate_over_time", "variance_trend", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "transaction_volume"].includes(w)) && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                {activeWidgets.includes("rate_over_time") && (
-                  <ContentCard title={isStandardDetail ? "Corporate Rate Over Time vs Mid-Market" : "Rate Over Time — Mid-Market vs Corporate"} icon={TrendingUp} tooltipText={WIDGET_TOOLTIPS.rate_over_time}>
-                    <div style={{ height: 250 }} className="-ml-2">
+          {/* ══ Analytics Widgets (Charts) — drag/resize/remove ══ */}
+          {(() => {
+            const CHART_KEYS = ["rate_over_time", "variance_trend", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "transaction_volume"];
+            // Visible widgets in the user-defined order. variance_trend hides when there's no corporate rate to compare against.
+            const visibleWidgetKeys = activeWidgets.filter(k =>
+              CHART_KEYS.includes(k) && (k !== "variance_trend" || !!detail.currentStdRate)
+            );
+            if (visibleWidgetKeys.length === 0) return null;
+
+            const heightFor = (key: string, sz: "sm" | "md" | "lg") => {
+              if (key === "conversion_trend") return sz === "sm" ? 150 : sz === "lg" ? 280 : 200;
+              return sz === "sm" ? 180 : sz === "lg" ? 320 : 250;
+            };
+
+            const renderBody = (key: string, height: number): React.ReactNode => {
+              switch (key) {
+                case "rate_over_time":
+                  return (
+                    <div style={{ height }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={chartData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
@@ -1262,12 +1494,10 @@ export function CurrencyPairDetailPage() {
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
-                  </ContentCard>
-                )}
-
-                {activeWidgets.includes("variance_trend") && detail.currentStdRate && (
-                  <ContentCard title="Corporate Variance Trend vs Mid-Market" icon={BarChart3} tooltipText={WIDGET_TOOLTIPS.variance_trend}>
-                    <div style={{ height: 250 }} className="-ml-2">
+                  );
+                case "variance_trend":
+                  return (
+                    <div style={{ height }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={varianceData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
@@ -1288,16 +1518,10 @@ export function CurrencyPairDetailPage() {
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
-                  </ContentCard>
-                )}
-
-                {activeWidgets.includes("daily_change") && (
-                  <ContentCard
-                    title="Daily % Change — Mid-Market"
-                    icon={Activity}
-                    tooltipText={WIDGET_TOOLTIPS.daily_change}
-                  >
-                    <div style={{ height: 250 }} className="-ml-2">
+                  );
+                case "daily_change":
+                  return (
+                    <div style={{ height }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={chartData.map((d, i, a) => {
                           const curr = d.mid;
@@ -1313,12 +1537,10 @@ export function CurrencyPairDetailPage() {
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
-                  </ContentCard>
-                )}
-
-                {activeWidgets.includes("cumulative_return") && (
-                  <ContentCard title="Cumulative Return" icon={TrendingUp} tooltipText={WIDGET_TOOLTIPS.cumulative_return}>
-                    <div style={{ height: 250 }} className="-ml-2">
+                  );
+                case "cumulative_return":
+                  return (
+                    <div style={{ height }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={chartData.map((d) => ({
                           date: d.date,
@@ -1333,64 +1555,41 @@ export function CurrencyPairDetailPage() {
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
-                  </ContentCard>
-                )}
-
-                {activeWidgets.includes("conversion_trend") && (
-                  <ContentCard
-                    title={isStandardDetail ? "Corporate Rate Conversion Trend" : "Mid-Market Rate Conversion Trend"}
-                    icon={DollarSign}
-                    tooltipText={
-                      isStandardDetail
-                        ? "Historical trend of corporate rates set by your team for this currency pair."
-                        : "Historical mid-market rate movement sourced from your configured provider."
-                    }
-                    action={
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-[#64748B]" style={{ fontWeight: 500 }}>Amount:</span>
-                        <input
-                          type="number"
-                          value={conversionAmount}
-                          onChange={e => setConversionAmount(e.target.value)}
-                          className="w-20 h-6 px-2 rounded border border-border text-[11px] tabular-nums outline-none focus:border-[#0A77FF]/40"
-                          onClick={e => e.stopPropagation()}
-                        />
-                        <span className="text-[10px] text-[#94A3B8]">{code}</span>
+                  );
+                case "conversion_trend":
+                  return (
+                    <>
+                      <div className="flex items-center gap-4 mb-3 text-[12px]">
+                        <div className="bg-[#F0FDF4] rounded-lg px-3 py-1.5 border border-[#A7F3D0]">
+                          <span className="text-[10px] text-[#059669]" style={{ fontWeight: 500 }}>Current</span>
+                          <p className="text-[14px] tabular-nums text-[#065F46]" style={{ fontWeight: 700 }}>
+                            {((parseFloat(conversionAmount) || 0) * detail.currentMidRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} {BASE_CURRENCY}
+                          </p>
+                        </div>
+                        <div className="bg-[#F8FAFC] rounded-lg px-3 py-1.5 border border-[#E2E8F0]">
+                          <span className="text-[10px] text-[#64748B]" style={{ fontWeight: 500 }}>30d Avg</span>
+                          <p className="text-[14px] tabular-nums text-[#334155]" style={{ fontWeight: 600 }}>
+                            {((parseFloat(conversionAmount) || 0) * detail.avgRate30d).toLocaleString(undefined, { maximumFractionDigits: 2 })} {BASE_CURRENCY}
+                          </p>
+                        </div>
                       </div>
-                    }
-                  >
-                    <div className="flex items-center gap-4 mb-3 text-[12px]">
-                      <div className="bg-[#F0FDF4] rounded-lg px-3 py-1.5 border border-[#A7F3D0]">
-                        <span className="text-[10px] text-[#059669]" style={{ fontWeight: 500 }}>Current</span>
-                        <p className="text-[14px] tabular-nums text-[#065F46]" style={{ fontWeight: 700 }}>
-                          {((parseFloat(conversionAmount) || 0) * detail.currentMidRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} {BASE_CURRENCY}
-                        </p>
+                      <div style={{ height }} className="-ml-2">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={conversionData}>
+                            <defs><linearGradient id="convGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0A77FF" stopOpacity={0.15} /><stop offset="100%" stopColor="#0A77FF" stopOpacity={0.01} /></linearGradient></defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                            <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
+                            <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                            <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} formatter={(val: number) => [`${val.toLocaleString()} ${BASE_CURRENCY}`, "Converted"]} />
+                            <Area type="monotone" dataKey="converted" name="Converted" stroke="#0A77FF" fill="url(#convGrad)" strokeWidth={2} />
+                          </AreaChart>
+                        </ResponsiveContainer>
                       </div>
-                      <div className="bg-[#F8FAFC] rounded-lg px-3 py-1.5 border border-[#E2E8F0]">
-                        <span className="text-[10px] text-[#64748B]" style={{ fontWeight: 500 }}>30d Avg</span>
-                        <p className="text-[14px] tabular-nums text-[#334155]" style={{ fontWeight: 600 }}>
-                          {((parseFloat(conversionAmount) || 0) * detail.avgRate30d).toLocaleString(undefined, { maximumFractionDigits: 2 })} {BASE_CURRENCY}
-                        </p>
-                      </div>
-                    </div>
-                    <div style={{ height: 200 }} className="-ml-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={conversionData}>
-                          <defs><linearGradient id="convGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0A77FF" stopOpacity={0.15} /><stop offset="100%" stopColor="#0A77FF" stopOpacity={0.01} /></linearGradient></defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
-                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                          <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} formatter={(val: number) => [`${val.toLocaleString()} ${BASE_CURRENCY}`, "Converted"]} />
-                          <Area type="monotone" dataKey="converted" name="Converted" stroke="#0A77FF" fill="url(#convGrad)" strokeWidth={2} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </ContentCard>
-                )}
-
-                {activeWidgets.includes("drawdown_from_peak") && (
-                  <ContentCard title="Drawdown from Peak (Mid-Market)" icon={ArrowDownRight} tooltipText={WIDGET_TOOLTIPS.drawdown_from_peak}>
-                    <div style={{ height: 250 }} className="-ml-2">
+                    </>
+                  );
+                case "drawdown_from_peak":
+                  return (
+                    <div style={{ height }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={drawdownData}>
                           <defs><linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#EF4444" stopOpacity={0.2} /><stop offset="100%" stopColor="#EF4444" stopOpacity={0.02} /></linearGradient></defs>
@@ -1402,12 +1601,10 @@ export function CurrencyPairDetailPage() {
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
-                  </ContentCard>
-                )}
-
-                {activeWidgets.includes("transaction_volume") && (
-                  <ContentCard title={isStandardDetail ? "Corporate Rate Transaction Volume" : "Transaction Volume in this Pair"} icon={BarChart3} tooltipText={WIDGET_TOOLTIPS.transaction_volume}>
-                    <div style={{ height: 250 }} className="-ml-2">
+                  );
+                case "transaction_volume":
+                  return (
+                    <div style={{ height }} className="-ml-2">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={transactionVolumeData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
@@ -1418,18 +1615,88 @@ export function CurrencyPairDetailPage() {
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
-                  </ContentCard>
-                )}
-              </div>
-            </div>
-          )}
+                  );
+                default:
+                  return null;
+              }
+            };
 
+            const widgetMeta = (key: string): { title: string; icon: React.ElementType; tooltip?: string; action?: React.ReactNode } => {
+              switch (key) {
+                case "rate_over_time":
+                  return { title: isStandardDetail ? "Corporate Rate Over Time vs Mid-Market" : "Rate Over Time — Mid-Market vs Corporate", icon: TrendingUp, tooltip: WIDGET_TOOLTIPS.rate_over_time };
+                case "variance_trend":
+                  return { title: "Corporate Variance Trend vs Mid-Market", icon: BarChart3, tooltip: WIDGET_TOOLTIPS.variance_trend };
+                case "daily_change":
+                  return { title: "Daily % Change — Mid-Market", icon: Activity, tooltip: WIDGET_TOOLTIPS.daily_change };
+                case "cumulative_return":
+                  return { title: "Cumulative Return", icon: TrendingUp, tooltip: WIDGET_TOOLTIPS.cumulative_return };
+                case "conversion_trend":
+                  return {
+                    title: isStandardDetail ? "Corporate Rate Conversion Trend" : "Mid-Market Rate Conversion Trend",
+                    icon: DollarSign,
+                    tooltip: isStandardDetail
+                      ? "Historical trend of corporate rates set by your team for this currency pair."
+                      : "Historical mid-market rate movement sourced from your configured provider.",
+                    action: (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-[#64748B]" style={{ fontWeight: 500 }}>Amount:</span>
+                        <input
+                          type="number"
+                          value={conversionAmount}
+                          onChange={e => setConversionAmount(e.target.value)}
+                          className="w-20 h-6 px-2 rounded border border-border text-[11px] tabular-nums outline-none focus:border-[#0A77FF]/40"
+                          onClick={e => e.stopPropagation()}
+                        />
+                        <span className="text-[10px] text-[#94A3B8]">{code}</span>
+                      </div>
+                    ),
+                  };
+                case "drawdown_from_peak":
+                  return { title: "Drawdown from Peak (Mid-Market)", icon: ArrowDownRight, tooltip: WIDGET_TOOLTIPS.drawdown_from_peak };
+                case "transaction_volume":
+                  return { title: isStandardDetail ? "Corporate Rate Transaction Volume" : "Transaction Volume in this Pair", icon: BarChart3, tooltip: WIDGET_TOOLTIPS.transaction_volume };
+                default:
+                  return { title: key, icon: Activity };
+              }
+            };
 
-          {/* ══ Rate History ══
-             Always visible on both Mid-Market and Corporate detail pages.
-             It is never a customisable widget — removing all KPIs and charts
-             collapses the dashboard into an empty-state card below, but
-             Rate History stays put. */}
+            return (
+              <DndProvider backend={HTML5Backend}>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 auto-rows-min">
+                  {visibleWidgetKeys.map((wKey, i) => {
+                    const sz = widgetSizes[wKey] || "md";
+                    const colSpan = sz === "lg" ? "lg:col-span-2" : "lg:col-span-1";
+                    const meta = widgetMeta(wKey);
+                    const height = heightFor(wKey, sz);
+                    return (
+                      <div key={wKey} className={`col-span-1 ${colSpan}`}>
+                        <DraggableWidgetCard widgetKey={wKey} index={i} moveWidget={moveWidget}>
+                          {(dragRef, isDragging) => (
+                            <ContentCard
+                              title={meta.title}
+                              icon={meta.icon}
+                              tooltipText={meta.tooltip}
+                              action={meta.action}
+                              dragRef={dragRef}
+                              isDragging={isDragging}
+                              currentSize={sz}
+                              onSizeChange={(s) => handleWidgetSizeChange(wKey, s)}
+                              onRemove={() => handleToggleWidget(wKey)}
+                            >
+                              {renderBody(wKey, height)}
+                            </ContentCard>
+                          )}
+                        </DraggableWidgetCard>
+                      </div>
+                    );
+                  })}
+                </div>
+              </DndProvider>
+            );
+          })()}
+
+          {/* ══ Rate History — always visible on the Dashboard ══ */}
           <div>
             <h2 className="text-[15px] mb-3" style={{ fontWeight: 600 }}>Rate History</h2>
             <div className="rounded-xl border border-[#E2E8F0] bg-white overflow-clip shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
@@ -1496,11 +1763,39 @@ export function CurrencyPairDetailPage() {
               </Table>
             </div>
           </div>
+            </>
+          )}
 
-          {/* ══ Audit Log — always visible and expanded on the corporate detail page ══ */}
-          {isStandardDetail && detail.auditLog.length > 0 && (
+          {activeTab === "communications" && (
+            <div className="bg-white border border-[#E2E8F0] rounded-xl shadow-sm">
+              <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
+                <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Communications</h3>
+              </div>
+              <PairTabEmptyState
+                icon={MessageSquare}
+                title="No communications yet"
+                description={`Messages, calls, and notes related to ${detail.pairCode} will appear here once added.`}
+              />
+            </div>
+          )}
+
+          {activeTab === "attachments" && (
+            <div className="bg-white border border-[#E2E8F0] rounded-xl shadow-sm">
+              <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
+                <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Attachments</h3>
+              </div>
+              <PairTabEmptyState
+                icon={Paperclip}
+                title="No attachments yet"
+                description={`Documents and files associated with ${detail.pairCode} will appear here once uploaded.`}
+              />
+            </div>
+          )}
+
+          {activeTab === "audit_log" && (
             <div className="pb-4">
               <h2 className="text-[15px] mb-3" style={{ fontWeight: 600 }}>Audit Log</h2>
+              {isStandardDetail && detail.auditLog.length > 0 ? (
               <div className="rounded-xl border border-[#E2E8F0] bg-white overflow-clip shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
                 <Table>
                   <TableHeader>
@@ -1531,6 +1826,19 @@ export function CurrencyPairDetailPage() {
                   </TableBody>
                 </Table>
               </div>
+              ) : (
+                <div className="bg-white border border-[#E2E8F0] rounded-xl shadow-sm">
+                  <PairTabEmptyState
+                    icon={ClipboardList}
+                    title="No audit entries yet"
+                    description={
+                      isStandardDetail
+                        ? `Rate changes for ${detail.pairCode} will be logged here.`
+                        : `Mid-Market rates are sourced from ${API_PROVIDER}; manual changes are tracked on the Corporate rate detail.`
+                    }
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

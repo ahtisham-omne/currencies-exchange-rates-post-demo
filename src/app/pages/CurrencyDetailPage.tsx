@@ -14,6 +14,7 @@ import {
 import {
   ChevronLeft,
   ChevronDown,
+  ChevronRight,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -23,13 +24,17 @@ import {
   CircleSlash,
   CircleCheck,
   Inbox,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   ArrowLeftRight,
   Plus,
   Check,
   X,
+  MessageSquare,
+  Paperclip,
+  FileText,
+  ShoppingCart,
+  CreditCard,
+  Receipt,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
@@ -58,8 +63,6 @@ import {
   TooltipContent,
 } from "../components/ui/tooltip";
 import { format } from "date-fns";
-
-type DocSortKey = "ref" | "party" | "amount" | "status" | "date" | "type";
 
 /** Rounded chip showing a currency symbol with a hover tooltip resolving the currency. */
 function CurrencySymbolChip({
@@ -748,6 +751,38 @@ function RateSegmentedToggle({
   );
 }
 
+// ── Tab definitions ──
+const TABS = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "linked_transactions", label: "Linked Transactions" },
+  { id: "communications", label: "Communications" },
+  { id: "attachments", label: "Attachments" },
+  { id: "audit_log", label: "Audit Log" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
+function TabEmptyState({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center" style={{ animation: "csFade 0.4s ease-out both" }}>
+      <div className="relative mb-3">
+        <div
+          className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#F8FAFC] to-[#F1F5F9] border border-[#E2E8F0] flex items-center justify-center shadow-sm"
+          style={{ animation: "csFloat 4s ease-in-out infinite" }}
+        >
+          <Icon className="w-5 h-5 text-[#94A3B8]" />
+        </div>
+      </div>
+      <p className="text-[13px] text-[#334155] mb-0.5" style={{ fontWeight: 600 }}>{title}</p>
+      <p className="text-[12px] text-[#94A3B8] max-w-xs leading-relaxed">{description}</p>
+      <style>{`
+        @keyframes csFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+        @keyframes csFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
+    </div>
+  );
+}
+
 export function CurrencyDetailPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
@@ -755,8 +790,10 @@ export function CurrencyDetailPage() {
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [openDocsErrorOpen, setOpenDocsErrorOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-  const [docSort, setDocSort] = useState<Record<string, { key: string; dir: "asc" | "desc" }>>({});
-  const [activeDocTab, setActiveDocTab] = useState("vendorInvoices");
+  const [activeDocTab, setActiveDocTab] = useState("all");
+  const [docSearch, setDocSearch] = useState("");
+  const [collapsedDocSections, setCollapsedDocSections] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -957,28 +994,6 @@ export function CurrencyDetailPage() {
   // Total docs in past 12 months (simulated as totalLifetimeDocuments for demo)
   const docsInPast12Months = currency.usage.totalLifetimeDocuments;
 
-
-  const handleSectionSort = (sectionKey: string, colKey: string) => {
-    setDocSort(prev => {
-      const current = prev[sectionKey];
-      if (current?.key === colKey) {
-        return { ...prev, [sectionKey]: { key: colKey, dir: current.dir === "asc" ? "desc" : "asc" } };
-      }
-      return { ...prev, [sectionKey]: { key: colKey, dir: "asc" } };
-    });
-  };
-
-  const getSortedData = (section: DocSection) => {
-    const sort = docSort[section.key];
-    if (!sort) return section.data;
-    const sorted = [...section.data];
-    sorted.sort((a, b) => {
-      const cmp = (a[sort.key] || "").localeCompare(b[sort.key] || "");
-      return sort.dir === "desc" ? -cmp : cmp;
-    });
-    return sorted;
-  };
-
   // Status config
   const statusConfig: Record<string, { color: string; bg: string; border: string; label: string }> = {
     active: { color: "#065F46", bg: "#ECFDF5", border: "#A7F3D0", label: "Active" },
@@ -1129,6 +1144,32 @@ export function CurrencyDetailPage() {
                   <StatusActionButton compact={isScrolled} />
                 </div>
               </div>
+
+              {/* Tab bar — always visible at the bottom of the card */}
+              <div className="flex items-center gap-0 overflow-x-auto scrollbar-hide border-t border-[#F1F5F9] px-4 lg:px-5">
+                {TABS.map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex items-center px-3.5 border-b-2 transition-all duration-200 whitespace-nowrap cursor-pointer ${
+                        isActive
+                          ? "border-[#0A77FF] text-[#0A77FF]"
+                          : "border-transparent text-[#64748B] hover:text-[#334155] hover:border-[#CBD5E1]"
+                      }`}
+                      style={{
+                        padding: isScrolled ? "8px 14px" : "10px 14px",
+                        fontSize: isScrolled ? 12 : 13,
+                        fontWeight: isActive ? 600 : 400,
+                        transition: "padding 250ms ease, font-size 250ms ease",
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -1138,6 +1179,8 @@ export function CurrencyDetailPage() {
       {/* CONTENT */}
       <div className="flex-1">
         <div className="mx-auto px-4 lg:px-6 xl:px-8 max-w-[1440px] 2xl:max-w-[1600px] py-4">
+          {activeTab === "dashboard" && (
+            <>
           {/* Currency Information Card */}
           <div className="bg-white border border-[#E2E8F0] rounded-xl mb-4 shadow-sm">
             <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
@@ -1171,153 +1214,286 @@ export function CurrencyDetailPage() {
 
           {/* Live Exchange Rate Converter — section below Currency Information */}
           <CurrencyConverter detailCurrency={currency} />
+            </>
+          )}
 
-          {/* In Use Section */}
-          <div className="bg-white border border-[#E2E8F0] rounded-xl mb-4 shadow-sm">
-            <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
-              <div className="flex items-baseline justify-between gap-3 flex-wrap">
-                <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>In Use</h3>
-                <div className="text-[12px] text-[#64748B] inline-flex items-center gap-1.5" style={{ fontWeight: 500 }}>
-                  <span>Total value across all documents:</span>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex" tabIndex={-1}>
-                        <Info className="w-3 h-3 text-[#94A3B8] cursor-help" />
+          {activeTab === "linked_transactions" && (() => {
+            const SECTION_META: Record<string, { icon: React.ElementType; iconColor: string; iconBg: string }> = {
+              vendorInvoices: { icon: FileText, iconColor: "#D97706", iconBg: "#FFFBEB" },
+              customerInvoices: { icon: Receipt, iconColor: "#7C3AED", iconBg: "#F5F3FF" },
+              purchaseOrders: { icon: ShoppingCart, iconColor: "#0A77FF", iconBg: "#EFF6FF" },
+              salesOrders: { icon: ShoppingCart, iconColor: "#059669", iconBg: "#ECFDF5" },
+              vendorPayments: { icon: CreditCard, iconColor: "#DB2777", iconBg: "#FDF2F8" },
+              customerPayments: { icon: CreditCard, iconColor: "#0891B2", iconBg: "#ECFEFF" },
+            };
+
+            const matchesSearch = (doc: Record<string, string>) => {
+              const q = docSearch.trim().toLowerCase();
+              if (!q) return true;
+              return (doc.ref || "").toLowerCase().includes(q) || (doc.party || "").toLowerCase().includes(q);
+            };
+
+            const visibleSections = allDocTabs
+              .filter(s => activeDocTab === "all" || s.key === activeDocTab)
+              .map(s => {
+                const filtered = s.data.filter(matchesSearch);
+                return { ...s, filtered, filteredTotal: filtered.reduce((sum, d) => sum + parseAmount(d.amount), 0) };
+              });
+
+            const visibleCount = visibleSections.reduce((sum, s) => sum + s.filtered.length, 0);
+            const visibleTotal = visibleSections.reduce((sum, s) => sum + s.filteredTotal, 0);
+
+            const toggleCollapse = (key: string) =>
+              setCollapsedDocSections(prev => {
+                const next = new Set(prev);
+                if (next.has(key)) next.delete(key);
+                else next.add(key);
+                return next;
+              });
+
+            return (
+              <div className="bg-white border border-[#E2E8F0] rounded-xl mb-4 shadow-sm">
+                {/* Section header — totals + summary */}
+                <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
+                  <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                    <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Linked Transactions</h3>
+                    <div className="text-[12px] text-[#64748B] inline-flex items-center gap-1.5" style={{ fontWeight: 500 }}>
+                      <span>Total value across all documents:</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex" tabIndex={-1}>
+                            <Info className="w-3 h-3 text-[#94A3B8] cursor-help" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[280px] text-[11.5px]">
+                          {RATE_TOOLTIPS.totalValueAllDocs}
+                        </TooltipContent>
+                      </Tooltip>
+                      <span className="inline-flex items-center gap-1.5 ml-0.5 align-middle">
+                        <CurrencySymbolChip symbol={currency.symbol} name={currency.name} code={currency.code} />
+                        <span className="text-[14px] text-[#0F172A] tabular-nums" style={{ fontWeight: 700 }}>{totalValueFormatted}</span>
                       </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[280px] text-[11.5px]">
-                      {RATE_TOOLTIPS.totalValueAllDocs}
-                    </TooltipContent>
-                  </Tooltip>
-                  <span className="inline-flex items-center gap-1.5 ml-0.5 align-middle">
-                    <CurrencySymbolChip symbol={currency.symbol} name={currency.name} code={currency.code} />
-                    <span className="text-[14px] text-[#0F172A] tabular-nums" style={{ fontWeight: 700 }}>{totalValueFormatted}</span>
-                  </span>
+                    </div>
+                  </div>
+                  <p className="text-[12px] text-[#64748B] mt-1.5">
+                    {inUseCount} active document{inUseCount !== 1 ? "s" : ""}
+                    {totalOpenDocs > 0 && <> · blocking deactivation</>}
+                    {" "}· Last transaction: {lastTransactionDate} · {docsInPast12Months} documents in the past 12 months
+                  </p>
                 </div>
-              </div>
-              <p className="text-[12px] text-[#64748B] mt-1.5">
-                {inUseCount} active document{inUseCount !== 1 ? "s" : ""}
-                {totalOpenDocs > 0 && <> · blocking deactivation</>}
-                {" "}· Last transaction: {lastTransactionDate} · {docsInPast12Months} documents in the past 12 months
-              </p>
-            </div>
 
-            <div className="border-b border-[#E2E8F0] px-5">
-              <div className="flex gap-0 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-                {allDocTabs.map((tab) => {
-                  const isActive = activeDocTab === tab.key;
-                  return (
-                    <button
-                      key={tab.key}
-                      onClick={() => setActiveDocTab(tab.key)}
-                      className={`relative px-3 py-2 text-left whitespace-nowrap transition-colors cursor-pointer ${
-                        isActive ? "text-[#0A77FF]" : "text-[#64748B] hover:text-[#0F172A]"
-                      }`}
-                      style={{ fontWeight: isActive ? 600 : 500 }}
+                {/* Search + visible-count bar */}
+                <div className="px-5 py-3 border-b border-[#F1F5F9] flex items-center justify-between gap-3 flex-wrap">
+                  <div className="relative flex-1 min-w-[220px] max-w-[360px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#94A3B8]" />
+                    <Input
+                      value={docSearch}
+                      onChange={e => setDocSearch(e.target.value)}
+                      placeholder="Search transactions..."
+                      className="pl-9 h-8 bg-[#F8FAFC] border-[#E2E8F0] text-[12.5px] placeholder:text-[#94A3B8] rounded-lg"
+                    />
+                  </div>
+                  <div className="text-[12px] text-[#64748B] tabular-nums" style={{ fontWeight: 500 }}>
+                    {visibleCount} transaction{visibleCount !== 1 ? "s" : ""}
+                    <span className="mx-1.5 text-[#CBD5E1]">·</span>
+                    <span className="text-[#0F172A]" style={{ fontWeight: 600 }}>{currency.symbol}{fmtMoney(visibleTotal)}</span>
+                  </div>
+                </div>
+
+                {/* Type-filter pills */}
+                <div className="px-5 py-3 border-b border-[#F1F5F9] flex items-center gap-1.5 flex-wrap">
+                  <button
+                    onClick={() => setActiveDocTab("all")}
+                    className={`inline-flex items-center gap-1.5 h-7 px-3 rounded-full border text-[12px] transition-colors cursor-pointer ${
+                      activeDocTab === "all"
+                        ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#0A77FF]"
+                        : "bg-white border-[#E2E8F0] text-[#475569] hover:bg-[#F8FAFC]"
+                    }`}
+                    style={{ fontWeight: activeDocTab === "all" ? 600 : 500 }}
+                  >
+                    All
+                    <span
+                      className="inline-flex items-center justify-center min-w-[18px] h-[16px] px-1 rounded-full text-[10px] tabular-nums"
+                      style={{
+                        fontWeight: 600,
+                        backgroundColor: activeDocTab === "all" ? "#DBEAFE" : "#F1F5F9",
+                        color: activeDocTab === "all" ? "#0A77FF" : "#94A3B8",
+                      }}
                     >
-                      <span className="flex items-center gap-1.5 text-[13px] leading-tight">
+                      {inUseCount}
+                    </span>
+                  </button>
+                  {allDocTabs.map(tab => {
+                    const isActive = activeDocTab === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        onClick={() => setActiveDocTab(tab.key)}
+                        className={`inline-flex items-center gap-1.5 h-7 px-3 rounded-full border text-[12px] transition-colors cursor-pointer ${
+                          isActive
+                            ? "bg-[#EFF6FF] border-[#BFDBFE] text-[#0A77FF]"
+                            : "bg-white border-[#E2E8F0] text-[#475569] hover:bg-[#F8FAFC]"
+                        }`}
+                        style={{ fontWeight: isActive ? 600 : 500 }}
+                      >
                         {tab.label}
                         <span
-                          className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full text-[10px] tabular-nums"
+                          className="inline-flex items-center justify-center min-w-[18px] h-[16px] px-1 rounded-full text-[10px] tabular-nums"
                           style={{
                             fontWeight: 600,
-                            backgroundColor: isActive ? "#EDF4FF" : "#F1F5F9",
+                            backgroundColor: isActive ? "#DBEAFE" : "#F1F5F9",
                             color: isActive ? "#0A77FF" : "#94A3B8",
                           }}
                         >
                           {tab.data.length}
                         </span>
-                      </span>
-                      <span
-                        className="block text-[11px] mt-1 leading-tight tabular-nums"
-                        style={{ color: isActive ? "rgba(10,119,255,0.75)" : "#94A3B8", fontWeight: 500 }}
-                      >
-                        {currency.symbol}
-                        {fmtMoney(tab.totalAmount)}
-                      </span>
-                      {isActive && (
-                        <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#0A77FF] rounded-full" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {(() => {
-              const section = allDocTabs.find(t => t.key === activeDocTab);
-              if (!section) return null;
-              const sortState = docSort[section.key];
-              const sortedData = getSortedData(section);
-
-              if (sortedData.length === 0) {
-                return (
-                  <div className="flex flex-col items-center justify-center py-16 text-[#94A3B8]">
-                    <Inbox className="w-10 h-10 mb-3" />
-                    <p className="text-[14px] text-[#64748B]" style={{ fontWeight: 500 }}>
-                      No {section.label.toLowerCase()} found for this currency.
-                    </p>
-                    <p className="text-[12px] text-[#94A3B8] mt-1">
-                      {section.label} using {currency.code} will appear here.
-                    </p>
-                  </div>
-                );
-              }
-
-              return (
-                <div className="overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-[#F8FAFC] hover:bg-[#F8FAFC]">
-                        {section.columns.map(col => (
-                          <TableHead key={col.key}>
-                            <button
-                              onClick={() => handleSectionSort(section.key, col.key)}
-                              className="inline-flex items-center gap-1 text-[12px] hover:text-[#0F172A] transition-colors"
-                              style={{ fontWeight: 600, color: sortState?.key === col.key ? "#0A77FF" : undefined }}
-                            >
-                              {col.label}
-                              {sortState?.key === col.key && sortState.dir === "asc" && <ArrowUp className="w-3 h-3" style={{ color: "#0A77FF" }} />}
-                              {sortState?.key === col.key && sortState.dir === "desc" && <ArrowDown className="w-3 h-3" style={{ color: "#0A77FF" }} />}
-                              {sortState?.key !== col.key && <ArrowUpDown className="w-3 h-3 text-[#94A3B8]" />}
-                            </button>
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedData.map((doc, i) => (
-                        <TableRow key={doc.ref + i}>
-                          <TableCell>
-                            <span className="text-[13px] text-[#0A77FF] cursor-pointer hover:underline" style={{ fontWeight: 600 }}>{doc.ref}</span>
-                          </TableCell>
-                          <TableCell className="text-[13px]">{doc.party}</TableCell>
-                          <TableCell className="text-[13px] tabular-nums" style={{ fontWeight: 500 }}>{currency.code} {stripSymbol(doc.amount)}</TableCell>
-                          <TableCell>
-                            {doc.status ? (() => {
-                              const ss = docStatusStyle(doc.status);
-                              return (
-                                <span className="text-[11px] px-2 py-0.5 rounded-full border" style={{ fontWeight: 500, color: ss.color, backgroundColor: ss.bg, borderColor: ss.border }}>
-                                  {doc.status}
-                                </span>
-                              );
-                            })() : <span className="text-[12px] text-[#94A3B8]">—</span>}
-                          </TableCell>
-                          <TableCell className="text-[12px] text-[#64748B] tabular-nums">
-                            {(() => {
-                              try { return format(new Date(doc.date), "dd MMM yyyy"); } catch { return doc.date; }
-                            })()}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </button>
+                    );
+                  })}
                 </div>
-              );
-            })()}
-          </div>
 
-          {/* Audit Log Section */}
+                {/* Grouped collapsible sections */}
+                <div className="p-4 space-y-3">
+                  {visibleCount === 0 && (
+                    <div className="flex flex-col items-center justify-center py-16 text-[#94A3B8]">
+                      <Inbox className="w-10 h-10 mb-3" />
+                      <p className="text-[14px] text-[#64748B]" style={{ fontWeight: 500 }}>
+                        {docSearch.trim()
+                          ? `No transactions match "${docSearch.trim()}".`
+                          : `No transactions found for ${currency.code}.`}
+                      </p>
+                      <p className="text-[12px] text-[#94A3B8] mt-1">
+                        {docSearch.trim()
+                          ? "Try a different search term or clear the search."
+                          : "Documents using this currency will appear here."}
+                      </p>
+                    </div>
+                  )}
+
+                  {visibleSections.map(section => {
+                    if (section.filtered.length === 0) return null;
+                    const meta = SECTION_META[section.key];
+                    const Icon = meta?.icon || FileText;
+                    const isCollapsed = collapsedDocSections.has(section.key);
+                    return (
+                      <div key={section.key} className="border border-[#E2E8F0] rounded-lg overflow-hidden bg-white">
+                        <button
+                          onClick={() => toggleCollapse(section.key)}
+                          className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 hover:bg-[#F8FAFC] transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {isCollapsed ? (
+                              <ChevronRight className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
+                            )}
+                            <span
+                              className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                              style={{ backgroundColor: meta?.iconBg || "#F1F5F9" }}
+                            >
+                              <Icon className="w-3.5 h-3.5" style={{ color: meta?.iconColor || "#64748B" }} />
+                            </span>
+                            <span className="text-[13px] text-[#0F172A]" style={{ fontWeight: 600 }}>{section.label}</span>
+                            <span
+                              className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full text-[10px] tabular-nums bg-[#F1F5F9] text-[#64748B]"
+                              style={{ fontWeight: 600 }}
+                            >
+                              {section.filtered.length}
+                            </span>
+                          </div>
+                          <span className="text-[13px] text-[#0F172A] tabular-nums shrink-0" style={{ fontWeight: 700 }}>
+                            {currency.symbol}{fmtMoney(section.filteredTotal)}
+                          </span>
+                        </button>
+
+                        {!isCollapsed && (
+                          <div className="border-t border-[#F1F5F9] overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+                            <table className="w-full">
+                              <thead>
+                                <tr className="bg-[#FAFBFC]">
+                                  <th className="text-left text-[10px] text-[#94A3B8] uppercase tracking-wider px-3.5 py-2" style={{ fontWeight: 600, letterSpacing: "0.04em" }}>Number</th>
+                                  <th className="text-left text-[10px] text-[#94A3B8] uppercase tracking-wider px-3.5 py-2" style={{ fontWeight: 600, letterSpacing: "0.04em" }}>{section.columns.find(c => c.key === "party")?.label || "Party"}</th>
+                                  <th className="text-left text-[10px] text-[#94A3B8] uppercase tracking-wider px-3.5 py-2" style={{ fontWeight: 600, letterSpacing: "0.04em" }}>Status</th>
+                                  <th className="text-left text-[10px] text-[#94A3B8] uppercase tracking-wider px-3.5 py-2" style={{ fontWeight: 600, letterSpacing: "0.04em" }}>Date</th>
+                                  <th className="text-right text-[10px] text-[#94A3B8] uppercase tracking-wider px-3.5 py-2" style={{ fontWeight: 600, letterSpacing: "0.04em" }}>Amount</th>
+                                  <th className="w-8 px-2 py-2" />
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {section.filtered.map((doc, i) => (
+                                  <tr key={doc.ref + i} className="border-t border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
+                                    <td className="px-3.5 py-2.5">
+                                      <span className="text-[12.5px] text-[#0A77FF] cursor-pointer hover:underline" style={{ fontWeight: 600 }}>{doc.ref}</span>
+                                    </td>
+                                    <td className="px-3.5 py-2.5 text-[12.5px] text-[#0F172A]">{doc.party}</td>
+                                    <td className="px-3.5 py-2.5">
+                                      {doc.status ? (() => {
+                                        const ss = docStatusStyle(doc.status);
+                                        return (
+                                          <span className="text-[10.5px] px-2 py-0.5 rounded-full border" style={{ fontWeight: 500, color: ss.color, backgroundColor: ss.bg, borderColor: ss.border }}>
+                                            {doc.status}
+                                          </span>
+                                        );
+                                      })() : <span className="text-[11.5px] text-[#94A3B8]">—</span>}
+                                    </td>
+                                    <td className="px-3.5 py-2.5 text-[11.5px] text-[#64748B] tabular-nums">
+                                      {(() => {
+                                        try { return format(new Date(doc.date), "dd MMM yyyy"); } catch { return doc.date; }
+                                      })()}
+                                    </td>
+                                    <td className="px-3.5 py-2.5 text-right text-[12.5px] text-[#0F172A] tabular-nums" style={{ fontWeight: 600 }}>
+                                      {currency.code} {stripSymbol(doc.amount)}
+                                    </td>
+                                    <td className="px-2 py-2.5 text-right">
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[#94A3B8] hover:text-[#0A77FF] hover:bg-[#EFF6FF] transition-colors cursor-pointer"
+                                        aria-label={`Open ${doc.ref}`}
+                                      >
+                                        <ExternalLink className="w-3 h-3" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {activeTab === "communications" && (
+            <div className="bg-white border border-[#E2E8F0] rounded-xl mb-4 shadow-sm">
+              <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
+                <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Communications</h3>
+              </div>
+              <TabEmptyState
+                icon={MessageSquare}
+                title="No communications yet"
+                description={`Messages, calls, and notes related to ${currency.code} will appear here once added.`}
+              />
+            </div>
+          )}
+
+          {activeTab === "attachments" && (
+            <div className="bg-white border border-[#E2E8F0] rounded-xl mb-4 shadow-sm">
+              <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
+                <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Attachments</h3>
+              </div>
+              <TabEmptyState
+                icon={Paperclip}
+                title="No attachments yet"
+                description={`Documents and files associated with ${currency.code} will appear here once uploaded.`}
+              />
+            </div>
+          )}
+
+          {activeTab === "audit_log" && (
           <div className="bg-white border border-[#E2E8F0] rounded-xl mb-6 shadow-sm">
             <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
               <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Audit Log</h3>
@@ -1354,6 +1530,7 @@ export function CurrencyDetailPage() {
               </Table>
             </div>
           </div>
+          )}
         </div>
       </div>
 
