@@ -923,30 +923,9 @@ export function ExchangeRateLibraryPage() {
                 )}
               </div>
             </div>
-            <div className="flex items-center justify-between gap-3 flex-wrap mt-1">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Manage all exchange rates for your company.
-              </p>
-              <TooltipProvider delayDuration={200}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex items-center gap-1.5 h-6 pl-1 pr-2 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] cursor-help">
-                      {(() => {
-                        const baseFlag = getFlagUrl(BASE_CURRENCY);
-                        return baseFlag ? (
-                          <img src={baseFlag} alt={BASE_CURRENCY} className="w-4 h-[11px] rounded-[1px] object-cover shrink-0" />
-                        ) : null;
-                      })()}
-                      <span className="text-[10.5px] text-[#64748B]" style={{ fontWeight: 500 }}>Rates quoted against</span>
-                      <span className="text-[10.5px] text-[#0F172A]" style={{ fontWeight: 700 }}>{BASE_CURRENCY}</span>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-[260px] text-[11.5px]">
-                    All exchange rates are quoted against {BASE_CURRENCY} ({BASE_CURRENCY_NAME}), your workspace base currency. Change the base currency in Settings.
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+              Manage all exchange rates for your company.
+            </p>
           </div>
 
           {/* Tab Bar */}
@@ -1418,6 +1397,23 @@ export function ExchangeRateLibraryPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
+                      {paged.length > 0 && (() => {
+                        const baseFlag = getFlagUrl(BASE_CURRENCY);
+                        const colSpan = visibleColumns.length + (activeTab === "standard" ? 3 : 2);
+                        return (
+                          <TableRow className="hover:bg-transparent" style={{ backgroundColor: "#fffbf2" }}>
+                            <TableCell colSpan={colSpan} className="!py-2.5 !px-4" style={{ borderLeft: "3px solid #e65100" }}>
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                {baseFlag && <img src={baseFlag} alt={BASE_CURRENCY} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" />}
+                                <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary shrink-0" style={{ fontWeight: 600 }}>{BASE_CURRENCY}</span>
+                                <span className="text-[13px] text-[#0F172A]" style={{ fontWeight: 500 }}>{BASE_CURRENCY_NAME}</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" style={{ fontWeight: 600, color: "#92400E", backgroundColor: "#FEF3C7" }}>Base</span>
+                                <span className="text-[11.5px] text-muted-foreground" style={{ fontWeight: 500 }}>All exchange rates below are quoted against this currency.</span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })()}
                       {paged.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={visibleColumns.length + (activeTab === "standard" ? 3 : 2)} className="text-center py-16 text-muted-foreground">
