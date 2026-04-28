@@ -35,6 +35,14 @@ interface PDFPreviewModalProps {
     status: string;
   };
   mode?: 'download' | 'print';
+  /** Customer's quote currency. Drives the FX header/footer + dual-column option. */
+  customerCurrency?: string;
+  /** Customer→base rate locked at quote send time. Used when rendering both currencies. */
+  quoteLockedRate?: number;
+  /** Active rate book at lock time. */
+  rateType?: 'market' | 'corporate';
+  /** ISO date the rate was locked (defaults to today). */
+  lockedAt?: string;
 }
 
 // ── Toggle component ──
@@ -79,7 +87,7 @@ const DUMMY_ATTACHMENTS = [
   { name: 'Infrastructure_Diagram.png', size: '1.1 MB' },
 ];
 
-export function PDFPreviewModal({ isOpen, onClose, quoteNumber = 'Q-2026-0142', customerName = 'Tri-County EMS Authority', contactName = 'Karen Rodriguez', mode = 'download' }: PDFPreviewModalProps) {
+export function PDFPreviewModal({ isOpen, onClose, quoteNumber = 'Q-2026-0142', customerName = 'Tri-County EMS Authority', contactName = 'Karen Rodriguez', mode = 'download', customerCurrency, quoteLockedRate, rateType = 'market', lockedAt }: PDFPreviewModalProps) {
   // Clean defaults: no rules/adjustments/payment charges shown
   const [config, setConfig] = useState<VisibilityConfig>({
     companyLogo: true,
@@ -94,6 +102,24 @@ export function PDFPreviewModal({ isOpen, onClose, quoteNumber = 'Q-2026-0142', 
     notes: true,
     termsAndConditions: true,
   });
+
+  // ── FX-specific print/export options ────────────────────────────────
+  // When the customer settles in PKR the toggle group is hidden because
+  // there's nothing to convert; everything renders in base.
+  const fxAvailable = !!customerCurrency && customerCurrency.toUpperCase() !== 'PKR';
+  const [showCurrencyConversion, setShowCurrencyConversion] = useState(true);
+  const [includeRateSource, setIncludeRateSource] = useState(true);
+  const [printIn, setPrintIn] = useState<'customer' | 'base' | 'both'>('both');
+  const customerSym = (() => {
+    const map: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', AED: 'د.إ', CAD: 'C$', AUD: 'A$', JPY: '¥', INR: '₹', SAR: '﷼' };
+    return customerCurrency ? (map[customerCurrency.toUpperCase()] ?? customerCurrency.toUpperCase()) : '$';
+  })();
+  const lockedAtDisplay = (() => {
+    const d = lockedAt ? new Date(lockedAt) : new Date();
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+  })();
+  const rateTypeLabel = rateType === 'market' ? 'Mid-market' : 'Corporate';
 
   const [pricingExpanded, setPricingExpanded] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -240,6 +266,68 @@ export function PDFPreviewModal({ isOpen, onClose, quoteNumber = 'Q-2026-0142', 
                   checked={config.companyLogo}
                   onChange={val => updateConfig('companyLogo', val)}
                 />
+
+                {/* ─ Currency & FX (only when customer settles in non-PKR) ─ */}
+                {fxAvailable && (
+                  <>
+                    <SettingRow
+                      icon={<span style={{ fontSize: '11px', fontWeight: 700, color: '#7c3aed', lineHeight: '1' }}>$₨</span>}
+                      iconBg="#F5F3FF"
+                      title="Show currency conversion details"
+                      desc="Render the customer-currency total alongside the base equivalent at the top of the quote."
+                      checked={showCurrencyConversion}
+                      onChange={setShowCurrencyConversion}
+                    />
+                    <SettingRow
+                      icon={<span style={{ fontSize: '11px', fontWeight: 700, color: '#0891B2', lineHeight: '1' }}>R</span>}
+                      iconBg="#ECFEFF"
+                      title="Include rate source & timestamp"
+                      desc="Print the rate book name and the date it was locked in the footer."
+                      checked={includeRateSource}
+                      onChange={setIncludeRateSource}
+                    />
+                    {/* Print-In radio group */}
+                    <div style={{ borderBottom: '1px solid #F3F4F6', padding: '12px 20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                        <div style={{ width: '26px', height: '26px', borderRadius: '6px', backgroundColor: '#FFFBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#92400E', lineHeight: '1' }}>$</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '12px', fontWeight: 600, color: '#1F2937', lineHeight: '1', marginBottom: '2px' }}>
+                            Print in
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1.3' }}>
+                            Which currency should the printed totals lead with.
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 4, paddingLeft: 36 }}>
+                        {(['customer', 'base', 'both'] as const).map((opt) => {
+                          const selected = printIn === opt;
+                          const label = opt === 'customer'
+                            ? `${customerSym} ${customerCurrency!.toUpperCase()}`
+                            : opt === 'base' ? '₨ PKR' : 'Both';
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => setPrintIn(opt)}
+                              style={{
+                                padding: '4px 10px', borderRadius: 999, fontSize: 10, fontWeight: 600, lineHeight: '1',
+                                border: selected ? '1px solid #1B6EF3' : '1px solid #E5E7EB',
+                                backgroundColor: selected ? '#EDF4FF' : '#FFFFFF',
+                                color: selected ? '#1B6EF3' : '#6B7280',
+                                cursor: 'pointer', fontFamily: 'Inter, system-ui, sans-serif',
+                              }}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {/* ─ Pricing Rules ─ */}
                 <div style={{ borderBottom: '1px solid #F3F4F6' }}>
@@ -390,6 +478,46 @@ export function PDFPreviewModal({ isOpen, onClose, quoteNumber = 'Q-2026-0142', 
                 fontFamily: 'Inter, system-ui, sans-serif',
                 alignSelf: 'flex-start',
               }}>
+
+                {/* ─ FX Header banner (shown when customer settles in non-PKR) ─ */}
+                {fxAvailable && showCurrencyConversion && (() => {
+                  const lr = quoteLockedRate ?? 0;
+                  const baseTotalFmt = grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                  const customerTotalFmt = lr ? (grandTotal / lr).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+                  return (
+                    <div style={{
+                      marginBottom: '14px', padding: '10px 12px',
+                      borderRadius: '6px',
+                      backgroundColor: '#F8FAFF',
+                      border: '1px solid #E0E7FF',
+                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px',
+                    }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '8px', fontWeight: 700, color: '#3730A3', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Quote total</span>
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#1F2937', fontVariantNumeric: 'tabular-nums', lineHeight: '1.2' }}>
+                          {(printIn === 'customer' || printIn === 'both') && (
+                            <>{customerSym} {customerTotalFmt} {customerCurrency!.toUpperCase()}</>
+                          )}
+                          {printIn === 'both' && (
+                            <span style={{ color: '#6B7280', fontWeight: 500, fontSize: '11px' }}> · </span>
+                          )}
+                          {(printIn === 'base' || printIn === 'both') && (
+                            <>₨ {baseTotalFmt} PKR</>
+                          )}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
+                        <span style={{ fontSize: '8px', fontWeight: 700, color: '#3730A3', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Exchange rate</span>
+                        <span style={{ fontSize: '10px', color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                          1 {customerCurrency!.toUpperCase()} = ₨ {(lr || 0).toFixed(2)} PKR
+                        </span>
+                        <span style={{ fontSize: '9px', color: '#6B7280' }}>
+                          {rateTypeLabel}{lockedAtDisplay ? ` · locked on ${lockedAtDisplay}` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* ─ Company header ─ */}
                 {config.companyLogo && (
@@ -542,6 +670,26 @@ export function PDFPreviewModal({ isOpen, onClose, quoteNumber = 'Q-2026-0142', 
                       1. Payment is due within 30 days of invoice date. 2. Late payments are subject to a 1.5% monthly finance charge.
                       3. All prices are in USD unless otherwise noted. 4. This quote does not constitute a binding agreement until signed by both parties.
                       5. Pricing may be adjusted with 15 days written notice. 6. Subject to final verification at time of order conversion.
+                    </div>
+                  </div>
+                )}
+
+                {/* ─ FX footer disclaimer (rate source + lock timestamp + advisory) ─ */}
+                {fxAvailable && (showCurrencyConversion || includeRateSource) && (
+                  <div style={{
+                    marginTop: '20px', padding: '8px 12px',
+                    borderRadius: '4px', backgroundColor: '#FAFBFC', border: '1px solid #F3F4F6',
+                    display: 'flex', flexDirection: 'column', gap: 3,
+                  }}>
+                    {includeRateSource && (
+                      <div style={{ fontSize: '8.5px', color: '#6B7280', lineHeight: '1.5', fontVariantNumeric: 'tabular-nums' }}>
+                        <span style={{ fontWeight: 600 }}>Rate source:</span>{' '}
+                        {rateType === 'market' ? 'Open Exchange Rates (Mid-market)' : 'Corporate Treasury (Q1 FY26)'}
+                        {lockedAtDisplay && <> · Locked on {lockedAtDisplay}</>}
+                      </div>
+                    )}
+                    <div style={{ fontSize: '8px', color: '#9CA3AF', fontStyle: 'italic', lineHeight: '1.5' }}>
+                      Amounts reflect the exchange rate locked at quote creation.
                     </div>
                   </div>
                 )}

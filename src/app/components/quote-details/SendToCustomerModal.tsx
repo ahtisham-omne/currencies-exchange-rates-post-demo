@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Send, X, Mail, Check, Settings2, Loader2,
-  Printer, ChevronLeft, ChevronRight, EyeOff,
+  Printer, ChevronLeft, ChevronRight, EyeOff, Lock,
 } from 'lucide-react';
 
 /* ── Visibility options ── */
@@ -64,6 +64,12 @@ interface SendToCustomerModalProps {
   mode?: SendModalMode;
   onClose: () => void;
   onSend: () => void;
+  /** Customer's quote currency. Drives the rate-lock confirmation banner. Hidden when customer settles in PKR. */
+  customerCurrency?: string;
+  /** Live customer→base rate that will be frozen on send. */
+  quoteLiveRate?: number;
+  /** Active rate book at send time. */
+  rateType?: 'market' | 'corporate';
 }
 
 /* ── Styling tokens ── */
@@ -71,7 +77,13 @@ const caption: React.CSSProperties = { fontSize: 12, fontWeight: 500 };
 const captionSemi: React.CSSProperties = { fontSize: 12, fontWeight: 600 };
 const micro: React.CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const };
 
-export function SendToCustomerModal({ isOpen, quoteNumber = 'Q-000-000-000', customerName, isResend, mode = 'send', onClose, onSend }: SendToCustomerModalProps) {
+export function SendToCustomerModal({ isOpen, quoteNumber = 'Q-000-000-000', customerName, isResend, mode = 'send', onClose, onSend, customerCurrency, quoteLiveRate, rateType = 'market' }: SendToCustomerModalProps) {
+  const showRateLockNotice = !!customerCurrency && customerCurrency.toUpperCase() !== 'PKR' && !!quoteLiveRate && mode === 'send';
+  const rateTypeLabel = rateType === 'market' ? 'Mid-market' : 'Corporate';
+  const rateTypeHex = rateType === 'market' ? '#7c3aed' : '#d97706';
+  const rateTypeBg = rateType === 'market'
+    ? 'color-mix(in srgb, #7c3aed 8%, transparent)'
+    : 'color-mix(in srgb, #d97706 10%, transparent)';
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
@@ -291,6 +303,43 @@ export function SendToCustomerModal({ isOpen, quoteNumber = 'Q-000-000-000', cus
             </div>
           </div>
         </div>
+
+        {/* ── Rate-lock confirmation banner (Send only) ── */}
+        {showRateLockNotice && (
+          <div
+            className="border-t border-border"
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#FFFBEB',
+              borderTop: '1px solid #FDE68A',
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+            }}
+          >
+            <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: '#92400E' }} />
+            <div className="flex flex-col gap-0.5">
+              <div className="text-[12.5px] text-[#78350F]" style={{ fontWeight: 600 }}>
+                Sending will lock the current exchange rate
+              </div>
+              <div className="text-[11.5px] text-[#92400E] tabular-nums" style={{ lineHeight: 1.5 }}>
+                <span style={{ fontWeight: 600 }}>1 {customerCurrency!.toUpperCase()} = ₨ {quoteLiveRate!.toFixed(2)} PKR</span>
+                <span
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8,
+                    padding: '0 6px', borderRadius: 999,
+                    backgroundColor: rateTypeBg, color: rateTypeHex,
+                    fontSize: 10, fontWeight: 600,
+                  }}
+                >
+                  <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: rateTypeHex }} />
+                  {rateTypeLabel}
+                </span>
+                <span style={{ marginLeft: 6, color: '#92400E' }}>
+                  · Once sent, this rate is preserved across the quote, its versions, and any linked transactions.
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Footer ── */}
         <div className="flex items-center justify-between border-t border-border" style={{ padding: '12px 20px' }}>

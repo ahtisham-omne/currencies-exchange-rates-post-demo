@@ -1405,6 +1405,10 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
             status: quoteStatus
           }}
           mode="download"
+          customerCurrency={currencyConfig.currency}
+          quoteLockedRate={278}
+          rateType="market"
+          lockedAt={initialCreatedDate}
         />
       )}
       {showPrintModal && (
@@ -1422,6 +1426,10 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
             status: quoteStatus
           }}
           mode="print"
+          customerCurrency={currencyConfig.currency}
+          quoteLockedRate={278}
+          rateType="market"
+          lockedAt={initialCreatedDate}
         />
       )}
       <QuoteCurrencyConfigModal
@@ -1783,6 +1791,9 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
         quoteNumber={quoteNumber}
         customerName={customerName}
         isResend={isSendResend}
+        customerCurrency={currencyConfig.currency}
+        quoteLiveRate={278}
+        rateType="market"
         onClose={() => setShowSendToCustomer(false)}
         onSend={() => {
           setShowSendToCustomer(false);
