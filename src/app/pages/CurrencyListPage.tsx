@@ -124,7 +124,7 @@ const COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align
   { key: "symbol", label: "Symbol", minWidth: "100px" },
   { key: "decimalPlaces", label: "Decimals", minWidth: "120px", sortable: true },
   { key: "country", label: "Country / Region", minWidth: "220px", sortable: true },
-  { key: "inUse", label: "In Use", minWidth: "140px", sortable: true },
+  { key: "inUse", label: "Linked Transactions", minWidth: "200px", sortable: true },
   { key: "status", label: "Status", minWidth: "130px", sortable: true },
   { key: "numericCode", label: "Numeric Code", minWidth: "160px", sortable: true },
 ];
