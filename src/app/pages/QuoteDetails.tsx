@@ -2,7 +2,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, Package, ArrowUpRight, Zap, Pencil, Paperclip, MessageSquare, GitBranch, Copy, Archive, X, Download, FileText, Printer, CheckCircle2, Clock, AlertTriangle, Link2, Ban, MoreHorizontal, Receipt } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Package, ArrowUpRight, Zap, Pencil, Paperclip, MessageSquare, GitBranch, Copy, Archive, X, Download, FileText, Printer, CheckCircle2, Clock, AlertTriangle, Link2, Ban, MoreHorizontal, Receipt, Settings2 } from 'lucide-react';
+import { QuoteCurrencyConfigModal, type QuoteCurrencyConfig } from '../components/currency/QuoteCurrencyConfigModal';
+import { QuoteMoney } from '../components/currency/QuoteMoney';
+import { BASE_CURRENCY, getLibraryCurrency } from '../data/currencyLibrary';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { QuoteLifecycleStatus, ModernStatusStepper, getStepperBackground } from '../components/quote-details/ModernStatusStepper';
@@ -99,6 +102,20 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   const [showConvertToSOModal, setShowConvertToSOModal] = useState(false);
   const [showSendToCustomer, setShowSendToCustomer] = useState(false);
   const [isSendResend, setIsSendResend] = useState(false);
+  const [showCurrencyConfig, setShowCurrencyConfig] = useState(false);
+  // Quote-level FX configuration. The customer's primary currency persists
+  // separately from the quote's per-instance currency so the configurator can
+  // offer a proper Reset-to-default and surface "Custom for this quote" hints.
+  const customerDefaultCurrency = (quote?.customerCurrency || BASE_CURRENCY).toUpperCase();
+  const [currencyConfig, setCurrencyConfig] = useState<QuoteCurrencyConfig>({
+    currency: customerDefaultCurrency,
+    settlementCurrency: BASE_CURRENCY,
+  });
+  // Page-level Base ↔ Customer view toggle. `base` shows PKR with customer
+  // hover everywhere; `customer` flips every cell to the customer currency
+  // with PKR hover. Toggle is suppressed when the customer settles in PKR.
+  const [quoteViewMode, setQuoteViewMode] = useState<'base' | 'customer'>('base');
+  const customerCurrencyIsBase = currencyConfig.currency.toUpperCase() === BASE_CURRENCY;
   
   // Status transition overlay state
   const [transitionOverlay, setTransitionOverlay] = useState<{
@@ -675,10 +692,46 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
 
                     {/* Right: Action buttons + separator + CTA */}
                     <div className="flex items-center shrink-0 gap-1.5">
+                      {/* Global Base ↔ Customer view toggle. Hidden when
+                          customer settles in PKR (no foreign currency to flip). */}
+                      {!isNarrow && !customerCurrencyIsBase && (() => {
+                        const cur = getLibraryCurrency(currencyConfig.currency);
+                        const sym = cur?.symbol ?? currencyConfig.currency;
+                        return (
+                          <div className="inline-flex items-center h-8 rounded-lg border border-border bg-white p-0.5 shrink-0 mr-1">
+                            <button
+                              type="button"
+                              onClick={() => setQuoteViewMode('base')}
+                              aria-pressed={quoteViewMode === 'base'}
+                              className={`inline-flex items-center h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                                quoteViewMode === 'base' ? 'bg-[#EDF4FF] text-primary' : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                              style={{ fontWeight: quoteViewMode === 'base' ? 600 : 500 }}
+                              title={`Show all amounts in ${BASE_CURRENCY} (base) with customer-currency hover`}
+                            >
+                              ₨ {BASE_CURRENCY}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setQuoteViewMode('customer')}
+                              aria-pressed={quoteViewMode === 'customer'}
+                              className={`inline-flex items-center h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                                quoteViewMode === 'customer' ? 'bg-[#EDF4FF] text-primary' : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                              style={{ fontWeight: quoteViewMode === 'customer' ? 600 : 500 }}
+                              title={`Show all amounts in ${currencyConfig.currency} with PKR hover`}
+                            >
+                              {sym} {currencyConfig.currency}
+                            </button>
+                          </div>
+                        );
+                      })()}
+
                       {/* Icon action buttons — SO-style with CSS vars */}
                       {!isNarrow && (
                         <>
                           {([
+                            { icon: Settings2, onClick: () => setShowCurrencyConfig(true), destructive: false, label: 'Currency' },
                             { icon: Printer, onClick: () => setShowPrintModal(true), destructive: false, label: 'Print' },
                             { icon: Download, onClick: () => setShowPDFVisibilityModal(true), destructive: false, label: 'Download' },
                             { icon: Copy, onClick: () => setShowDuplicateModal(true), destructive: false, label: 'Duplicate Quote' },
@@ -882,10 +935,11 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                         </span>
                         <div style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: 'color-mix(in srgb, var(--muted-foreground) 25%, transparent)', flexShrink: 0 }} />
                         <span style={{ fontSize: 13, fontWeight: 600, color: isClosed ? 'color-mix(in srgb, var(--muted-foreground) 75%, transparent)' : 'var(--foreground)', lineHeight: 1.3 }}>
-                          {(() => {
-                            const totalValue = (quote?.total || quote?.subtotal || 87000);
-                            return totalValue >= 100000 ? `$${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(totalValue).toLowerCase()}` : `$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                          })()}
+                          <QuoteMoney
+                            valuePKR={quote?.total || quote?.subtotal || quote?.totalValue || 87000}
+                            customerCurrency={currencyConfig.currency}
+                            view={quoteViewMode}
+                          />
                         </span>
                       </div>
                     </div>
@@ -1261,13 +1315,13 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.15, ease: 'easeOut' }}
                 >
-                  {activeTab === 'items' && <ItemsTabTableClean quoteStatus={quoteStatus} quoteId={propQuoteId} readOnly={isFullyReadOnly} onMaterialChange={handleMaterialChange} />}
+                  {activeTab === 'items' && <ItemsTabTableClean quoteStatus={quoteStatus} quoteId={propQuoteId} readOnly={isFullyReadOnly} customerCurrency={currencyConfig.currency} viewMode={quoteViewMode} onMaterialChange={handleMaterialChange} />}
                   {activeTab === 'overview' && <OverviewTab quoteNumber={quoteNumber} customerName={customerName} contactName={contactName} readOnly={isFullyReadOnly} tags={quoteTags} priority={quotePriority} winProbability={quoteWinProbability} salesRep={quoteSalesRep} onNonMaterialChange={handleNonMaterialChange} />}
                   {activeTab === 'invoicing' && <ComingSoonTab title="Invoicing" description="Invoice generation, tracking, payment status, and billing history will be available here." />}
                   {activeTab === 'linked_transactions' && <LinkedTransactionsTab quoteNumber={quoteNumber} customerName={customerName} readOnly={isFullyReadOnly} onAskUserChange={handleAskUserChange} />}
-                  {activeTab === 'transactions' && <TransactionsTab quoteNumber={quoteNumber} customerName={customerName} readOnly={isFullyReadOnly} />}
+                  {activeTab === 'transactions' && <TransactionsTab quoteNumber={quoteNumber} customerName={customerName} readOnly={isFullyReadOnly} customerCurrency={currencyConfig.currency} quoteLockedRate={278} quoteRateType="market" />}
                   {activeTab === 'communications' && <ComingSoonTab title="Communications" description="Threaded messages, email integration, and customer correspondence will be available here." />}
-                  {activeTab === 'version_history' && <VersionHistoryTab quoteNumber={quoteNumber} customerName={customerName} />}
+                  {activeTab === 'version_history' && <VersionHistoryTab quoteNumber={quoteNumber} customerName={customerName} customerCurrency={currencyConfig.currency} />}
                   {activeTab === 'activity' && <ComingSoonTab title="Activity Log" description="A full audit trail of changes, status transitions, and user actions will appear here." />}
                 </motion.div>
               </AnimatePresence>
@@ -1290,6 +1344,10 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                 quoteId={propQuoteId}
                 readOnly={isFullyReadOnly}
                 salesRep={quoteSalesRep}
+                customerCurrency={currencyConfig.currency}
+                settlementCurrency={currencyConfig.settlementCurrency}
+                viewMode={quoteViewMode}
+                onOpenCurrencyConfig={() => setShowCurrencyConfig(true)}
                 onMaterialChange={handleMaterialChange}
                 onNonMaterialChange={handleNonMaterialChange}
                 onAskUserChange={handleAskUserChange}
@@ -1308,7 +1366,13 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
           onClose={() => setShowDuplicateModal(false)}
           quoteNumber={quoteNumber}
           currentCustomer={customerName}
-          onConfirm={(customerId, custName) => {
+          quoteCurrency={currencyConfig.currency}
+          quoteLockedRate={278}
+          onChangeCurrencyPair={() => {
+            setShowDuplicateModal(false);
+            setShowCurrencyConfig(true);
+          }}
+          onConfirm={(customerId, custName, _rateOption) => {
             setShowDuplicateModal(false);
             setActionOverlay({
               config: {
@@ -1360,6 +1424,16 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
           mode="print"
         />
       )}
+      <QuoteCurrencyConfigModal
+        open={showCurrencyConfig}
+        onOpenChange={setShowCurrencyConfig}
+        customerDefaultCurrency={customerDefaultCurrency}
+        config={currencyConfig}
+        // Once a quote leaves Draft → it's "sent": rate locks per business rules.
+        locked={quoteStatus !== 'draft'}
+        lockedAt={initialCreatedDate}
+        onSave={(next) => setCurrencyConfig(next)}
+      />
       {showConvertToSOModal && (
         <ConvertToSOModal
           isOpen={showConvertToSOModal}

@@ -25,6 +25,10 @@ import { RecipientsSelectionModal } from '../quote-creation/RecipientsSelectionM
 import { LocationSelectionModal } from '../quote-creation/LocationSelectionModal';
 import { SearchOverlay } from '../quote-creation/SearchOverlay';
 import { MOCK_CUSTOMERS, MOCK_CONTACTS } from '../quote-creation/Step1CustomerSelection';
+import { QuoteMoney } from '../currency/QuoteMoney';
+import { BASE_CURRENCY, convertBetween, getLibraryCurrency, rateTypeLabel } from '../../data/currencyLibrary';
+import { useRateContext } from '../../context/RateContext';
+import { Lock as LockIcon, Settings2 as Settings2Icon } from 'lucide-react';
 import { QuoteLifecycleStatus } from './ModernStatusStepper';
 import { ManageAdjustmentsModal, AddQuoteLevelAdjustmentModal } from './ManageAdjustmentsModal';
 import { PricingRulesManageModal } from './PricingRulesManageModal';
@@ -323,6 +327,14 @@ interface RightSidebarProps {
   contactName?: string;
   quoteId?: string;
   salesRep?: string;
+  /** Customer's quote currency (ISO 4217). Drives the Currency block + Money cells. */
+  customerCurrency?: string;
+  /** Currency we settle into our books. Defaults to base when omitted. */
+  settlementCurrency?: string;
+  /** Page-level Base ↔ Customer view-mode toggle. */
+  viewMode?: 'base' | 'customer';
+  /** Wired from QuoteDetails — opens the Currency Configurator modal. */
+  onOpenCurrencyConfig?: () => void;
   /** Called when a material field changes (customer, ship to, bill to, expiry, payment terms) */
   onMaterialChange?: (fieldKey: string, fieldLabel: string, oldValue?: string, newValue?: string) => void;
   /** Called when a non-material field changes (sales rep, payment method, contact) */
@@ -347,6 +359,10 @@ export function RightSidebar({
   customerName: propCustomerName = 'Unknown Customer',
   contactName: propContactName = 'Unknown Contact',
   salesRep: _propSalesRep,
+  customerCurrency,
+  settlementCurrency,
+  viewMode = 'base',
+  onOpenCurrencyConfig,
   onMaterialChange,
   onNonMaterialChange,
   onAskUserChange,
@@ -749,8 +765,27 @@ export function RightSidebar({
               fontSize: '12px', fontWeight: 700, flexShrink: 0,
             }}>{customerInitials}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#1F2937', lineHeight: '1.2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {customerName}
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#1F2937', lineHeight: '1.2', display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{customerName}</span>
+                {customerCurrency && (() => {
+                  const cur = getLibraryCurrency(customerCurrency);
+                  const sym = cur?.symbol ?? customerCurrency;
+                  return (
+                    <span
+                      title={`Customer's primary currency · ${cur?.name ?? customerCurrency}`}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '3px',
+                        padding: '1px 6px', borderRadius: '999px',
+                        backgroundColor: '#F1F5F9', color: '#475569',
+                        fontSize: '10px', fontWeight: 600, flexShrink: 0,
+                        cursor: 'help',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {sym} {customerCurrency.toUpperCase()}
+                    </span>
+                  );
+                })()}
               </div>
               <div style={{ fontSize: '11px', color: '#9CA3AF', lineHeight: '1', marginTop: '3px' }}>Customer</div>
             </div>
@@ -995,6 +1030,15 @@ export function RightSidebar({
         <SectionHeader icon={DollarSign} label="Quote Summary" collapsed={quoteSummaryCollapsed} onToggle={() => setQuoteSummaryCollapsed(!quoteSummaryCollapsed)} />
 
         {!quoteSummaryCollapsed && <><div style={{ borderTop: '1px solid var(--border)' }} /><div style={{ display: 'flex', flexDirection: 'column', padding: '0 0 12px' }}>
+          {/* Currency block — what customer pays in / billed in / base equivalent + rate type. */}
+          <CurrencySummaryBlock
+            customerCurrency={customerCurrency}
+            settlementCurrency={settlementCurrency}
+            quoteStatus={quoteStatus}
+            createdDate={propCreatedDate}
+            onOpenCurrencyConfig={onOpenCurrencyConfig}
+          />
+
           {/* Subtotal */}
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -1004,7 +1048,9 @@ export function RightSidebar({
             <span style={{ fontSize: '13px', color: '#1F2937', fontWeight: 500, lineHeight: '1' }}>
               Subtotal <span style={{ fontWeight: 400, color: '#9CA3AF' }}>(5 items)</span>
             </span>
-            <span style={{ fontSize: '13px', color: '#1F2937', fontWeight: 600, lineHeight: '1' }}>{fmtCurrency(subtotal)}</span>
+            <span style={{ fontSize: '13px', color: '#1F2937', fontWeight: 600, lineHeight: '1' }}>
+              <QuoteMoney valuePKR={subtotal} customerCurrency={customerCurrency} view={viewMode} />
+            </span>
           </div>
 
           {/* Pricing Rules Applied sub-section */}
@@ -1018,7 +1064,8 @@ export function RightSidebar({
                 Pricing Rules Applied
               </span>
               <span style={{ fontSize: '13px', color: pricingRulesNet >= 0 ? '#DC2626' : '#059669', fontWeight: 500, lineHeight: '1' }}>
-                {pricingRulesNet >= 0 ? '+' : '-'}{fmtCurrency(Math.abs(pricingRulesNet))}
+                <span style={{ marginRight: 2 }}>{pricingRulesNet >= 0 ? '+' : '-'}</span>
+                <QuoteMoney valuePKR={Math.abs(pricingRulesNet)} customerCurrency={customerCurrency} view={viewMode} />
               </span>
             </div>
             {hasPricingRules ? (
@@ -1053,7 +1100,8 @@ export function RightSidebar({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '13px', color: '#6B7280', fontWeight: 400, lineHeight: '1' }}>One-Time Discounts/Premiums</span>
               <span style={{ fontSize: '13px', color: adjustmentNet > 0 ? '#DC2626' : adjustmentNet < 0 ? '#059669' : '#6B7280', fontWeight: 500, lineHeight: '1' }}>
-                {adjustmentNet > 0 ? '+' : adjustmentNet < 0 ? '-' : ''}{fmtCurrency(Math.abs(adjustmentNet))}
+                <span style={{ marginRight: 2 }}>{adjustmentNet > 0 ? '+' : adjustmentNet < 0 ? '-' : ''}</span>
+                <QuoteMoney valuePKR={Math.abs(adjustmentNet)} customerCurrency={customerCurrency} view={viewMode} />
               </span>
             </div>
             {hasAdjustments ? (
@@ -1091,7 +1139,9 @@ export function RightSidebar({
             borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: '#E5E7EB',
           }}>
             <span style={{ fontSize: '14px', color: '#1F2937', fontWeight: 600, lineHeight: '1' }}>Grand Total</span>
-            <span style={{ fontSize: '16px', color: '#1F2937', fontWeight: 700, lineHeight: '1' }}>{fmtCurrency(liveGrandTotal)}</span>
+            <span style={{ fontSize: '16px', color: '#1F2937', fontWeight: 700, lineHeight: '1' }}>
+              <QuoteMoney valuePKR={liveGrandTotal} customerCurrency={customerCurrency} view={viewMode} />
+            </span>
           </div>
         </div></>}
       </div>
@@ -1597,6 +1647,154 @@ export function RightSidebar({
             </div>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ─── Currency Summary Block ──────────────────────────────────────────────────
+// Shows what the customer pays in, what they're billed in (settlement), the
+// base equivalent rate, the active rate type, a lock chip when sent, and a
+// "View configuration" link that reopens the Currency Configurator.
+function CurrencySummaryBlock({
+  customerCurrency,
+  settlementCurrency,
+  quoteStatus,
+  createdDate,
+  onOpenCurrencyConfig,
+}: {
+  customerCurrency?: string;
+  settlementCurrency?: string;
+  quoteStatus?: QuoteLifecycleStatus;
+  createdDate?: Date;
+  onOpenCurrencyConfig?: () => void;
+}) {
+  const { rateType, snapshot } = useRateContext();
+  const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
+  const cur = (customerCurrency || BASE_CURRENCY).toUpperCase();
+  const settlement = (settlementCurrency || BASE_CURRENCY).toUpperCase();
+  const customerCur = getLibraryCurrency(cur);
+  const settlementCur = getLibraryCurrency(settlement);
+  const customerSym = customerCur?.symbol ?? cur;
+  const settlementSym = settlementCur?.symbol ?? settlement;
+
+  const customerIsBase = cur === BASE_CURRENCY;
+  const settlementIsBase = settlement === BASE_CURRENCY;
+  const isLocked = quoteStatus !== 'draft';
+  const lockedAtText = createdDate
+    ? createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
+
+  const typeHex = rateType === 'market' ? '#7c3aed' : '#d97706';
+  const typeBg = rateType === 'market'
+    ? 'color-mix(in srgb, #7c3aed 8%, transparent)'
+    : 'color-mix(in srgb, #d97706 10%, transparent)';
+
+  // Skip the block entirely when everything is base — no FX context to show.
+  if (customerIsBase && settlementIsBase) return null;
+
+  const customerToBase = customerIsBase ? 1 : convertBetween(1, cur, BASE_CURRENCY);
+
+  return (
+    <div style={{
+      padding: '10px 0 10px',
+      borderBottomWidth: '1px',
+      borderBottomStyle: 'dashed',
+      borderBottomColor: '#E5E7EB',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 6,
+    }}>
+      {/* Header: section label + rate-type badge + lock chip */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+        <span style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+          Currency
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            title={rateType === 'market'
+              ? `Mid-market rates from ${snapshot.source}.`
+              : `Treasury-locked corporate rates from ${snapshot.source}.`}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              padding: '1px 6px', borderRadius: 999,
+              backgroundColor: typeBg, color: typeHex,
+              fontSize: 10, fontWeight: 600, cursor: 'help',
+            }}
+          >
+            <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: typeHex }} />
+            {rateTypeLabel(rateType)}
+          </span>
+          {isLocked && (
+            <span
+              title={lockedAtText ? `Rate locked when sent on ${lockedAtText}` : 'Rate locked'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: '1px 6px', borderRadius: 999,
+                backgroundColor: '#ECFDF5', color: '#047857',
+                border: '1px solid #A7F3D0',
+                fontSize: 10, fontWeight: 600, cursor: 'help',
+              }}
+            >
+              <LockIcon style={{ width: 9, height: 9 }} />
+              Locked
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {!customerIsBase && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+            <span style={{ color: '#6B7280' }}>Customer pays in</span>
+            <span style={{ color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+              {customerSym} {cur}
+            </span>
+          </div>
+        )}
+        {!settlementIsBase && settlement !== cur && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+            <span style={{ color: '#6B7280' }}>Customer billed in</span>
+            <span style={{ color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+              {settlementSym} {settlement}
+            </span>
+          </div>
+        )}
+        {!customerIsBase && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+            <span style={{ color: '#6B7280' }}>Base equivalent</span>
+            <span style={{ color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+              {baseSym} {BASE_CURRENCY}
+            </span>
+          </div>
+        )}
+        {/* Rate line */}
+        {!customerIsBase && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9CA3AF', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
+            <span>Rate</span>
+            <span>1 {cur} = {baseSym} {customerToBase.toFixed(2)} {BASE_CURRENCY}</span>
+          </div>
+        )}
+      </div>
+
+      {/* View configuration link */}
+      {onOpenCurrencyConfig && (
+        <button
+          type="button"
+          onClick={onOpenCurrencyConfig}
+          style={{
+            alignSelf: 'flex-end',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: 0, border: 'none', background: 'transparent',
+            fontSize: 11, color: '#6B7280', cursor: 'pointer', fontWeight: 500,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = '#1B6EF3'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = '#6B7280'; }}
+        >
+          <Settings2Icon style={{ width: 11, height: 11 }} />
+          View configuration
+        </button>
       )}
     </div>
   );

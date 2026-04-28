@@ -1,9 +1,31 @@
-import { formatCurrency } from '@/app/utils/quoteUtils';
 import { QuoteDraft } from '@/app/components/CreateQuoteModal';
 import { Building2, User, Package, DollarSign } from 'lucide-react';
+import { CurrencyAmount } from '@/app/components/ui/CurrencyAmount';
+import { BASE_CURRENCY, convertBetween } from '@/app/data/currencyLibrary';
 
 interface QuoteSummaryPanelProps {
   quoteDraft: QuoteDraft;
+}
+
+/**
+ * Render a PKR amount as the canonical base value with a customer-currency
+ * hover when the quote settles in a non-PKR currency.
+ */
+function Money({ valuePKR, quote }: { valuePKR: number; quote: QuoteDraft }) {
+  const customerCur = (quote.currency ?? quote.customerDefaultCurrency ?? BASE_CURRENCY).toUpperCase();
+  const isBase = customerCur === BASE_CURRENCY;
+  if (isBase) {
+    return <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={valuePKR} />;
+  }
+  return (
+    <CurrencyAmount
+      mode="listing-base"
+      currency={BASE_CURRENCY}
+      value={valuePKR}
+      partnerDefaultCurrency={customerCur}
+      partnerDefaultValue={convertBetween(valuePKR, BASE_CURRENCY, customerCur)}
+    />
+  );
 }
 
 export function QuoteSummaryPanel({ quoteDraft }: QuoteSummaryPanelProps) {
@@ -113,9 +135,11 @@ export function QuoteSummaryPanel({ quoteDraft }: QuoteSummaryPanelProps) {
                         {item.description}
                       </div>
                       <div className="flex items-center justify-between text-[11px] text-[#6B7280]">
-                        <span>{item.quantity}x {formatCurrency(item.unitPrice)}</span>
+                        <span className="inline-flex items-center gap-1">
+                          {item.quantity}x <Money valuePKR={item.unitPrice} quote={quoteDraft} />
+                        </span>
                         <span className="font-medium text-[#1F2937]" style={{ fontWeight: 500 }}>
-                          {formatCurrency(item.total)}
+                          <Money valuePKR={item.total} quote={quoteDraft} />
                         </span>
                       </div>
                     </div>
@@ -145,31 +169,31 @@ export function QuoteSummaryPanel({ quoteDraft }: QuoteSummaryPanelProps) {
             <div className="bg-white rounded border border-[#E5E7EB] p-3 space-y-2" style={{ borderRadius: '6px' }}>
               <div className="flex items-center justify-between text-[12px]">
                 <span className="text-[#6B7280]">Subtotal</span>
-                <span className="text-[#1F2937]">{formatCurrency(subtotal)}</span>
+                <span className="text-[#1F2937]"><Money valuePKR={subtotal} quote={quoteDraft} /></span>
               </div>
-              
+
               {totalDiscount > 0 && (
                 <div className="flex items-center justify-between text-[12px]">
                   <span className="text-[#6B7280]">Discount</span>
-                  <span className="text-[#10B981]">-{formatCurrency(totalDiscount)}</span>
+                  <span className="text-[#10B981]">- <Money valuePKR={totalDiscount} quote={quoteDraft} /></span>
                 </div>
               )}
-              
+
               <div className="flex items-center justify-between text-[12px]">
                 <span className="text-[#6B7280]">Tax (10%)</span>
-                <span className="text-[#1F2937]">{formatCurrency(tax)}</span>
+                <span className="text-[#1F2937]"><Money valuePKR={tax} quote={quoteDraft} /></span>
               </div>
-              
+
               <div className="pt-2 border-t border-[#E5E7EB]">
                 <div className="flex items-center justify-between">
                   <span className="text-[13px] font-semibold text-[#1F2937]" style={{ fontWeight: 600 }}>
                     Grand Total
                   </span>
-                  <span 
-                    className="text-[16px] font-semibold text-[#1B6EF3]" 
+                  <span
+                    className="text-[16px] font-semibold text-[#1B6EF3]"
                     style={{ fontWeight: 600 }}
                   >
-                    {formatCurrency(total)}
+                    <Money valuePKR={total} quote={quoteDraft} />
                   </span>
                 </div>
               </div>

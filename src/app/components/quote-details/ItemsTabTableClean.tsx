@@ -3,6 +3,8 @@ import { Plus, Trash2, Package, ChevronDown, Copy, X, Layers } from 'lucide-reac
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { LineItemConfigModal } from '../quote-creation/LineItemConfigModal';
+import { QuoteMoney } from '../currency/QuoteMoney';
+import { BASE_CURRENCY, getLibraryCurrency } from '../../data/currencyLibrary';
 import { ProductPickerModal } from './ProductPickerModal';
 import { getCreatedQuoteLineItems, CreatedLineItem } from '../../data/quoteStore';
 import { PRODUCTS } from '../../data/products';
@@ -308,6 +310,10 @@ interface ItemRowProps {
   onDeleteRow: (itemId: string) => void;
   formatCurrency: (amount: number) => string;
   getNetAdjustmentPercent: (item: LineItem) => number | null;
+  /** Customer's quote currency (passed through for the QuoteMoney cell). */
+  customerCurrency?: string;
+  /** Page-level view-mode toggle. Forwards directly to QuoteMoney. */
+  viewMode?: 'base' | 'customer';
 }
 
 // Helper: get tracking type info for a product
@@ -343,6 +349,8 @@ function ItemRow({
   onDeleteRow,
   formatCurrency,
   getNetAdjustmentPercent,
+  customerCurrency,
+  viewMode,
 }: ItemRowProps) {
   const ref = useRef<HTMLTableRowElement>(null);
   const uomDropdownRef = useRef<HTMLDivElement>(null);
@@ -886,7 +894,7 @@ function ItemRow({
                 boxSizing: 'border-box',
               }}
             >
-              <span style={{ fontSize: '12px', color: '#9CA3AF', lineHeight: '1', flexShrink: 0 }}>$</span>
+              <span style={{ fontSize: '12px', color: '#9CA3AF', lineHeight: '1', flexShrink: 0 }}>{getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY}</span>
               <input
                 type="number"
                 defaultValue={item.unitPrice}
@@ -909,7 +917,7 @@ function ItemRow({
                 }}
               />
             </div>
-          ) : (
+          ) : showEditAffordance ? (
             <button
               onClick={() => isEditable && isEditMode && onStartEdit(item.id, 'unitPrice')}
               style={{
@@ -917,23 +925,41 @@ function ItemRow({
                 alignItems: 'center',
                 gap: '1px',
                 width: '100%',
-                height: showEditAffordance ? '30px' : 'auto',
-                padding: showEditAffordance ? '0 10px' : '0',
+                height: '30px',
+                padding: '0 10px',
                 borderRadius: '6px',
-                border: `1px solid ${showEditAffordance ? '#D1D5DB' : 'transparent'}`,
-                backgroundColor: showEditAffordance ? '#FFFFFF' : 'transparent',
-                cursor: showEditAffordance ? 'text' : 'default',
+                border: '1px solid #D1D5DB',
+                backgroundColor: '#FFFFFF',
+                cursor: 'text',
                 transition: 'all 100ms',
                 fontFamily: 'Inter, system-ui, sans-serif',
                 boxSizing: 'border-box',
               }}
-              title={showEditAffordance ? 'Click to edit price' : undefined}
+              title="Click to edit price"
             >
-              <span style={{ fontSize: '12px', color: '#9CA3AF', lineHeight: '1' }}>$</span>
               <span style={{ fontSize: '13px', fontWeight: 500, color: '#1F2937', lineHeight: '1' }}>
-                {item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                ₨ {item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
             </button>
+          ) : (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '1px',
+                width: '100%',
+                fontFamily: 'Inter, system-ui, sans-serif',
+                boxSizing: 'border-box',
+              }}
+            >
+              <span style={{ fontSize: '13px', fontWeight: 500, color: '#1F2937', lineHeight: '1' }}>
+                <QuoteMoney
+                  valuePKR={item.unitPrice}
+                  customerCurrency={customerCurrency}
+                  view={viewMode}
+                />
+              </span>
+            </div>
           )}
           
           {/* Unit label below PPU — absolutely positioned so it doesn't affect row centering */}
@@ -953,7 +979,11 @@ function ItemRow({
       {/* Total */}
       <td style={{ padding: '0 12px', textAlign: 'right', verticalAlign: 'middle' }}>
         <span style={{ fontSize: '13px', fontWeight: 700, color: '#1F2937', lineHeight: '1' }}>
-          {formatCurrency(item.total)}
+          <QuoteMoney
+            valuePKR={item.total}
+            customerCurrency={customerCurrency}
+            view={viewMode}
+          />
         </span>
       </td>
 
@@ -1008,11 +1038,15 @@ interface ItemsTabTableCleanProps {
   quoteStatus?: string;
   quoteId?: string;
   readOnly?: boolean;
+  /** Customer's quote currency (ISO 4217). Drives the Advanced Configurator's price hover and pricing-rule conversion display. Defaults to base when omitted. */
+  customerCurrency?: string;
+  /** Page-level Base ↔ Customer view toggle. When `customer`, PPU and Total cells render in customer currency with PKR hover. */
+  viewMode?: 'base' | 'customer';
   /** Called when a material line-item change occurs (add/delete/modify/qty/uom/pricing) */
   onMaterialChange?: (fieldKey: string, fieldLabel: string, oldValue?: string, newValue?: string) => void;
 }
 
-function ItemsTable({ quoteStatus, quoteId, readOnly, onMaterialChange }: ItemsTabTableCleanProps) {
+function ItemsTable({ quoteStatus, quoteId, readOnly, customerCurrency, viewMode, onMaterialChange }: ItemsTabTableCleanProps) {
   // Check if there are created line items for this quote
   const createdItems = quoteId ? getCreatedQuoteLineItems(quoteId) : undefined;
   
@@ -1729,6 +1763,8 @@ function ItemsTable({ quoteStatus, quoteId, readOnly, onMaterialChange }: ItemsT
                   onDeleteRow={handleDeleteRow}
                   formatCurrency={formatCurrency}
                   getNetAdjustmentPercent={getNetAdjustmentPercent}
+                  customerCurrency={customerCurrency}
+                  viewMode={viewMode}
                 />
               ))}
             </AnimatePresence>
@@ -1744,6 +1780,7 @@ function ItemsTable({ quoteStatus, quoteId, readOnly, onMaterialChange }: ItemsT
         <LineItemConfigModal
           isOpen={true}
           onClose={() => setConfiguratorItem(null)}
+          customerCurrency={customerCurrency}
           item={{
             id: configuratorItem.id,
             productId: configuratorItem.productId,
@@ -1781,8 +1818,8 @@ function ItemsTable({ quoteStatus, quoteId, readOnly, onMaterialChange }: ItemsT
   );
 }
 
-export function ItemsTabTableClean({ quoteStatus, quoteId, readOnly, onMaterialChange }: ItemsTabTableCleanProps) {
+export function ItemsTabTableClean({ quoteStatus, quoteId, readOnly, customerCurrency, viewMode, onMaterialChange }: ItemsTabTableCleanProps) {
   return (
-    <ItemsTable quoteStatus={quoteStatus} quoteId={quoteId} readOnly={readOnly} onMaterialChange={onMaterialChange} />
+    <ItemsTable quoteStatus={quoteStatus} quoteId={quoteId} readOnly={readOnly} customerCurrency={customerCurrency} viewMode={viewMode} onMaterialChange={onMaterialChange} />
   );
 }

@@ -110,6 +110,18 @@ function generatePointOfContact(customer: Customer, isPrimary: boolean, rng: () 
   };
 }
 
+// Customer-currency cycle — most quotes settle in PKR (base), a meaningful
+// minority operate in foreign currencies so the FX surfaces exercise hover,
+// rate-toggle, and currency-filter behaviors. ISO 4217 alpha-3.
+const CUSTOMER_CURRENCY_CYCLE: string[] = [
+  'PKR', 'USD', 'PKR', 'EUR', 'PKR',
+  'GBP', 'PKR', 'USD', 'AED', 'PKR',
+  'PKR', 'CAD', 'USD', 'PKR', 'AUD',
+  'PKR', 'EUR', 'PKR', 'USD', 'PKR',
+  'JPY', 'PKR', 'USD', 'INR', 'PKR',
+  'PKR', 'SAR', 'EUR', 'PKR', 'USD',
+];
+
 // Fixed status cycle to guarantee even distribution
 const STATUS_CYCLE: QuoteStatus[] = [
   'Draft', 'Sent to Customer', 'Draft', 'Confirmed SO', 'Unconfirmed SO',
@@ -194,12 +206,16 @@ export function generateMockQuotes(count: number): Quote[] {
     
     const lastUpdated = new Date(createdDate.getTime() + Math.floor(rng() * (now.getTime() - createdDate.getTime())));
     
-    // Realistic value ranges for vehicle conversions
-    const baseValue = Math.floor(rng() * 450000) + 18000;
-    const totalValue = Math.round(baseValue / 100) * 100; // Round to nearest 100
-    
+    // Realistic PKR (base currency) amounts for vehicle conversions —
+    // approximately the prior USD-scale figures × the live PKR/USD rate, so
+    // the displayed totals look like real industrial invoices in ₨.
+    const usdEquivalent = Math.floor(rng() * 450000) + 18000;
+    const totalValue = Math.round((usdEquivalent * 278) / 1000) * 1000; // round to nearest thousand
+
+    const customerCurrency = CUSTOMER_CURRENCY_CYCLE[i % CUSTOMER_CURRENCY_CYCLE.length];
+
     const desc = QUOTE_DESCS[i % QUOTE_DESCS.length];
-    
+
     const quote: Quote = {
       id: `quote-${i}`,
       quoteNumber,
@@ -209,6 +225,7 @@ export function generateMockQuotes(count: number): Quote[] {
       additionalPoCs: additionalPoCs.length > 0 ? additionalPoCs : undefined,
       status: weightedStatus,
       totalValue,
+      customerCurrency,
       createdDate,
       expiryDate,
       salesRep: SALES_REPS[i % SALES_REPS.length],

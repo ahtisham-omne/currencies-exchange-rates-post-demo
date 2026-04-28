@@ -51,6 +51,8 @@ export interface Customer {
   locations: Location[];
   totalContacts: number;
   recentQuote: string;
+  /** Customer's primary transaction currency (ISO 4217 alpha-3). Read-only on this customer record — quotes capture their own override via `QuoteDraft.currency`. */
+  defaultCurrency: string;
 }
 
 // Generate mock data with THOUSANDS of contacts
@@ -104,6 +106,17 @@ const NOTES_TEMPLATES = [
   'Available Mon-Thu; off-shift Fri-Sun rotation'
 ];
 
+// Customer default currency cycle — most customers settle in PKR (base);
+// a deliberate minority operate in foreign currencies so the FX surfaces
+// exercise hover, override, and quote-level conversion behaviors.
+const CUSTOMER_DEFAULT_CURRENCY_CYCLE: string[] = [
+  'PKR', 'USD', 'PKR', 'EUR', 'PKR',
+  'GBP', 'PKR', 'USD', 'AED', 'PKR',
+  'PKR', 'CAD', 'USD', 'PKR', 'AUD',
+  'PKR', 'EUR', 'PKR', 'USD', 'PKR',
+  'JPY',
+];
+
 // Generate customers with HUNDREDS of locations each
 export const MOCK_CUSTOMERS: Customer[] = CUSTOMER_NAMES.map((name, idx) => {
   const locations: Location[] = [];
@@ -128,7 +141,8 @@ export const MOCK_CUSTOMERS: Customer[] = CUSTOMER_NAMES.map((name, idx) => {
     status: 'Active',
     locations,
     totalContacts: 0, // Will be calculated
-    recentQuote: `${idx + 1} days ago`
+    recentQuote: `${idx + 1} days ago`,
+    defaultCurrency: CUSTOMER_DEFAULT_CURRENCY_CYCLE[idx % CUSTOMER_DEFAULT_CURRENCY_CYCLE.length],
   };
 });
 
@@ -243,6 +257,8 @@ export function Step1CustomerSelection({ quoteDraft, onUpdate, onNext }: Step1Cu
         name: customer.name,
         location: `${defaultLocation.name} - ${defaultLocation.city}`,
       },
+      customerDefaultCurrency: customer.defaultCurrency,
+      currency: customer.defaultCurrency,
       primaryPoC: primaryContact ? {
         id: primaryContact.id,
         name: primaryContact.name,
@@ -256,12 +272,16 @@ export function Step1CustomerSelection({ quoteDraft, onUpdate, onNext }: Step1Cu
   const handleSelectContact = (contact: Contact) => {
     // When selecting a specific contact, only add that contact to recipients
     // and set them as the primary POC
+    const parentCustomer = MOCK_CUSTOMERS.find(c => c.id === contact.customerId);
+    const inferredCurrency = parentCustomer?.defaultCurrency || 'PKR';
     onUpdate({
       customer: {
         id: contact.customerId,
         name: contact.customerName,
         location: `${contact.locationName} - ${contact.locationCity}`,
       },
+      customerDefaultCurrency: inferredCurrency,
+      currency: inferredCurrency,
       primaryPoC: {
         id: contact.id,
         name: contact.name,

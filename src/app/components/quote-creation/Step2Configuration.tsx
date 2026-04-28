@@ -10,6 +10,8 @@ import { DateConfigCards } from '@/app/components/quote-creation/DateConfigCards
 import { DateEditModal } from '@/app/components/quote-creation/DateEditModal';
 import { LocationSelectionModal } from '@/app/components/quote-creation/LocationSelectionModal';
 import { SalesRepSelector, SelectedSalesRep, SalesRepOption } from '@/app/components/shared/SalesRepSelector';
+import { QuoteCurrencyPicker } from '@/app/components/currency/QuoteCurrencyPicker';
+import { BASE_CURRENCY } from '@/app/data/currencyLibrary';
 
 interface Step2ConfigurationProps {
   quoteDraft: QuoteDraft;
@@ -527,8 +529,20 @@ export function Step2Configuration({ quoteDraft, onUpdate, onClearAll }: Step2Co
 
                   {/* Payment Details - Simple rows */}
                   <div className="space-y-1">
+                    {/* Currency — auto-populated from customer default; overrideable per quote */}
+                    <div className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-[#F9FAFB] transition-all">
+                      <label className="text-[13px] text-[#6B7280]" style={{ fontWeight: 400 }}>
+                        Currency
+                      </label>
+                      <QuoteCurrencyPicker
+                        value={(quoteDraft.currency || quoteDraft.customerDefaultCurrency || BASE_CURRENCY).toUpperCase()}
+                        customerDefault={quoteDraft.customerDefaultCurrency}
+                        onChange={code => onUpdate({ currency: code })}
+                      />
+                    </div>
+
                     {/* Payment Terms */}
-                    <div 
+                    <div
                       className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-[#F9FAFB] cursor-pointer transition-all group"
                       onClick={() => setShowPaymentTermsLibrary(true)}
                       style={{

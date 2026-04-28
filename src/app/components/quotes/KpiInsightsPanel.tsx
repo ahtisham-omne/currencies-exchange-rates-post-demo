@@ -16,42 +16,102 @@ export interface KpiDefinition {
   iconColor: string;
   subtitle: string;
   tooltip?: string;
+  /** When `true`, the KPI's value is a PKR amount that should be rendered with `BaseCurrencyKPI` (and recomputed under the active rate snapshot). Untyped or `false` KPIs render their `computeKpiValue` string output verbatim. */
+  isCurrency?: boolean;
 }
 
 export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
   // Overview
   { key: "total_quotes", label: "Total Quotes", category: "Overview", iconName: "FileText", iconBg: "#EDF4FF", iconColor: "#0A77FF", subtitle: "All quotes in system" },
-  { key: "total_value", label: "Total Value", category: "Overview", iconName: "DollarSign", iconBg: "#F0FDF4", iconColor: "#16A34A", subtitle: "Combined quote value", tooltip: "Cumulative value of all active quotes created in the selected period, regardless of status. Dynamically updates based on the date range filter." },
-  { key: "avg_value", label: "Avg Quote Value", category: "Overview", iconName: "TrendingUp", iconBg: "#F5F3FF", iconColor: "#7C3AED", subtitle: "Average per quote" },
+  { key: "total_value", label: "Total Value", category: "Overview", iconName: "DollarSign", iconBg: "#F0FDF4", iconColor: "#16A34A", subtitle: "Combined quote value", tooltip: "Cumulative value of all active quotes created in the selected period, regardless of status. Dynamically updates based on the date range filter.", isCurrency: true },
+  { key: "avg_value", label: "Avg Quote Value", category: "Overview", iconName: "TrendingUp", iconBg: "#F5F3FF", iconColor: "#7C3AED", subtitle: "Average per quote", isCurrency: true },
   // Status
   { key: "draft_count", label: "Drafts", category: "Status", iconName: "FileText", iconBg: "#F8FAFC", iconColor: "#64748B", subtitle: "Pending submission" },
-  { key: "sent_count", label: "Sent to Customer", category: "Status", iconName: "Send", iconBg: "#EFF6FF", iconColor: "#2563EB", subtitle: "Awaiting response", tooltip: "Quotes that have been delivered to the customer and are awaiting their response. Does not include quotes already confirmed, expired, or cancelled." },
+  { key: "sent_value", label: "Sent to Customer", category: "Status", iconName: "Send", iconBg: "#EFF6FF", iconColor: "#2563EB", subtitle: "Value awaiting response", tooltip: "Combined value of quotes delivered to the customer and awaiting their response. Does not include quotes already confirmed, expired, or cancelled.", isCurrency: true },
+  { key: "sent_count", label: "Sent to Customer (Count)", category: "Status", iconName: "Send", iconBg: "#EFF6FF", iconColor: "#2563EB", subtitle: "Awaiting response" },
   { key: "confirmed_count", label: "Confirmed", category: "Status", iconName: "CheckCircle", iconBg: "#F5F3FF", iconColor: "#7C3AED", subtitle: "Customer confirmed" },
-  { key: "converted_count", label: "Converted to SO", category: "Status", iconName: "Check", iconBg: "#F0FDF4", iconColor: "#16A34A", subtitle: "Sales orders created", tooltip: "Quotes that have been accepted by the customer and converted to a sales order." },
+  { key: "converted_value", label: "Converted to SO", category: "Status", iconName: "Check", iconBg: "#F0FDF4", iconColor: "#16A34A", subtitle: "Value converted to SO", tooltip: "Combined value of quotes that have been accepted by the customer and converted to a sales order.", isCurrency: true },
+  { key: "converted_count", label: "Converted to SO (Count)", category: "Status", iconName: "Check", iconBg: "#F0FDF4", iconColor: "#16A34A", subtitle: "Sales orders created" },
   { key: "expired_count", label: "Expired", category: "Status", iconName: "Clock", iconBg: "#FEF2F2", iconColor: "#DC2626", subtitle: "Past expiry date" },
   { key: "cancelled_count", label: "Cancelled", category: "Status", iconName: "Archive", iconBg: "#FEF2F2", iconColor: "#DC2626", subtitle: "Cancelled quotes" },
   // Alerts
-  { key: "expiring_soon", label: "Expiring Soon", category: "Alerts", iconName: "AlertTriangle", iconBg: "#FFF7ED", iconColor: "#EA580C", subtitle: "Within 7 days", tooltip: "Quotes currently sent to a customer that will reach their expiry date within the next 7 days." },
+  { key: "expiring_value", label: "Expiring Soon", category: "Alerts", iconName: "AlertTriangle", iconBg: "#FFF7ED", iconColor: "#EA580C", subtitle: "Value expiring within 7 days", tooltip: "Combined value of quotes currently sent to a customer that will reach their expiry date within the next 7 days.", isCurrency: true },
+  { key: "expiring_soon", label: "Expiring Soon (Count)", category: "Alerts", iconName: "AlertTriangle", iconBg: "#FFF7ED", iconColor: "#EA580C", subtitle: "Within 7 days" },
   // Advanced (addable via sidebar)
   { key: "win_rate", label: "Win Rate", category: "Advanced", iconName: "Percent", iconBg: "#F0FDF4", iconColor: "#16A34A", subtitle: "Conversion percentage", tooltip: "Percentage of quotes that converted to a sales order, out of all quotes that reached a final outcome (converted, expired, or cancelled) in the selected period." },
   { key: "high_priority", label: "High Priority Quotes", category: "Advanced", iconName: "Flag", iconBg: "#FEF2F2", iconColor: "#DC2626", subtitle: "Urgent quotes", tooltip: "Total number of quotes currently marked with High Priority status." },
   { key: "avg_days_to_convert", label: "Avg. Days to Convert", category: "Advanced", iconName: "Timer", iconBg: "#FFF7ED", iconColor: "#EA580C", subtitle: "Creation to SO", tooltip: "Average number of calendar days from quote creation to sales order conversion, across all converted quotes in the selected period." },
   { key: "revised_quotes", label: "Revised Quotes", category: "Advanced", iconName: "RefreshCw", iconBg: "#EFF6FF", iconColor: "#2563EB", subtitle: "Multi-version quotes", tooltip: "Count of active quotes that have been revised at least once \u2014 including line item changes, pricing adjustments, or validity date extensions." },
-  { key: "open_quote_value", label: "Open Quote Value", category: "Advanced", iconName: "Wallet", iconBg: "#ECFDF5", iconColor: "#059669", subtitle: "Active pipeline value", tooltip: "Total monetary value of all quotes still active \u2014 in draft, sent to the customer or confirmed \u2014 that have not yet expired, been cancelled, or converted to a sales order." },
+  { key: "open_quote_value", label: "Open Quote Value", category: "Advanced", iconName: "Wallet", iconBg: "#ECFDF5", iconColor: "#059669", subtitle: "Active pipeline value", tooltip: "Total monetary value of all quotes still active \u2014 in draft, sent to the customer or confirmed \u2014 that have not yet expired, been cancelled, or converted to a sales order.", isCurrency: true },
+  // FX context \u2014 one card per rate book. Display-only freshness indicator;
+  // full source / sync / last-synced metadata lives in the tooltip.
+  { key: "market_rate", label: "Market Rate", category: "FX", iconName: "RefreshCw", iconBg: "#F5F3FF", iconColor: "#7C3AED", subtitle: "Live mid-market rates", tooltip: "Live mid-market rates from Open Exchange Rates. Refreshed every 15 minutes. Display-only \u2014 drives the customer-currency hover conversions on the table." },
+  { key: "corporate_rate", label: "Corporate Rate", category: "FX", iconName: "RefreshCw", iconBg: "#FFFBEB", iconColor: "#D97706", subtitle: "Treasury-locked book rates", tooltip: "Corporate book rates from Corporate Treasury (Q1 FY26). Refreshed quarterly \u2014 manual. Display-only \u2014 matches what finance uses for accruals and reporting." },
 ];
 
-export const DEFAULT_ACTIVE_KPIS = ["total_value", "sent_count", "expiring_soon", "converted_count"];
+// Market Rate sits last by default; Corporate Rate is hidden — users add it via
+// the "Add Insights" drawer like any other optional KPI.
+export const DEFAULT_ACTIVE_KPIS = ["total_value", "sent_value", "expiring_value", "converted_value", "market_rate"];
+
+/**
+ * Numeric PKR amount for currency-typed KPIs. Returns `undefined` for KPIs
+ * that are counts/ratios/durations \u2014 caller should fall back to
+ * `computeKpiValue()` and render the string.
+ */
+export function computeKpiAmount(key: string, quotes: Quote[]): number | undefined {
+  switch (key) {
+    case "total_value":
+      return quotes.reduce((s, q) => s + (q.totalValue || 0), 0);
+    case "avg_value":
+      return quotes.length > 0
+        ? quotes.reduce((s, q) => s + (q.totalValue || 0), 0) / quotes.length
+        : 0;
+    case "sent_value":
+      return quotes
+        .filter(q => q.status === "Sent to Customer")
+        .reduce((s, q) => s + (q.totalValue || 0), 0);
+    case "converted_value":
+      return quotes
+        .filter(q => q.status === "Confirmed SO")
+        .reduce((s, q) => s + (q.totalValue || 0), 0);
+    case "expiring_value": {
+      const now = new Date();
+      const week = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      return quotes
+        .filter(q => q.expiryDate && new Date(q.expiryDate) <= week && new Date(q.expiryDate) > now && q.status !== "Expired" && q.status !== "Cancelled")
+        .reduce((s, q) => s + (q.totalValue || 0), 0);
+    }
+    case "open_quote_value": {
+      const activeStatuses = ["Draft", "Sent to Customer", "Unconfirmed SO"];
+      return quotes
+        .filter(q => activeStatuses.includes(q.status))
+        .reduce((s, q) => s + (q.totalValue || 0), 0);
+    }
+    default:
+      return undefined;
+  }
+}
 
 export function computeKpiValue(key: string, quotes: Quote[]): string {
+  // Compact base-currency formatter — PKR is the canonical base currency for
+  // every quote total, so the symbol stays the same regardless of the active
+  // rate snapshot.
   const formatCompact = (val: number): string => {
-    if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`;
-    if (val >= 1_000) return `$${(val / 1_000).toFixed(0)}K`;
-    return `$${val.toFixed(0)}`;
+    if (val >= 1_000_000) return `₨ ${(val / 1_000_000).toFixed(1)}M`;
+    if (val >= 1_000) return `₨ ${(val / 1_000).toFixed(0)}K`;
+    return `₨ ${val.toFixed(0)}`;
   };
   switch (key) {
     case "total_quotes": return String(quotes.length);
     case "total_value": return formatCompact(quotes.reduce((s, q) => s + (q.totalValue || 0), 0));
     case "avg_value": return quotes.length > 0 ? formatCompact(quotes.reduce((s, q) => s + (q.totalValue || 0), 0) / quotes.length) : "$0";
+    case "sent_value": return formatCompact(quotes.filter(q => q.status === "Sent to Customer").reduce((s, q) => s + (q.totalValue || 0), 0));
+    case "converted_value": return formatCompact(quotes.filter(q => q.status === "Confirmed SO").reduce((s, q) => s + (q.totalValue || 0), 0));
+    case "expiring_value": {
+      const now = new Date();
+      const week = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      return formatCompact(quotes.filter(q => q.expiryDate && new Date(q.expiryDate) <= week && new Date(q.expiryDate) > now && q.status !== "Expired" && q.status !== "Cancelled").reduce((s, q) => s + (q.totalValue || 0), 0));
+    }
     case "draft_count": return String(quotes.filter(q => q.status === "Draft").length);
     case "sent_count": return String(quotes.filter(q => q.status === "Sent to Customer").length);
     case "confirmed_count": return String(quotes.filter(q => q.status === "Unconfirmed SO").length);

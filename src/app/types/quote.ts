@@ -96,6 +96,8 @@ export interface Quote {
   subtotal?: number;
   tax?: number;
   total?: number;
+  /** Customer's transaction currency, ISO 4217 alpha-3. When set and != PKR, the quote's `totalValue` is the PKR-equivalent and the customer-currency view is computed via the active rate snapshot. */
+  customerCurrency?: string;
 }
 
 export interface ConfiguratorItem {

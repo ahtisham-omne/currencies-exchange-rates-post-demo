@@ -32,6 +32,16 @@ interface VersionSnapshot {
   lineItems?: { id: string; description: string; qty: number; uom: string; unitPrice: number; total: number; thumbColor?: string }[];
 }
 
+/** FX snapshot frozen with each version. Captures the rate type, customer→base rate, customer currency, lock timestamp. */
+interface VersionRateSnapshot {
+  rateType: 'market' | 'corporate';
+  /** Number of base currency (PKR) units per 1 unit of the customer currency at this version's lock time. */
+  customerRate: number;
+  customerCurrency: string;
+  /** ISO timestamp the rate was locked (matches version sent date when status === 'sent' / 'confirmed'). */
+  lockedAt: string;
+}
+
 interface Version {
   version: number;
   versionStatus: VersionStatus;
@@ -42,6 +52,8 @@ interface Version {
   avatarColor: string;
   reason: string;
   snapshot: VersionSnapshot;
+  /** FX snapshot for this version. Older versions stay frozen at their lock-time rate. */
+  rateSnapshot?: VersionRateSnapshot;
   changes: VersionChange[];
   isRevert?: boolean;
   revertedFrom?: number;
@@ -139,10 +151,50 @@ const versionStatusConfig: Record<VersionStatus, { label: string; bg: string; co
 interface VersionHistoryTabProps {
   quoteNumber?: string;
   customerName?: string;
+  /** Customer's quote currency. Drives the per-version rate display + tracked rate-change rows. Defaults to PKR (no FX context). */
+  customerCurrency?: string;
 }
 
-export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName = 'Tri-County EMS Authority' }: VersionHistoryTabProps) {
-  const [versions, setVersions] = useState(MOCK_VERSIONS);
+/**
+ * Hydrate `MOCK_VERSIONS` with deterministic per-version rate snapshots.
+ * Older versions get slightly older rates so the rate-change tracked entry
+ * surfaces between adjacent versions out of the box.
+ */
+function withRateSnapshots(versions: Version[], customerCurrency?: string): Version[] {
+  const cur = (customerCurrency || 'PKR').toUpperCase();
+  if (cur === 'PKR') {
+    // No FX leg — clear any existing snapshot to prevent stale rates from showing.
+    return versions.map(v => ({ ...v, rateSnapshot: undefined }));
+  }
+  // Slightly different rates per version to demo locked-rate drift.
+  // Newer version (index 0) → most recent rate; older versions stretched back.
+  const baseRates: Record<string, number[]> = {
+    USD: [281.50, 278.00, 276.20, 274.10, 272.50, 270.00],
+    EUR: [307.20, 305.00, 303.50, 302.10, 300.50, 299.00],
+    GBP: [357.40, 355.00, 352.80, 351.20, 349.50, 348.00],
+    AED: [76.20, 75.70, 75.30, 74.90, 74.50, 74.10],
+    CAD: [206.40, 205.00, 203.80, 202.50, 201.20, 200.00],
+    AUD: [183.30, 182.00, 181.20, 180.40, 179.50, 178.50],
+    JPY: [1.86, 1.85, 1.84, 1.83, 1.82, 1.81],
+    INR: [3.36, 3.35, 3.34, 3.33, 3.32, 3.31],
+    SAR: [74.20, 74.10, 74.00, 73.90, 73.80, 73.70],
+  };
+  const series = baseRates[cur] ?? [278, 277, 276, 275, 274, 273];
+  return versions.map((v, idx) => ({
+    ...v,
+    rateSnapshot: {
+      // Treat the latest version as "market" and older ones as "corporate"
+      // for visual variety; in production this comes from the actual lock-time pointer.
+      rateType: idx === 0 ? 'market' : 'corporate',
+      customerRate: series[Math.min(idx, series.length - 1)],
+      customerCurrency: cur,
+      lockedAt: v.sentAt ?? v.confirmedAt ?? new Date().toISOString(),
+    },
+  }));
+}
+
+export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName = 'Tri-County EMS Authority', customerCurrency }: VersionHistoryTabProps) {
+  const [versions, setVersions] = useState(() => withRateSnapshots(MOCK_VERSIONS, customerCurrency));
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<VersionFilter>('all');
   const [expandedVersions, setExpandedVersions] = useState<Set<number>>(new Set([3]));
@@ -603,6 +655,28 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
             const isLatestVersion = ver.version === latestVersionNum;
             const vsCfg = versionStatusConfig[ver.versionStatus];
             const VSIcon = vsCfg.icon;
+            // Detect a rate change vs the previous (older) version. When the
+            // user reverts with "apply current rate" or saves a new draft that
+            // re-pulls today's market rate, the locked rate shifts — surface
+            // that as a tracked change at the top of the version's change list.
+            const prevRateSnapshot = filteredVersions[vidx + 1]?.rateSnapshot;
+            const rateChangeEntry: VersionChange | null = (() => {
+              if (!ver.rateSnapshot || !prevRateSnapshot) return null;
+              const prev = prevRateSnapshot;
+              const next = ver.rateSnapshot;
+              const sameRate = Math.abs(prev.customerRate - next.customerRate) < 0.001 && prev.rateType === next.rateType;
+              if (sameRate) return null;
+              const typeLabel = next.rateType === 'market' ? 'Mid-market' : 'Corporate';
+              return {
+                id: `RATE-${ver.version}`,
+                type: 'config-changed',
+                action: 'Changed',
+                subject: 'Exchange rate',
+                detail: `1 ${next.customerCurrency} = ${prev.customerRate.toFixed(2)} PKR → 1 ${next.customerCurrency} = ${next.customerRate.toFixed(2)} PKR (${typeLabel})`,
+                timestamp: ver.sentAt?.split(' · ')[1] ?? '—',
+                user: ver.sentBy,
+              };
+            })();
 
             return (
               <div key={ver.version}>
@@ -714,6 +788,28 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                     <span style={{ fontSize: '12px', fontWeight: 600, color: '#1F2937', lineHeight: '1' }}>
                       {formatCurrency(ver.snapshot.grandTotal)}
                     </span>
+                    {ver.rateSnapshot && (() => {
+                      const rs = ver.rateSnapshot;
+                      const hex = rs.rateType === 'market' ? '#7c3aed' : '#d97706';
+                      const bg = rs.rateType === 'market'
+                        ? 'color-mix(in srgb, #7c3aed 8%, transparent)'
+                        : 'color-mix(in srgb, #d97706 10%, transparent)';
+                      return (
+                        <span
+                          title={`${rs.rateType === 'market' ? 'Mid-market' : 'Corporate'} rate locked ${rs.lockedAt ? `on ${rs.lockedAt}` : ''}`}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            fontSize: 10, color: hex, backgroundColor: bg,
+                            padding: '1px 6px', borderRadius: 999, fontWeight: 600,
+                            cursor: 'help', flexShrink: 0,
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          <span style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: hex }} />
+                          @ {rs.customerRate.toFixed(2)} PKR/{rs.customerCurrency}
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   {/* Revert action (only for confirmed versions that are not current) */}
@@ -846,17 +942,17 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                       </div>
                     </div>
 
-                    {/* Changes list */}
-                    {ver.changes.length === 0 ? (
+                    {/* Changes list — prepend rate-change tracked entry when this version's locked rate differs from the previous version's. */}
+                    {(ver.changes.length === 0 && !rateChangeEntry) ? (
                       <div style={{ fontSize: '12px', color: '#9CA3AF', fontStyle: 'italic', lineHeight: '1' }}>
                         No recorded changes in this version
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
                         <div style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', lineHeight: '1' }}>
-                          Changes ({ver.changes.length})
+                          Changes ({ver.changes.length + (rateChangeEntry ? 1 : 0)})
                         </div>
-                        {ver.changes.map((change, cidx) => {
+                        {[...(rateChangeEntry ? [rateChangeEntry] : []), ...ver.changes].map((change, cidx) => {
                           const ct = changeTypeConfig[change.type] || changeTypeConfig['config-changed'];
                           const CIcon = ct.icon;
                           const userInitials = change.user.split(' ').map(n => n[0]).join('');
@@ -961,9 +1057,19 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
 function CompareView({ v1, v2, formatCurrency, onClose }: {
   v1: Version; v2: Version; formatCurrency: (n: number) => string; onClose: () => void;
 }) {
+  const rateText = (v: Version) => {
+    if (!v.rateSnapshot) return '—';
+    const rs = v.rateSnapshot;
+    const typeLabel = rs.rateType === 'market' ? 'Mid-market' : 'Corporate';
+    return `1 ${rs.customerCurrency} = ${rs.customerRate.toFixed(2)} PKR · ${typeLabel}`;
+  };
   const fields = [
     { label: 'Line Items', val1: String(v1.snapshot.lineItemCount), val2: String(v2.snapshot.lineItemCount) },
     { label: 'Grand Total', val1: formatCurrency(v1.snapshot.grandTotal), val2: formatCurrency(v2.snapshot.grandTotal) },
+    // FX columns surface the locked rate per version + rate type. When the
+    // versions used different rate books or rates, the field is highlighted
+    // by the existing changed-row treatment below.
+    { label: 'Currency / Rate', val1: rateText(v1), val2: rateText(v2) },
     { label: 'Rules', val1: String(v1.snapshot.rulesCount), val2: String(v2.snapshot.rulesCount) },
     { label: 'Adjustments', val1: String(v1.snapshot.adjustmentsCount), val2: String(v2.snapshot.adjustmentsCount) },
     { label: 'Status', val1: versionStatusConfig[v1.versionStatus].label, val2: versionStatusConfig[v2.versionStatus].label },

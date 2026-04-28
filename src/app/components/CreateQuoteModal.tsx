@@ -37,6 +37,10 @@ export interface QuoteDraft {
     initials: string;
     isPrimary?: boolean;
   }>;
+  /** Customer's primary currency at the moment of selection (ISO 4217). Persists separately so we can show "differs from customer default" hints when the user picks a different `currency` for this quote. */
+  customerDefaultCurrency?: string;
+  /** Currency the quote will settle in (ISO 4217). Defaults to `customerDefaultCurrency` on customer select; user-overrideable per quote without affecting the customer's default. */
+  currency?: string;
   configuration: {
     billingAddress: string;
     shippingAddress: string;

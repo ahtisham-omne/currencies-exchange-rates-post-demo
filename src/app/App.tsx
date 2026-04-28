@@ -4,6 +4,7 @@ import { RootLayout } from './pages/RootLayout';
 import { QuotesListPage } from './pages/QuotesListPage';
 import { QuoteDetails } from './pages/QuoteDetails';
 import { EditQuote } from './pages/EditQuote';
+import { RateProvider } from './context/RateContext';
 
 function QuoteDetailsWrapper() {
   const { quoteId } = useParams<{ quoteId: string }>();
@@ -17,14 +18,16 @@ function EditQuoteWrapper() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<RootLayout />}>
-          <Route index element={<QuotesListPage />} />
-          <Route path="quotes/:quoteId" element={<QuoteDetailsWrapper />} />
-          <Route path="quotes/:quoteId/edit" element={<EditQuoteWrapper />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <RateProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<RootLayout />}>
+            <Route index element={<QuotesListPage />} />
+            <Route path="quotes/:quoteId" element={<QuoteDetailsWrapper />} />
+            <Route path="quotes/:quoteId/edit" element={<EditQuoteWrapper />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </RateProvider>
   );
 }

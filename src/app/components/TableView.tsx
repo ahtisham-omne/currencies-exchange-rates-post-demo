@@ -3,6 +3,8 @@ import { ArrowUpDown, ArrowUp, ArrowDown, MoreHorizontal, GripVertical, MapPin, 
 import { Quote, ColumnConfig } from '@/app/types/quote';
 import { SortConfig } from '@/app/utils/quoteUtils';
 import { formatCurrency, formatDate, isExpiringSoon, isExpired } from '@/app/utils/quoteUtils';
+import { CurrencyAmount } from '@/app/components/ui/CurrencyAmount';
+import { BASE_CURRENCY, convertBetween } from '@/app/data/currencyLibrary';
 import { StatusBadge } from '@/app/components/StatusBadge';
 import { PriorityBadge } from '@/app/components/PriorityBadge';
 import { CustomerCell } from '@/app/components/CustomerCell';
@@ -254,12 +256,25 @@ export function TableView({
       case 'status':
         return <StatusBadge status={quote.status} />;
 
-      case 'totalValue':
+      case 'totalValue': {
+        const customerCur = (quote.customerCurrency ?? BASE_CURRENCY).toUpperCase();
+        const isBase = customerCur === BASE_CURRENCY;
         return (
           <div className="text-right">
-            <span className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>{formatCurrency(quote.totalValue)}</span>
+            <span className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>
+              {isBase
+                ? <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={quote.totalValue || 0} />
+                : <CurrencyAmount
+                    mode="listing-base"
+                    currency={BASE_CURRENCY}
+                    value={quote.totalValue || 0}
+                    partnerDefaultCurrency={customerCur}
+                    partnerDefaultValue={convertBetween(quote.totalValue || 0, BASE_CURRENCY, customerCur)}
+                  />}
+            </span>
           </div>
         );
+      }
 
       case 'createdDate':
         return <span className="text-[13px] text-muted-foreground">{formatDate(quote.createdDate)}</span>;

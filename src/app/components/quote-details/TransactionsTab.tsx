@@ -1,4 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { CurrencyAmount } from '../ui/CurrencyAmount';
+import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from '../../data/currencyLibrary';
 import {
   Search, ExternalLink, ChevronDown, SlidersHorizontal,
   FileText, ShoppingCart, Truck, CreditCard, RotateCcw,
@@ -25,6 +27,12 @@ interface LinkedTransaction {
   notes?: string;
   parentId?: string;
   parentNumber?: string;
+  /** Optional locked rate at the time of this transaction (base-per-customer-unit). When omitted, falls back to the live snapshot. */
+  lockedRate?: number;
+  /** ISO date the rate was locked. Surfaces in the hover tooltip. */
+  lockedAt?: string;
+  /** Rate book that was active at lock time. */
+  rateType?: 'market' | 'corporate';
 }
 
 // ── Config ─────────────────────────────────────────────────────────
@@ -123,6 +131,17 @@ const MOCK_TRANSACTIONS: LinkedTransaction[] = [
 
 // ── Helpers ────────────────────────────────────────────────────────
 const formatCurrency = (n: number) => '$' + n.toLocaleString('en-US');
+
+// Deterministic per-transaction locked-rate cycle so the demo shows a mix of
+// rate books and slight rate drift across linked transactions. In production
+// this comes from each transaction's saved rate snapshot at creation time.
+const DEMO_LOCKED_RATE_CYCLE: Array<{ rate: number; rateType: 'market' | 'corporate'; offsetDays: number }> = [
+  { rate: 278.00, rateType: 'market', offsetDays: 0 },
+  { rate: 280.00, rateType: 'corporate', offsetDays: 7 },
+  { rate: 281.50, rateType: 'market', offsetDays: 14 },
+  { rate: 277.20, rateType: 'market', offsetDays: 21 },
+  { rate: 279.10, rateType: 'corporate', offsetDays: 28 },
+];
 const formatDateShort = (d: string) => {
   const date = new Date(d + 'T00:00:00');
   return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}/${date.getFullYear()}`;
@@ -149,13 +168,35 @@ interface TransactionsTabProps {
   quoteNumber?: string;
   customerName?: string;
   readOnly?: boolean;
+  /** Customer's quote currency (ISO 4217). Drives the per-transaction hover + rate-divergence indicator. */
+  customerCurrency?: string;
+  /** Quote's locked customer→base rate. Each transaction's locked rate is compared against this to flag divergence. */
+  quoteLockedRate?: number;
+  /** Quote's rate type at lock time, for indicator styling. */
+  quoteRateType?: 'market' | 'corporate';
 }
 
 export function TransactionsTab({
   quoteNumber = 'Q-2026-0142',
   customerName = 'Tri-County EMS Authority',
   readOnly = false,
+  customerCurrency,
+  quoteLockedRate,
+  quoteRateType,
 }: TransactionsTabProps) {
+  const cur = (customerCurrency || 'PKR').toUpperCase();
+  const showFx = cur !== 'PKR';
+
+  // Hydrate transactions with deterministic locked-rate snapshots so the demo
+  // surfaces hover, rate-type, and rate-divergence indicators realistically.
+  const transactionsWithRates = React.useMemo(() => {
+    if (!showFx) return MOCK_TRANSACTIONS;
+    return MOCK_TRANSACTIONS.map((t, idx) => {
+      if (t.lockedRate !== undefined) return t;
+      const seed = DEMO_LOCKED_RATE_CYCLE[idx % DEMO_LOCKED_RATE_CYCLE.length];
+      return { ...t, lockedRate: seed.rate, rateType: seed.rateType, lockedAt: t.createdDate };
+    });
+  }, [showFx]);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<TransactionType | 'all'>('all');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<TransactionType>>(new Set());
@@ -230,7 +271,7 @@ export function TransactionsTab({
   };
 
   // Filter transactions
-  const filteredTxns = MOCK_TRANSACTIONS.filter(txn => {
+  const filteredTxns = transactionsWithRates.filter(txn => {
     const q = searchQuery.toLowerCase();
     const matchesSearch = !searchQuery ||
       txn.number.toLowerCase().includes(q) ||
@@ -655,7 +696,7 @@ export function TransactionsTab({
                     <span />
                   </div>
                   {items.map((txn) => (
-                    <TransactionRow key={txn.id} txn={txn} />
+                    <TransactionRow key={txn.id} txn={txn} customerCurrency={customerCurrency} quoteLockedRate={quoteLockedRate} quoteRateType={quoteRateType} />
                   ))}
                 </>
               )}
@@ -668,7 +709,13 @@ export function TransactionsTab({
 }
 
 // ── Transaction Row ────────────────────────────────────────────────
-function TransactionRow({ txn }: { txn: LinkedTransaction }) {
+function TransactionRow({ txn, customerCurrency, quoteLockedRate, quoteRateType }: {
+  txn: LinkedTransaction;
+  customerCurrency?: string;
+  quoteLockedRate?: number;
+  quoteRateType?: 'market' | 'corporate';
+}) {
+  const showFx = !!customerCurrency && customerCurrency.toUpperCase() !== 'PKR';
   const [hovered, setHovered] = useState(false);
   const status = STATUS_CONFIG[txn.status];
   const avatarColor = getAvatarColor(txn.assigneeInitials);
@@ -738,12 +785,58 @@ function TransactionRow({ txn }: { txn: LinkedTransaction }) {
         {formatDateShort(txn.createdDate)}
       </span>
 
-      {/* Amount — right-aligned */}
+      {/* Amount — right-aligned. Each linked transaction shows its own
+          locked rate; hover reveals the customer-currency equivalent at
+          that rate. A small chip flags rate divergence vs. the quote's rate. */}
       <span style={{
         fontSize: '13px', fontWeight: 500, color: '#1F2937',
         whiteSpace: 'nowrap', textAlign: 'right', lineHeight: '1',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6,
       }}>
-        {formatCurrency(txn.total)}
+        {showFx ? (
+          <>
+            {(() => {
+              const partnerCur = customerCurrency!.toUpperCase();
+              const lr = txn.lockedRate;
+              const partnerValue = lr !== undefined
+                ? (txn.total / lr)
+                : convertBetween(txn.total, BASE_CURRENCY, partnerCur);
+              return (
+                <CurrencyAmount
+                  mode="listing-base"
+                  currency={BASE_CURRENCY}
+                  value={txn.total}
+                  partnerDefaultCurrency={partnerCur}
+                  partnerDefaultValue={partnerValue}
+                  lockedRate={lr}
+                  lockedAt={txn.lockedAt}
+                />
+              );
+            })()}
+            {(() => {
+              if (txn.lockedRate === undefined || quoteLockedRate === undefined) return null;
+              const diverged = Math.abs(txn.lockedRate - quoteLockedRate) > 0.01 || (txn.rateType && quoteRateType && txn.rateType !== quoteRateType);
+              if (!diverged) return null;
+              return (
+                <span
+                  title={`Locked at 1 ${customerCurrency} = ₨ ${txn.lockedRate.toFixed(2)} PKR · Quote rate: ₨ ${quoteLockedRate.toFixed(2)}`}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                    padding: '1px 5px', borderRadius: 999,
+                    backgroundColor: '#FFFBEB', color: '#92400E',
+                    border: '1px solid #FDE68A',
+                    fontSize: 9, fontWeight: 600, cursor: 'help',
+                    flexShrink: 0,
+                  }}
+                >
+                  Rate differs
+                </span>
+              );
+            })()}
+          </>
+        ) : (
+          formatCurrency(txn.total)
+        )}
       </span>
 
       {/* Spacer */}

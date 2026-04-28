@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Search, Building2, MapPin, Check, Copy } from 'lucide-react';
+import { X, Search, Building2, MapPin, Check, Copy, Lock, RefreshCw, Settings2 } from 'lucide-react';
+import { activeRateSnapshot, BASE_CURRENCY, getLibraryCurrency } from '../../data/currencyLibrary';
 
 interface Customer {
   id: string;
@@ -25,18 +26,28 @@ const CUSTOMERS: Customer[] = [
   { id: 'CUST-015', name: 'Phoenix Industries', location: 'Chicago Plant' },
 ];
 
+/** What rate to seed the duplicated quote with. */
+export type DuplicateRateOption = 'locked' | 'today' | 'change-pair';
+
 interface DuplicateQuoteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (customerId: string, customerName: string) => void;
+  onConfirm: (customerId: string, customerName: string, rateOption: DuplicateRateOption) => void;
   currentCustomer?: string;
   quoteNumber?: string;
+  /** Original quote's currency. Drives the rate-option preview copy. */
+  quoteCurrency?: string;
+  /** Original quote's locked customer→base rate. Surfaces in the "Use locked rate" option. */
+  quoteLockedRate?: number;
+  /** Caller wires this to open the Currency Configurator when the user picks "Change currency pair". */
+  onChangeCurrencyPair?: () => void;
 }
 
-export function DuplicateQuoteModal({ isOpen, onClose, onConfirm, currentCustomer = 'Tri-County EMS Authority', quoteNumber }: DuplicateQuoteModalProps) {
+export function DuplicateQuoteModal({ isOpen, onClose, onConfirm, currentCustomer = 'Tri-County EMS Authority', quoteNumber, quoteCurrency, quoteLockedRate, onChangeCurrencyPair }: DuplicateQuoteModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [useSameCustomer, setUseSameCustomer] = useState(true);
+  const [rateOption, setRateOption] = useState<DuplicateRateOption>('locked');
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -44,6 +55,7 @@ export function DuplicateQuoteModal({ isOpen, onClose, onConfirm, currentCustome
       setSearchQuery('');
       setSelectedCustomer(null);
       setUseSameCustomer(true);
+      setRateOption('locked');
     }
   }, [isOpen]);
 
@@ -56,11 +68,21 @@ export function DuplicateQuoteModal({ isOpen, onClose, onConfirm, currentCustome
 
   const handleConfirm = () => {
     if (useSameCustomer) {
-      onConfirm('', currentCustomer);
+      onConfirm('', currentCustomer, rateOption);
     } else if (selectedCustomer) {
-      onConfirm(selectedCustomer.id, selectedCustomer.name);
+      onConfirm(selectedCustomer.id, selectedCustomer.name, rateOption);
     }
   };
+
+  // Rate-option metadata
+  const cur = (quoteCurrency || BASE_CURRENCY).toUpperCase();
+  const showFx = cur !== BASE_CURRENCY;
+  const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
+  const todaySnapshot = activeRateSnapshot();
+  const todayRate = todaySnapshot.rates[cur] ?? 0;
+  const todayRateInverse = todayRate ? (1 / todayRate) : 0;
+  const lockedRate = quoteLockedRate ?? 0;
+  const drift = lockedRate ? Math.round(((todayRate - lockedRate) / lockedRate) * 1000) / 10 : 0;
 
   const canConfirm = useSameCustomer || selectedCustomer !== null;
 
@@ -237,6 +259,91 @@ export function DuplicateQuoteModal({ isOpen, onClose, onConfirm, currentCustome
               </div>
             </div>
           )}
+
+          {/* ── Currency section — three rate options + "What will be different" preview ── */}
+          {showFx && (
+            <>
+              <div style={{ borderTop: '1px solid #F3F4F6', margin: '4px -24px 4px -24px' }} />
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>
+                  Currency
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {/* Option 1: Use locked rate */}
+                  <RateOptionCard
+                    selected={rateOption === 'locked'}
+                    onSelect={() => setRateOption('locked')}
+                    icon={<Lock style={{ width: 12, height: 12, color: '#047857' }} />}
+                    title="Use the locked rate from the original quote"
+                    detail={lockedRate
+                      ? `1 ${cur} = ${baseSym} ${lockedRate.toFixed(2)} ${BASE_CURRENCY}`
+                      : 'Carry forward the rate captured at original quote send time.'}
+                  />
+                  {/* Option 2: Use today's mid-market */}
+                  <RateOptionCard
+                    selected={rateOption === 'today'}
+                    onSelect={() => setRateOption('today')}
+                    icon={<RefreshCw style={{ width: 12, height: 12, color: '#7c3aed' }} />}
+                    title="Use today's Mid-market rate"
+                    detail={todayRate
+                      ? `1 ${cur} = ${baseSym} ${todayRate.toFixed(2)} ${BASE_CURRENCY}${drift !== 0 && lockedRate ? ` · ${drift > 0 ? '+' : ''}${drift}% vs locked` : ''}`
+                      : 'Pull the latest live mid-market rate.'}
+                  />
+                  {/* Option 3: Change pair */}
+                  <RateOptionCard
+                    selected={rateOption === 'change-pair'}
+                    onSelect={() => {
+                      setRateOption('change-pair');
+                      onChangeCurrencyPair?.();
+                    }}
+                    icon={<Settings2 style={{ width: 12, height: 12, color: '#1B6EF3' }} />}
+                    title="Change currency pair"
+                    detail="Open the Currency Configurator to pick different customer / settlement currencies."
+                  />
+                </div>
+              </div>
+
+              {/* What will be different */}
+              <div style={{
+                marginTop: '4px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: '1px solid #E0E7FF',
+                backgroundColor: '#F8FAFF',
+                display: 'flex', flexDirection: 'column', gap: 4,
+              }}>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#3730A3', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  What will be different
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 16, fontSize: '12px', color: '#1F2937', lineHeight: 1.5 }}>
+                  <li>Customer: <strong>{useSameCustomer ? currentCustomer : (selectedCustomer?.name ?? 'Pick one above')}</strong></li>
+                  <li>
+                    Currency pair:{' '}
+                    {rateOption === 'change-pair' ? (
+                      <strong>To be configured</strong>
+                    ) : (
+                      <strong>{cur} → {BASE_CURRENCY} (unchanged)</strong>
+                    )}
+                  </li>
+                  <li>
+                    Exchange rate:{' '}
+                    {rateOption === 'locked' && lockedRate
+                      ? <strong>Locked at 1 {cur} = {baseSym} {lockedRate.toFixed(2)} {BASE_CURRENCY}</strong>
+                      : rateOption === 'today' && todayRate
+                        ? <>
+                            <strong>Today's mid-market: 1 {cur} = {baseSym} {todayRate.toFixed(2)} {BASE_CURRENCY}</strong>
+                            {lockedRate && drift !== 0 && (
+                              <span style={{ marginLeft: 6, color: drift > 0 ? '#92400E' : '#065F46' }}>
+                                ({drift > 0 ? '+' : ''}{drift}% vs locked rate)
+                              </span>
+                            )}
+                          </>
+                        : <strong>Set in the Currency Configurator</strong>}
+                  </li>
+                </ul>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Footer */}
@@ -263,5 +370,48 @@ export function DuplicateQuoteModal({ isOpen, onClose, onConfirm, currentCustome
         </div>
       </div>
     </div>
+  );
+}
+
+/** Compact radio-card for a single Duplicate-flow rate option. */
+function RateOptionCard({ selected, onSelect, icon, title, detail }: {
+  selected: boolean;
+  onSelect: () => void;
+  icon: React.ReactNode;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      style={{
+        width: '100%', display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px',
+        borderRadius: '8px', cursor: 'pointer', textAlign: 'left',
+        border: selected ? '2px solid #3B82F6' : '1px solid #E5E7EB',
+        backgroundColor: selected ? '#F0F7FF' : '#FFFFFF',
+        fontFamily: 'Inter, system-ui, sans-serif', transition: 'all 150ms',
+      }}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.borderColor = '#D1D5DB'; }}
+      onMouseLeave={e => { if (!selected) e.currentTarget.style.borderColor = '#E5E7EB'; }}
+    >
+      <div style={{
+        width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
+        border: selected ? 'none' : '2px solid #D1D5DB',
+        backgroundColor: selected ? '#3B82F6' : '#FFFFFF',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2,
+      }}>
+        {selected && <div style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#FFFFFF' }} />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+          {icon}
+          <span style={{ fontSize: '13px', fontWeight: 500, color: '#1F2937', lineHeight: '1' }}>{title}</span>
+        </div>
+        <div style={{ fontSize: '11.5px', color: '#6B7280', lineHeight: '1.45', fontVariantNumeric: 'tabular-nums' }}>
+          {detail}
+        </div>
+      </div>
+    </button>
   );
 }

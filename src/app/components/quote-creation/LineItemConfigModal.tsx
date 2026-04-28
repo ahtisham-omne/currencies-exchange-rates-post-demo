@@ -7,6 +7,8 @@ import { PricingRuleLibraryModal } from '@/app/components/quote-creation/Pricing
 import { ConfirmationModal } from '@/app/components/ConfirmationModal';
 import { AdjustmentFormModal } from '@/app/components/shared/AdjustmentFormModal';
 import type { AdjustmentFormData } from '@/app/components/shared/AdjustmentFormModal';
+import { CurrencyAmount } from '@/app/components/ui/CurrencyAmount';
+import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from '@/app/data/currencyLibrary';
 
 // Helper function to generate Item ID from item.id in xxx-xxx-xxx format
 const generateItemId = (itemId: string): string => {
@@ -42,6 +44,8 @@ interface LineItemConfigModalProps {
   };
   onSave: (updatedItem: any) => void;
   readOnly?: boolean;
+  /** Customer's quote currency (ISO 4217). Drives price/total hover and the pricing-rule "(converted from -₨ X)" indicator. Falls back to PKR when omitted. */
+  customerCurrency?: string;
 }
 
 const SHIPMENT_METHODS = [
@@ -264,7 +268,32 @@ function DonutChart({ segments, total, label }: { segments: { value: number; col
   );
 }
 
-export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly }: LineItemConfigModalProps) {
+export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly, customerCurrency }: LineItemConfigModalProps) {
+  const quoteCurrency = (customerCurrency || BASE_CURRENCY).toUpperCase();
+  const isBaseCurrency = quoteCurrency === BASE_CURRENCY;
+  const customerCur = getLibraryCurrency(quoteCurrency);
+  const customerSym = customerCur?.symbol ?? quoteCurrency;
+  const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
+
+  /** Render a PKR amount as base with a customer-currency hover. */
+  const Money = ({ valuePKR, className }: { valuePKR: number; className?: string }) => {
+    if (isBaseCurrency) {
+      return <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={valuePKR} className={className} />;
+    }
+    return (
+      <CurrencyAmount
+        mode="listing-base"
+        currency={BASE_CURRENCY}
+        value={valuePKR}
+        partnerDefaultCurrency={quoteCurrency}
+        partnerDefaultValue={convertBetween(valuePKR, BASE_CURRENCY, quoteCurrency)}
+        className={className}
+      />
+    );
+  };
+
+  /** Format a PKR amount with a thousand separator (no symbol). */
+  const fmtPKR = (n: number) => Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [formData, setFormData] = useState({
     quantity: item.quantity,
@@ -1005,21 +1034,40 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly }:
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-[12px] text-[#6B7280] flex items-center gap-1.5"><DollarSign className="w-3 h-3 text-[#9CA3AF]" />Price Per Unit</span>
                   <div className="flex items-center gap-2">
+                    <span
+                      className="text-[10px] text-[#9CA3AF] mr-1"
+                      title={`Prices entered in ${BASE_CURRENCY} (base). Customer-currency equivalent appears on hover.`}
+                      style={{ fontWeight: 500 }}
+                    >
+                      {baseSym}
+                    </span>
                     <input
                       type="text"
-                      value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(formData.unitPrice)}
+                      value={fmtPKR(formData.unitPrice)}
                       onChange={(e) => {
                         const cleaned = e.target.value.replace(/[^0-9.]/g, '');
                         const value = parseFloat(cleaned) || 0;
                         if (value !== formData.unitPrice) { setPendingPriceChange(value); setShowPriceUpdateConfirm(true); }
                       }}
                       readOnly={readOnly}
-                      className={`w-24 h-7 px-2 text-[13px] text-[#1F2937] text-right border border-[#E5E7EB] focus:outline-none ${readOnly ? 'bg-[#F9FAFB] cursor-default' : 'bg-white focus:ring-1 focus:ring-[#1B6EF3]'}`}
+                      className={`w-28 h-7 px-2 text-[13px] text-[#1F2937] text-right border border-[#E5E7EB] focus:outline-none tabular-nums ${readOnly ? 'bg-[#F9FAFB] cursor-default' : 'bg-white focus:ring-1 focus:ring-[#1B6EF3]'}`}
                       style={{ borderRadius: '6px', fontWeight: 500 }}
                     />
                     <span className="text-[11px] text-[#9CA3AF]">per {selectedUom?.abbreviation}</span>
                   </div>
                 </div>
+                {!isBaseCurrency && formData.unitPrice > 0 && (() => {
+                  const converted = convertBetween(formData.unitPrice, BASE_CURRENCY, quoteCurrency);
+                  return (
+                    <div className="px-4 pb-2.5 -mt-1 flex items-center justify-end gap-1 text-[11px] text-[#9CA3AF] tabular-nums">
+                      <span>Customer pays approx</span>
+                      <span className="text-[#6B7280]" style={{ fontWeight: 500 }}>
+                        {customerSym} {converted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {quoteCurrency}
+                      </span>
+                      <span>per {selectedUom?.abbreviation}</span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Pricing Rules Section */}
@@ -1033,6 +1081,12 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly }:
                         <span className="text-[13px] text-[#1F2937]" style={{ fontWeight: 500 }}>
                           Pricing Rules
                         </span>
+                        <span
+                          title={`Rules are defined in base currency (${BASE_CURRENCY}) and converted automatically based on the active exchange rate.`}
+                          className="inline-flex items-center cursor-help"
+                        >
+                          <Info className="w-3 h-3 text-[#9CA3AF]" />
+                        </span>
                         {activeRulesCount > 0 && (
                           <span className="text-[10px] px-1.5 py-0.5 bg-[#D1FAE5] text-[#065F46]" style={{ borderRadius: '3px', fontWeight: 500 }}>{activeRulesCount} active</span>
                         )}
@@ -1042,8 +1096,21 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly }:
                       </div>
                       <div className="flex items-center gap-2">
                         {totalRulesDiscount !== 0 && (
-                          <span className={`text-[13px] ${totalRulesDiscount > 0 ? 'text-[#10B981]' : 'text-[#7C3AED]'}`} style={{ fontWeight: 600 }}>
-                            {totalRulesDiscount > 0 ? '-' : '+'}{formatCurrency(Math.abs(totalRulesDiscount))}
+                          <span
+                            className={`text-[13px] ${totalRulesDiscount > 0 ? 'text-[#10B981]' : 'text-[#7C3AED]'} inline-flex items-baseline gap-1`}
+                            style={{ fontWeight: 600 }}
+                          >
+                            <span>{totalRulesDiscount > 0 ? '-' : '+'}</span>
+                            {isBaseCurrency ? (
+                              <span className="tabular-nums">{baseSym} {fmtPKR(totalRulesDiscount)}</span>
+                            ) : (
+                              <span
+                                className="tabular-nums"
+                                title={`Rule defined in ${BASE_CURRENCY}: ${baseSym} ${fmtPKR(totalRulesDiscount)}. Converted at the active rate.`}
+                              >
+                                {customerSym} {convertBetween(Math.abs(totalRulesDiscount), BASE_CURRENCY, quoteCurrency).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            )}
                           </span>
                         )}
                         {!readOnly && hasAppliedRules && (
@@ -1096,7 +1163,30 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly }:
                           <div className="flex items-center gap-3 flex-shrink-0">
                             <div className="text-right flex items-baseline gap-2">
                               <span className={`text-[12px] ${percentageColor}`} style={{ fontWeight: 600 }}>{isPremium ? '+' : '-'}{Math.abs(rule.percentage)}%</span>
-                              <span className={`text-[11px] ${amountColor}`} style={{ fontWeight: 500, opacity: 0.8 }}>{isPremium ? '+' : '-'}{rule.isActive ? formatCurrency(Math.abs(rule.amount)) : formatCurrency(baseSubtotal * Math.abs(rule.percentage) / 100)}</span>
+                              {(() => {
+                                const ruleAmountPKR = rule.isActive ? Math.abs(rule.amount) : (baseSubtotal * Math.abs(rule.percentage) / 100);
+                                const sign = isPremium ? '+' : '-';
+                                if (isBaseCurrency) {
+                                  return (
+                                    <span className={`text-[11px] ${amountColor} tabular-nums`} style={{ fontWeight: 500, opacity: 0.8 }}>
+                                      {sign}{baseSym} {fmtPKR(ruleAmountPKR)}
+                                    </span>
+                                  );
+                                }
+                                const converted = convertBetween(ruleAmountPKR, BASE_CURRENCY, quoteCurrency);
+                                return (
+                                  <span
+                                    className={`text-[11px] ${amountColor} tabular-nums inline-flex items-baseline gap-1 cursor-help`}
+                                    style={{ fontWeight: 500, opacity: 0.85 }}
+                                    title={`Rule defined in ${BASE_CURRENCY}: ${sign}${baseSym} ${fmtPKR(ruleAmountPKR)} · Converted at the active rate (1 ${quoteCurrency} = ${baseSym} ${convertBetween(1, quoteCurrency, BASE_CURRENCY).toFixed(2)} ${BASE_CURRENCY}).`}
+                                  >
+                                    <span>{sign}{customerSym} {converted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    <span className="text-[10px] text-[#9CA3AF]" style={{ fontWeight: 400, opacity: 1 }}>
+                                      (from {sign}{baseSym} {fmtPKR(ruleAmountPKR)})
+                                    </span>
+                                  </span>
+                                );
+                              })()}
                             </div>
                             {!readOnly && (
                               <button onClick={() => { setFormData(prev => ({ ...prev, appliedRules: prev.appliedRules.filter(id => id !== rule.id) })); }} className="w-5 h-5 flex items-center justify-center hover:bg-[#FEF2F2] transition-colors opacity-0 group-hover:opacity-100" style={{ flexShrink: 0, borderRadius: '4px' }} title="Remove rule">
@@ -1143,8 +1233,15 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly }:
                         <span className="text-[10px] px-1.5 py-0.5 bg-[#D1FAE5] text-[#065F46]" style={{ borderRadius: '3px', fontWeight: 500 }}>{formData.oneTimeAdjustments.length} active</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className={`text-[13px] ${oneTimeTotal < 0 ? 'text-[#10B981]' : oneTimeTotal > 0 ? 'text-[#1B6EF3]' : 'text-[#6B7280]'}`} style={{ fontWeight: 600 }}>
-                          {oneTimeTotal < 0 ? '-' : '+'}{formatCurrency(Math.abs(oneTimeTotal))}
+                        <span className={`text-[13px] ${oneTimeTotal < 0 ? 'text-[#10B981]' : oneTimeTotal > 0 ? 'text-[#1B6EF3]' : 'text-[#6B7280]'} inline-flex items-baseline gap-1 tabular-nums`} style={{ fontWeight: 600 }}>
+                          <span>{oneTimeTotal < 0 ? '-' : '+'}</span>
+                          {isBaseCurrency ? (
+                            <span>{baseSym} {fmtPKR(oneTimeTotal)}</span>
+                          ) : (
+                            <span title={`Adjustment defined in ${BASE_CURRENCY}: ${baseSym} ${fmtPKR(oneTimeTotal)}.`}>
+                              {customerSym} {convertBetween(Math.abs(oneTimeTotal), BASE_CURRENCY, quoteCurrency).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          )}
                         </span>
                         {!readOnly && formData.oneTimeAdjustments.length > 0 && (
                           <button onClick={() => setShowDeleteAllAdjustmentsConfirm(true)} className="p-1 hover:bg-[#FEF2F2] transition-colors" style={{ borderRadius: '4px' }} title="Remove all adjustments">
@@ -1186,7 +1283,29 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly }:
                           <div className="flex items-center gap-3 flex-shrink-0">
                             <div className="text-right flex items-baseline gap-2">
                               <span className={`text-[12px] ${isDiscount ? 'text-[#10B981]' : 'text-[#7C3AED]'}`} style={{ fontWeight: 600 }}>{isDiscount ? '-' : '+'}{adj.amount}{adj.amountType}</span>
-                              <span className={`text-[11px] ${isDiscount ? 'text-[#10B981]' : 'text-[#7C3AED]'}`} style={{ fontWeight: 500, opacity: 0.8 }}>{isDiscount ? '-' : '+'}{formatCurrency(amount)}</span>
+                              {(() => {
+                                const sign = isDiscount ? '-' : '+';
+                                if (isBaseCurrency) {
+                                  return (
+                                    <span className={`text-[11px] ${isDiscount ? 'text-[#10B981]' : 'text-[#7C3AED]'} tabular-nums`} style={{ fontWeight: 500, opacity: 0.8 }}>
+                                      {sign}{baseSym} {fmtPKR(amount)}
+                                    </span>
+                                  );
+                                }
+                                const converted = convertBetween(amount, BASE_CURRENCY, quoteCurrency);
+                                return (
+                                  <span
+                                    className={`text-[11px] ${isDiscount ? 'text-[#10B981]' : 'text-[#7C3AED]'} tabular-nums inline-flex items-baseline gap-1 cursor-help`}
+                                    style={{ fontWeight: 500, opacity: 0.85 }}
+                                    title={`Adjustment defined in ${BASE_CURRENCY}: ${sign}${baseSym} ${fmtPKR(amount)} · Converted at the active rate.`}
+                                  >
+                                    <span>{sign}{customerSym} {converted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    <span className="text-[10px] text-[#9CA3AF]" style={{ fontWeight: 400, opacity: 1 }}>
+                                      (from {sign}{baseSym} {fmtPKR(amount)})
+                                    </span>
+                                  </span>
+                                );
+                              })()}
                             </div>
                             {!readOnly && (
                               <div className="flex items-center gap-0.5">
@@ -1225,7 +1344,9 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly }:
               {/* Subtotal */}
               <div className="flex items-center justify-between px-1 py-1">
                 <span className="text-[13px] text-[#1F2937] flex items-center gap-1.5" style={{ fontWeight: 500 }}><Tag className="w-3.5 h-3.5 text-[#6B7280]" />Subtotal</span>
-                <span className="text-[16px] text-[#1F2937]" style={{ fontWeight: 600 }}>{formatCurrency(baseSubtotal)}</span>
+                <span className="text-[16px] text-[#1F2937]" style={{ fontWeight: 600 }}>
+                  <Money valuePKR={baseSubtotal} />
+                </span>
               </div>
 
               {/* Shipment & Delivery Card */}
@@ -1343,13 +1464,15 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly }:
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: '13px', fontWeight: 600, color: '#1F2937' }}>Total</span>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                  <span style={{ fontSize: '20px', fontWeight: 700, color: '#1F2937', letterSpacing: '-0.3px', lineHeight: '1.1' }}>{formatCurrency(total)}</span>
+                  <span style={{ fontSize: '20px', fontWeight: 700, color: '#1F2937', letterSpacing: '-0.3px', lineHeight: '1.1' }}>
+                    <Money valuePKR={total} />
+                  </span>
                   {(totalRulesDiscount !== 0 || oneTimeTotal !== 0 || shippingCost > 0) && (
                     <div style={{ display: 'flex', alignItems: 'center' }}>
                       {[
-                        ...(totalRulesDiscount !== 0 ? [`Rules ${totalRulesDiscount > 0 ? '-' : '+'}${formatCurrency(Math.abs(totalRulesDiscount))}`] : []),
-                        ...(oneTimeTotal !== 0 ? [`Adj. ${oneTimeTotal > 0 ? '+' : '-'}${formatCurrency(Math.abs(oneTimeTotal))}`] : []),
-                        ...(shippingCost > 0 ? [`Shipping +${formatCurrency(shippingCost)}`] : []),
+                        ...(totalRulesDiscount !== 0 ? [`Rules ${totalRulesDiscount > 0 ? '-' : '+'}${baseSym} ${fmtPKR(totalRulesDiscount)}`] : []),
+                        ...(oneTimeTotal !== 0 ? [`Adj. ${oneTimeTotal > 0 ? '+' : '-'}${baseSym} ${fmtPKR(oneTimeTotal)}`] : []),
+                        ...(shippingCost > 0 ? [`Shipping +${baseSym} ${fmtPKR(shippingCost)}`] : []),
                       ].map((tag, i, arr) => (
                         <span key={i} style={{ fontSize: '11px', fontWeight: 500, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
                           {tag}{i < arr.length - 1 && <span style={{ margin: '0 5px', color: '#D1D5DB' }}>·</span>}

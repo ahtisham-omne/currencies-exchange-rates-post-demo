@@ -33,7 +33,12 @@ import {
   ALL_KPI_DEFINITIONS,
   DEFAULT_ACTIVE_KPIS,
   computeKpiValue,
+  computeKpiAmount,
 } from '@/app/components/quotes/KpiInsightsPanel';
+import { BaseCurrencyKPI } from '@/app/components/currency/BaseCurrencyKPI';
+import { RateKpiValue } from '@/app/components/currency/RateKpiValue';
+import { CurrencyAmount } from '@/app/components/ui/CurrencyAmount';
+import { BASE_CURRENCY, convertBetween } from '@/app/data/currencyLibrary';
 import {
   QuoteFiltersModal,
   DEFAULT_QUOTE_FILTERS,
@@ -122,8 +127,8 @@ function getAvatarTint(name: string) {
 }
 
 /* ─── DraggableListKpiCard — matches PM-V exactly ─── */
-function DraggableListKpiCard({ index, kpiKey, label, value, iconName, tooltip, moveCard, onRemove }: {
-  index: number; kpiKey: string; label: string; value: string; iconName: string; tooltip?: string; moveCard: (from: number, to: number) => void; onRemove?: () => void;
+function DraggableListKpiCard({ index, kpiKey, label, value, valueNode, iconName, tooltip, moveCard, onRemove }: {
+  index: number; kpiKey: string; label: string; value: string; valueNode?: React.ReactNode; iconName: string; tooltip?: string; moveCard: (from: number, to: number) => void; onRemove?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [{ isDragging }, drag, preview] = useDrag({ type: DND_LIST_KPI, item: () => ({ index }), collect: m => ({ isDragging: m.isDragging() }) });
@@ -180,9 +185,9 @@ function DraggableListKpiCard({ index, kpiKey, label, value, iconName, tooltip, 
             )}
           </div>
         </div>
-        <div className="flex items-baseline gap-1.5">
-          <p className="text-[15px] text-[#0F172A] tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{value}</p>
-        </div>
+        {valueNode
+          ? <div className="text-[15px] text-[#0F172A]" style={{ fontWeight: 600, lineHeight: 1.2 }}>{valueNode}</div>
+          : <div className="flex items-baseline gap-1.5"><p className="text-[15px] text-[#0F172A] tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{value}</p></div>}
       </div>
       {onRemove && (
         <button onClick={e => { e.stopPropagation(); onRemove(); }}
@@ -331,6 +336,7 @@ export function QuotesListPage() {
     if (f.priorities.length > 0) result = result.filter(q => f.priorities.includes(q.priority));
     if (f.salesReps.length > 0) result = result.filter(q => { const n = typeof q.salesRep === 'string' ? q.salesRep : q.salesRep?.name || ''; return f.salesReps.includes(n); });
     if (f.customers.length > 0) result = result.filter(q => { const n = typeof q.customer === 'string' ? q.customer : q.customer?.name || ''; return f.customers.includes(n); });
+    if (f.currencies.length > 0) result = result.filter(q => f.currencies.includes((q.customerCurrency ?? 'PKR').toUpperCase()));
     if (f.valueMin) result = result.filter(q => (q.totalValue || 0) >= Number(f.valueMin));
     if (f.valueMax) result = result.filter(q => (q.totalValue || 0) <= Number(f.valueMax));
     if (f.createdFrom) result = result.filter(q => q.createdDate && new Date(q.createdDate) >= new Date(f.createdFrom));
@@ -605,7 +611,15 @@ export function QuotesListPage() {
               <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))' }}>
                 {activeKpiDefs.map((kpi, idx) => {
                   const value = computeKpiValue(kpi.key, quotes);
-                  return <DraggableListKpiCard key={kpi.key} index={idx} kpiKey={kpi.key} label={kpi.label} value={value} iconName={kpi.iconName} tooltip={kpi.tooltip} moveCard={moveKpi} onRemove={() => handleToggleKpi(kpi.key)} />;
+                  const amountPKR = kpi.isCurrency ? computeKpiAmount(kpi.key, quotes) : undefined;
+                  const valueNode = kpi.key === 'market_rate'
+                    ? <RateKpiValue rateType="market" />
+                    : kpi.key === 'corporate_rate'
+                      ? <RateKpiValue rateType="corporate" />
+                      : amountPKR !== undefined
+                        ? <BaseCurrencyKPI valuePKR={amountPKR} />
+                        : undefined;
+                  return <DraggableListKpiCard key={kpi.key} index={idx} kpiKey={kpi.key} label={kpi.label} value={value} valueNode={valueNode} iconName={kpi.iconName} tooltip={kpi.tooltip} moveCard={moveKpi} onRemove={() => handleToggleKpi(kpi.key)} />;
                 })}
               </div>
             </DndProvider>
@@ -975,7 +989,25 @@ export function QuotesListPage() {
                                 </TableCell>
                               );
                             case 'status': return <TableCell key={colKey}><StatusBadge status={quote.status} /></TableCell>;
-                            case 'totalValue': return <TableCell key={colKey} className="text-right"><span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>$ {fmtCurrency(quote.totalValue || 0)}</span></TableCell>;
+                            case 'totalValue': {
+                              const customerCur = (quote.customerCurrency ?? BASE_CURRENCY).toUpperCase();
+                              const isBase = customerCur === BASE_CURRENCY;
+                              return (
+                                <TableCell key={colKey} className="text-right">
+                                  <span className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
+                                    {isBase
+                                      ? <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={quote.totalValue || 0} />
+                                      : <CurrencyAmount
+                                          mode="listing-base"
+                                          currency={BASE_CURRENCY}
+                                          value={quote.totalValue || 0}
+                                          partnerDefaultCurrency={customerCur}
+                                          partnerDefaultValue={convertBetween(quote.totalValue || 0, BASE_CURRENCY, customerCur)}
+                                        />}
+                                  </span>
+                                </TableCell>
+                              );
+                            }
                             case 'deliveryLocation': return <TableCell key={colKey}><span className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{highlightText(customerLoc || '–')}</span></TableCell>;
                             case 'requestedDate': return <TableCell key={colKey}><span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{fmtDate(quote.requestedDate)}</span></TableCell>;
                             case 'createdDate': return <TableCell key={colKey}><span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{fmtDate(quote.createdDate)}</span></TableCell>;
@@ -1113,7 +1145,11 @@ export function QuotesListPage() {
                 <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))' }}>
                   {activeKpiDefs.map((kpi, idx) => {
                     const value = computeKpiValue(kpi.key, quotes);
-                    return <DraggableListKpiCard key={kpi.key} index={idx} kpiKey={kpi.key} label={kpi.label} value={value} iconName={kpi.iconName} tooltip={kpi.tooltip} moveCard={moveKpi} onRemove={() => handleToggleKpi(kpi.key)} />;
+                    const amountPKR = kpi.isCurrency ? computeKpiAmount(kpi.key, quotes) : undefined;
+                    const valueNode = amountPKR !== undefined
+                      ? <BaseCurrencyKPI valuePKR={amountPKR} />
+                      : undefined;
+                    return <DraggableListKpiCard key={kpi.key} index={idx} kpiKey={kpi.key} label={kpi.label} value={value} valueNode={valueNode} iconName={kpi.iconName} tooltip={kpi.tooltip} moveCard={moveKpi} onRemove={() => handleToggleKpi(kpi.key)} />;
                   })}
                 </div>
               </DndProvider>

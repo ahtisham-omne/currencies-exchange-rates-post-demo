@@ -3,6 +3,8 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Plus, Minus, Trash2, Search, Check, Package, Settings, Info, ChevronDown, LayoutList, Grid2x2, AlertCircle, Users, Lightbulb, Armchair, Laptop, Wrench, Box, Layers, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { QuoteDraft } from '@/app/components/CreateQuoteModal';
+import { CurrencyAmount } from '@/app/components/ui/CurrencyAmount';
+import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from '@/app/data/currencyLibrary';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import { LineItemConfigModal } from '@/app/components/quote-creation/LineItemConfigModal';
 import { HighlightText } from '@/app/components/HighlightText';
@@ -32,6 +34,10 @@ const generateItemId = (itemId: string): string => {
 
 export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const customerCurrency = (quoteDraft.currency || quoteDraft.customerDefaultCurrency || BASE_CURRENCY).toUpperCase();
+  const customerCurrencyIsBase = customerCurrency === BASE_CURRENCY;
+  // Default to base currency display; toggle is hidden when customer settles in PKR.
+  const [priceView, setPriceView] = useState<'base' | 'customer'>('base');
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [selectedItemForConfig, setSelectedItemForConfig] = useState<any>(null);
   const [uomDropdownOpen, setUomDropdownOpen] = useState<string | null>(null);
@@ -315,6 +321,39 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
     }).format(amount);
   };
 
+  /**
+   * Render a PKR amount under the active price-view toggle. When the customer
+   * settles in PKR there's nothing to flip — render a plain base value with
+   * no hover. Otherwise honor the toggle: base view shows ₨ with customer
+   * hover, customer view shows the converted value with ₨ hover.
+   */
+  const Money = ({ valuePKR, className }: { valuePKR: number; className?: string }) => {
+    if (customerCurrencyIsBase) {
+      return <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={valuePKR} className={className} />;
+    }
+    if (priceView === 'customer') {
+      const customerValue = convertBetween(valuePKR, BASE_CURRENCY, customerCurrency);
+      return (
+        <CurrencyAmount
+          mode="listing-partner"
+          currency={customerCurrency}
+          value={customerValue}
+          className={className}
+        />
+      );
+    }
+    return (
+      <CurrencyAmount
+        mode="listing-base"
+        currency={BASE_CURRENCY}
+        value={valuePKR}
+        partnerDefaultCurrency={customerCurrency}
+        partnerDefaultValue={convertBetween(valuePKR, BASE_CURRENCY, customerCurrency)}
+        className={className}
+      />
+    );
+  };
+
   const subtotal = quoteDraft.lineItems.reduce((sum, item) => sum + item.total, 0);
 
   // Sequential numbering: 1, 2, 3, 4, 5... with duplicate tracking
@@ -473,6 +512,38 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
               />
             </div>
             <FilterButton filters={advancedFilters} setFilters={setAdvancedFilters} filteredCount={displayProducts.length} />
+            {/* Price-view toggle — Base ↔ Customer. Hidden when customer
+                already settles in PKR (nothing meaningful to flip). */}
+            {!customerCurrencyIsBase && (() => {
+              const cur = getLibraryCurrency(customerCurrency);
+              const sym = cur?.symbol ?? customerCurrency;
+              return (
+                <div className="inline-flex items-center h-9 rounded-md border border-[#E5E7EB] bg-white p-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setPriceView('base')}
+                    className={`inline-flex items-center h-7 px-2.5 rounded text-[12px] whitespace-nowrap cursor-pointer transition-colors ${
+                      priceView === 'base' ? 'bg-[#EDF4FF] text-[#1B6EF3]' : 'text-[#6B7280] hover:text-[#1F2937]'
+                    }`}
+                    style={{ fontWeight: priceView === 'base' ? 600 : 500 }}
+                    title={`Show prices in ${BASE_CURRENCY} (base)`}
+                  >
+                    ₨ {BASE_CURRENCY}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPriceView('customer')}
+                    className={`inline-flex items-center h-7 px-2.5 rounded text-[12px] whitespace-nowrap cursor-pointer transition-colors ${
+                      priceView === 'customer' ? 'bg-[#EDF4FF] text-[#1B6EF3]' : 'text-[#6B7280] hover:text-[#1F2937]'
+                    }`}
+                    style={{ fontWeight: priceView === 'customer' ? 600 : 500 }}
+                    title={`Show prices in customer currency (${customerCurrency})`}
+                  >
+                    {sym} {customerCurrency}
+                  </button>
+                </div>
+              );
+            })()}
           </div>
           <ActiveFilterTags filters={advancedFilters} setFilters={setAdvancedFilters} />
         </div>
@@ -564,7 +635,7 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <span className="text-[13px] text-[#1F2937]" style={{ fontWeight: 600 }}>
-                          {formatCurrency(product.unitPrice)}
+                          <Money valuePKR={product.unitPrice} />
                         </span>
                         <span className="text-[11px] text-[#9CA3AF] ml-1" style={{ fontWeight: 400 }}>/ EA</span>
                       </div>
@@ -979,12 +1050,12 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
                       <div className="flex-1 text-right min-w-0">
                         {sidebarWidth === 'narrow' ? (
                           <div className="text-[13px] text-[#1F2937] truncate" style={{ fontWeight: 600 }}>
-                            {formatCurrency(item.total)} <span className="text-[#6B7280]" style={{ fontWeight: 400 }}>({UNITS_OF_MEASURE.find(u => u.id === (item.uom || 'ea'))?.name || 'EA'})</span>
+                            <Money valuePKR={item.total} /> <span className="text-[#6B7280]" style={{ fontWeight: 400 }}>({UNITS_OF_MEASURE.find(u => u.id === (item.uom || 'ea'))?.name || 'EA'})</span>
                           </div>
                         ) : (
                           <>
                             <div className="text-[16px] text-[#1F2937] truncate" style={{ fontWeight: 600 }}>
-                              {formatCurrency(item.total)}
+                              <Money valuePKR={item.total} />
                             </div>
                             <div className="text-[11px] text-[#6B7280]" style={{ fontWeight: 400 }}>
                               ({UNITS_OF_MEASURE.find(u => u.id === (item.uom || 'ea'))?.name || 'EA'})
@@ -1019,7 +1090,7 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
                 Subtotal ({quoteDraft.lineItems.length} items)
               </span>
               <span className="text-[20px] text-[#1B6EF3]" style={{ fontWeight: 600 }}>
-                {formatCurrency(subtotal)}
+                <Money valuePKR={subtotal} />
               </span>
             </div>
             <p className="text-[11px] text-[#9CA3AF]">+ Shipping calculated on next step</p>
@@ -1033,6 +1104,7 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
           onClose={() => setConfigModalOpen(false)}
           item={selectedItemForConfig}
           onSave={handleSaveConfig}
+          customerCurrency={customerCurrency}
         />
       )}
 

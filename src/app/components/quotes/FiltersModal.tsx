@@ -8,6 +8,7 @@ import {
 } from "@/app/components/ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X, ChevronDown, ChevronUp, Search } from "lucide-react";
+import { BASE_CURRENCY, getLibraryCurrency } from "@/app/data/currencyLibrary";
 
 /* ─── Filter Types ─── */
 export interface QuoteAdvancedFilters {
@@ -15,6 +16,8 @@ export interface QuoteAdvancedFilters {
   priorities: string[];
   salesReps: string[];
   customers: string[];
+  /** ISO 4217 alpha-3 codes — empty array means "any". */
+  currencies: string[];
   valueMin: string;
   valueMax: string;
   createdFrom: string;
@@ -28,6 +31,7 @@ export const DEFAULT_QUOTE_FILTERS: QuoteAdvancedFilters = {
   priorities: [],
   salesReps: [],
   customers: [],
+  currencies: [],
   valueMin: "",
   valueMax: "",
   createdFrom: "",
@@ -42,6 +46,7 @@ export function countActiveQuoteFilters(f: QuoteAdvancedFilters): number {
   if (f.priorities.length > 0) count++;
   if (f.salesReps.length > 0) count++;
   if (f.customers.length > 0) count++;
+  if (f.currencies.length > 0) count++;
   if (f.valueMin || f.valueMax) count++;
   if (f.createdFrom || f.createdTo) count++;
   if (f.expiryFrom || f.expiryTo) count++;
@@ -205,15 +210,25 @@ export function QuoteFiltersModal({ open, onOpenChange, filters, onFiltersChange
   const filterOptions = useMemo(() => {
     const salesReps = new Set<string>();
     const customers = new Set<string>();
+    const currencies = new Set<string>();
     quotes.forEach(q => {
       const repName = typeof q.salesRep === 'string' ? q.salesRep : q.salesRep?.name;
       if (repName) salesReps.add(repName);
       const custName = typeof q.customer === 'string' ? q.customer : q.customer?.name;
       if (custName) customers.add(custName);
+      const cur = (q.customerCurrency ?? BASE_CURRENCY).toUpperCase();
+      currencies.add(cur);
     });
     return {
       salesReps: Array.from(salesReps).sort().map(v => ({ value: v, label: v })),
       customers: Array.from(customers).sort().map(v => ({ value: v, label: v })),
+      // Pin base currency first so it's always visible even when only a few
+      // foreign currencies are present in the dataset.
+      currencies: Array.from(currencies).sort((a, b) => {
+        if (a === BASE_CURRENCY) return -1;
+        if (b === BASE_CURRENCY) return 1;
+        return a.localeCompare(b);
+      }),
     };
   }, [quotes]);
 
@@ -291,6 +306,28 @@ export function QuoteFiltersModal({ open, onOpenChange, filters, onFiltersChange
                     onToggle={v => toggleMulti("customers", v)}
                     getCount={val => quotes.filter(q => (typeof q.customer === 'string' ? q.customer : q.customer?.name) === val).length}
                     placeholder="Search customers…" />
+                </Section>
+                <Divider />
+              </>
+            )}
+
+            {/* Currency — filter rows by the customer's transaction currency */}
+            {filterOptions.currencies.length > 0 && (
+              <>
+                <Section title="Currency" subtitle="Filter by the customer's transaction currency.">
+                  <div className="flex flex-wrap gap-1.5">
+                    <Pill label="Any" selected={filters.currencies.length === 0} onClick={() => update("currencies", [])} />
+                    {filterOptions.currencies.map(code => {
+                      const cur = getLibraryCurrency(code);
+                      const symbol = cur?.symbol ?? code;
+                      const label = `${symbol} ${code}${code === BASE_CURRENCY ? " · Base" : ""}`;
+                      const count = quotes.filter(q => (q.customerCurrency ?? BASE_CURRENCY).toUpperCase() === code).length;
+                      return (
+                        <Pill key={code} label={label} selected={filters.currencies.includes(code)}
+                          onClick={() => toggleMulti("currencies", code)} count={count} />
+                      );
+                    })}
+                  </div>
                 </Section>
                 <Divider />
               </>
