@@ -3,21 +3,28 @@ import {
   Search, ChevronDown, ChevronRight, RotateCcw,
   ArrowLeftRight, X, Check, Package, DollarSign, Plus, Trash2,
   Edit, Tag, Send, CheckCircle2, FileText, Clock, AlertCircle, Scale,
-  Eye, EyeOff
+  Eye, EyeOff, TrendingUp
 } from "lucide-react";
 import { toast } from "sonner";
 import { FONT } from "./designTokens";
 import type { POVersionEntry, POChangeRecord, POLineItemSnapshot, POVersionSnapshot } from "./poStore";
+import { refreshPOLockedRates } from "./poStore";
 import UserHoverCard from "./UserHoverCard";
+import { POVersionRateChip } from "./currency/POVersionRateChip";
+import { CurrencyAmount } from "./ui/CurrencyAmount";
+import { BASE_CURRENCY } from "@/app/data/currencyLibrary";
 
 /* ── Types ─────────────────────────────────────────────────── */
 
 interface POVersionHistoryTabProps {
   poNumber: string;
+  poId: string;
   versions: POVersionEntry[];
-  onRevert: (version: number, reason: string) => void;
+  onRevert: (version: number, reason: string, rateChoice: "locked" | "refresh") => void;
   /** When set, comparison opens full-width outside the tab area */
   onCompareFullScreen?: (v1: POVersionEntry, v2: POVersionEntry) => void;
+  /** Mirrors the PO-level Base ↔ Partner toggle from the detail header. */
+  viewMode?: "base" | "partner";
 }
 
 
@@ -33,6 +40,7 @@ const changeTypeConfig: Record<string, { icon: React.ElementType; color: string;
   "pricing-changed": { icon: DollarSign, color: "#2563EB", bg: "#DBEAFE" },
   "vendor-changed": { icon: Edit, color: "#7C3AED", bg: "#EDE9FE" },
   "config-changed": { icon: Tag, color: "#6B7280", bg: "#F3F4F6" },
+  "exchange-rate-changed": { icon: TrendingUp, color: "#7C3AED", bg: "#EDE9FE" },
 };
 
 const versionStatusConfig: Record<POVersionStatus, { label: string; bg: string; color: string; icon: React.ElementType }> = {
@@ -42,15 +50,120 @@ const versionStatusConfig: Record<POVersionStatus, { label: string; bg: string; 
   "partially-received": { label: "Partially Received", bg: "#fffbeb", color: "#b45309", icon: Package },
 };
 
+/**
+ * Format an amount as base currency (PKR). Every currency-bearing string in
+ * the version history must carry a symbol per the global currency rule —
+ * using `Rs` keeps amounts consistent with PKR display elsewhere in the PO
+ * module and avoids the misleading `$` from a USD locale.
+ */
 const formatCurrency = (n: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  `Rs ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)}`;
+
+/**
+ * Render a base-PKR amount honoring the PO-level Base ↔ Partner toggle, with
+ * the standard hover tooltip used everywhere else in the module — `CurrencyAmount`
+ * surfaces the equivalent value in the other currency, the rate, and the rate
+ * source.
+ *
+ * Each version converts via its own locked rate so a sent version stays frozen
+ * at the rate it captured, while a draft picks up today's rate.
+ */
+export function VersionAmount({
+  amountPKR,
+  version,
+  viewMode = "base",
+  className,
+}: {
+  amountPKR: number;
+  version: POVersionEntry;
+  viewMode?: "base" | "partner";
+  className?: string;
+}) {
+  const partnerCode = (version.snapshot.vendorAmountCurrency ?? BASE_CURRENCY).toUpperCase();
+  const isVendorBase = partnerCode === BASE_CURRENCY;
+  const lockedRate = version.rateSnapshot?.lockedRate;
+  const lockedAt = version.rateSnapshot?.lockedAt;
+
+  if (isVendorBase) {
+    return (
+      <CurrencyAmount
+        mode="single"
+        currency={BASE_CURRENCY}
+        value={amountPKR}
+        className={className}
+      />
+    );
+  }
+
+  // Partner-currency value, derived through this version's own locked rate.
+  const partnerValue = lockedRate && lockedRate > 0 ? amountPKR / lockedRate : amountPKR;
+
+  if (viewMode === "partner") {
+    return (
+      <CurrencyAmount
+        mode="listing-partner"
+        currency={partnerCode}
+        value={partnerValue}
+        lockedRate={lockedRate}
+        lockedAt={lockedAt}
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <CurrencyAmount
+      mode="listing-base"
+      currency={BASE_CURRENCY}
+      value={amountPKR}
+      partnerDefaultCurrency={partnerCode}
+      partnerDefaultValue={partnerValue}
+      lockedRate={lockedRate}
+      lockedAt={lockedAt}
+      className={className}
+    />
+  );
+}
+
+/**
+ * Render a base-PKR amount honoring the PO-level Base ↔ Partner toggle. In
+ * partner mode we convert the stored PKR figure back through the version's
+ * own locked rate so each version reads in the FX context it was recorded
+ * in (sent versions are frozen; refreshed drafts pick up today's rate).
+ *
+ * Falls back to base PKR when the version has no rate snapshot or the
+ * vendor currency is already PKR.
+ */
+export function formatVersionAmount(
+  amountPKR: number,
+  version: POVersionEntry,
+  viewMode: "base" | "partner" = "base",
+): string {
+  if (viewMode === "base") return formatCurrency(amountPKR);
+  const partnerCode = (version.snapshot.vendorAmountCurrency ?? "PKR").toUpperCase();
+  if (partnerCode === "PKR") return formatCurrency(amountPKR);
+  const rate = version.rateSnapshot?.lockedRate;
+  if (!rate || rate <= 0) return formatCurrency(amountPKR);
+  const partnerValue = amountPKR / rate;
+  const sym = (() => {
+    const map: Record<string, string> = {
+      USD: "$", EUR: "€", GBP: "£", JPY: "¥", CHF: "CHF", CAD: "C$", AUD: "A$",
+      CNY: "¥", INR: "₹", KRW: "₩", SGD: "S$", HKD: "HK$", AED: "د.إ", SAR: "﷼",
+    };
+    return map[partnerCode] ?? partnerCode;
+  })();
+  // Keep 2 decimals in partner mode — most non-PKR currencies (USD, EUR, GBP)
+  // need cent precision to be readable, especially for line-item totals.
+  const formatted = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(partnerValue);
+  return `${sym} ${formatted}`;
+}
 
 const CURRENT_USER = "Areeb Tanvir";
 
 
 /* ── Main Component ────────────────────────────────────────── */
 
-export default function POVersionHistoryTab({ poNumber, versions, onRevert, onCompareFullScreen }: POVersionHistoryTabProps) {
+export default function POVersionHistoryTab({ poNumber, poId, versions, onRevert, onCompareFullScreen, viewMode = "base" }: POVersionHistoryTabProps) {
   const [searchQuery, setSearchQuery] = useState("");
   
   const [expandedVersions, setExpandedVersions] = useState<Set<number>>(new Set([versions[0]?.version ?? 1]));
@@ -281,7 +394,10 @@ export default function POVersionHistoryTab({ poNumber, versions, onRevert, onCo
                     {/* Snapshot badges */}
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
                       <span style={{ fontSize: "11px", color: "#6B7280", lineHeight: "1" }}>{ver.snapshot.lineItemCount} items</span>
-                      <span style={{ fontSize: "12px", fontWeight: 600, color: "#1F2937", lineHeight: "1" }}>{formatCurrency(ver.snapshot.total)}</span>
+                      <span style={{ fontSize: "12px", fontWeight: 600, color: "#1F2937", lineHeight: "1" }}>
+                        <VersionAmount amountPKR={ver.snapshot.total} version={ver} viewMode={viewMode} />
+                      </span>
+                      <POVersionRateChip version={ver} dense />
                     </div>
 
                     {/* Revert */}
@@ -349,8 +465,12 @@ export default function POVersionHistoryTab({ poNumber, versions, onRevert, onCo
                                 </div>
                                 <span style={{ fontSize: "11px", color: "#6B7280", lineHeight: "1", flexShrink: 0, width: "40px", textAlign: "right" as const }}>{li.vendorQty}</span>
                                 <span style={{ fontSize: "11px", color: "#9CA3AF", lineHeight: "1", flexShrink: 0, width: "40px", textAlign: "center" as const }}>{li.vendorUOM}</span>
-                                <span style={{ fontSize: "11px", color: "#9CA3AF", lineHeight: "1", flexShrink: 0, width: "72px", textAlign: "right" as const }}>{formatCurrency(li.unitPrice)}</span>
-                                <span style={{ fontSize: "12px", fontWeight: 600, color: "#1F2937", lineHeight: "1", flexShrink: 0, width: "72px", textAlign: "right" as const }}>{formatCurrency(li.lineTotal)}</span>
+                                <span style={{ fontSize: "11px", color: "#9CA3AF", lineHeight: "1", flexShrink: 0, width: "72px", textAlign: "right" as const }}>
+                                  <VersionAmount amountPKR={li.unitPrice} version={ver} viewMode={viewMode} />
+                                </span>
+                                <span style={{ fontSize: "12px", fontWeight: 600, color: "#1F2937", lineHeight: "1", flexShrink: 0, width: "72px", textAlign: "right" as const }}>
+                                  <VersionAmount amountPKR={li.lineTotal} version={ver} viewMode={viewMode} />
+                                </span>
                               </div>
                             ))}
                           </div>
@@ -362,18 +482,20 @@ export default function POVersionHistoryTab({ poNumber, versions, onRevert, onCo
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "6px 14px", borderTop: "1px solid #E5E7EB", backgroundColor: "#FFFFFF" }}>
                             <span style={{ fontSize: "11px", fontWeight: 500, color: "#6B7280", textTransform: "uppercase" as const, letterSpacing: "0.3px", lineHeight: "1", marginRight: "8px" }}>Subtotal</span>
                             <span style={{ fontSize: "12px", fontWeight: 600, color: "#374151", lineHeight: "1", width: "72px", textAlign: "right" as const }}>
-                              {formatCurrency(ver.snapshot.lineItems.reduce((s, li) => s + li.lineTotal, 0))}
+                              <VersionAmount amountPKR={ver.snapshot.lineItems.reduce((s, li) => s + li.lineTotal, 0)} version={ver} viewMode={viewMode} />
                             </span>
                           </div>
                         )}
                         {/* Footer */}
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", backgroundColor: "#F9FAFB", borderTop: "1px solid #E5E7EB" }}>
                           <span style={{ fontSize: "11px", color: "#9CA3AF", lineHeight: "1" }}>
-                            Shipping: {formatCurrency(ver.snapshot.shippingFee)} · Discount: {formatCurrency(ver.snapshot.discountTotal)}
+                            Shipping: <VersionAmount amountPKR={ver.snapshot.shippingFee} version={ver} viewMode={viewMode} /> · Discount: <VersionAmount amountPKR={ver.snapshot.discountTotal} version={ver} viewMode={viewMode} />
                           </span>
                           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                             <span style={{ fontSize: "11px", fontWeight: 500, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.3px", lineHeight: "1" }}>Total</span>
-                            <span style={{ fontSize: "13px", fontWeight: 700, color: "#1F2937", lineHeight: "1" }}>{formatCurrency(ver.snapshot.total)}</span>
+                            <span style={{ fontSize: "13px", fontWeight: 700, color: "#1F2937", lineHeight: "1" }}>
+                              <VersionAmount amountPKR={ver.snapshot.total} version={ver} viewMode={viewMode} />
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -437,11 +559,17 @@ export default function POVersionHistoryTab({ poNumber, versions, onRevert, onCo
         <RevertConfirmModal
           version={showRevertConfirm}
           nextVersion={(sorted[0]?.version ?? 1) + 1}
+          sourceEntry={sorted.find(v => v.version === showRevertConfirm) ?? null}
           onClose={() => setShowRevertConfirm(null)}
-          onConfirm={(reason: string) => {
-            onRevert(showRevertConfirm, reason);
+          onConfirm={(reason: string, rateChoice: "locked" | "refresh") => {
+            onRevert(showRevertConfirm, reason, rateChoice);
             setShowRevertConfirm(null);
-            toast.success(`Reverted to Version ${showRevertConfirm}`, { description: "Created as a new version in the history.", position: "top-right" });
+            toast.success(`Reverted to Version ${showRevertConfirm}`, {
+              description: rateChoice === "refresh"
+                ? "Created as a new version with today's rate applied."
+                : "Created as a new version with the locked rate restored.",
+              position: "top-right",
+            });
           }}
         />
       )}
@@ -453,15 +581,38 @@ export default function POVersionHistoryTab({ poNumber, versions, onRevert, onCo
    RevertConfirmModal
    ═══════════════════════════════════════════════════════════════ */
 
-function RevertConfirmModal({ version, nextVersion, onClose, onConfirm }: {
-  version: number; nextVersion: number; onClose: () => void; onConfirm: (reason: string) => void;
+function RevertConfirmModal({ version, nextVersion, sourceEntry, onClose, onConfirm }: {
+  version: number;
+  nextVersion: number;
+  sourceEntry: POVersionEntry | null;
+  onClose: () => void;
+  onConfirm: (reason: string, rateChoice: "locked" | "refresh") => void;
 }) {
   const [reason, setReason] = useState("");
+  const [rateChoice, setRateChoice] = useState<"locked" | "refresh">("locked");
+
+  const lockedRateLabel = (() => {
+    const r = sourceEntry?.rateSnapshot?.lockedRate;
+    if (!r) return null;
+    const partner = (sourceEntry?.snapshot.vendorAmountCurrency ?? "").toUpperCase();
+    if (!partner || partner === "PKR") return null;
+    return `1 ${partner} = Rs ${r.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  })();
+
+  const lockedDateLabel = (() => {
+    const at = sourceEntry?.rateSnapshot?.lockedAt;
+    if (!at) return null;
+    try {
+      return new Date(at).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+    } catch {
+      return null;
+    }
+  })();
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ position: "absolute", inset: 0, backgroundColor: "rgba(0,0,0,0.3)" }} onClick={onClose} />
-      <div style={{ position: "relative", backgroundColor: "#FFFFFF", borderRadius: "12px", width: "440px", boxShadow: "0 16px 48px rgba(0,0,0,0.12)", fontFamily: "Inter, system-ui, sans-serif" }}>
+      <div style={{ position: "relative", backgroundColor: "#FFFFFF", borderRadius: "12px", width: "480px", boxShadow: "0 16px 48px rgba(0,0,0,0.12)", fontFamily: "Inter, system-ui, sans-serif" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #E5E7EB" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <RotateCcw style={{ width: "16px", height: "16px", color: "#D97706" }} />
@@ -473,12 +624,54 @@ function RevertConfirmModal({ version, nextVersion, onClose, onConfirm }: {
         </div>
 
         <div style={{ padding: "20px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "12px", padding: "8px 10px", backgroundColor: "#FFFBEB", borderRadius: "6px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "14px", padding: "8px 10px", backgroundColor: "#FFFBEB", borderRadius: "6px" }}>
             <AlertCircle style={{ width: "13px", height: "13px", color: "#D97706", flexShrink: 0 }} />
             <span style={{ fontSize: "11px", color: "#92400E", lineHeight: "1.3" }}>
               This will create a new version (V{nextVersion}) based on V{version}. The current state will be preserved in history.
             </span>
           </div>
+
+          {lockedRateLabel && (
+            <div style={{ marginBottom: "14px" }}>
+              <label style={{ fontSize: "11px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px", display: "block", marginBottom: "8px", lineHeight: "1" }}>
+                Currency rate
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {([
+                  { key: "locked", title: `Restore locked rate from V${version}`, sub: `${lockedRateLabel}${lockedDateLabel ? ` · locked on ${lockedDateLabel}` : ""}` },
+                  { key: "refresh", title: "Refresh to today's rate", sub: "Recompute totals against today's market snapshot" },
+                ] as const).map((opt) => {
+                  const active = rateChoice === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setRateChoice(opt.key)}
+                      style={{
+                        display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
+                        borderRadius: 8, border: `1px solid ${active ? "#1B6EF3" : "#E5E7EB"}`,
+                        backgroundColor: active ? "#EFF6FF" : "#FFFFFF",
+                        textAlign: "left", cursor: "pointer", fontFamily: "Inter, system-ui, sans-serif",
+                      }}
+                    >
+                      <span style={{
+                        marginTop: 2, width: 14, height: 14, borderRadius: "50%",
+                        border: `1.5px solid ${active ? "#1B6EF3" : "#D1D5DB"}`,
+                        backgroundColor: active ? "#1B6EF3" : "#FFFFFF",
+                        display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                      }}>
+                        {active && <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "#FFFFFF" }} />}
+                      </span>
+                      <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "#111827", lineHeight: "1.3" }}>{opt.title}</span>
+                        <span style={{ fontSize: 11, color: "#6B7280", lineHeight: "1.3" }}>{opt.sub}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <label style={{ fontSize: "11px", fontWeight: 600, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.5px", display: "block", marginBottom: "6px", lineHeight: "1" }}>
             Reason for revert <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(optional)</span>
@@ -499,7 +692,7 @@ function RevertConfirmModal({ version, nextVersion, onClose, onConfirm }: {
             Cancel
           </button>
           <button
-            onClick={() => onConfirm(reason.trim())}
+            onClick={() => onConfirm(reason.trim(), rateChoice)}
             style={{ height: "34px", padding: "0 16px", fontSize: "13px", fontWeight: 500, color: "#FFFFFF", backgroundColor: "#D97706", border: "none", borderRadius: "6px", cursor: "pointer", fontFamily: "Inter, system-ui, sans-serif", display: "flex", alignItems: "center", gap: "6px" }}
           >
             <RotateCcw style={{ width: "13px", height: "13px" }} />

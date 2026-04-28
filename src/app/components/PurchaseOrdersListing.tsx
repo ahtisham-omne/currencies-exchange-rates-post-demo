@@ -18,6 +18,8 @@ import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { getAllPOs, subscribeToPOStore, createPOFromBuyNow, getPO, duplicatePO, createPOFromVendorCheckout } from "./poStore";
 import type { PurchaseOrderData } from "./poStore";
 import { printPurchaseOrder } from "./PrintPurchaseOrder";
+import PrintOptionsDialog from "./PrintOptionsDialog";
+import { poVendorCurrencyIsBase } from "./poStore";
 import ItemsCatalogueModal from "./CatalogueModal";
 import { CATALOG } from "./catalogData";
 import { getCart, subscribeToCart, addToCart as addToGlobalCart } from "./cartStore";
@@ -793,6 +795,7 @@ export default function PurchaseOrdersListing() {
 
   /* ── Delete confirmation modal ── */
   const [deleteTarget, setDeleteTarget] = useState<PurchaseOrder | null>(null);
+  const [printTarget, setPrintTarget] = useState<PurchaseOrderData | null>(null);
 
   const toggleInsight = useCallback((id: string) => {
     setActiveInsightIds((prev) =>
@@ -858,55 +861,50 @@ export default function PurchaseOrdersListing() {
       case "print": {
         // Try store PO first for full data, otherwise build a minimal PO for print
         const printSource = getPO(item.id);
-        if (printSource) {
-          printPurchaseOrder(printSource);
-        } else {
-          // Build a minimal PurchaseOrderData from the listing row for printing
-          const mockPOData: PurchaseOrderData = {
-            id: item.id,
-            poNumber: item.poNumber,
-            status: item.status as PurchaseOrderData["status"],
-            orderDate: item.orderDate ? new Date(item.orderDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
-            deliveryDate: item.dueDeliveryDate ? new Date(item.dueDeliveryDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
-            confirmationDate: null,
-            sentDate: null,
-            receivingStartDate: null,
-            vendor: { name: item.partnerLocation, address: "", phone: "", email: "", taxId: "" },
-            recipient: { name: item.pointOfContact, role: "Vendor Contact", email: "", phone: "" },
-            secondaryContactNames: [],
-            lineItems: item.orderedItems.map((oi, idx) => ({
-              id: `print-${item.id}-${idx}`,
-              itemNumber: oi.code,
-              descriptiveName: oi.code,
-              image: oi.image,
-              unitPrice: (item.quoteValue || 50000) / Math.max(1, item.orderedItems.length),
-              vendorQty: 1,
-              vendorUOM: "Unit",
-              vendorUOMQty: 1,
-              quantity: 1,
-              defaultUOM: "Unit",
-              discount: 0,
-              lineTotal: (item.quoteValue || 50000) / Math.max(1, item.orderedItems.length),
-              shipmentMethod: "fedex-ground",
-              dueDeliveryDate: item.dueDeliveryDate ? new Date(item.dueDeliveryDate).toISOString().split("T")[0] : "",
-              inboundLocation: item.location,
-              category: "General",
-              receivedQuantity: 0,
-            })),
-            payment: { paymentTerms: "Net 30", payTo: item.partnerLocation, paymentMethod: "Wire Transfer", shippedTo: item.location, fundedBy: "Omne Manufacturing Corp." },
-            subtotal: item.quoteValue || 50000,
-            shippingFee: 0,
-            discountTotal: 0,
-            total: item.quoteValue || 50000,
-            notes: "",
-            poNotes: [],
-            createdBy: item.createdBy,
-            receivingRecords: [],
-            currentVersion: item.version,
-            versions: [],
-          };
-          printPurchaseOrder(mockPOData);
-        }
+        const target = printSource ?? ({
+          id: item.id,
+          poNumber: item.poNumber,
+          status: item.status as PurchaseOrderData["status"],
+          orderDate: item.orderDate ? new Date(item.orderDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+          deliveryDate: item.dueDeliveryDate ? new Date(item.dueDeliveryDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+          confirmationDate: null,
+          sentDate: null,
+          receivingStartDate: null,
+          vendor: { name: item.partnerLocation, address: "", phone: "", email: "", taxId: "" },
+          recipient: { name: item.pointOfContact, role: "Vendor Contact", email: "", phone: "" },
+          secondaryContactNames: [],
+          lineItems: item.orderedItems.map((oi, idx) => ({
+            id: `print-${item.id}-${idx}`,
+            itemNumber: oi.code,
+            descriptiveName: oi.code,
+            image: oi.image,
+            unitPrice: (item.quoteValue || 50000) / Math.max(1, item.orderedItems.length),
+            vendorQty: 1,
+            vendorUOM: "Unit",
+            vendorUOMQty: 1,
+            quantity: 1,
+            defaultUOM: "Unit",
+            discount: 0,
+            lineTotal: (item.quoteValue || 50000) / Math.max(1, item.orderedItems.length),
+            shipmentMethod: "fedex-ground",
+            dueDeliveryDate: item.dueDeliveryDate ? new Date(item.dueDeliveryDate).toISOString().split("T")[0] : "",
+            inboundLocation: item.location,
+            category: "General",
+            receivedQuantity: 0,
+          })),
+          payment: { paymentTerms: "Net 30", payTo: item.partnerLocation, paymentMethod: "Wire Transfer", shippedTo: item.location, fundedBy: "Omne Manufacturing Corp." },
+          subtotal: item.quoteValue || 50000,
+          shippingFee: 0,
+          discountTotal: 0,
+          total: item.quoteValue || 50000,
+          notes: "",
+          poNotes: [],
+          createdBy: item.createdBy,
+          receivingRecords: [],
+          currentVersion: item.version,
+          versions: [],
+        } as PurchaseOrderData);
+        setPrintTarget(target);
         break;
       }
       case "download-pdf":
@@ -1419,6 +1417,18 @@ export default function PurchaseOrdersListing() {
         </motion.div>
       )}
     </AnimatePresence>
+
+    {/* ── PRINT OPTIONS DIALOG (currency rule) ── */}
+    <PrintOptionsDialog
+      open={!!printTarget}
+      onOpenChange={(v) => { if (!v) setPrintTarget(null); }}
+      context={printTarget ? `PO ${printTarget.poNumber}` : undefined}
+      hideCurrencyMode={!!printTarget && poVendorCurrencyIsBase(printTarget)}
+      onConfirm={(opts) => {
+        if (printTarget) printPurchaseOrder(printTarget, { printOptions: opts });
+        setPrintTarget(null);
+      }}
+    />
 
     {/* ── ITEMS CATALOGUE MODAL (direct entry — replaces search modal) ── */}
     <ItemsCatalogueModal

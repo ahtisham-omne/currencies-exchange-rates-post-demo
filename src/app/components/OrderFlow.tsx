@@ -1044,6 +1044,8 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
                     onSelectVendor={handleSelectVendorOfferOriginal}
                     variant="inline"
                     onAddNewVendor={() => setAddNewVendorOpen(true)}
+                    viewMode={effectiveViewMode}
+                    inputIsPKR={inputValuesArePKR}
                   />
                 ) : isUnassigned ? (
                   /* ── NO VENDOR — Empty state: vendor card shell ── */
@@ -1078,6 +1080,8 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
                         onSelect={handleSelectVendorOffer}
                         assignedVendors={assignedVendors.map(v => v.vendorName)}
                         onAddNewVendor={() => { setEmptyVendorPickerOpen(false); setAddNewVendorOpen(true); }}
+                        viewMode={effectiveViewMode}
+                        inputIsPKR={inputValuesArePKR}
                       />
                     </PopoverContent>
                   </Popover>
@@ -1184,6 +1188,8 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
                                   : undefined
                               }
                               onAddNewVendor={() => setAddNewVendorOpen(true)}
+                              viewMode={effectiveViewMode}
+                              inputIsPKR={inputValuesArePKR}
                             />
                           </PopoverContent>
                         </Popover>

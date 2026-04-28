@@ -28,6 +28,9 @@ import {
 } from "./ui/popover";
 import { Badge } from "./ui/badge";
 import type { ItemVendorOffer } from "./catalogData";
+import { getVendorCurrency } from "./catalogData";
+import { CurrencyAmount } from "./ui/CurrencyAmount";
+import { BASE_CURRENCY, convertToBase } from "@/app/data/currencyLibrary";
 import { FONT } from "./designTokens";
 
 /* ── Typography tokens (CSS variable bound, Inter only) ── */
@@ -71,6 +74,66 @@ const st = {
   } as React.CSSProperties,
 };
 
+/**
+ * Render a vendor offer's unit price honoring the modal-level Base ↔ Partner
+ * toggle. When `viewMode === "partner"` the offer's native quote is shown
+ * primary with a base-currency hover; when `viewMode === "base"` the base
+ * equivalent is primary with the native quote on hover. Unspecified defaults
+ * to "base" so existing callers (catalog cards, post-checkout summaries) keep
+ * the global currency rule's default.
+ */
+function VendorOfferPrice({
+  vendorName,
+  nativePrice,
+  viewMode = "base",
+  inputIsPKR = false,
+  className,
+}: {
+  vendorName: string;
+  /** Either the vendor's native quote OR a PKR-equivalent — toggled via `inputIsPKR`. */
+  nativePrice: number;
+  viewMode?: "base" | "partner";
+  /** Set when the caller has already converted unit prices to PKR (e.g. PO edit flows). */
+  inputIsPKR?: boolean;
+  className?: string;
+}) {
+  const vendorCurrency = (getVendorCurrency(vendorName) ?? BASE_CURRENCY).toUpperCase();
+  const isVendorBase = vendorCurrency === BASE_CURRENCY;
+  const effectiveMode: "base" | "partner" = isVendorBase ? "base" : viewMode;
+
+  // Resolve both base and partner values from whichever the caller supplied.
+  const basePKR = inputIsPKR ? nativePrice : convertToBase(nativePrice, vendorCurrency);
+  const partnerValue = inputIsPKR
+    ? (isVendorBase ? nativePrice : convertToBase(nativePrice, vendorCurrency) / convertToBase(1, vendorCurrency))
+    : nativePrice;
+  // Note: `convertToBase(1, vendorCurrency)` is the rate; dividing PKR by it yields the native value.
+  // Using the rate directly avoids importing convertBetween here.
+  const nativeValue = inputIsPKR && !isVendorBase
+    ? nativePrice / (convertToBase(1, vendorCurrency) || 1)
+    : partnerValue;
+
+  if (effectiveMode === "partner") {
+    return (
+      <CurrencyAmount
+        mode="listing-partner"
+        currency={vendorCurrency}
+        value={nativeValue}
+        className={className}
+      />
+    );
+  }
+  return (
+    <CurrencyAmount
+      mode="listing-base"
+      currency={BASE_CURRENCY}
+      value={basePKR}
+      partnerDefaultCurrency={vendorCurrency}
+      partnerDefaultValue={nativeValue}
+      className={className}
+    />
+  );
+}
+
 /* ── Priority badge colors ── */
 function getPriorityBadge(priority: string) {
   if (priority === "default") {
@@ -109,6 +172,18 @@ export interface VendorSelectorProps {
   onSelectVendor: (offer: ItemVendorOffer) => void;
   variant?: "card" | "inline" | "compact";
   onAddNewVendor?: () => void;
+  /**
+   * When the host shell exposes a Base ↔ Partner currency toggle (e.g. the
+   * Item Detail modal in OrderFlow), pass it through so the prices in this
+   * dropdown honor the same view. Defaults to "base" — the global rule.
+   */
+  viewMode?: "base" | "partner";
+  /**
+   * Set when the supplied `offer.unitPrice` values are already PKR-equivalent
+   * (e.g. when the modal hosts an existing PO line item). Catalog-sourced
+   * flows leave this false — the offer's native quote is used as-is.
+   */
+  inputIsPKR?: boolean;
 }
 
 export default function VendorSelector({
@@ -117,6 +192,8 @@ export default function VendorSelector({
   onSelectVendor,
   variant = "inline",
   onAddNewVendor,
+  viewMode = "base",
+  inputIsPKR = false,
 }: VendorSelectorProps) {
   const [open, setOpen] = useState(false);
 
@@ -194,6 +271,8 @@ export default function VendorSelector({
               selectedVendor={selectedVendor}
               onSelect={handleSelect}
               onAddNewVendor={handleAddNewVendor}
+              viewMode={viewMode}
+              inputIsPKR={inputIsPKR}
             />
           </PopoverContent>
         )}
@@ -237,6 +316,8 @@ export default function VendorSelector({
               selectedVendor={selectedVendor}
               onSelect={handleSelect}
               onAddNewVendor={handleAddNewVendor}
+              viewMode={viewMode}
+              inputIsPKR={inputIsPKR}
             />
           </PopoverContent>
         )}
@@ -282,8 +363,14 @@ export default function VendorSelector({
               )}
             </div>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-primary" style={st.priceLabel}>
-                ${currentOffer.unitPrice.toFixed(2)} / {currentOffer.defaultUOM}
+              <span className="text-primary inline-flex items-baseline gap-0.5" style={st.priceLabel}>
+                <VendorOfferPrice
+                  vendorName={currentOffer.vendorName}
+                  nativePrice={currentOffer.unitPrice}
+                  viewMode={viewMode}
+                  inputIsPKR={inputIsPKR}
+                />
+                <span className="text-primary/80">/ {currentOffer.defaultUOM}</span>
               </span>
               {hasMultipleVendors && (
                 <span className="text-foreground/30" style={st.uiSmall}>
@@ -310,6 +397,8 @@ export default function VendorSelector({
             selectedVendor={selectedVendor}
             onSelect={handleSelect}
             onAddNewVendor={handleAddNewVendor}
+            viewMode={viewMode}
+            inputIsPKR={inputIsPKR}
           />
         </PopoverContent>
       )}
@@ -329,6 +418,8 @@ export function VendorSelectorContent({
   assignedVendors = [],
   onAssignAnother,
   onAddNewVendor,
+  viewMode = "base",
+  inputIsPKR = false,
 }: {
   offers: ItemVendorOffer[];
   selectedVendor: string;
@@ -339,6 +430,10 @@ export function VendorSelectorContent({
   onAssignAnother?: () => void;
   /** When provided, shows a "+ Add New Vendor" action at the bottom of the list */
   onAddNewVendor?: () => void;
+  /** Mirror of the host shell's currency toggle. Default: base. */
+  viewMode?: "base" | "partner";
+  /** Set when the supplied `offer.unitPrice` values are already PKR-equivalent. */
+  inputIsPKR?: boolean;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [detailVendor, setDetailVendor] = useState<string | null>(null);
@@ -486,7 +581,7 @@ export function VendorSelectorContent({
                     {!hidePrice || offer.unitPrice > 0 ? (
                       offer.unitPrice > 0 ? (
                         <span
-                          className="text-primary block"
+                          className="text-primary inline-flex items-baseline gap-1"
                           style={{
                             fontSize: "11px",
                             fontWeight: "var(--font-weight-semibold)",
@@ -494,7 +589,13 @@ export function VendorSelectorContent({
                             fontFamily: FONT,
                           }}
                         >
-                          ${offer.unitPrice.toFixed(2)} / {offer.defaultUOM}
+                          <VendorOfferPrice
+                            vendorName={offer.vendorName}
+                            nativePrice={offer.unitPrice}
+                            viewMode={viewMode}
+                            inputIsPKR={inputIsPKR}
+                          />
+                          <span className="text-primary/80">/ {offer.defaultUOM}</span>
                           {offer.discount > 0 && (
                             <span
                               className="text-accent ml-1.5"
@@ -565,7 +666,7 @@ export function VendorSelectorContent({
                         {/* Price highlight */}
                         <div className="px-3 pt-2.5 pb-2">
                           <span
-                            className="text-primary"
+                            className="text-primary inline-flex items-baseline gap-1"
                             style={{
                               fontSize: "12px",
                               fontWeight: "var(--font-weight-semibold)",
@@ -573,8 +674,14 @@ export function VendorSelectorContent({
                               lineHeight: "1.4",
                             }}
                           >
-                            Price per unit : ${offer.unitPrice.toFixed(2)} /{" "}
-                            {offer.defaultUOM} ({offer.defaultUOM})
+                            <span className="text-foreground/60" style={{ fontWeight: "var(--font-weight-normal)" }}>Price per unit :</span>
+                            <VendorOfferPrice
+                              vendorName={offer.vendorName}
+                              nativePrice={offer.unitPrice}
+                              viewMode={viewMode}
+                              inputIsPKR={inputIsPKR}
+                            />
+                            <span className="text-primary/80">/ {offer.defaultUOM} ({offer.defaultUOM})</span>
                           </span>
                         </div>
 

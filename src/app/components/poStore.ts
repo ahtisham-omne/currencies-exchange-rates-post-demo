@@ -4,7 +4,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { getVendorContacts, getVendorCurrency } from "./catalogData";
-import { MARKET_RATES, BASE_CURRENCY } from "../data/currencyLibrary";
+import { MARKET_RATES, BASE_CURRENCY, getActiveRateType, type RateType } from "../data/currencyLibrary";
 
 export type POStatus = "Draft" | "Sent" | "Confirmed" | "Partially Received" | "Fully Received" | "Cancelled" | "Active with Cancellations" | "Fully Received with Cancellations";
 
@@ -99,7 +99,8 @@ export type POChangeType =
   | "line-item-modified"
   | "pricing-changed"
   | "vendor-changed"
-  | "config-changed";
+  | "config-changed"
+  | "exchange-rate-changed";
 
 export interface POChangeRecord {
   id: string;
@@ -145,6 +146,21 @@ export interface POVersionSnapshot {
   orderDate?: string;
   confirmationDate?: string | null;
   sentDate?: string | null;
+  /** Vendor-amount currency captured at the time this version was recorded. */
+  vendorAmountCurrency?: string;
+  /** Settlement currency captured at the time this version was recorded. */
+  settlementCurrency?: string;
+}
+
+export interface POVersionRateSnapshot {
+  /** Active rate type when the version was recorded. */
+  rateType: RateType;
+  /** Representative locked rate (base-per-vendor) at the time, if known. */
+  lockedRate?: number;
+  /** ISO timestamp when the rate was locked / snapshotted for this version. */
+  lockedAt: string;
+  /** Whether this version is read-only because it was sent. */
+  locked: boolean;
 }
 
 export interface POVersionEntry {
@@ -161,6 +177,12 @@ export interface POVersionEntry {
   changeTags?: string[];
   previousStatus?: string;
   newStatus?: string;
+  /**
+   * Rate snapshot used by this version. `locked: true` means the version was
+   * recorded when the PO was already past Draft, so the rate cannot be
+   * recomputed against today's snapshot.
+   */
+  rateSnapshot?: POVersionRateSnapshot;
 }
 
 export interface PurchaseOrderData {
@@ -399,6 +421,91 @@ export function buildVersionSnapshot(po: PurchaseOrderData): POVersionSnapshot {
     orderDate: po.orderDate,
     confirmationDate: po.confirmationDate,
     sentDate: po.sentDate,
+    vendorAmountCurrency: po.vendorAmountCurrency,
+    settlementCurrency: po.settlementCurrency,
+  };
+}
+
+/**
+ * Format a base-per-vendor rate for change-history display. Mirrors the
+ * precision rules used by the currency configurator so the same rate reads
+ * the same number of decimals everywhere.
+ */
+function formatRateForChange(value: number): string {
+  const abs = Math.abs(value);
+  const decimals = abs >= 100 ? 2 : abs >= 1 ? 4 : 6;
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+/**
+ * Build a `POChangeRecord` describing a rate-snapshot diff between two
+ * consecutive versions, or `null` when nothing FX-relevant changed. The detail
+ * string follows the format requested in product spec, e.g.
+ * `1 USD = 278 PKR → 1 USD = 281.50 PKR (Mid-market)`.
+ *
+ * Exported so the rate-diff detection logic can be unit tested without
+ * spinning up the rest of the store machinery. `recordPOVersion` is the only
+ * production caller.
+ */
+export function detectRateChange(
+  prev: POVersionRateSnapshot | undefined,
+  next: POVersionRateSnapshot,
+  vendorCurrency: string,
+): Omit<POChangeRecord, "id" | "timestamp" | "user"> | null {
+  if (!prev) return null;
+  const vc = vendorCurrency.toUpperCase();
+  // No FX rate to surface when the vendor already invoices in base currency.
+  if (vc === BASE_CURRENCY) return null;
+
+  const prevRate = prev.lockedRate;
+  const nextRate = next.lockedRate;
+  const rateChanged =
+    typeof prevRate === "number" &&
+    typeof nextRate === "number" &&
+    Math.abs(prevRate - nextRate) > 1e-6;
+  const typeChanged = prev.rateType !== next.rateType;
+  if (!rateChanged && !typeChanged) return null;
+
+  const typeLabel = (t: RateType) => (t === "market" ? "Mid-market" : "Corporate");
+  const prevRateStr =
+    typeof prevRate === "number"
+      ? `1 ${vc} = ${formatRateForChange(prevRate)} ${BASE_CURRENCY}`
+      : "—";
+  const nextRateStr =
+    typeof nextRate === "number"
+      ? `1 ${vc} = ${formatRateForChange(nextRate)} ${BASE_CURRENCY}`
+      : "—";
+  const detail = typeChanged
+    ? `${prevRateStr} (${typeLabel(prev.rateType)}) → ${nextRateStr} (${typeLabel(next.rateType)})`
+    : `${prevRateStr} → ${nextRateStr} (${typeLabel(next.rateType)})`;
+
+  return {
+    type: "exchange-rate-changed",
+    action: "Changed",
+    subject: "Exchange rate updated",
+    detail,
+  };
+}
+
+function buildVersionRateSnapshot(po: PurchaseOrderData): POVersionRateSnapshot {
+  // Pull the most-common locked rate across active line items as the
+  // representative rate. If none of the line items carry a locked rate (e.g.
+  // very early Draft state), fall back to today's market rate for the vendor
+  // currency so the version still has a meaningful number to display.
+  const activeRates = po.lineItems
+    .filter((li) => !li.cancelled && typeof li.lockedRate === "number")
+    .map((li) => li.lockedRate as number);
+  const lockedRate = activeRates[0] ?? marketRateToBase(po.vendorAmountCurrency ?? getVendorCurrency(po.vendor.name));
+  const lockedAt = po.lineItems.find((li) => !li.cancelled && li.lockedAt)?.lockedAt ?? new Date().toISOString();
+  return {
+    rateType: getActiveRateType(),
+    lockedRate,
+    lockedAt,
+    // A version is locked once its status moves past Draft.
+    locked: po.status !== "Draft",
   };
 }
 
@@ -416,12 +523,13 @@ function initVersioning(po: PurchaseOrderData, reason = "Initial PO created"): P
         type: "config-changed",
         action: "Added",
         subject: "Purchase Order Created",
-        detail: `${po.lineItems.length} items · $${po.total.toFixed(2)}`,
+        detail: `${po.lineItems.length} items · Rs ${po.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
         user: po.createdBy,
       },
     ],
     snapshot: buildVersionSnapshot(po),
+    rateSnapshot: buildVersionRateSnapshot(po),
   };
 
   return {
@@ -491,6 +599,24 @@ export function recordPOVersion(
   const newVersion = (po.currentVersion || 1) + 1;
   const user = payload.createdBy || po.createdBy;
 
+  // Detect a rate-snapshot diff against the previous version so an
+  // "Exchange rate updated" change record is auto-appended whenever the
+  // user opts to apply today's rate (or the active rate type flips). The
+  // store builds this implicitly so callers don't need to remember to
+  // add the change record themselves.
+  const previousRateSnapshot = po.versions?.[0]?.rateSnapshot;
+  const newRateSnapshot = buildVersionRateSnapshot(po);
+  const vendorCurrency =
+    po.vendorAmountCurrency ?? getVendorCurrency(po.vendor.name) ?? BASE_CURRENCY;
+  const rateChangeRecord = detectRateChange(
+    previousRateSnapshot,
+    newRateSnapshot,
+    vendorCurrency,
+  );
+  const allChanges = rateChangeRecord
+    ? [...payload.changes, rateChangeRecord]
+    : payload.changes;
+
   const versionEntry: POVersionEntry = {
     version: newVersion,
     versionStatus: payload.resetToDraft ? "draft" : toVersionStatus(po.status),
@@ -508,13 +634,14 @@ export function recordPOVersion(
     changeTags: payload.changeTags,
     previousStatus: payload.previousStatus,
     newStatus: payload.newStatus,
-    changes: payload.changes.map((c, idx) => ({
+    changes: allChanges.map((c, idx) => ({
       ...c,
       id: `chg-${po.id}-v${newVersion}-${idx + 1}`,
       timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
       user,
     })),
     snapshot: buildVersionSnapshot(po),
+    rateSnapshot: newRateSnapshot,
   };
 
   po.currentVersion = newVersion;
@@ -596,7 +723,19 @@ export function restorePOFromSnapshot(poId: string, snapshot: POVersionSnapshot)
   notify();
 }
 
-export function revertPOToVersion(poId: string, version: number, reason: string): number | null {
+export function revertPOToVersion(
+  poId: string,
+  version: number,
+  reason: string,
+  /**
+   * Whether to carry forward the locked rate from the source version
+   * (`"locked"`, default) or pull today's market rate (`"refresh"`). When
+   * refreshing, the new version's rate snapshot will reflect today's rate and
+   * `recordPOVersion` will auto-append an "Exchange rate updated" change
+   * record describing the diff.
+   */
+  rateChoice: "locked" | "refresh" = "locked",
+): number | null {
   const po = purchaseOrders.get(poId);
   if (!po) return null;
   const source = po.versions.find((v) => v.version === version);
@@ -605,30 +744,46 @@ export function revertPOToVersion(poId: string, version: number, reason: string)
   po.deliveryDate = source.snapshot.deliveryDate;
   po.notes = source.snapshot.notes;
   po.payment = clonePayment(source.snapshot.payment);
-  po.lineItems = source.snapshot.lineItems.map((li, idx) => ({
-    id: `${po.id}-rv-${idx + 1}-${Date.now()}`,
-    itemNumber: li.itemNumber,
-    descriptiveName: li.descriptiveName,
-    image: po.lineItems.find((x) => x.itemNumber === li.itemNumber)?.image || "",
-    unitPrice: li.unitPrice,
-    vendorQty: li.vendorQty,
-    vendorUOM: li.vendorUOM,
-    vendorUOMQty: Math.max(1, Math.round(li.quantity / Math.max(1, li.vendorQty))),
-    quantity: li.quantity,
-    defaultUOM: po.lineItems.find((x) => x.itemNumber === li.itemNumber)?.defaultUOM || "Unit",
-    discount: li.discount,
-    lineTotal: li.lineTotal,
-    shipmentMethod: po.lineItems.find((x) => x.itemNumber === li.itemNumber)?.shipmentMethod || "fedex-ground",
-    dueDeliveryDate: li.dueDeliveryDate,
-    inboundLocation: li.inboundLocation,
-    category: po.lineItems.find((x) => x.itemNumber === li.itemNumber)?.category || "",
-    receivedQuantity: 0,
-    cancelled: li.cancelled,
-  }));
+  po.lineItems = source.snapshot.lineItems.map((li, idx) => {
+    const existing = po.lineItems.find((x) => x.itemNumber === li.itemNumber);
+    return {
+      id: `${po.id}-rv-${idx + 1}-${Date.now()}`,
+      itemNumber: li.itemNumber,
+      descriptiveName: li.descriptiveName,
+      image: existing?.image || "",
+      unitPrice: li.unitPrice,
+      vendorQty: li.vendorQty,
+      vendorUOM: li.vendorUOM,
+      vendorUOMQty: Math.max(1, Math.round(li.quantity / Math.max(1, li.vendorQty))),
+      quantity: li.quantity,
+      defaultUOM: existing?.defaultUOM || "Unit",
+      discount: li.discount,
+      lineTotal: li.lineTotal,
+      shipmentMethod: existing?.shipmentMethod || "fedex-ground",
+      dueDeliveryDate: li.dueDeliveryDate,
+      inboundLocation: li.inboundLocation,
+      category: existing?.category || "",
+      receivedQuantity: 0,
+      cancelled: li.cancelled,
+      // Carry forward FX context from the existing line so the next snapshot
+      // still has a locked rate to compare against.
+      originalCurrency: existing?.originalCurrency,
+      originalPrice: existing?.originalPrice,
+      lockedRate: existing?.lockedRate,
+      lockedAt: existing?.lockedAt,
+    };
+  });
   po.subtotal = source.snapshot.subtotal;
   po.discountTotal = source.snapshot.discountTotal;
   po.shippingFee = source.snapshot.shippingFee;
   po.total = source.snapshot.total;
+
+  // Apply today's rate BEFORE recording the version so the new snapshot's
+  // rate diff against the previous version is captured by recordPOVersion.
+  // No-op for non-Draft POs (rate is permanently locked once sent).
+  if (rateChoice === "refresh" && po.status === "Draft") {
+    applyLockedRateRefreshInPlace(po);
+  }
 
   const newVersion = recordPOVersion(poId, {
     reason: reason || `Reverted to Version ${version}`,
@@ -1138,6 +1293,51 @@ export function updatePOVendorAmountCurrency(poId: string, currency: string): vo
 }
 
 /**
+ * Refresh every active line item's locked FX to today's market rate. Used by
+ * version-revert and new-version flows when the user opts to "apply current
+ * rate" instead of keeping the previously-locked rate. No-op for POs that
+ * are no longer in Draft (the rate is permanently locked at that point).
+ */
+/**
+ * Mutates `po` in place to update every active line item's locked FX to
+ * today's market rate. Caller is responsible for persisting (`set` + `notify`)
+ * — this exists so `revertPOToVersion` can refresh and then record a single
+ * version, rather than emitting two store updates.
+ */
+function applyLockedRateRefreshInPlace(po: PurchaseOrderData): void {
+  if (po.status !== "Draft") return;
+  const lockedAt = new Date().toISOString();
+  let changed = false;
+  po.lineItems = po.lineItems.map((li) => {
+    if (!li.originalCurrency) return li;
+    const newRate = MARKET_RATES.rates[li.originalCurrency.toUpperCase()];
+    if (!newRate || newRate === li.lockedRate) return li;
+    const newUnitPrice = (li.originalPrice ?? li.unitPrice) * newRate;
+    changed = true;
+    return {
+      ...li,
+      unitPrice: newUnitPrice,
+      lineTotal: newUnitPrice * li.quantity * (1 - li.discount / 100),
+      lockedRate: newRate,
+      lockedAt,
+    };
+  });
+  if (!changed) return;
+  po.subtotal = po.lineItems.reduce((s, li) => s + li.unitPrice * li.quantity, 0);
+  po.discountTotal = po.lineItems.reduce((s, li) => s + li.unitPrice * li.quantity * (li.discount / 100), 0);
+  po.shippingFee = Math.round(po.lineItems.length * 12.5 * 100) / 100;
+  po.total = po.subtotal - po.discountTotal + po.shippingFee;
+}
+
+export function refreshPOLockedRates(poId: string): void {
+  const po = purchaseOrders.get(poId);
+  if (!po) return;
+  applyLockedRateRefreshInPlace(po);
+  purchaseOrders.set(poId, { ...po });
+  notify();
+}
+
+/**
  * Save the "You Pay" settlement currency + live-computed snapshot. Freezes
  * the settlement amount at today's rate so downstream modules (invoices /
  * payments) can read a stable number.
@@ -1329,8 +1529,30 @@ export function removeLineItemFromPO(poId: string, lineItemId: string): void {
   notify();
 }
 
+/**
+ * How the duplicated PO should treat exchange-rate state from the source.
+ *  - `same`: Carry the locked rate forward (no recalculation; line items keep
+ *    their `lockedRate`/`lockedAt`).
+ *  - `refresh`: Re-run FX against today's market snapshot — `lockedRate`
+ *    becomes today's rate, `lockedAt` becomes now. Line totals stay in PKR
+ *    so the sum doesn't shift, but the metadata reflects today.
+ *  - `configure`: Like `refresh` but additionally lets the caller change the
+ *    vendor-amount / settlement currencies via the supplied config; the new
+ *    PO opens with that configuration applied.
+ */
+export type DuplicateRateChoice = "same" | "refresh" | "configure";
+
+export interface DuplicatePOOptions {
+  rateChoice?: DuplicateRateChoice;
+  rateType?: RateType;
+  /** When `rateChoice === "configure"`, override the vendor-amount currency. */
+  vendorAmountCurrency?: string;
+  /** When `rateChoice === "configure"`, override the settlement currency. */
+  settlementCurrency?: string;
+}
+
 /* ── Duplicate a PO as a new Draft ── */
-export function duplicatePO(sourceId: string): PurchaseOrderData | null {
+export function duplicatePO(sourceId: string, options?: DuplicatePOOptions): PurchaseOrderData | null {
   const source = purchaseOrders.get(sourceId);
   if (!source) return null;
 
@@ -1339,11 +1561,42 @@ export function duplicatePO(sourceId: string): PurchaseOrderData | null {
   const poNumber = `395-${9900 + poCounter}`;
   const now = new Date();
 
-  const newLineItems: POLineItem[] = source.lineItems.map((li, idx) => ({
-    ...li,
-    id: `${id}-li-${idx + 1}`,
-    receivedQuantity: 0,
-  }));
+  const rateChoice: DuplicateRateChoice = options?.rateChoice ?? "same";
+  const refreshNow = rateChoice !== "same";
+  const lockedAtRefresh = now.toISOString();
+
+  const newLineItems: POLineItem[] = source.lineItems.map((li, idx) => {
+    if (!refreshNow || !li.originalCurrency) {
+      return { ...li, id: `${id}-li-${idx + 1}`, receivedQuantity: 0 };
+    }
+    // Refresh the locked rate against today's market snapshot. Keep totals
+    // in PKR stable by recomputing from the original native price.
+    const newRate = MARKET_RATES.rates[li.originalCurrency.toUpperCase()] ?? li.lockedRate ?? 1;
+    const newUnitPrice = (li.originalPrice ?? li.unitPrice) * newRate;
+    return {
+      ...li,
+      id: `${id}-li-${idx + 1}`,
+      receivedQuantity: 0,
+      unitPrice: newUnitPrice,
+      lineTotal: newUnitPrice * li.quantity * (1 - li.discount / 100),
+      lockedRate: newRate,
+      lockedAt: lockedAtRefresh,
+    };
+  });
+
+  const subtotal = newLineItems.reduce((s, li) => s + li.unitPrice * li.quantity, 0);
+  const discountTotal = newLineItems.reduce((s, li) => s + li.unitPrice * li.quantity * (li.discount / 100), 0);
+  const shippingFee = source.shippingFee;
+  const total = subtotal - discountTotal + shippingFee;
+
+  const vendorAmountCurrency =
+    options?.vendorAmountCurrency?.toUpperCase()
+    ?? source.vendorAmountCurrency
+    ?? getVendorCurrency(source.vendor.name);
+  const settlementCurrency =
+    options?.settlementCurrency?.toUpperCase()
+    ?? source.settlementCurrency
+    ?? vendorAmountCurrency;
 
   const po: PurchaseOrderData = {
     id,
@@ -1359,16 +1612,19 @@ export function duplicatePO(sourceId: string): PurchaseOrderData | null {
     secondaryContactNames: [...source.secondaryContactNames],
     lineItems: newLineItems,
     payment: { ...source.payment },
-    subtotal: source.subtotal,
-    shippingFee: source.shippingFee,
-    discountTotal: source.discountTotal,
-    total: source.total,
+    subtotal: refreshNow ? subtotal : source.subtotal,
+    shippingFee,
+    discountTotal: refreshNow ? discountTotal : source.discountTotal,
+    total: refreshNow ? total : source.total,
     notes: source.notes,
     poNotes: source.poNotes.map(n => ({ ...n, id: `note-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` })),
     createdBy: source.createdBy,
     receivingRecords: [],
     currentVersion: 1,
     versions: [],
+    vendorAmountCurrency,
+    settlementCurrency,
+    viewMode: source.viewMode,
   };
 
   purchaseOrders.set(id, initVersioning(po, `Duplicated from ${source.poNumber}`));
@@ -1586,6 +1842,8 @@ function seedDemoPO(): void {
     lineItemCount: 4, subtotal: 10356.00, discountTotal: 607.50, shippingFee: 50.00, total: 9798.50,
     payment: clonePayment(po.payment),
     lineItems: v1LineItems,
+    vendorAmountCurrency: vendorCurrency,
+    settlementCurrency: vendorCurrency,
   };
 
   const v2LineItems: POLineItemSnapshot[] = [
@@ -1596,6 +1854,8 @@ function seedDemoPO(): void {
     { id: "demo-li-5", itemNumber: "ALU-5580-T6", descriptiveName: "Aluminum Extrusion Profile — T-Slot 40x40mm, 6061-T6", quantity: 32, vendorQty: 8, vendorUOM: "Bundle", unitPrice: 32.75, discount: 3, lineTotal: 1016.08, dueDeliveryDate: "2026-03-22", inboundLocation: "Warehouse A - Pasadena, OK" },
   ];
   const v2Snapshot: POVersionSnapshot = {
+    vendorAmountCurrency: vendorCurrency,
+    settlementCurrency: vendorCurrency,
     poNumber: "395-9900", vendorName: "General Motors (GM)", status: "Sent",
     deliveryDate: "2026-03-22", notes: "Updated quantities and added aluminum extrusions per engineering request.",
     lineItemCount: 5, subtotal: 20721.08, discountTotal: 1498.25, shippingFee: 62.50, total: 19285.33,
@@ -1612,6 +1872,8 @@ function seedDemoPO(): void {
     { id: "demo-li-7", itemNumber: "TSK-2200-M4", descriptiveName: "Transmission Seal Kit — Complete Rebuild Set", quantity: 6, vendorQty: 6, vendorUOM: "Kit", unitPrice: 89.50, discount: 0, lineTotal: 537.00, dueDeliveryDate: "2026-03-18", inboundLocation: "Warehouse A - Pasadena, OK" },
   ];
   const v3Snapshot: POVersionSnapshot = {
+    vendorAmountCurrency: vendorCurrency,
+    settlementCurrency: vendorCurrency,
     poNumber: "395-9900", vendorName: "General Motors (GM)", status: "Confirmed",
     deliveryDate: "2026-03-22", notes: "GSK-3305-R1 removed per vendor discontinuation. Added fasteners and transmission seal kit.",
     lineItemCount: 6, subtotal: 23234.08, discountTotal: 1890.25, shippingFee: 75.00, total: 21418.83,
@@ -1645,6 +1907,7 @@ function seedDemoPO(): void {
       ],
       snapshot: v4Snapshot,
       changeTags: ["Date Change", "Shipping Change", "Billing Change", "Funding Change", "Payment Method Change"],
+      rateSnapshot: { rateType: "market", lockedRate: rate, lockedAt: "2026-03-10T11:10:00.000Z", locked: true },
     },
     {
       version: 3,
@@ -1663,6 +1926,7 @@ function seedDemoPO(): void {
       ],
       snapshot: v3Snapshot,
       changeTags: ["Item Added", "Item Removed", "Notes", "Contact Change", "Shipping Change"],
+      rateSnapshot: { rateType: "market", lockedRate: rate, lockedAt: "2026-03-07T09:40:00.000Z", locked: true },
     },
     {
       version: 2,
@@ -1680,6 +1944,7 @@ function seedDemoPO(): void {
       ],
       snapshot: v2Snapshot,
       changeTags: ["Qty Change", "Price Change", "Item Added", "Payment Terms Change", "Date Change"],
+      rateSnapshot: { rateType: "market", lockedRate: rate, lockedAt: "2026-03-03T15:05:00.000Z", locked: true },
     },
     {
       version: 1,
@@ -1696,6 +1961,7 @@ function seedDemoPO(): void {
         { id: "chg-po-demo-v1-5", type: "config-changed", action: "Changed", subject: "Payment Terms", detail: "Net 30", timestamp: "10:08 AM", user: "Areeb Tanvir" },
       ],
       snapshot: v1Snapshot,
+      rateSnapshot: { rateType: "market", lockedRate: rate, lockedAt: "2026-02-20T10:00:00.000Z", locked: false },
     },
   ];
   /* Seed demo notes */

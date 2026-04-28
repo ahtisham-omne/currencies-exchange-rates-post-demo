@@ -1,13 +1,26 @@
 /* ═══════════════════════════════════════════════════════════════
    Print Purchase Order — generates a print-ready PO document
-   Opens in a new window, triggers native print dialog.
-   All styling is inline to work independently of the app's CSS.
+   Opens in a hidden iframe, triggers the native print dialog. All
+   styling is inline so the document is self-contained.
    Typography: Inter only (via Google Fonts import).
+   Currency rule: amounts are always shown with a currency symbol,
+   and — when the user opts in via PrintOptions — both the vendor
+   and base-currency equivalents are surfaced in headers, line
+   items, and the footer.
    ═══════════════════════════════════════════════════════════════ */
 
 import type { PurchaseOrderData, POVersionEntry } from "./poStore";
-import { getShipmentMethodLabel } from "./poStore";
+import { getShipmentMethodLabel, getPOVendorCurrency, getPOSettlementCurrency } from "./poStore";
 import { getPrintStatusBadgeStyle } from "./statusColors";
+import {
+  BASE_CURRENCY,
+  activeRateSnapshot,
+  convertBetween,
+  getLibraryCurrency,
+  rateTypeLabel,
+} from "@/app/data/currencyLibrary";
+import type { PrintOptions } from "./PrintOptionsDialog";
+import { DEFAULT_PRINT_OPTIONS } from "./PrintOptionsDialog";
 
 /* ── Color tokens (mirrored from theme.css for inline use) ── */
 const C = {
@@ -24,13 +37,18 @@ const C = {
 
 /* ── Helpers ── */
 function fmtDate(dateStr: string | null): string {
-  if (!dateStr) return "\u2014";
+  if (!dateStr) return "—";
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
 }
 
-function fmtCurrency(n: number): string {
-  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function fmtDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+  } catch {
+    return iso;
+  }
 }
 
 function fmtNow(): string {
@@ -43,9 +61,52 @@ function fmtNow(): string {
   });
 }
 
+function symbolFor(code: string): string {
+  const cur = getLibraryCurrency(code);
+  return cur?.symbol ?? code;
+}
+
+function fmtAmount(value: number, code: string): string {
+  const zeroDecimals = new Set(["JPY", "KRW", "VND", "IDR", "HUF", "ISK", "CLP"]);
+  const threeDecimals = new Set(["KWD", "BHD", "OMR", "JOD", "TND"]);
+  const upper = code.toUpperCase();
+  const decimals = zeroDecimals.has(upper) ? 0 : threeDecimals.has(upper) ? 3 : 2;
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+/** Render a single amount with its currency symbol, optionally with the
+ *  partner / base equivalent appended in muted text underneath. */
+function fmtMoney(valueBasePKR: number, opts: {
+  primary: "vendor" | "base";
+  vendorCurrency: string;
+  showConversion: boolean;
+}): string {
+  const v = valueBasePKR;
+  const baseSym = symbolFor(BASE_CURRENCY);
+  const vendor = opts.vendorCurrency.toUpperCase();
+  const sameAsBase = vendor === BASE_CURRENCY;
+  const partnerValue = sameAsBase ? v : convertBetween(v, BASE_CURRENCY, vendor);
+  const partnerSym = symbolFor(vendor);
+  const primaryLabel = opts.primary === "vendor"
+    ? `${partnerSym} ${fmtAmount(partnerValue, vendor)}`
+    : `${baseSym} ${fmtAmount(v, BASE_CURRENCY)}`;
+  if (sameAsBase || !opts.showConversion) return primaryLabel;
+  const secondary = opts.primary === "vendor"
+    ? `${baseSym} ${fmtAmount(v, BASE_CURRENCY)} ${BASE_CURRENCY}`
+    : `${partnerSym} ${fmtAmount(partnerValue, vendor)} ${vendor}`;
+  return `${primaryLabel}<span style="display:block;font-size:10px;color:${C.muted};margin-top:1px;">≈ ${secondary}</span>`;
+}
+
 /* ── Main export: print via hidden iframe (no popup needed) ── */
-export function printPurchaseOrder(po: PurchaseOrderData, options?: { version?: POVersionEntry }): void {
-  const html = generatePrintHTML(po, options?.version);
+export function printPurchaseOrder(
+  po: PurchaseOrderData,
+  options?: { version?: POVersionEntry; printOptions?: PrintOptions },
+): void {
+  const printOptions = options?.printOptions ?? DEFAULT_PRINT_OPTIONS;
+  const html = generatePrintHTML(po, options?.version, printOptions);
 
   // Remove any previous print iframe
   const existingFrame = document.getElementById("__po-print-frame__");
@@ -92,7 +153,11 @@ export function printPurchaseOrder(po: PurchaseOrderData, options?: { version?: 
    HTML GENERATOR — full standalone document
    ═══════════════════════════════════════════════════════════════ */
 
-function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEntry): string {
+function generatePrintHTML(
+  po: PurchaseOrderData,
+  selectedVersion: POVersionEntry | undefined,
+  printOptions: PrintOptions,
+): string {
   const sourceLineItems = selectedVersion
     ? selectedVersion.snapshot.lineItems.map((li) => {
         const source = po.lineItems.find((x) => x.itemNumber === li.itemNumber);
@@ -113,6 +178,10 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
           defaultUOM: source?.defaultUOM || "Unit",
           description: source?.description,
           receivedQuantity: source?.receivedQuantity || 0,
+          originalCurrency: source?.originalCurrency,
+          originalPrice: source?.originalPrice,
+          lockedRate: source?.lockedRate,
+          lockedAt: source?.lockedAt,
         };
       })
     : po.lineItems;
@@ -137,6 +206,28 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
     ? `Version ${selectedVersion.version} of ${po.versions.length}`
     : `Version ${po.currentVersion} of ${po.versions.length}`;
 
+  const vendorCurrency = (selectedVersion?.snapshot.vendorAmountCurrency ?? getPOVendorCurrency(po)).toUpperCase();
+  const settlementCurrency = (selectedVersion?.snapshot.settlementCurrency ?? getPOSettlementCurrency(po)).toUpperCase();
+  const baseSym = symbolFor(BASE_CURRENCY);
+  const vendorSym = symbolFor(vendorCurrency);
+  const settleSym = symbolFor(settlementCurrency);
+  const isBase = vendorCurrency === BASE_CURRENCY;
+  // Print is single-currency: either base or vendor. (PKR-only POs always use base.)
+  const primaryColumn: "vendor" | "base" = !isBase && printOptions.currencyMode === "vendor"
+    ? "vendor"
+    : "base";
+
+  const rateSnap = selectedVersion?.rateSnapshot;
+  const activeSnap = activeRateSnapshot();
+  const rateType = rateSnap?.rateType ?? activeSnap.type;
+  const rateLabel = rateType === "market" ? "Mid-market" : "Corporate";
+  const fullRateLabel = rateTypeLabel(rateType);
+  const lockedRate = rateSnap?.lockedRate
+    ?? (isBase ? 1 : convertBetween(1, vendorCurrency, BASE_CURRENCY));
+  const lockedAt = rateSnap?.lockedAt ?? po.sentDate ?? po.orderDate;
+  const lockedAtLabel = fmtDateTime(lockedAt);
+  const rateSource = rateType === "market" ? activeSnap.source : "Corporate Treasury";
+
   /* Get vendor-facing notes for line items */
   const getVendorNotesForItem = (lineItemId: string) =>
     (display.poNotes || []).filter(n => n.type === "vendor" && n.lineItemId === lineItemId);
@@ -146,12 +237,24 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
       (li, idx) => {
         const itemVendorNotes = getVendorNotesForItem(li.id);
         const notesHtml = itemVendorNotes.length > 0
-          ? `<tr><td colspan="6" style="padding:0 8px 8px 40px;">
+          ? `<tr><td colspan="${baseRowSpan(printOptions, isBase)}" style="padding:0 8px 8px 40px;">
               ${itemVendorNotes.map(n => `<div style="font-size:10px;color:#52525b;line-height:1.5;padding:4px 8px;background:#f7f7f8;border-radius:4px;margin-top:4px;border-left:2px solid ${C.primary};">
                 <span style="font-weight:500;color:${C.fg};">${esc(n.author)}:</span> ${esc(n.text)}
               </div>`).join("")}
             </td></tr>`
           : "";
+
+        const unitPriceHtml = fmtMoney(li.unitPrice, {
+          primary: primaryColumn,
+          vendorCurrency,
+          showConversion: printOptions.showConversion,
+        });
+        const lineTotalHtml = fmtMoney(li.lineTotal, {
+          primary: primaryColumn,
+          vendorCurrency,
+          showConversion: printOptions.showConversion,
+        });
+
         return `
     <tr style="border-bottom:1px solid ${C.border};">
       <td style="padding:10px 8px;color:${C.muted};font-size:12px;text-align:center;vertical-align:top;">${idx + 1}</td>
@@ -164,9 +267,9 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
         <div>${li.vendorQty} ${esc(li.vendorUOM)}${li.vendorQty > 1 ? "s" : ""}</div>
         ${li.vendorUOMQty > 1 ? `<div style="color:${C.muted};font-size:10px;margin-top:1px;">(${li.quantity} ${esc(li.defaultUOM)}${li.quantity > 1 ? "s" : ""})</div>` : ""}
       </td>
-      <td style="padding:10px 8px;font-size:12px;text-align:right;vertical-align:top;">${fmtCurrency(li.unitPrice)}<span style="color:${C.muted};font-size:10px;">/${esc(li.defaultUOM)}</span></td>
-      <td style="padding:10px 8px;font-size:12px;text-align:center;vertical-align:top;color:${li.discount > 0 ? C.accent : C.muted};">${li.discount > 0 ? li.discount + "%" : "\u2014"}</td>
-      <td style="padding:10px 8px;font-size:13px;font-weight:600;text-align:right;vertical-align:top;">${fmtCurrency(li.lineTotal)}</td>
+      <td style="padding:10px 8px;font-size:12px;text-align:right;vertical-align:top;">${unitPriceHtml}<span style="color:${C.muted};font-size:10px;">/${esc(li.defaultUOM)}</span></td>
+      <td style="padding:10px 8px;font-size:12px;text-align:center;vertical-align:top;color:${li.discount > 0 ? C.accent : C.muted};">${li.discount > 0 ? li.discount + "%" : "—"}</td>
+      <td style="padding:10px 8px;font-size:13px;font-weight:600;text-align:right;vertical-align:top;">${lineTotalHtml}</td>
     </tr>${notesHtml}`;
       }
     )
@@ -211,7 +314,7 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
                 <td style="padding:7px 8px;font-size:12px;font-weight:500;">${esc(li.itemNumber)}</td>
                 <td style="padding:7px 8px;font-size:12px;text-align:center;">${li.quantity}</td>
                 <td style="padding:7px 8px;font-size:12px;text-align:center;color:${isFull ? C.accent : C.primary};font-weight:500;">${li.receivedQuantity}</td>
-                <td style="padding:7px 8px;font-size:12px;text-align:center;">${remaining > 0 ? remaining : "\u2014"}</td>
+                <td style="padding:7px 8px;font-size:12px;text-align:center;">${remaining > 0 ? remaining : "—"}</td>
                 <td style="padding:7px 8px;font-size:11px;text-align:center;font-weight:500;color:${isFull ? C.accent : C.muted};">${isFull ? "Complete" : li.receivedQuantity > 0 ? "Partial" : "Pending"}</td>
               </tr>`;
             })
@@ -219,6 +322,23 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
         </tbody>
       </table>
     </div>`
+    : "";
+
+  const headerRateBlock = printOptions.includeRateInfo && !isBase
+    ? `<div style="margin-top:6px;font-size:10.5px;color:${C.muted};">
+        <span style="font-weight:600;color:${C.fg};">${rateLabel}</span>
+        · 1 ${vendorCurrency} = ${baseSym} ${fmtAmount(lockedRate, BASE_CURRENCY)} ${BASE_CURRENCY}
+        · locked on ${esc(lockedAtLabel)}
+      </div>`
+    : "";
+
+  const dualTotalRow = !isBase
+    ? `<div style="font-size:11px;color:${C.muted};margin-top:2px;">
+        ${vendorSym} ${fmtAmount(convertBetween(display.total, BASE_CURRENCY, vendorCurrency), vendorCurrency)} ${vendorCurrency}
+        ${settlementCurrency !== vendorCurrency
+          ? ` · ${settleSym} ${fmtAmount(convertBetween(display.total, BASE_CURRENCY, settlementCurrency), settlementCurrency)} ${settlementCurrency}`
+          : ""}
+      </div>`
     : "";
 
   return `<!DOCTYPE html>
@@ -280,6 +400,11 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
         <div style="font-size:22px;font-weight:700;color:${C.primary};">PO ${esc(display.poNumber)}</div>
         <div style="font-size:11px;color:${C.muted};margin-top:2px;">${esc(versionLabel)}</div>
         <div style="display:inline-block;margin-top:6px;padding:3px 12px;border-radius:6px;font-size:11px;font-weight:600;background:${statusBg(display.status)};color:${statusFg(display.status)};border:1px solid ${statusBorder(display.status)};">${esc(statusLabel)}</div>
+        <div style="margin-top:6px;font-size:13px;font-weight:600;color:${C.fg};">
+          ${baseSym} ${fmtAmount(display.total, BASE_CURRENCY)} ${BASE_CURRENCY}
+        </div>
+        ${dualTotalRow}
+        ${headerRateBlock}
       </div>
     </div>
 
@@ -329,9 +454,9 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
             <th style="padding:8px;font-size:11px;font-weight:600;text-align:center;color:${C.muted};text-transform:uppercase;letter-spacing:0.05em;width:36px;">#</th>
             <th style="padding:8px;font-size:11px;font-weight:600;text-align:left;color:${C.muted};text-transform:uppercase;letter-spacing:0.05em;">Item</th>
             <th style="padding:8px;font-size:11px;font-weight:600;text-align:center;color:${C.muted};text-transform:uppercase;letter-spacing:0.05em;">Qty</th>
-            <th style="padding:8px;font-size:11px;font-weight:600;text-align:right;color:${C.muted};text-transform:uppercase;letter-spacing:0.05em;">Unit Price</th>
+            <th style="padding:8px;font-size:11px;font-weight:600;text-align:right;color:${C.muted};text-transform:uppercase;letter-spacing:0.05em;">Unit ${primaryColumn === "vendor" ? `(${vendorCurrency})` : `(${BASE_CURRENCY})`}</th>
             <th style="padding:8px;font-size:11px;font-weight:600;text-align:center;color:${C.muted};text-transform:uppercase;letter-spacing:0.05em;">Disc.</th>
-            <th style="padding:8px;font-size:11px;font-weight:600;text-align:right;color:${C.muted};text-transform:uppercase;letter-spacing:0.05em;">Total</th>
+            <th style="padding:8px;font-size:11px;font-weight:600;text-align:right;color:${C.muted};text-transform:uppercase;letter-spacing:0.05em;">Total ${primaryColumn === "vendor" ? `(${vendorCurrency})` : `(${BASE_CURRENCY})`}</th>
           </tr>
         </thead>
         <tbody>
@@ -361,7 +486,7 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
     <!-- ═══ RECEIVING STATUS (conditional) ═══ -->
     ${receivingSection}
 
-    <!-- ═══ ORDER SUMMARY + PAYMENT (side by side) ���══ -->
+    <!-- ═══ ORDER SUMMARY + PAYMENT (side by side) ═══ -->
     <div style="display:flex;gap:16px;margin-top:28px;margin-bottom:24px;">
       <!-- Payment & Delivery -->
       <div style="flex:1;border:1px solid ${C.border};border-radius:10px;padding:16px;">
@@ -374,18 +499,49 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
         ${paymentRow("Funded By", display.payment.fundedBy)}
       </div>
 
-      <!-- Order Summary -->
+      <!-- Order Summary — rendered in the user's chosen currency (Print in: ...) -->
+      ${(() => {
+        // Pick primary currency once and render every summary row through it.
+        const useVendor = primaryColumn === "vendor" && !isBase;
+        const code = useVendor ? vendorCurrency : BASE_CURRENCY;
+        const sym = useVendor ? vendorSym : baseSym;
+        const toPrimary = (pkr: number) => useVendor ? convertBetween(pkr, BASE_CURRENCY, vendorCurrency) : pkr;
+        const moneyLabel = (pkr: number) => `${sym} ${fmtAmount(toPrimary(pkr), code)} ${code}`;
+        const negLabel = (pkr: number) => `-${sym} ${fmtAmount(toPrimary(pkr), code)} ${code}`;
+        // Optional secondary line: when printing in vendor currency, surface
+        // the base equivalent below the grand total (and vice versa) so the
+        // document still answers "what's this in PKR" at a glance.
+        const otherCode = useVendor ? BASE_CURRENCY : vendorCurrency;
+        const otherSym = useVendor ? baseSym : vendorSym;
+        const otherValue = useVendor
+          ? display.total
+          : (isBase ? display.total : convertBetween(display.total, BASE_CURRENCY, vendorCurrency));
+        const showSecondary = !isBase && printOptions.showConversion;
+        return `
       <div style="flex:1;border:1px solid ${C.border};border-radius:10px;padding:16px;background:${C.secondary};">
         <div style="font-size:10px;font-weight:600;color:${C.muted};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Order Summary</div>
-        ${summaryRow("Subtotal", fmtCurrency(display.subtotal))}
-        ${summaryRow("Shipping & Handling", fmtCurrency(display.shippingFee))}
-        ${display.discountTotal > 0 ? summaryRow("Discount", "-" + fmtCurrency(display.discountTotal), C.accent) : ""}
+        ${summaryRow("Subtotal", moneyLabel(display.subtotal))}
+        ${summaryRow("Shipping & Handling", moneyLabel(display.shippingFee))}
+        ${display.discountTotal > 0 ? summaryRow("Discount", negLabel(display.discountTotal), C.accent) : ""}
         <div style="height:2px;background:${C.border};margin:10px 0;"></div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;">
           <span style="font-size:14px;font-weight:600;color:${C.fg};">Grand Total</span>
-          <span style="font-size:20px;font-weight:700;color:${C.fg};">${fmtCurrency(display.total)}</span>
+          <span style="font-size:20px;font-weight:700;color:${C.fg};">${moneyLabel(display.total)}</span>
         </div>
-      </div>
+        ${showSecondary ? `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px;">
+          <span style="font-size:11px;color:${C.muted};">In ${otherCode}</span>
+          <span style="font-size:13px;font-weight:600;color:${C.muted};">${otherSym} ${fmtAmount(otherValue, otherCode)} ${otherCode}</span>
+        </div>` : ""}
+        ${!isBase && settlementCurrency !== vendorCurrency ? `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px;">
+          <span style="font-size:11px;color:${C.muted};">In ${settlementCurrency} (settlement)</span>
+          <span style="font-size:13px;font-weight:600;color:${C.muted};">${settleSym} ${fmtAmount(convertBetween(display.total, BASE_CURRENCY, settlementCurrency), settlementCurrency)} ${settlementCurrency}</span>
+        </div>` : ""}
+        ${!isBase && printOptions.includeRateInfo ? `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed ${C.border};font-size:10.5px;color:${C.muted};line-height:1.5;">
+          <div><span style="font-weight:600;color:${C.fg};">${rateLabel}</span> · 1 ${vendorCurrency} = ${baseSym} ${fmtAmount(lockedRate, BASE_CURRENCY)} ${BASE_CURRENCY}</div>
+          <div>Source: ${esc(rateSource)} · Locked on ${esc(lockedAtLabel)}</div>
+        </div>` : ""}
+      </div>`;
+      })()}
     </div>
 
     <!-- ═══ NOTES (Vendor-Facing Only) ═══ -->
@@ -408,10 +564,14 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
     })()}
 
     <!-- ═══ FOOTER ═══ -->
-    <div style="border-top:1px solid ${C.border};padding-top:16px;display:flex;justify-content:space-between;align-items:center;">
-      <div>
+    <div style="border-top:1px solid ${C.border};padding-top:16px;display:flex;justify-content:space-between;align-items:flex-start;">
+      <div style="max-width:60%;">
         <div style="font-size:10px;color:${C.muted};">This document is a computer-generated Purchase Order from Omne ERP.</div>
         <div style="font-size:10px;color:#a1a1aa;margin-top:2px;">Printed on ${esc(fmtNow())}</div>
+        ${!isBase && printOptions.includeRateInfo ? `<div style="font-size:10px;color:${C.muted};margin-top:6px;">
+          <span style="font-weight:600;color:${C.fg};">${fullRateLabel}</span> · Source: ${esc(rateSource)} · Locked on ${esc(lockedAtLabel)}
+        </div>` : ""}
+        ${!isBase ? `<div style="font-size:10px;color:#a1a1aa;margin-top:4px;font-style:italic;">Amounts reflect the exchange rate locked at PO creation.</div>` : ""}
       </div>
       <div style="text-align:right;">
         <div style="font-size:10px;color:${C.muted};">PO ${esc(display.poNumber)} · ${esc(versionLabel)}</div>
@@ -436,6 +596,13 @@ function generatePrintHTML(po: PurchaseOrderData, selectedVersion?: POVersionEnt
   </div>
 </body>
 </html>`;
+}
+
+/* Number of `<td>`s a notes row needs to span. Always six now that the
+ * print document renders a single currency column (# | Item | Qty | Unit |
+ * Disc | Total). */
+function baseRowSpan(_opts: PrintOptions, _isBase: boolean): number {
+  return 6;
 }
 
 /* ── Micro-template helpers ── */

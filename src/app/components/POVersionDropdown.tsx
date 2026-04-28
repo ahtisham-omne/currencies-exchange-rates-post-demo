@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, FileText, RotateCcw, Eye, Send, CheckCircle2, Clock } from 'lucide-react';
 import type { POVersionEntry, POStatus, POVersionStatus } from './poStore';
+import { POVersionRateChip } from './currency/POVersionRateChip';
 
 /* ── Status config ── */
 const statusConfig: Record<POVersionStatus, { label: string; bg: string; color: string; icon: typeof Send }> = {
@@ -76,6 +77,9 @@ export default function POVersionDropdown({
   const versions: LocalVersion[] = [...poVersions]
     .sort((a, b) => b.version - a.version)
     .map(toLocalVersion);
+
+  // Look up the full entry for a given version number — needed for the rate chip.
+  const entryByVersion = new Map(poVersions.map((v) => [v.version, v]));
 
   // Sync latest version status with current PO status
   if (versions.length > 0) {
@@ -306,6 +310,19 @@ export default function POVersionDropdown({
                     <div style={{ fontSize: 11, color: '#6B7280', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {version.summary}
                     </div>
+                    {(() => {
+                      const entry = entryByVersion.get(version.version);
+                      if (!entry) return null;
+                      const total = entry.snapshot.total;
+                      return (
+                        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 10, color: '#6B7280', fontWeight: 600 }} className="tabular-nums">
+                            ${total.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </span>
+                          <POVersionRateChip version={entry} dense />
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Date + revert */}

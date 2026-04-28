@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local tooling artifacts
+.claude/
+.playwright-mcp/
+
+# Debug screenshots — captured during dev sessions, not for source control
+*.png
+!src/**/*.png
+!public/**/*.png

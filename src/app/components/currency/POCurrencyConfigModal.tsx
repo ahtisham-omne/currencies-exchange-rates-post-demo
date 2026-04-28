@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMemo, useState } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Lock, RotateCcw } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
@@ -18,6 +18,7 @@ import { CurrencyFlag } from "../ui/CurrencyFlag";
 import {
   BASE_CURRENCY,
   CURRENCY_LIBRARY,
+  CORPORATE_RATES,
   activeRateSnapshot,
   convertBetween,
   getLibraryCurrency,
@@ -26,6 +27,7 @@ import {
 } from "@/app/data/currencyLibrary";
 import { formatRateUpdatedAs } from "@/app/data/rateDateFormat";
 import { useRateContext } from "../../context/RateContext";
+import { getVendorCurrency } from "../catalogData";
 import type { PurchaseOrderData } from "../poStore";
 import {
   getPOVendorCurrency,
@@ -42,18 +44,21 @@ interface Props {
 }
 
 /**
- * PO-level currency configuration. Converter-style layout:
+ * PO-level currency configuration. Layout:
  *   [ Vendor Amount + currency ]
- *         1 USD = 278.00 PKR  [Mid-market | Corporate]
  *   [ You Pay + currency ]
+ *   Rate type   [Mid-market | Corporate]
+ *   [ Rate metadata card ]
  *
- * Both amount fields carry a hover showing the base-currency equivalent, the
- * active PO reference rate, and the rate-source metadata. The inline rate-type
- * switch writes through to the shared currency configurator, so the same type
- * label is used everywhere an exchange rate is displayed.
+ * The amount portion of each field is non-editable (display-only) and styled
+ * as such; only the currency dropdown is interactive. Hovering an amount opens
+ * a card with base-equivalent, the active PO reference rate, and source
+ * metadata. The rate-type switch writes through to the shared configurator so
+ * the same type label is used everywhere an exchange rate is displayed.
  */
 export default function POCurrencyConfigModal({ open, onOpenChange, po }: Props) {
   const readOnly = po.status !== "Draft";
+  const isLocked = po.status !== "Draft";
   const { rateType, setRateType } = useRateContext();
 
   // "You Pay" defaults to the base currency unless the PO explicitly set a different settlement currency.
@@ -61,6 +66,10 @@ export default function POCurrencyConfigModal({ open, onOpenChange, po }: Props)
     const vendor = getPOVendorCurrency(po);
     const saved = getPOSettlementCurrency(po);
     return saved === vendor ? BASE_CURRENCY : saved;
+  };
+
+  const defaultVendorCurrency = (): string => {
+    return (getVendorCurrency(po.vendor.name) ?? BASE_CURRENCY).toUpperCase();
   };
 
   const [vendorCurrency, setVendorCurrency] = useState<string>(getPOVendorCurrency(po));
@@ -84,11 +93,6 @@ export default function POCurrencyConfigModal({ open, onOpenChange, po }: Props)
     if (settlementCurrency.toUpperCase() === BASE_CURRENCY) return totalPKR;
     return convertBetween(totalPKR, BASE_CURRENCY, settlementCurrency);
   }, [totalPKR, settlementCurrency, rateType]);
-
-  const crossRate = useMemo(() => {
-    if (vendorCurrency.toUpperCase() === settlementCurrency.toUpperCase()) return 1;
-    return convertBetween(1, vendorCurrency, settlementCurrency);
-  }, [vendorCurrency, settlementCurrency, rateType]);
 
   const settlementRateAtSave = useMemo(() => {
     if (settlementCurrency.toUpperCase() === BASE_CURRENCY) return 1;
@@ -114,17 +118,47 @@ export default function POCurrencyConfigModal({ open, onOpenChange, po }: Props)
     onOpenChange(false);
   };
 
+  const handleResetToDefault = () => {
+    if (readOnly) return;
+    setVendorCurrency(defaultVendorCurrency());
+    setSettlementCurrency(BASE_CURRENCY);
+    setRateType("market");
+    toast("Reverted to defaults", {
+      description: `Vendor: ${defaultVendorCurrency()} · Settlement: ${BASE_CURRENCY} · Mid-market`,
+    });
+  };
+
+  const lockedAtDisplay = po.sentDate
+    ? new Date(po.sentDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
+    : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[560px] p-0 overflow-hidden gap-0">
+      <DialogContent
+        className="max-w-[560px] p-0 overflow-hidden gap-0"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader className="px-6 pt-6 pb-3">
-          <DialogTitle className="text-[16px]" style={{ fontWeight: 600 }}>Currency Configuration</DialogTitle>
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle className="text-[16px]" style={{ fontWeight: 600 }}>Currency Configuration</DialogTitle>
+            {isLocked && (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] tabular-nums"
+                style={{ backgroundColor: "#ecfdf5", color: "#047857", fontWeight: 600, border: "1px solid #a7f3d0" }}
+                title={lockedAtDisplay ? `Locked on ${lockedAtDisplay}` : "Locked"}
+              >
+                <Lock className="w-3 h-3" />
+                Locked
+                {lockedAtDisplay && <span className="text-[10px] text-emerald-700/70 font-normal">· {lockedAtDisplay}</span>}
+              </span>
+            )}
+          </div>
           <DialogDescription className="text-[12px] text-slate-500 mt-1">
             This configuration applies only to this PO. The vendor's default currency stays the same.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="px-6 pt-4 pb-6 flex flex-col gap-1">
+        <div className="px-6 pt-4 pb-2 flex flex-col gap-3">
           <AmountField
             label="Vendor Amount"
             helper="The currency the vendor will receive the amount in. Changing this only applies to this PO."
@@ -135,15 +169,6 @@ export default function POCurrencyConfigModal({ open, onOpenChange, po }: Props)
             basePKR={totalPKR}
           />
 
-          <RateDivider
-            fromCurrency={vendorCurrency}
-            toCurrency={settlementCurrency}
-            rate={crossRate}
-            rateType={rateType}
-            onRateTypeChange={setRateType}
-            readOnly={readOnly}
-          />
-
           <AmountField
             label="You Pay"
             helper="The currency you settle the payment in. Defaults to base currency but can be changed for this PO."
@@ -152,19 +177,183 @@ export default function POCurrencyConfigModal({ open, onOpenChange, po }: Props)
             onCurrencyChange={setSettlementCurrency}
             readOnly={readOnly}
             basePKR={totalPKR}
+            showBaseEquivalent
           />
+
+          <div className="mt-1 flex items-center justify-between">
+            <span className="text-[11.5px] text-slate-500" style={{ fontWeight: 500 }}>
+              Rate type
+            </span>
+            <RateTypeSwitch rateType={rateType} onChange={setRateType} disabled={readOnly} />
+          </div>
+
+          <RateMetadataPanel
+            rateType={rateType}
+            vendorCurrency={vendorCurrency}
+            settlementCurrency={settlementCurrency}
+          />
+
+          {!isLocked && (
+            <div
+              className="mt-2 inline-flex items-start gap-2 rounded-md px-3 py-2 text-[11.5px] leading-relaxed"
+              style={{ backgroundColor: "#fffbeb", color: "#92400e", border: "1px solid #fde68a" }}
+            >
+              <Lock className="w-3 h-3 mt-[1px] shrink-0" />
+              <span>Rate will be locked once the PO is sent. After that, totals stay fixed even if market rates move.</span>
+            </div>
+          )}
         </div>
 
-        <DialogFooter className="px-6 py-4 border-t border-slate-100 flex items-center gap-2">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={handleSave} disabled={readOnly}>
-            Save Configuration
-          </Button>
+        <DialogFooter className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-2 sm:flex-row sm:justify-between">
+          <button
+            type="button"
+            onClick={handleResetToDefault}
+            disabled={readOnly}
+            className="inline-flex items-center gap-1.5 text-[11.5px] text-slate-500 hover:text-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            style={{ fontWeight: 500 }}
+          >
+            <RotateCcw className="w-3 h-3" />
+            Reset to default
+          </button>
+          <div className="inline-flex items-center gap-2">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleSave} disabled={readOnly}>
+              Save Configuration
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function RateMetadataPanel({
+  rateType,
+  vendorCurrency,
+  settlementCurrency,
+}: {
+  rateType: RateType;
+  vendorCurrency: string;
+  settlementCurrency: string;
+}) {
+  const vc = vendorCurrency.toUpperCase();
+  const sc = settlementCurrency.toUpperCase();
+  const baseCode = BASE_CURRENCY;
+
+  // Build the list of FX rates the user actually needs to see. When You Pay
+  // differs from base currency AND from the vendor currency, two rates are at
+  // play: vendor ↔ You Pay (what we owe the vendor in their currency) and
+  // You Pay ↔ base (so finance can track the cost in PKR). Otherwise the two
+  // collapse into a single rate.
+  type Conv = { from: string; to: string; label: string };
+  const conversions: Conv[] = [];
+
+  if (vc !== sc) {
+    conversions.push({
+      from: vc,
+      to: sc,
+      label: sc === baseCode ? "Vendor amount → Base currency" : "Vendor amount → You Pay",
+    });
+    if (sc !== baseCode && vc !== baseCode) {
+      conversions.push({
+        from: sc,
+        to: baseCode,
+        label: "You Pay → Base currency (reporting)",
+      });
+    }
+  } else if (sc !== baseCode) {
+    conversions.push({
+      from: sc,
+      to: baseCode,
+      label: "Vendor amount → Base currency",
+    });
+  }
+
+  if (conversions.length === 0) {
+    return null;
+  }
+
+  const showHeaders = conversions.length > 1;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {conversions.map((c) => (
+        <ConversionBlock
+          key={`${c.from}-${c.to}`}
+          fromCode={c.from}
+          toCode={c.to}
+          label={showHeaders ? c.label : undefined}
+          rateType={rateType}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ConversionBlock({
+  fromCode,
+  toCode,
+  label,
+  rateType,
+}: {
+  fromCode: string;
+  toCode: string;
+  label?: string;
+  rateType: RateType;
+}) {
+  const snap = activeRateSnapshot();
+  const typeLabel = rateTypeLabel(rateType);
+  const typeHex = rateType === "market" ? "#7c3aed" : "#d97706";
+  const updatedAs = formatRateUpdatedAs(snap.lastSyncAt);
+  const corporateAsOf = (() => {
+    try {
+      return new Date(CORPORATE_RATES.asOfDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+    } catch {
+      return CORPORATE_RATES.asOfDate;
+    }
+  })();
+
+  const forwardRate = convertBetween(1, fromCode, toCode);
+  const inverseRate = convertBetween(1, toCode, fromCode);
+  const fromCur = getLibraryCurrency(fromCode);
+  const toCur = getLibraryCurrency(toCode);
+  const fromSym = fromCur?.symbol ?? fromCode;
+  const toSym = toCur?.symbol ?? toCode;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+      {label && (
+        <div
+          className="text-[10px] text-slate-400 mb-1.5"
+          style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+        >
+          {label}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 text-[11.5px]">
+        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: typeHex }} />
+        <span style={{ color: typeHex, fontWeight: 600 }}>{typeLabel}</span>
+        {rateType === "market" ? (
+          <span className="text-slate-500">· Source: Open Exchange Rates</span>
+        ) : (
+          <span className="text-slate-500">· Created by Treasury · As of {corporateAsOf}</span>
+        )}
+      </div>
+
+      <div className="mt-2 text-[11.5px] text-slate-700 tabular-nums leading-5">
+        <div>1 {fromCode} = {toSym} {formatRate(forwardRate)} {toCode}</div>
+        <div>1 {toCode} = {fromSym} {formatRate(inverseRate)} {fromCode}</div>
+      </div>
+
+      <div className="mt-1.5 text-[10.5px] text-slate-500">
+        {rateType === "market"
+          ? <>Last updated {updatedAs ?? "moments ago"}.</>
+          : <>Created by Treasury · Last updated {corporateAsOf}.</>}
+      </div>
+    </div>
   );
 }
 
@@ -176,6 +365,7 @@ function AmountField({
   onCurrencyChange,
   readOnly,
   basePKR,
+  showBaseEquivalent,
 }: {
   label: string;
   helper: string;
@@ -184,44 +374,58 @@ function AmountField({
   onCurrencyChange: (v: string) => void;
   readOnly?: boolean;
   basePKR: number;
+  /** When true and the field's currency is not base, render a small base-equivalent strip beneath the input. */
+  showBaseEquivalent?: boolean;
 }) {
-  const cur = getLibraryCurrency(currency);
   const formatted = formatCurrency(amount, currency);
+  const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
+  const baseSym = baseCur.symbol ?? BASE_CURRENCY;
+  const isBase = currency.toUpperCase() === BASE_CURRENCY;
 
   return (
     <section className="flex flex-col gap-2 py-1">
       <label className="text-[12.5px] text-slate-700" style={{ fontWeight: 600 }}>{label}</label>
 
-      <HoverCard openDelay={150} closeDelay={80}>
-        <HoverCardTrigger asChild>
-          <div
-            className={`flex items-stretch rounded-xl border transition-colors cursor-help ${
-              readOnly
-                ? "bg-slate-50 border-slate-200 opacity-70"
-                : "bg-white border-slate-200 hover:border-slate-300"
-            }`}
-          >
-            <div className="flex-1 flex items-center px-4 min-w-0">
-              <input
-                type="text"
-                readOnly
-                value={formatted}
-                aria-label={`${label} in ${currency}`}
-                className={`w-full h-12 bg-transparent text-[18px] tabular-nums outline-none cursor-help ${
-                  readOnly ? "text-slate-500" : "text-slate-900"
-                }`}
-                style={{ fontWeight: 600 }}
-              />
+      <div
+        className={`flex items-stretch rounded-xl border transition-colors ${
+          readOnly
+            ? "border-slate-200 opacity-80"
+            : "border-slate-200 hover:border-slate-300"
+        }`}
+      >
+        <HoverCard openDelay={150} closeDelay={80}>
+          <HoverCardTrigger asChild>
+            <div
+              role="textbox"
+              aria-readonly="true"
+              aria-disabled="true"
+              aria-label={`${label} in ${currency}`}
+              className="flex-1 flex items-center px-4 min-w-0 h-12 rounded-l-xl bg-slate-100 text-slate-400 cursor-help select-none"
+            >
+              <span
+                className="w-full text-[18px] tabular-nums truncate"
+                style={{ fontWeight: 500 }}
+              >
+                {formatted}
+              </span>
             </div>
-            <div className="shrink-0 border-l border-slate-200">
-              <CurrencySelect value={currency} onChange={onCurrencyChange} disabled={readOnly} />
-            </div>
-          </div>
-        </HoverCardTrigger>
-        <HoverCardContent side="top" align="start" className="w-[320px] p-3 rounded-lg border border-slate-200 shadow-lg bg-white">
-          <RateDetailBody amount={amount} currency={currency} basePKR={basePKR} />
-        </HoverCardContent>
-      </HoverCard>
+          </HoverCardTrigger>
+          <HoverCardContent side="top" align="start" className="w-[320px] p-3 rounded-lg border border-slate-200 shadow-lg bg-white">
+            <RateDetailBody amount={amount} currency={currency} basePKR={basePKR} />
+          </HoverCardContent>
+        </HoverCard>
+        <div className="shrink-0 border-l border-slate-200">
+          <CurrencySelect value={currency} onChange={onCurrencyChange} disabled={readOnly} />
+        </div>
+      </div>
+
+      {showBaseEquivalent && !isBase && (
+        <div className="text-[11.5px] text-slate-600 tabular-nums">
+          <span className="text-slate-400">≈ </span>
+          {baseSym} {formatCurrency(basePKR, BASE_CURRENCY)} {BASE_CURRENCY}
+          <span className="text-slate-400"> in base currency</span>
+        </div>
+      )}
 
       <p className="text-[11.5px] text-slate-500 leading-relaxed">{helper}</p>
     </section>
@@ -263,6 +467,11 @@ function CurrencySelect({
         align="end"
         sideOffset={4}
         className="p-0 w-[280px] rounded-lg border border-slate-200 shadow-lg"
+        // The popover sits inside a Dialog whose RemoveScroll layer swallows
+        // wheel events bubbling out of nested scrollable regions. Stopping
+        // propagation at the popover root lets the cmdk list scroll natively.
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
       >
         <Command
           filter={(itemValue, search) => {
@@ -272,7 +481,11 @@ function CurrencySelect({
           }}
         >
           <CommandInput placeholder="Search currency..." className="h-10 text-[13px]" />
-          <CommandList className="max-h-[260px] overflow-y-auto">
+          <CommandList
+            className="max-h-[260px] overflow-y-auto"
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+          >
             <CommandEmpty className="py-4 text-center text-[12px] text-slate-500">
               No currencies found.
             </CommandEmpty>
@@ -301,35 +514,6 @@ function CurrencySelect({
         </Command>
       </PopoverContent>
     </Popover>
-  );
-}
-
-function RateDivider({
-  fromCurrency,
-  toCurrency,
-  rate,
-  rateType,
-  onRateTypeChange,
-  readOnly,
-}: {
-  fromCurrency: string;
-  toCurrency: string;
-  rate: number;
-  rateType: RateType;
-  onRateTypeChange: (t: RateType) => void;
-  readOnly?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-3 py-3">
-      <div className="h-px flex-1 bg-slate-200" />
-      <div className="inline-flex items-center gap-2">
-        <span className="text-[12.5px] text-slate-700 tabular-nums" style={{ fontWeight: 500 }}>
-          1 {fromCurrency.toUpperCase()} = {formatCurrency(rate, toCurrency)} {toCurrency.toUpperCase()}
-        </span>
-        <RateTypeSwitch rateType={rateType} onChange={onRateTypeChange} disabled={readOnly} />
-      </div>
-      <div className="h-px flex-1 bg-slate-200" />
-    </div>
   );
 }
 
@@ -425,6 +609,25 @@ function RateDetailBody({
       </div>
     </div>
   );
+}
+
+/**
+ * Render an FX rate with enough precision to be useful in either direction.
+ * Currency-style rounding (2dp) hides values like 1 PKR = 0.0036 USD as
+ * "0.00", which is misleading. Step the precision up as the magnitude
+ * shrinks so the inverse always renders meaningfully.
+ */
+function formatRate(value: number): string {
+  const abs = Math.abs(value);
+  let decimals: number;
+  if (abs >= 100) decimals = 2;
+  else if (abs >= 1) decimals = 4;
+  else if (abs >= 0.01) decimals = 5;
+  else decimals = 6;
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
 }
 
 function formatCurrency(value: number, code: string): string {

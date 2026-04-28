@@ -11,6 +11,8 @@ import {
   versionStatusConfig,
   changeTypeConfig,
   formatCurrency,
+  formatVersionAmount,
+  VersionAmount,
 } from "./POVersionHistoryTab";
 import type { POVersionStatus } from "./POVersionHistoryTab";
 
@@ -20,6 +22,8 @@ interface POCompareFullScreenProps {
   v1: POVersionEntry;
   v2: POVersionEntry;
   onClose: () => void;
+  /** Mirrors the PO-level Base ↔ Partner toggle so amounts align with the rest of the page. */
+  viewMode?: "base" | "partner";
 }
 
 type DiffStatus = "unchanged" | "added" | "removed" | "modified";
@@ -41,17 +45,50 @@ const getUserInitials = (name: string) => name.split(" ").map(n => n[0]).join(""
    Inline Comparison — side-by-side layout with readable typography
    ═══════════════════════════════════════════════════════════════ */
 
-export default function POCompareFullScreen({ v1, v2, onClose }: POCompareFullScreenProps) {
+export default function POCompareFullScreen({ v1, v2, onClose, viewMode = "base" }: POCompareFullScreenProps) {
   const [showOnlyDiffs, setShowOnlyDiffs] = useState(true);
   const [activeFilter, setActiveFilter] = useState<"all" | "line-items" | "pricing" | "config">("all");
 
   /* ── Field comparison data ── */
+  const fmtCurrencyConfig = (v: POVersionEntry) => {
+    const vendor = (v.snapshot.vendorAmountCurrency ?? "PKR").toUpperCase();
+    const settle = (v.snapshot.settlementCurrency ?? vendor).toUpperCase();
+    const rateLabel = v.rateSnapshot
+      ? `${v.rateSnapshot.rateType === "market" ? "Mid-market" : "Corporate"}${
+          v.rateSnapshot.lockedRate ? ` @ ${v.rateSnapshot.lockedRate.toFixed(2)}` : ""
+        }`
+      : "—";
+    return vendor === "PKR" ? `${vendor}` : `${vendor} → ${settle} · ${rateLabel}`;
+  };
+  const fmtRateLockedAt = (v: POVersionEntry) => {
+    const at = v.rateSnapshot?.lockedAt;
+    if (!at) return "—";
+    try {
+      return new Date(at).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+    } catch {
+      return at;
+    }
+  };
+
+  // Money rows carry both a string (used for the change/diff comparison) and
+  // a JSX node (used for rendering with the standard CurrencyAmount hover).
+  const moneyRow = (label: string, snapKey: "total" | "subtotal" | "shippingFee" | "discountTotal") => ({
+    label,
+    val1: formatVersionAmount(v1.snapshot[snapKey], v1, viewMode),
+    val2: formatVersionAmount(v2.snapshot[snapKey], v2, viewMode),
+    node1: <VersionAmount amountPKR={v1.snapshot[snapKey]} version={v1} viewMode={viewMode} />,
+    node2: <VersionAmount amountPKR={v2.snapshot[snapKey]} version={v2} viewMode={viewMode} />,
+    category: "pricing",
+  });
+
   const fields = useMemo(() => [
     { label: "Line Items", val1: String(v1.snapshot.lineItemCount), val2: String(v2.snapshot.lineItemCount), category: "config" },
-    { label: "Total", val1: formatCurrency(v1.snapshot.total), val2: formatCurrency(v2.snapshot.total), category: "pricing" },
-    { label: "Subtotal", val1: formatCurrency(v1.snapshot.subtotal), val2: formatCurrency(v2.snapshot.subtotal), category: "pricing" },
-    { label: "Shipping", val1: formatCurrency(v1.snapshot.shippingFee), val2: formatCurrency(v2.snapshot.shippingFee), category: "pricing" },
-    { label: "Discount", val1: formatCurrency(v1.snapshot.discountTotal), val2: formatCurrency(v2.snapshot.discountTotal), category: "pricing" },
+    moneyRow("Total", "total"),
+    moneyRow("Subtotal", "subtotal"),
+    moneyRow("Shipping", "shippingFee"),
+    moneyRow("Discount", "discountTotal"),
+    { label: "Currency", val1: fmtCurrencyConfig(v1), val2: fmtCurrencyConfig(v2), category: "pricing" },
+    { label: "Rate Locked At", val1: fmtRateLockedAt(v1), val2: fmtRateLockedAt(v2), category: "pricing" },
     { label: "Status", val1: v1.snapshot.status, val2: v2.snapshot.status, category: "config" },
     { label: "Delivery Date", val1: v1.snapshot.deliveryDate, val2: v2.snapshot.deliveryDate, category: "config" },
     { label: "Payment Terms", val1: v1.snapshot.payment.paymentTerms, val2: v2.snapshot.payment.paymentTerms, category: "config" },
@@ -59,7 +96,7 @@ export default function POCompareFullScreen({ v1, v2, onClose }: POCompareFullSc
     { label: "Pay To", val1: v1.snapshot.payment.payTo, val2: v2.snapshot.payment.payTo, category: "config" },
     { label: "Payment Method", val1: v1.snapshot.payment.paymentMethod, val2: v2.snapshot.payment.paymentMethod, category: "config" },
     { label: "Shipped To", val1: v1.snapshot.payment.shippedTo, val2: v2.snapshot.payment.shippedTo, category: "config" },
-  ], [v1, v2]);
+  ] as Array<{ label: string; val1: string; val2: string; category: string; node1?: React.ReactNode; node2?: React.ReactNode }>, [v1, v2, viewMode]);
 
   const filteredFields = useMemo(() => {
     let result = fields;
@@ -268,12 +305,12 @@ export default function POCompareFullScreen({ v1, v2, onClose }: POCompareFullSc
                           color: "#6B7280",
                           textDecoration: changed ? "line-through" : "none",
                         }}>
-                          {f.val1}
+                          {f.node1 ?? f.val1}
                         </span>
                       </div>
                       <div style={{ padding: "10px 16px", borderLeft: "1px solid #F3F4F6", display: "flex", alignItems: "center", gap: "6px" }}>
                         <span style={{ fontSize: "14px", fontWeight: 500, color: "#111827" }}>
-                          {f.val2}
+                          {f.node2 ?? f.val2}
                         </span>
                         {changed && <span style={{ width: "5px", height: "5px", borderRadius: "50%", backgroundColor: "#3B82F6", flexShrink: 0 }} />}
                       </div>
@@ -307,6 +344,7 @@ export default function POCompareFullScreen({ v1, v2, onClose }: POCompareFullSc
                   itemMap={v1Map}
                   getDiffStatus={getDiffStatus}
                   side="left"
+                  viewMode={viewMode}
                 />
                 {/* V2 Table */}
                 <LineItemsTable
@@ -317,6 +355,7 @@ export default function POCompareFullScreen({ v1, v2, onClose }: POCompareFullSc
                   itemMap={v2Map}
                   getDiffStatus={getDiffStatus}
                   side="right"
+                  viewMode={viewMode}
                 />
               </div>
             )}
@@ -383,7 +422,7 @@ export default function POCompareFullScreen({ v1, v2, onClose }: POCompareFullSc
 /* ── Sub-components ── */
 
 function LineItemsTable({
-  version, cfg, Icon, itemIds, itemMap, getDiffStatus, side
+  version, cfg, Icon, itemIds, itemMap, getDiffStatus, side, viewMode = "base",
 }: {
   version: POVersionEntry;
   cfg: { label: string; bg: string; color: string };
@@ -392,6 +431,7 @@ function LineItemsTable({
   itemMap: Map<string, POLineItemSnapshot>;
   getDiffStatus: (id: string) => DiffStatus;
   side: "left" | "right";
+  viewMode?: "base" | "partner";
 }) {
   return (
     <div style={{ border: "1px solid #E5E7EB", borderRadius: "8px", overflow: "hidden" }}>
@@ -417,18 +457,20 @@ function LineItemsTable({
       {itemIds.map(id => {
         const status = getDiffStatus(id);
         const li = itemMap.get(id);
-        return <LineItemRow key={id} li={li || null} status={status} side={side} />;
+        return <LineItemRow key={id} li={li || null} status={status} side={side} version={version} viewMode={viewMode} />;
       })}
       {/* Total footer */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "8px 14px", borderTop: "1px solid #E5E7EB", backgroundColor: "#F9FAFB" }}>
         <span style={{ fontSize: "12px", fontWeight: 500, color: "#6B7280", textTransform: "uppercase", letterSpacing: "0.3px", marginRight: "10px" }}>Total</span>
-        <span style={{ fontSize: "14px", fontWeight: 700, color: "#1F2937" }}>{formatCurrency(version.snapshot.total)}</span>
+        <span style={{ fontSize: "14px", fontWeight: 700, color: "#1F2937" }}>
+          <VersionAmount amountPKR={version.snapshot.total} version={version} viewMode={viewMode} />
+        </span>
       </div>
     </div>
   );
 }
 
-function LineItemRow({ li, status, side }: { li: POLineItemSnapshot | null; status: DiffStatus; side: "left" | "right" }) {
+function LineItemRow({ li, status, side, version, viewMode = "base" }: { li: POLineItemSnapshot | null; status: DiffStatus; side: "left" | "right"; version: POVersionEntry; viewMode?: "base" | "partner" }) {
   const isRemoved = status === "removed" || (side === "left" && status === "modified");
   const isAdded = status === "added";
   const rowBg = isAdded ? "#F8FAFC" : "#FFFFFF";
@@ -452,8 +494,12 @@ function LineItemRow({ li, status, side }: { li: POLineItemSnapshot | null; stat
       </div>
       <span style={{ fontSize: "13px", color: "#6B7280", fontWeight: 400, flexShrink: 0, width: "48px", textAlign: "right", textDecoration }}>{li.vendorQty}</span>
       <span style={{ fontSize: "13px", color: "#9CA3AF", flexShrink: 0, width: "48px", textAlign: "center", textDecoration }}>{li.vendorUOM}</span>
-      <span style={{ fontSize: "13px", color: "#9CA3AF", fontWeight: 400, flexShrink: 0, width: "80px", textAlign: "right", textDecoration }}>{formatCurrency(li.unitPrice)}</span>
-      <span style={{ fontSize: "13px", fontWeight: 600, color: textColor, flexShrink: 0, width: "80px", textAlign: "right", textDecoration }}>{formatCurrency(li.lineTotal)}</span>
+      <span style={{ fontSize: "13px", color: "#9CA3AF", fontWeight: 400, flexShrink: 0, width: "80px", textAlign: "right", textDecoration }}>
+        <VersionAmount amountPKR={li.unitPrice} version={version} viewMode={viewMode} />
+      </span>
+      <span style={{ fontSize: "13px", fontWeight: 600, color: textColor, flexShrink: 0, width: "80px", textAlign: "right", textDecoration }}>
+        <VersionAmount amountPKR={li.lineTotal} version={version} viewMode={viewMode} />
+      </span>
     </div>
   );
 }

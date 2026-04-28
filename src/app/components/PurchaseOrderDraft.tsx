@@ -114,6 +114,8 @@ import {
 import ItemsCatalogueModal from "./CatalogueModal";
 import type { CatalogItem } from "./catalogData";
 import { printPurchaseOrder } from "./PrintPurchaseOrder";
+import PrintOptionsDialog from "./PrintOptionsDialog";
+import type { PrintOptions } from "./PrintOptionsDialog";
 import { getVendorContacts, PAY_TO_VENDORS, SHIPPED_TO_VENDORS, FUNDED_BY_VENDORS, CATALOG } from "./catalogData";
 import VendorSelectionDialog from "./VendorSelectionDialog";
 import type { VendorSelection } from "./VendorSelectionDialog";
@@ -159,8 +161,9 @@ import { POMoneyCell } from "./currency/POMoneyCell";
 import { POCurrencyHeaderControls } from "./currency/POCurrencyHeaderControls";
 import POCurrencyConfigModal from "./currency/POCurrencyConfigModal";
 import { POLockedRateHelper } from "./currency/POLockedRateHelper";
+import { POSummaryRateBadge } from "./currency/POSummaryRateBadge";
 import { poVendorCurrencyIsBase, getPOVendorCurrency } from "./poStore";
-import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from "@/app/data/currencyLibrary";
+import { BASE_CURRENCY, MARKET_RATES, convertBetween, getLibraryCurrency } from "@/app/data/currencyLibrary";
 
 /* ═════════════════════���═══════�������═════������════════════════════��═════
    TYPOGRAPHY — CSS variable-bound, Inter only
@@ -1787,22 +1790,167 @@ function ChangeVendorContactDialog({
    Shows a summary of what will be duplicated and creates a new Draft PO.
    ═══════════════════════════════════════════════════════════════ */
 
+/**
+ * Asks the user whether to keep the locked rate from a previous version or
+ * apply today's market rate when creating a new version. Mirrors the language
+ * of the prompt used in the duplicate flow so users get the same mental model.
+ */
+function NewVersionRatePromptDialog({
+  prompt,
+  po,
+  onClose,
+  onConfirm,
+}: {
+  prompt: { fromVersion: number } | null;
+  po: PurchaseOrderData;
+  onClose: () => void;
+  onConfirm: (fromVersion: number, rateChoice: "locked" | "current") => void;
+}) {
+  const [choice, setChoice] = useState<"locked" | "current">("locked");
+  React.useEffect(() => { if (prompt) setChoice("locked"); }, [prompt]);
+
+  const open = !!prompt;
+  const sourceEntry = open
+    ? po.versions.find(v => v.version === prompt!.fromVersion) ?? null
+    : null;
+
+  const lockedRateLabel = (() => {
+    const r = sourceEntry?.rateSnapshot?.lockedRate;
+    if (!r) return null;
+    const partner = (sourceEntry?.snapshot.vendorAmountCurrency ?? "").toUpperCase();
+    if (!partner || partner === BASE_CURRENCY) return null;
+    return `1 ${partner} = Rs ${r.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  })();
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-[460px] p-0 gap-0 overflow-hidden" style={{ fontFamily: FONT }}>
+        <div className="px-5 pt-5 pb-3 border-b border-border">
+          <DialogTitle style={{ ...st.fieldValueBold, fontSize: "var(--text-label)" }} className="text-foreground">
+            Create new version
+          </DialogTitle>
+          <DialogDescription style={st.uiSmall} className="text-muted-foreground mt-1">
+            Use locked rate from V{prompt?.fromVersion ?? ""} or apply current rate?
+          </DialogDescription>
+        </div>
+        <div className="px-5 py-4 flex flex-col gap-2">
+          {([
+            { key: "locked" as const, title: `Use locked rate from V${prompt?.fromVersion ?? ""}`, sub: lockedRateLabel ?? "Carries the previous version's locked rate forward" },
+            { key: "current" as const, title: "Apply current rate", sub: "Recompute totals against today's market snapshot" },
+          ]).map((opt) => {
+            const active = choice === opt.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setChoice(opt.key)}
+                className={`flex items-start gap-2.5 rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-colors cursor-pointer ${
+                  active ? "border-primary bg-primary/5" : "border-border hover:bg-secondary/40"
+                }`}
+              >
+                <span
+                  className="mt-0.5 flex items-center justify-center size-4 rounded-full shrink-0 border"
+                  style={{
+                    borderColor: active ? "var(--primary)" : "var(--border)",
+                    backgroundColor: active ? "var(--primary)" : "var(--card)",
+                  }}
+                >
+                  {active && <span className="size-1.5 rounded-full bg-white" />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-foreground" style={st.uiLabel}>{opt.title}</div>
+                  <div className="text-muted-foreground" style={st.tiny}>{opt.sub}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border bg-secondary/30">
+          <Button variant="outline" size="sm" className="h-8 px-3" style={st.uiLabel} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" className="h-8 px-4" style={st.uiLabel} onClick={() => prompt && onConfirm(prompt.fromVersion, choice)}>
+            Create version
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DuplicatePODialog({
   open,
   onOpenChange,
   po,
   onDuplicate,
+  onOpenCurrencyConfig,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   po: PurchaseOrderData;
   onDuplicate: (newPo: PurchaseOrderData) => void;
+  /** When the user picks "Configure new rate", we duplicate first then open the config modal on the new PO. */
+  onOpenCurrencyConfig?: (newPo: PurchaseOrderData) => void;
 }) {
   const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  // Two ways to lock the new PO's rate: keep the source's locked rate, or
+  // re-lock against today's Mid-market snapshot. Changing the currency pair
+  // is a separate action that opens the Currency Configurator instead.
+  type RateChoice = "same" | "refresh";
+  const [rateChoice, setRateChoice] = useState<RateChoice>("same");
+
+  React.useEffect(() => {
+    if (open) {
+      setRateChoice("same");
+    }
+  }, [open]);
+
+  const sourceVendorCurrency = (po.vendorAmountCurrency ?? BASE_CURRENCY).toUpperCase();
+  const sourceSettlement = (po.settlementCurrency ?? sourceVendorCurrency).toUpperCase();
+
+  // Locked rate + lock date pulled off the source PO's line items.
+  const sourceLockedLineItem = po.lineItems.find((x) => !x.cancelled && typeof x.lockedRate === "number");
+  const sourceLockedRate = sourceLockedLineItem?.lockedRate;
+  const sourceLockedAt = sourceLockedLineItem?.lockedAt;
+  const sourceRate = sourceLockedRate
+    ?? (sourceVendorCurrency === BASE_CURRENCY ? 1 : convertBetween(1, sourceVendorCurrency, BASE_CURRENCY));
+
+  const sourceLockedAtLabel = sourceLockedAt
+    ? new Date(sourceLockedAt).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })
+    : po.sentDate
+      ? new Date(po.sentDate + "T00:00:00").toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })
+      : null;
+
+  // Today's Mid-market rate for the source vendor currency.
+  const todayMarketRate = sourceVendorCurrency === BASE_CURRENCY
+    ? 1
+    : (MARKET_RATES.rates[sourceVendorCurrency] ?? sourceRate);
+  const todayLabel = new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
+
+  const isBaseOnly = sourceVendorCurrency === BASE_CURRENCY;
+
+  const sourceConfigSummary = isBaseOnly
+    ? `${sourceVendorCurrency}`
+    : sourceSettlement === sourceVendorCurrency
+      ? `${sourceVendorCurrency} · Mid-market @ Rs ${sourceRate.toFixed(2)} / 1 ${sourceVendorCurrency}`
+      : `${sourceVendorCurrency} → ${sourceSettlement} · Mid-market @ ${sourceRate.toFixed(2)}`;
+
   const handleDuplicate = () => {
-    const newPo = duplicatePO(po.id);
-    if (newPo) onDuplicate(newPo);
+    const newPo = duplicatePO(po.id, {
+      rateChoice,
+      rateType: "market",
+    });
+    if (!newPo) return;
+    onDuplicate(newPo);
+  };
+
+  /** Change-pair button: duplicate first, then open the configurator on the new PO. */
+  const handleChangePair = () => {
+    const newPo = duplicatePO(po.id, { rateChoice: "configure", rateType: "market" });
+    if (!newPo) return;
+    if (onOpenCurrencyConfig) onOpenCurrencyConfig(newPo);
+    else onDuplicate(newPo);
   };
 
   const summaryRows: { label: string; value: string; icon: React.ElementType }[] = [
@@ -1810,10 +1958,16 @@ function DuplicatePODialog({
     { label: "Primary Contact", value: po.recipient.name, icon: User },
     { label: "Line Items", value: `${po.lineItems.length} item${po.lineItems.length !== 1 ? "s" : ""}`, icon: Package },
     { label: "Total Value", value: fmt(po.total), icon: CircleDollarSign },
+    { label: "Currency Configuration", value: sourceConfigSummary, icon: BadgeDollarSign },
     { label: "Payment Terms", value: po.payment.paymentTerms, icon: CreditCard },
     { label: "Ship To", value: po.payment.shippedTo, icon: Truck },
     { label: "Delivery Date", value: po.deliveryDate ? new Date(po.deliveryDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Not set", icon: CalendarDays },
   ];
+
+  const willDiffer: Record<RateChoice, string> = {
+    same: "Currency configuration carried forward as-is",
+    refresh: "Exchange rate refreshed to today's Mid-market rate",
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1891,6 +2045,94 @@ function DuplicatePODialog({
           </div>
         </div>
 
+        {/* ── Question 1: Which exchange rate? Two radio options. ── */}
+        {!isBaseOnly && (
+          <div className="px-5 pb-3">
+            <span className="text-muted-foreground/70 uppercase block mb-2" style={{ ...st.tiny, letterSpacing: "0.04em" }}>
+              Which exchange rate should be used for the new PO?
+            </span>
+            <div className="flex flex-col gap-1.5">
+              {/* Option 1 — locked rate from the original PO */}
+              <button
+                type="button"
+                onClick={() => setRateChoice("same")}
+                className={`flex items-start gap-2.5 rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-colors cursor-pointer ${
+                  rateChoice === "same" ? "border-primary bg-primary/5" : "border-border hover:bg-secondary/40"
+                }`}
+              >
+                <span
+                  className="mt-0.5 flex items-center justify-center size-4 rounded-full shrink-0 border"
+                  style={{
+                    borderColor: rateChoice === "same" ? "var(--primary)" : "var(--border)",
+                    backgroundColor: rateChoice === "same" ? "var(--primary)" : "var(--card)",
+                  }}
+                >
+                  {rateChoice === "same" && <span className="size-1.5 rounded-full bg-white" />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-foreground" style={st.uiLabel}>
+                    Use the locked rate from the original PO
+                  </div>
+                  <div className="text-muted-foreground tabular-nums" style={st.tiny}>
+                    1 {sourceVendorCurrency} = {sourceRate.toFixed(2)} PKR
+                    {sourceLockedAtLabel && <> · locked on {sourceLockedAtLabel}</>}
+                  </div>
+                </div>
+              </button>
+
+              {/* Option 2 — today's Mid-market rate */}
+              <button
+                type="button"
+                onClick={() => setRateChoice("refresh")}
+                className={`flex items-start gap-2.5 rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-colors cursor-pointer ${
+                  rateChoice === "refresh" ? "border-primary bg-primary/5" : "border-border hover:bg-secondary/40"
+                }`}
+              >
+                <span
+                  className="mt-0.5 flex items-center justify-center size-4 rounded-full shrink-0 border"
+                  style={{
+                    borderColor: rateChoice === "refresh" ? "var(--primary)" : "var(--border)",
+                    backgroundColor: rateChoice === "refresh" ? "var(--primary)" : "var(--card)",
+                  }}
+                >
+                  {rateChoice === "refresh" && <span className="size-1.5 rounded-full bg-white" />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-foreground" style={st.uiLabel}>
+                    Use today's Mid-market rate
+                  </div>
+                  <div className="text-muted-foreground tabular-nums" style={st.tiny}>
+                    1 {sourceVendorCurrency} = {todayMarketRate.toFixed(2)} PKR · as of today ({todayLabel})
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Question 2: Different currency pair? Single button. ── */}
+        {!isBaseOnly && (
+          <div className="px-5 pb-3">
+            <span className="text-muted-foreground/70 uppercase block mb-1" style={{ ...st.tiny, letterSpacing: "0.04em" }}>
+              Need a different currency pair?
+            </span>
+            <p className="text-muted-foreground mb-2" style={st.uiSmall}>
+              By default the new PO keeps the same {sourceVendorCurrency} → {sourceSettlement} pair. Change it via the Currency Configurator.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 px-3 hover:bg-primary/8 hover:border-primary/30 hover:text-primary"
+              style={st.uiLabel}
+              onClick={handleChangePair}
+            >
+              <BadgeDollarSign className="size-3.5 text-primary" />
+              Change currency pair
+            </Button>
+          </div>
+        )}
+
         {/* What will be different */}
         <div className="px-5 pb-4">
           <span className="text-muted-foreground/70 uppercase block mb-2" style={{ ...st.tiny, letterSpacing: "0.04em" }}>
@@ -1902,6 +2144,7 @@ function DuplicatePODialog({
               <>Status will be reset to <strong style={{ fontWeight: "var(--font-weight-semibold)" as string }}>Draft</strong></>,
               "Order date will be set to today",
               "All receiving records will be cleared (quantities reset to 0)",
+              ...(isBaseOnly ? [] : [willDiffer[rateChoice]]),
             ].map((text, i) => (
               <div key={i} className="flex items-center gap-2">
                 <div className="flex items-center justify-center size-5 rounded-full shrink-0" style={{ backgroundColor: "var(--avatar-1-bg)" }}>
@@ -2154,6 +2397,21 @@ export default function PurchaseOrderDraft() {
   const [shipToDialogOpen, setShipToDialogOpen] = useState(false);
   const [fundedByDialogOpen, setFundedByDialogOpen] = useState(false);
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
+  const [newVersionRatePrompt, setNewVersionRatePrompt] = useState<{ fromVersion: number } | null>(null);
+  const [printOptionsOpen, setPrintOptionsOpen] = useState(false);
+  // Open the currency configurator automatically when arriving via the
+  // duplicate flow's "Configure new rate" choice.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!po) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("currency-config") === "1") {
+      setCurrencyConfigOpen(true);
+      params.delete("currency-config");
+      const next = window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
+      window.history.replaceState({}, "", next);
+    }
+  }, [po?.id]);
   const [activeTab, setActiveTab] = useState("items");
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [description, setDescription] = useState("");
@@ -2519,14 +2777,9 @@ export default function PurchaseOrderDraft() {
                     viewingVersion={viewingVersion}
                     onViewVersion={setViewingVersion}
                     onEditAsDraft={(fromVersion) => {
-                      const newVersion = revertPOToVersion(po.id, fromVersion, `Reverted to Version ${fromVersion}`);
-                      if (newVersion) {
-                        setViewingVersion(null);
-                        toast.success(`Reverted to Version ${fromVersion}`, {
-                          description: `Created Version ${newVersion} from revert`,
-                          style: { fontFamily: FONT },
-                        });
-                      }
+                      // Surface the rate-choice prompt instead of reverting silently:
+                      // "Use locked rate from previous version or apply current rate?"
+                      setNewVersionRatePrompt({ fromVersion });
                     }}
                     materialChangesCount={po.versions.length > 0 ? po.versions[po.versions.length - 1]?.changes?.length : undefined}
                     versions={po.versions}
@@ -2538,7 +2791,7 @@ export default function PurchaseOrderDraft() {
                 <div className="flex items-center gap-1.5 flex-shrink-0 ml-4">
                   {/* Icon-only utility buttons */}
                   <button
-                    onClick={() => printPurchaseOrder(po, { version: selectedPrintVersion })}
+                    onClick={() => setPrintOptionsOpen(true)}
                     title="Print"
                     className="flex items-center justify-center rounded-md transition-colors"
                     style={{ width: '32px', height: '32px', border: isClosed ? '1px solid color-mix(in srgb, var(--muted-foreground) 18%, transparent)' : '1px solid var(--border)', backgroundColor: isClosed ? 'color-mix(in srgb, var(--muted-foreground) 5%, transparent)' : 'var(--card)', color: isClosed ? 'color-mix(in srgb, var(--muted-foreground) 55%, transparent)' : 'var(--muted-foreground)' }}
@@ -3071,13 +3324,23 @@ export default function PurchaseOrderDraft() {
               {activeTab === "versions" && !compareFullScreen && (
                 <POVersionHistoryTab
                   poNumber={po.poNumber}
+                  poId={po.id}
                   versions={po.versions}
-                  onRevert={(version, reason) => {
-                    const newVersion = revertPOToVersion(po.id, version, reason || `Reverted to Version ${version}`);
+                  viewMode={po.viewMode ?? "base"}
+                  onRevert={(version, reason, rateChoice) => {
+                    // The store applies the rate refresh BEFORE recording the
+                    // new version, so a "Exchange rate updated" change record
+                    // is auto-emitted and shows up in the Versions tab diff.
+                    const newVersion = revertPOToVersion(
+                      po.id,
+                      version,
+                      reason || `Reverted to Version ${version}`,
+                      rateChoice,
+                    );
                     if (newVersion) {
                       setViewingVersion(null);
                       toast.success(`Reverted to Version ${version}`, {
-                        description: `Created Version ${newVersion} from revert`,
+                        description: `Created Version ${newVersion} from revert${rateChoice === "refresh" ? " · today's rate applied" : " · locked rate restored"}`,
                         style: { fontFamily: FONT },
                       });
                     }
@@ -3092,6 +3355,7 @@ export default function PurchaseOrderDraft() {
                   v1={compareFullScreen.v1}
                   v2={compareFullScreen.v2}
                   onClose={() => setCompareFullScreen(null)}
+                  viewMode={po.viewMode ?? "base"}
                 />
               )}
 
@@ -3196,11 +3460,7 @@ export default function PurchaseOrderDraft() {
                         <POMoneyCell valuePKR={po.total} po={po} />
                       </span>
                     </div>
-                    {!poVendorCurrencyIsBase(po) && (
-                      <div className="flex items-center justify-end pt-0.5">
-                        <POLockedRateHelper po={po} />
-                      </div>
-                    )}
+                    <POSummaryRateBadge po={po} onViewConfig={() => setCurrencyConfigOpen(true)} />
                   </div>
                 </CollapsibleSection>
 
@@ -4052,6 +4312,10 @@ export default function PurchaseOrderDraft() {
           setDuplicateDialogOpen(false);
           navigate(`/purchase-orders/${newPo.id}`);
         }}
+        onOpenCurrencyConfig={(newPo) => {
+          setDuplicateDialogOpen(false);
+          navigate(`/purchase-orders/${newPo.id}?currency-config=1`);
+        }}
       />
 
       {/* ── Currency Configuration Modal ── */}
@@ -4059,6 +4323,38 @@ export default function PurchaseOrderDraft() {
         open={currencyConfigOpen}
         onOpenChange={setCurrencyConfigOpen}
         po={po}
+      />
+
+      {/* ── Print Options Dialog ── */}
+      <PrintOptionsDialog
+        open={printOptionsOpen}
+        onOpenChange={setPrintOptionsOpen}
+        context={`PO ${po.poNumber}${selectedPrintVersion ? ` · v${selectedPrintVersion.version}` : ""}`}
+        hideCurrencyMode={poVendorCurrencyIsBase(po)}
+        onConfirm={(opts) => printPurchaseOrder(po, { version: selectedPrintVersion, printOptions: opts })}
+      />
+
+      {/* ── New-version rate-choice prompt ── */}
+      <NewVersionRatePromptDialog
+        prompt={newVersionRatePrompt}
+        po={po}
+        onClose={() => setNewVersionRatePrompt(null)}
+        onConfirm={(fromVersion, rateChoice) => {
+          const newVersion = revertPOToVersion(
+            po.id,
+            fromVersion,
+            `Reverted to Version ${fromVersion}`,
+            rateChoice === "current" ? "refresh" : "locked",
+          );
+          if (newVersion) {
+            setViewingVersion(null);
+            toast.success(`Reverted to Version ${fromVersion}`, {
+              description: `Created Version ${newVersion} · ${rateChoice === "current" ? "applied today's rate" : "kept locked rate from previous version"}`,
+              style: { fontFamily: FONT },
+            });
+          }
+          setNewVersionRatePrompt(null);
+        }}
       />
 
       {/* ── Cancel PO Dialog ── */}
