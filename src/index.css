@@ -244,6 +244,26 @@ input[type="number"] {
 .animate-coming-soon-shimmer { background-size: 200% auto; animation: comingSoonShimmer 3s linear infinite; }
 .animate-coming-soon-orbit { animation: comingSoonOrbit 8s linear infinite; }
 
+/* ─── Pair converter — subtle motion on amount changes & swap toggle ─── */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fade-in 240ms cubic-bezier(0.16, 1, 0.3, 1); }
+
+@keyframes amount-flip {
+  0%   { opacity: 0; transform: translateY(-5px) scale(0.96); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-amount-flip { animation: amount-flip 280ms cubic-bezier(0.34, 1.4, 0.64, 1); }
+
+@keyframes inverse-badge-in {
+  from { opacity: 0; transform: translateY(-3px) scale(0.92); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-inverse-badge-in { animation: inverse-badge-in 260ms cubic-bezier(0.16, 1, 0.3, 1); }
+
 /* ─── Elevated z-index context for nested modals ─── */
 /* When PartnerItemsTab is inside a high-z modal (e.g. pricing rule detail z-220),
    all portalled radix content (dropdowns, popovers, tooltips, dialogs) needs z > 220 */

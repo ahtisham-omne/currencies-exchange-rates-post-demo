@@ -1542,7 +1542,7 @@ export function ExchangeRateLibraryPage() {
                                       onClick={(e) => { e.stopPropagation(); toggleRowInvert(r.id); }}
                                       aria-pressed={isInverted}
                                       aria-label={isInverted ? "Restore default direction" : "Swap direction"}
-                                      className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-colors cursor-pointer ${
+                                      className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer ${
                                         isInverted
                                           ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
                                           : "bg-white text-muted-foreground border border-border hover:bg-muted/60"
@@ -1706,7 +1706,7 @@ export function ExchangeRateLibraryPage() {
                                     onClick={(e) => { e.stopPropagation(); toggleRowInvert(r.id); }}
                                     aria-pressed={isInverted}
                                     aria-label={isInverted ? "Restore default direction" : "Swap direction"}
-                                    className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-colors cursor-pointer ${
+                                    className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer ${
                                       isInverted
                                         ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
                                         : "bg-white text-muted-foreground border border-border hover:bg-muted/60"
@@ -1731,7 +1731,7 @@ export function ExchangeRateLibraryPage() {
                                   </div>
                                 </div>
                                 {isInverted && (
-                                  <div className="pl-10 mt-2" onClick={e => e.stopPropagation()}>
+                                  <div className="pl-10 mt-2 animate-inverse-badge-in" onClick={e => e.stopPropagation()}>
                                     <TooltipProvider delayDuration={200}>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
@@ -1930,7 +1930,7 @@ export function ExchangeRateLibraryPage() {
                                     onClick={(e) => { e.stopPropagation(); toggleRowInvert(r.id); }}
                                     aria-pressed={isInverted}
                                     aria-label={isInverted ? "Restore default direction" : "Swap direction"}
-                                    className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-colors cursor-pointer ${
+                                    className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer ${
                                       isInverted
                                         ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
                                         : "bg-white text-muted-foreground border border-border hover:bg-muted/60"
@@ -1955,7 +1955,7 @@ export function ExchangeRateLibraryPage() {
                                   </div>
                                 </div>
                                 {isInverted && (
-                                  <div className="pl-16 mt-2" onClick={e => e.stopPropagation()}>
+                                  <div className="pl-16 mt-2 animate-inverse-badge-in" onClick={e => e.stopPropagation()}>
                                     <TooltipProvider delayDuration={200}>
                                       <Tooltip>
                                         <TooltipTrigger asChild>

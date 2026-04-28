@@ -1221,7 +1221,7 @@ export function CurrencyPairDetailPage() {
                                 onClick={() => setHeaderInverted(v => !v)}
                                 aria-pressed={headerInverted}
                                 aria-label={headerInverted ? "Restore default direction" : "Swap direction"}
-                                className={`flex items-center justify-center w-7 h-7 rounded-full shrink-0 transition-colors cursor-pointer ${
+                                className={`flex items-center justify-center w-7 h-7 rounded-full shrink-0 transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer ${
                                   headerInverted
                                     ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
                                     : "bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]"
