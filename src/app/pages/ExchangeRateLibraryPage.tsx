@@ -489,8 +489,13 @@ export function ExchangeRateLibraryPage() {
     }
   }, [activeTab, midMarketRates, standardRates]);
 
+  const pinnedMidRow = useMemo(
+    () => midMarketRates.find(r => r.sourceCurrency === BASE_CURRENCY) ?? null,
+    [midMarketRates]
+  );
+
   const filteredMid = useMemo(() => {
-    let list = [...midMarketRates];
+    let list = midMarketRates.filter(r => r.sourceCurrency !== BASE_CURRENCY);
     if (quickFilter === "active") list = list.filter(r => r.status === "active");
     if (quickFilter === "inactive") list = list.filter(r => r.status === "inactive");
     if (debouncedSearch) {
@@ -1047,7 +1052,7 @@ export function ExchangeRateLibraryPage() {
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                    <span className="text-sm tabular-nums mr-1 hidden sm:inline" style={{ fontWeight: 500 }}>
-                    <span className="text-foreground">{sorted.length}</span>
+                    <span className="text-foreground">{sorted.length + (activeTab === "mid-market" && pinnedMidRow ? 1 : 0)}</span>
                     <span className="text-muted-foreground/70"> rates</span>
                   </span>
                   {activeTab === "mid-market" && (
@@ -1397,9 +1402,9 @@ export function ExchangeRateLibraryPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {paged.length > 0 && (() => {
+                      {activeTab === "standard" && paged.length > 0 && (() => {
                         const baseFlag = getFlagUrl(BASE_CURRENCY);
-                        const colSpan = visibleColumns.length + (activeTab === "standard" ? 3 : 2);
+                        const colSpan = visibleColumns.length + 3;
                         return (
                           <TableRow className="hover:bg-transparent" style={{ backgroundColor: "#fffbf2" }}>
                             <TableCell colSpan={colSpan} className="!py-2.5 !px-4" style={{ borderLeft: "3px solid #e65100" }}>
@@ -1414,7 +1419,163 @@ export function ExchangeRateLibraryPage() {
                           </TableRow>
                         );
                       })()}
-                      {paged.length === 0 ? (
+                      {activeTab === "mid-market" && pinnedMidRow && (() => {
+                        const r = pinnedMidRow;
+                        const isExpanded = expandedRows.has(r.id);
+                        const isInverted = invertedRows.has(r.id) !== globalInverted;
+                        const flagUrl = getFlagUrl(r.sourceCurrency);
+                        const baseFlagUrl = getFlagUrl(r.baseCurrency);
+                        const fromAmount = isInverted ? (1 / r.rate) : 1;
+                        const toAmount = isInverted ? 1 : r.rate;
+                        const colSpan = visibleColumns.length + 2;
+                        const PINNED_BG = "#fffbf2";
+                        const PINNED_BORDER = "3px solid #e65100";
+                        return (
+                          <React.Fragment key={`pinned-${r.id}`}>
+                            <TableRow
+                              className={`cursor-pointer group ${
+                                density === "condensed" ? "[&>td]:py-1 [&>td]:pl-4 [&>td]:pr-2" : "[&>td]:py-2 [&>td]:pl-4 [&>td]:pr-2"
+                              }`}
+                              style={{ backgroundColor: PINNED_BG }}
+                              onClick={() => navigate(`/accounting/exchange-rates/${r.sourceCurrency}?type=mid`)}
+                            >
+                              <TableCell
+                                className="w-[36px] min-w-[36px] max-w-[36px] !pl-2 !pr-0"
+                                style={{ borderLeft: PINNED_BORDER }}
+                                onClick={e => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={(e) => toggleRowExpand(r.id, e)}
+                                  aria-label={isExpanded ? "Collapse row" : "Expand row"}
+                                  className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-transparent text-muted-foreground hover:bg-amber-100/60 hover:text-foreground hover:border-amber-200 transition-colors cursor-pointer"
+                                >
+                                  <ChevronRight className={`w-4 h-4 transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`} />
+                                </button>
+                              </TableCell>
+                              {visibleColumns.map(key => {
+                                switch (key) {
+                                  case "sourceCurrency":
+                                    return (
+                                      <TableCell key={key}>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          {flagUrl && <img src={flagUrl} alt={r.sourceCurrency} className="w-5 h-[14px] rounded-[2px] object-cover shrink-0" />}
+                                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary shrink-0" style={{ fontWeight: 600 }}>{r.sourceCurrency}</span>
+                                          <span className={`${isRelaxed ? "text-[13.5px]" : "text-[12px]"} truncate min-w-0`}>{r.sourceCurrencyName}</span>
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" style={{ fontWeight: 600, color: "#92400E", backgroundColor: "#FEF3C7" }}>Base</span>
+                                        </div>
+                                      </TableCell>
+                                    );
+                                  case "rate":
+                                    return (
+                                      <TableCell key={key} className="text-right tabular-nums">
+                                        <span className={isRelaxed ? "text-[13.5px]" : "text-[13px]"} style={{ fontWeight: 700 }}>{r.rate.toFixed(4)}</span>
+                                      </TableCell>
+                                    );
+                                  case "inverseRate":
+                                    return (
+                                      <TableCell key={key} className="text-right tabular-nums">
+                                        <span className={isRelaxed ? "text-[13.5px]" : "text-[13px]"} style={{ fontWeight: 500, color: "#64748B" }}>{(1 / r.rate).toFixed(6)}</span>
+                                      </TableCell>
+                                    );
+                                  case "change24h":
+                                    return (
+                                      <TableCell key={key} className="text-right">
+                                        <div className="flex items-center gap-1 justify-end">
+                                          <Minus className="w-3.5 h-3.5 text-muted-foreground" />
+                                          <span className="text-[12px] tabular-nums text-muted-foreground" style={{ fontWeight: 500 }}>
+                                            {r.change24h.toFixed(2)}%
+                                          </span>
+                                        </div>
+                                      </TableCell>
+                                    );
+                                  default:
+                                    return <TableCell key={key}>—</TableCell>;
+                                }
+                              })}
+                              <TableCell onClick={e => e.stopPropagation()}>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button
+                                      type="button"
+                                      aria-label="Row actions"
+                                      className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-transparent text-muted-foreground hover:bg-amber-100/60 hover:text-foreground hover:border-amber-200 data-[state=open]:bg-amber-100/60 data-[state=open]:border-amber-200 transition-colors cursor-pointer"
+                                    >
+                                      <MoreHorizontal className="w-4 h-4" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-[200px]">
+                                    <DropdownMenuItem onClick={() => navigate(`/accounting/exchange-rates/${r.sourceCurrency}?type=mid`)}>
+                                      <Eye className="w-4 h-4 mr-2" /> View Details
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                            <TableRow className="hover:bg-transparent" style={{ backgroundColor: PINNED_BG }}>
+                              <TableCell colSpan={colSpan} className="!py-1.5 !px-4" style={{ borderLeft: PINNED_BORDER }}>
+                                <span className="text-[11.5px] text-muted-foreground" style={{ fontWeight: 500 }}>
+                                  All exchange rates below are quoted against this currency.
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && (
+                              <TableRow className="bg-[#F8FBFF] hover:bg-[#F8FBFF] border-b border-border">
+                                <TableCell colSpan={colSpan} className="!py-4 !px-4">
+                                  <div className="flex items-center gap-4 pl-10">
+                                    <div>
+                                      <p className="text-[11px] text-emerald-600 mb-1.5" style={{ fontWeight: 600 }}>From</p>
+                                      <div className="flex items-center gap-3 bg-white rounded-lg border border-border pl-4 pr-2 py-3 min-w-[280px]">
+                                        {flagUrl && <img src={flagUrl} alt={r.sourceCurrency} className="w-8 h-[22px] rounded-[3px] object-cover shrink-0" />}
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-[13px]" style={{ fontWeight: 600 }}>{r.sourceCurrency} <span style={{ fontWeight: 400 }}>{r.sourceCurrencyName}</span></p>
+                                          <p className="text-[11px] text-muted-foreground">{getCountryName(r.sourceCurrency)}</p>
+                                        </div>
+                                        <div className="border-l border-border pl-3 ml-2">
+                                          <p className="text-[10px] text-muted-foreground" style={{ fontWeight: 500 }}>Amount</p>
+                                          <p key={isInverted ? "inv" : "std"} className="text-[15px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>{fromAmount.toFixed(isInverted ? 6 : 0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); toggleRowInvert(r.id); }}
+                                      aria-pressed={isInverted}
+                                      aria-label={isInverted ? "Restore default direction" : "Swap direction"}
+                                      className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-colors cursor-pointer ${
+                                        isInverted
+                                          ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
+                                          : "bg-white text-muted-foreground border border-border hover:bg-muted/60"
+                                      }`}
+                                    >
+                                      <ArrowLeftRight className="w-3.5 h-3.5" />
+                                    </button>
+                                    <div>
+                                      <p className="text-[11px] text-muted-foreground mb-1.5" style={{ fontWeight: 600 }}>To</p>
+                                      <div className="flex items-center gap-3 bg-white rounded-lg border border-border pl-4 pr-2 py-3 min-w-[280px]">
+                                        {baseFlagUrl && <img src={baseFlagUrl} alt={BASE_CURRENCY} className="w-8 h-[22px] rounded-[3px] object-cover shrink-0" />}
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-[13px]" style={{ fontWeight: 600 }}>{BASE_CURRENCY} <span style={{ fontWeight: 400 }}>{BASE_CURRENCY_NAME}</span></p>
+                                          <p className="text-[11px] text-muted-foreground">{getCountryName(BASE_CURRENCY)}</p>
+                                        </div>
+                                        <div className="border-l border-border pl-3 ml-2">
+                                          <p className="text-[10px] text-muted-foreground" style={{ fontWeight: 500 }}>Amount</p>
+                                          <p key={isInverted ? "inv" : "std"} className="text-[15px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>{toAmount.toFixed(isInverted ? 0 : 4).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
+                        );
+                      })()}
+                      {paged.length === 0 && !(activeTab === "mid-market" && pinnedMidRow && debouncedSearch && (
+                        pinnedMidRow.sourceCurrency.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                        pinnedMidRow.sourceCurrencyName.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                        getCountryName(pinnedMidRow.sourceCurrency).toLowerCase().includes(debouncedSearch.toLowerCase())
+                      )) ? (
                         <TableRow>
                           <TableCell colSpan={visibleColumns.length + (activeTab === "standard" ? 3 : 2)} className="text-center py-16 text-muted-foreground">
                             <div className="flex flex-col items-center gap-2">
@@ -1424,7 +1585,7 @@ export function ExchangeRateLibraryPage() {
                             </div>
                           </TableCell>
                         </TableRow>
-                      ) : activeTab === "mid-market" ? (
+                      ) : paged.length === 0 ? null : activeTab === "mid-market" ? (
                         (paged as MidMarketRate[]).map(r => {
                           const isExpanded = expandedRows.has(r.id);
                           const isInverted = invertedRows.has(r.id) !== globalInverted;
@@ -2176,7 +2337,7 @@ export function ExchangeRateLibraryPage() {
         filters={advFilters}
         onFiltersChange={(f) => { setAdvFilters(f); setCurrentPage(1); }}
         currencyCodes={allCurrencyCodes}
-        filteredCount={sorted.length}
+        filteredCount={sorted.length + (activeTab === "mid-market" && pinnedMidRow ? 1 : 0)}
       />
     </div>
   );
