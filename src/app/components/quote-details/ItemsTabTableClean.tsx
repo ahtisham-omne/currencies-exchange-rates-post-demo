@@ -1818,6 +1818,7 @@ function ItemsTable({ quoteStatus, quoteId, readOnly, customerCurrency, viewMode
         onAddProducts={handleAddProducts}
         existingProductIds={items.map(i => i.productId)}
         existingItems={items.map(i => ({ productId: i.productId, quantity: i.quantity, productName: i.productName }))}
+        customerCurrency={customerCurrency}
       />
 
 

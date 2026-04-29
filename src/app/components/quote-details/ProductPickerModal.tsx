@@ -4,6 +4,7 @@ import { X, Search, Package, Check, Plus, Trash2, Settings, ChevronDown, Chevron
 import { PRODUCTS, type Product } from '../../data/products';
 import { InventoryTooltip } from '../InventoryTooltip';
 import { ConfirmationModal } from '../ConfirmationModal';
+import { QuoteMoney } from '../currency/QuoteMoney';
 
 /* ─── Interfaces ─── */
 interface SelectedProduct { product: Product; quantity: number; }
@@ -14,6 +15,9 @@ interface ProductPickerModalProps {
   onAddProducts: (products: SelectedProduct[]) => void;
   existingProductIds?: string[];
   existingItems?: ExistingItem[];
+  /** Quote's customer currency. When non-base, amounts still render in
+   *  base PKR but expose a customer-currency hover via QuoteMoney. */
+  customerCurrency?: string;
 }
 interface SelectedLineItem { id: string; productId: string; product: Product; quantity: number; }
 
@@ -416,7 +420,7 @@ export { EMPTY_FILTERS };
 /* ═══════════════════════════════════════════════════════════ */
 /* ═══ Main Modal Component ════════════════════════════════ */
 /* ═══════════════════════════════════════════════════════════ */
-export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingProductIds = [], existingItems = [] }: ProductPickerModalProps) {
+export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingProductIds = [], existingItems = [], customerCurrency }: ProductPickerModalProps) {
   const [search, setSearch] = useState('');
   const [selectedItems, setSelectedItems] = useState<SelectedLineItem[]>([]);
   const [filters, setFilters] = useState<AdvancedFilters>({ ...EMPTY_FILTERS });
@@ -663,7 +667,9 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
                                 <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: '11px', fontWeight: 600, color: tracking.color, backgroundColor: tracking.bg, padding: '2px 6px', borderRadius: '3px', lineHeight: '1', whiteSpace: 'nowrap' }}>{tracking.label}</span>
                               </div>
                               <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                                <span style={{ fontSize: '13px', fontWeight: 600, color: '#1F2937' }}>{formatCurrency(product.unitPrice)}</span>
+                                <span style={{ fontSize: '13px', fontWeight: 600, color: '#1F2937' }}>
+                                  <QuoteMoney valuePKR={product.unitPrice} customerCurrency={customerCurrency} view="base" />
+                                </span>
                                 <span style={{ fontSize: '11px', fontWeight: 400, color: '#9CA3AF', marginLeft: '2px' }}>/ EA</span>
                               </div>
                             </div>
@@ -903,7 +909,10 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
                           </div>
                           <div style={{ textAlign: 'right' }}>
                             <div style={{ fontSize: '11px', fontWeight: 500, color: '#6B7280', marginBottom: '4px', lineHeight: '1' }}>Item Total</div>
-                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1F2937', lineHeight: '1' }}>{formatCurrency(total)} <span style={{ fontSize: '11px', fontWeight: 400, color: '#6B7280' }}>(EA)</span></div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1F2937', lineHeight: '1' }}>
+                              <QuoteMoney valuePKR={total} customerCurrency={customerCurrency} view="base" />{' '}
+                              <span style={{ fontSize: '11px', fontWeight: 400, color: '#6B7280' }}>(EA)</span>
+                            </div>
                           </div>
                         </div>
                         {/* Config button */}
@@ -925,7 +934,13 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderTop: '1px solid #E5E7EB', backgroundColor: '#F9FAFB', flexShrink: 0 }}>
           <div style={{ fontSize: '13px', color: '#6B7280', fontWeight: 400 }}>
             {newItems.length > 0 ? (
-              <>New subtotal: <span style={{ fontWeight: 600, color: '#1B6EF3', fontSize: '16px' }}>{formatCurrency(newItems.reduce((s, i) => s + i.quantity * i.product.unitPrice, 0))}</span> <span style={{ fontSize: '12px', color: '#9CA3AF' }}>({newItems.length} new · {existingCount} existing)</span></>
+              <>New subtotal: <span style={{ fontWeight: 600, color: '#1B6EF3', fontSize: '16px' }}>
+                <QuoteMoney
+                  valuePKR={newItems.reduce((s, i) => s + i.quantity * i.product.unitPrice, 0)}
+                  customerCurrency={customerCurrency}
+                  view="base"
+                />
+              </span> <span style={{ fontSize: '12px', color: '#9CA3AF' }}>({newItems.length} new · {existingCount} existing)</span></>
             ) : existingCount > 0 ? (
               <span style={{ fontSize: '12px', color: '#9CA3AF' }}>{existingCount} existing item{existingCount !== 1 ? 's' : ''} in quote</span>
             ) : `${filteredProducts.length} products available`}

@@ -1104,16 +1104,9 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly, c
                             style={{ fontWeight: 600 }}
                           >
                             <span>{totalRulesDiscount > 0 ? '-' : '+'}</span>
-                            {isBaseCurrency ? (
-                              <span className="tabular-nums">{baseSym} {fmtPKR(totalRulesDiscount)}</span>
-                            ) : (
-                              <span
-                                className="tabular-nums"
-                                title={`Rule defined in ${BASE_CURRENCY}: ${baseSym} ${fmtPKR(totalRulesDiscount)}. Converted at the active rate.`}
-                              >
-                                {customerSym} {convertBetween(Math.abs(totalRulesDiscount), BASE_CURRENCY, quoteCurrency).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            )}
+                            {/* Pricing rules are defined and shown in the base currency
+                                regardless of the quote's customer currency. */}
+                            <span className="tabular-nums">{baseSym} {fmtPKR(totalRulesDiscount)}</span>
                           </span>
                         )}
                         {!readOnly && hasAppliedRules && (
@@ -1169,24 +1162,13 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly, c
                               {(() => {
                                 const ruleAmountPKR = rule.isActive ? Math.abs(rule.amount) : (baseSubtotal * Math.abs(rule.percentage) / 100);
                                 const sign = isPremium ? '+' : '-';
-                                if (isBaseCurrency) {
-                                  return (
-                                    <span className={`text-[11px] ${amountColor} tabular-nums`} style={{ fontWeight: 500, opacity: 0.8 }}>
-                                      {sign}{baseSym} {fmtPKR(ruleAmountPKR)}
-                                    </span>
-                                  );
-                                }
-                                const converted = convertBetween(ruleAmountPKR, BASE_CURRENCY, quoteCurrency);
+                                // Pricing rule values are always shown in base
+                                // currency in this modal; line-item totals
+                                // elsewhere honor the page-level Base ↔ Customer
+                                // toggle via QuoteMoney.
                                 return (
-                                  <span
-                                    className={`text-[11px] ${amountColor} tabular-nums inline-flex items-baseline gap-1 cursor-help`}
-                                    style={{ fontWeight: 500, opacity: 0.85 }}
-                                    title={`Rule defined in ${BASE_CURRENCY}: ${sign}${baseSym} ${fmtPKR(ruleAmountPKR)} · Converted at the active rate (1 ${quoteCurrency} = ${baseSym} ${convertBetween(1, quoteCurrency, BASE_CURRENCY).toFixed(2)} ${BASE_CURRENCY}).`}
-                                  >
-                                    <span>{sign}{customerSym} {converted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                    <span className="text-[10px] text-[#9CA3AF]" style={{ fontWeight: 400, opacity: 1 }}>
-                                      (from {sign}{baseSym} {fmtPKR(ruleAmountPKR)})
-                                    </span>
+                                  <span className={`text-[11px] ${amountColor} tabular-nums`} style={{ fontWeight: 500, opacity: 0.8 }}>
+                                    {sign}{baseSym} {fmtPKR(ruleAmountPKR)}
                                   </span>
                                 );
                               })()}
