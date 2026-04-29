@@ -14,11 +14,18 @@ function relativeTime(iso: string): string {
   return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
 }
 
+/** Whole-day count since `iso`, floored. 0 = today. */
+function daysSince(iso: string): number {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  return Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
+}
+
 /**
  * Standard KPI value cell for a rate type. Shows a colored dot (purple = market,
- * amber = corporate) plus relative freshness — same visual contract as the
- * other KPI cards (label above, value below). The full source / sync /
- * last-synced metadata lives in the KPI's tooltip, set via `KpiDefinition`.
+ * amber = corporate) plus a freshness label tuned to the cadence of the book —
+ *   • market → "As of <relative time>"  (live feed, minute-grain)
+ *   • corporate → "Last changed <N days ago>"  (treasury-locked, day-grain)
+ * The full source / sync metadata lives in the KPI's tooltip.
  */
 export function RateKpiValue({ rateType }: { rateType: RateType }) {
   // Subscribe so the cell updates when the live snapshot's `lastSyncAt` is
@@ -26,13 +33,21 @@ export function RateKpiValue({ rateType }: { rateType: RateType }) {
   useRateContext();
   const snap = rateSnapshotFor(rateType);
   const hex = rateType === "market" ? "#7c3aed" : "#d97706";
+  let label: string;
+  if (rateType === "market") {
+    label = `As of ${relativeTime(snap.lastSyncAt)}`;
+  } else {
+    const days = daysSince(snap.lastSyncAt);
+    const phrase = days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`;
+    label = `Last changed ${phrase}`;
+  }
   return (
     <span className="inline-flex items-center gap-1.5 tabular-nums">
       <span
         className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
         style={{ backgroundColor: hex }}
       />
-      <span>{relativeTime(snap.lastSyncAt)}</span>
+      <span>{label}</span>
     </span>
   );
 }

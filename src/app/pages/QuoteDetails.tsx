@@ -922,50 +922,48 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                           );
                         })()}
 
-                        {/* Base ↔ Customer view toggle + Currency configurator —
-                            mirrors POCurrencyHeaderControls 1:1. Always visible
-                            so users can see the page-level FX view at a glance,
-                            even when the customer settles in the base currency. */}
+                        {/* Base ↔ Customer view toggle + Currency configurator.
+                            The toggle itself is hidden when the customer settles
+                            in the base currency — there's no FX view to flip to,
+                            so the control would just be noise. The configurator
+                            button remains so the user can still change currency. */}
                         <div className="flex items-center gap-1.5 shrink-0" style={{ marginLeft: 4 }}>
-                          <div className="inline-flex items-center gap-0.5 h-8 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => setQuoteViewMode('base')}
-                              aria-pressed={quoteViewMode === 'base'}
-                              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
-                                quoteViewMode === 'base'
-                                  ? 'bg-[#EDF4FF] text-primary'
-                                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-                              }`}
-                              style={{ fontWeight: quoteViewMode === 'base' ? 600 : 500 }}
-                            >
-                              Base Currency
-                              <InfoTooltip side="bottom" iconClassName="w-3 h-3">
-                                Show amounts in the company's base currency ({BASE_CURRENCY}). Values stay comparable across all quotes regardless of the customer's transaction currency.
-                              </InfoTooltip>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setQuoteViewMode('customer')}
-                              aria-pressed={quoteViewMode === 'customer'}
-                              disabled={customerCurrencyIsBase}
-                              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap transition-colors ${
-                                customerCurrencyIsBase
-                                  ? 'text-muted-foreground/40 cursor-not-allowed'
-                                  : quoteViewMode === 'customer'
+                          {!customerCurrencyIsBase && (
+                            <div className="inline-flex items-center gap-0.5 h-8 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setQuoteViewMode('base')}
+                                aria-pressed={quoteViewMode === 'base'}
+                                className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
+                                  quoteViewMode === 'base'
+                                    ? 'bg-[#EDF4FF] text-primary'
+                                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                                }`}
+                                style={{ fontWeight: quoteViewMode === 'base' ? 600 : 500 }}
+                              >
+                                Base Currency
+                                <InfoTooltip side="bottom" iconClassName="w-3 h-3">
+                                  Show amounts in the company's base currency ({BASE_CURRENCY}). Values stay comparable across all quotes regardless of the customer's transaction currency.
+                                </InfoTooltip>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setQuoteViewMode('customer')}
+                                aria-pressed={quoteViewMode === 'customer'}
+                                className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap transition-colors ${
+                                  quoteViewMode === 'customer'
                                     ? 'bg-[#EDF4FF] text-primary cursor-pointer'
                                     : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground cursor-pointer'
-                              }`}
-                              style={{ fontWeight: quoteViewMode === 'customer' && !customerCurrencyIsBase ? 600 : 500 }}
-                            >
-                              Customer Currency
-                              <InfoTooltip side="bottom" iconClassName="w-3 h-3">
-                                {customerCurrencyIsBase
-                                  ? `Customer settles in ${BASE_CURRENCY} — same as the base currency, so this view is identical to "Base Currency". Set a different currency in the configurator to enable the toggle.`
-                                  : `Show amounts in this customer's own default transaction currency (${currencyConfig.currency}). The base-currency equivalent remains available on hover for reporting.`}
-                              </InfoTooltip>
-                            </button>
-                          </div>
+                                }`}
+                                style={{ fontWeight: quoteViewMode === 'customer' ? 600 : 500 }}
+                              >
+                                Customer Currency
+                                <InfoTooltip side="bottom" iconClassName="w-3 h-3">
+                                  Show amounts in this customer's own default transaction currency ({currencyConfig.currency}). The base-currency equivalent remains available on hover for reporting.
+                                </InfoTooltip>
+                              </button>
+                            </div>
+                          )}
 
                           <button
                             type="button"
@@ -1485,7 +1483,12 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
         locked={!currencyConfigForceUnlocked && quoteStatus !== 'draft'}
         lockedAt={initialCreatedDate}
         quoteTotalPKR={quote?.total || quote?.subtotal || quote?.totalValue || 87000}
-        onSave={(next) => setCurrencyConfig(next)}
+        onSave={(next) => {
+          setCurrencyConfig(next);
+          // If the new currency is the base, the toggle disappears — force the
+          // view back to 'base' so we don't leave the page in a stale customer view.
+          if (next.currency.toUpperCase() === BASE_CURRENCY) setQuoteViewMode('base');
+        }}
       />
       {showConvertToSOModal && (
         <ConvertToSOModal

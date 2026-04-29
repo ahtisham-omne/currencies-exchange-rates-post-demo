@@ -1,6 +1,5 @@
 import * as React from "react";
 import { CurrencyAmount } from "@/app/components/ui/CurrencyAmount";
-import { BaseCurrencyKPI } from "@/app/components/currency/BaseCurrencyKPI";
 import { BASE_CURRENCY, convertBetween } from "@/app/data/currencyLibrary";
 
 interface Props {
@@ -29,8 +28,17 @@ export function QuoteMoney({ valuePKR, customerCurrency, view = "base", lockedRa
   const isBase = cur === BASE_CURRENCY;
 
   if (isBase) {
-    // Customer settles in PKR — render with a base-currency hover (full precision + active rate snapshot).
-    return <BaseCurrencyKPI compact={false} valuePKR={valuePKR} className={className} />;
+    // Customer settles in the base currency — no FX context to surface, so
+    // render the amount plain (no hover) to match the listing's quote-value column.
+    return (
+      <CurrencyAmount
+        mode="single"
+        currency={BASE_CURRENCY}
+        value={valuePKR}
+        signed={signed}
+        className={className}
+      />
+    );
   }
 
   // Per-record locked rate wins over the live snapshot (versions, transactions).
