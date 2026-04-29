@@ -29,7 +29,6 @@ import {
   Check,
   X,
   MessageSquare,
-  Paperclip,
   FileText,
   ShoppingCart,
   CreditCard,
@@ -63,6 +62,7 @@ import {
   TooltipContent,
 } from "../components/ui/tooltip";
 import { format } from "date-fns";
+import { AttachmentsTab } from "../components/AttachmentsTab";
 
 /** Rounded chip showing a currency symbol with a hover tooltip resolving the currency. */
 function CurrencySymbolChip({
@@ -1481,15 +1481,8 @@ export function CurrencyDetailPage() {
           )}
 
           {activeTab === "attachments" && (
-            <div className="bg-white border border-[#E2E8F0] rounded-xl mb-4 shadow-sm">
-              <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
-                <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Attachments</h3>
-              </div>
-              <TabEmptyState
-                icon={Paperclip}
-                title="No attachments yet"
-                description={`Documents and files associated with ${currency.code} will appear here once uploaded.`}
-              />
+            <div className="mb-4">
+              <AttachmentsTab />
             </div>
           )}
 

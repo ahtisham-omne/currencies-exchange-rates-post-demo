@@ -52,11 +52,11 @@ import {
   Eye,
   ArrowDownRight,
   MessageSquare,
-  Paperclip,
   ClipboardList,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { AttachmentsTab } from "../components/AttachmentsTab";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -1780,16 +1780,7 @@ export function CurrencyPairDetailPage() {
           )}
 
           {activeTab === "attachments" && (
-            <div className="bg-white border border-[#E2E8F0] rounded-xl shadow-sm">
-              <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
-                <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Attachments</h3>
-              </div>
-              <PairTabEmptyState
-                icon={Paperclip}
-                title="No attachments yet"
-                description={`Documents and files associated with ${detail.pairCode} will appear here once uploaded.`}
-              />
-            </div>
+            <AttachmentsTab />
           )}
 
           {activeTab === "audit_log" && (
