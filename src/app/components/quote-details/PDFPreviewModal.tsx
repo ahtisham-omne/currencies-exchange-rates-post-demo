@@ -109,7 +109,9 @@ export function PDFPreviewModal({ isOpen, onClose, quoteNumber = 'Q-2026-0142', 
   const fxAvailable = !!customerCurrency && customerCurrency.toUpperCase() !== 'PKR';
   const [showCurrencyConversion, setShowCurrencyConversion] = useState(true);
   const [includeRateSource, setIncludeRateSource] = useState(true);
-  const [printIn, setPrintIn] = useState<'customer' | 'base' | 'both'>('both');
+  // PO precedent: only Customer / Base — no "Both" option, the converted
+  // counterpart appears via the conversion banner above the body.
+  const [printIn, setPrintIn] = useState<'customer' | 'base'>('customer');
   const customerSym = (() => {
     const map: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', AED: 'د.إ', CAD: 'C$', AUD: 'A$', JPY: '¥', INR: '₹', SAR: '﷼' };
     return customerCurrency ? (map[customerCurrency.toUpperCase()] ?? customerCurrency.toUpperCase()) : '$';
@@ -267,68 +269,6 @@ export function PDFPreviewModal({ isOpen, onClose, quoteNumber = 'Q-2026-0142', 
                   onChange={val => updateConfig('companyLogo', val)}
                 />
 
-                {/* ─ Currency & FX (only when customer settles in non-PKR) ─ */}
-                {fxAvailable && (
-                  <>
-                    <SettingRow
-                      icon={<span style={{ fontSize: '11px', fontWeight: 700, color: '#7c3aed', lineHeight: '1' }}>$₨</span>}
-                      iconBg="#F5F3FF"
-                      title="Show currency conversion details"
-                      desc="Render the customer-currency total alongside the base equivalent at the top of the quote."
-                      checked={showCurrencyConversion}
-                      onChange={setShowCurrencyConversion}
-                    />
-                    <SettingRow
-                      icon={<span style={{ fontSize: '11px', fontWeight: 700, color: '#0891B2', lineHeight: '1' }}>R</span>}
-                      iconBg="#ECFEFF"
-                      title="Include rate source & timestamp"
-                      desc="Print the rate book name and the date it was locked in the footer."
-                      checked={includeRateSource}
-                      onChange={setIncludeRateSource}
-                    />
-                    {/* Print-In radio group */}
-                    <div style={{ borderBottom: '1px solid #F3F4F6', padding: '12px 20px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                        <div style={{ width: '26px', height: '26px', borderRadius: '6px', backgroundColor: '#FFFBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#92400E', lineHeight: '1' }}>$</span>
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: '12px', fontWeight: 600, color: '#1F2937', lineHeight: '1', marginBottom: '2px' }}>
-                            Print in
-                          </div>
-                          <div style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1.3' }}>
-                            Which currency should the printed totals lead with.
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 4, paddingLeft: 36 }}>
-                        {(['customer', 'base', 'both'] as const).map((opt) => {
-                          const selected = printIn === opt;
-                          const label = opt === 'customer'
-                            ? `${customerSym} ${customerCurrency!.toUpperCase()}`
-                            : opt === 'base' ? '₨ PKR' : 'Both';
-                          return (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() => setPrintIn(opt)}
-                              style={{
-                                padding: '4px 10px', borderRadius: 999, fontSize: 10, fontWeight: 600, lineHeight: '1',
-                                border: selected ? '1px solid #1B6EF3' : '1px solid #E5E7EB',
-                                backgroundColor: selected ? '#EDF4FF' : '#FFFFFF',
-                                color: selected ? '#1B6EF3' : '#6B7280',
-                                cursor: 'pointer', fontFamily: 'Inter, system-ui, sans-serif',
-                              }}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </>
-                )}
-
                 {/* ─ Pricing Rules ─ */}
                 <div style={{ borderBottom: '1px solid #F3F4F6' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px' }}>
@@ -415,6 +355,66 @@ export function PDFPreviewModal({ isOpen, onClose, quoteNumber = 'Q-2026-0142', 
                   onChange={val => updateConfig('adjustments', val)}
                 />
 
+                {/* ─ Currency & FX (only when customer settles in non-PKR) —
+                      placed right before Attachments per design feedback so
+                      it sits with the document-content options rather than
+                      at the top of the panel. ─ */}
+                {fxAvailable && (
+                  <>
+                    <div style={{ borderBottom: '1px solid #F3F4F6' }}>
+                      <SettingRow
+                        icon={<span style={{ fontSize: '11px', fontWeight: 700, color: '#7c3aed', lineHeight: '1' }}>$₨</span>}
+                        iconBg="#F5F3FF"
+                        title="Show currency conversion details"
+                        desc="Render the customer-currency total alongside the base equivalent at the top of the quote."
+                        checked={showCurrencyConversion}
+                        onChange={setShowCurrencyConversion}
+                      />
+                      {/* Print-In pills — only relevant when conversion details
+                          are on; nested under that toggle (PO precedent). */}
+                      {showCurrencyConversion && (
+                        <div style={{ padding: '0 20px 12px 56px', display: 'flex', alignItems: 'center', gap: 8, marginTop: -4 }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                            Print in
+                          </span>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {(['customer', 'base'] as const).map((opt) => {
+                              const selected = printIn === opt;
+                              const label = opt === 'customer'
+                                ? `${customerSym} ${customerCurrency!.toUpperCase()}`
+                                : '₨ PKR';
+                              return (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  onClick={() => setPrintIn(opt)}
+                                  style={{
+                                    padding: '4px 10px', borderRadius: 999, fontSize: 10, fontWeight: 600, lineHeight: '1',
+                                    border: selected ? '1px solid #1B6EF3' : '1px solid #E5E7EB',
+                                    backgroundColor: selected ? '#EDF4FF' : '#FFFFFF',
+                                    color: selected ? '#1B6EF3' : '#6B7280',
+                                    cursor: 'pointer', fontFamily: 'Inter, system-ui, sans-serif',
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <SettingRow
+                      icon={<span style={{ fontSize: '11px', fontWeight: 700, color: '#0891B2', lineHeight: '1' }}>R</span>}
+                      iconBg="#ECFEFF"
+                      title="Include rate source & timestamp"
+                      desc="Print the rate book name and the date it was locked in the footer."
+                      checked={includeRateSource}
+                      onChange={setIncludeRateSource}
+                    />
+                  </>
+                )}
+
                 {/* ─ Attachments ─ */}
                 <SettingRow
                   icon={<Paperclip style={{ width: '13px', height: '13px', color: '#D97706' }} />}
@@ -479,42 +479,45 @@ export function PDFPreviewModal({ isOpen, onClose, quoteNumber = 'Q-2026-0142', 
                 alignSelf: 'flex-start',
               }}>
 
-                {/* ─ FX Header banner (shown when customer settles in non-PKR) ─ */}
+                {/* ─ FX Header banner — minimal "card" at the very top of the
+                      printed quote, ABOVE the QUOTATION header. Bold typography,
+                      a single thin accent rule, and a compact one-line layout
+                      replace the previous indigo-tinted card. ─ */}
                 {fxAvailable && showCurrencyConversion && (() => {
                   const lr = quoteLockedRate ?? 0;
                   const baseTotalFmt = grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                   const customerTotalFmt = lr ? (grandTotal / lr).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+                  const leadCustomer = printIn === 'customer';
+                  const primary = leadCustomer
+                    ? `${customerSym} ${customerTotalFmt} ${customerCurrency!.toUpperCase()}`
+                    : `₨ ${baseTotalFmt} PKR`;
+                  const secondary = leadCustomer
+                    ? `≈ ₨ ${baseTotalFmt} PKR`
+                    : `≈ ${customerSym} ${customerTotalFmt} ${customerCurrency!.toUpperCase()}`;
                   return (
-                    <div style={{
-                      marginBottom: '14px', padding: '10px 12px',
-                      borderRadius: '6px',
-                      backgroundColor: '#F8FAFF',
-                      border: '1px solid #E0E7FF',
-                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px',
-                    }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '8px', fontWeight: 700, color: '#3730A3', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Quote total</span>
-                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#1F2937', fontVariantNumeric: 'tabular-nums', lineHeight: '1.2' }}>
-                          {(printIn === 'customer' || printIn === 'both') && (
-                            <>{customerSym} {customerTotalFmt} {customerCurrency!.toUpperCase()}</>
-                          )}
-                          {printIn === 'both' && (
-                            <span style={{ color: '#6B7280', fontWeight: 500, fontSize: '11px' }}> · </span>
-                          )}
-                          {(printIn === 'base' || printIn === 'both') && (
-                            <>₨ {baseTotalFmt} PKR</>
-                          )}
+                    <div
+                      style={{
+                        marginBottom: '14px',
+                        paddingBottom: '10px',
+                        borderBottom: '2px solid #1F2937',
+                        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+                        <span style={{ fontSize: 8.5, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                          Quote Total
+                        </span>
+                        <span style={{ fontSize: 16, fontWeight: 800, color: '#0F172A', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.2px', lineHeight: 1 }}>
+                          {primary}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#6B7280', fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>
+                          {secondary}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
-                        <span style={{ fontSize: '8px', fontWeight: 700, color: '#3730A3', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Exchange rate</span>
-                        <span style={{ fontSize: '10px', color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                          1 {customerCurrency!.toUpperCase()} = ₨ {(lr || 0).toFixed(2)} PKR
-                        </span>
-                        <span style={{ fontSize: '9px', color: '#6B7280' }}>
-                          {rateTypeLabel}{lockedAtDisplay ? ` · locked on ${lockedAtDisplay}` : ''}
-                        </span>
-                      </div>
+                      <span style={{ fontSize: 9, color: '#6B7280', fontVariantNumeric: 'tabular-nums', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                        1 {customerCurrency!.toUpperCase()} = ₨ {(lr || 0).toFixed(2)} · {rateTypeLabel}
+                        {lockedAtDisplay ? ` · ${lockedAtDisplay}` : ''}
+                      </span>
                     </div>
                   );
                 })()}

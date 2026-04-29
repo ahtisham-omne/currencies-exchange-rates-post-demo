@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from '@/app/data/currencyLibrary';
+import { QuoteMoney } from '@/app/components/currency/QuoteMoney';
 
 // ── Types ──────────────────────────────────────────────────────────
 type VersionStatus = 'draft' | 'sent' | 'confirmed';
@@ -141,6 +142,7 @@ const MOCK_VERSIONS: Version[] = [
 
 type VersionFilter = 'all' | 'pricing' | 'line-items' | 'config';
 
+
 const CURRENT_USER = 'Sarah Chen';
 
 const versionStatusConfig: Record<VersionStatus, { label: string; bg: string; color: string; icon: typeof Send }> = {
@@ -261,12 +263,26 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
     });
   };
 
-  // Draft conflict state for VersionHistoryTab internal reverts
+  // Draft conflict state for VersionHistoryTab internal reverts.
   const [draftConflictRevert, setDraftConflictRevert] = useState<{ toVersion: number; reason: string } | null>(null);
+
+  /** Reverts always re-lock at today's Mid-market rate, so the new version is
+   *  labeled Mid-market regardless of the source's type. */
+  const buildRateSnapshotForRevert = (source: Version): VersionRateSnapshot | undefined => {
+    if (!source.rateSnapshot) return undefined;
+    const headRate = versions[0]?.rateSnapshot?.customerRate ?? source.rateSnapshot.customerRate;
+    return {
+      ...source.rateSnapshot,
+      rateType: 'market',
+      customerRate: headRate,
+      lockedAt: new Date().toISOString(),
+    };
+  };
 
   const doRevert = (toVersion: number, reason: string, overwriteExisting: boolean) => {
     const source = versions.find(v => v.version === toVersion)!;
     const latestVer = versions[0];
+    const nextRateSnapshot = buildRateSnapshotForRevert(source);
 
     if (overwriteExisting && latestVer.versionStatus === 'draft') {
       // Overwrite existing draft
@@ -276,6 +292,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
         isRevert: true,
         revertedFrom: toVersion,
         snapshot: { ...source.snapshot },
+        rateSnapshot: nextRateSnapshot,
         changes: [
           { id: `C${Date.now()}`, type: 'config-changed', action: 'Changed' as const, subject: 'Reverted Draft', detail: `Restored from V${toVersion}`, subjectDetail: reason || undefined, timestamp: 'Just now', user: 'Sarah Chen' },
         ],
@@ -297,6 +314,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
         isRevert: true,
         revertedFrom: toVersion,
         snapshot: { ...source.snapshot },
+        rateSnapshot: nextRateSnapshot,
         changes: [
           { id: `C${Date.now()}`, type: 'config-changed', action: 'Changed' as const, subject: 'Reverted to Draft', detail: `Created from V${toVersion}`, subjectDetail: reason || undefined, timestamp: 'Just now', user: 'Sarah Chen' },
         ],
@@ -801,7 +819,13 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                       </span>
                     )}
                     <span style={{ fontSize: '12px', fontWeight: 600, color: '#1F2937', lineHeight: '1' }}>
-                      {formatCurrency(ver.snapshot.grandTotal, ver.rateSnapshot?.customerRate)}
+                      <QuoteMoney
+                        valuePKR={ver.snapshot.grandTotal}
+                        customerCurrency={customerCurrency}
+                        view={viewMode}
+                        lockedRate={ver.rateSnapshot?.customerRate}
+                        lockedAt={ver.rateSnapshot?.lockedAt}
+                      />
                     </span>
                     {ver.rateSnapshot && (() => {
                       const rs = ver.rateSnapshot;
@@ -928,8 +952,24 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                               </div>
                               <span style={{ fontSize: '10px', color: '#6B7280', lineHeight: '1', flexShrink: 0, width: '28px', textAlign: 'right' as const }}>{li.qty}</span>
                               <span style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1', flexShrink: 0, width: '28px', textAlign: 'center' as const }}>{li.uom}</span>
-                              <span style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1', flexShrink: 0, width: '64px', textAlign: 'right' as const }}>{formatCurrency(li.unitPrice, ver.rateSnapshot?.customerRate)}</span>
-                              <span style={{ fontSize: '11px', fontWeight: 600, color: '#1F2937', lineHeight: '1', flexShrink: 0, minWidth: '64px', textAlign: 'right' as const }}>{formatCurrency(li.total, ver.rateSnapshot?.customerRate)}</span>
+                              <span style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1', flexShrink: 0, width: '64px', textAlign: 'right' as const }}>
+                                <QuoteMoney
+                                  valuePKR={li.unitPrice}
+                                  customerCurrency={customerCurrency}
+                                  view={viewMode}
+                                  lockedRate={ver.rateSnapshot?.customerRate}
+                                  lockedAt={ver.rateSnapshot?.lockedAt}
+                                />
+                              </span>
+                              <span style={{ fontSize: '11px', fontWeight: 600, color: '#1F2937', lineHeight: '1', flexShrink: 0, minWidth: '64px', textAlign: 'right' as const }}>
+                                <QuoteMoney
+                                  valuePKR={li.total}
+                                  customerCurrency={customerCurrency}
+                                  view={viewMode}
+                                  lockedRate={ver.rateSnapshot?.customerRate}
+                                  lockedAt={ver.rateSnapshot?.lockedAt}
+                                />
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -944,7 +984,13 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                         }}>
                           <span style={{ fontSize: '10px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.3px', lineHeight: '1', marginRight: '8px' }}>Subtotal</span>
                           <span style={{ fontSize: '11px', fontWeight: 600, color: '#374151', lineHeight: '1', minWidth: '64px', textAlign: 'right' as const }}>
-                            {formatCurrency(ver.snapshot.lineItems.reduce((s, li) => s + li.total, 0), ver.rateSnapshot?.customerRate)}
+                            <QuoteMoney
+                              valuePKR={ver.snapshot.lineItems.reduce((s, li) => s + li.total, 0)}
+                              customerCurrency={customerCurrency}
+                              view={viewMode}
+                              lockedRate={ver.rateSnapshot?.customerRate}
+                              lockedAt={ver.rateSnapshot?.lockedAt}
+                            />
                           </span>
                         </div>
                       )}
@@ -964,7 +1010,15 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ fontSize: '10px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.3px', lineHeight: '1' }}>Total</span>
-                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#1F2937', lineHeight: '1' }}>{formatCurrency(ver.snapshot.grandTotal, ver.rateSnapshot?.customerRate)}</span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#1F2937', lineHeight: '1' }}>
+                            <QuoteMoney
+                              valuePKR={ver.snapshot.grandTotal}
+                              customerCurrency={customerCurrency}
+                              view={viewMode}
+                              lockedRate={ver.rateSnapshot?.customerRate}
+                              lockedAt={ver.rateSnapshot?.lockedAt}
+                            />
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1089,7 +1143,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
             version={showRevertConfirm}
             nextVersion={versions[0].version + 1}
             onClose={() => setShowRevertConfirm(null)}
-            onConfirm={(reason, _rateStrategy) => handleRevert(showRevertConfirm, reason)}
+            onConfirm={(reason) => handleRevert(showRevertConfirm, reason)}
             rateSnapshot={targetVer?.rateSnapshot}
             todayRate={todayRate}
             customerCurrency={customerCurrency}
@@ -1302,23 +1356,23 @@ function CompareView({ v1, v2, formatCurrency, onClose }: {
 }
 
 // ── Revert Confirm Modal ──────────────────────────────────────────
-type RevertRateStrategy = 'locked' | 'today';
 
 function RevertConfirmModal({ version, nextVersion, onClose, onConfirm, rateSnapshot, todayRate, customerCurrency }: {
   version: number;
   nextVersion: number;
   onClose: () => void;
-  /** Reason text plus the user's choice between carrying forward the locked rate or refreshing to today's rate. */
-  onConfirm: (reason: string, rateStrategy: RevertRateStrategy) => void;
-  /** Locked rate snapshot from the version being reverted to. Surfaces the "Use locked rate" option's detail. */
+  /** Reason text. Reverts always re-lock at today's Mid-market rate; the modal
+   *  surfaces an indicator of that rate so the user knows what they're getting. */
+  onConfirm: (reason: string) => void;
+  /** Locked rate snapshot from the version being reverted to — used purely for
+   *  the "vs locked" drift annotation in the indicator. */
   rateSnapshot?: VersionRateSnapshot;
-  /** Today's customer→base rate. Surfaces the "Refresh to today's rate" option's detail. */
+  /** Today's customer→base Mid-market rate. Surfaces in the indicator. */
   todayRate?: number;
   /** Customer currency code, used to render the rate hint. */
   customerCurrency?: string;
 }) {
   const [reason, setReason] = useState('');
-  const [rateStrategy, setRateStrategy] = useState<RevertRateStrategy>('locked');
   const showFx = !!customerCurrency && customerCurrency.toUpperCase() !== 'PKR' && !!rateSnapshot;
   const drift = (rateSnapshot && todayRate)
     ? Math.round(((todayRate - rateSnapshot.customerRate) / rateSnapshot.customerRate) * 1000) / 10
@@ -1347,77 +1401,43 @@ function RevertConfirmModal({ version, nextVersion, onClose, onConfirm, rateSnap
             </span>
           </div>
 
-          {/* ── Rate strategy — only shown when the customer settles in a non-PKR currency ── */}
+          {/* ── Rate indicator — reverts always re-lock at today's Mid-market.
+                Shown only for non-PKR customers; the rest of the modal stays
+                a simple confirm. ── */}
           {showFx && (
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: 6, lineHeight: '1' }}>
-                Restore locked rate from V{version} or refresh to today's rate?
-              </label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {/* Locked option */}
-                <button
-                  type="button"
-                  onClick={() => setRateStrategy('locked')}
-                  style={{
-                    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px',
-                    border: rateStrategy === 'locked' ? '2px solid #3B82F6' : '1px solid #E5E7EB',
-                    backgroundColor: rateStrategy === 'locked' ? '#F0F7FF' : '#FFFFFF',
-                    borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-                    fontFamily: 'Inter, system-ui, sans-serif',
-                  }}
-                >
-                  <div style={{
-                    width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
-                    border: rateStrategy === 'locked' ? 'none' : '2px solid #D1D5DB',
-                    backgroundColor: rateStrategy === 'locked' ? '#3B82F6' : '#FFFFFF',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2,
-                  }}>
-                    {rateStrategy === 'locked' && <div style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#FFFFFF' }} />}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                      <Scale style={{ width: 12, height: 12, color: '#047857' }} />
-                      <span style={{ fontSize: 13, fontWeight: 500, color: '#1F2937', lineHeight: 1 }}>Use the locked rate from V{version}</span>
-                    </div>
-                    <span style={{ fontSize: 11, color: '#6B7280', lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' }}>
-                      1 {customerCurrency} = ₨ {rateSnapshot!.customerRate.toFixed(2)} PKR · {rateSnapshot!.rateType === 'market' ? 'Mid-market' : 'Corporate'}
+            <div
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                padding: '10px 12px', marginBottom: 14,
+                borderRadius: 8,
+                border: '1px solid color-mix(in srgb, #7c3aed 22%, transparent)',
+                backgroundColor: 'color-mix(in srgb, #7c3aed 6%, transparent)',
+              }}
+            >
+              <div
+                style={{
+                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: 'color-mix(in srgb, #7c3aed 14%, transparent)',
+                  marginTop: 1,
+                }}
+              >
+                <Send style={{ width: 11, height: 11, color: '#7c3aed' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1F2937', lineHeight: 1.3, marginBottom: 3 }}>
+                  Today's Mid-market rate will be applied to this revert
+                </div>
+                <div style={{ fontSize: 11, color: '#4B5563', lineHeight: 1.5, fontVariantNumeric: 'tabular-nums' }}>
+                  {todayRate
+                    ? <>1 {customerCurrency} = ₨ {todayRate.toFixed(2)} PKR</>
+                    : 'The latest live mid-market rate will be locked when you confirm.'}
+                  {drift !== 0 && rateSnapshot && (
+                    <span style={{ marginLeft: 6, color: drift > 0 ? '#92400E' : '#065F46' }}>
+                      ({drift > 0 ? '+' : ''}{drift}% vs V{version} locked rate of ₨ {rateSnapshot.customerRate.toFixed(2)})
                     </span>
-                  </div>
-                </button>
-
-                {/* Today option */}
-                <button
-                  type="button"
-                  onClick={() => setRateStrategy('today')}
-                  style={{
-                    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px',
-                    border: rateStrategy === 'today' ? '2px solid #3B82F6' : '1px solid #E5E7EB',
-                    backgroundColor: rateStrategy === 'today' ? '#F0F7FF' : '#FFFFFF',
-                    borderRadius: 8, cursor: 'pointer', textAlign: 'left',
-                    fontFamily: 'Inter, system-ui, sans-serif',
-                  }}
-                >
-                  <div style={{
-                    width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
-                    border: rateStrategy === 'today' ? 'none' : '2px solid #D1D5DB',
-                    backgroundColor: rateStrategy === 'today' ? '#3B82F6' : '#FFFFFF',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2,
-                  }}>
-                    {rateStrategy === 'today' && <div style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#FFFFFF' }} />}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                      <Send style={{ width: 12, height: 12, color: '#7c3aed' }} />
-                      <span style={{ fontSize: 13, fontWeight: 500, color: '#1F2937', lineHeight: 1 }}>Refresh to today's rate</span>
-                    </div>
-                    <span style={{ fontSize: 11, color: '#6B7280', lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' }}>
-                      {todayRate ? <>1 {customerCurrency} = ₨ {todayRate.toFixed(2)} PKR · Mid-market</> : 'Pull the latest live mid-market rate.'}
-                      {drift !== 0 && (
-                        <span style={{ marginLeft: 6, color: drift > 0 ? '#92400E' : '#065F46' }}>({drift > 0 ? '+' : ''}{drift}% vs locked)</span>
-                      )}
-                    </span>
-                  </div>
-                </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1451,7 +1471,7 @@ function RevertConfirmModal({ version, nextVersion, onClose, onConfirm, rateSnap
           </button>
           <button
             disabled={false}
-            onClick={() => onConfirm(reason.trim(), rateStrategy)}
+            onClick={() => onConfirm(reason.trim())}
             style={{
               height: '32px', padding: '0 16px', fontSize: '13px', fontWeight: 500,
               color: '#FFFFFF', backgroundColor: '#D97706',

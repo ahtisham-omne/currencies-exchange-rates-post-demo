@@ -104,6 +104,10 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   const [showSendToCustomer, setShowSendToCustomer] = useState(false);
   const [isSendResend, setIsSendResend] = useState(false);
   const [showCurrencyConfig, setShowCurrencyConfig] = useState(false);
+  // When the configurator is opened from the Duplicate flow, the user is
+  // configuring the *new* (Draft) quote being created — not the original.
+  // Override the sent/confirmed lock so they can pick a different pair.
+  const [currencyConfigForceUnlocked, setCurrencyConfigForceUnlocked] = useState(false);
   // Quote-level FX configuration. The customer's primary currency persists
   // separately from the quote's per-instance currency so the configurator can
   // offer a proper Reset-to-default and surface "Custom for this quote" hints.
@@ -1404,6 +1408,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
           quoteLockedRate={278}
           onChangeCurrencyPair={() => {
             setShowDuplicateModal(false);
+            setCurrencyConfigForceUnlocked(true);
             setShowCurrencyConfig(true);
           }}
           onConfirm={(customerId, custName, _rateOption) => {
@@ -1468,11 +1473,16 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       )}
       <QuoteCurrencyConfigModal
         open={showCurrencyConfig}
-        onOpenChange={setShowCurrencyConfig}
+        onOpenChange={(v) => {
+          setShowCurrencyConfig(v);
+          if (!v) setCurrencyConfigForceUnlocked(false);
+        }}
         customerDefaultCurrency={customerDefaultCurrency}
         config={currencyConfig}
         // Once a quote leaves Draft → it's "sent": rate locks per business rules.
-        locked={quoteStatus !== 'draft'}
+        // Exception: when opened from the Duplicate flow, the configurator is
+        // editing the *new* Draft being created, so unlock it.
+        locked={!currencyConfigForceUnlocked && quoteStatus !== 'draft'}
         lockedAt={initialCreatedDate}
         quoteTotalPKR={quote?.total || quote?.subtotal || quote?.totalValue || 87000}
         onSave={(next) => setCurrencyConfig(next)}

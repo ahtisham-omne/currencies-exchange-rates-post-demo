@@ -30,10 +30,23 @@ function Money({ valuePKR, quote }: { valuePKR: number; quote: QuoteDraft }) {
 }
 
 export function QuoteSummaryPanel({ quoteDraft }: QuoteSummaryPanelProps) {
-  const subtotal = quoteDraft.lineItems.reduce((sum, item) => sum + item.total, 0);
-  const totalDiscount = quoteDraft.lineItems.reduce((sum, item) => sum + (item.unitPrice * item.quantity * item.discount / 100), 0);
-  const tax = subtotal * 0.1; // 10% tax
-  const total = subtotal + tax;
+  // Each line item's `total` is already net of its own discount, so summing
+  // them gave us the post-discount subtotal — but the panel labelled it
+  // "Subtotal" and then re-listed the discount, leaving viewers to double-
+  // subtract. Rebuild the math so Subtotal is pre-discount and the rows
+  // actually add up: Grand Total = Subtotal − Discount + Tax.
+  const subtotalPreDiscount = quoteDraft.lineItems.reduce(
+    (sum, item) => sum + item.unitPrice * item.quantity,
+    0,
+  );
+  const totalDiscount = quoteDraft.lineItems.reduce(
+    (sum, item) => sum + (item.unitPrice * item.quantity * item.discount) / 100,
+    0,
+  );
+  const subtotal = subtotalPreDiscount;
+  const subtotalAfterDiscount = subtotalPreDiscount - totalDiscount;
+  const tax = subtotalAfterDiscount * 0.1; // 10% tax on the discounted subtotal
+  const total = subtotalAfterDiscount + tax;
 
   return (
     <div className="w-80 border-l border-[#E5E7EB] bg-[#FAFBFC] flex flex-col">

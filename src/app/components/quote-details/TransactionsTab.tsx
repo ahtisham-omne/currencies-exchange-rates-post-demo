@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CurrencyAmount } from '../ui/CurrencyAmount';
+import { QuoteMoney } from '../currency/QuoteMoney';
 import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from '../../data/currencyLibrary';
 import {
   Search, ExternalLink, ChevronDown, SlidersHorizontal,
@@ -175,7 +176,11 @@ const getAvatarColor = (initials: string) => {
 };
 
 // ── Table grid ─────────────────────────────────────────────────────
-const TABLE_GRID = 'minmax(80px,110px) minmax(140px,1fr) 90px 80px 90px 16px 80px 28px';
+// Columns: Number · Description · Status · Date · Amount · gap · Created by · action.
+// Amount widened to 180px so the "Rate differs" pill fits next to the value
+// without bleeding into Date. Spacer column shrunk to 4px to give Created by
+// a bit more breathing room.
+const TABLE_GRID = 'minmax(90px,110px) minmax(140px,1fr) 96px 92px 180px 4px 116px 28px';
 
 // ── Component ──────────────────────────────────────────────────────
 interface TransactionsTabProps {
@@ -586,8 +591,9 @@ export function TransactionsTab({
 
           {/* Right: Summary + actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-            <span style={{ fontSize: '12px', color: '#9CA3AF', whiteSpace: 'nowrap', lineHeight: '1' }}>
-              {totalCount} transaction{totalCount !== 1 ? 's' : ''} · {formatCurrency(totalValue)}
+            <span style={{ fontSize: '12px', color: '#9CA3AF', whiteSpace: 'nowrap', lineHeight: '1', display: 'inline-flex', alignItems: 'baseline', gap: 4 }}>
+              {totalCount} transaction{totalCount !== 1 ? 's' : ''} ·
+              <QuoteMoney valuePKR={totalValue} customerCurrency={customerCurrency} view={viewMode} />
             </span>
           </div>
         </div>
@@ -685,7 +691,7 @@ export function TransactionsTab({
                 </span>
                 <div style={{ flex: 1 }} />
                 <span style={{ fontSize: '12px', color: '#9CA3AF', lineHeight: '1' }}>
-                  {formatCurrency(groupTotal)}
+                  <QuoteMoney valuePKR={groupTotal} customerCurrency={customerCurrency} view={viewMode} />
                 </span>
               </button>
 
@@ -866,7 +872,7 @@ function TransactionRow({ txn, customerCurrency, quoteLockedRate, quoteRateType,
             })()}
           </>
         ) : (
-          formatCurrency(txn.total)
+          <QuoteMoney valuePKR={txn.total} customerCurrency={customerCurrency} view={viewMode} lockedRate={txn.lockedRate} lockedAt={txn.lockedAt} />
         )}
       </span>
 

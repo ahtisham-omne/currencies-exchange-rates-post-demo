@@ -260,13 +260,14 @@ export function DuplicateQuoteModal({ isOpen, onClose, onConfirm, currentCustome
             </div>
           )}
 
-          {/* ── Currency section — three rate options + "What will be different" preview ── */}
+          {/* ── Currency section — PO-style: rate-radio question, then a
+                separate "Need a different currency pair?" subsection. ── */}
           {showFx && (
             <>
               <div style={{ borderTop: '1px solid #F3F4F6', margin: '4px -24px 4px -24px' }} />
               <div>
                 <div style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '8px' }}>
-                  Currency
+                  Which exchange rate should be used for the new quote?
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {/* Option 1: Use locked rate */}
@@ -289,18 +290,46 @@ export function DuplicateQuoteModal({ isOpen, onClose, onConfirm, currentCustome
                       ? `1 ${cur} = ${baseSym} ${todayRate.toFixed(2)} ${BASE_CURRENCY}${drift !== 0 && lockedRate ? ` · ${drift > 0 ? '+' : ''}${drift}% vs locked` : ''}`
                       : 'Pull the latest live mid-market rate.'}
                   />
-                  {/* Option 3: Change pair */}
-                  <RateOptionCard
-                    selected={rateOption === 'change-pair'}
-                    onSelect={() => {
-                      setRateOption('change-pair');
-                      onChangeCurrencyPair?.();
-                    }}
-                    icon={<Settings2 style={{ width: 12, height: 12, color: '#1B6EF3' }} />}
-                    title="Change currency pair"
-                    detail="Open the Currency Configurator to pick different customer / settlement currencies."
-                  />
                 </div>
+              </div>
+
+              {/* Need a different currency pair? — separate subsection with an
+                  outlined button that hands off to the Currency Configurator. */}
+              <div style={{ marginTop: '4px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '4px' }}>
+                  Need a different currency pair?
+                </div>
+                <p style={{ fontSize: '12px', color: '#6B7280', margin: '0 0 8px 0', lineHeight: '1.4' }}>
+                  By default the new quote keeps the same {cur} → {BASE_CURRENCY} pair. Change it via the Currency Configurator.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRateOption('change-pair');
+                    onChangeCurrencyPair?.();
+                  }}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    height: '34px', padding: '0 12px', borderRadius: '6px',
+                    border: '1px solid #E5E7EB', backgroundColor: '#FFFFFF',
+                    color: '#1F2937', fontSize: '12px', fontWeight: 500,
+                    fontFamily: 'Inter, system-ui, sans-serif', cursor: 'pointer',
+                    transition: 'all 150ms', lineHeight: '1',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.borderColor = 'rgba(27, 110, 243, 0.3)';
+                    e.currentTarget.style.backgroundColor = 'rgba(27, 110, 243, 0.06)';
+                    e.currentTarget.style.color = '#1B6EF3';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.borderColor = '#E5E7EB';
+                    e.currentTarget.style.backgroundColor = '#FFFFFF';
+                    e.currentTarget.style.color = '#1F2937';
+                  }}
+                >
+                  <Settings2 style={{ width: 13, height: 13, color: '#1B6EF3' }} />
+                  Change currency pair
+                </button>
               </div>
 
               {/* What will be different */}
