@@ -23,8 +23,8 @@ function daysSince(iso: string): number {
 /**
  * Standard KPI value cell for a rate type. Shows a colored dot (purple = market,
  * amber = corporate) plus a freshness label tuned to the cadence of the book —
- *   • market → "As of <relative time>"  (live feed, minute-grain)
- *   • corporate → "Last changed <N days ago>"  (treasury-locked, day-grain)
+ *   • market → "Updated <relative time>"  (live feed, minute-grain)
+ *   • corporate → "Updated <N days ago>"  (treasury-locked, day-grain)
  * The full source / sync metadata lives in the KPI's tooltip.
  */
 export function RateKpiValue({ rateType }: { rateType: RateType }) {
@@ -35,11 +35,11 @@ export function RateKpiValue({ rateType }: { rateType: RateType }) {
   const hex = rateType === "market" ? "#7c3aed" : "#d97706";
   let label: string;
   if (rateType === "market") {
-    label = `As of ${relativeTime(snap.lastSyncAt)}`;
+    label = `Updated ${relativeTime(snap.lastSyncAt)}`;
   } else {
     const days = daysSince(snap.lastSyncAt);
     const phrase = days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`;
-    label = `Last changed ${phrase}`;
+    label = `Updated ${phrase}`;
   }
   return (
     <span className="inline-flex items-center gap-1.5 tabular-nums">
