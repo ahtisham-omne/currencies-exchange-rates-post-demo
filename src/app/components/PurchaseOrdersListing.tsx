@@ -83,6 +83,9 @@ const PARTNER_LOCATIONS = [
   { name: "Honda Motor Co., Ltd. (USA)", abbr: "HM" },
   { name: "Nissan North America", abbr: "NA" },
   { name: "BMW of North America", abbr: "BN" },
+  // Domestic PKR supplier wired into seedListingPOs so po-1 demonstrates the
+  // toggle-hidden / no-FX-tooltip branch on the detail page.
+  { name: "Karachi Industrial Works", abbr: "KI" },
 ];
 
 const CONTACTS = [

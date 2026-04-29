@@ -295,6 +295,14 @@ const VENDOR_DETAILS: Record<string, Omit<POVendor, "name">> = {
     email: "vendoraccts@lucidmotors.com",
     taxId: "46-5554035",
   },
+  // Domestic PKR supplier — demonstrates the toggle-hidden / no-FX-tooltip
+  // branch on the detail page when vendor currency equals base currency.
+  "Karachi Industrial Works": {
+    address: "Plot 12-A, S.I.T.E. Industrial Area, Karachi 75700, Pakistan",
+    phone: "+92 21 32567890",
+    email: "procurement@karachiindustrial.pk",
+    taxId: "0123456-7",
+  },
 };
 
 const DEFAULT_VENDOR: Omit<POVendor, "name"> = {
@@ -312,6 +320,7 @@ const PAYMENT_DEFAULTS: Record<string, POPaymentDelivery> = {
   "Ford Motor Company": { paymentTerms: "Net 30", payTo: "Ford Motor Credit", paymentMethod: "Wire Transfer", shippedTo: "Great Lakes Depot", fundedBy: "Omne Manufacturing Corp." },
   "Tesla, Inc.": { paymentTerms: "Net 15", payTo: "Tesla Financial Services", paymentMethod: "Wire Transfer", shippedTo: "Pacific Distribution Hub", fundedBy: "Omne Manufacturing Corp." },
   "Chrysler (Stellantis N.V.)": { paymentTerms: "Net 30", payTo: "Stellantis Financial", paymentMethod: "ACH Transfer", shippedTo: "Southern Cross Logistics", fundedBy: "Omne Manufacturing Corp." },
+  "Karachi Industrial Works": { paymentTerms: "Net 30", payTo: "Karachi Industrial Works (Pvt.) Ltd.", paymentMethod: "Bank Transfer", shippedTo: "Omne Warehouse Network", fundedBy: "Omne Manufacturing Corp." },
 };
 
 const DEFAULT_PAYMENT: POPaymentDelivery = {
@@ -1997,8 +2006,12 @@ function seedListingPOs(): void {
     "395-9823", "395-9834", "395-9835", "395-9836", "395-9837",
     "395-9838", "395-9839", "395-9840", "395-9841", "395-9842",
   ];
+  // Position 0 → po-1, the 2nd visible row in the listing (after the seeded
+  // demo PO). "Karachi Industrial Works" is a PKR vendor, so po-1's detail
+  // page exercises the "no FX context" branch — the Base/Partner toggle is
+  // hidden, and tooltips on amounts collapse since there's no conversion.
   const partnerNames = [
-    "General Motors (GM)", "Toyota Technical Center (TTC)", "Ford Motor Company",
+    "Karachi Industrial Works", "Toyota Technical Center (TTC)", "Ford Motor Company",
     "Tesla, Inc.", "Chrysler (Stellantis N.V.)", "Rivian Automotive",
     "Lucid Motors", "Honda Motor Co., Ltd. (USA)", "Nissan North America",
     "BMW of North America",
