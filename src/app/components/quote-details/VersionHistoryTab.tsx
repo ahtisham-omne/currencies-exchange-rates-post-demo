@@ -6,6 +6,7 @@ import {
   Send, CheckCircle2, FileText, Scale
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from '@/app/data/currencyLibrary';
 
 // ── Types ──────────────────────────────────────────────────────────
 type VersionStatus = 'draft' | 'sent' | 'confirmed';
@@ -153,6 +154,8 @@ interface VersionHistoryTabProps {
   customerName?: string;
   /** Customer's quote currency. Drives the per-version rate display + tracked rate-change rows. Defaults to PKR (no FX context). */
   customerCurrency?: string;
+  /** Page-level Base ↔ Customer currency view. When `customer`, version totals/line-items render in the customer currency using each version's locked rate. */
+  viewMode?: 'base' | 'customer';
 }
 
 /**
@@ -193,7 +196,7 @@ function withRateSnapshots(versions: Version[], customerCurrency?: string): Vers
   }));
 }
 
-export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName = 'Tri-County EMS Authority', customerCurrency }: VersionHistoryTabProps) {
+export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName = 'Tri-County EMS Authority', customerCurrency, viewMode = 'base' }: VersionHistoryTabProps) {
   const [versions, setVersions] = useState(() => withRateSnapshots(MOCK_VERSIONS, customerCurrency));
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<VersionFilter>('all');
@@ -227,8 +230,20 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
     return () => document.removeEventListener('mousedown', handler);
   }, [showFilterDropdown]);
 
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  // View-aware money formatter. All snapshot values are stored in PKR (base);
+  // when the page is in customer view, convert through the version's locked
+  // rate so each version stays anchored to the FX rate it was sent at.
+  const cur = (customerCurrency || BASE_CURRENCY).toUpperCase();
+  const showCustomer = cur !== BASE_CURRENCY && viewMode === 'customer';
+  const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
+  const customerSym = getLibraryCurrency(cur)?.symbol ?? cur;
+  const formatCurrency = (n: number, lockedRate?: number): string => {
+    if (showCustomer) {
+      const customerValue = typeof lockedRate === 'number' ? n / lockedRate : convertBetween(n, BASE_CURRENCY, cur);
+      return `${customerSym} ${customerValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    }
+    return `${baseSym} ${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  };
 
   const toggleExpanded = (v: number) => {
     setExpandedVersions(prev => {
@@ -786,7 +801,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                       </span>
                     )}
                     <span style={{ fontSize: '12px', fontWeight: 600, color: '#1F2937', lineHeight: '1' }}>
-                      {formatCurrency(ver.snapshot.grandTotal)}
+                      {formatCurrency(ver.snapshot.grandTotal, ver.rateSnapshot?.customerRate)}
                     </span>
                     {ver.rateSnapshot && (() => {
                       const rs = ver.rateSnapshot;
@@ -858,6 +873,18 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                         <Clock style={{ width: '12px', height: '12px', color: '#9CA3AF' }} />
                         <span style={{ fontSize: '12px', color: '#6B7280', lineHeight: '1' }}>Valid until {ver.snapshot.validUntil}</span>
                       </div>
+                      {ver.rateSnapshot && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <Scale style={{ width: '12px', height: '12px', color: ver.rateSnapshot.rateType === 'market' ? '#7c3aed' : '#d97706' }} />
+                          <span style={{ fontSize: '12px', color: '#6B7280', lineHeight: '1', fontVariantNumeric: 'tabular-nums' as const }}>
+                            Rate locked: 1 {ver.rateSnapshot.customerCurrency} = {ver.rateSnapshot.customerRate.toFixed(2)} PKR
+                            <span style={{ color: ver.rateSnapshot.rateType === 'market' ? '#7c3aed' : '#d97706', fontWeight: 600, marginLeft: '6px' }}>
+                              {ver.rateSnapshot.rateType === 'market' ? 'Mid-market' : 'Corporate'}
+                            </span>
+                            {ver.rateSnapshot.lockedAt && <span style={{ color: '#9CA3AF', marginLeft: '6px' }}>· {ver.rateSnapshot.lockedAt}</span>}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Snapshot + Line Items (combined) */}
@@ -901,8 +928,8 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                               </div>
                               <span style={{ fontSize: '10px', color: '#6B7280', lineHeight: '1', flexShrink: 0, width: '28px', textAlign: 'right' as const }}>{li.qty}</span>
                               <span style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1', flexShrink: 0, width: '28px', textAlign: 'center' as const }}>{li.uom}</span>
-                              <span style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1', flexShrink: 0, width: '64px', textAlign: 'right' as const }}>{formatCurrency(li.unitPrice)}</span>
-                              <span style={{ fontSize: '11px', fontWeight: 600, color: '#1F2937', lineHeight: '1', flexShrink: 0, minWidth: '64px', textAlign: 'right' as const }}>{formatCurrency(li.total)}</span>
+                              <span style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1', flexShrink: 0, width: '64px', textAlign: 'right' as const }}>{formatCurrency(li.unitPrice, ver.rateSnapshot?.customerRate)}</span>
+                              <span style={{ fontSize: '11px', fontWeight: 600, color: '#1F2937', lineHeight: '1', flexShrink: 0, minWidth: '64px', textAlign: 'right' as const }}>{formatCurrency(li.total, ver.rateSnapshot?.customerRate)}</span>
                             </div>
                           ))}
                         </div>
@@ -917,7 +944,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                         }}>
                           <span style={{ fontSize: '10px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.3px', lineHeight: '1', marginRight: '8px' }}>Subtotal</span>
                           <span style={{ fontSize: '11px', fontWeight: 600, color: '#374151', lineHeight: '1', minWidth: '64px', textAlign: 'right' as const }}>
-                            {formatCurrency(ver.snapshot.lineItems.reduce((s, li) => s + li.total, 0))}
+                            {formatCurrency(ver.snapshot.lineItems.reduce((s, li) => s + li.total, 0), ver.rateSnapshot?.customerRate)}
                           </span>
                         </div>
                       )}
@@ -937,7 +964,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ fontSize: '10px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.3px', lineHeight: '1' }}>Total</span>
-                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#1F2937', lineHeight: '1' }}>{formatCurrency(ver.snapshot.grandTotal)}</span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#1F2937', lineHeight: '1' }}>{formatCurrency(ver.snapshot.grandTotal, ver.rateSnapshot?.customerRate)}</span>
                         </div>
                       </div>
                     </div>
@@ -989,6 +1016,27 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                                 {change.detail && (
                                   <div style={{ fontSize: '11px', color: '#9CA3AF', lineHeight: '1.3', marginTop: '1px' }}>
                                     {change.detail}
+                                  </div>
+                                )}
+                                {ver.rateSnapshot && (change.type === 'rule-applied' || change.type === 'adjustment-applied' || change.type === 'pricing-changed') && (
+                                  <div style={{ marginTop: '4px' }}>
+                                    <span
+                                      title={`Pricing-rule values were computed using V${ver.version}'s locked ${ver.rateSnapshot.rateType === 'market' ? 'mid-market' : 'corporate'} rate. Newer versions may re-rate at a different lock-time rate.`}
+                                      style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                        fontSize: '9px', fontWeight: 600, lineHeight: '1',
+                                        padding: '2px 6px', borderRadius: '999px',
+                                        color: ver.rateSnapshot.rateType === 'market' ? '#7c3aed' : '#d97706',
+                                        backgroundColor: ver.rateSnapshot.rateType === 'market'
+                                          ? 'color-mix(in srgb, #7c3aed 8%, transparent)'
+                                          : 'color-mix(in srgb, #d97706 10%, transparent)',
+                                        fontVariantNumeric: 'tabular-nums' as const,
+                                        cursor: 'help',
+                                      }}
+                                    >
+                                      <span style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: ver.rateSnapshot.rateType === 'market' ? '#7c3aed' : '#d97706' }} />
+                                      Computed @ 1 {ver.rateSnapshot.customerCurrency} = {ver.rateSnapshot.customerRate.toFixed(2)} PKR · V{ver.version} rate
+                                    </span>
                                   </div>
                                 )}
                               </div>
@@ -1065,7 +1113,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
 
 // ── Compare View ──────────────────────────────────────────────────
 function CompareView({ v1, v2, formatCurrency, onClose }: {
-  v1: Version; v2: Version; formatCurrency: (n: number) => string; onClose: () => void;
+  v1: Version; v2: Version; formatCurrency: (n: number, lockedRate?: number) => string; onClose: () => void;
 }) {
   const rateText = (v: Version) => {
     if (!v.rateSnapshot) return '—';
@@ -1075,7 +1123,7 @@ function CompareView({ v1, v2, formatCurrency, onClose }: {
   };
   const fields = [
     { label: 'Line Items', val1: String(v1.snapshot.lineItemCount), val2: String(v2.snapshot.lineItemCount) },
-    { label: 'Grand Total', val1: formatCurrency(v1.snapshot.grandTotal), val2: formatCurrency(v2.snapshot.grandTotal) },
+    { label: 'Grand Total', val1: formatCurrency(v1.snapshot.grandTotal, v1.rateSnapshot?.customerRate), val2: formatCurrency(v2.snapshot.grandTotal, v2.rateSnapshot?.customerRate) },
     // FX columns surface the locked rate per version + rate type. When the
     // versions used different rate books or rates, the field is highlighted
     // by the existing changed-row treatment below.

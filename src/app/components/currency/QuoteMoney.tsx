@@ -1,5 +1,6 @@
 import * as React from "react";
 import { CurrencyAmount } from "@/app/components/ui/CurrencyAmount";
+import { BaseCurrencyKPI } from "@/app/components/currency/BaseCurrencyKPI";
 import { BASE_CURRENCY, convertBetween } from "@/app/data/currencyLibrary";
 
 interface Props {
@@ -24,16 +25,8 @@ export function QuoteMoney({ valuePKR, customerCurrency, view = "base", signed, 
   const isBase = cur === BASE_CURRENCY;
 
   if (isBase) {
-    // Customer settles in PKR — nothing to flip; render a plain base value with no hover.
-    return (
-      <CurrencyAmount
-        mode="single"
-        currency={BASE_CURRENCY}
-        value={valuePKR}
-        signed={signed}
-        className={className}
-      />
-    );
+    // Customer settles in PKR — render with a base-currency hover (full precision + active rate snapshot).
+    return <BaseCurrencyKPI compact={false} valuePKR={valuePKR} className={className} />;
   }
 
   if (view === "customer") {

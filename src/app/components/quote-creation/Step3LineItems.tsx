@@ -4,6 +4,7 @@ import { Plus, Minus, Trash2, Search, Check, Package, Settings, Info, ChevronDow
 import { toast } from 'sonner';
 import { QuoteDraft } from '@/app/components/CreateQuoteModal';
 import { CurrencyAmount } from '@/app/components/ui/CurrencyAmount';
+import { BaseCurrencyKPI } from '@/app/components/currency/BaseCurrencyKPI';
 import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from '@/app/data/currencyLibrary';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import { LineItemConfigModal } from '@/app/components/quote-creation/LineItemConfigModal';
@@ -35,9 +36,12 @@ const generateItemId = (itemId: string): string => {
 export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const customerCurrency = (quoteDraft.currency || quoteDraft.customerDefaultCurrency || BASE_CURRENCY).toUpperCase();
+  // Quote-creation line items always render in base currency — there is no
+  // PKR ↔ Customer toggle in this step. The customer-currency view lives on
+  // the Quote Detail page after creation. Hovers still surface FX context
+  // (customer equivalent for non-base customers, rate type/source for base).
   const customerCurrencyIsBase = customerCurrency === BASE_CURRENCY;
   // Default to base currency display; toggle is hidden when customer settles in PKR.
-  const [priceView, setPriceView] = useState<'base' | 'customer'>('base');
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [selectedItemForConfig, setSelectedItemForConfig] = useState<any>(null);
   const [uomDropdownOpen, setUomDropdownOpen] = useState<string | null>(null);
@@ -322,25 +326,14 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
   };
 
   /**
-   * Render a PKR amount under the active price-view toggle. When the customer
-   * settles in PKR there's nothing to flip — render a plain base value with
-   * no hover. Otherwise honor the toggle: base view shows ₨ with customer
-   * hover, customer view shows the converted value with ₨ hover.
+   * Render a PKR (base) amount. Quote creation always shows base values —
+   * the Base ↔ Customer toggle lives on the Quote Detail page post-creation.
+   * Base-currency rows hover with full-precision PKR + active rate snapshot;
+   * non-base customers hover with the customer-currency equivalent.
    */
   const Money = ({ valuePKR, className }: { valuePKR: number; className?: string }) => {
     if (customerCurrencyIsBase) {
-      return <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={valuePKR} className={className} />;
-    }
-    if (priceView === 'customer') {
-      const customerValue = convertBetween(valuePKR, BASE_CURRENCY, customerCurrency);
-      return (
-        <CurrencyAmount
-          mode="listing-partner"
-          currency={customerCurrency}
-          value={customerValue}
-          className={className}
-        />
-      );
+      return <BaseCurrencyKPI compact={false} valuePKR={valuePKR} className={className} />;
     }
     return (
       <CurrencyAmount
@@ -512,38 +505,6 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
               />
             </div>
             <FilterButton filters={advancedFilters} setFilters={setAdvancedFilters} filteredCount={displayProducts.length} />
-            {/* Price-view toggle — Base ↔ Customer. Hidden when customer
-                already settles in PKR (nothing meaningful to flip). */}
-            {!customerCurrencyIsBase && (() => {
-              const cur = getLibraryCurrency(customerCurrency);
-              const sym = cur?.symbol ?? customerCurrency;
-              return (
-                <div className="inline-flex items-center h-9 rounded-md border border-[#E5E7EB] bg-white p-0.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setPriceView('base')}
-                    className={`inline-flex items-center h-7 px-2.5 rounded text-[12px] whitespace-nowrap cursor-pointer transition-colors ${
-                      priceView === 'base' ? 'bg-[#EDF4FF] text-[#1B6EF3]' : 'text-[#6B7280] hover:text-[#1F2937]'
-                    }`}
-                    style={{ fontWeight: priceView === 'base' ? 600 : 500 }}
-                    title={`Show prices in ${BASE_CURRENCY} (base)`}
-                  >
-                    ₨ {BASE_CURRENCY}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPriceView('customer')}
-                    className={`inline-flex items-center h-7 px-2.5 rounded text-[12px] whitespace-nowrap cursor-pointer transition-colors ${
-                      priceView === 'customer' ? 'bg-[#EDF4FF] text-[#1B6EF3]' : 'text-[#6B7280] hover:text-[#1F2937]'
-                    }`}
-                    style={{ fontWeight: priceView === 'customer' ? 600 : 500 }}
-                    title={`Show prices in customer currency (${customerCurrency})`}
-                  >
-                    {sym} {customerCurrency}
-                  </button>
-                </div>
-              );
-            })()}
           </div>
           <ActiveFilterTags filters={advancedFilters} setFilters={setAdvancedFilters} />
         </div>

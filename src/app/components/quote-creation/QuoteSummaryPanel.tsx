@@ -1,6 +1,7 @@
 import { QuoteDraft } from '@/app/components/CreateQuoteModal';
 import { Building2, User, Package, DollarSign } from 'lucide-react';
 import { CurrencyAmount } from '@/app/components/ui/CurrencyAmount';
+import { BaseCurrencyKPI } from '@/app/components/currency/BaseCurrencyKPI';
 import { BASE_CURRENCY, convertBetween } from '@/app/data/currencyLibrary';
 
 interface QuoteSummaryPanelProps {
@@ -15,7 +16,7 @@ function Money({ valuePKR, quote }: { valuePKR: number; quote: QuoteDraft }) {
   const customerCur = (quote.currency ?? quote.customerDefaultCurrency ?? BASE_CURRENCY).toUpperCase();
   const isBase = customerCur === BASE_CURRENCY;
   if (isBase) {
-    return <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={valuePKR} />;
+    return <BaseCurrencyKPI compact={false} valuePKR={valuePKR} />;
   }
   return (
     <CurrencyAmount

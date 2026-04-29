@@ -106,15 +106,17 @@ const NOTES_TEMPLATES = [
   'Available Mon-Thu; off-shift Fri-Sun rotation'
 ];
 
-// Customer default currency cycle — most customers settle in PKR (base);
-// a deliberate minority operate in foreign currencies so the FX surfaces
-// exercise hover, override, and quote-level conversion behaviors.
+// Customer default currency cycle — heavy on foreign currencies for the demo
+// so the Base ↔ Customer toggle, hover affordances, and FX conversion paths
+// all light up after creating a new quote. ~25% PKR, the rest spread across
+// the major non-base currencies the rate library knows about.
 const CUSTOMER_DEFAULT_CURRENCY_CYCLE: string[] = [
-  'PKR', 'USD', 'PKR', 'EUR', 'PKR',
-  'GBP', 'PKR', 'USD', 'AED', 'PKR',
-  'PKR', 'CAD', 'USD', 'PKR', 'AUD',
-  'PKR', 'EUR', 'PKR', 'USD', 'PKR',
-  'JPY',
+  'USD', 'EUR', 'GBP', 'AED', 'PKR',
+  'CAD', 'AUD', 'JPY', 'USD', 'EUR',
+  'SAR', 'INR', 'PKR', 'USD', 'GBP',
+  'EUR', 'AED', 'CAD', 'USD', 'PKR',
+  'AUD', 'JPY', 'EUR', 'GBP', 'USD',
+  'INR', 'SAR', 'PKR', 'USD', 'EUR',
 ];
 
 // Generate customers with HUNDREDS of locations each

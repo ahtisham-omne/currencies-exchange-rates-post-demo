@@ -226,6 +226,9 @@ export function QuotesListPage() {
   // Row selection
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
 
+  // Quote Value column — Base ↔ Customer currency view (set from the column-header menu)
+  const [quoteValueView, setQuoteValueView] = useState<'base' | 'partner'>('base');
+
   // Board state
   const [boardGroupBy, setBoardGroupBy] = useState<'none' | 'salesRep' | 'customer' | 'priority'>('none');
   const [isBoardColumnConfigModalOpen, setIsBoardColumnConfigModalOpen] = useState(false);
@@ -496,23 +499,67 @@ export function QuotesListPage() {
   }, [quotes]);
 
   const handleQuoteCreated = useCallback((draft: QuoteDraft): { quoteId: string; quoteNumber: string } => {
-    const now = new Date(); const quoteId = `quote-created-${Date.now()}`; const quoteNumber = generateQuoteNumber();
+    const now = new Date();
+    const quoteId = `quote-created-${Date.now()}`;
+    const quoteNumber = generateQuoteNumber();
     const totalValue = draft.lineItems.reduce((sum, item) => sum + item.total, 0);
+
+    // Map fields from the wizard's QuoteDraft (customer in `draft.customer`,
+    // PoC in `draft.primaryPoC`, FX in `draft.currency`, dates/tags inside
+    // `draft.configuration`) onto the listing-page Quote shape. Earlier this
+    // code referenced flat fields like `draft.customerName` that don't exist
+    // on QuoteDraft, so most of the new quote was silently empty.
+    const expiryDate = draft.configuration?.expiryDate ? new Date(draft.configuration.expiryDate) : undefined;
     const newQuote: Quote = {
-      id: quoteId, quoteNumber, status: 'Draft' as QuoteStatus, priority: draft.priority || 'Medium', version: 1,
-      customer: { name: draft.customerName || 'New Customer', location: draft.deliveryLocation ? { name: draft.deliveryLocation } : undefined },
-      primaryPoC: draft.pointOfContact ? { name: draft.pointOfContact.name, email: draft.pointOfContact.email, phone: draft.pointOfContact.phone, designation: draft.pointOfContact.designation } : undefined,
-      salesRep: draft.salesRep ? { name: draft.salesRep } : undefined,
-      totalValue, createdDate: now, requestedDate: draft.deliveryDate || now,
-      respondBy: draft.respondByDate || undefined, expiryDate: draft.expiryDate || undefined,
-      description: `Quote for ${draft.customerName || 'customer'}`,
-      lineItems: draft.lineItems.map(item => ({ id: item.id || `li-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, ...item })),
+      id: quoteId,
+      quoteNumber,
+      status: 'Draft' as QuoteStatus,
+      priority: 'Medium',
+      version: 1,
+      customer: {
+        id: draft.customer?.id || `cust-${Date.now()}`,
+        name: draft.customer?.name || 'New Customer',
+        location: draft.customer?.location ? { name: draft.customer.location, isPrimary: true } : undefined,
+      },
+      primaryPoC: draft.primaryPoC
+        ? { id: draft.primaryPoC.id, name: draft.primaryPoC.name, email: draft.primaryPoC.email }
+        : undefined as any,
+      salesRep: undefined as any,
+      totalValue,
+      total: totalValue,
+      subtotal: totalValue,
+      customerCurrency: draft.currency || draft.customerDefaultCurrency || 'PKR',
+      createdDate: now,
+      requestedDate: now,
+      expiryDate: expiryDate || now,
+      lastUpdated: now,
+      hasUnreadMessages: false,
+      unreadMessageCount: 0,
+      daysInCurrentStage: 0,
+      description: draft.configuration?.notes || `Quote for ${draft.customer?.name || 'customer'}`,
+      tags: draft.configuration?.tags || [],
     };
+
+    // Persist line items separately — ItemsTabTableClean reads them via
+    // getCreatedQuoteLineItems(quoteId). Without this, the detail page
+    // falls back to MOCK_LINE_ITEMS regardless of what the user added.
+    const createdLineItems = draft.lineItems.map(item => ({
+      id: item.id || `li-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      productId: item.productId,
+      name: item.name,
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      discount: item.discount,
+      total: item.total,
+      image: item.image,
+    }));
+
     setQuotes(prev => [newQuote, ...prev]);
-    addCreatedQuote(newQuote);
+    addCreatedQuote(newQuote, createdLineItems);
     setCurrentPage(1); setSearchQuery(''); setQuickFilter('all');
     return { quoteId, quoteNumber };
-  }, [quotes, generateQuoteNumber]);
+  }, [generateQuoteNumber]);
 
   const handleStatusChange = useCallback((quoteId: string, newStatus: QuoteStatus) => {
     setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, status: newStatus } : q));
@@ -908,7 +955,9 @@ export function QuotesListPage() {
                                 <ColumnHeaderMenu columnKey={key} label={def.label} sortable={def.sortable} sortConfig={sortConfig}
                                   onSort={handleSort} onAddFilter={handleAddColumnFilter} onHideColumn={handleHideColumn}
                                   onFreezeColumn={handleFreezeColumn} isFrozen={isFrozen} isLocked={isLocked} hasActiveFilter={hasFilter}
-                                  filter={columnFilters[key] ?? null} quotes={quotes} onFilterChange={handleColumnFilterChange}>
+                                  filter={columnFilters[key] ?? null} quotes={quotes} onFilterChange={handleColumnFilterChange}
+                                  currencyViewMode={key === 'totalValue' ? quoteValueView : undefined}
+                                  onCurrencyViewModeChange={key === 'totalValue' ? setQuoteValueView : undefined}>
                                   <div className={`inline-flex items-center gap-1 ${def.align === 'right' ? 'w-full justify-end' : ''}`}>
                                     <span className="text-[13px]" style={currentColSort || hasFilter ? { color: '#0A77FF' } : undefined}>{def.label}</span>
                                     {hasFilter && !currentColSort && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#0A77FF' }} />}
@@ -992,11 +1041,18 @@ export function QuotesListPage() {
                             case 'totalValue': {
                               const customerCur = (quote.customerCurrency ?? BASE_CURRENCY).toUpperCase();
                               const isBase = customerCur === BASE_CURRENCY;
+                              const showAsPartner = quoteValueView === 'partner' && !isBase;
                               return (
                                 <TableCell key={colKey} className="text-right">
                                   <span className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
                                     {isBase
                                       ? <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={quote.totalValue || 0} />
+                                      : showAsPartner
+                                      ? <CurrencyAmount
+                                          mode="listing-partner"
+                                          currency={customerCur}
+                                          value={convertBetween(quote.totalValue || 0, BASE_CURRENCY, customerCur)}
+                                        />
                                       : <CurrencyAmount
                                           mode="listing-base"
                                           currency={BASE_CURRENCY}
@@ -1121,7 +1177,12 @@ export function QuotesListPage() {
 
       {/* Modals */}
       <QuoteFiltersModal open={filtersOpen} onOpenChange={setFiltersOpen} filters={advFilters} onFiltersChange={f => { setAdvFilters(f); setCurrentPage(1); }} quotes={quotes} filteredCount={filteredQuotes.length} />
-      <CreateQuoteModal open={isCreateQuoteModalOpen} onOpenChange={setIsCreateQuoteModalOpen} onQuoteCreated={handleQuoteCreated} />
+      <CreateQuoteModal
+        open={isCreateQuoteModalOpen}
+        onOpenChange={setIsCreateQuoteModalOpen}
+        onQuoteCreated={handleQuoteCreated}
+        onNavigateToQuote={(id) => navigate(`/quotes/${id}`)}
+      />
       <AssignSalesRepModal open={showAssignRepModal} onOpenChange={setShowAssignRepModal} selectedCount={selectedRows.size}
         onAssign={rep => { toast.success(`Assigned ${rep} to ${selectedRows.size} quote${selectedRows.size > 1 ? 's' : ''}`); setSelectedRows(new Set()); setShowAssignRepModal(false); }} />
       {versionHistoryQuote && (

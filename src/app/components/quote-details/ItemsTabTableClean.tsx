@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { LineItemConfigModal } from '../quote-creation/LineItemConfigModal';
 import { QuoteMoney } from '../currency/QuoteMoney';
-import { BASE_CURRENCY, getLibraryCurrency } from '../../data/currencyLibrary';
+import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from '../../data/currencyLibrary';
 import { ProductPickerModal } from './ProductPickerModal';
 import { getCreatedQuoteLineItems, CreatedLineItem } from '../../data/quoteStore';
 import { PRODUCTS } from '../../data/products';
@@ -938,7 +938,14 @@ function ItemRow({
               title="Click to edit price"
             >
               <span style={{ fontSize: '13px', fontWeight: 500, color: '#1F2937', lineHeight: '1' }}>
-                ₨ {item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {(() => {
+                  const cur = (customerCurrency || BASE_CURRENCY).toUpperCase();
+                  const showCustomer = cur !== BASE_CURRENCY && viewMode === 'customer';
+                  const displayCur = showCustomer ? cur : BASE_CURRENCY;
+                  const sym = getLibraryCurrency(displayCur)?.symbol ?? displayCur;
+                  const value = showCustomer ? convertBetween(item.unitPrice, BASE_CURRENCY, cur) : item.unitPrice;
+                  return `${sym} ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                })()}
               </span>
             </button>
           ) : (

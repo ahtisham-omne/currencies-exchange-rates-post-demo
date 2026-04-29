@@ -1,20 +1,32 @@
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
-import { X, Lock, RotateCcw, Settings2, ArrowRight } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
+import { Check, ChevronDown, Lock, RotateCcw } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/app/components/ui/dialog";
 import { Button } from "@/app/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/app/components/ui/command";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/app/components/ui/hover-card";
+import { toast } from "sonner";
 import { CurrencyFlag } from "@/app/components/ui/CurrencyFlag";
-import { QuoteCurrencyPicker } from "./QuoteCurrencyPicker";
-import { MarketCorporateToggle } from "./MarketCorporateToggle";
-import { useRateContext } from "@/app/context/RateContext";
 import {
   BASE_CURRENCY,
+  CURRENCY_LIBRARY,
+  CORPORATE_RATES,
+  activeRateSnapshot,
   convertBetween,
   getLibraryCurrency,
   rateTypeLabel,
   type RateType,
 } from "@/app/data/currencyLibrary";
 import { formatRateUpdatedAs } from "@/app/data/rateDateFormat";
+import { useRateContext } from "@/app/context/RateContext";
 
 export interface QuoteCurrencyConfig {
   /** The currency the customer is invoiced / pays in. Defaults to customer's primary on first open. */
@@ -26,25 +38,33 @@ export interface QuoteCurrencyConfig {
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  /** Customer's primary currency — used as the "Reset to default" target and to surface "Custom for this quote" hints. */
+  /** Customer's primary currency — used as the "Reset to default" target. */
   customerDefaultCurrency: string;
-  /** Current configuration. Pass `currency` (defaults to customer default) and `settlementCurrency` (defaults to base). */
+  /** Current configuration. */
   config: QuoteCurrencyConfig;
-  /** When `true`, the quote has been sent to the customer — rates are locked, the modal is read-only, and the lock chip is shown. */
+  /** When `true`, the quote has been sent — modal is read-only and the lock chip is shown. */
   locked?: boolean;
   /** ISO date the quote was sent. Surfaces inside the lock chip when present. */
   lockedAt?: string;
-  /** Persisted on save. Caller should propagate back to its `Quote.currency` / `paymentCurrency` fields. */
+  /** Quote total in PKR (base). Drives the Customer Amount / You Receive display values. */
+  quoteTotalPKR?: number;
+  /** Persisted on save. */
   onSave: (next: QuoteCurrencyConfig) => void;
 }
 
-const RATE_TYPE_HEX: Record<RateType, string> = { market: "#7c3aed", corporate: "#d97706" };
-
 /**
- * Quote-level currency configuration modal — opened from the Quote Details
- * header (or the Duplicate flow). Mirrors the PO Currency Configuration modal
- * inverted to the sell-side: "Customer pays" + "You receive" with conditional
- * one-leg or two-leg rate cards underneath.
+ * Quote-level currency configuration. Layout (mirrors POCurrencyConfigModal 1:1,
+ * inverted to the sell-side):
+ *   [ Customer Amount + currency ]
+ *   [ You Receive + currency ]
+ *   Rate type   [Mid-market | Corporate]
+ *   [ Rate metadata card ]
+ *
+ * The amount portion of each field is non-editable (display-only) and styled
+ * as such; only the currency dropdown is interactive. Hovering an amount opens
+ * a card with base-equivalent, the active quote reference rate, and source
+ * metadata. The rate-type switch writes through to the shared configurator so
+ * the same type label is used everywhere an exchange rate is displayed.
  */
 export function QuoteCurrencyConfigModal({
   open,
@@ -53,328 +73,572 @@ export function QuoteCurrencyConfigModal({
   config,
   locked,
   lockedAt,
+  quoteTotalPKR = 0,
   onSave,
 }: Props) {
-  // Subscribe so rate cards refresh when the user flips Mid-market / Corporate.
-  const { rateType, snapshot } = useRateContext();
+  const readOnly = !!locked;
+  const isLocked = !!locked;
+  const { rateType, setRateType } = useRateContext();
 
-  const [currency, setCurrency] = useState(config.currency);
-  const [settlement, setSettlement] = useState(config.settlementCurrency);
+  const [customerCurrency, setCustomerCurrency] = useState<string>(config.currency);
+  const [settlementCurrency, setSettlementCurrency] = useState<string>(config.settlementCurrency);
 
   useEffect(() => {
     if (open) {
-      setCurrency(config.currency);
-      setSettlement(config.settlementCurrency);
+      setCustomerCurrency(config.currency);
+      setSettlementCurrency(config.settlementCurrency);
     }
   }, [open, config.currency, config.settlementCurrency]);
 
-  const customerCur = useMemo(() => getLibraryCurrency(currency)!, [currency]);
-  const settlementCur = useMemo(() => getLibraryCurrency(settlement)!, [settlement]);
-  const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
-  const baseSym = baseCur.symbol ?? BASE_CURRENCY;
+  const totalPKR = quoteTotalPKR ?? 0;
 
-  const currencyIsBase = currency.toUpperCase() === BASE_CURRENCY;
-  const settlementIsBase = settlement.toUpperCase() === BASE_CURRENCY;
-  const currencyEqualsSettlement = currency.toUpperCase() === settlement.toUpperCase();
+  const customerAmount = useMemo(() => {
+    if (customerCurrency.toUpperCase() === BASE_CURRENCY) return totalPKR;
+    return convertBetween(totalPKR, BASE_CURRENCY, customerCurrency);
+  }, [totalPKR, customerCurrency, rateType]);
 
-  // Rate legs:
-  //  - all-base       → no conversion to display
-  //  - one-leg        → currency → base (settlement lives at base, or settlement = currency)
-  //  - two-leg        → currency → settlement, then settlement → base
-  type RateLeg = { from: string; to: string; rate: number };
-  const legs: RateLeg[] = useMemo(() => {
-    if (currencyIsBase && settlementIsBase) return [];
-    if (currencyEqualsSettlement || settlementIsBase) {
-      // Single conversion: customer currency → base
-      const r = convertBetween(1, currency, BASE_CURRENCY);
-      return [{ from: currency, to: BASE_CURRENCY, rate: r }];
-    }
-    if (currencyIsBase) {
-      // Customer pays in PKR, settle in non-PKR — single leg base → settlement
-      const r = convertBetween(1, BASE_CURRENCY, settlement);
-      return [{ from: BASE_CURRENCY, to: settlement, rate: r }];
-    }
-    // Two legs: customer → settlement, settlement → base
-    return [
-      { from: currency, to: settlement, rate: convertBetween(1, currency, settlement) },
-      { from: settlement, to: BASE_CURRENCY, rate: convertBetween(1, settlement, BASE_CURRENCY) },
-    ];
-  }, [currency, settlement, currencyIsBase, settlementIsBase, currencyEqualsSettlement, snapshot.type]);
-
-  const isCustomCurrency = currency.toUpperCase() !== customerDefaultCurrency.toUpperCase();
-  const isCustomSettlement = settlement.toUpperCase() !== BASE_CURRENCY;
-  const dirty = currency !== config.currency || settlement !== config.settlementCurrency;
-
-  const handleReset = () => {
-    setCurrency(customerDefaultCurrency);
-    setSettlement(BASE_CURRENCY);
-  };
+  const settlementAmount = useMemo(() => {
+    if (settlementCurrency.toUpperCase() === BASE_CURRENCY) return totalPKR;
+    return convertBetween(totalPKR, BASE_CURRENCY, settlementCurrency);
+  }, [totalPKR, settlementCurrency, rateType]);
 
   const handleSave = () => {
-    onSave({ currency: currency.toUpperCase(), settlementCurrency: settlement.toUpperCase() });
+    if (readOnly) {
+      onOpenChange(false);
+      return;
+    }
+    onSave({
+      currency: customerCurrency.toUpperCase(),
+      settlementCurrency: settlementCurrency.toUpperCase(),
+    });
+    toast.success("Currency configuration saved", {
+      description: `This quote will settle in ${settlementCurrency}`,
+    });
     onOpenChange(false);
   };
 
+  const handleResetToDefault = () => {
+    if (readOnly) return;
+    setCustomerCurrency(customerDefaultCurrency);
+    setSettlementCurrency(BASE_CURRENCY);
+    setRateType("market");
+    toast("Reverted to defaults", {
+      description: `Customer: ${customerDefaultCurrency} · Settlement: ${BASE_CURRENCY} · Mid-market`,
+    });
+  };
+
+  const lockedAtDisplay = lockedAt
+    ? (() => {
+        try {
+          return new Date(lockedAt).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+        } catch {
+          return lockedAt;
+        }
+      })()
+    : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px] p-0 gap-0 overflow-hidden">
-        {/* Header */}
-        <DialogHeader className="px-5 pt-4 pb-3 border-b border-slate-100 flex-row items-center justify-between gap-2 space-y-0">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#EDF4FF] flex items-center justify-center">
-              <Settings2 className="w-4 h-4 text-primary" />
-            </div>
-            <div>
-              <DialogTitle className="text-[15px] text-slate-900" style={{ fontWeight: 600 }}>
-                Currency configuration
-              </DialogTitle>
-              <p className="text-[11.5px] text-slate-500">
-                Set the currency the customer pays in and what you receive into your books.
-              </p>
-            </div>
+      <DialogContent
+        className="max-w-[560px] p-0 overflow-hidden gap-0"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="px-6 pt-6 pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle className="text-[16px]" style={{ fontWeight: 600 }}>Currency Configuration</DialogTitle>
+            {isLocked && (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] tabular-nums"
+                style={{ backgroundColor: "#ecfdf5", color: "#047857", fontWeight: 600, border: "1px solid #a7f3d0" }}
+                title={lockedAtDisplay ? `Locked on ${lockedAtDisplay}` : "Locked"}
+              >
+                <Lock className="w-3 h-3" />
+                Locked
+                {lockedAtDisplay && <span className="text-[10px] text-emerald-700/70 font-normal">· {lockedAtDisplay}</span>}
+              </span>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4 text-slate-500" />
-          </button>
+          <DialogDescription className="text-[12px] text-slate-500 mt-1">
+            This configuration applies only to this quote. The customer's default currency stays the same.
+          </DialogDescription>
         </DialogHeader>
 
-        {/* Body */}
-        <div className="px-5 py-4 max-h-[70vh] overflow-y-auto">
-          {/* Lock notice */}
-          {locked ? (
-            <div className="mb-4 flex items-start gap-2 px-3 py-2 rounded-md bg-emerald-50 border border-emerald-200">
-              <Lock className="w-3.5 h-3.5 text-emerald-700 mt-0.5 shrink-0" />
-              <div className="text-[11.5px] text-emerald-800 leading-snug">
-                <div style={{ fontWeight: 600 }}>Rate locked</div>
-                <div>
-                  {lockedAt
-                    ? `This quote was sent on ${new Date(lockedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}. The rate captured at send time is preserved.`
-                    : "This quote has been sent. The rate captured at send time is preserved."}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="mb-4 flex items-start gap-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-200">
-              <Lock className="w-3.5 h-3.5 text-amber-700 mt-0.5 shrink-0" />
-              <div className="text-[11.5px] text-amber-900 leading-snug">
-                Rate will be locked once the quote is sent to the customer.
-              </div>
-            </div>
-          )}
+        <div className="px-6 pt-4 pb-2 flex flex-col gap-3">
+          <AmountField
+            label="Customer Amount"
+            helper="The currency the customer pays in on their invoice. Changing this only applies to this quote."
+            amount={customerAmount}
+            currency={customerCurrency}
+            onCurrencyChange={setCustomerCurrency}
+            readOnly={readOnly}
+            basePKR={totalPKR}
+          />
 
-          {/* Currency rows */}
-          <div className="rounded-lg border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100">
-            {/* Customer pays */}
-            <div className="px-3.5 py-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[12.5px] text-slate-900" style={{ fontWeight: 600 }}>
-                  Customer pays
-                </div>
-                <div className="text-[11px] text-slate-500 leading-snug">
-                  The currency on the customer's invoice.
-                  {isCustomCurrency && customerDefaultCurrency && (
-                    <> Customer's default is <span className="text-slate-700" style={{ fontWeight: 500 }}>{customerDefaultCurrency}</span>.</>
-                  )}
-                </div>
-              </div>
-              <div className="shrink-0">
-                {locked ? (
-                  <span className="inline-flex items-center gap-1.5 text-[12.5px] text-slate-700">
-                    <CurrencyFlag currency={customerCur} size={16} />
-                    <span style={{ fontWeight: 600 }}>{customerCur.symbol ?? customerCur.code} {customerCur.code}</span>
-                  </span>
-                ) : (
-                  <QuoteCurrencyPicker
-                    value={currency}
-                    customerDefault={customerDefaultCurrency}
-                    onChange={setCurrency}
-                  />
-                )}
-              </div>
-            </div>
+          <AmountField
+            label="You Receive"
+            helper="The currency you settle the payment into your books. Defaults to base currency but can be changed for this quote."
+            amount={settlementAmount}
+            currency={settlementCurrency}
+            onCurrencyChange={setSettlementCurrency}
+            readOnly={readOnly}
+            basePKR={totalPKR}
+            showBaseEquivalent
+          />
 
-            {/* You receive */}
-            <div className="px-3.5 py-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[12.5px] text-slate-900" style={{ fontWeight: 600 }}>
-                  You receive
-                </div>
-                <div className="text-[11px] text-slate-500 leading-snug">
-                  Currency settled into your books. Defaults to base currency ({BASE_CURRENCY}).
-                </div>
-              </div>
-              <div className="shrink-0">
-                {locked ? (
-                  <span className="inline-flex items-center gap-1.5 text-[12.5px] text-slate-700">
-                    <CurrencyFlag currency={settlementCur} size={16} />
-                    <span style={{ fontWeight: 600 }}>{settlementCur.symbol ?? settlementCur.code} {settlementCur.code}</span>
-                  </span>
-                ) : (
-                  <QuoteCurrencyPicker
-                    value={settlement}
-                    customerDefault={BASE_CURRENCY}
-                    onChange={setSettlement}
-                  />
-                )}
-              </div>
-            </div>
+          <div className="mt-1 flex items-center justify-between">
+            <span className="text-[11.5px] text-slate-500" style={{ fontWeight: 500 }}>
+              Rate type
+            </span>
+            <RateTypeSwitch rateType={rateType} onChange={setRateType} disabled={readOnly} />
           </div>
 
-          {/* Rate type toggle — applies to all rate legs in this modal. */}
-          {legs.length > 0 && (
-            <div className="mt-4 flex items-center justify-between">
-              <span className="text-[11.5px] text-slate-500" style={{ fontWeight: 500 }}>
-                Rate type {legs.length > 1 && <span className="text-slate-400">— applies to both legs</span>}
-              </span>
-              <MarketCorporateToggle variant="inline" />
-            </div>
-          )}
+          <RateMetadataPanel
+            rateType={rateType}
+            customerCurrency={customerCurrency}
+            settlementCurrency={settlementCurrency}
+          />
 
-          {/* Rate cards */}
-          {legs.length === 0 ? (
-            <div className="mt-3 px-3 py-3 rounded-md bg-slate-50 border border-slate-100 text-[12px] text-slate-600">
-              All amounts settle in {BASE_CURRENCY} (base currency) — no FX conversion needed.
-            </div>
-          ) : (
-            <div className="mt-3 flex flex-col gap-2">
-              {legs.map((leg, idx) => (
-                <RateCard
-                  key={`${leg.from}-${leg.to}`}
-                  leg={leg}
-                  rateType={rateType}
-                  snapshot={snapshot}
-                  legIndex={legs.length > 1 ? idx + 1 : undefined}
-                />
-              ))}
-
-              {/* Base-equivalent helper: if neither currency nor settlement is base, surface the implied base value of 1 customer unit. */}
-              {!currencyIsBase && !settlementIsBase && currency !== settlement && (
-                <div className="text-[11px] text-slate-500 px-1">
-                  Base equivalent of 1 {currency}: <span className="text-slate-700 tabular-nums" style={{ fontWeight: 500 }}>
-                    {baseSym} {convertBetween(1, currency, BASE_CURRENCY).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {BASE_CURRENCY}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Reset row */}
-          {!locked && (isCustomCurrency || isCustomSettlement) && (
-            <button
-              type="button"
-              onClick={handleReset}
-              className="mt-4 inline-flex items-center gap-1.5 text-[11.5px] text-slate-600 hover:text-primary transition-colors cursor-pointer"
-              style={{ fontWeight: 500 }}
+          {!isLocked && (
+            <div
+              className="mt-2 inline-flex items-start gap-2 rounded-md px-3 py-2 text-[11.5px] leading-relaxed"
+              style={{ backgroundColor: "#fffbeb", color: "#92400e", border: "1px solid #fde68a" }}
             >
-              <RotateCcw className="w-3 h-3" />
-              Reset to default
-            </button>
+              <Lock className="w-3 h-3 mt-[1px] shrink-0" />
+              <span>Rate will be locked once the quote is sent to the customer. After that, totals stay fixed even if market rates move.</span>
+            </div>
           )}
         </div>
 
-        {/* Footer actions */}
-        <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-            {locked ? "Close" : "Cancel"}
-          </Button>
-          {!locked && (
-            <Button size="sm" onClick={handleSave} disabled={!dirty}>
-              Save changes
+        <DialogFooter className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-2 sm:flex-row sm:justify-between">
+          <button
+            type="button"
+            onClick={handleResetToDefault}
+            disabled={readOnly}
+            className="inline-flex items-center gap-1.5 text-[11.5px] text-slate-500 hover:text-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            style={{ fontWeight: 500 }}
+          >
+            <RotateCcw className="w-3 h-3" />
+            Reset to default
+          </button>
+          <div className="inline-flex items-center gap-2">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
             </Button>
-          )}
-        </div>
+            <Button type="button" onClick={handleSave} disabled={readOnly}>
+              Save Configuration
+            </Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function RateCard({
-  leg,
+function RateMetadataPanel({
   rateType,
-  snapshot,
-  legIndex,
+  customerCurrency,
+  settlementCurrency,
 }: {
-  leg: { from: string; to: string; rate: number };
   rateType: RateType;
-  snapshot: { source: string; lastSyncAt: string };
-  legIndex?: number;
+  customerCurrency: string;
+  settlementCurrency: string;
 }) {
-  const fromCur = getLibraryCurrency(leg.from)!;
-  const toCur = getLibraryCurrency(leg.to)!;
-  const fromSym = fromCur.symbol ?? fromCur.code;
-  const toSym = toCur.symbol ?? toCur.code;
-  const inverse = leg.rate !== 0 ? 1 / leg.rate : 0;
-  const hex = RATE_TYPE_HEX[rateType];
-  const updated = formatRateUpdatedAs(snapshot.lastSyncAt);
+  const cc = customerCurrency.toUpperCase();
+  const sc = settlementCurrency.toUpperCase();
+  const baseCode = BASE_CURRENCY;
 
-  // Mid-market metadata: source + last-updated. Corporate metadata: created by + last-updated date.
-  const meta = rateType === "market"
-    ? <>Source: <span className="text-slate-700" style={{ fontWeight: 500 }}>{snapshot.source}</span> · Updated as of {updated}</>
-    : <>Created by <span className="text-slate-700" style={{ fontWeight: 500 }}>Treasury</span> · {snapshot.source} · Effective {updated}</>;
+  // Build the list of FX rates the user actually needs to see. When You Receive
+  // differs from base currency AND from the customer currency, two rates are at
+  // play: customer ↔ You Receive (what the customer pays) and You Receive ↔
+  // base (so finance can track receivables in PKR). Otherwise the two collapse
+  // into a single rate.
+  type Conv = { from: string; to: string; label: string };
+  const conversions: Conv[] = [];
+
+  if (cc !== sc) {
+    conversions.push({
+      from: cc,
+      to: sc,
+      label: sc === baseCode ? "Customer amount → Base currency" : "Customer amount → You Receive",
+    });
+    if (sc !== baseCode && cc !== baseCode) {
+      conversions.push({
+        from: sc,
+        to: baseCode,
+        label: "You Receive → Base currency (reporting)",
+      });
+    }
+  } else if (sc !== baseCode) {
+    conversions.push({
+      from: sc,
+      to: baseCode,
+      label: "Customer amount → Base currency",
+    });
+  }
+
+  if (conversions.length === 0) {
+    return null;
+  }
+
+  const showHeaders = conversions.length > 1;
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white">
-      {/* Heading */}
-      <div className="px-3.5 py-2 flex items-center justify-between border-b border-slate-100">
-        <div className="flex items-center gap-2 text-[11.5px] text-slate-700">
-          {legIndex && (
-            <span
-              className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] tabular-nums shrink-0"
-              style={{ fontWeight: 600 }}
-            >
-              {legIndex}
-            </span>
-          )}
-          <span className="inline-flex items-center gap-1" style={{ fontWeight: 600 }}>
-            <CurrencyFlag currency={fromCur} size={14} /> {fromCur.code}
-          </span>
-          <ArrowRight className="w-3 h-3 text-slate-400" />
-          <span className="inline-flex items-center gap-1" style={{ fontWeight: 600 }}>
-            <CurrencyFlag currency={toCur} size={14} /> {toCur.code}
-          </span>
-        </div>
-        <span
-          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full"
-          style={{ color: hex, backgroundColor: `color-mix(in srgb, ${hex} 8%, transparent)`, fontWeight: 600 }}
+    <div className="flex flex-col gap-2">
+      {conversions.map((c) => (
+        <ConversionBlock
+          key={`${c.from}-${c.to}`}
+          fromCode={c.from}
+          toCode={c.to}
+          label={showHeaders ? c.label : undefined}
+          rateType={rateType}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ConversionBlock({
+  fromCode,
+  toCode,
+  label,
+  rateType,
+}: {
+  fromCode: string;
+  toCode: string;
+  label?: string;
+  rateType: RateType;
+}) {
+  const snap = activeRateSnapshot();
+  const typeLabel = rateTypeLabel(rateType);
+  const typeHex = rateType === "market" ? "#7c3aed" : "#d97706";
+  const updatedAs = formatRateUpdatedAs(snap.lastSyncAt);
+  const corporateAsOf = (() => {
+    try {
+      return new Date(CORPORATE_RATES.asOfDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+    } catch {
+      return CORPORATE_RATES.asOfDate;
+    }
+  })();
+
+  const forwardRate = convertBetween(1, fromCode, toCode);
+  const inverseRate = convertBetween(1, toCode, fromCode);
+  const fromCur = getLibraryCurrency(fromCode);
+  const toCur = getLibraryCurrency(toCode);
+  const fromSym = fromCur?.symbol ?? fromCode;
+  const toSym = toCur?.symbol ?? toCode;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+      {label && (
+        <div
+          className="text-[10px] text-slate-400 mb-1.5"
+          style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
         >
-          <span className="w-1 h-1 rounded-full" style={{ backgroundColor: hex }} />
-          {rateTypeLabel(rateType)}
-        </span>
-      </div>
-      {/* Bidirectional rates */}
-      <div className="px-3.5 py-2.5 grid grid-cols-2 gap-3 text-[12px] tabular-nums">
-        <div>
-          <div className="text-[10px] text-slate-400 uppercase tracking-wide" style={{ fontWeight: 600, letterSpacing: "0.04em" }}>Forward</div>
-          <div className="text-slate-800" style={{ fontWeight: 600 }}>
-            1 {fromCur.code} = {toSym} {fmtRate(leg.rate)} {toCur.code}
-          </div>
+          {label}
         </div>
-        <div>
-          <div className="text-[10px] text-slate-400 uppercase tracking-wide" style={{ fontWeight: 600, letterSpacing: "0.04em" }}>Inverse</div>
-          <div className="text-slate-800" style={{ fontWeight: 600 }}>
-            1 {toCur.code} = {fromSym} {fmtRate(inverse)} {fromCur.code}
-          </div>
-        </div>
+      )}
+
+      <div className="flex items-center gap-2 text-[11.5px]">
+        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: typeHex }} />
+        <span style={{ color: typeHex, fontWeight: 600 }}>{typeLabel}</span>
+        {rateType === "market" ? (
+          <span className="text-slate-500">· Source: Open Exchange Rates</span>
+        ) : (
+          <span className="text-slate-500">· Created by Treasury · As of {corporateAsOf}</span>
+        )}
       </div>
-      {/* Metadata */}
-      <div className="px-3.5 pb-2.5 text-[10.5px] text-slate-500">
-        {meta}
+
+      <div className="mt-2 text-[11.5px] text-slate-700 tabular-nums leading-5">
+        <div>1 {fromCode} = {toSym} {formatRate(forwardRate)} {toCode}</div>
+        <div>1 {toCode} = {fromSym} {formatRate(inverseRate)} {fromCode}</div>
+      </div>
+
+      <div className="mt-1.5 text-[10.5px] text-slate-500">
+        {rateType === "market"
+          ? <>Last updated {updatedAs ?? "moments ago"}.</>
+          : <>Created by Treasury · Last updated {corporateAsOf}.</>}
       </div>
     </div>
   );
 }
 
-function fmtRate(value: number): string {
+function AmountField({
+  label,
+  helper,
+  amount,
+  currency,
+  onCurrencyChange,
+  readOnly,
+  basePKR,
+  showBaseEquivalent,
+}: {
+  label: string;
+  helper: string;
+  amount: number;
+  currency: string;
+  onCurrencyChange: (v: string) => void;
+  readOnly?: boolean;
+  basePKR: number;
+  /** When true and the field's currency is not base, render a small base-equivalent strip beneath the input. */
+  showBaseEquivalent?: boolean;
+}) {
+  const formatted = formatCurrency(amount, currency);
+  const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
+  const baseSym = baseCur.symbol ?? BASE_CURRENCY;
+  const isBase = currency.toUpperCase() === BASE_CURRENCY;
+
+  return (
+    <section className="flex flex-col gap-2 py-1">
+      <label className="text-[12.5px] text-slate-700" style={{ fontWeight: 600 }}>{label}</label>
+
+      <div
+        className={`flex items-stretch rounded-xl border transition-colors ${
+          readOnly
+            ? "border-slate-200 opacity-80"
+            : "border-slate-200 hover:border-slate-300"
+        }`}
+      >
+        <HoverCard openDelay={150} closeDelay={80}>
+          <HoverCardTrigger asChild>
+            <div
+              role="textbox"
+              aria-readonly="true"
+              aria-disabled="true"
+              aria-label={`${label} in ${currency}`}
+              className="flex-1 flex items-center px-4 min-w-0 h-12 rounded-l-xl bg-slate-100 text-slate-400 cursor-help select-none"
+            >
+              <span
+                className="w-full text-[18px] tabular-nums truncate"
+                style={{ fontWeight: 500 }}
+              >
+                {formatted}
+              </span>
+            </div>
+          </HoverCardTrigger>
+          <HoverCardContent side="top" align="start" className="w-[320px] p-3 rounded-lg border border-slate-200 shadow-lg bg-white">
+            <RateDetailBody amount={amount} currency={currency} basePKR={basePKR} />
+          </HoverCardContent>
+        </HoverCard>
+        <div className="shrink-0 border-l border-slate-200">
+          <CurrencySelect value={currency} onChange={onCurrencyChange} disabled={readOnly} />
+        </div>
+      </div>
+
+      {showBaseEquivalent && !isBase && (
+        <div className="text-[11.5px] text-slate-600 tabular-nums">
+          <span className="text-slate-400">≈ </span>
+          {baseSym} {formatCurrency(basePKR, BASE_CURRENCY)} {BASE_CURRENCY}
+          <span className="text-slate-400"> in base currency</span>
+        </div>
+      )}
+
+      <p className="text-[11.5px] text-slate-500 leading-relaxed">{helper}</p>
+    </section>
+  );
+}
+
+function CurrencySelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const cur = getLibraryCurrency(value);
+
+  return (
+    <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
+      <PopoverTrigger asChild disabled={disabled}>
+        <button
+          type="button"
+          disabled={disabled}
+          className={`h-12 min-w-[140px] rounded-none rounded-r-xl border-0 px-3.5 text-[13px] bg-transparent outline-none flex items-center justify-center gap-2 w-full ${
+            disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-slate-50"
+          }`}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+        >
+          {cur && <CurrencyFlag currency={cur} size={22} />}
+          <span className="text-slate-800 leading-none" style={{ fontWeight: 600 }}>
+            {value.toUpperCase()}
+          </span>
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={4}
+        className="p-0 w-[280px] rounded-lg border border-slate-200 shadow-lg"
+        // The popover sits inside a Dialog whose RemoveScroll layer swallows
+        // wheel events bubbling out of nested scrollable regions. Stopping
+        // propagation at the popover root lets the cmdk list scroll natively.
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+      >
+        <Command
+          filter={(itemValue, search) => {
+            const q = search.trim().toLowerCase();
+            if (!q) return 1;
+            return itemValue.toLowerCase().includes(q) ? 1 : 0;
+          }}
+        >
+          <CommandInput placeholder="Search currency..." className="h-10 text-[13px]" />
+          <CommandList
+            className="max-h-[260px] overflow-y-auto"
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+          >
+            <CommandEmpty className="py-4 text-center text-[12px] text-slate-500">
+              No currencies found.
+            </CommandEmpty>
+            <CommandGroup>
+              {CURRENCY_LIBRARY.map((c) => {
+                const selected = c.code.toUpperCase() === value.toUpperCase();
+                return (
+                  <CommandItem
+                    key={c.code}
+                    value={`${c.code} ${c.name}`}
+                    onSelect={() => {
+                      onChange(c.code);
+                      setOpen(false);
+                    }}
+                    className="text-[13px] flex items-center gap-2 py-2"
+                  >
+                    <CurrencyFlag currency={c} size={20} />
+                    <span className="text-slate-800" style={{ fontWeight: 600 }}>{c.code}</span>
+                    <span className="text-slate-500 truncate">— {c.name}</span>
+                    {selected && <Check className="ml-auto w-3.5 h-3.5 text-primary" />}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function RateTypeSwitch({
+  rateType,
+  onChange,
+  disabled,
+}: {
+  rateType: RateType;
+  onChange: (t: RateType) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      className={`inline-flex items-center gap-0.5 h-7 rounded-md border border-slate-200 p-0.5 bg-white ${
+        disabled ? "opacity-60" : ""
+      }`}
+    >
+      {(["market", "corporate"] as RateType[]).map((t) => {
+        const active = rateType === t;
+        const shortLabel = t === "market" ? "Mid-market" : "Corporate";
+        return (
+          <button
+            key={t}
+            type="button"
+            onClick={() => !disabled && onChange(t)}
+            disabled={disabled}
+            className={`inline-flex items-center h-full px-2 rounded text-[11px] whitespace-nowrap transition-colors ${
+              active
+                ? "bg-[#EDF4FF] text-primary"
+                : "text-slate-500 hover:text-slate-700"
+            } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+            style={{ fontWeight: active ? 600 : 500 }}
+          >
+            {shortLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function RateDetailBody({
+  amount,
+  currency,
+  basePKR,
+}: {
+  amount: number;
+  currency: string;
+  basePKR: number;
+}) {
+  const snap = activeRateSnapshot();
+  const typeLabel = rateTypeLabel(snap.type);
+  const typeHex = snap.type === "market" ? "#7c3aed" : "#d97706";
+  const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
+  const baseSym = baseCur.symbol ?? BASE_CURRENCY;
+  const upperCurrency = currency.toUpperCase();
+  const sameAsBase = upperCurrency === BASE_CURRENCY;
+  const ratePerUnit = sameAsBase ? 1 : convertBetween(1, currency, BASE_CURRENCY);
+  const updatedAs = formatRateUpdatedAs(snap.lastSyncAt);
+  const isMarket = snap.type === "market";
+
+  const cur = getLibraryCurrency(currency);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-baseline gap-2 text-[13px] text-slate-900">
+        <CurrencyFlag currency={cur ?? baseCur} size={18} />
+        <span style={{ fontWeight: 600 }}>{(cur ?? baseCur).name} ({upperCurrency})</span>
+      </div>
+      <div className="h-px bg-slate-100" />
+      {!sameAsBase && (
+        <div className="text-[12px] text-slate-700 tabular-nums">
+          Base equivalent: {baseSym} {formatCurrency(basePKR, BASE_CURRENCY)} {BASE_CURRENCY}
+        </div>
+      )}
+      <div className="px-2 py-1.5 rounded-md bg-slate-50 border border-slate-100">
+        {!sameAsBase && (
+          <div className="text-[11px] text-slate-700 tabular-nums leading-4">
+            1 {upperCurrency} = {baseSym} {formatCurrency(ratePerUnit, BASE_CURRENCY)} {BASE_CURRENCY}
+          </div>
+        )}
+        <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: typeHex }} />
+          <span style={{ color: typeHex, fontWeight: 600 }}>{typeLabel}</span>
+          {isMarket && <span className="text-slate-400">· Source: {snap.source}</span>}
+        </div>
+        {updatedAs && (
+          <div className="text-[10px] text-slate-400 mt-0.5">Updated as of {updatedAs}</div>
+        )}
+        <div className="text-[10px] text-slate-400 mt-0.5 italic">Captured at quote creation rate</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Render an FX rate with enough precision to be useful in either direction.
+ * Currency-style rounding (2dp) hides values like 1 PKR = 0.0036 USD as
+ * "0.00", which is misleading. Step the precision up as the magnitude
+ * shrinks so the inverse always renders meaningfully.
+ */
+function formatRate(value: number): string {
   const abs = Math.abs(value);
   let decimals: number;
   if (abs >= 100) decimals = 2;
   else if (abs >= 1) decimals = 4;
   else if (abs >= 0.01) decimals = 5;
   else decimals = 6;
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+function formatCurrency(value: number, code: string): string {
+  const zeroDecimals = new Set(["JPY", "KRW", "VND", "IDR", "HUF", "ISK", "CLP"]);
+  const threeDecimals = new Set(["KWD", "BHD", "OMR", "JOD", "TND"]);
+  const upper = code.toUpperCase();
+  const decimals = zeroDecimals.has(upper) ? 0 : threeDecimals.has(upper) ? 3 : 2;
   return value.toLocaleString("en-US", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,

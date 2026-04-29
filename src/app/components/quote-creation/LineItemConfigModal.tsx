@@ -8,6 +8,7 @@ import { ConfirmationModal } from '@/app/components/ConfirmationModal';
 import { AdjustmentFormModal } from '@/app/components/shared/AdjustmentFormModal';
 import type { AdjustmentFormData } from '@/app/components/shared/AdjustmentFormModal';
 import { CurrencyAmount } from '@/app/components/ui/CurrencyAmount';
+import { BaseCurrencyKPI } from '@/app/components/currency/BaseCurrencyKPI';
 import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from '@/app/data/currencyLibrary';
 
 // Helper function to generate Item ID from item.id in xxx-xxx-xxx format
@@ -275,10 +276,12 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, readOnly, c
   const customerSym = customerCur?.symbol ?? quoteCurrency;
   const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
 
-  /** Render a PKR amount as base with a customer-currency hover. */
+  /** Render a PKR amount as base with a hover. Base-currency quotes hover
+   *  with full-precision PKR + active rate snapshot; non-base quotes hover
+   *  with the customer-currency equivalent + locked rate. */
   const Money = ({ valuePKR, className }: { valuePKR: number; className?: string }) => {
     if (isBaseCurrency) {
-      return <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={valuePKR} className={className} />;
+      return <BaseCurrencyKPI compact={false} valuePKR={valuePKR} className={className} />;
     }
     return (
       <CurrencyAmount

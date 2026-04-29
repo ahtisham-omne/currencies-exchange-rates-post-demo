@@ -4,6 +4,7 @@ import { Quote, ColumnConfig } from '@/app/types/quote';
 import { SortConfig } from '@/app/utils/quoteUtils';
 import { formatCurrency, formatDate, isExpiringSoon, isExpired } from '@/app/utils/quoteUtils';
 import { CurrencyAmount } from '@/app/components/ui/CurrencyAmount';
+import { BaseCurrencyKPI } from '@/app/components/currency/BaseCurrencyKPI';
 import { BASE_CURRENCY, convertBetween } from '@/app/data/currencyLibrary';
 import { StatusBadge } from '@/app/components/StatusBadge';
 import { PriorityBadge } from '@/app/components/PriorityBadge';

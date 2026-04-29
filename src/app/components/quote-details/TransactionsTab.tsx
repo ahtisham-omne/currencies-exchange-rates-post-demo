@@ -130,7 +130,21 @@ const MOCK_TRANSACTIONS: LinkedTransaction[] = [
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────
-const formatCurrency = (n: number) => '$' + n.toLocaleString('en-US');
+function makeFormatCurrency(customerCurrency: string | undefined, viewMode: 'base' | 'customer') {
+  const cur = (customerCurrency || BASE_CURRENCY).toUpperCase();
+  const showCustomer = cur !== BASE_CURRENCY && viewMode === 'customer';
+  const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
+  const customerSym = getLibraryCurrency(cur)?.symbol ?? cur;
+  // `n` is stored in PKR (base). When the page is in customer view, optionally
+  // honor the transaction's locked rate so per-transaction FX stays anchored.
+  return (n: number, lockedRate?: number): string => {
+    if (showCustomer) {
+      const customerValue = typeof lockedRate === 'number' ? n / lockedRate : convertBetween(n, BASE_CURRENCY, cur);
+      return `${customerSym} ${customerValue.toLocaleString('en-US')}`;
+    }
+    return `${baseSym} ${n.toLocaleString('en-US')}`;
+  };
+}
 
 // Deterministic per-transaction locked-rate cycle so the demo shows a mix of
 // rate books and slight rate drift across linked transactions. In production
@@ -174,6 +188,8 @@ interface TransactionsTabProps {
   quoteLockedRate?: number;
   /** Quote's rate type at lock time, for indicator styling. */
   quoteRateType?: 'market' | 'corporate';
+  /** Page-level Base ↔ Customer currency view. Drives the symbol on transaction totals. */
+  viewMode?: 'base' | 'customer';
 }
 
 export function TransactionsTab({
@@ -183,9 +199,11 @@ export function TransactionsTab({
   customerCurrency,
   quoteLockedRate,
   quoteRateType,
+  viewMode = 'base',
 }: TransactionsTabProps) {
   const cur = (customerCurrency || 'PKR').toUpperCase();
   const showFx = cur !== 'PKR';
+  const formatCurrency = React.useMemo(() => makeFormatCurrency(customerCurrency, viewMode), [customerCurrency, viewMode]);
 
   // Hydrate transactions with deterministic locked-rate snapshots so the demo
   // surfaces hover, rate-type, and rate-divergence indicators realistically.
@@ -696,7 +714,7 @@ export function TransactionsTab({
                     <span />
                   </div>
                   {items.map((txn) => (
-                    <TransactionRow key={txn.id} txn={txn} customerCurrency={customerCurrency} quoteLockedRate={quoteLockedRate} quoteRateType={quoteRateType} />
+                    <TransactionRow key={txn.id} txn={txn} customerCurrency={customerCurrency} quoteLockedRate={quoteLockedRate} quoteRateType={quoteRateType} viewMode={viewMode} formatCurrency={formatCurrency} />
                   ))}
                 </>
               )}
@@ -709,11 +727,13 @@ export function TransactionsTab({
 }
 
 // ── Transaction Row ────────────────────────────────────────────────
-function TransactionRow({ txn, customerCurrency, quoteLockedRate, quoteRateType }: {
+function TransactionRow({ txn, customerCurrency, quoteLockedRate, quoteRateType, viewMode, formatCurrency }: {
   txn: LinkedTransaction;
   customerCurrency?: string;
   quoteLockedRate?: number;
   quoteRateType?: 'market' | 'corporate';
+  viewMode: 'base' | 'customer';
+  formatCurrency: (n: number, lockedRate?: number) => string;
 }) {
   const showFx = !!customerCurrency && customerCurrency.toUpperCase() !== 'PKR';
   const [hovered, setHovered] = useState(false);
@@ -801,6 +821,17 @@ function TransactionRow({ txn, customerCurrency, quoteLockedRate, quoteRateType 
               const partnerValue = lr !== undefined
                 ? (txn.total / lr)
                 : convertBetween(txn.total, BASE_CURRENCY, partnerCur);
+              if (viewMode === 'customer') {
+                return (
+                  <CurrencyAmount
+                    mode="listing-partner"
+                    currency={partnerCur}
+                    value={partnerValue}
+                    lockedRate={lr}
+                    lockedAt={txn.lockedAt}
+                  />
+                );
+              }
               return (
                 <CurrencyAmount
                   mode="listing-base"
