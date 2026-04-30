@@ -209,6 +209,11 @@ export const BASE_CURRENCY = "PKR";
 /** Selects which rate table is used for display-side conversions. */
 export type RateType = "market" | "corporate";
 
+/** Human-readable label for a rate type — shown in money-cell hover cards. */
+export function rateTypeLabel(type: RateType): string {
+  return type === "market" ? "Mid-market rate" : "Corporate rate";
+}
+
 /**
  * A complete FX snapshot: the conversion table plus the metadata we need to
  * show users where the numbers come from (source, cadence, freshness).
@@ -303,16 +308,92 @@ export const MARKET_RATES: RateSnapshot = {
 };
 
 /**
- * Active rate snapshot accessor. Rates are always mid-market — they refresh
- * automatically each day at 19:30 PKT, so there is no display-time toggle.
+ * Corporate (book) rates — locked by Treasury for the current quarter. Used
+ * by the Corporate Rate KPI; all display-side conversions still flow through
+ * the mid-market snapshot.
+ */
+export const CORPORATE_RATES: RateSnapshot = {
+  type: "corporate",
+  source: "Corporate Treasury (Q1 FY26)",
+  syncFrequency: "Quarterly — manual",
+  lastSyncAt: "2026-01-05T09:00:00.000Z",
+  asOfDate: "2026-01-01",
+  rates: {
+    PKR: 1,
+    USD: 280,
+    EUR: 302,
+    GBP: 350,
+    JPY: 1.90,
+    CHF: 316,
+    CAD: 210,
+    AUD: 185,
+    CNY: 40,
+    INR: 3.40,
+    KRW: 0.22,
+    SGD: 210,
+    HKD: 36.0,
+    TWD: 9.0,
+    THB: 8.0,
+    MYR: 63,
+    IDR: 0.018,
+    PHP: 5.0,
+    VND: 0.012,
+    NZD: 170,
+    BDT: 2.6,
+    LKR: 0.95,
+    MXN: 14.5,
+    BRL: 56,
+    ARS: 0.30,
+    CLP: 0.30,
+    COP: 0.070,
+    PEN: 75.0,
+    SEK: 27.0,
+    NOK: 26.5,
+    DKK: 41.5,
+    PLN: 71.0,
+    CZK: 12.5,
+    HUF: 0.80,
+    RON: 62.0,
+    BGN: 158,
+    TRY: 8.8,
+    RUB: 3.0,
+    UAH: 7.0,
+    ISK: 2.1,
+    AED: 76.0,
+    SAR: 74.5,
+    QAR: 77.0,
+    KWD: 910,
+    BHD: 740,
+    OMR: 725,
+    JOD: 395,
+    ILS: 76.0,
+    EGP: 6.0,
+    ZAR: 15.5,
+    NGN: 0.20,
+    KES: 2.20,
+    KZT: 0.60,
+    GEL: 105,
+    RSD: 2.7,
+  },
+};
+
+/**
+ * Active rate snapshot accessor. Display-side conversions always flow through
+ * the mid-market snapshot — corporate rates are surfaced only as a freshness
+ * indicator on the optional Corporate Rate KPI card.
  */
 export function activeRateSnapshot(): RateSnapshot {
   return MARKET_RATES;
 }
 
+/** Resolve a snapshot by type — used by the FX KPI cards. */
+export function rateSnapshotFor(type: RateType): RateSnapshot {
+  return type === "corporate" ? CORPORATE_RATES : MARKET_RATES;
+}
+
 /** No-op kept for back-compat with the old toggle-driven API. */
 export function setActiveRateType(_type: RateType): void {
-  // Mid-market is the only supported rate table.
+  // Mid-market is the only supported display-side rate table.
 }
 
 /**
@@ -369,11 +450,15 @@ export function renderPartnerAmount(
   rollupBreakdown?: { code: string; txCount: number; amount: number }[];
 } {
   const isMulti = (partner.currencyBreakdown?.length ?? 0) > 1;
+  // When the partner settles in the base currency and has no foreign-currency
+  // streams, drop into `single` mode so the cell renders as a plain base
+  // amount with no FX hover or dotted underline.
+  const partnerIsBase = partner.defaultTransactionCurrency.toUpperCase() === BASE_CURRENCY;
   return {
     value,
     currency: partner.defaultTransactionCurrency,
-    mode: isMulti ? "partner-rolled-up" : "single",
-    rollupBreakdown: isMulti ? partner.currencyBreakdown : undefined,
+    mode: isMulti && !partnerIsBase ? "partner-rolled-up" : "single",
+    rollupBreakdown: isMulti && !partnerIsBase ? partner.currencyBreakdown : undefined,
   };
 }
 
@@ -396,6 +481,14 @@ export function renderProfileAmount(
   partnerDefaultCurrency?: string;
   partnerDefaultValue?: number;
 } {
+  // When the partner already settles in the base currency, both toggle sides
+  // collapse to the same plain amount — no FX context to surface. Render in
+  // `single` mode so the dotted underline and hover are dropped.
+  const partnerIsBase = partner.defaultTransactionCurrency.toUpperCase() === BASE_CURRENCY;
+  if (partnerIsBase) {
+    return { mode: "single", value, currency: BASE_CURRENCY };
+  }
+
   if (mode === "base") {
     return {
       mode: "listing-base",

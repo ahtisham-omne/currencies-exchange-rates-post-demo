@@ -18,6 +18,8 @@ import {
   ChevronDown,
   ChevronLeft,
   Plus,
+  Banknote,
+  Globe,
 } from "lucide-react";
 import { Checkbox } from "../ui/checkbox";
 
@@ -56,6 +58,9 @@ export interface SortConfig {
   key: string;
   direction: "asc" | "desc";
 }
+
+/** Base ↔ Partner currency view, surfaced inside currency columns' header menus. */
+export type CurrencyViewMode = "base" | "partner";
 
 /** Determine filter type for a given column key */
 export function getFilterType(columnKey: string): FilterType {
@@ -189,6 +194,9 @@ interface ColumnHeaderMenuProps {
   filter?: ColumnFilterState | null;
   vendors?: Vendor[];
   onFilterChange?: (columnKey: string, filter: ColumnFilterState) => void;
+  /** When provided, renders a Base ↔ Partner currency view toggle inside this column's header menu. */
+  currencyViewMode?: CurrencyViewMode;
+  onCurrencyViewModeChange?: (mode: CurrencyViewMode) => void;
   children: ReactNode;
 }
 
@@ -207,6 +215,8 @@ export function ColumnHeaderMenu({
   filter,
   vendors,
   onFilterChange,
+  currencyViewMode,
+  onCurrencyViewModeChange,
   children,
 }: ColumnHeaderMenuProps) {
   const [open, setOpen] = useState(false);
@@ -369,6 +379,45 @@ export function ColumnHeaderMenu({
                     <ArrowDown className="w-4 h-4 text-muted-foreground" />
                     <span style={{ fontWeight: 400 }}>Sort descending</span>
                     {currentSort === "desc" && (
+                      <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
+                    )}
+                  </button>
+                </>
+              )}
+
+              {/* Show values as — Base ↔ Partner currency switch */}
+              {currencyViewMode !== undefined && onCurrencyViewModeChange && (
+                <>
+                  <div className="border-t border-border/60 my-1" />
+                  <div
+                    className="px-2.5 pt-1 pb-0.5 text-[10.5px] text-muted-foreground/70 uppercase tracking-wider"
+                    style={{ fontWeight: 600, letterSpacing: "0.04em" }}
+                  >
+                    Show values as
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { onCurrencyViewModeChange("base"); setOpen(false); }}
+                    className={`flex items-center gap-2.5 w-full px-2.5 py-[7px] rounded-md text-[13px] cursor-pointer transition-colors hover:bg-muted/60 ${
+                      currencyViewMode === "base" ? "text-primary bg-primary/5" : "text-foreground"
+                    }`}
+                  >
+                    <Banknote className="w-4 h-4 text-muted-foreground" />
+                    <span style={{ fontWeight: 400 }}>Base currency</span>
+                    {currencyViewMode === "base" && (
+                      <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { onCurrencyViewModeChange("partner"); setOpen(false); }}
+                    className={`flex items-center gap-2.5 w-full px-2.5 py-[7px] rounded-md text-[13px] cursor-pointer transition-colors hover:bg-muted/60 ${
+                      currencyViewMode === "partner" ? "text-primary bg-primary/5" : "text-foreground"
+                    }`}
+                  >
+                    <Globe className="w-4 h-4 text-muted-foreground" />
+                    <span style={{ fontWeight: 400 }}>Partner currency</span>
+                    {currencyViewMode === "partner" && (
                       <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
                     )}
                   </button>

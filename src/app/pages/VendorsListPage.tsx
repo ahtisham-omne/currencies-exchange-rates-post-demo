@@ -138,7 +138,6 @@ import type { PartnerType, Vendor } from "../data/vendors";
 import { CATEGORY_LABELS } from "../data/vendors";
 import { CurrencyAmount } from "../components/ui/CurrencyAmount";
 import { CurrencyFlag } from "../components/ui/CurrencyFlag";
-import { InfoTooltip } from "../components/ui/info-tooltip";
 import { BASE_CURRENCY, convertToBase, getLibraryCurrency } from "../data/currencyLibrary";
 
 /**
@@ -149,6 +148,41 @@ import { BASE_CURRENCY, convertToBase, getLibraryCurrency } from "../data/curren
  */
 function netProfitOf(vendor: Vendor): number {
   return vendor.netProfitMargin ?? 0;
+}
+
+/**
+ * Render a partner-currency amount in the listing table according to the
+ * Base ↔ Partner toggle. When the partner already settles in the base
+ * currency there is no FX context to surface, so we render in `single` mode
+ * (no dotted underline, no hover) regardless of which side of the toggle the
+ * user is on. Mirrors the quote-listing pattern in the sibling Quotes module.
+ */
+function renderListingMoney(
+  /** Amount expressed in the partner's default transaction currency. */
+  raw: number,
+  partnerCurrency: string,
+  mode: "base" | "partner",
+): React.ReactNode {
+  const partnerCur = (partnerCurrency || BASE_CURRENCY).toUpperCase();
+  const isBase = partnerCur === BASE_CURRENCY;
+
+  if (isBase) {
+    return <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={raw} />;
+  }
+
+  if (mode === "partner") {
+    return <CurrencyAmount mode="listing-partner" value={raw} currency={partnerCur} />;
+  }
+
+  return (
+    <CurrencyAmount
+      mode="listing-base"
+      value={convertToBase(raw, partnerCur)}
+      currency={BASE_CURRENCY}
+      partnerDefaultCurrency={partnerCur}
+      partnerDefaultValue={raw}
+    />
+  );
 }
 
 const DND_LIST_KPI = "LIST_KPI_CARD";
@@ -220,7 +254,7 @@ import { getAvatarTint } from "../utils/avatarTints";
 import { usePersonLightbox } from "../components/vendors/PersonAvatarLightbox";
 
 import { CONTACT_DICTIONARY, VENDOR_SUB_TYPES, CUSTOMER_SUB_TYPES } from "../components/vendors/partnerConstants";
-import { RateContextStrip } from "../components/vendors/RateContextStrip";
+import { RateKpiValue } from "../components/vendors/RateKpiValue";
 import { useRateContext } from "../context/RateContext";
 
 /* ─── Name → Contact ID resolver ─── */
@@ -269,7 +303,17 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
    * - "partner": values shown in each partner's default transaction currency; hover
    *   reveals the base-currency equivalent.
    */
-  const [tableCurrencyMode, setTableCurrencyMode] = useState<"base" | "partner">("base");
+  // Per-column currency view — Net Profit, Credit Limit, and Credit Utilization
+  // each own their Base ↔ Partner toggle so flipping one doesn't drag the others.
+  type CurrencyColumnKey = "net_profit" | "credit_limit" | "credit_utilization";
+  const [columnCurrencyMode, setColumnCurrencyMode] = useState<Record<CurrencyColumnKey, "base" | "partner">>({
+    net_profit: "base",
+    credit_limit: "base",
+    credit_utilization: "base",
+  });
+  const setColumnCurrency = useCallback((key: CurrencyColumnKey, mode: "base" | "partner") => {
+    setColumnCurrencyMode((prev) => ({ ...prev, [key]: mode }));
+  }, []);
   const [density, setDensity] = useState<DensityOption>(embeddedDefaultDensity ?? "condensed");
   const [cardSize, setCardSize] = useState<CardSize>("medium");
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
@@ -1239,13 +1283,6 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
           </div>
           )}
 
-          {/* Exchange-rate context strip — persistent across the listing */}
-          {!embedded && (
-            <div className="mb-3 shrink-0">
-              <RateContextStrip />
-            </div>
-          )}
-
           {/* KPI Insights -- collapsible section (hidden when embedded) */}
           {!embedded && showInsights && activeKpiDefs.length > 0 && (
           <div className="mb-4 shrink-0">
@@ -1347,9 +1384,13 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
 
                   return activeKpiDefs.map((kpi, idx) => {
                     const isCurrencyKpi = CURRENCY_KPI_KEYS.has(kpi.key);
-                    const value: React.ReactNode = isCurrencyKpi
-                      ? currencyValueFor(kpi.key) ?? computeKpiValue(kpi.key, vendors)
-                      : computeKpiValue(kpi.key, vendors);
+                    const value: React.ReactNode = kpi.key === "market_rate"
+                      ? <RateKpiValue rateType="market" />
+                      : kpi.key === "corporate_rate"
+                        ? <RateKpiValue rateType="corporate" />
+                        : isCurrencyKpi
+                          ? currencyValueFor(kpi.key) ?? computeKpiValue(kpi.key, vendors)
+                          : computeKpiValue(kpi.key, vendors);
                     // Populate rich tooltip breakdowns with live data (only for complex KPIs).
                     const tooltipData = KPI_TOOLTIP_DATA[kpi.key];
                     if (tooltipData) {
@@ -1629,44 +1670,6 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                   );
                 })}
 
-                {/* Spacer pushes the currency-view toggle to the far right */}
-                <div className="flex-1" />
-
-                {/* Currency view toggle — base vs. each partner's own currency */}
-                <div className="inline-flex items-center gap-1 rounded-full border border-border p-0.5 shrink-0 bg-white">
-                  <button
-                    type="button"
-                    onClick={() => setTableCurrencyMode("base")}
-                    aria-pressed={tableCurrencyMode === "base"}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
-                      tableCurrencyMode === "base"
-                        ? "bg-accent text-primary"
-                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                    }`}
-                    style={{ fontWeight: tableCurrencyMode === "base" ? 600 : 500 }}
-                  >
-                    Base Currency
-                    <InfoTooltip side="top" iconClassName="w-3 h-3">
-                      Shows every partner's financials converted into the company's base currency ({BASE_CURRENCY}) so values are directly comparable across the list.
-                    </InfoTooltip>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTableCurrencyMode("partner")}
-                    aria-pressed={tableCurrencyMode === "partner"}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
-                      tableCurrencyMode === "partner"
-                        ? "bg-accent text-primary"
-                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                    }`}
-                    style={{ fontWeight: tableCurrencyMode === "partner" ? 600 : 500 }}
-                  >
-                    Partner Currency
-                    <InfoTooltip side="top" iconClassName="w-3 h-3">
-                      Shows each partner's financials in their own default transaction currency. Hover a cell to see the base-currency ({BASE_CURRENCY}) equivalent.
-                    </InfoTooltip>
-                  </button>
-                </div>
               </div>
 
               {/* Active Column Filters Bar (Notion-style) */}
@@ -1788,21 +1791,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                               <div className="flex justify-between">
                                 <span>Credit Limit</span>
                                 <span className="text-foreground" style={{ fontWeight: 500 }}>
-                                  {tableCurrencyMode === "partner" ? (
-                                    <CurrencyAmount
-                                      mode="listing-partner"
-                                      value={vendor.creditLimit ?? 0}
-                                      currency={vendor.defaultTransactionCurrency}
-                                    />
-                                  ) : (
-                                    <CurrencyAmount
-                                      mode="listing-base"
-                                      value={convertToBase(vendor.creditLimit ?? 0, vendor.defaultTransactionCurrency)}
-                                      currency={BASE_CURRENCY}
-                                      partnerDefaultCurrency={vendor.defaultTransactionCurrency}
-                                      partnerDefaultValue={vendor.creditLimit ?? 0}
-                                    />
-                                  )}
+                                  {renderListingMoney(vendor.creditLimit ?? 0, vendor.defaultTransactionCurrency, columnCurrencyMode.credit_limit)}
                                 </span>
                               </div>
                               <div className="flex justify-between">
@@ -1899,6 +1888,16 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                   filter={columnFilters[key] ?? null}
                                   vendors={vendors}
                                   onFilterChange={handleColumnFilterChange}
+                                  currencyViewMode={
+                                    key === "net_profit" || key === "credit_limit" || key === "credit_utilization"
+                                      ? columnCurrencyMode[key]
+                                      : undefined
+                                  }
+                                  onCurrencyViewModeChange={
+                                    key === "net_profit" || key === "credit_limit" || key === "credit_utilization"
+                                      ? (mode) => setColumnCurrency(key, mode)
+                                      : undefined
+                                  }
                                 >
                                   <div className={`inline-flex items-center gap-1 ${def.align === "right" ? "w-full justify-end" : ""}`}>
                                     <span className="text-[13px]" style={currentColSort || hasFilter ? { color: "hsl(var(--primary))" } : undefined}>{def.label}</span>
@@ -2378,21 +2377,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                 return (
                                   <TableCell key={colKey} className="text-right tabular-nums">
                                     <span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>
-                                      {tableCurrencyMode === "partner" ? (
-                                        <CurrencyAmount
-                                          mode="listing-partner"
-                                          value={raw}
-                                          currency={vendor.defaultTransactionCurrency}
-                                        />
-                                      ) : (
-                                        <CurrencyAmount
-                                          mode="listing-base"
-                                          value={convertToBase(raw, vendor.defaultTransactionCurrency)}
-                                          currency={BASE_CURRENCY}
-                                          partnerDefaultCurrency={vendor.defaultTransactionCurrency}
-                                          partnerDefaultValue={raw}
-                                        />
-                                      )}
+                                      {renderListingMoney(raw, vendor.defaultTransactionCurrency, columnCurrencyMode.net_profit)}
                                     </span>
                                   </TableCell>
                                 );
@@ -2402,21 +2387,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                 return (
                                   <TableCell key={colKey} className="text-right tabular-nums">
                                     <span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>
-                                      {tableCurrencyMode === "partner" ? (
-                                        <CurrencyAmount
-                                          mode="listing-partner"
-                                          value={raw}
-                                          currency={vendor.defaultTransactionCurrency}
-                                        />
-                                      ) : (
-                                        <CurrencyAmount
-                                          mode="listing-base"
-                                          value={convertToBase(raw, vendor.defaultTransactionCurrency)}
-                                          currency={BASE_CURRENCY}
-                                          partnerDefaultCurrency={vendor.defaultTransactionCurrency}
-                                          partnerDefaultValue={raw}
-                                        />
-                                      )}
+                                      {renderListingMoney(raw, vendor.defaultTransactionCurrency, columnCurrencyMode.credit_limit)}
                                     </span>
                                   </TableCell>
                                 );
@@ -2426,21 +2397,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                 return (
                                   <TableCell key={colKey} className="text-right tabular-nums">
                                     <span className={isRelaxed ? "text-[13.5px]" : "text-sm"}>
-                                      {tableCurrencyMode === "partner" ? (
-                                        <CurrencyAmount
-                                          mode="listing-partner"
-                                          value={raw}
-                                          currency={vendor.defaultTransactionCurrency}
-                                        />
-                                      ) : (
-                                        <CurrencyAmount
-                                          mode="listing-base"
-                                          value={convertToBase(raw, vendor.defaultTransactionCurrency)}
-                                          currency={BASE_CURRENCY}
-                                          partnerDefaultCurrency={vendor.defaultTransactionCurrency}
-                                          partnerDefaultValue={raw}
-                                        />
-                                      )}
+                                      {renderListingMoney(raw, vendor.defaultTransactionCurrency, columnCurrencyMode.credit_utilization)}
                                     </span>
                                   </TableCell>
                                 );

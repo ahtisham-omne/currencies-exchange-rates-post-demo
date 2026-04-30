@@ -5902,42 +5902,6 @@ function ConfigPageContent({
                   </p>
                 </div>
                 <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                  {/* Currency view toggle — mirrors the partner-details toggle. Drives which
-                      currency fixed-amount inputs are entered in; both values are stored. */}
-                  <div className="inline-flex items-center gap-0.5 h-8 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setCreatePtCurrencyMode("base")}
-                      aria-pressed={createPtCurrencyMode === "base"}
-                      className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
-                        createPtCurrencyMode === "base"
-                          ? "bg-accent text-primary"
-                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                      }`}
-                      style={{ fontWeight: createPtCurrencyMode === "base" ? 600 : 500 }}
-                    >
-                      Base Currency
-                      <InfoTooltip side="top" iconClassName="w-3 h-3">
-                        Enter fixed amounts in the company's base currency ({BASE_CURRENCY}). Values stay comparable across all partners regardless of the transaction currency.
-                      </InfoTooltip>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCreatePtCurrencyMode("partner")}
-                      aria-pressed={createPtCurrencyMode === "partner"}
-                      className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
-                        createPtCurrencyMode === "partner"
-                          ? "bg-accent text-primary"
-                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                      }`}
-                      style={{ fontWeight: createPtCurrencyMode === "partner" ? 600 : 500 }}
-                    >
-                      Partner Currency
-                      <InfoTooltip side="top" iconClassName="w-3 h-3">
-                        Enter fixed amounts in this partner's own default transaction currency ({currency || BASE_CURRENCY}). The base-currency equivalent is stored alongside for reporting.
-                      </InfoTooltip>
-                    </button>
-                  </div>
                   <button
                     onClick={() => setCreatePtFullscreen(!createPtFullscreen)}
                     className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-white text-xs text-muted-foreground hover:bg-slate-50 hover:border-slate-300 transition-all cursor-pointer"
@@ -6247,34 +6211,22 @@ function ConfigPageContent({
                         </div>
                         <div className="rounded-xl border border-border bg-white p-4">
                           <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-                            {/* Value with % / $ toggle */}
+                            {/* Value (always entered as a percentage of the order total) */}
                             <div>
                               <div className="flex items-center justify-between mb-1.5">
                                 <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>
-                                  Prepayment {createPtPrepayMode === "fixed" ? "Amount" : "Value"}
+                                  Prepayment Value
                                 </label>
-                                <PctAmountToggle
-                                  isFixed={createPtPrepayMode === "fixed"}
-                                  onChange={(fixed) => setCreatePtPrepayMode(fixed ? "fixed" : "percent")}
-                                  percentTooltip="Prepayment set as a percentage of the order total."
-                                  amountTooltip="Prepayment set as a fixed dollar amount."
-                                />
                               </div>
                               <div className="relative">
-                                {createPtPrepayMode === "fixed" && (
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{createPtInputCurrencySymbol}</span>
-                                )}
                                 <Input
                                   value={createPtCustomDuration || ""}
                                   onChange={(e) => setCreatePtCustomDuration(e.target.value)}
-                                  placeholder={createPtPrepayMode === "percent" ? "e.g. 50" : "e.g. 5000.00"}
-                                  className={`rounded-lg border-border bg-white text-[13px] h-9 placeholder:text-slate-400 ${createPtPrepayMode === "fixed" ? "pl-8 pr-3" : "pr-8"}`}
+                                  placeholder="e.g. 50"
+                                  className="rounded-lg border-border bg-white text-[13px] h-9 placeholder:text-slate-400 pr-8"
                                 />
-                                {createPtPrepayMode === "percent" && (
-                                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
-                                )}
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                               </div>
-                              {createPtPrepayMode === "fixed" && renderPtFxHelper(createPtCustomDuration || "")}
                             </div>
                             {/* Trigger */}
                             <div>
@@ -6328,30 +6280,22 @@ function ConfigPageContent({
                               {/* Body */}
                               <div className="px-3.5 py-3">
                                 <div className="grid grid-cols-2 gap-3">
-                                  {/* Split Value with % / $ toggle */}
+                                  {/* Split Value (always entered as a percentage of the order total) */}
                                   <div>
                                     <div className="flex items-center justify-between mb-1.5">
                                       <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>
-                                        Split {evt.fixRate ? "Amount" : "Value"}
+                                        Split Value
                                       </label>
-                                      <PctAmountToggle
-                                        isFixed={evt.fixRate}
-                                        onChange={(fixed) => { const u = [...createPtSplitEvents]; u[idx] = { ...u[idx], fixRate: fixed }; setCreatePtSplitEvents(u); }}
-                                        percentTooltip="Split portion set as a percentage of the order total."
-                                        amountTooltip="Split portion set as a fixed dollar amount."
-                                      />
                                     </div>
                                     <div className="relative">
-                                      {evt.fixRate && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{createPtInputCurrencySymbol}</span>}
                                       <Input
                                         value={evt.percent}
                                         onChange={(e) => { const u = [...createPtSplitEvents]; u[idx] = { ...u[idx], percent: e.target.value }; setCreatePtSplitEvents(u); }}
-                                        placeholder={evt.fixRate ? "e.g. 5000.00" : "e.g. 50"}
-                                        className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 ${evt.fixRate ? "pl-8 pr-3" : "pr-8"}`}
+                                        placeholder="e.g. 50"
+                                        className="rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 pr-8"
                                       />
-                                      {!evt.fixRate && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>}
+                                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                                     </div>
-                                    {evt.fixRate && renderPtFxHelper(evt.percent)}
                                   </div>
                                   {/* Trigger Event dropdown */}
                                   <div>
@@ -6435,38 +6379,24 @@ function ConfigPageContent({
                         {createPtApplyDiscount && (
                           <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-muted items-end">
                             <div>
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1">
-                                  <Label className="text-xs sm:text-[13px] text-foreground" style={{ fontWeight: 500 }}>Discount</Label>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild><span><Info className="w-3 h-3 text-slate-300 cursor-help" /></span></TooltipTrigger>
-                                    <TooltipContent side="bottom" sideOffset={6} className="max-w-[260px] text-[11px] leading-[1.5] z-[300]">
-                                      <p className="text-slate-500">Amount deducted when paid within the eligible window. Choose % or fixed $.</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
-                                <PctAmountToggle
-                                  isFixed={createPtDiscountMode === "fixed"}
-                                  onChange={(fixed) => setCreatePtDiscountMode(fixed ? "fixed" : "percent")}
-                                  percentTooltip="Early-payment discount set as a percentage of the invoice total."
-                                  amountTooltip="Early-payment discount set as a fixed dollar amount."
-                                />
+                              <div className="flex items-center gap-1">
+                                <Label className="text-xs sm:text-[13px] text-foreground" style={{ fontWeight: 500 }}>Discount</Label>
+                                <Tooltip>
+                                  <TooltipTrigger asChild><span><Info className="w-3 h-3 text-slate-300 cursor-help" /></span></TooltipTrigger>
+                                  <TooltipContent side="bottom" sideOffset={6} className="max-w-[260px] text-[11px] leading-[1.5] z-[300]">
+                                    <p className="text-slate-500">Percentage deducted from the invoice when paid within the eligible window.</p>
+                                  </TooltipContent>
+                                </Tooltip>
                               </div>
                               <div className="relative mt-1">
-                                {createPtDiscountMode === "fixed" && (
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">{createPtInputCurrencySymbol}</span>
-                                )}
                                 <Input
                                   value={createPtDiscountPercent}
                                   onChange={(e) => setCreatePtDiscountPercent(e.target.value)}
-                                  placeholder={createPtDiscountMode === "percent" ? "e.g. 5" : "e.g. 25.00"}
-                                  className={`rounded-lg border-border bg-white !h-10 text-sm placeholder:text-slate-400 ${createPtDiscountMode === "fixed" ? "pl-8 pr-3" : "pr-8"}`}
+                                  placeholder="e.g. 5"
+                                  className="rounded-lg border-border bg-white !h-10 text-sm placeholder:text-slate-400 pr-8"
                                 />
-                                {createPtDiscountMode === "percent" && (
-                                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
-                                )}
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
                               </div>
-                              {createPtDiscountMode === "fixed" && renderPtFxHelper(createPtDiscountPercent)}
                             </div>
                             <div>
                               <div className="flex items-center gap-1">

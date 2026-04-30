@@ -42,7 +42,6 @@ import {
   type SortConfig,
 } from "../components/vendors/ColumnHeaderMenu";
 import { OverflowTooltip } from "../components/vendors/OverflowTooltip";
-import { InfoTooltip } from "../components/ui/info-tooltip";
 import { CurrencyAmount } from "../components/ui/CurrencyAmount";
 import { CurrencyFlag } from "../components/ui/CurrencyFlag";
 import {
@@ -265,13 +264,10 @@ export function VendorDetailsPage() {
   const [customizePanelOpen, setCustomizePanelOpen] = useState(false);
   /**
    * Currency view for this profile's financial surfaces (KPI bar, charts,
-   * widgets, Financial Summary, Credit Limits).
-   * - "base": values in the company base currency (PKR), hover shows the
-   *   partner's default-currency amount. Default, matches the listing page.
-   * - "partner": values in the partner's default transaction currency;
-   *   multi-currency partners get the rolled-up breakdown on hover.
+   * widgets, Financial Summary, Credit Limits). Toggled from the dashboard
+   * action bar; defaults to the partner's own default transaction currency.
    */
-  const [profileCurrencyMode, setProfileCurrencyMode] = useState<"base" | "partner">("base");
+  const [profileCurrencyMode, setProfileCurrencyMode] = useState<"base" | "partner">("partner");
   const [lastRefreshed, setLastRefreshed] = useState(() => new Date());
   const [dashDateRange, setDashDateRange] = useState("last_30");
 
@@ -969,41 +965,6 @@ export function VendorDetailsPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-[12px] text-slate-500">
                   <span className="text-sm text-muted-foreground" style={{ fontWeight: 500 }}>Dashboard</span>
-                  {/* Currency view toggle — base vs. this partner's own currency */}
-                  <div className="inline-flex items-center gap-0.5 h-7 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setProfileCurrencyMode("base")}
-                      aria-pressed={profileCurrencyMode === "base"}
-                      className={`inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
-                        profileCurrencyMode === "base"
-                          ? "bg-accent text-primary"
-                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                      }`}
-                      style={{ fontWeight: profileCurrencyMode === "base" ? 600 : 500 }}
-                    >
-                      Base Currency
-                      <InfoTooltip side="top" iconClassName="w-3 h-3">
-                        Shows this profile's financials converted into the company's base currency ({BASE_CURRENCY}) so it compares cleanly with the rest of the portfolio.
-                      </InfoTooltip>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setProfileCurrencyMode("partner")}
-                      aria-pressed={profileCurrencyMode === "partner"}
-                      className={`inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${
-                        profileCurrencyMode === "partner"
-                          ? "bg-accent text-primary"
-                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                      }`}
-                      style={{ fontWeight: profileCurrencyMode === "partner" ? 600 : 500 }}
-                    >
-                      Partner Currency
-                      <InfoTooltip side="top" iconClassName="w-3 h-3">
-                        Shows amounts in this partner's own default transaction currency. Hover any value to see the base-currency ({BASE_CURRENCY}) equivalent.
-                      </InfoTooltip>
-                    </button>
-                  </div>
                   {/* Date Range Filter */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -1048,6 +1009,39 @@ export function VendorDetailsPage() {
                   </button>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Base ↔ Partner currency toggle — hidden when this partner
+                      already settles in the base currency, since both sides
+                      would render identically. */}
+                  {vendor.defaultTransactionCurrency.toUpperCase() !== BASE_CURRENCY && (
+                    <div className="inline-flex items-center gap-0.5 h-8 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setProfileCurrencyMode("base")}
+                        aria-pressed={profileCurrencyMode === "base"}
+                        className={`inline-flex items-center h-7 px-2.5 rounded-md text-[12px] whitespace-nowrap cursor-pointer transition-colors ${
+                          profileCurrencyMode === "base"
+                            ? "bg-accent text-primary"
+                            : "text-slate-700 hover:bg-muted/60"
+                        }`}
+                        style={{ fontWeight: profileCurrencyMode === "base" ? 600 : 500 }}
+                      >
+                        Base Currency
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProfileCurrencyMode("partner")}
+                        aria-pressed={profileCurrencyMode === "partner"}
+                        className={`inline-flex items-center h-7 px-2.5 rounded-md text-[12px] whitespace-nowrap cursor-pointer transition-colors ${
+                          profileCurrencyMode === "partner"
+                            ? "bg-accent text-primary"
+                            : "text-slate-700 hover:bg-muted/60"
+                        }`}
+                        style={{ fontWeight: profileCurrencyMode === "partner" ? 600 : 500 }}
+                      >
+                        Partner Currency
+                      </button>
+                    </div>
+                  )}
                   <button
                     onClick={handleResetLayout}
                     className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border bg-white hover:bg-slate-50 text-slate-700 text-[12px] shadow-sm transition-all cursor-pointer"

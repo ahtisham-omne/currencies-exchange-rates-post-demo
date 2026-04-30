@@ -24,9 +24,10 @@ import {
   ToggleLeft,
   ToggleRight,
   Sliders,
+  RefreshCw,
 } from "lucide-react";
 import type { Vendor } from "../../data/vendors";
-import { BASE_CURRENCY, convertToBase, getLibraryCurrency } from "../../data/currencyLibrary";
+import { BASE_CURRENCY, convertToBase, getLibraryCurrency, rateSnapshotFor } from "../../data/currencyLibrary";
 
 /* ─── KPI definition type ─── */
 export interface KpiDefinition {
@@ -178,13 +179,37 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     subtitle: "Average partner rating",
     tooltip: "Weighted average of all partner performance ratings. Based on delivery reliability, quality, communication, and compliance scores.",
   },
+  // FX context — one card per rate book. Display-only freshness indicator;
+  // full source / sync / last-synced context lives in the tooltip.
+  {
+    key: "market_rate",
+    label: "Market Rate",
+    category: "FX",
+    iconName: "RefreshCw",
+    iconBg: "#F5F3FF",
+    iconColor: "#7C3AED",
+    subtitle: "Live mid-market rates",
+    tooltip: "Live mid-market rates from Open Exchange Rates. Refreshed every 15 minutes. Display-only — drives the partner-currency hover conversions on the table.",
+  },
+  {
+    key: "corporate_rate",
+    label: "Corporate Rate",
+    category: "FX",
+    iconName: "RefreshCw",
+    iconBg: "#FFFBEB",
+    iconColor: "#D97706",
+    subtitle: "Treasury-locked book rates",
+    tooltip: "Corporate book rates from Corporate Treasury (Q1 FY26). Refreshed quarterly — manual. Display-only — matches what finance uses for accruals and reporting.",
+  },
 ];
 
-/* Default active KPIs */
+/* Default active KPIs — Market Rate is on by default; Corporate Rate is hidden
+   and added via the "Add Insights" drawer like any optional KPI. */
 export const DEFAULT_ACTIVE_KPIS = [
   "total_credit_limit",
   "total_partners",
   "active_partners",
+  "market_rate",
 ];
 
 /* ─── Compute KPI value from vendors data ─── */
@@ -239,9 +264,32 @@ export function computeKpiValue(key: string, vendors: Vendor[]): string {
         : 0;
       return avg.toFixed(1);
     }
+    case "market_rate":
+      return formatRelative(rateSnapshotFor("market").lastSyncAt);
+    case "corporate_rate":
+      return formatRelativeDays(rateSnapshotFor("corporate").lastSyncAt);
     default:
       return "–";
   }
+}
+
+function formatRelative(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffSec = Math.max(0, Math.round(diffMs / 1000));
+  if (diffSec < 45) return "Just now";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? "" : "s"} ago`;
+  const diffDay = Math.round(diffHr / 24);
+  return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
+}
+
+function formatRelativeDays(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const days = Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
+  if (days === 0) return "today";
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 /* ─── Icon mapper ─── */
@@ -262,6 +310,7 @@ function KpiIcon({ name, className, style }: { name: string; className?: string;
     case "ArchiveRestore": return <ArchiveRestore {...props} />;
     case "Package": return <Package {...props} />;
     case "Star": return <Star {...props} />;
+    case "RefreshCw": return <RefreshCw {...props} />;
     default: return <ChartColumn {...props} />;
   }
 }
@@ -273,6 +322,7 @@ function CategoryIcon({ category }: { category: string }) {
     case "Financial": return <DollarSign className="w-4 h-4 text-muted-foreground" />;
     case "Status": return <Clock className="w-4 h-4 text-muted-foreground" />;
     case "Operational": return <Globe className="w-4 h-4 text-muted-foreground" />;
+    case "FX": return <RefreshCw className="w-4 h-4 text-muted-foreground" />;
     default: return <ChartColumn className="w-4 h-4 text-muted-foreground" />;
   }
 }
