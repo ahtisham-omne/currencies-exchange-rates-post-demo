@@ -6,6 +6,8 @@ import { ATPTooltip } from './ATPTooltip';
 import { ItemTypeBadge, DuplicateBadge } from './StatusBadge';
 import { ConfirmationDialog } from './ui/DiscardChangesDialog';
 import { AdvancedConfiguratorModal } from './AdvancedConfiguratorModal';
+import { CurrencyAmount } from '@/app/components/ui/CurrencyAmount';
+import { BASE_CURRENCY, convertBetween } from '@/app/data/currencyLibrary';
 
 /* ═══ Extended catalog for this step ═══ */
 export const EXTENDED_CATALOG = [
@@ -31,6 +33,9 @@ export interface Step2Props {
   lineItems: SOLineItem[];
   onLineItemsChange: (items: SOLineItem[]) => void;
   hasCustomer: boolean;
+  /** Customer-facing transaction currency selected on Step 1 — drives the
+   * line-items hover popover (base equivalent vs customer surface). */
+  customerCurrency?: string;
 }
 
 const UNITS_OF_MEASURE = [
@@ -40,10 +45,28 @@ const UNITS_OF_MEASURE = [
   { id: 'pallet', name: 'Pallet', fullName: 'Pallet (480 units)' },
 ];
 
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
-
-export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Step2Props) {
+export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer, customerCurrency }: Step2Props) {
+  /** Render a base-currency (PKR) amount with the same Currency-Library
+   * hover affordance Quotes uses on its line items step — mode="single" when
+   * the customer settles in PKR (no FX context to disclose), else
+   * "listing-base" so the hover surfaces the customer-currency equivalent. */
+  const Money = ({ valuePKR, className }: { valuePKR: number; className?: string }) => {
+    const cur = (customerCurrency ?? BASE_CURRENCY).toUpperCase();
+    const isBase = cur === BASE_CURRENCY;
+    if (isBase) {
+      return <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={valuePKR} className={className} />;
+    }
+    return (
+      <CurrencyAmount
+        mode="listing-base"
+        currency={BASE_CURRENCY}
+        value={valuePKR}
+        partnerDefaultCurrency={cur}
+        partnerDefaultValue={convertBetween(valuePKR, BASE_CURRENCY, cur)}
+        className={className}
+      />
+    );
+  };
   const { inventory } = useSOStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
@@ -470,7 +493,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                         </div>
                         <div className="text-right shrink-0">
                           <span style={{ fontSize: 'var(--text-caption)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }}>
-                            {formatCurrency(product.unitPrice)}
+                            <Money valuePKR={product.unitPrice} />
                           </span>
                           <span style={{ fontSize: 'var(--text-micro)', color: 'var(--foreground)', opacity: 0.4, marginLeft: 4 }}>/ EA</span>
                         </div>
@@ -745,11 +768,11 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                         <div className="flex-1 text-right min-w-0">
                           {sidebarWidth === 'narrow' ? (
                             <div className="truncate" style={{ fontSize: 'var(--text-caption)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }}>
-                              {formatCurrency(item.total)} <span style={{ fontWeight: 'var(--font-weight-normal)', opacity: 0.5 }}>({UNITS_OF_MEASURE.find(u => u.id === (item.uom || 'ea'))?.name || 'EA'})</span>
+                              <Money valuePKR={item.total} /> <span style={{ fontWeight: 'var(--font-weight-normal)', opacity: 0.5 }}>({UNITS_OF_MEASURE.find(u => u.id === (item.uom || 'ea'))?.name || 'EA'})</span>
                             </div>
                           ) : (
                             <>
-                              <div className="truncate" style={{ fontSize: 'var(--text-label)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }}>{formatCurrency(item.total)}</div>
+                              <div className="truncate" style={{ fontSize: 'var(--text-label)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }}><Money valuePKR={item.total} /></div>
                               <div style={{ fontSize: 'var(--text-micro)', color: 'var(--foreground)', opacity: 0.4 }}>({UNITS_OF_MEASURE.find(u => u.id === (item.uom || 'ea'))?.name || 'EA'})</div>
                             </>
                           )}
@@ -781,7 +804,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                 Subtotal ({lineItems.length} item{lineItems.length !== 1 ? 's' : ''})
               </span>
               <span style={{ fontSize: 'var(--text-h3)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--primary)' }}>
-                {formatCurrency(subtotal)}
+                <Money valuePKR={subtotal} />
               </span>
             </div>
             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--foreground)', opacity: 0.35, textAlign: 'left' }}>+ Shipping calculated on next step</p>

@@ -60,6 +60,18 @@ const INSIGHT_CATEGORIES: InsightCategory[] = [
       { label: "Order Revisions", value: "12", active: false, description: "Count of active orders (excludes cancelled, shipped, and completed) revised at least once — line item changes, quantity adjustments, delivery date changes, or address updates." },
     ],
   },
+  // FX context — one card per rate book. Mirrors the Quotes module's FX
+  // section. Display-only freshness indicator; the full source/sync metadata
+  // surfaces in the card's tooltip.
+  {
+    id: "fx",
+    title: "FX Context",
+    icon: RefreshCw,
+    metrics: [
+      { label: "Mid-market Rate", value: "", active: true, description: "Live mid-market rates from Open Exchange Rates. Refreshed every 15 minutes. Display-only — drives the customer-currency hover conversions on the table." },
+      { label: "Corporate Rate", value: "", active: false, description: "Corporate book rates from Corporate Treasury (Q1 FY26). Refreshed quarterly — manual. Display-only — matches what finance uses for accruals and reporting." },
+    ],
+  },
 ];
 
 export interface ActiveInsight { label: string; value: string; trending?: "up" | "down" | "neutral"; description?: string; }
@@ -69,6 +81,7 @@ function CategoryIcon({ catId }: { catId: string }) {
   const map: Record<string, typeof DollarSign> = {
     revenue: DollarSign, orders: Globe, operational: Zap, performance: BarChart3,
     sales: Users, time: Clock, exceptions: AlertCircle, inventory: Package, shipping: Truck,
+    fx: RefreshCw,
   };
   const Icon = map[catId] || ChartColumn;
   return <Icon className="w-4 h-4 text-muted-foreground" />;

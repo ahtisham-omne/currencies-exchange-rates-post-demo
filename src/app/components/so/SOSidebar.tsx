@@ -15,13 +15,115 @@ import { PaymentTermsLibrary } from "./PaymentTermsLibrary";
 import { PaymentMethodSelectionModal } from "./PaymentMethodSelectionModal";
 import { DateEditModal, type SODateType } from "./ui/DateEditModal";
 import { toast } from "sonner";
+import {
+  BASE_CURRENCY,
+  convertBetween,
+  getLibraryCurrency,
+  rateTypeLabel,
+  formatRate,
+} from "@/app/data/currencyLibrary";
+import { useRateContext } from "@/app/context/RateContext";
+import { CurrencyFlag } from "../currency/CurrencyFlag";
+import { RATE_TYPE_COLORS } from "../currency/MarketCorporateToggle";
+import { OrderMoney } from "../currency/OrderMoney";
+
+/* ── Currency block at the top of Order Summary — mirrors the Quotes module's
+ * summary FX section. Shows rate-type pill, customer-currency line, base-
+ * currency line, the active rate, and a link to the configurator.
+ * ─────────────────────────────────────────────────────────────────────── */
+function OrderSummaryCurrencyBlock({
+  customerCurrency,
+  lockedRate,
+  onOpenConfig,
+}: {
+  customerCurrency?: string;
+  lockedRate?: number;
+  onOpenConfig?: () => void;
+}) {
+  const { rateType } = useRateContext();
+  const code = (customerCurrency || BASE_CURRENCY).toUpperCase();
+  if (code === BASE_CURRENCY) return null;
+
+  const colors = RATE_TYPE_COLORS[rateType];
+  const cur = getLibraryCurrency(code);
+  const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
+  const ratePerUnit = typeof lockedRate === "number"
+    ? lockedRate
+    : convertBetween(1, code, BASE_CURRENCY);
+  const customerSym = cur?.symbol ?? code;
+  const baseSym = baseCur.symbol ?? BASE_CURRENCY;
+
+  return (
+    <div
+      style={{
+        padding: "10px 0 12px",
+        borderBottomWidth: 1,
+        borderBottomStyle: "dashed",
+        borderBottomColor: "#E5E7EB",
+        marginBottom: 4,
+      }}
+    >
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: "#9CA3AF", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          Currency
+        </span>
+        <span
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
+          style={{ backgroundColor: `${colors.hex}10`, color: colors.hex, border: `1px solid ${colors.hex}30`, fontSize: 10, fontWeight: 600 }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colors.hex }} />
+          {rateTypeLabel(rateType)}
+        </span>
+      </div>
+
+      <div className="flex flex-col" style={{ gap: 6 }}>
+        <div className="flex items-center justify-between">
+          <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 400 }}>Customer pays in</span>
+          <span className="inline-flex items-center gap-1.5" style={{ fontSize: 12, color: "#1F2937", fontWeight: 600 }}>
+            {cur && <CurrencyFlag currency={cur} size={14} />}
+            {customerSym} {code}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 400 }}>Base equivalent</span>
+          <span className="inline-flex items-center gap-1.5" style={{ fontSize: 12, color: "#1F2937", fontWeight: 600 }}>
+            <CurrencyFlag currency={baseCur} size={14} />
+            {baseSym} {BASE_CURRENCY}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 400 }}>Rate</span>
+          <span style={{ fontSize: 12, color: "#1F2937", fontWeight: 600 }} className="tabular-nums">
+            1 {code} = {baseSym} {formatRate(ratePerUnit)} {BASE_CURRENCY}
+          </span>
+        </div>
+      </div>
+
+      {onOpenConfig && (
+        <button
+          type="button"
+          onClick={onOpenConfig}
+          className="mt-2 text-[11px] cursor-pointer transition-colors"
+          style={{ color: "var(--primary)", border: "none", background: "transparent", padding: 0, fontWeight: 500 }}
+        >
+          View configuration →
+        </button>
+      )}
+    </div>
+  );
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Props
  * ═══════════════════════════════════════════════════════════════════════════ */
 interface Props {
   so: SalesOrder;
+  /** Page-level Base ↔ Customer view toggle, threaded from SODetail so the
+   * sidebar's totals flip in lockstep with the rest of the page. */
+  viewMode?: "base" | "customer";
   onOpenInvoicing?: () => void;
+  /** Open the order's Currency Configuration modal (managed in SODetail). */
+  onOpenCurrencyConfig?: () => void;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -565,7 +667,7 @@ const cardStyle: CSSProperties = {
 /* ═══════════════════════════════════════════════════════════════════════════
  *  MAIN SIDEBAR COMPONENT
  * ═══════════════════════════════════════════════════════════════════════════ */
-export function SOSidebar({ so, onOpenInvoicing }: Props) {
+export function SOSidebar({ so, viewMode = "base", onOpenInvoicing, onOpenCurrencyConfig }: Props) {
   /* ── Collapse state ── */
   const [customerCollapsed, setCustomerCollapsed] = useState(false);
   const [summaryCollapsed, setSummaryCollapsed] = useState(false);
@@ -608,11 +710,8 @@ export function SOSidebar({ so, onOpenInvoicing }: Props) {
     { id: "c6", name: "David Chen", initials: "DC", title: "Engineering" },
   ];
 
-  /* ── Formatters ── */
-  const fmtCurrency = (n: number) => {
-    if (Math.abs(n) >= 1_000_000) return `$${new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n)}`;
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
-  };
+  /* ── Formatters — display amounts in the base currency (PKR). The conversion
+   * to the customer currency is surfaced via OrderMoney's built-in hover. ── */
 
   return (
     <>
@@ -839,12 +938,20 @@ export function SOSidebar({ so, onOpenInvoicing }: Props) {
         <SectionHeader icon={DollarSign} label="Order Summary" collapsed={summaryCollapsed} onToggle={() => setSummaryCollapsed(!summaryCollapsed)} />
 
         {!summaryCollapsed && <div className="flex flex-col" style={{ padding: "10px 0 12px" }}>
+          {/* Currency block — surfaces the FX context that drives all the totals below. */}
+          <OrderSummaryCurrencyBlock
+            customerCurrency={so.currency}
+            lockedRate={so.lockedRate}
+            onOpenConfig={onOpenCurrencyConfig}
+          />
           {/* Subtotal */}
           <div className="flex justify-between items-center" style={{ padding: "10px 0", borderBottomWidth: 1, borderBottomStyle: "dashed", borderBottomColor: "#E5E7EB" }}>
             <span style={{ fontSize: 13, color: "#1F2937", fontWeight: 500, lineHeight: 1 }}>
               Subtotal <span style={{ fontWeight: 400, color: "#9CA3AF" }}>({so.lines.length} items)</span>
             </span>
-            <span style={{ fontSize: 13, color: "#1F2937", fontWeight: 600, lineHeight: 1 }}>{fmtCurrency(subtotal)}</span>
+            <span style={{ fontSize: 13, color: "#1F2937", fontWeight: 600, lineHeight: 1 }}>
+              <OrderMoney valuePKR={subtotal} customerCurrency={so.currency} view={viewMode} lockedRate={so.lockedRate} lockedAt={so.lockedAt} />
+            </span>
           </div>
 
           {/* Pricing Rules Applied */}
@@ -852,7 +959,7 @@ export function SOSidebar({ so, onOpenInvoicing }: Props) {
             <div className="flex justify-between items-center">
               <span style={{ fontSize: 13, color: "#6B7280", fontWeight: 400, lineHeight: 1 }}>Pricing Rules Applied</span>
               <span style={{ fontSize: 13, color: "#059669", fontWeight: 500, lineHeight: 1 }}>
-                -{fmtCurrency(pricingRulesAmount)}
+                <OrderMoney valuePKR={-pricingRulesAmount} customerCurrency={so.currency} view={viewMode} lockedRate={so.lockedRate} lockedAt={so.lockedAt} />
               </span>
             </div>
             <SummaryInfoRow label={`3 rules · applied to ${so.lines.length} items`} onClick={() => setShowPricingRules(true)} />
@@ -863,7 +970,7 @@ export function SOSidebar({ so, onOpenInvoicing }: Props) {
             <div className="flex justify-between items-center">
               <span style={{ fontSize: 13, color: "#6B7280", fontWeight: 400, lineHeight: 1 }}>One-Time Discounts/Premiums</span>
               <span style={{ fontSize: 13, color: "#DC2626", fontWeight: 500, lineHeight: 1 }}>
-                +{fmtCurrency(discountsPremiums)}
+                +<OrderMoney valuePKR={discountsPremiums} customerCurrency={so.currency} view={viewMode} lockedRate={so.lockedRate} lockedAt={so.lockedAt} />
               </span>
             </div>
             <SummaryInfoRow label="4 discounts/premiums · 2 order-level" onClick={() => setShowAdjustments(true)} />
@@ -872,12 +979,14 @@ export function SOSidebar({ so, onOpenInvoicing }: Props) {
           {/* Grand Total */}
           <div className="flex justify-between items-center" style={{ paddingTop: 14, marginTop: 4, borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#E5E7EB" }}>
             <span style={{ fontSize: 14, color: "#1F2937", fontWeight: 600, lineHeight: 1 }}>Grand Total</span>
-            <span style={{ fontSize: 16, color: "#1F2937", fontWeight: 700, lineHeight: 1 }}>{fmtCurrency(grandTotal)}</span>
+            <span style={{ fontSize: 16, color: "#1F2937", fontWeight: 700, lineHeight: 1 }}>
+              <OrderMoney valuePKR={grandTotal} customerCurrency={so.currency} view={viewMode} lockedRate={so.lockedRate} lockedAt={so.lockedAt} />
+            </span>
           </div>
 
           {/* Invoice Summary — SO specific */}
           <div className="border-t border-border" style={{ paddingTop: 10, marginTop: 10 }}>
-            <InvoiceSidebarSummary so={so} onOpenInvoicing={onOpenInvoicing} />
+            <InvoiceSidebarSummary so={so} viewMode={viewMode} onOpenInvoicing={onOpenInvoicing} />
           </div>
         </div>}
       </div>

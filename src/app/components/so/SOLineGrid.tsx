@@ -7,9 +7,15 @@ import { ProgressFractionCell } from "./ProgressFractionCell";
 import { ConfirmationModal } from "./ConfirmationModal";
 import type { SalesOrder, SOLine } from "./types";
 import { Button } from "./ui/Button";
+import { BASE_CURRENCY, convertBetween, formatMoney, getLibraryCurrency } from "@/app/data/currencyLibrary";
+import { MoneyConvertTooltip } from "../currency/MoneyConvertTooltip";
 
 interface SOLineGridProps {
   so: SalesOrder;
+  /** Page-level Base ↔ Customer view toggle. When `customer`, unit prices and
+   * line totals render in the customer currency with the base equivalent in
+   * the hover. */
+  viewMode?: "base" | "customer";
   onAddLine: () => void;
   onAllocateLine?: (line: SOLine) => void;
   onAllocateAll?: () => void;
@@ -31,7 +37,7 @@ const UOM_OPTIONS = [
   { code: "LB", label: "Pound" },
 ];
 
-const DOLLAR = "\u0024";
+const BASE_SYMBOL = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
 
 function formatCompactValue(value: number) {
   if (Math.abs(value) < 1000) return value.toLocaleString();
@@ -40,9 +46,9 @@ function formatCompactValue(value: number) {
 
 function formatCurrencyValue(value: number, compact = false) {
   if (!compact || Math.abs(value) < 100000) {
-    return `${DOLLAR}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `${BASE_SYMBOL} ${formatMoney(value, BASE_CURRENCY)}`;
   }
-  return `${DOLLAR}${new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value).toLowerCase()}`;
+  return `${BASE_SYMBOL} ${new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value).toLowerCase()}`;
 }
 /* ═══ Price Change Confirmation Modal ═══ */
 function PriceChangeModal({ newPrice, onThisOrderOnly, onUpdateItemMaster, onCancel }: {
@@ -120,8 +126,8 @@ function PriceChangeModal({ newPrice, onThisOrderOnly, onUpdateItemMaster, onCan
   );
 }
 
-/* ═══ PPU capsule — matches Quote module: $ + price in outlined capsule, unit label BELOW ═══ */
-function PriceCapsule({ price, unit = "EA", cancelled, editable, onChangePrice }: { price: number; unit?: string; cancelled?: boolean; editable?: boolean; onChangePrice?: (v: number) => void }) {
+/* ═══ PPU capsule — matches Quote module: base symbol + price in outlined capsule, unit label BELOW ═══ */
+function PriceCapsule({ price, unit = "EA", cancelled, editable, onChangePrice, customerCurrency, lockedRate, lockedAt, viewMode = "base" }: { price: number; unit?: string; cancelled?: boolean; editable?: boolean; onChangePrice?: (v: number) => void; customerCurrency?: string; lockedRate?: number; lockedAt?: string; viewMode?: "base" | "customer" }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(price));
   const [showPriceConfirm, setShowPriceConfirm] = useState(false);
@@ -142,6 +148,16 @@ function PriceCapsule({ price, unit = "EA", cancelled, editable, onChangePrice }
   const formatted = formatCurrencyValue(price, true);
   const isCan = !!cancelled;
   const uomLabel = UOM_OPTIONS.find(u => u.code === unit)?.label || unit;
+  // Display-side currency switch — editing always stays in the canonical base
+  // currency; the static cell flips between base and customer when the
+  // page-level toggle is in customer view.
+  const customerCur = (customerCurrency ?? BASE_CURRENCY).toUpperCase();
+  const showCustomer = viewMode === "customer" && customerCur !== BASE_CURRENCY;
+  const customerSym = getLibraryCurrency(customerCur)?.symbol ?? customerCur;
+  const displaySym = showCustomer ? customerSym : BASE_SYMBOL;
+  const displayValue = showCustomer
+    ? (typeof lockedRate === "number" ? price / lockedRate : convertBetween(price, BASE_CURRENCY, customerCur))
+    : price;
 
   return (
     <div className={`${isCan ? "opacity-50" : ""}`} style={{ position: "relative", display: "inline-block", width: 110 }}>
@@ -154,7 +170,7 @@ function PriceCapsule({ price, unit = "EA", cancelled, editable, onChangePrice }
             boxShadow: "0 0 0 2px rgba(59,130,246,0.10)",
           }}
         >
-          <span style={{ fontSize: 12, color: "#9CA3AF", lineHeight: 1, flexShrink: 0 }}>$</span>
+          <span style={{ fontSize: 12, color: "#9CA3AF", lineHeight: 1, flexShrink: 0 }}>{BASE_SYMBOL}</span>
           <input ref={inputRef} type="text" inputMode="decimal" value={draft}
             onChange={e => { const v = e.target.value; if (/^[0-9]*\.?[0-9]*$/.test(v) || v === '') setDraft(v); }}
             onBlur={commit}
@@ -163,24 +179,25 @@ function PriceCapsule({ price, unit = "EA", cancelled, editable, onChangePrice }
             style={{ width: 90, height: "100%", border: "none", fontSize: 13, fontWeight: 500, color: "#1F2937", padding: "0 2px" }} />
         </div>
       ) : (
-        <button
-          onClick={editable ? () => { setDraft(String(price)); setEditing(true); } : undefined}
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 1,
-            width: "100%", height: editable ? 30 : "auto",
-            padding: editable ? "0 10px" : "0", borderRadius: 6,
-            border: `1px solid ${editable ? "#D1D5DB" : "transparent"}`,
-            backgroundColor: editable ? "#FFFFFF" : "transparent",
-            cursor: editable ? "text" : "default", transition: "all 100ms",
-          }}
-          tabIndex={editable ? 0 : -1}
-          title={formatCurrencyValue(price)}
-        >
-          <span style={{ fontSize: 12, color: "#9CA3AF", lineHeight: 1 }}>$</span>
-          <span className={isCan ? "line-through" : ""} style={{ fontSize: 13, fontWeight: 500, color: "#1F2937", lineHeight: 1 }}>
-            {price.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-          </span>
-        </button>
+        <MoneyConvertTooltip valuePKR={price} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt} display={viewMode} block>
+          <button
+            onClick={editable ? () => { setDraft(String(price)); setEditing(true); } : undefined}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 1,
+              width: "100%", height: editable ? 30 : "auto",
+              padding: editable ? "0 10px" : "0", borderRadius: 6,
+              border: `1px solid ${editable ? "#D1D5DB" : "transparent"}`,
+              backgroundColor: editable ? "#FFFFFF" : "transparent",
+              cursor: editable ? "text" : "default", transition: "all 100ms",
+            }}
+            tabIndex={editable ? 0 : -1}
+          >
+            <span style={{ fontSize: 12, color: "#9CA3AF", lineHeight: 1 }}>{displaySym}</span>
+            <span className={isCan ? "line-through" : ""} style={{ fontSize: 13, fontWeight: 500, color: "#1F2937", lineHeight: 1 }}>
+              {displayValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </span>
+          </button>
+        </MoneyConvertTooltip>
       )}
       {/* Unit label below PPU like Quotes module */}
       <span style={{
@@ -323,10 +340,12 @@ function QtyUomCapsule({ qty, unit = "EA", cancelled, editable, onChangeQty, onC
   );
 }
 
-function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds, duplicateOfMap, onDeleteLine, onCancelLines, onConfigureLine, onUpdateLine, toggleExpand, toggleSelectLine }: {
+function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds, duplicateOfMap, onDeleteLine, onCancelLines, onConfigureLine, onUpdateLine, toggleExpand, toggleSelectLine, customerCurrency, lockedRate, lockedAt, viewMode = "base" }: {
   line: SOLine; idx: number; isEditable: boolean; isDraft: boolean; expandedRows: Set<string>; selectedLineIds: Set<string>; duplicateOfMap: Map<number, number>;
   onDeleteLine?: (id: string) => void; onCancelLines?: (ids: string[]) => void; onConfigureLine?: (l: SOLine) => void; onUpdateLine?: (id: string, u: Partial<SOLine>) => void;
   toggleExpand: (id: string) => void; toggleSelectLine: (id: string) => void;
+  customerCurrency?: string; lockedRate?: number; lockedAt?: string;
+  viewMode?: "base" | "customer";
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const isExp = expandedRows.has(line.id);
@@ -378,15 +397,39 @@ function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds
       {/* PPU column after QTY */}
       <td style={{ padding: "10px 12px", verticalAlign: "top" }} onClick={e => e.stopPropagation()}>
         <div className="flex justify-start">
-          <PriceCapsule price={line.unitPrice} unit="EA" cancelled={isCan} editable={showEditAffordance && !!onUpdateLine} onChangePrice={v => onUpdateLine?.(line.id, { unitPrice: v })} />
+          <PriceCapsule
+            price={line.unitPrice}
+            unit="EA"
+            cancelled={isCan}
+            editable={showEditAffordance && !!onUpdateLine}
+            onChangePrice={v => onUpdateLine?.(line.id, { unitPrice: v })}
+            customerCurrency={customerCurrency}
+            lockedRate={lockedRate}
+            lockedAt={lockedAt}
+            viewMode={viewMode}
+          />
         </div>
       </td>
       <td style={{ padding: "10px 8px", verticalAlign: "top", textAlign: "right" }}>
-        {!isCan ? (
-          <span className="text-foreground tabular-nums" style={{ fontSize: 13, fontWeight: 700, color: "#1F2937" }} title={formatCurrencyValue(line.orderedQty * line.unitPrice)}>
-            {formatCurrencyValue(line.orderedQty * line.unitPrice, true)}
-          </span>
-        ) : dash}
+        {!isCan ? (() => {
+          const lineTotal = line.orderedQty * line.unitPrice;
+          const customerCur = (customerCurrency ?? BASE_CURRENCY).toUpperCase();
+          const showCustomer = viewMode === "customer" && customerCur !== BASE_CURRENCY;
+          const customerSym = getLibraryCurrency(customerCur)?.symbol ?? customerCur;
+          const displaySym = showCustomer ? customerSym : BASE_SYMBOL;
+          const displayValue = showCustomer
+            ? (typeof lockedRate === "number" ? lineTotal / lockedRate : convertBetween(lineTotal, BASE_CURRENCY, customerCur))
+            : lineTotal;
+          return (
+            <MoneyConvertTooltip valuePKR={lineTotal} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt} display={viewMode}>
+              <span className="text-foreground tabular-nums" style={{ fontSize: 13, fontWeight: 700, color: "#1F2937" }}>
+                {displaySym} {Math.abs(displayValue) >= 100000
+                  ? new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(displayValue).toLowerCase()
+                  : formatMoney(displayValue, showCustomer ? customerCur : BASE_CURRENCY)}
+              </span>
+            </MoneyConvertTooltip>
+          );
+        })() : dash}
       </td>
       <td style={{ padding: "10px 8px", verticalAlign: "top", textAlign: "right" }}>{!isCan ? <ProgressFractionCell value={line.allocatedQty} total={toShip} /> : dash}</td>
       <td style={{ padding: "10px 8px", verticalAlign: "top", textAlign: "right" }}>{!isCan ? <ProgressFractionCell value={line.shippedQty} total={line.orderedQty} altPartialColor /> : dash}</td>
@@ -456,7 +499,7 @@ function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds
   );
 }
 
-export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDeleteLine, onCancelLines, onConfigureLine, onUpdateLine, onDuplicateLine }: SOLineGridProps) {
+export function SOLineGrid({ so, viewMode = "base", onAddLine, onAllocateLine, onAllocateAll, onDeleteLine, onCancelLines, onConfigureLine, onUpdateLine, onDuplicateLine }: SOLineGridProps) {
   const isEditable = !["Cancelled", "Shipped", "Archived"].includes(so.status);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set());
@@ -517,7 +560,7 @@ export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDel
             <th style={{ width: "52px", padding: "8px 8px" }} />
           </tr></thead>
           <tbody>
-            {so.lines.map((line, i) => <LineRow key={line.id} line={line} idx={i} isEditable={isEditable} isDraft={isDraft} expandedRows={expandedRows} selectedLineIds={selectedLineIds} duplicateOfMap={dupMap} onDeleteLine={onDeleteLine} onCancelLines={onCancelLines} onConfigureLine={onConfigureLine} onUpdateLine={onUpdateLine} toggleExpand={toggleExpand} toggleSelectLine={toggleSelectLine} />)}
+            {so.lines.map((line, i) => <LineRow key={line.id} line={line} idx={i} isEditable={isEditable} isDraft={isDraft} expandedRows={expandedRows} selectedLineIds={selectedLineIds} duplicateOfMap={dupMap} onDeleteLine={onDeleteLine} onCancelLines={onCancelLines} onConfigureLine={onConfigureLine} onUpdateLine={onUpdateLine} toggleExpand={toggleExpand} toggleSelectLine={toggleSelectLine} customerCurrency={so.currency} lockedRate={so.lockedRate} lockedAt={so.lockedAt} viewMode={viewMode} />)}
             {so.lines.length === 0 && <tr><td colSpan={8} className="text-center text-foreground/40" style={{ padding: "var(--space-section-gap) var(--space-card-padding)", fontSize: "var(--text-caption)" }}>No line items yet.</td></tr>}
           </tbody>
         </table>

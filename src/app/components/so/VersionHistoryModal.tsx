@@ -1,6 +1,18 @@
 import React, { useState } from 'react';
-import { X, Clock, User, FileText, GitCompare, DollarSign, Package, Plus, Trash2, Edit, Tag, Send, CheckCircle2, Scale, RotateCcw, AlertCircle, Check, Truck, Lock } from 'lucide-react';
+import { X, Clock, User, FileText, GitCompare, DollarSign, Package, Plus, Trash2, Edit, Tag, Send, CheckCircle2, Scale, RotateCcw, AlertCircle, Check, Truck, Lock, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
+import { useSOStore } from './store';
+import {
+  BASE_CURRENCY,
+  convertBetween,
+  getLibraryCurrency,
+  formatRate,
+  rateTypeLabel,
+} from '@/app/data/currencyLibrary';
+import { useRateContext } from '@/app/context/RateContext';
+import { RATE_TYPE_COLORS } from '../currency/MarketCorporateToggle';
+import { MoneyConvertTooltip } from '../currency/MoneyConvertTooltip';
+import { formatMoney } from '@/app/data/currencyLibrary';
 
 // ── Types ──────────────────────────────────────────────────────────
 type ChangeType = 'line-item-added' | 'line-item-removed' | 'line-item-modified' | 'pricing-changed' |
@@ -74,8 +86,10 @@ const changeTypeConfig: Record<string, { icon: React.ElementType; color: string;
   'shipment': { icon: Truck, color: '#0891B2', bg: '#CFFAFE' },
 };
 
-const formatCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+/* Renders amounts in the base currency (PKR). Conversion to the customer
+ * currency is surfaced via MoneyConvertTooltip on hover throughout this view. */
+const BASE_SYMBOL = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
+const formatCurrency = (n: number) => `${BASE_SYMBOL} ${formatMoney(n, BASE_CURRENCY)}`;
 
 const versionStatusConfig: Record<SOVersionStatus, { label: string; bg: string; color: string; icon: React.ElementType }> = {
   draft: { label: 'Draft', bg: '#F3F4F6', color: '#374151', icon: FileText },
@@ -163,6 +177,11 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose }: Versi
   const [versions, setVersions] = useState<SOVersionEntry[]>(generateSOVersions);
   const latestCleared = versions.find(v => v.versionStatus === 'cleared');
   const currentVersionNum = latestCleared?.version ?? 1;
+  const store = useSOStore();
+  const so = store.salesOrders.find(s => s.soNumber === soNumber);
+  const customerCurrency = so?.currency;
+  const lockedRate = so?.lockedRate;
+  const lockedAt = so?.lockedAt;
 
   const [selectedVersion, setSelectedVersion] = useState<number>(currentVersionNum);
   const [compareMode, setCompareMode] = useState(false);
@@ -389,6 +408,9 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose }: Versi
                   formatCurrency={formatCurrency}
                   changeTypeConfig={changeTypeConfig}
                   versionStatusConfig={versionStatusConfig}
+                  customerCurrency={customerCurrency}
+                  lockedRate={lockedRate}
+                  lockedAt={lockedAt}
                 />
               ) : selectedVersionData ? (
                 <SingleVersionView
@@ -400,6 +422,9 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose }: Versi
                   getUserColor={getUserColor}
                   getUserInitials={getUserInitials}
                   onRevert={(v) => { setVersionToRevert(v); setShowRevertConfirm(true); }}
+                  customerCurrency={customerCurrency}
+                  lockedRate={lockedRate}
+                  lockedAt={lockedAt}
                 />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', height: '100%', textAlign: 'center' as const }}>
@@ -422,6 +447,7 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose }: Versi
           version={versionToRevert}
           nextVersion={versions[0].version + 1}
           hasShippedItems={versions.find(v => v.version === versionToRevert)?.snapshot.lineItems.some(li => (li.shippedQty || 0) > 0) ?? false}
+          soNumber={soNumber}
           onClose={() => { setShowRevertConfirm(false); setVersionToRevert(null); }}
           onConfirm={(reason: string) => handleRevert(versionToRevert, reason)}
         />
@@ -431,7 +457,7 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose }: Versi
 }
 
 // ── Single Version View ──────────────────────────────────────────
-function SingleVersionView({ version, currentVersionNum, versionStatusConfig: vsCfg, changeTypeConfig: ctCfg, formatCurrency: fmt, getUserColor, getUserInitials, onRevert }: {
+function SingleVersionView({ version, currentVersionNum, versionStatusConfig: vsCfg, changeTypeConfig: ctCfg, formatCurrency: fmt, getUserColor, getUserInitials, onRevert, customerCurrency, lockedRate, lockedAt }: {
   version: SOVersionEntry; currentVersionNum: number;
   versionStatusConfig: Record<SOVersionStatus, { label: string; bg: string; color: string; icon: React.ElementType }>;
   changeTypeConfig: Record<string, { icon: React.ElementType; color: string; bg: string }>;
@@ -439,6 +465,9 @@ function SingleVersionView({ version, currentVersionNum, versionStatusConfig: vs
   getUserColor: (name: string) => string;
   getUserInitials: (name: string) => string;
   onRevert: (version: number) => void;
+  customerCurrency?: string;
+  lockedRate?: number;
+  lockedAt?: string;
 }) {
   const sCfg = vsCfg[version.versionStatus];
   const SIcon = sCfg.icon;
@@ -558,8 +587,12 @@ function SingleVersionView({ version, currentVersionNum, versionStatusConfig: vs
                 </div>
                 <span style={{ fontSize: '10px', color: '#6B7280', width: '28px', textAlign: 'right' as const }}>{li.qty}</span>
                 <span style={{ fontSize: '10px', color: '#9CA3AF', width: '28px', textAlign: 'center' as const }}>{li.uom}</span>
-                <span style={{ fontSize: '10px', color: '#9CA3AF', width: '64px', textAlign: 'right' as const }}>{fmt(li.unitPrice)}</span>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#1F2937', minWidth: '64px', textAlign: 'right' as const }}>{fmt(li.total)}</span>
+                <MoneyConvertTooltip valuePKR={li.unitPrice} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt}>
+                  <span style={{ fontSize: '10px', color: '#9CA3AF', width: '64px', textAlign: 'right' as const, display: 'inline-block' }}>{fmt(li.unitPrice)}</span>
+                </MoneyConvertTooltip>
+                <MoneyConvertTooltip valuePKR={li.total} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#1F2937', minWidth: '64px', textAlign: 'right' as const, display: 'inline-block' }}>{fmt(li.total)}</span>
+                </MoneyConvertTooltip>
               </div>
             );
           })}
@@ -567,7 +600,9 @@ function SingleVersionView({ version, currentVersionNum, versionStatusConfig: vs
         {version.snapshot.lineItems.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '4px 10px', borderTop: '1px solid #E5E7EB' }}>
             <span style={{ fontSize: '10px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.3px', marginRight: '8px' }}>Subtotal</span>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '64px', textAlign: 'right' as const }}>{fmt(version.snapshot.lineItems.reduce((s, li) => s + li.total, 0))}</span>
+            <MoneyConvertTooltip valuePKR={version.snapshot.lineItems.reduce((s, li) => s + li.total, 0)} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#374151', minWidth: '64px', textAlign: 'right' as const, display: 'inline-block' }}>{fmt(version.snapshot.lineItems.reduce((s, li) => s + li.total, 0))}</span>
+            </MoneyConvertTooltip>
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', backgroundColor: '#F9FAFB', borderTop: '1px solid #E5E7EB' }}>
@@ -578,7 +613,9 @@ function SingleVersionView({ version, currentVersionNum, versionStatusConfig: vs
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '10px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.3px' }}>Total</span>
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#1F2937' }}>{fmt(version.snapshot.grandTotal)}</span>
+            <MoneyConvertTooltip valuePKR={version.snapshot.grandTotal} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#1F2937' }}>{fmt(version.snapshot.grandTotal)}</span>
+            </MoneyConvertTooltip>
           </div>
         </div>
       </div>
@@ -622,11 +659,14 @@ function SingleVersionView({ version, currentVersionNum, versionStatusConfig: vs
 }
 
 // ── Compare View ──────────────────────────────────────────────────
-function CompareView({ v1, v2, formatCurrency: fmt, changeTypeConfig: ctCfg, versionStatusConfig: vsCfg }: {
+function CompareView({ v1, v2, formatCurrency: fmt, changeTypeConfig: ctCfg, versionStatusConfig: vsCfg, customerCurrency, lockedRate, lockedAt }: {
   v1: SOVersionEntry; v2: SOVersionEntry;
   formatCurrency: (n: number) => string;
   changeTypeConfig: Record<string, { icon: React.ElementType; color: string; bg: string }>;
   versionStatusConfig: Record<SOVersionStatus, { label: string; bg: string; color: string; icon: React.ElementType }>;
+  customerCurrency?: string;
+  lockedRate?: number;
+  lockedAt?: string;
 }) {
   const v1Map = new Map(v1.snapshot.lineItems.map(li => [li.id, li]));
   const v2Map = new Map(v2.snapshot.lineItems.map(li => [li.id, li]));
@@ -644,9 +684,9 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeTypeConfig: ctCfg, ver
   const diffBg: Record<DiffStatus, string> = { unchanged: '#FFFFFF', added: '#F0FDF4', removed: '#FEF2F2', modified: '#FFFBEB' };
   const diffBorder: Record<DiffStatus, string> = { unchanged: '#F7F8F9', added: '#BBF7D0', removed: '#FECACA', modified: '#FDE68A' };
 
-  const summaryFields = [
+  const summaryFields: Array<{ label: string; val1: string; val2: string; money1?: number; money2?: number }> = [
     { label: 'Line Items', val1: String(v1.snapshot.lineItemCount), val2: String(v2.snapshot.lineItemCount) },
-    { label: 'Grand Total', val1: fmt(v1.snapshot.grandTotal), val2: fmt(v2.snapshot.grandTotal) },
+    { label: 'Grand Total', val1: fmt(v1.snapshot.grandTotal), val2: fmt(v2.snapshot.grandTotal), money1: v1.snapshot.grandTotal, money2: v2.snapshot.grandTotal },
     { label: 'Rules', val1: String(v1.snapshot.rulesCount), val2: String(v2.snapshot.rulesCount) },
     { label: 'Adjustments', val1: String(v1.snapshot.adjustmentsCount), val2: String(v2.snapshot.adjustmentsCount) },
     { label: 'Status', val1: vsCfg[v1.versionStatus].label, val2: vsCfg[v2.versionStatus].label },
@@ -681,8 +721,12 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeTypeConfig: ctCfg, ver
         </div>
         <span style={{ fontSize: '10px', color: isChanged ? '#92400E' : '#6B7280', fontWeight: isChanged ? 600 : 400, width: '24px', textAlign: 'right' as const }}>{li.qty}</span>
         <span style={{ fontSize: '10px', color: '#9CA3AF', width: '24px', textAlign: 'center' as const }}>{li.uom}</span>
-        <span style={{ fontSize: '10px', color: isChanged ? '#92400E' : '#9CA3AF', fontWeight: isChanged ? 500 : 400, width: '56px', textAlign: 'right' as const }}>{fmt(li.unitPrice)}</span>
-        <span style={{ fontSize: '10px', fontWeight: 600, color: isChanged ? '#92400E' : '#1F2937', width: '56px', textAlign: 'right' as const }}>{fmt(li.total)}</span>
+        <MoneyConvertTooltip valuePKR={li.unitPrice} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt}>
+          <span style={{ fontSize: '10px', color: isChanged ? '#92400E' : '#9CA3AF', fontWeight: isChanged ? 500 : 400, width: '56px', textAlign: 'right' as const, display: 'inline-block' }}>{fmt(li.unitPrice)}</span>
+        </MoneyConvertTooltip>
+        <MoneyConvertTooltip valuePKR={li.total} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt}>
+          <span style={{ fontSize: '10px', fontWeight: 600, color: isChanged ? '#92400E' : '#1F2937', width: '56px', textAlign: 'right' as const, display: 'inline-block' }}>{fmt(li.total)}</span>
+        </MoneyConvertTooltip>
       </div>
     );
   };
@@ -723,13 +767,17 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeTypeConfig: ctCfg, ver
         })}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '3px 8px', borderTop: '1px solid #E5E7EB', backgroundColor: subtotalChanged && side === 'right' ? '#FFFBEB' : '#FFFFFF' }}>
           <span style={{ fontSize: '9px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.3px', marginRight: '6px' }}>Subtotal</span>
-          <span style={{ fontSize: '10px', fontWeight: 600, color: subtotalChanged && side === 'right' ? '#92400E' : '#374151', minWidth: '56px', textAlign: 'right' as const }}>{fmt(otherSubtotal)}</span>
+          <MoneyConvertTooltip valuePKR={otherSubtotal} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt}>
+            <span style={{ fontSize: '10px', fontWeight: 600, color: subtotalChanged && side === 'right' ? '#92400E' : '#374151', minWidth: '56px', textAlign: 'right' as const, display: 'inline-block' }}>{fmt(otherSubtotal)}</span>
+          </MoneyConvertTooltip>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', backgroundColor: totalChanged && side === 'right' ? '#FFFBEB' : '#F9FAFB', borderTop: '1px solid #E5E7EB' }}>
           <span style={{ fontSize: '9px', color: '#6B7280' }}>{ver.snapshot.rulesCount} rules · {ver.snapshot.adjustmentsCount} adj.</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <span style={{ fontSize: '9px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.3px' }}>Total</span>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: totalChanged && side === 'right' ? '#92400E' : '#1F2937' }}>{fmt(ver.snapshot.grandTotal)}</span>
+            <MoneyConvertTooltip valuePKR={ver.snapshot.grandTotal} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: totalChanged && side === 'right' ? '#92400E' : '#1F2937' }}>{fmt(ver.snapshot.grandTotal)}</span>
+            </MoneyConvertTooltip>
           </div>
         </div>
       </div>
@@ -764,9 +812,21 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeTypeConfig: ctCfg, ver
           return (
             <div key={f.label} style={{ display: 'grid', gridTemplateColumns: '120px minmax(0, 1fr) minmax(0, 1fr)', padding: '7px 12px', borderBottom: '1px solid #E5E7EB', backgroundColor: isEven ? '#FFFFFF' : '#F9FAFB', borderLeft: changed ? '3px solid #F59E0B' : '3px solid transparent' }}>
               <span style={{ fontSize: '11px', fontWeight: 500, color: '#6B7280' }}>{f.label}</span>
-              <span style={{ fontSize: '12px', fontWeight: 500, color: changed ? '#92400E' : '#1F2937' }}>{f.val1}</span>
+              {typeof f.money1 === 'number' ? (
+                <MoneyConvertTooltip valuePKR={f.money1} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt}>
+                  <span style={{ fontSize: '12px', fontWeight: 500, color: changed ? '#92400E' : '#1F2937' }}>{f.val1}</span>
+                </MoneyConvertTooltip>
+              ) : (
+                <span style={{ fontSize: '12px', fontWeight: 500, color: changed ? '#92400E' : '#1F2937' }}>{f.val1}</span>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 500, color: changed ? '#065F46' : '#1F2937' }}>{f.val2}</span>
+                {typeof f.money2 === 'number' ? (
+                  <MoneyConvertTooltip valuePKR={f.money2} customerCurrency={customerCurrency} lockedRate={lockedRate} lockedAt={lockedAt}>
+                    <span style={{ fontSize: '12px', fontWeight: 500, color: changed ? '#065F46' : '#1F2937' }}>{f.val2}</span>
+                  </MoneyConvertTooltip>
+                ) : (
+                  <span style={{ fontSize: '12px', fontWeight: 500, color: changed ? '#065F46' : '#1F2937' }}>{f.val2}</span>
+                )}
                 {changed && <span style={{ fontSize: '9px', fontWeight: 600, color: '#D97706' }}>●</span>}
               </div>
             </div>
@@ -864,10 +924,28 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeTypeConfig: ctCfg, ver
 }
 
 // ── Revert Confirm Modal ──────────────────────────────────────────
-function RevertConfirmModal({ version, nextVersion, hasShippedItems, onClose, onConfirm }: {
-  version: number; nextVersion: number; hasShippedItems: boolean; onClose: () => void; onConfirm: (reason: string) => void;
+function RevertConfirmModal({ version, nextVersion, hasShippedItems, soNumber, onClose, onConfirm }: {
+  version: number; nextVersion: number; hasShippedItems: boolean; soNumber: string; onClose: () => void; onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState('');
+  const store = useSOStore();
+  const so = store.salesOrders.find(s => s.soNumber === soNumber);
+  const { rateType } = useRateContext();
+  const customerCurrency = so?.currency?.toUpperCase();
+  const showFx = !!customerCurrency && customerCurrency !== BASE_CURRENCY;
+  const todayRate = showFx ? convertBetween(1, customerCurrency, BASE_CURRENCY) : 0;
+  // For the demo we mock the version's locked rate as a small offset from today's
+  // rate when we don't have a per-version snapshot.
+  const versionLockedRate = showFx
+    ? (so?.lockedRate ?? +(todayRate * 0.988).toFixed(4))
+    : 0;
+  const drift = showFx && versionLockedRate
+    ? +(((todayRate - versionLockedRate) / versionLockedRate) * 100).toFixed(1)
+    : 0;
+  const cur = showFx ? getLibraryCurrency(customerCurrency!) : null;
+  const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
+  const baseSym = baseCur.symbol ?? BASE_CURRENCY;
+  const colors = RATE_TYPE_COLORS[rateType];
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 10002, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)' }} onClick={onClose} />
@@ -894,6 +972,37 @@ function RevertConfirmModal({ version, nextVersion, hasShippedItems, onClose, on
               <span style={{ fontSize: '11px', color: '#065F46', lineHeight: '1.3' }}>
                 Already-shipped items will be included as non-editable (locked) in the new draft.
               </span>
+            </div>
+          )}
+
+          {/* FX disclosure — today's rate will apply to the reverted draft, not V{version}'s locked rate. */}
+          {showFx && (
+            <div
+              style={{
+                marginBottom: '12px',
+                padding: '10px 12px',
+                backgroundColor: `${colors.hex}0D`,
+                border: `1px solid ${colors.hex}33`,
+                borderRadius: '6px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                <TrendingUp style={{ width: '13px', height: '13px', color: colors.hex, flexShrink: 0 }} />
+                <span style={{ fontSize: '12px', color: colors.hex, fontWeight: 600, lineHeight: 1.3 }}>
+                  Today's {rateTypeLabel(rateType)} will be applied to this revert
+                </span>
+              </div>
+              <div style={{ fontSize: '11.5px', color: '#1F2937', fontWeight: 500, lineHeight: 1.5 }} className="tabular-nums">
+                1 {customerCurrency} = {baseSym} {formatRate(todayRate)} {BASE_CURRENCY}
+              </div>
+              {versionLockedRate > 0 && (
+                <div style={{ fontSize: '11px', color: '#6B7280', lineHeight: 1.5 }} className="tabular-nums">
+                  <span style={{ color: drift >= 0 ? '#059669' : '#DC2626', fontWeight: 600 }}>
+                    {drift >= 0 ? '+' : ''}{drift}%
+                  </span>{' '}
+                  vs V{version} locked rate of {baseSym} {formatRate(versionLockedRate)}
+                </div>
+              )}
             </div>
           )}
           <label style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>

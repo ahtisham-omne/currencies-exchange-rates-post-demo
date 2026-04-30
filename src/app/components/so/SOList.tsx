@@ -32,6 +32,9 @@ import {
   AlertCircle, Layers, Users, Building2, Flag, Calendar, Maximize2, Minimize2,
 } from "lucide-react";
 import { CreateSOModal, type SOCreationPayload } from "./CreateSOModal";
+import { RateKpiValue } from "../currency/RateKpiValue";
+import { CurrencyAmount } from "@/app/components/ui/CurrencyAmount";
+import { BASE_CURRENCY, convertBetween } from "@/app/data/currencyLibrary";
 import { ConfirmSOModal } from "./ConfirmSOModal";
 import { BulkConfirmSOModal } from "./BulkConfirmSOModal";
 import { CancellationModal } from "./CancellationModal";
@@ -127,6 +130,36 @@ const DEFAULT_COLUMN_WIDTHS: Record<string, number> = Object.fromEntries(
 
 function colDef(key: string) { return COLUMN_DEFS.find(c => c.key === key)!; }
 
+/* ─── Per-column money rendering — mirrors the Quotes module's listing.
+ * Switches between single (base==customer), listing-base (base view, customer
+ * currency surfaced via hover), and listing-partner (customer view, base
+ * surfaced via hover) based on the column's current view-mode toggle. ─── */
+function renderListingMoney(valuePKR: number, customerCurrency: string | undefined, view: "base" | "partner") {
+  const customerCur = (customerCurrency ?? BASE_CURRENCY).toUpperCase();
+  const isBase = customerCur === BASE_CURRENCY;
+  if (isBase) {
+    return <CurrencyAmount mode="single" currency={BASE_CURRENCY} value={valuePKR} />;
+  }
+  if (view === "partner") {
+    return (
+      <CurrencyAmount
+        mode="listing-partner"
+        currency={customerCur}
+        value={convertBetween(valuePKR, BASE_CURRENCY, customerCur)}
+      />
+    );
+  }
+  return (
+    <CurrencyAmount
+      mode="listing-base"
+      currency={BASE_CURRENCY}
+      value={valuePKR}
+      partnerDefaultCurrency={customerCur}
+      partnerDefaultValue={convertBetween(valuePKR, BASE_CURRENCY, customerCur)}
+    />
+  );
+}
+
 /* ═══ Styled Tooltip for bulk action icons ═══ */
 function ActionTooltip({ children, label, description }: { children: React.ReactNode; label: string; description: string }) {
   const [show, setShow] = useState(false);
@@ -161,9 +194,13 @@ function ActionTooltip({ children, label, description }: { children: React.React
 const DND_LIST_KPI = "LIST_KPI_CARD";
 
 /* ═══ DraggableListKpiCard — matches Partner Management exactly ═══ */
-function DraggableInsightCard({ index, card, moveCard, onRemove }: {
+function DraggableInsightCard({ index, card, valueNode, moveCard, onRemove }: {
   index: number;
   card: { label: string; value: string; trending?: "up" | "down" | "neutral"; description?: string };
+  /** When provided, overrides the default text-only value rendering. Used for
+   *  rate-type KPIs (Market Rate / Corporate Rate) that render a colored dot
+   *  + freshness label instead of a plain string. */
+  valueNode?: React.ReactNode;
   moveCard: (from: number, to: number) => void;
   onRemove?: (label: string) => void;
 }) {
@@ -252,9 +289,13 @@ function DraggableInsightCard({ index, card, moveCard, onRemove }: {
           )}
         </div>
         {/* Value */}
-        <div className="flex items-baseline gap-1.5">
-          <p className="text-[15px] text-[#0F172A] tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{card.value}</p>
-        </div>
+        {valueNode ? (
+          <div className="text-[15px] text-[#0F172A]" style={{ fontWeight: 600, lineHeight: 1.2 }}>{valueNode}</div>
+        ) : (
+          <div className="flex items-baseline gap-1.5">
+            <p className="text-[15px] text-[#0F172A] tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{card.value}</p>
+          </div>
+        )}
       </div>
       {/* Remove button — bottom-right on hover, trash icon */}
       {onRemove && (
@@ -306,6 +347,9 @@ export function SOList() {
     { label: "High Priority Orders", value: "", description: "Total number of orders currently marked with Critical priority status." },
     { label: "Ready to Ship", value: "", description: "Orders that are fully allocated and packed, awaiting carrier pickup or shipment dispatch." },
     { label: "Avg. Days to Fulfill", value: "", description: "Average number of days from Cleared by Ops to fully shipped, across all completed orders in the selected period." },
+    // FX context — Mid-market Rate is active by default at the end of the row;
+    // Corporate Rate sits hidden, addable via the Insights drawer.
+    { label: "Mid-market Rate", value: "", description: "Live mid-market rates from Open Exchange Rates. Refreshed every 15 minutes. Display-only — drives the customer-currency hover conversions on the table." },
   ]);
   const [confirmSingleSO, setConfirmSingleSO] = useState<SalesOrder | null>(null);
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
@@ -348,6 +392,12 @@ export function SOList() {
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({ ...DEFAULT_COLUMN_WIDTHS });
   const [frozenColumns, setFrozenColumns] = useState<Set<string>>(new Set(["so"]));
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+
+  /* Per-column Base ↔ Customer currency view, set from each column-header menu.
+   * Mirrors the Quotes module's Quote Value column. */
+  const [valueView, setValueView] = useState<"base" | "partner">("base");
+  const [invoicedView, setInvoicedView] = useState<"base" | "partner">("base");
+  const [paymentsView, setPaymentsView] = useState<"base" | "partner">("base");
 
   /* Column drag reorder state */
   const colDragRef = useRef<{ columnKey: string; startX: number; startY: number; isDragging: boolean; lastSwapTime: number } | null>(null);
@@ -802,16 +852,21 @@ export function SOList() {
           </div>
         );
       }
-      case "value":
-        return <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>${so.total.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+      case "value": {
+        return (
+          <span className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>
+            {renderListingMoney(so.total, so.currency, valueView)}
+          </span>
+        );
+      }
       case "invoiced": {
         const invoiced = so.linkedTransactions.filter(t => t.type === "Invoice").reduce((s, t) => s + t.amount, 0);
         const invoiceList = so.linkedTransactions.filter(t => t.type === "Invoice");
         return (
           <div className="relative group/inv">
             <div className="flex items-center gap-1">
-              <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 500, color: invoiced > 0 ? '#0F172A' : '#94A3B8' }}>
-                {invoiced > 0 ? `$${invoiced.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '—'}
+              <span className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 500, color: invoiced > 0 ? '#0F172A' : '#94A3B8' }}>
+                {invoiced > 0 ? renderListingMoney(invoiced, so.currency, invoicedView) : '—'}
               </span>
               {invoiceList.length > 0 && (
                 <ArrowUpRight className="w-3 h-3 text-primary/40 group-hover/inv:text-primary transition-colors" />
@@ -824,7 +879,9 @@ export function SOList() {
                   {invoiceList.map((inv, i) => (
                     <div key={i} className="flex items-center justify-between py-1 px-2 rounded-md hover:bg-muted/40 transition-colors cursor-pointer">
                       <span className="text-[12px] text-primary" style={{ fontWeight: 500 }}>{inv.number}</span>
-                      <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }}>${inv.amount.toLocaleString()}</span>
+                      <span className="text-[12px] text-foreground" style={{ fontWeight: 600 }}>
+                        {renderListingMoney(inv.amount, so.currency, invoicedView)}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -835,7 +892,11 @@ export function SOList() {
       }
       case "payments": {
         const payments = so.linkedTransactions.filter(t => t.type === "Payment Receipt").reduce((s, t) => s + t.amount, 0);
-        return <span className="whitespace-nowrap tabular-nums text-left" style={{ fontSize: '13px', fontWeight: 500, color: payments > 0 ? '#0F172A' : '#94A3B8' }}>{payments > 0 ? `$${payments.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '—'}</span>;
+        return (
+          <span className="whitespace-nowrap text-left" style={{ fontSize: '13px', fontWeight: 500, color: payments > 0 ? '#0F172A' : '#94A3B8' }}>
+            {payments > 0 ? renderListingMoney(payments, so.currency, paymentsView) : '—'}
+          </span>
+        );
       }
       case "orderdate": return <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{dates.orderDate}</span>;
       case "shipby": return <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{dates.shipBy}</span>;
@@ -887,7 +948,7 @@ export function SOList() {
       }
       default: return null;
     }
-  }, [search, isCondensed, cellFontSize, avatarSize, avatarFontSize, smallAvatarSize, smallAvatarFontSize]);
+  }, [search, isCondensed, cellFontSize, avatarSize, avatarFontSize, smallAvatarSize, smallAvatarFontSize, valueView, invoicedView, paymentsView]);
 
   const isTableView = density !== "kanban";
 
@@ -928,9 +989,14 @@ export function SOList() {
             </div>
             <DndProvider backend={HTML5Backend}>
               <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
-                {insightCardData.map((card, idx) => (
-                  <DraggableInsightCard key={card.label} index={idx} card={card} moveCard={moveInsight} onRemove={(label) => setActiveInsights(prev => prev.filter(i => i.label !== label))} />
-                ))}
+                {insightCardData.map((card, idx) => {
+                  const valueNode = card.label === "Mid-market Rate"
+                    ? <RateKpiValue rateType="market" />
+                    : card.label === "Corporate Rate"
+                    ? <RateKpiValue rateType="corporate" />
+                    : undefined;
+                  return <DraggableInsightCard key={card.label} index={idx} card={card} valueNode={valueNode} moveCard={moveInsight} onRemove={(label) => setActiveInsights(prev => prev.filter(i => i.label !== label))} />;
+                })}
               </div>
             </DndProvider>
           </div>
@@ -1306,6 +1372,18 @@ export function SOList() {
                                 onFreezeColumn={handleFreezeColumn}
                                 isFrozen={isFrozen}
                                 isLocked={isLocked}
+                                currencyViewMode={
+                                  key === "value" ? valueView
+                                    : key === "invoiced" ? invoicedView
+                                    : key === "payments" ? paymentsView
+                                    : undefined
+                                }
+                                onCurrencyViewModeChange={
+                                  key === "value" ? setValueView
+                                    : key === "invoiced" ? setInvoicedView
+                                    : key === "payments" ? setPaymentsView
+                                    : undefined
+                                }
                               >
                                 <div className={`inline-flex items-center gap-1 ${def.align === "right" ? "w-full justify-end" : ""}`}>
                                   <span className="text-[13px]" style={currentColSort ? { color: "#0A77FF" } : undefined}>{def.label}</span>
@@ -1521,9 +1599,14 @@ export function SOList() {
                 </div>
                 <DndProvider backend={HTML5Backend}>
                   <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
-                    {insightCardData.map((card, idx) => (
-                      <DraggableInsightCard key={card.label} index={idx} card={card} moveCard={moveInsight} onRemove={(label) => setActiveInsights(prev => prev.filter(i => i.label !== label))} />
-                    ))}
+                    {insightCardData.map((card, idx) => {
+                      const valueNode = card.label === "Mid-market Rate"
+                        ? <RateKpiValue rateType="market" />
+                        : card.label === "Corporate Rate"
+                        ? <RateKpiValue rateType="corporate" />
+                        : undefined;
+                      return <DraggableInsightCard key={card.label} index={idx} card={card} valueNode={valueNode} moveCard={moveInsight} onRemove={(label) => setActiveInsights(prev => prev.filter(i => i.label !== label))} />;
+                    })}
                   </div>
                 </DndProvider>
               </div>
@@ -1745,7 +1828,7 @@ export function SOList() {
 
       {/* Insights Panel — overlay drawer (not pushing) */}
       <InsightsPanel onClose={() => setShowInsights(false)} onActiveChange={setActiveInsights} open={showInsights} />
-      <CreateSOModal open={showCreateModal} onClose={() => setShowCreateModal(false)} onContinue={(payload: SOCreationPayload) => { setShowCreateModal(false); const so = createSO({ customer: payload.customer, customerInitials: payload.customerInitials, shippingAddress: payload.customerAddress, description: `Sales order for ${payload.customer} — ${payload.lineItems.length} line items`, priority: payload.priority, tags: payload.tags, lines: payload.lineItems.map(li => ({ id: "", itemCode: li.itemCode, itemName: li.itemName, itemType: li.itemType, warehouse: "Main Warehouse", orderedQty: li.qty, allocatedQty: 0, pickedQty: 0, shippedQty: 0, deliveredQty: 0, unitPrice: li.unitPrice, taxRate: 0.08, allocations: [], cancelled: false, cancelledQty: 0, readyToPick: false })) }); toast.success(`Sales Order ${so.soNumber} Created`); navigate(`/sales-orders/${so.id}`); }} />
+      <CreateSOModal open={showCreateModal} onClose={() => setShowCreateModal(false)} onContinue={(payload: SOCreationPayload) => { setShowCreateModal(false); const so = createSO({ customer: payload.customer, customerInitials: payload.customerInitials, shippingAddress: payload.customerAddress, description: `Sales order for ${payload.customer} — ${payload.lineItems.length} line items`, priority: payload.priority, tags: payload.tags, currency: payload.currency, lines: payload.lineItems.map(li => ({ id: "", itemCode: li.itemCode, itemName: li.itemName, itemType: li.itemType, warehouse: "Main Warehouse", orderedQty: li.qty, allocatedQty: 0, pickedQty: 0, shippedQty: 0, deliveredQty: 0, unitPrice: li.unitPrice, taxRate: 0.08, allocations: [], cancelled: false, cancelledQty: 0, readyToPick: false })) }); toast.success(`Sales Order ${so.soNumber} Created`); navigate(`/sales-orders/${so.id}`); }} />
       {confirmSingleSO && <ConfirmSOModal so={confirmSingleSO} onConfirm={() => handleSingleConfirmDone()} onClose={() => setConfirmSingleSO(null)} />}
       {showBulkConfirm && <BulkConfirmSOModal orders={selectedSOs} onConfirm={(soIds) => handleBulkConfirmDone(soIds)} onClose={() => setShowBulkConfirm(false)} />}
       {cancelTargetSO && <CancellationModal so={cancelTargetSO} mode={cancelModalMode} onConfirmFull={handleCancelFull} onConfirmPartial={handleCancelPartial} onClose={() => setCancelTargetSO(null)} />}

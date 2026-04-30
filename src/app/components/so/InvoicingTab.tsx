@@ -11,6 +11,7 @@ import { ThTooltip, Tooltip } from "./Tooltip";
 import { useModalShortcuts, KbdHint, ModalShell } from "./ModalKeyboard";
 import { Button } from "./ui/Button";
 import type { SalesOrder } from "./types";
+import { makeFormatOrderMoney } from "../currency/formatOrderMoney";
 
 /* ═══ Invoice types ═══ */
 export type InvoiceStatus = "Paid" | "Pending" | "Overdue" | "Draft" | "Partially Paid" | "Voided";
@@ -713,7 +714,7 @@ function EditInvoiceModal({ invoice, onClose, onSave }: {
             </div>
             <div className="flex justify-between text-caption" style={{ marginTop: 4 }}>
               <span className="text-foreground/50">Paid</span>
-              <span className="text-accent font-medium">${invoice.paidAmount.toLocaleString()}</span>
+              <span className="text-accent font-medium">{fmtMoney(invoice.paidAmount)}</span>
             </div>
           </div>
         </div>
@@ -732,8 +733,9 @@ function EditInvoiceModal({ invoice, onClose, onSave }: {
 }
 
 /* ═══ Invoice Detail Modal — replaces expanded rows ═══ */
-function InvoiceDetailModal({ invoice, onClose, onRecordPayment, onEdit, onVoid }: {
+function InvoiceDetailModal({ invoice, fmtMoney, onClose, onRecordPayment, onEdit, onVoid }: {
   invoice: Invoice;
+  fmtMoney: (n: number) => string;
   onClose: () => void;
   onRecordPayment: () => void;
   onEdit: () => void;
@@ -814,9 +816,9 @@ function InvoiceDetailModal({ invoice, onClose, onRecordPayment, onEdit, onVoid 
               {/* Financial summary */}
               <div className="grid grid-cols-3" style={{ gap: "var(--space-inline-gap)" }}>
                 {[
-                  { label: "Invoice Amount", value: `$${invoice.amount.toLocaleString()}`, color: "text-foreground" },
-                  { label: "Paid", value: `$${invoice.paidAmount.toLocaleString()}`, color: "text-accent" },
-                  { label: "Outstanding", value: `$${remaining.toLocaleString()}`, color: remaining > 0 ? "text-chart-3" : "text-accent" },
+                  { label: "Invoice Amount", value: fmtMoney(invoice.amount), color: "text-foreground" },
+                  { label: "Paid", value: fmtMoney(invoice.paidAmount), color: "text-accent" },
+                  { label: "Outstanding", value: fmtMoney(remaining), color: remaining > 0 ? "text-chart-3" : "text-accent" },
                 ].map(item => (
                   <div key={item.label} className="border border-border rounded-lg text-center" style={{ padding: "8px var(--space-inline-gap)" }}>
                     <div className="text-foreground/40 text-micro font-semibold tracking-wider" style={{ marginBottom: 3 }}>{item.label}</div>
@@ -896,8 +898,8 @@ function InvoiceDetailModal({ invoice, onClose, onRecordPayment, onEdit, onVoid 
                           <span className="text-caption text-foreground/50 truncate">{li.itemName}</span>
                         </div>
                         <div className="flex items-center shrink-0" style={{ gap: 8 }}>
-                          <span className="text-small text-foreground/40">{li.qty} × ${li.unitPrice.toLocaleString()}</span>
-                          <span className="text-caption text-foreground font-semibold">${(li.qty * li.unitPrice).toLocaleString()}</span>
+                          <span className="text-small text-foreground/40">{li.qty} × {fmtMoney(li.unitPrice)}</span>
+                          <span className="text-caption text-foreground font-semibold">{fmtMoney(li.qty * li.unitPrice)}</span>
                         </div>
                       </div>
                     ))}
@@ -922,7 +924,7 @@ function InvoiceDetailModal({ invoice, onClose, onRecordPayment, onEdit, onVoid 
                           </div>
                           <div className="flex items-center" style={{ gap: 12 }}>
                             <span className="text-small text-foreground/40">{sp.date}</span>
-                            <span className="text-caption text-foreground font-semibold">${sp.amount.toLocaleString()}</span>
+                            <span className="text-caption text-foreground font-semibold">{fmtMoney(sp.amount)}</span>
                           </div>
                         </div>
                       ))}
@@ -956,13 +958,13 @@ function InvoiceDetailModal({ invoice, onClose, onRecordPayment, onEdit, onVoid 
                         <Check className="w-4 h-4 text-accent" />
                       </div>
                       <div>
-                        <div className="text-foreground text-label font-semibold">${invoice.paidAmount.toLocaleString()}</div>
+                        <div className="text-foreground text-label font-semibold">{fmtMoney(invoice.paidAmount)}</div>
                         <div className="text-foreground/40 text-small">collected across {invoice.paymentHistory.length} payment{invoice.paymentHistory.length > 1 ? "s" : ""}</div>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className={`text-label font-semibold ${remaining > 0 ? "text-chart-3" : "text-accent"}`}>
-                        {remaining > 0 ? `$${remaining.toLocaleString()} due` : "Fully paid"}
+                        {remaining > 0 ? `${fmtMoney(remaining)} due` : "Fully paid"}
                       </div>
                       <div className="text-foreground/40 text-small">{collectedPct}% collected</div>
                     </div>
@@ -997,7 +999,7 @@ function InvoiceDetailModal({ invoice, onClose, onRecordPayment, onEdit, onVoid 
                           <div className="border border-border rounded-lg hover:border-primary/20 transition-colors" style={{ padding: "var(--space-inline-gap) var(--space-card-padding)" }}>
                             <div className="flex items-center justify-between">
                               <div className="flex items-center" style={{ gap: 8 }}>
-                                <span className="text-foreground text-label font-semibold">${ph.amount.toLocaleString()}</span>
+                                <span className="text-foreground text-label font-semibold">{fmtMoney(ph.amount)}</span>
                                 <span className="text-small text-foreground/40 border border-border rounded px-1.5 py-px font-medium">{ph.method}</span>
                               </div>
                               <span className="text-foreground/40 text-caption font-medium">{ph.date}</span>
@@ -1035,7 +1037,7 @@ function InvoiceDetailModal({ invoice, onClose, onRecordPayment, onEdit, onVoid 
                               <div className="border border-dashed border-border rounded-lg" style={{ padding: "var(--space-inline-gap) var(--space-card-padding)" }}>
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center" style={{ gap: 8 }}>
-                                    <span className="text-foreground/50 text-label font-semibold">${sp.amount.toLocaleString()}</span>
+                                    <span className="text-foreground/50 text-label font-semibold">{fmtMoney(sp.amount)}</span>
                                     {sp.note && <span className="text-small text-foreground/35 font-medium">{sp.note}</span>}
                                   </div>
                                   <div className="flex items-center" style={{ gap: 6 }}>
@@ -1097,7 +1099,8 @@ function InvoiceDetailModal({ invoice, onClose, onRecordPayment, onEdit, onVoid 
 }
 
 /* ═══ Main Component ═══ */
-export function InvoicingTab({ so }: { so: SalesOrder }) {
+export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMode?: "base" | "customer" }) {
+  const fmtMoney = makeFormatOrderMoney(so.currency, viewMode);
   const [invoices, setInvoices] = useState<Invoice[]>(() => generateMockInvoices(so));
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InvFilter>("all");
@@ -1203,7 +1206,7 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
               className="text-foreground/50"
               style={{ fontSize: "var(--text-small)", fontWeight: "var(--font-weight-medium)" }}
             >
-              {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? "s" : ""} · ${totalInvoiced.toLocaleString()}
+              {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? "s" : ""} · {fmtMoney(totalInvoiced)}
             </span>
           }
         >
@@ -1227,7 +1230,7 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
               <span className="text-small text-foreground font-semibold">Collection Progress</span>
               <span className="text-micro text-foreground/50 bg-border rounded-full px-1.5 py-[1px] min-w-[16px] text-center font-medium">{paidPct}%</span>
             </div>
-            <span className="text-small text-foreground/70 font-medium">${totalPaid.toLocaleString()} of ${totalInvoiced.toLocaleString()}</span>
+            <span className="text-small text-foreground/70 font-medium">{fmtMoney(totalPaid)} of {fmtMoney(totalInvoiced)}</span>
           </div>
           <div className="bg-card px-3 py-2.5">
             <div className="flex rounded-full overflow-hidden" style={{ height: 5, background: "var(--secondary)" }}>
@@ -1238,12 +1241,12 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
               <div className="flex items-center gap-1">
                 <div className="w-1.5 h-1.5 rounded-full bg-accent" />
                 <span className="text-micro text-foreground/50 font-medium">Paid</span>
-                <span className="text-small text-accent font-semibold">${totalPaid.toLocaleString()}</span>
+                <span className="text-small text-accent font-semibold">{fmtMoney(totalPaid)}</span>
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-1.5 h-1.5 rounded-full bg-chart-3/40" />
                 <span className="text-micro text-foreground/50 font-medium">Outstanding</span>
-                <span className="text-small text-chart-3 font-semibold">${totalPending.toLocaleString()}</span>
+                <span className="text-small text-chart-3 font-semibold">{fmtMoney(totalPending)}</span>
               </div>
             </div>
 
@@ -1257,7 +1260,7 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
                     </span>
                   </div>
                   <span className="text-micro text-destructive/60 font-medium">
-                    ${overdueInvoices.reduce((s, inv) => s + (inv.amount - inv.paidAmount), 0).toLocaleString()} total
+                    {fmtMoney(overdueInvoices.reduce((s, inv) => s + (inv.amount - inv.paidAmount), 0))} total
                   </span>
                 </div>
                 <div className="flex flex-col" style={{ gap: 3 }}>
@@ -1270,7 +1273,7 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
                           <span className="text-micro text-foreground/40">Due {inv.dueDate}</span>
                         </div>
                         <div className="flex items-center" style={{ gap: 6 }}>
-                          <span className="text-small text-destructive font-semibold">${bal.toLocaleString()}</span>
+                          <span className="text-small text-destructive font-semibold">{fmtMoney(bal)}</span>
                           <button
                             onClick={() => setMarkPaidInvoice(inv)}
                             className="inline-flex items-center rounded bg-accent text-accent-foreground hover:bg-accent/90 transition-colors opacity-60 group-hover:opacity-100 text-micro font-semibold"
@@ -1300,7 +1303,7 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
                     <span className="text-small text-foreground font-semibold">Invoices</span>
                     <span className="text-micro text-foreground/50 bg-border rounded-full px-1.5 py-[1px] min-w-[16px] text-center font-medium">{filteredInvoices.length}</span>
                   </button>
-                  <span className="text-small text-foreground font-medium">${filteredInvoices.reduce((s, inv) => s + inv.amount, 0).toLocaleString()}</span>
+                  <span className="text-small text-foreground font-medium">{fmtMoney(filteredInvoices.reduce((s, inv) => s + inv.amount, 0))}</span>
                 </div>
                 {open && (
                   <div className="overflow-x-auto bg-card" id="lt-invoices">
@@ -1349,15 +1352,15 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
                               <td className="py-2 px-3 pr-2 text-small whitespace-nowrap">
                                 <span className={inv.status === "Overdue" ? "text-destructive font-medium" : "text-foreground/50"}>{inv.dueDate}</span>
                               </td>
-                              <td className="py-2 px-3 pr-2 text-small text-foreground whitespace-nowrap text-right font-medium">${inv.amount.toLocaleString()}</td>
+                              <td className="py-2 px-3 pr-2 text-small text-foreground whitespace-nowrap text-right font-medium">{fmtMoney(inv.amount)}</td>
                               <td className="py-2 px-3 pr-2 text-small whitespace-nowrap text-right">
                                 {inv.paidAmount > 0 ? (
-                                  <span className="text-accent font-medium">${inv.paidAmount.toLocaleString()}</span>
+                                  <span className="text-accent font-medium">{fmtMoney(inv.paidAmount)}</span>
                                 ) : (
                                   <span className="text-foreground/20">&mdash;</span>
                                 )}
                                 {remaining > 0 && inv.paidAmount > 0 && (
-                                  <span className="text-chart-3/70 ml-1 text-micro">(${remaining.toLocaleString()} due)</span>
+                                  <span className="text-chart-3/70 ml-1 text-micro">({fmtMoney(remaining)} due)</span>
                                 )}
                               </td>
                               <td className="py-2 px-3 pr-2 hidden lg:table-cell">
@@ -1412,7 +1415,7 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
                     <span className="text-small text-foreground font-semibold">Payment Receipts</span>
                     <span className="text-micro text-foreground/50 bg-border rounded-full px-1.5 py-[1px] min-w-[16px] text-center font-medium">{receiptSection.length}</span>
                   </button>
-                  <span className="text-small text-foreground font-medium">${receiptSection.reduce((s, inv) => s + inv.paidAmount, 0).toLocaleString()}</span>
+                  <span className="text-small text-foreground font-medium">{fmtMoney(receiptSection.reduce((s, inv) => s + inv.paidAmount, 0))}</span>
                 </div>
                 {open && (
                   <div className="overflow-x-auto bg-card" id="lt-receipts">
@@ -1443,7 +1446,7 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
                               </td>
                               <td className="py-2 px-3 pr-2 text-small text-foreground">{inv.paymentMethod || "\u2014"}</td>
                               <td className="py-2 px-3 pr-2 text-small text-foreground/50 whitespace-nowrap">{inv.paymentDate || "\u2014"}</td>
-                              <td className="py-2 px-3 pr-2 text-small text-accent whitespace-nowrap text-right font-medium">${inv.paidAmount.toLocaleString()}</td>
+                              <td className="py-2 px-3 pr-2 text-small text-accent whitespace-nowrap text-right font-medium">{fmtMoney(inv.paidAmount)}</td>
                               <td className="py-2 px-3 pr-2">
                                 {inv.receiptFiles && inv.receiptFiles.length > 0 ? (
                                   <div className="flex items-center gap-1">
@@ -1487,6 +1490,7 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
       {detailInvoice && (
         <InvoiceDetailModal
           invoice={detailInvoice}
+          fmtMoney={fmtMoney}
           onClose={() => setDetailInvoice(null)}
           onRecordPayment={() => { setDetailInvoice(null); setMarkPaidInvoice(detailInvoice); }}
           onEdit={() => { setDetailInvoice(null); setEditInvoice(detailInvoice); }}
@@ -1507,12 +1511,13 @@ export function InvoicingTab({ so }: { so: SalesOrder }) {
 /**
  * Compact invoice summary for the sidebar — horizontal stacked bar with paid/pending breakdown.
  */
-export function InvoiceSidebarSummary({ so, onOpenInvoicing }: { so: SalesOrder; onOpenInvoicing?: () => void }) {
+export function InvoiceSidebarSummary({ so, viewMode = "base", onOpenInvoicing }: { so: SalesOrder; viewMode?: "base" | "customer"; onOpenInvoicing?: () => void }) {
   const invoices = generateMockInvoices(so);
   const totalInvoiced = invoices.reduce((s, inv) => s + inv.amount, 0);
   const totalPaid = invoices.reduce((s, inv) => s + inv.paidAmount, 0);
   const totalPending = totalInvoiced - totalPaid;
   const overdueCount = invoices.filter(inv => inv.status === "Overdue").length;
+  const fmt = makeFormatOrderMoney(so.currency, viewMode);
 
   if (totalInvoiced === 0) return null;
 
@@ -1520,15 +1525,15 @@ export function InvoiceSidebarSummary({ so, onOpenInvoicing }: { so: SalesOrder;
     <div className="flex flex-col" style={{ gap: 6 }}>
       <div className="flex items-center justify-between">
         <span className="text-foreground/50" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" }}>Invoiced</span>
-        <span className="text-foreground" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>${totalInvoiced.toLocaleString()}</span>
+        <span className="text-foreground" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>{fmt(totalInvoiced)}</span>
       </div>
       <div className="flex items-center justify-between">
         <span className="text-foreground/50" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" }}>Paid</span>
-        <span className="text-accent" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>${totalPaid.toLocaleString()}</span>
+        <span className="text-accent" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>{fmt(totalPaid)}</span>
       </div>
       <div className="flex items-center justify-between">
         <span className="text-foreground/50" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" }}>Outstanding (Balance)</span>
-        <span className="text-chart-3" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>${totalPending.toLocaleString()}</span>
+        <span className="text-chart-3" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>{fmt(totalPending)}</span>
       </div>
       {overdueCount > 0 && (
         <div className="flex items-center justify-between rounded-lg" style={{ gap: 6, padding: "8px 12px", marginTop: 4, backgroundColor: "rgba(255, 69, 58, 0.08)" }}>

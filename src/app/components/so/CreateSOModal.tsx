@@ -18,6 +18,7 @@ import { PaymentMethodSelectionModal, type PaymentMethod } from "./PaymentMethod
 
 import { RecipientsSelectionModal, type PoC as RecipientPoC } from "./RecipientsSelectionModal";
 import { SalesRepSelector, type SalesRepOption, type SelectedSalesRep } from "./SalesRepSelector";
+import { OrderCurrencyPicker } from "../currency/OrderCurrencyPicker";
 
 /* ═══ Typography — CSS variable tokens only ═══ */
 const font: React.CSSProperties = {};
@@ -203,6 +204,8 @@ export interface SOCreationPayload {
   pocEmail: string;
   priority: "Low" | "Standard" | "High";
   tags: string[];
+  /** Customer-facing transaction currency for this order. Defaults to the customer's default. */
+  currency: string;
   lineItems: { catalogCode: string; itemCode: string; itemName: string; itemType: "Serialized" | "Non-Serialized" | "Lot Controlled"; unitPrice: number; qty: number }[];
 }
 
@@ -243,6 +246,8 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
   const [showPaymentMethod, setShowPaymentMethod] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("ACH/Direct Deposit");
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string>("ach");
+  /* Currency — defaults to the customer's default currency (mock: EUR). Used as the order's transaction currency. */
+  const [selectedCurrency, setSelectedCurrency] = useState<string>("EUR");
 
   const AVAILABLE_REPS: SalesRepOption[] = [
     { id: 'rep1', name: 'Yahya Naveed', initials: 'YN', isCurrentUser: true, isCustomerDefault: true },
@@ -287,6 +292,7 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
       pocEmail: selectedPOC.email,
       priority,
       tags,
+      currency: selectedCurrency,
       lineItems: selectedItems.map(si => {
         const cat = EXTENDED_CATALOG.find(c => c.code === si.productId);
         return {
@@ -299,7 +305,7 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
         };
       }),
     };
-  }, [selectedCustomer, selectedPOC, selectedItems, priority, tags]);
+  }, [selectedCustomer, selectedPOC, selectedItems, priority, tags, selectedCurrency]);
 
   /* Dirty state — any user selections/entries means unsaved changes */
   const isDirty = !!selectedCustomer || !!selectedPOC || selectedItems.length > 0
@@ -379,6 +385,7 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
     setSelectedPaymentTermId("net30");
     setSelectedPaymentMethod("ACH/Direct Deposit");
     setSelectedPaymentMethodId("ach");
+    setSelectedCurrency("EUR");
     setSelectedReps([{ id: 'rep1', name: 'Yahya Naveed', initials: 'YN', isPrimary: true, isCurrentUser: true, isCustomerDefault: true }]);
   };
 
@@ -524,6 +531,9 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
                 selectedReps={selectedReps}
                 availableReps={AVAILABLE_REPS}
                 onRepsChange={setSelectedReps}
+                currency={selectedCurrency}
+                onCurrencyChange={setSelectedCurrency}
+                customerDefaultCurrency="EUR"
                 variant={customerVerificationVariant}
               />
             )}
@@ -533,6 +543,7 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
             lineItems={selectedItems}
             onLineItemsChange={setSelectedItems}
             hasCustomer={!!selectedCustomer}
+            customerCurrency={selectedCurrency}
           />
         )}
 
@@ -1101,6 +1112,10 @@ interface SelectedStateProps {
   selectedReps: SelectedSalesRep[];
   availableReps: SalesRepOption[];
   onRepsChange: (reps: SelectedSalesRep[]) => void;
+  /* Currency */
+  currency: string;
+  onCurrencyChange: (code: string) => void;
+  customerDefaultCurrency: string;
 }
 
 function SelectedState({
@@ -1111,6 +1126,7 @@ function SelectedState({
   paymentTerms, paymentMethod,
   billingAddress, shippingAddress,
   selectedReps, availableReps, onRepsChange,
+  currency, onCurrencyChange, customerDefaultCurrency,
 }: SelectedStateProps) {
   if (variant === 1) {
     return (
@@ -1199,6 +1215,7 @@ function SelectedState({
               <AddressCard label="BILL TO" name={customer.name} address={billingAddress || customer.address} onClick={() => onOpenAddress('billing')} />
               <AddressCard label="SHIP TO" name={customer.name} address={shippingAddress || customer.address} onClick={() => onOpenAddress('shipping')} />
             </div>
+            <CurrencyConfigRow currency={currency} onChange={onCurrencyChange} customerDefault={customerDefaultCurrency} />
             <ConfigRow label="Payment terms" value={paymentTerms} onClick={onOpenPaymentTerms} />
             <ConfigRow label="Payment method" value={paymentMethod} hasIcon onClick={onOpenPaymentMethod} />
             <SalesRepSelector selectedReps={selectedReps} availableReps={availableReps} onSelectedRepsChange={onRepsChange} />
@@ -1304,6 +1321,7 @@ function SelectedState({
             <AddressCard label="BILL TO" name={customer.name} address={billingAddress || customer.address} onClick={() => onOpenAddress('billing')} />
             <AddressCard label="SHIP TO" name={customer.name} address={shippingAddress || customer.address} onClick={() => onOpenAddress('shipping')} />
           </div>
+          <CurrencyConfigRow currency={currency} onChange={onCurrencyChange} customerDefault={customerDefaultCurrency} />
           <ConfigRow label="Payment terms" value={paymentTerms} onClick={onOpenPaymentTerms} />
           <ConfigRow label="Payment method" value={paymentMethod} hasIcon onClick={onOpenPaymentMethod} />
           <SalesRepSelector selectedReps={selectedReps} availableReps={availableReps} onSelectedRepsChange={onRepsChange} />
@@ -1552,6 +1570,7 @@ function SelectedState({
 
             {/* Config rows */}
             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              <CurrencyConfigRow currency={currency} onChange={onCurrencyChange} customerDefault={customerDefaultCurrency} />
               <ConfigRow label="Payment terms" value={paymentTerms} onClick={onOpenPaymentTerms} />
               <ConfigRow label="Payment method" value={paymentMethod} hasIcon onClick={onOpenPaymentMethod} />
               <SalesRepSelector
@@ -1632,6 +1651,30 @@ function AddressCard({ label, name, address, onClick }: {
 }
 
 /* ── Config Row — hoverable with pencil, no border between rows ── */
+/* ── Currency row — matches ConfigRow shape, but the value is an inline currency picker with a flag. ── */
+function CurrencyConfigRow({ currency, onChange, customerDefault }: {
+  currency: string;
+  onChange: (code: string) => void;
+  customerDefault: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "5px 10px",
+        borderRadius: "calc(var(--radius) - 6px)",
+      }}
+    >
+      <span style={{ ...captionNormal, color: "#6B7280" }}>Currency</span>
+      <OrderCurrencyPicker
+        value={currency}
+        onChange={onChange}
+        customerDefaultCurrency={customerDefault}
+      />
+    </div>
+  );
+}
+
 function ConfigRow({ label, value, isAvatar, avatarInitials, hasIcon, onClick }: {
   label: string; value: string; isAvatar?: boolean; avatarInitials?: string; hasIcon?: boolean; onClick?: () => void;
 }) {

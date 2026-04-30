@@ -11,6 +11,7 @@ import { Button } from "./ui/Button";
 import type {
   SalesOrder, ProcurementStatus, SOLine,
 } from "./types";
+import { makeFormatOrderMoney } from "../currency/formatOrderMoney";
 
 /* ═══════════════════════════════════════════
    Shared helpers (kept from original)
@@ -324,9 +325,14 @@ function generateOpHistory(so: SalesOrder): OpEvent[] {
    Main Tab Component
    ═══════════════════════════════════════════ */
 
-interface Props { so: SalesOrder; }
+interface Props {
+  so: SalesOrder;
+  /** Page-level Base ↔ Customer view toggle. */
+  viewMode?: "base" | "customer";
+}
 
-export function SourcingProductionTab({ so }: Props) {
+export function SourcingProductionTab({ so, viewMode = "base" }: Props) {
+  const fmtMoney = makeFormatOrderMoney(so.currency, viewMode);
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggle = (k: string) => setCollapsed(p => ({ ...p, [k]: !p[k] }));
@@ -434,7 +440,7 @@ export function SourcingProductionTab({ so }: Props) {
         count={filteredPOs.length}
         rightContent={filteredPOs.length > 0 ? (
           <span className="text-foreground" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" }}>
-            ${filteredPOs.reduce((s, po) => s + po.totalAmount, 0).toLocaleString()}
+            {fmtMoney(filteredPOs.reduce((s, po) => s + po.totalAmount, 0))}
           </span>
         ) : undefined}
         open={collapsed["po"] !== true}
@@ -474,7 +480,7 @@ export function SourcingProductionTab({ so }: Props) {
                         <Clock className="w-3 h-3 inline mr-1" />{po.expectedDate}
                       </span>
                       <span className="text-foreground tabular-nums" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>
-                        ${po.totalAmount.toLocaleString()}
+                        {fmtMoney(po.totalAmount)}
                       </span>
                       <Tooltip text={`Open ${po.poNumber} in Procurement`} position="top">
                         <button className="w-6 h-6 rounded flex items-center justify-center hover:bg-secondary transition-colors">

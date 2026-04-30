@@ -104,6 +104,12 @@ export interface SalesOrder {
   orderDate: string;
   warehouse: string;
   currency: string;
+  /** The currency we settle the order into our books. Defaults to base (PKR). */
+  settlementCurrency?: string;
+  /** Frozen exchange rate (base-per-1-customer) captured when the order was sent to the customer. */
+  lockedRate?: number;
+  /** ISO timestamp the rate was locked. */
+  lockedAt?: string;
   paymentTerms: string;
   shippingAddress: string;
   status: SOStatus;

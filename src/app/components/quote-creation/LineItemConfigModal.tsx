@@ -7,6 +7,38 @@ import { PricingRuleLibraryModal } from '@/app/components/quote-creation/Pricing
 import { ConfirmationModal } from '@/app/components/ConfirmationModal';
 import { AdjustmentFormModal } from '@/app/components/shared/AdjustmentFormModal';
 import type { AdjustmentFormData } from '@/app/components/shared/AdjustmentFormModal';
+import { BASE_CURRENCY, convertBetween, getLibraryCurrency, formatMoney } from '@/app/data/currencyLibrary';
+import { useRateContext } from '@/app/context/RateContext';
+
+/* ── Helper line under Price Per Unit showing customer-currency equivalent. ── */
+function CustomerCurrencyHelper({
+  unitPriceBase,
+  customerCurrency,
+  uomLabel,
+  lockedRate,
+}: {
+  unitPriceBase: number;
+  customerCurrency: string;
+  uomLabel: string;
+  lockedRate?: number;
+}) {
+  // Subscribe so the helper updates instantly when the global rate type flips.
+  useRateContext();
+  const cur = getLibraryCurrency(customerCurrency);
+  const symbol = cur?.symbol ?? customerCurrency;
+  const code = customerCurrency.toUpperCase();
+  const customerValue = typeof lockedRate === 'number'
+    ? unitPriceBase / lockedRate
+    : convertBetween(unitPriceBase, BASE_CURRENCY, code);
+  return (
+    <div className="px-4 pb-2.5 -mt-1 flex items-center justify-end">
+      <span className="text-[11px] text-[#9CA3AF]" style={{ fontStyle: 'normal' }}>
+        Customer pays approx {symbol} {formatMoney(customerValue, code)} {code}
+        {uomLabel ? ` per ${uomLabel}` : ''}
+      </span>
+    </div>
+  );
+}
 
 // Helper function to generate Item ID from item.id in xxx-xxx-xxx format
 const generateItemId = (itemId: string): string => {
@@ -44,6 +76,10 @@ interface LineItemConfigModalProps {
   onDelete?: () => void;
   deleteLabel?: string;
   readOnly?: boolean;
+  /** Customer-facing transaction currency for the parent order (e.g. "EUR"). When supplied and ≠ base, the configurator renders a helper line below the unit price showing the customer-currency equivalent. */
+  customerCurrency?: string;
+  /** Optional locked rate captured at order send-time (base-per-1-customer). When supplied, it overrides the live snapshot for the helper line. */
+  lockedRate?: number;
 }
 
 const SHIPMENT_METHODS = [
@@ -266,7 +302,7 @@ function DonutChart({ segments, total, label }: { segments: { value: number; col
   );
 }
 
-export function LineItemConfigModal({ isOpen, onClose, item, onSave, onDelete, deleteLabel, readOnly }: LineItemConfigModalProps) {
+export function LineItemConfigModal({ isOpen, onClose, item, onSave, onDelete, deleteLabel, readOnly, customerCurrency, lockedRate }: LineItemConfigModalProps) {
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [formData, setFormData] = useState({
     quantity: item.quantity,
@@ -1022,6 +1058,15 @@ export function LineItemConfigModal({ isOpen, onClose, item, onSave, onDelete, d
                     <span className="text-[11px] text-[#9CA3AF]">per {selectedUom?.abbreviation}</span>
                   </div>
                 </div>
+                {/* Customer-currency helper — shows the per-unit equivalent in the order's customer currency. */}
+                {customerCurrency && customerCurrency.toUpperCase() !== BASE_CURRENCY && (
+                  <CustomerCurrencyHelper
+                    unitPriceBase={formData.unitPrice}
+                    customerCurrency={customerCurrency}
+                    uomLabel={selectedUom?.abbreviation || ""}
+                    lockedRate={lockedRate}
+                  />
+                )}
               </div>
 
               {/* Pricing Rules Section */}

@@ -6,6 +6,7 @@ import {
 import { HighlightText, TabSearchBar, FilterPills } from "./SearchHighlight";
 import { ThTooltip, Tooltip } from "./Tooltip";
 import type { LinkedTransaction } from "./types";
+import { makeFormatOrderMoney } from "../currency/formatOrderMoney";
 
 const TYPE_META: Record<string, { icon: typeof FileText; plural: string }> = {
   Quote: { icon: ShoppingCart, plural: "Quotes" }, Contract: { icon: FileCheck, plural: "Contracts" },
@@ -42,9 +43,16 @@ const SECTIONS = [
 const ALL_TYPES = ["Quote", "Contract", "Pick Ticket", "Shipment", "Delivery Confirmation", "Return"];
 type FilterKey = "all" | string;
 
-interface Props { transactions: LinkedTransaction[]; }
+interface Props {
+  transactions: LinkedTransaction[];
+  /** Customer's order currency, threaded from SODetail. */
+  customerCurrency?: string;
+  /** Page-level Base ↔ Customer view toggle. */
+  viewMode?: "base" | "customer";
+}
 
-export function LinkedTransactionsTab({ transactions }: Props) {
+export function LinkedTransactionsTab({ transactions, customerCurrency, viewMode = "base" }: Props) {
+  const fmtMoney = makeFormatOrderMoney(customerCurrency, viewMode);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -80,7 +88,7 @@ export function LinkedTransactionsTab({ transactions }: Props) {
         onSearchChange={setSearch}
         placeholder="Search transactions..."
         resultCount={filtered.length}
-        resultLabel={`transaction${filtered.length !== 1 ? "s" : ""} · $${totalAmount.toLocaleString()}`}
+        resultLabel={`transaction${filtered.length !== 1 ? "s" : ""} · ${fmtMoney(totalAmount)}`}
       />
       <FilterPills pills={pills} active={filter} onSelect={setFilter} />
 
@@ -102,7 +110,7 @@ export function LinkedTransactionsTab({ transactions }: Props) {
                     <span className="text-[length:var(--text-caption)] text-foreground font-semibold">{meta.plural}</span>
                     <span className="text-[length:var(--text-small)] text-foreground/50 bg-border rounded-full px-1.5 py-[1px] min-w-[18px] text-center font-medium">{items.length}</span>
                   </button>
-                  {sectionTotal > 0 && <span className="text-[length:var(--text-caption)] text-foreground font-medium">${sectionTotal.toLocaleString()}</span>}
+                  {sectionTotal > 0 && <span className="text-[length:var(--text-caption)] text-foreground font-medium">{fmtMoney(sectionTotal)}</span>}
                 </div>
                 {open && (
                   <div className="overflow-x-auto bg-card" id={`lt-${type}`}>
@@ -150,8 +158,8 @@ export function LinkedTransactionsTab({ transactions }: Props) {
                                 <Tooltip text={`Created on ${t.date}`} position="top"><span>{t.date}</span></Tooltip>
                               </td>
                               <td className="py-2 px-4 pr-3 text-[length:var(--text-caption)] text-foreground whitespace-nowrap text-right font-medium">
-                                <Tooltip text={t.amount > 0 ? `Transaction value: $${t.amount.toLocaleString()}` : "No monetary value"} position="top">
-                                  <span>{t.amount > 0 ? `$${t.amount.toLocaleString()}` : "\u2014"}</span>
+                                <Tooltip text={t.amount > 0 ? `Transaction value: ${fmtMoney(t.amount)}` : "No monetary value"} position="top">
+                                  <span>{t.amount > 0 ? fmtMoney(t.amount) : "\u2014"}</span>
                                 </Tooltip>
                               </td>
                               <td className="py-2 px-4 pr-3 hidden lg:table-cell">

@@ -13,6 +13,16 @@ import {
   getLineComments, getLineAttachmentRefs,
   statusBadgeColors, getPaymentInfo, getHeaderMeta, getParties,
 } from "./soDocumentData";
+import {
+  BASE_CURRENCY,
+  convertBetween,
+  formatRate,
+  formatMoney,
+  getLibraryCurrency,
+  rateTypeLabel,
+} from "@/app/data/currencyLibrary";
+import { useRateContext } from "@/app/context/RateContext";
+import { RATE_TYPE_COLORS } from "../currency/MarketCorporateToggle";
 
 /* ── Styling tokens ── */
 const caption: React.CSSProperties = { fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" };
@@ -121,6 +131,13 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
   const [sent, setSent] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [options, setOptions] = useState(DEFAULT_OPTIONS);
+  /* FX print options — only relevant when the order's customer currency ≠ base. */
+  const [showCurrencyConversion, setShowCurrencyConversion] = useState(true);
+  const [includeRateSource, setIncludeRateSource] = useState(true);
+  const [printInCurrency, setPrintInCurrency] = useState<"customer" | "base">("customer");
+  const { rateType, snapshot } = useRateContext();
+  const customerCurrency = (so?.currency || BASE_CURRENCY).toUpperCase();
+  const showFx = customerCurrency !== BASE_CURRENCY;
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set(MOCK_CONTACTS.filter(c => c.primary).map(c => c.email)));
   const [currentPage, setCurrentPage] = useState(1);
   const totalPages = 2;
@@ -204,8 +221,94 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
       </div>
     );
 
+    /* FX header strip — appears above the company header in print mode when a
+     * non-base customer currency is in play. Mirrors the Quotes module's print
+     * preview banner. */
+    const fxBannerColors = RATE_TYPE_COLORS[rateType];
+    const fxCurrencyMeta = getLibraryCurrency(customerCurrency);
+    const fxBaseMeta = getLibraryCurrency(BASE_CURRENCY)!;
+    const fxCustomerSym = fxCurrencyMeta?.symbol ?? customerCurrency;
+    const fxBaseSym = fxBaseMeta.symbol ?? BASE_CURRENCY;
+    const fxRate = showFx
+      ? (so.lockedRate ?? convertBetween(1, customerCurrency, BASE_CURRENCY))
+      : 1;
+    const fxTotalCustomer = showFx
+      ? (so.lockedRate ? grandTotal / so.lockedRate : convertBetween(grandTotal, BASE_CURRENCY, customerCurrency))
+      : grandTotal;
+    const fxLockDate = (() => {
+      if (so.lockedAt) {
+        try { return new Date(so.lockedAt).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }); }
+        catch { return so.lockedAt; }
+      }
+      try { return new Date(snapshot.lastSyncAt).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }); }
+      catch { return ""; }
+    })();
+    const fxPrimary = printInCurrency === "customer"
+      ? `${fxCustomerSym} ${formatMoney(fxTotalCustomer, customerCurrency)} ${customerCurrency}`
+      : `${fxBaseSym} ${formatMoney(grandTotal, BASE_CURRENCY)} ${BASE_CURRENCY}`;
+    const fxSecondary = printInCurrency === "customer"
+      ? `≈ ${fxBaseSym} ${formatMoney(grandTotal, BASE_CURRENCY)} ${BASE_CURRENCY}`
+      : `≈ ${fxCustomerSym} ${formatMoney(fxTotalCustomer, customerCurrency)} ${customerCurrency}`;
+
     return (
       <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: DOC_C.fg }}>
+        {/* FX context banner — surfaces the currency conversion + rate source at the top of the printout. */}
+        {isPrint && showFx && showCurrencyConversion && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: "10px 14px",
+              borderRadius: 8,
+              border: `1px solid ${fxBannerColors.hex}33`,
+              backgroundColor: `${fxBannerColors.hex}0A`,
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 10,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                color: "#6B7280",
+                textTransform: "uppercase",
+              }}
+            >
+              Order Total
+            </span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: DOC_C.fg }} className="tabular-nums">
+              {fxPrimary}
+            </span>
+            <span style={{ fontSize: 12, color: "#6B7280" }} className="tabular-nums">
+              {fxSecondary}
+            </span>
+            <span style={{ width: 1, height: 14, backgroundColor: "#E5E7EB" }} />
+            <span style={{ fontSize: 11, color: "#1F2937" }} className="tabular-nums">
+              1 {customerCurrency} = {fxBaseSym} {formatRate(fxRate)} {BASE_CURRENCY}
+            </span>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 11,
+                fontWeight: 600,
+                color: fxBannerColors.hex,
+              }}
+            >
+              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: fxBannerColors.hex }} />
+              {rateTypeLabel(rateType)}
+            </span>
+            {includeRateSource && fxLockDate && (
+              <span style={{ fontSize: 11, color: "#6B7280" }}>
+                · {fxLockDate}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Header bar */}
         {showHeader && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
@@ -692,6 +795,61 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
                     <Toggle enabled={opt.enabled} onChange={() => toggleOption(opt.key)} />
                   </div>
                 ))}
+                {/* FX print options — only when the order has a non-base currency. */}
+                {isPrint && showFx && (
+                  <>
+                    <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
+                    <div className="flex items-start justify-between" style={{ gap: 12 }}>
+                      <div className="flex items-start" style={{ gap: 10 }}>
+                        <span style={{ fontSize: "var(--text-base)", lineHeight: 1, marginTop: 2 }}>💱</span>
+                        <div>
+                          <div className="text-foreground" style={captionSemi}>Show currency conversion details</div>
+                          <div className="text-foreground/40" style={{ ...caption, fontWeight: "var(--font-weight-normal)" }}>
+                            Render the customer-currency total alongside the base equivalent at the top of the order.
+                          </div>
+                        </div>
+                      </div>
+                      <Toggle enabled={showCurrencyConversion} onChange={setShowCurrencyConversion} />
+                    </div>
+                    {/* PRINT IN segment selector — only visible when conversion details are on. */}
+                    {showCurrencyConversion && (
+                      <div className="flex items-center justify-between" style={{ gap: 12, paddingLeft: 26 }}>
+                        <span className="text-foreground/60" style={micro}>PRINT IN</span>
+                        <div className="inline-flex items-center gap-0.5 h-7 rounded-md border border-border p-0.5 bg-white">
+                          {([
+                            { key: "customer" as const, sym: getLibraryCurrency(customerCurrency)?.symbol ?? customerCurrency, code: customerCurrency },
+                            { key: "base" as const, sym: getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY, code: BASE_CURRENCY },
+                          ]).map(opt => {
+                            const active = printInCurrency === opt.key;
+                            return (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => setPrintInCurrency(opt.key)}
+                                className={`inline-flex items-center h-full px-2 rounded text-[11px] whitespace-nowrap transition-colors ${active ? "bg-[#EDF4FF] text-primary" : "text-muted-foreground hover:text-foreground"} cursor-pointer`}
+                                style={{ fontWeight: active ? 600 : 500 }}
+                              >
+                                {opt.sym} {opt.code}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-start justify-between" style={{ gap: 12 }}>
+                      <div className="flex items-start" style={{ gap: 10 }}>
+                        <span style={{ fontSize: "var(--text-base)", lineHeight: 1, marginTop: 2 }}>🕒</span>
+                        <div>
+                          <div className="text-foreground" style={captionSemi}>Include rate source & timestamp</div>
+                          <div className="text-foreground/40" style={{ ...caption, fontWeight: "var(--font-weight-normal)" }}>
+                            Print the rate book name and the date it was locked in the footer.
+                          </div>
+                        </div>
+                      </div>
+                      <Toggle enabled={includeRateSource} onChange={setIncludeRateSource} />
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Recipient section for send mode */}

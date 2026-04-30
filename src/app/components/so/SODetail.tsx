@@ -19,6 +19,13 @@ import { VersionHistoryTab } from "./VersionHistoryTab";
 import { SourcingProductionTab } from "./SourcingProductionTab";
 import { CancellationModal } from "./CancellationModal";
 import { AdvancedConfiguratorModal } from "./AdvancedConfiguratorModal";
+import { OrderCurrencyConfigModal, type OrderCurrencyConfig } from "../currency/OrderCurrencyConfigModal";
+import { DuplicateSOModal } from "./DuplicateSOModal";
+import { OrderMoney } from "../currency/OrderMoney";
+import { BASE_CURRENCY, getLibraryCurrency, convertBetween, formatRate } from "@/app/data/currencyLibrary";
+import { useRateContext } from "@/app/context/RateContext";
+import { CurrencyFlag } from "../currency/CurrencyFlag";
+import { RATE_TYPE_COLORS } from "../currency/MarketCorporateToggle";
 import { ConfirmSOModal } from "./ConfirmSOModal";
 import { StageTransitionOverlay } from "./StageTransitionOverlay";
 import { FulfillmentModal } from "./FulfillmentModal";
@@ -147,6 +154,9 @@ export function SODetail() {
 
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
   const [showVersionModal, setShowVersionModal] = useState(false);
+  /* Order-level base/customer view toggle — flips all monetary displays. */
+  const [orderViewMode, setOrderViewMode] = useState<"base" | "customer">("base");
+  const [showCurrencyConfig, setShowCurrencyConfig] = useState(false);
   const [showAutoVersionConfirm, setShowAutoVersionConfirm] = useState(false);
   const [autoVersionField, setAutoVersionField] = useState("");
   const [showAutoVersionOverlay, setShowAutoVersionOverlay] = useState(false);
@@ -753,15 +763,55 @@ export function SODetail() {
                     <div className="flex items-center min-w-0 flex-1">
                       <DescriptionField soId={so.id} initialDescription={so.description || `Sales order for ${so.customer} — ${so.lines.length} line items`} />
                     </div>
-                    {/* Right: Items count + Total */}
+                    {/* Right: Items count + Total + view toggle + Currency config */}
                     <div className="flex items-center gap-2 shrink-0">
                       <span style={{ fontSize: 13, color: isClosed ? "color-mix(in srgb, var(--muted-foreground) 50%, transparent)" : "var(--muted-foreground)", lineHeight: 1.3 }}>
                         {so.lines.length} item{so.lines.length !== 1 ? "s" : ""}
                       </span>
                       <div style={{ width: 3, height: 3, borderRadius: "50%", backgroundColor: "color-mix(in srgb, var(--muted-foreground) 25%, transparent)", flexShrink: 0 }} />
                       <span style={{ fontSize: 13, fontWeight: 600, color: isClosed ? "color-mix(in srgb, var(--muted-foreground) 75%, transparent)" : "var(--foreground)", lineHeight: 1.3 }}>
-                        {totalValue >= 100000 ? `$${new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(totalValue).toLowerCase()}` : `$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                        <OrderMoney
+                          valuePKR={totalValue}
+                          customerCurrency={so.currency}
+                          view={orderViewMode}
+                          lockedRate={so.lockedRate}
+                          lockedAt={so.lockedAt}
+                        />
                       </span>
+                      {/* Base ↔ Customer toggle — visible only when the order's currency differs from the base. */}
+                      {so.currency && so.currency.toUpperCase() !== BASE_CURRENCY && (
+                        <>
+                          <div style={{ width: 1, height: 14, backgroundColor: "var(--border)", marginLeft: 4 }} />
+                          <div className="inline-flex items-center gap-0.5 h-7 rounded-md border border-border p-0.5 bg-white">
+                            {(["base", "customer"] as const).map((m) => {
+                              const active = orderViewMode === m;
+                              const label = m === "base" ? "Base Currency" : "Customer Currency";
+                              return (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  onClick={() => setOrderViewMode(m)}
+                                  className={`inline-flex items-center h-full px-2 rounded text-[11px] whitespace-nowrap transition-colors ${active ? "bg-[#EDF4FF] text-primary" : "text-muted-foreground hover:text-foreground"} cursor-pointer`}
+                                  style={{ fontWeight: active ? 600 : 500 }}
+                                  title={label}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrencyConfig(true)}
+                        className="inline-flex items-center gap-1.5 h-7 px-2 rounded-md border border-border bg-white text-[11px] text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+                        style={{ fontWeight: 500 }}
+                        title="Currency Configuration"
+                      >
+                        <DollarSign className="w-3 h-3 text-muted-foreground" />
+                        Currency
+                      </button>
                     </div>
                   </div>
                 )}
@@ -981,7 +1031,7 @@ export function SODetail() {
           <div className="flex" style={{ alignItems: "flex-start", gap: "var(--space-card-padding)" }}>
           <div className="flex-1 min-w-0" style={{ paddingTop: 24, paddingBottom: "var(--space-page-x)" }}>
             {activeTab === "lines" && (
-              <SOLineGrid so={so} onAddLine={() => {
+              <SOLineGrid viewMode={orderViewMode} so={so} onAddLine={() => {
                   if (requiresNewDraftFirst(so.status)) {
                     setPendingVersionChange({ fieldLabel: "Add Line Item", action: () => setShowAddLine(true) });
                     setAutoVersionField("Add Line Item");
@@ -1024,7 +1074,7 @@ export function SODetail() {
                 }} />
             )}
             {activeTab === "deal" && <DealInformationTab so={so} />}
-            {activeTab === "linked" && <LinkedTransactionsTab transactions={so.linkedTransactions} />}
+            {activeTab === "linked" && <LinkedTransactionsTab transactions={so.linkedTransactions} customerCurrency={so.currency} viewMode={orderViewMode} />}
             {activeTab === "comms" && (
               <div className="bg-card rounded-xl border border-border" style={{ padding: "48px var(--space-card-padding)", boxShadow: "var(--elevation-1)" }}>
                 <div className="flex flex-col items-center justify-center" style={{ gap: "var(--space-inline-gap)" }}>
@@ -1054,13 +1104,13 @@ export function SODetail() {
               </div>
             )}
             {activeTab === "shipping" && <ShipmentsTab shipments={soShipments} soId={so.id} so={so} />}
-            {activeTab === "invoicing" && <InvoicingTab so={so} />}
+            {activeTab === "invoicing" && <InvoicingTab so={so} viewMode={orderViewMode} />}
             {activeTab === "attachments" && <AttachmentsTab attachments={so.attachments} lines={so.lines} />}
-            {activeTab === "versions" && <VersionHistoryTab so={so} />}
-            {activeTab === "sourcing" && <SourcingProductionTab so={so} />}
+            {activeTab === "versions" && <VersionHistoryTab so={so} viewMode={orderViewMode} />}
+            {activeTab === "sourcing" && <SourcingProductionTab so={so} viewMode={orderViewMode} />}
           </div>
           <div className="shrink-0 sticky top-0" style={{ width: 300, paddingTop: 24, paddingBottom: "var(--space-page-x)" }}>
-            <SOSidebar so={so} onOpenInvoicing={() => setActiveTab("invoicing")} />
+            <SOSidebar so={so} viewMode={orderViewMode} onOpenInvoicing={() => setActiveTab("invoicing")} onOpenCurrencyConfig={() => setShowCurrencyConfig(true)} />
           </div>
           </div>{/* close flex row */}
         </div>
@@ -1075,6 +1125,8 @@ export function SODetail() {
         <AdvancedConfiguratorModal line={configureLine} inventory={store.inventory} onClose={() => setConfigureLine(null)}
           readOnly={configureLine.cancelled}
           isPostDraft={!["Draft"].includes(so.status)}
+          customerCurrency={so.currency}
+          lockedRate={so.lockedRate}
           onSave={({ orderedQty, unitPrice }) => {
             if (requiresNewDraftFirst(so.status)) {
               const oldVal = `Qty: ${configureLine.orderedQty}, $${configureLine.unitPrice}`;
@@ -1131,24 +1183,42 @@ export function SODetail() {
         onConfirm={() => { handleArchive(); setShowArchiveModal(false); }}
       />}
 
-      {/* Duplicate SO Confirmation */}
+      {/* Duplicate SO — full flow with FX disclosures */}
       {showDuplicateConfirm && (
-        <ConfirmationModal
-          isOpen={showDuplicateConfirm}
-          title="Duplicate Sales Order?"
-          message={`This will create a new Draft Sales Order with all line items copied from ${so.soNumber}. Fulfillment quantities will be reset to zero.`}
-          confirmText="Duplicate"
-          cancelText="Cancel"
-          onConfirm={() => {
+        <DuplicateSOModal
+          so={so}
+          onClose={() => setShowDuplicateConfirm(false)}
+          onChangeCurrencyPair={() => { setShowDuplicateConfirm(false); setShowCurrencyConfig(true); }}
+          onConfirm={({ customerMode, rateOption }) => {
             setShowDuplicateConfirm(false);
             const dupLines = so.lines.map(l => ({ ...l, allocatedQty: 0, pickedQty: 0, shippedQty: 0, deliveredQty: 0, cancelled: false, cancelledQty: 0, cancelledReason: undefined, cancelAction: undefined, allocations: [], readyToPick: false }));
-            const dup = store.createSO({ customer: so.customer, customerInitials: so.customerInitials, description: `Copy of ${so.soNumber}`, lines: dupLines, warehouse: so.warehouse, currency: so.currency, paymentTerms: so.paymentTerms, shippingAddress: so.shippingAddress, salesRep: so.salesRep, salesReps: so.salesReps, tags: [...so.tags], freightMethod: so.freightMethod, sourceQuoteRef: so.sourceQuoteRef, rfqRef: so.rfqRef, warehouses: [...so.warehouses] });
+            // Carry the locked rate forward only when the user explicitly chose
+            // it; "today" means the new draft picks up the live rate at view time.
+            const lockedRateForCopy = rateOption === "locked" ? so.lockedRate : undefined;
+            const lockedAtForCopy = rateOption === "locked" ? so.lockedAt : undefined;
+            const dup = store.createSO({
+              customer: customerMode === "same" ? so.customer : "",
+              customerInitials: customerMode === "same" ? so.customerInitials : "",
+              description: `Copy of ${so.soNumber}`,
+              lines: dupLines,
+              warehouse: so.warehouse,
+              currency: so.currency,
+              settlementCurrency: so.settlementCurrency,
+              lockedRate: lockedRateForCopy,
+              lockedAt: lockedAtForCopy,
+              paymentTerms: so.paymentTerms,
+              shippingAddress: so.shippingAddress,
+              salesRep: so.salesRep,
+              salesReps: so.salesReps,
+              tags: [...so.tags],
+              freightMethod: so.freightMethod,
+              sourceQuoteRef: so.sourceQuoteRef,
+              rfqRef: so.rfqRef,
+              warehouses: [...so.warehouses],
+            });
             toast.success(`Duplicated ${so.soNumber} → ${dup.soNumber}`);
             navigate(`/sales-orders/${dup.id}`);
           }}
-          onCancel={() => setShowDuplicateConfirm(false)}
-          variant="blue"
-          icon={<Copy className="w-6 h-6 text-white" />}
         />
       )}
 
@@ -1213,6 +1283,26 @@ export function SODetail() {
         onDiscard={() => {
           setShowAutoVersionConfirm(false);
           setPendingVersionChange(null);
+        }}
+      />
+
+      {/* Currency Configuration */}
+      <OrderCurrencyConfigModal
+        open={showCurrencyConfig}
+        onOpenChange={setShowCurrencyConfig}
+        customerDefaultCurrency={so.currency || "USD"}
+        config={{
+          currency: so.currency || BASE_CURRENCY,
+          settlementCurrency: so.settlementCurrency || BASE_CURRENCY,
+        }}
+        locked={!["Draft", "Pending Review"].includes(so.status)}
+        lockedAt={so.lockedAt}
+        orderTotalPKR={so.total ?? so.lines.reduce((sum, l) => sum + l.orderedQty * l.unitPrice, 0)}
+        onSave={(next: OrderCurrencyConfig) => {
+          store.updateSO(so.id, {
+            currency: next.currency,
+            settlementCurrency: next.settlementCurrency,
+          });
         }}
       />
 

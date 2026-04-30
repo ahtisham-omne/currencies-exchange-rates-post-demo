@@ -24,6 +24,10 @@ interface AdvancedConfiguratorModalProps {
   readOnly?: boolean;
   /** If true, shows "Cancel Line Item" instead of "Delete from Order" */
   isPostDraft?: boolean;
+  /** Customer-facing transaction currency for the parent order — drives the customer-pays helper line. */
+  customerCurrency?: string;
+  /** Optional locked rate captured at order send-time. */
+  lockedRate?: number;
 }
 
 export function AdvancedConfiguratorModal({
@@ -35,6 +39,8 @@ export function AdvancedConfiguratorModal({
   onDelete,
   readOnly,
   isPostDraft,
+  customerCurrency,
+  lockedRate,
 }: AdvancedConfiguratorModalProps) {
   if (!isOpen) return null;
 
@@ -75,6 +81,8 @@ export function AdvancedConfiguratorModal({
       readOnly={readOnly}
       deleteLabel={deleteLabel}
       onDelete={onDelete}
+      customerCurrency={customerCurrency}
+      lockedRate={lockedRate}
       onSave={(updatedItem) => {
         if (line) {
           const qty = Number(updatedItem?.quantity ?? mappedItem.quantity);
