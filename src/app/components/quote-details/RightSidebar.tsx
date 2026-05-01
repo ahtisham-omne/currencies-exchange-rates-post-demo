@@ -1037,6 +1037,7 @@ export function RightSidebar({
             quoteStatus={quoteStatus}
             createdDate={propCreatedDate}
             onOpenCurrencyConfig={onOpenCurrencyConfig}
+            grandTotalPKR={liveGrandTotal}
           />
 
           {/* Subtotal */}
@@ -1662,12 +1663,14 @@ function CurrencySummaryBlock({
   quoteStatus,
   createdDate,
   onOpenCurrencyConfig,
+  grandTotalPKR,
 }: {
   customerCurrency?: string;
   settlementCurrency?: string;
   quoteStatus?: QuoteLifecycleStatus;
   createdDate?: Date;
   onOpenCurrencyConfig?: () => void;
+  grandTotalPKR?: number;
 }) {
   const { rateType, snapshot } = useRateContext();
   const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
@@ -1694,6 +1697,15 @@ function CurrencySummaryBlock({
   if (customerIsBase && settlementIsBase) return null;
 
   const customerToBase = customerIsBase ? 1 : convertBetween(1, cur, BASE_CURRENCY);
+  const fmtAmount = (n: number) =>
+    n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const baseAmount = typeof grandTotalPKR === 'number' ? grandTotalPKR : undefined;
+  const customerAmount = baseAmount !== undefined
+    ? (customerIsBase ? baseAmount : convertBetween(baseAmount, BASE_CURRENCY, cur))
+    : undefined;
+  const settlementAmount = baseAmount !== undefined
+    ? (settlementIsBase ? baseAmount : convertBetween(baseAmount, BASE_CURRENCY, settlement))
+    : undefined;
 
   return (
     <div style={{
@@ -1746,26 +1758,32 @@ function CurrencySummaryBlock({
       {/* Rows */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {!customerIsBase && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, gap: 8 }}>
             <span style={{ color: '#6B7280' }}>Customer pays in</span>
-            <span style={{ color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-              {customerSym} {cur}
+            <span style={{ color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
+              {customerAmount !== undefined
+                ? <>{customerSym} {fmtAmount(customerAmount)} <span style={{ color: '#9CA3AF', fontWeight: 500 }}>{cur}</span></>
+                : <>{customerSym} {cur}</>}
             </span>
           </div>
         )}
         {!settlementIsBase && settlement !== cur && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, gap: 8 }}>
             <span style={{ color: '#6B7280' }}>Customer billed in</span>
-            <span style={{ color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-              {settlementSym} {settlement}
+            <span style={{ color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
+              {settlementAmount !== undefined
+                ? <>{settlementSym} {fmtAmount(settlementAmount)} <span style={{ color: '#9CA3AF', fontWeight: 500 }}>{settlement}</span></>
+                : <>{settlementSym} {settlement}</>}
             </span>
           </div>
         )}
         {!customerIsBase && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, gap: 8 }}>
             <span style={{ color: '#6B7280' }}>Base equivalent</span>
-            <span style={{ color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-              {baseSym} {BASE_CURRENCY}
+            <span style={{ color: '#1F2937', fontWeight: 600, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
+              {baseAmount !== undefined
+                ? <>{baseSym} {fmtAmount(baseAmount)} <span style={{ color: '#9CA3AF', fontWeight: 500 }}>{BASE_CURRENCY}</span></>
+                : <>{baseSym} {BASE_CURRENCY}</>}
             </span>
           </div>
         )}
