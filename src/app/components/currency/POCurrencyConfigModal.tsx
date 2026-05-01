@@ -45,7 +45,7 @@ interface Props {
 
 /**
  * PO-level currency configuration. Layout:
- *   [ Vendor Amount + currency ]
+ *   [ Vendor Receives + currency ]
  *   [ You Pay + currency ]
  *   Rate type   [Mid-market | Corporate]
  *   [ Rate metadata card ]
@@ -160,7 +160,7 @@ export default function POCurrencyConfigModal({ open, onOpenChange, po }: Props)
 
         <div className="px-6 pt-4 pb-2 flex flex-col gap-3">
           <AmountField
-            label="Vendor Amount"
+            label="Vendor Receives"
             helper="The currency the vendor will receive the amount in. Changing this only applies to this PO."
             amount={vendorAmount}
             currency={vendorCurrency}
