@@ -336,14 +336,14 @@ function WhatToExpectSection({
     <div>
       <SectionLabel>What to expect</SectionLabel>
       <div
-        className="rounded-lg px-3.5 py-3 border flex flex-col gap-2"
+        className="rounded-lg px-3.5 py-3 border"
         style={{ backgroundColor: "#F8FAFF", borderColor: "#E0E7FF" }}
       >
-        <p className="text-[11.5px] text-slate-600 leading-snug m-0">
-          The currency setup is carried over from the PO. You can adjust it for this
-          invoice if needed.
-        </p>
         <ul className="m-0 pl-4 text-[12px] text-slate-800 leading-[1.7]" style={{ listStyle: "disc" }}>
+          <li>
+            The currency setup is carried over from the PO. You can adjust it for
+            this invoice if needed.
+          </li>
           <li>
             Vendor will receive in: <strong>{vendorCurrency}</strong>
           </li>
