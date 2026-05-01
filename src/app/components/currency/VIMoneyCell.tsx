@@ -72,6 +72,10 @@ export function VIMoneyCell(props: VIMoneyCellProps) {
 
     if (viewMode === "base") {
       // Show the PKR equivalent; hover reveals the vendor currency line.
+      // Note: PO creation rate is intentionally not surfaced once the invoice
+      // exists — that context is only relevant pre-creation. The full FX
+      // history is still available from the detail-screen Currency
+      // configurator.
       const rate = invoice.lockedRate;
       const baseValue = rate !== undefined ? value * rate : value;
       return (
@@ -83,8 +87,6 @@ export function VIMoneyCell(props: VIMoneyCellProps) {
           partnerDefaultValue={value}
           lockedRate={invoice.lockedRate}
           lockedAt={invoice.lockedAt}
-          poRate={invoice.poLockedRate}
-          poRateAt={invoice.poLockedAt}
           lockedRateLabel="Invoice rate"
           className={className}
         />
@@ -99,8 +101,6 @@ export function VIMoneyCell(props: VIMoneyCellProps) {
         value={value}
         lockedRate={invoice.lockedRate}
         lockedAt={invoice.lockedAt}
-        poRate={invoice.poLockedRate}
-        poRateAt={invoice.poLockedAt}
         lockedRateLabel="Invoice rate"
         className={className}
       />
