@@ -147,7 +147,6 @@ function RatePanel({
   partnerCode,
   lockedRate,
   lockedAt,
-  lockedRateLabel,
   poRate,
   poRateAt,
 }: {
@@ -164,37 +163,63 @@ function RatePanel({
 
   const baseCur = getLibraryCurrency(BASE_CURRENCY);
   const baseSym = baseCur?.symbol ?? BASE_CURRENCY;
+  const code = partnerCode.toUpperCase();
   const primaryRate = lockedRate ?? rateToBase(partnerCode);
-  const primaryLabel = lockedRateLabel ?? (lockedRate !== undefined ? "Invoice rate" : "Current rate");
-  const primaryUpdatedAs = formatRateUpdatedAs(lockedRate !== undefined ? lockedAt : snap.lastSyncAt);
+  const isLocked = lockedRate !== undefined;
   const typeLabelText = rateTypeLabel(snap.type);
   const hex = snap.type === "market" ? "#7c3aed" : "#d97706";
+  const primaryDate = formatLockedDate(isLocked ? lockedAt : snap.lastSyncAt);
+  const primaryDatePrefix = isLocked ? "Locked on" : "Updated as of";
+  const primaryDateSuffix = isLocked ? " — invoice date" : "";
 
   return (
     <div className="mt-1.5 px-2 py-1.5 rounded-md bg-slate-50 border border-slate-100">
+      {/* Primary rate · Mid-market combined on one line */}
       <div className="text-[11px] text-slate-700 tabular-nums leading-4" dir="ltr">
-        <span className="text-slate-500" style={{ fontWeight: 500 }}>{primaryLabel}: </span>
-        1 {partnerCode.toUpperCase()} = <bdi>{baseSym}</bdi> {formatNumber(primaryRate, BASE_CURRENCY)} {BASE_CURRENCY}
+        1 {code} = <bdi>{baseSym}</bdi> {formatNumber(primaryRate, BASE_CURRENCY)} {BASE_CURRENCY}
+        <span className="text-slate-400"> · </span>
+        <span style={{ color: hex, fontWeight: 600 }}>{typeLabelText.replace(" rate", "")}</span>
       </div>
+      {/* Source line — kept as a separate row, dot indicator preserved */}
+      <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: hex }} />
+        <span className="text-slate-400">Source: {snap.source}</span>
+      </div>
+      {primaryDate && (
+        <div className="text-[10px] text-slate-400 mt-0.5">
+          {primaryDatePrefix} {primaryDate}{primaryDateSuffix}
+        </div>
+      )}
+      {/* PO creation rate (vendor-invoicing specific). Same compact shape:
+          rate line + locked-on date with "PO send date" qualifier. */}
       {poRate !== undefined && (
-        <div className="text-[11px] text-slate-700 tabular-nums leading-4 mt-0.5" dir="ltr">
-          <span className="text-slate-500" style={{ fontWeight: 500 }}>PO creation rate: </span>
-          1 {partnerCode.toUpperCase()} = <bdi>{baseSym}</bdi> {formatNumber(poRate, BASE_CURRENCY)} {BASE_CURRENCY}
+        <div className="mt-2 pt-2 border-t border-slate-200/60">
+          <div className="text-[11px] text-slate-700 tabular-nums leading-4" dir="ltr">
+            1 {code} = <bdi>{baseSym}</bdi> {formatNumber(poRate, BASE_CURRENCY)} {BASE_CURRENCY}
+            <span className="text-slate-400"> · </span>
+            <span className="text-slate-500" style={{ fontWeight: 600 }}>PO creation</span>
+          </div>
           {poRateAt && (
-            <span className="text-slate-400"> · locked {formatRateUpdatedAs(poRateAt)}</span>
+            <div className="text-[10px] text-slate-400 mt-0.5">
+              Locked on {formatLockedDate(poRateAt)} — PO send date
+            </div>
           )}
         </div>
       )}
-      <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1.5">
-        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: hex }} />
-        <span style={{ color: hex, fontWeight: 600 }}>{typeLabelText}</span>
-        <span className="text-slate-400">· Source: {snap.source}</span>
-      </div>
-      {primaryUpdatedAs && (
-        <div className="text-[10px] text-slate-400 mt-0.5">Updated as of {primaryUpdatedAs}</div>
-      )}
     </div>
   );
+}
+
+/**
+ * Date-only formatter for "Locked on …" rows. Strips the time component
+ * because for accounting purposes the day the rate was captured is the
+ * meaningful unit, not the minute.
+ */
+function formatLockedDate(input: string | Date | undefined | null): string {
+  if (!input) return "";
+  const d = input instanceof Date ? input : new Date(input);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurrency }) {
