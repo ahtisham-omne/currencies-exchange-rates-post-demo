@@ -8,6 +8,7 @@ import {
   Check,
   X,
 } from "lucide-react";
+import { InfoTooltip } from "../ui/info-tooltip";
 import {
   BASE_CURRENCY,
   MARKET_RATES,
@@ -84,17 +85,21 @@ export function RatePreviewModal({ selectedPOs, onCancel, onContinue }: Props) {
             </button>
           </div>
           <p className="text-[12px] text-slate-500 m-0 leading-relaxed">
-            The PO locked an exchange rate at commitment time. Per accounting rules,
-            the invoice records at today's mid-market rate — review the variance and
-            continue.
-            {referencePO && (
-              <>
-                {" "}
-                <span className="text-slate-700">From {referencePO.poNumber}</span>
-                {referencePO.poDate ? ` · ${formatLockedDate(referencePO.poDate)}` : ""}
-              </>
-            )}
+            This invoice will use today's Mid-market rate, in accordance with foreign
+            currency accounting standards.{" "}
+            <InfoTooltip side="bottom" iconClassName="w-3 h-3 inline-block align-[-1px]">
+              Per IAS 21 (IFRS) and ASC 830 (US GAAP), foreign currency transactions
+              must be recorded at the spot exchange rate on the transaction date.
+            </InfoTooltip>{" "}
+            The PO's locked rate is shown below for reference, along with the variance
+            you can expect.
           </p>
+          {referencePO && (
+            <p className="text-[11.5px] text-slate-400 m-0 mt-1.5">
+              From <span className="text-slate-700">{referencePO.poNumber}</span>
+              {referencePO.poDate ? ` · ${formatLockedDate(referencePO.poDate)}` : ""}
+            </p>
+          )}
         </div>
 
         {/* Content */}
