@@ -139,7 +139,8 @@ export default function VICurrencyConfigModal({ open, onOpenChange, invoice }: P
             )}
           </div>
           <DialogDescription className="text-[12px] text-slate-500 mt-1">
-            This configuration applies only to this invoice. The vendor's default currency stays the same.
+            The currency setup is carried over from the PO. You can adjust it for
+            this invoice if needed.
           </DialogDescription>
         </DialogHeader>
 
@@ -184,7 +185,11 @@ export default function VICurrencyConfigModal({ open, onOpenChange, invoice }: P
               style={{ backgroundColor: "#fffbeb", color: "#92400e", border: "1px solid #fde68a" }}
             >
               <Lock className="w-3 h-3 mt-[1px] shrink-0" />
-              <span>Rate will be locked once the invoice is approved. After that, totals stay fixed even if market rates move.</span>
+              <span>
+                This rate will be locked once the invoice is recorded. At the time of
+                payment, the prevailing Mid-market rate will apply, and any difference
+                will be recognized as an FX variance.
+              </span>
             </div>
           )}
         </div>
