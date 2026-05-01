@@ -1,28 +1,15 @@
 import * as React from "react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Lock,
   RefreshCw,
-  Settings2,
   ArrowRight,
   AlertTriangle,
   Check,
-  ChevronDown,
   X,
 } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "../ui/command";
-import { CurrencyFlag } from "../ui/CurrencyFlag";
 import {
   BASE_CURRENCY,
-  CURRENCY_LIBRARY,
   MARKET_RATES,
   activeRateSnapshot,
   getLibraryCurrency,
@@ -39,18 +26,15 @@ interface Props {
 /**
  * Pre-creation rate-preview modal. Visual language follows the Quotes
  * module's `DuplicateQuoteModal`: uppercase section headers, side-by-side
- * rate cards with a colored accent, a tinted "What to expect" summary at
- * the bottom, and a discreet outlined "Edit Currency Configuration"
- * button that hands off to an inline editor.
+ * rate cards with a colored accent, and a tinted "What to expect" summary
+ * at the bottom. Renders on top of the "Add Items to Invoice" picker
+ * (which the runtime keeps mounted, blurred, behind this modal) so the
+ * user retains spatial context while reviewing the FX preview.
  */
 export function RatePreviewModal({ selectedPOs, onCancel, onContinue }: Props) {
   const referencePO = selectedPOs[0];
-  const initialVendorCurrency = (referencePO?.currency || BASE_CURRENCY).toUpperCase();
-
-  const [vendorCurrency, setVendorCurrency] = useState<string>(initialVendorCurrency);
-  const [settlementCurrency, setSettlementCurrency] = useState<string>(BASE_CURRENCY);
-  const [editing, setEditing] = useState(false);
-  const [pendingVendorCurrency, setPendingVendorCurrency] = useState<string | null>(null);
+  const vendorCurrency = (referencePO?.currency || BASE_CURRENCY).toUpperCase();
+  const settlementCurrency = BASE_CURRENCY;
 
   const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
   const baseSym = baseCur.symbol ?? BASE_CURRENCY;
@@ -73,131 +57,97 @@ export function RatePreviewModal({ selectedPOs, onCancel, onContinue }: Props) {
     return Math.round(((todayRate - poLockedRate) / poLockedRate) * 1000) / 10;
   }, [todayRate, poLockedRate]);
 
-  const handleVendorCurrencyChange = (next: string) => {
-    if (next === vendorCurrency) return;
-    setPendingVendorCurrency(next);
-  };
-
-  const confirmVendorCurrencyChange = () => {
-    if (pendingVendorCurrency) setVendorCurrency(pendingVendorCurrency);
-    setPendingVendorCurrency(null);
-  };
-
-  const cancelVendorCurrencyChange = () => setPendingVendorCurrency(null);
-
   return (
-    <>
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 backdrop-blur-[3px]"
+      onClick={onCancel}
+    >
       <div
-        className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-[1px]"
-        onClick={onCancel}
+        className="bg-white rounded-xl w-[520px] max-w-[95vw] max-h-[85vh] flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.18)]"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="bg-white rounded-xl w-[520px] max-w-[95vw] max-h-[85vh] flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.15)]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="px-6 pt-5 pb-4 border-b border-slate-100 shrink-0">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
-                <RefreshCw className="w-4 h-4 text-blue-500" />
-                <h2 className="text-[15px] text-slate-900 leading-none m-0" style={{ fontWeight: 600 }}>
-                  Currency &amp; Rate Preview
-                </h2>
-              </div>
-              <button
-                onClick={onCancel}
-                className="w-7 h-7 rounded-md hover:bg-slate-100 flex items-center justify-center transition-colors"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4 text-slate-500" />
-              </button>
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-slate-100 shrink-0">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 text-blue-500" />
+              <h2 className="text-[15px] text-slate-900 leading-none m-0" style={{ fontWeight: 600 }}>
+                Currency &amp; Rate Preview
+              </h2>
             </div>
-            <p className="text-[12px] text-slate-500 m-0 leading-relaxed">
-              The PO locked an exchange rate at commitment time. Per accounting rules,
-              the invoice records at today's mid-market rate — review the variance and
-              continue.
-              {referencePO && (
-                <>
-                  {" "}
-                  <span className="text-slate-700">From {referencePO.poNumber}</span>
-                  {referencePO.poDate ? ` · ${formatLockedDate(referencePO.poDate)}` : ""}
-                </>
-              )}
-            </p>
+            <button
+              onClick={onCancel}
+              className="w-7 h-7 rounded-md hover:bg-slate-100 flex items-center justify-center transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4 text-slate-500" />
+            </button>
           </div>
-
-          {/* Content */}
-          <div className="px-6 py-4 flex-1 overflow-y-auto flex flex-col gap-4">
-            {isBaseInvoice ? (
-              <BaseCurrencyNotice />
-            ) : (
+          <p className="text-[12px] text-slate-500 m-0 leading-relaxed">
+            The PO locked an exchange rate at commitment time. Per accounting rules,
+            the invoice records at today's mid-market rate — review the variance and
+            continue.
+            {referencePO && (
               <>
-                <RateComparisonSection
-                  vendorCurrency={vendorCurrency}
-                  poLockedRate={poLockedRate}
-                  poLockedAt={referencePO?.poDate}
-                  todayRate={todayRate}
-                  variancePct={variancePct}
-                  baseSym={baseSym}
-                />
-                <Divider />
+                {" "}
+                <span className="text-slate-700">From {referencePO.poNumber}</span>
+                {referencePO.poDate ? ` · ${formatLockedDate(referencePO.poDate)}` : ""}
               </>
             )}
+          </p>
+        </div>
 
-            <CurrencyConfigSection
-              vendorCurrency={vendorCurrency}
-              settlementCurrency={settlementCurrency}
-              editing={editing}
-              onToggleEdit={() => setEditing((e) => !e)}
-              onVendorCurrencyChange={handleVendorCurrencyChange}
-              onSettlementCurrencyChange={setSettlementCurrency}
-            />
+        {/* Content */}
+        <div className="px-6 py-4 flex-1 overflow-y-auto flex flex-col gap-4">
+          {isBaseInvoice ? (
+            <BaseCurrencyNotice />
+          ) : (
+            <>
+              <RateComparisonSection
+                vendorCurrency={vendorCurrency}
+                poLockedRate={poLockedRate}
+                poLockedAt={referencePO?.poDate}
+                todayRate={todayRate}
+                variancePct={variancePct}
+                baseSym={baseSym}
+              />
+              <Divider />
+            </>
+          )}
 
-            <Divider />
+          <WhatToExpectSection
+            vendorCurrency={vendorCurrency}
+            settlementCurrency={settlementCurrency}
+            poLockedRate={poLockedRate}
+            todayRate={todayRate}
+            variancePct={variancePct}
+            baseSym={baseSym}
+            isBaseInvoice={isBaseInvoice}
+          />
+        </div>
 
-            <WhatToExpectSection
-              vendorCurrency={vendorCurrency}
-              settlementCurrency={settlementCurrency}
-              poLockedRate={poLockedRate}
-              todayRate={todayRate}
-              variancePct={variancePct}
-              baseSym={baseSym}
-              isBaseInvoice={isBaseInvoice}
-            />
-          </div>
-
-          {/* Footer */}
-          <div className="px-6 py-3.5 border-t border-slate-100 shrink-0 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="h-9 px-3.5 text-[13px] text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
-              style={{ fontWeight: 500 }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => onContinue({ vendorCurrency, settlementCurrency })}
-              className="inline-flex items-center gap-1.5 h-9 px-4 text-[13px] text-white bg-blue-500 hover:bg-blue-600 rounded-md transition-colors"
-              style={{ fontWeight: 500 }}
-            >
-              Continue to Invoice
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+        {/* Footer */}
+        <div className="px-6 py-3.5 border-t border-slate-100 shrink-0 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-9 px-3.5 text-[13px] text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
+            style={{ fontWeight: 500 }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onContinue({ vendorCurrency, settlementCurrency })}
+            className="inline-flex items-center gap-1.5 h-9 px-4 text-[13px] text-white bg-blue-500 hover:bg-blue-600 rounded-md transition-colors"
+            style={{ fontWeight: 500 }}
+          >
+            Continue to Invoice
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
-
-      {pendingVendorCurrency && (
-        <ConfirmVendorCurrencyDialog
-          fromCurrency={vendorCurrency}
-          toCurrency={pendingVendorCurrency}
-          onCancel={cancelVendorCurrencyChange}
-          onConfirm={confirmVendorCurrencyChange}
-        />
-      )}
-    </>
+    </div>
   );
 }
 
@@ -360,196 +310,6 @@ function RateCard({
   );
 }
 
-function CurrencyConfigSection({
-  vendorCurrency,
-  settlementCurrency,
-  editing,
-  onToggleEdit,
-  onVendorCurrencyChange,
-  onSettlementCurrencyChange,
-}: {
-  vendorCurrency: string;
-  settlementCurrency: string;
-  editing: boolean;
-  onToggleEdit: () => void;
-  onVendorCurrencyChange: (v: string) => void;
-  onSettlementCurrencyChange: (v: string) => void;
-}) {
-  return (
-    <div>
-      <SectionLabel>Currency configuration</SectionLabel>
-      <div className="rounded-lg border border-slate-200 bg-white px-3.5 py-3 flex flex-col gap-2.5">
-        <ConfigRow label="Vendor billed in" code={vendorCurrency} hint="From PO" />
-        <ConfigRow label="You'll settle in" code={settlementCurrency} hint="Defaults to base" />
-        <ConfigRow
-          label="Base currency"
-          code={BASE_CURRENCY}
-          hint="Locked"
-          locked
-        />
-        <button
-          type="button"
-          onClick={onToggleEdit}
-          className="self-start mt-1 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 text-[12px] text-slate-700 transition-colors"
-          style={{ fontWeight: 500 }}
-        >
-          <Settings2 className="w-3.5 h-3.5 text-blue-500" />
-          {editing ? "Done editing" : "Edit Currency Configuration"}
-        </button>
-      </div>
-
-      {editing && (
-        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/40 px-3.5 py-3 flex flex-col gap-3">
-          <FieldRow
-            label="Vendor billed in"
-            helper="From the PO. Changing this requires confirmation — only use it if the vendor's actual invoice differs from what was committed."
-            value={vendorCurrency}
-            onChange={onVendorCurrencyChange}
-            warnOnChange
-          />
-          <FieldRow
-            label="You'll settle in"
-            helper="The currency the company books this liability in. Defaults to base."
-            value={settlementCurrency}
-            onChange={onSettlementCurrencyChange}
-          />
-          <div className="text-[10.5px] text-slate-500 leading-relaxed">
-            Base currency stays {BASE_CURRENCY} so cross-vendor totals stay comparable.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ConfigRow({
-  label,
-  code,
-  hint,
-  locked,
-}: {
-  label: string;
-  code: string;
-  hint?: string;
-  locked?: boolean;
-}) {
-  const cur = getLibraryCurrency(code);
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="text-[12px] text-slate-700">{label}</span>
-        {hint && <span className="text-[10.5px] text-slate-400">· {hint}</span>}
-      </div>
-      <span className="inline-flex items-center gap-1.5 h-7 px-2 rounded-md bg-slate-50 border border-slate-200">
-        {cur && <CurrencyFlag currency={cur} size={14} />}
-        <span className="text-[12px] text-slate-800 tabular-nums" style={{ fontWeight: 600 }}>
-          {code.toUpperCase()}
-        </span>
-        {locked && <Lock className="w-2.5 h-2.5 text-slate-400" />}
-      </span>
-    </div>
-  );
-}
-
-function FieldRow({
-  label,
-  helper,
-  value,
-  onChange,
-  warnOnChange,
-}: {
-  label: string;
-  helper: string;
-  value: string;
-  onChange: (v: string) => void;
-  warnOnChange?: boolean;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="flex-1 min-w-0">
-        <div className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>{label}</div>
-        <div className="text-[10.5px] text-slate-500 mt-0.5 leading-snug">{helper}</div>
-      </div>
-      <div className="shrink-0">
-        <CurrencySelect value={value} onChange={onChange} subtleWarning={warnOnChange} />
-      </div>
-    </div>
-  );
-}
-
-function CurrencySelect({
-  value,
-  onChange,
-  subtleWarning,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  subtleWarning?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const cur = getLibraryCurrency(value);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-slate-200 bg-white text-[13px] hover:bg-slate-50 transition-colors min-w-[150px]"
-        >
-          {cur && <CurrencyFlag currency={cur} size={18} />}
-          <span className="text-slate-800" style={{ fontWeight: 600 }}>
-            {value.toUpperCase()}
-          </span>
-          {subtleWarning && (
-            <AlertTriangle className="w-3 h-3 text-amber-500 ml-0.5" />
-          )}
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        sideOffset={4}
-        className="p-0 w-[280px] rounded-lg border border-slate-200 shadow-lg z-[210]"
-      >
-        <Command
-          filter={(itemValue, search) => {
-            const q = search.trim().toLowerCase();
-            if (!q) return 1;
-            return itemValue.toLowerCase().includes(q) ? 1 : 0;
-          }}
-        >
-          <CommandInput placeholder="Search currency..." className="h-10 text-[13px]" />
-          <CommandList className="max-h-[260px] overflow-y-auto">
-            <CommandEmpty className="py-4 text-center text-[12px] text-slate-500">
-              No currencies found.
-            </CommandEmpty>
-            <CommandGroup>
-              {CURRENCY_LIBRARY.map((c) => {
-                const selected = c.code.toUpperCase() === value.toUpperCase();
-                return (
-                  <CommandItem
-                    key={c.code}
-                    value={`${c.code} ${c.name}`}
-                    onSelect={() => {
-                      onChange(c.code);
-                      setOpen(false);
-                    }}
-                    className="text-[13px] flex items-center gap-2 py-2"
-                  >
-                    <CurrencyFlag currency={c} size={20} />
-                    <span className="text-slate-800" style={{ fontWeight: 600 }}>{c.code}</span>
-                    <span className="text-slate-500 truncate">— {c.name}</span>
-                    {selected && <Check className="ml-auto w-3.5 h-3.5 text-primary" />}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 function WhatToExpectSection({
   vendorCurrency,
   settlementCurrency,
@@ -610,77 +370,6 @@ function WhatToExpectSection({
             )}
           </li>
         </ul>
-      </div>
-    </div>
-  );
-}
-
-function ConfirmVendorCurrencyDialog({
-  fromCurrency,
-  toCurrency,
-  onCancel,
-  onConfirm,
-}: {
-  fromCurrency: string;
-  toCurrency: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const fromCur = getLibraryCurrency(fromCurrency);
-  const toCur = getLibraryCurrency(toCurrency);
-  return (
-    <div
-      className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40 backdrop-blur-[1px]"
-      onClick={onCancel}
-    >
-      <div
-        className="bg-white rounded-xl w-[460px] max-w-[95vw] shadow-[0_20px_60px_rgba(0,0,0,0.18)]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-6 pt-5 pb-2 flex items-start gap-3">
-          <div
-            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: "#fef3c7", color: "#b45309" }}
-          >
-            <AlertTriangle className="w-4 h-4" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-[15px] text-slate-900" style={{ fontWeight: 600 }}>
-              Change vendor currency?
-            </h3>
-            <p className="text-[12px] text-slate-500 mt-1 leading-relaxed">
-              The vendor billed this PO in <strong>{fromCurrency}</strong>. Changing the
-              vendor currency to <strong>{toCurrency}</strong> means line-item amounts
-              will be re-interpreted in the new currency for this invoice. This is rarely
-              correct — only do this if the vendor's actual invoice differs from the PO.
-            </p>
-            <div className="mt-3 inline-flex items-center gap-2 text-[12px] text-slate-700 tabular-nums px-3 py-1.5 rounded-md bg-slate-50 border border-slate-100">
-              {fromCur && <CurrencyFlag currency={fromCur} size={16} />}
-              <span style={{ fontWeight: 600 }}>{fromCurrency}</span>
-              <ArrowRight className="w-3 h-3 text-slate-400" />
-              {toCur && <CurrencyFlag currency={toCur} size={16} />}
-              <span style={{ fontWeight: 600 }}>{toCurrency}</span>
-            </div>
-          </div>
-        </div>
-        <div className="px-6 py-3.5 border-t border-slate-100 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="h-9 px-3.5 text-[13px] text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
-            style={{ fontWeight: 500 }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="h-9 px-4 text-[13px] text-white bg-amber-600 hover:bg-amber-700 rounded-md transition-colors"
-            style={{ fontWeight: 500 }}
-          >
-            Yes, change to {toCurrency}
-          </button>
-        </div>
       </div>
     </div>
   );

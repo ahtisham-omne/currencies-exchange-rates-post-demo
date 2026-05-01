@@ -88,8 +88,10 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated }: InvoiceCreat
         />
       )}
 
-      {/* Step 2a: Inventory Selection (Vendor-First Nesting) */}
-      {currentStep === 'inventory-selection' && (
+      {/* Step 2a: Inventory Selection (Vendor-First Nesting). Stays mounted
+          during the rate-preview step so the user keeps spatial context — the
+          rate-preview modal renders on top with a backdrop blur. */}
+      {(currentStep === 'inventory-selection' || currentStep === 'rate-preview') && (
         <VendorSelectionModal
           isOpen={true}
           onClose={handleGoBack}
