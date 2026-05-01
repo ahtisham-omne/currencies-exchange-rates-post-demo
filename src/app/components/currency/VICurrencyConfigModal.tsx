@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMemo, useState } from "react";
-import { Check, ChevronDown, Lock, RotateCcw, TrendingUp, TrendingDown } from "lucide-react";
+import { Check, ChevronDown, Lock, RotateCcw } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
@@ -18,10 +18,15 @@ import { CurrencyFlag } from "../ui/CurrencyFlag";
 import {
   BASE_CURRENCY,
   CURRENCY_LIBRARY,
+  CORPORATE_RATES,
+  activeRateSnapshot,
   convertBetween,
   getLibraryCurrency,
+  rateTypeLabel,
+  type RateType,
 } from "@/app/data/currencyLibrary";
 import { formatRateUpdatedAs } from "@/app/data/rateDateFormat";
+import { useRateContext } from "@/app/context/RateContext";
 import type { Invoice } from "@/app/data/mockInvoices";
 
 interface Props {
@@ -31,47 +36,57 @@ interface Props {
 }
 
 /**
- * Invoice-level currency configuration. Mirrors the PO config modal visually
- * but adapts to the vendor-invoicing reality:
- *  - Vendor Invoiced is fully read-only — the currency is fixed by the
- *    vendor's invoice and cannot be changed at recording time.
- *  - You Record In (settlement) defaults to the company base currency and
- *    is editable until the invoice is approved/posted.
- *  - No rate-type switch. Vendor invoices must record at the mid-market rate
- *    on invoice date (accounting requirement).
- *  - Rate panel shows TWO rates side by side: the invoice-date mid-market
- *    rate and the rate that was locked when the originating PO was created.
- *    Variance between them is the FX impact of the commitment-vs-record gap.
+ * Invoice-level currency configuration. Mirrors the PO module's
+ * `POCurrencyConfigModal` 1:1 for visual parity:
+ *   [ Vendor receives + currency ]
+ *   [ You pay + currency ]
+ *   Rate type   [Mid-market | Corporate]
+ *   [ Rate metadata card(s) ]
+ *
+ * The amount portion of each field is non-editable (display-only) and styled
+ * as such; only the currency dropdown is interactive. Hovering an amount
+ * opens a card with the base equivalent and active rate metadata. The
+ * rate-type switch writes through to the shared rate configurator so the
+ * same type label is used everywhere an exchange rate is displayed.
  */
 export default function VICurrencyConfigModal({ open, onOpenChange, invoice }: Props) {
   const isLocked = invoice.status !== "Pending Approval";
   const readOnly = isLocked;
-  const vendorCurrency = (invoice.currency || BASE_CURRENCY).toUpperCase();
-  const isBaseInvoice = vendorCurrency === BASE_CURRENCY;
+  const { rateType, setRateType } = useRateContext();
 
-  const initialSettlement = (): string => BASE_CURRENCY;
+  const initialVendorCurrency = (invoice.currency || BASE_CURRENCY).toUpperCase();
+  const initialSettlement = (): string => {
+    return initialVendorCurrency === BASE_CURRENCY ? BASE_CURRENCY : BASE_CURRENCY;
+  };
 
+  const [vendorCurrency, setVendorCurrency] = useState<string>(initialVendorCurrency);
   const [settlementCurrency, setSettlementCurrency] = useState<string>(initialSettlement());
 
   React.useEffect(() => {
     if (open) {
+      setVendorCurrency(initialVendorCurrency);
       setSettlementCurrency(initialSettlement());
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, invoice.id]);
 
-  // Vendor's invoice amount in their currency (already what's stored on Invoice).
-  const vendorAmount = invoice.amount;
+  // Express the invoice total in PKR using the invoice's locked rate when
+  // available, otherwise the active snapshot.
+  const totalPKR = useMemo(() => {
+    if (initialVendorCurrency === BASE_CURRENCY) return invoice.amount;
+    if (invoice.lockedRate !== undefined) return invoice.amount * invoice.lockedRate;
+    return convertBetween(invoice.amount, initialVendorCurrency, BASE_CURRENCY);
+  }, [invoice, initialVendorCurrency]);
 
-  // Invoice-date rate captured on the invoice. Falls back to live conversion
-  // for the rare case of unseeded mock data.
-  const invoiceRate = invoice.lockedRate ?? (isBaseInvoice ? 1 : convertBetween(1, vendorCurrency, BASE_CURRENCY));
-  const baseAmount = vendorAmount * invoiceRate;
+  const vendorAmount = useMemo(() => {
+    if (vendorCurrency.toUpperCase() === BASE_CURRENCY) return totalPKR;
+    return convertBetween(totalPKR, BASE_CURRENCY, vendorCurrency);
+  }, [totalPKR, vendorCurrency, rateType]);
 
-  // Settlement amount = base PKR cost converted to the chosen settlement currency.
   const settlementAmount = useMemo(() => {
-    if (settlementCurrency.toUpperCase() === BASE_CURRENCY) return baseAmount;
-    return convertBetween(baseAmount, BASE_CURRENCY, settlementCurrency);
-  }, [baseAmount, settlementCurrency]);
+    if (settlementCurrency.toUpperCase() === BASE_CURRENCY) return totalPKR;
+    return convertBetween(totalPKR, BASE_CURRENCY, settlementCurrency);
+  }, [totalPKR, settlementCurrency, rateType]);
 
   const handleSave = () => {
     if (readOnly) {
@@ -79,20 +94,28 @@ export default function VICurrencyConfigModal({ open, onOpenChange, invoice }: P
       return;
     }
     toast.success("Currency configuration saved", {
-      description: `Settlement currency set to ${settlementCurrency}`,
+      description: `This invoice will settle in ${settlementCurrency}`,
     });
     onOpenChange(false);
   };
 
   const handleResetToDefault = () => {
     if (readOnly) return;
+    setVendorCurrency(initialVendorCurrency);
     setSettlementCurrency(BASE_CURRENCY);
-    toast("Reverted to defaults", { description: `Settlement: ${BASE_CURRENCY}` });
+    setRateType("market");
+    toast("Reverted to defaults", {
+      description: `Vendor: ${initialVendorCurrency} · Settlement: ${BASE_CURRENCY} · Mid-market`,
+    });
   };
 
-  const lockedAtDisplay = invoice.lockedAt
-    ? new Date(invoice.lockedAt).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
-    : null;
+  const lockedAtDisplay = (() => {
+    const src = invoice.lockedAt ?? invoice.invoiceDate;
+    if (!src) return null;
+    const d = new Date(src);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+  })();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -116,33 +139,44 @@ export default function VICurrencyConfigModal({ open, onOpenChange, invoice }: P
             )}
           </div>
           <DialogDescription className="text-[12px] text-slate-500 mt-1">
-            This configuration applies only to this invoice. The vendor's invoice currency is fixed; only settlement and reporting currencies can be adjusted.
+            This configuration applies only to this invoice. The vendor's default currency stays the same.
           </DialogDescription>
         </DialogHeader>
 
         <div className="px-6 pt-4 pb-2 flex flex-col gap-3">
           <AmountField
-            label="Vendor Invoiced"
-            helper="The amount and currency on the vendor's invoice. Locked — comes directly from the vendor."
+            label="Vendor receives"
+            helper="The currency the vendor billed the invoice in. Changing this only applies to this invoice."
             amount={vendorAmount}
             currency={vendorCurrency}
-            onCurrencyChange={() => {}}
-            readOnly
-            basePKR={baseAmount}
+            onCurrencyChange={setVendorCurrency}
+            readOnly={readOnly}
+            basePKR={totalPKR}
           />
 
           <AmountField
-            label="You Record In"
-            helper="The currency the company books this liability in. Defaults to base currency."
+            label="You pay"
+            helper="The currency you settle the invoice in. Defaults to base currency but can be changed for this invoice."
             amount={settlementAmount}
             currency={settlementCurrency}
             onCurrencyChange={setSettlementCurrency}
             readOnly={readOnly}
-            basePKR={baseAmount}
+            basePKR={totalPKR}
             showBaseEquivalent
           />
 
-          <RatePanel invoice={invoice} />
+          <div className="mt-1 flex items-center justify-between">
+            <span className="text-[11.5px] text-slate-500" style={{ fontWeight: 500 }}>
+              Rate type
+            </span>
+            <RateTypeSwitch rateType={rateType} onChange={setRateType} disabled={readOnly} />
+          </div>
+
+          <RateMetadataPanel
+            rateType={rateType}
+            vendorCurrency={vendorCurrency}
+            settlementCurrency={settlementCurrency}
+          />
 
           {!isLocked && (
             <div
@@ -180,114 +214,124 @@ export default function VICurrencyConfigModal({ open, onOpenChange, invoice }: P
   );
 }
 
-/**
- * Two-rate panel: invoice-date mid-market rate (locked at posting) on top, PO
- * commitment rate beneath, plus the FX variance between them.
- */
-function RatePanel({ invoice }: { invoice: Invoice }) {
-  const vendorCurrency = (invoice.currency || BASE_CURRENCY).toUpperCase();
-  if (vendorCurrency === BASE_CURRENCY) return null;
+function RateMetadataPanel({
+  rateType,
+  vendorCurrency,
+  settlementCurrency,
+}: {
+  rateType: RateType;
+  vendorCurrency: string;
+  settlementCurrency: string;
+}) {
+  const vc = vendorCurrency.toUpperCase();
+  const sc = settlementCurrency.toUpperCase();
+  const baseCode = BASE_CURRENCY;
 
-  const invoiceRate = invoice.lockedRate;
-  const poRate = invoice.poLockedRate;
+  type Conv = { from: string; to: string; label: string };
+  const conversions: Conv[] = [];
 
-  const variancePct =
-    invoiceRate !== undefined && poRate !== undefined && poRate !== 0
-      ? ((invoiceRate - poRate) / poRate) * 100
-      : null;
+  if (vc !== sc) {
+    conversions.push({
+      from: vc,
+      to: sc,
+      label: sc === baseCode ? "Vendor amount → Base currency" : "Vendor amount → You pay",
+    });
+    if (sc !== baseCode && vc !== baseCode) {
+      conversions.push({
+        from: sc,
+        to: baseCode,
+        label: "You pay → Base currency (reporting)",
+      });
+    }
+  } else if (sc !== baseCode) {
+    conversions.push({
+      from: sc,
+      to: baseCode,
+      label: "Vendor amount → Base currency",
+    });
+  }
+
+  if (conversions.length === 0) {
+    return null;
+  }
+
+  const showHeaders = conversions.length > 1;
 
   return (
     <div className="flex flex-col gap-2">
-      <RateBlock
-        label="Invoice rate"
-        sublabel="Mid-market on invoice date — used to record this liability"
-        rate={invoiceRate}
-        capturedAt={invoice.lockedAt}
-        vendorCurrency={vendorCurrency}
-        accent="#7c3aed"
-      />
-      {poRate !== undefined && (
-        <RateBlock
-          label="PO creation rate"
-          sublabel="Mid-market locked when the originating PO was committed"
-          rate={poRate}
-          capturedAt={invoice.poLockedAt}
-          vendorCurrency={vendorCurrency}
-          accent="#0ea5e9"
+      {conversions.map((c) => (
+        <ConversionBlock
+          key={`${c.from}-${c.to}`}
+          fromCode={c.from}
+          toCode={c.to}
+          label={showHeaders ? c.label : undefined}
+          rateType={rateType}
         />
-      )}
-      {variancePct !== null && (
-        <FXVarianceLine variancePct={variancePct} />
-      )}
+      ))}
     </div>
   );
 }
 
-function RateBlock({
+function ConversionBlock({
+  fromCode,
+  toCode,
   label,
-  sublabel,
-  rate,
-  capturedAt,
-  vendorCurrency,
-  accent,
+  rateType,
 }: {
-  label: string;
-  sublabel: string;
-  rate: number | undefined;
-  capturedAt: string | undefined;
-  vendorCurrency: string;
-  accent: string;
+  fromCode: string;
+  toCode: string;
+  label?: string;
+  rateType: RateType;
 }) {
-  const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
-  const baseSym = baseCur.symbol ?? BASE_CURRENCY;
-  const vendorCur = getLibraryCurrency(vendorCurrency);
-  const vendorSym = vendorCur?.symbol ?? vendorCurrency;
-  const updatedAs = formatRateUpdatedAs(capturedAt);
+  const snap = activeRateSnapshot();
+  const typeLabel = rateTypeLabel(rateType);
+  const typeHex = rateType === "market" ? "#7c3aed" : "#d97706";
+  const updatedAs = formatRateUpdatedAs(snap.lastSyncAt);
+  const corporateAsOf = (() => {
+    try {
+      return new Date(CORPORATE_RATES.asOfDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+    } catch {
+      return CORPORATE_RATES.asOfDate;
+    }
+  })();
+
+  const forwardRate = convertBetween(1, fromCode, toCode);
+  const inverseRate = convertBetween(1, toCode, fromCode);
+  const fromCur = getLibraryCurrency(fromCode);
+  const toCur = getLibraryCurrency(toCode);
+  const fromSym = fromCur?.symbol ?? fromCode;
+  const toSym = toCur?.symbol ?? toCode;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+      {label && (
+        <div
+          className="text-[10px] text-slate-400 mb-1.5"
+          style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+        >
+          {label}
+        </div>
+      )}
+
       <div className="flex items-center gap-2 text-[11.5px]">
-        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: accent }} />
-        <span style={{ color: accent, fontWeight: 600 }}>{label}</span>
-        <span className="text-slate-500">· Source: Open Exchange Rates</span>
+        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: typeHex }} />
+        <span style={{ color: typeHex, fontWeight: 600 }}>{typeLabel}</span>
+        {rateType === "market" ? (
+          <span className="text-slate-500">· Source: Open Exchange Rates</span>
+        ) : (
+          <span className="text-slate-500">· Created by Treasury · As of {corporateAsOf}</span>
+        )}
       </div>
-      <div className="text-[10.5px] text-slate-500 mt-0.5">{sublabel}</div>
 
-      {rate !== undefined ? (
-        <div className="mt-2 text-[11.5px] text-slate-700 tabular-nums leading-5" dir="ltr">
-          <div>1 {vendorCurrency} = <bdi>{baseSym}</bdi> {formatRate(rate)} {BASE_CURRENCY}</div>
-          <div>1 {BASE_CURRENCY} = <bdi>{vendorSym}</bdi> {formatRate(1 / rate)} {vendorCurrency}</div>
-        </div>
-      ) : (
-        <div className="mt-2 text-[11.5px] text-slate-400">Not captured for this invoice</div>
-      )}
+      <div className="mt-2 text-[11.5px] text-slate-700 tabular-nums leading-5" dir="ltr">
+        <div>1 {fromCode} = <bdi>{toSym}</bdi> {formatRate(forwardRate)} {toCode}</div>
+        <div>1 {toCode} = <bdi>{fromSym}</bdi> {formatRate(inverseRate)} {fromCode}</div>
+      </div>
 
-      {updatedAs && (
-        <div className="mt-1.5 text-[10.5px] text-slate-500">Captured {updatedAs}</div>
-      )}
-    </div>
-  );
-}
-
-function FXVarianceLine({ variancePct }: { variancePct: number }) {
-  const isUp = variancePct > 0;
-  const isFlat = Math.abs(variancePct) < 0.05;
-  const color = isFlat ? "#64748b" : isUp ? "#dc2626" : "#059669";
-  const Icon = isFlat ? null : isUp ? TrendingUp : TrendingDown;
-  const label = isFlat
-    ? "No material FX change between PO and invoice"
-    : isUp
-    ? "Vendor currency strengthened against base — costs you more PKR"
-    : "Vendor currency weakened against base — costs you less PKR";
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 flex items-center gap-2.5">
-      {Icon && <Icon className="w-3.5 h-3.5 shrink-0" style={{ color }} />}
-      <div className="flex flex-col">
-        <div className="text-[11.5px] tabular-nums" style={{ color, fontWeight: 600 }}>
-          FX variance: {variancePct >= 0 ? "+" : ""}{variancePct.toFixed(2)}%
-        </div>
-        <div className="text-[10.5px] text-slate-500">{label}</div>
+      <div className="mt-1.5 text-[10.5px] text-slate-500">
+        {rateType === "market"
+          ? <>Last updated {updatedAs ?? "moments ago"}.</>
+          : <>Created by Treasury · Last updated {corporateAsOf}.</>}
       </div>
     </div>
   );
@@ -310,6 +354,7 @@ function AmountField({
   onCurrencyChange: (v: string) => void;
   readOnly?: boolean;
   basePKR: number;
+  /** When true and the field's currency is not base, render a small base-equivalent strip beneath the input. */
   showBaseEquivalent?: boolean;
 }) {
   const formatted = formatCurrency(amount, currency);
@@ -450,6 +495,45 @@ function CurrencySelect({
   );
 }
 
+function RateTypeSwitch({
+  rateType,
+  onChange,
+  disabled,
+}: {
+  rateType: RateType;
+  onChange: (t: RateType) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      className={`inline-flex items-center gap-0.5 h-7 rounded-md border border-slate-200 p-0.5 bg-white ${
+        disabled ? "opacity-60" : ""
+      }`}
+    >
+      {(["market", "corporate"] as RateType[]).map((t) => {
+        const active = rateType === t;
+        const shortLabel = t === "market" ? "Mid-market" : "Corporate";
+        return (
+          <button
+            key={t}
+            type="button"
+            onClick={() => !disabled && onChange(t)}
+            disabled={disabled}
+            className={`inline-flex items-center h-full px-2 rounded text-[11px] whitespace-nowrap transition-colors ${
+              active
+                ? "bg-blue-50 text-blue-600"
+                : "text-slate-500 hover:text-slate-700"
+            } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+            style={{ fontWeight: active ? 600 : 500 }}
+          >
+            {shortLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function RateDetailBody({
   amount,
   currency,
@@ -459,11 +543,16 @@ function RateDetailBody({
   currency: string;
   basePKR: number;
 }) {
+  const snap = activeRateSnapshot();
+  const typeLabel = rateTypeLabel(snap.type);
+  const typeHex = snap.type === "market" ? "#7c3aed" : "#d97706";
   const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
   const baseSym = baseCur.symbol ?? BASE_CURRENCY;
   const upperCurrency = currency.toUpperCase();
   const sameAsBase = upperCurrency === BASE_CURRENCY;
   const ratePerUnit = sameAsBase ? 1 : convertBetween(1, currency, BASE_CURRENCY);
+  const updatedAs = formatRateUpdatedAs(snap.lastSyncAt);
+  const isMarket = snap.type === "market";
 
   const cur = getLibraryCurrency(currency);
 
@@ -476,7 +565,7 @@ function RateDetailBody({
       <div className="h-px bg-slate-100" />
       {!sameAsBase && (
         <div className="text-[12px] text-slate-700 tabular-nums" dir="ltr">
-          Base equivalent: <bdi>{baseSym}</bdi> {formatCurrency(basePKR, BASE_CURRENCY)} {BASE_CURRENCY}
+          Base equivalent: <bdi>{baseSym}</bdi> {formatCurrency(basePKR, BASE_CURRENCY)} {baseCur.code}
         </div>
       )}
       <div className="px-2 py-1.5 rounded-md bg-slate-50 border border-slate-100">
@@ -485,12 +574,25 @@ function RateDetailBody({
             1 {upperCurrency} = <bdi>{baseSym}</bdi> {formatCurrency(ratePerUnit, BASE_CURRENCY)} {BASE_CURRENCY}
           </div>
         )}
-        <div className="text-[10px] text-slate-500 mt-0.5">Mid-market — Open Exchange Rates</div>
+        <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+          <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: typeHex }} />
+          <span style={{ color: typeHex, fontWeight: 600 }}>{typeLabel}</span>
+          {isMarket && <span className="text-slate-400">· Source: {snap.source}</span>}
+        </div>
+        {updatedAs && (
+          <div className="text-[10px] text-slate-400 mt-0.5">Updated as of {updatedAs}</div>
+        )}
       </div>
     </div>
   );
 }
 
+/**
+ * Render an FX rate with enough precision to be useful in either direction.
+ * Currency-style rounding (2dp) hides values like 1 PKR = 0.0036 USD as
+ * "0.00", which is misleading. Step the precision up as the magnitude
+ * shrinks so the inverse always renders meaningfully.
+ */
 function formatRate(value: number): string {
   const abs = Math.abs(value);
   let decimals: number;
