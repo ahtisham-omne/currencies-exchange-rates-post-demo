@@ -275,7 +275,7 @@ function DraggableInsightCard({ index, card, valueNode, moveCard, onRemove }: {
                   <Info className="w-3 h-3 text-[#CBD5E1] hover:text-[#94A3B8] transition-colors cursor-help" />
                 </button>
                 <div className="absolute z-50 w-[220px] pointer-events-none opacity-0 group-hover/info:opacity-100 transition-opacity duration-200 bottom-[calc(100%+6px)] left-1/2 -translate-x-1/2">
-                  <div className="bg-white border border-border rounded-lg px-3 py-2 shadow-md text-[11px] text-muted-foreground" style={{ lineHeight: 1.55 }}>
+                  <div className="bg-white border border-border rounded-lg px-3 py-2 shadow-md text-[11px] text-muted-foreground" style={{ lineHeight: 1.55, whiteSpace: "pre-line" }}>
                     {card.description}
                   </div>
                 </div>
@@ -349,7 +349,7 @@ export function SOList() {
     { label: "Avg. Days to Fulfill", value: "", description: "Average number of days from Cleared by Ops to fully shipped, across all completed orders in the selected period." },
     // FX context — Mid-market Rate is active by default at the end of the row;
     // Corporate Rate sits hidden, addable via the Insights drawer.
-    { label: "Mid-market Rate", value: "", description: "Live mid-market rates from Open Exchange Rates. Refreshed every 15 minutes. Display-only — drives the customer-currency hover conversions on the table." },
+    { label: "Mid-market Rate", value: "", description: "Live interbank rates sourced from Open Exchange Rates and synced automatically every 24 hours. The mid-market rate represents the midpoint between the global buy and sell prices of a currency pair.\n\nUpdated as of 30th April at 19:30 pm" },
   ]);
   const [confirmSingleSO, setConfirmSingleSO] = useState<SalesOrder | null>(null);
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);

@@ -131,8 +131,10 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
   const [sent, setSent] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [options, setOptions] = useState(DEFAULT_OPTIONS);
-  /* FX print options — only relevant when the order's customer currency ≠ base. */
-  const [showCurrencyConversion, setShowCurrencyConversion] = useState(true);
+  /* FX print options — only relevant when the order's customer currency ≠ base.
+   * Mirrors the Quotes module's PDFPreviewModal: the print-currency picker is
+   * always shown when FX is in play, and the rate-source toggle drives the
+   * footer disclaimer block. */
   const [includeRateSource, setIncludeRateSource] = useState(true);
   const [printInCurrency, setPrintInCurrency] = useState<"customer" | "base">("customer");
   const { rateType, snapshot } = useRateContext();
@@ -192,6 +194,12 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
   const estDelivery = so.requestedDeliveryDate || "March 15, 2025";
   const versionNum = so.version?.number ?? 1;
 
+  /* Active print currency code at component scope so both pages can render
+   * consistent currency text (Terms section on page 2 references this). */
+  const activePrintCode = !showFx
+    ? "USD"
+    : (isPrint && printInCurrency === "customer" ? customerCurrency : BASE_CURRENCY);
+
   function handleAction() {
     if (isPrint) {
       window.print();
@@ -221,10 +229,11 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
       </div>
     );
 
-    /* FX header strip — appears above the company header in print mode when a
-     * non-base customer currency is in play. Mirrors the Quotes module's print
-     * preview banner. */
-    const fxBannerColors = RATE_TYPE_COLORS[rateType];
+    /* FX print helpers — mirror the Quotes module's PDFPreviewModal so that
+     * the body (line items, subtotal, total) is rendered in the picked
+     * currency, with a small rate line beneath the Total and a footer
+     * disclaimer block carrying the rate source + lock timestamp. */
+    const fxColors = RATE_TYPE_COLORS[rateType];
     const fxCurrencyMeta = getLibraryCurrency(customerCurrency);
     const fxBaseMeta = getLibraryCurrency(BASE_CURRENCY)!;
     const fxCustomerSym = fxCurrencyMeta?.symbol ?? customerCurrency;
@@ -232,9 +241,6 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
     const fxRate = showFx
       ? (so.lockedRate ?? convertBetween(1, customerCurrency, BASE_CURRENCY))
       : 1;
-    const fxTotalCustomer = showFx
-      ? (so.lockedRate ? grandTotal / so.lockedRate : convertBetween(grandTotal, BASE_CURRENCY, customerCurrency))
-      : grandTotal;
     const fxLockDate = (() => {
       if (so.lockedAt) {
         try { return new Date(so.lockedAt).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }); }
@@ -243,72 +249,27 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
       try { return new Date(snapshot.lastSyncAt).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }); }
       catch { return ""; }
     })();
-    const fxPrimary = printInCurrency === "customer"
-      ? `${fxCustomerSym} ${formatMoney(fxTotalCustomer, customerCurrency)} ${customerCurrency}`
-      : `${fxBaseSym} ${formatMoney(grandTotal, BASE_CURRENCY)} ${BASE_CURRENCY}`;
-    const fxSecondary = printInCurrency === "customer"
-      ? `≈ ${fxBaseSym} ${formatMoney(grandTotal, BASE_CURRENCY)} ${BASE_CURRENCY}`
-      : `≈ ${fxCustomerSym} ${formatMoney(fxTotalCustomer, customerCurrency)} ${customerCurrency}`;
+    /* Active print currency drives every amount rendered below. SO mock data
+     * is in BASE_CURRENCY (PKR); converting to customer divides by the locked
+     * rate (PKR per 1 customer unit). When FX isn't in play, we keep the
+     * legacy "$" rendering used elsewhere in the modal. */
+    const printingInCustomer = isPrint && showFx && printInCurrency === "customer";
+    const printSym = !showFx ? "$" : (printingInCustomer ? fxCustomerSym : fxBaseSym);
+    const printCode = !showFx ? "USD" : (printingInCustomer ? customerCurrency : BASE_CURRENCY);
+    const toPrintAmount = (n: number): number => {
+      if (!printingInCustomer) return n;
+      if (so.lockedRate && so.lockedRate > 0) return n / so.lockedRate;
+      return convertBetween(n, BASE_CURRENCY, customerCurrency);
+    };
+    const fmtMoney = (n: number): string => {
+      if (!showFx) {
+        return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+      return `${printSym} ${formatMoney(toPrintAmount(n), printCode)}`;
+    };
 
     return (
       <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: DOC_C.fg }}>
-        {/* FX context banner — surfaces the currency conversion + rate source at the top of the printout. */}
-        {isPrint && showFx && showCurrencyConversion && (
-          <div
-            style={{
-              marginBottom: 16,
-              padding: "10px 14px",
-              borderRadius: 8,
-              border: `1px solid ${fxBannerColors.hex}33`,
-              backgroundColor: `${fxBannerColors.hex}0A`,
-              display: "flex",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 10,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                color: "#6B7280",
-                textTransform: "uppercase",
-              }}
-            >
-              Order Total
-            </span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: DOC_C.fg }} className="tabular-nums">
-              {fxPrimary}
-            </span>
-            <span style={{ fontSize: 12, color: "#6B7280" }} className="tabular-nums">
-              {fxSecondary}
-            </span>
-            <span style={{ width: 1, height: 14, backgroundColor: "#E5E7EB" }} />
-            <span style={{ fontSize: 11, color: "#1F2937" }} className="tabular-nums">
-              1 {customerCurrency} = {fxBaseSym} {formatRate(fxRate)} {BASE_CURRENCY}
-            </span>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: 11,
-                fontWeight: 600,
-                color: fxBannerColors.hex,
-              }}
-            >
-              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: fxBannerColors.hex }} />
-              {rateTypeLabel(rateType)}
-            </span>
-            {includeRateSource && fxLockDate && (
-              <span style={{ fontSize: 11, color: "#6B7280" }}>
-                · {fxLockDate}
-              </span>
-            )}
-          </div>
-        )}
-
         {/* Header bar */}
         {showHeader && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
@@ -410,15 +371,15 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
                       {showPricing && hasDiscount ? (
                         <>
                           <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: DOC_C.greenBg, color: DOC_C.greenFg, marginBottom: 3 }}>5% off</span><br />
-                          <span style={{ textDecoration: "line-through", color: DOC_C.muted, fontSize: 11 }}>{fmtCurrency(li.unitPrice)}</span><br />
-                          <span style={{ fontWeight: 700 }}>{fmtCurrency(li.unitPrice * 0.95)}</span>
+                          <span style={{ textDecoration: "line-through", color: DOC_C.muted, fontSize: 11 }}>{fmtMoney(li.unitPrice)}</span><br />
+                          <span style={{ fontWeight: 700 }}>{fmtMoney(li.unitPrice * 0.95)}</span>
                         </>
                       ) : (
-                        <span style={{ fontWeight: 600 }}>{fmtCurrency(li.unitPrice)}</span>
+                        <span style={{ fontWeight: 600 }}>{fmtMoney(li.unitPrice)}</span>
                       )}
                     </td>
                     <td style={{ padding: "14px 6px", fontSize: 11, textAlign: "center", color: DOC_C.fg, fontWeight: 500 }}>{ship.shipMethod}</td>
-                    <td style={{ padding: "14px 6px", fontSize: 12, fontWeight: 700, textAlign: "right" }}>{fmtCurrency(lineTotal)}</td>
+                    <td style={{ padding: "14px 6px", fontSize: 12, fontWeight: 700, textAlign: "right" }}>{fmtMoney(lineTotal)}</td>
                     <td style={{ padding: "14px 6px", fontSize: 11, textAlign: "right", color: DOC_C.fg, fontWeight: 500, whiteSpace: "nowrap" }}>{ship.shipBy}</td>
                   </tr>
                   <tr key={`${li.id}-ship`}>
@@ -477,18 +438,30 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
           <div style={{ minWidth: 300 }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12 }}>
               <span style={{ color: DOC_C.muted }}>Subtotal ({totalUnits} items)</span>
-              <span style={{ fontWeight: 600, color: DOC_C.fg }}>{fmtCurrency(subtotal)}</span>
+              <span style={{ fontWeight: 600, color: DOC_C.fg }}>{fmtMoney(subtotal)}</span>
             </div>
             {showPricing && totalDiscounts > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12 }}>
                 <span style={{ color: DOC_C.muted }}>Discounts Applied ({discountItemCount} items)</span>
-                <span style={{ fontWeight: 600, color: DOC_C.green }}>-{fmtCurrency(totalDiscounts)}</span>
+                <span style={{ fontWeight: 600, color: DOC_C.green }}>-{fmtMoney(totalDiscounts)}</span>
               </div>
             )}
             <div style={{ borderTop: `2px solid ${DOC_C.fg}`, marginTop: 8, paddingTop: 10, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <span style={{ fontSize: 16, fontWeight: 700 }}>Total Amount</span>
-              <span style={{ fontSize: 20, fontWeight: 700 }}>{fmtCurrency(grandTotal)}</span>
+              <span style={{ fontSize: 20, fontWeight: 700 }}>{fmtMoney(grandTotal)}</span>
             </div>
+            {/* Rate line — sits directly below the Total so the customer can
+                verify the conversion that produced it. Mirrors the Quotes
+                module's PDFPreviewModal. */}
+            {isPrint && showFx && fxRate > 0 && (
+              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6, marginTop: 6, fontSize: 10, color: DOC_C.muted }} className="tabular-nums">
+                <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", backgroundColor: fxColors.hex }} />
+                <span>
+                  1 {customerCurrency} = {fxBaseSym} {formatRate(fxRate)} {BASE_CURRENCY} · {rateTypeLabel(rateType)}
+                  {fxLockDate ? ` · ${fxLockDate}` : ""}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -502,9 +475,9 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
             <span style={{ color: DOC_C.muted }}>Invoice #</span>             <span style={{ textAlign: "right", fontWeight: 700, color: DOC_C.primary }}>{payment.invoiceNumber}</span>
             <span style={{ color: DOC_C.muted }}>Invoice Date</span>          <span style={{ textAlign: "right", fontWeight: 600, color: DOC_C.fg }}>{payment.invoiceDate}</span>
             <span style={{ color: DOC_C.muted }}>Payment Due Date</span>      <span style={{ textAlign: "right", fontWeight: 600, color: DOC_C.fg }}>{payment.dueDate}</span>
-            <span style={{ color: DOC_C.muted }}>Amount Invoiced</span>       <span style={{ textAlign: "right", fontWeight: 600, color: DOC_C.fg }}>{fmtCurrency(payment.amountInvoiced)}</span>
-            <span style={{ color: DOC_C.muted }}>{payment.paidLabel}</span>   <span style={{ textAlign: "right", fontWeight: 700, color: DOC_C.green }}>{fmtCurrency(payment.amountPaid)}</span>
-            <span style={{ color: DOC_C.muted }}>Outstanding Balance</span>   <span style={{ textAlign: "right", fontWeight: 700, color: DOC_C.destructive }}>{fmtCurrency(payment.amountInvoiced - payment.amountPaid)}</span>
+            <span style={{ color: DOC_C.muted }}>Amount Invoiced</span>       <span style={{ textAlign: "right", fontWeight: 600, color: DOC_C.fg }}>{fmtMoney(payment.amountInvoiced)}</span>
+            <span style={{ color: DOC_C.muted }}>{payment.paidLabel}</span>   <span style={{ textAlign: "right", fontWeight: 700, color: DOC_C.green }}>{fmtMoney(payment.amountPaid)}</span>
+            <span style={{ color: DOC_C.muted }}>Outstanding Balance</span>   <span style={{ textAlign: "right", fontWeight: 700, color: DOC_C.destructive }}>{fmtMoney(payment.amountInvoiced - payment.amountPaid)}</span>
           </div>
         </div>
 
@@ -527,7 +500,7 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
           <div style={{ marginTop: 24 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: DOC_C.fg, marginBottom: 8 }}>Terms and Conditions</div>
             <div style={{ fontSize: 11, color: DOC_C.muted, lineHeight: 1.65 }}>
-              Prices are guaranteed for 30 days from quote conversion. Payment terms are <strong style={{ color: DOC_C.fg }}>{so.paymentTerms || "Net 30"}</strong> days from invoice date. A 1.5% late fee will be applied to overdue invoices. Warranty covers defects in material and workmanship for one year. Customer is responsible for shipping costs on warranty returns. Full Terms and Conditions are included on the next page.
+              Prices are guaranteed for 30 days from quote conversion. All amounts on this order are in <strong style={{ color: DOC_C.fg }}>{printCode}</strong>. Payment terms are <strong style={{ color: DOC_C.fg }}>{so.paymentTerms || "Net 30"}</strong> days from invoice date. A 1.5% late fee will be applied to overdue invoices. Warranty covers defects in material and workmanship for one year. Customer is responsible for shipping costs on warranty returns. Full Terms and Conditions are included on the next page.
             </div>
           </div>
         )}
@@ -540,6 +513,32 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
               [1] https://pioneer-erp.com/docs/specs.pdf<br />
               [2] https://pioneer-erp.com/docs/certifications.pdf<br />
               [3] https://pioneer-erp.com/docs/drawings.pdf
+            </div>
+          </div>
+        )}
+
+        {/* FX footer disclaimer (rate source + lock timestamp + advisory) —
+            mirrors the Quotes module's PDFPreviewModal. */}
+        {isPrint && showFx && includeRateSource && (
+          <div
+            style={{
+              marginTop: 20,
+              padding: "8px 12px",
+              borderRadius: 4,
+              backgroundColor: "#FAFBFC",
+              border: "1px solid #F3F4F6",
+              display: "flex",
+              flexDirection: "column",
+              gap: 3,
+            }}
+          >
+            <div style={{ fontSize: 11, color: DOC_C.muted, lineHeight: 1.5 }} className="tabular-nums">
+              <strong style={{ fontWeight: 600 }}>Rate source:</strong>{" "}
+              {rateType === "market" ? "Open Exchange Rates (Mid-market)" : "Corporate Treasury (Q1 FY26)"}
+              {fxLockDate && <> · Locked on {fxLockDate}</>}
+            </div>
+            <div style={{ fontSize: 10, color: DOC_C.mutedSoft, fontStyle: "italic", lineHeight: 1.5 }}>
+              Amounts reflect the exchange rate locked at order creation.
             </div>
           </div>
         )}
@@ -567,7 +566,7 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
 
           <p style={{ marginBottom: 6 }}><strong>2. PRICING & PAYMENT:</strong></p>
           <ul style={{ paddingLeft: 22, marginBottom: 12, listStyle: "disc" }}>
-            <li><strong>Pricing:</strong> All prices are in {so.currency || "USD"} and locked at the values agreed in the referenced Quote.</li>
+            <li><strong>Pricing:</strong> All prices are in {activePrintCode} and locked at the values agreed in the referenced Quote.</li>
             <li style={{ marginTop: 3 }}><strong>Payment Terms:</strong> {so.paymentTerms || "Net 30"} days from invoice date. 50% deposit due upon order acceptance.</li>
             <li style={{ marginTop: 3 }}><strong>Late Payment:</strong> Overdue amounts incur 1.5% monthly interest. We may suspend deliveries and pursue collection, with the customer responsible for all collection costs.</li>
           </ul>
@@ -795,47 +794,43 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
                     <Toggle enabled={opt.enabled} onChange={() => toggleOption(opt.key)} />
                   </div>
                 ))}
-                {/* FX print options — only when the order has a non-base currency. */}
+                {/* FX print options — only when the order has a non-base
+                 *  currency. Mirrors the Quotes module's PDFPreviewModal:
+                 *  the print-currency picker is always shown, paired with a
+                 *  toggle to include the rate source & timestamp footer. */}
                 {isPrint && showFx && (
                   <>
                     <div style={{ height: 1, backgroundColor: "var(--border)", margin: "4px 0" }} />
-                    <div className="flex items-start justify-between" style={{ gap: 12 }}>
-                      <div className="flex items-start" style={{ gap: 10 }}>
+                    <div>
+                      <div className="flex items-start" style={{ gap: 10, marginBottom: 8 }}>
                         <span style={{ fontSize: "var(--text-base)", lineHeight: 1, marginTop: 2 }}>💱</span>
                         <div>
-                          <div className="text-foreground" style={captionSemi}>Show currency conversion details</div>
+                          <div className="text-foreground" style={captionSemi}>Print currency</div>
                           <div className="text-foreground/40" style={{ ...caption, fontWeight: "var(--font-weight-normal)" }}>
-                            Render the customer-currency total alongside the base equivalent at the top of the order.
+                            Pick the currency used for line items, subtotal, and total.
                           </div>
                         </div>
                       </div>
-                      <Toggle enabled={showCurrencyConversion} onChange={setShowCurrencyConversion} />
-                    </div>
-                    {/* PRINT IN segment selector — only visible when conversion details are on. */}
-                    {showCurrencyConversion && (
-                      <div className="flex items-center justify-between" style={{ gap: 12, paddingLeft: 26 }}>
-                        <span className="text-foreground/60" style={micro}>PRINT IN</span>
-                        <div className="inline-flex items-center gap-0.5 h-7 rounded-md border border-border p-0.5 bg-white">
-                          {([
-                            { key: "customer" as const, sym: getLibraryCurrency(customerCurrency)?.symbol ?? customerCurrency, code: customerCurrency },
-                            { key: "base" as const, sym: getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY, code: BASE_CURRENCY },
-                          ]).map(opt => {
-                            const active = printInCurrency === opt.key;
-                            return (
-                              <button
-                                key={opt.key}
-                                type="button"
-                                onClick={() => setPrintInCurrency(opt.key)}
-                                className={`inline-flex items-center h-full px-2 rounded text-[11px] whitespace-nowrap transition-colors ${active ? "bg-[#EDF4FF] text-primary" : "text-muted-foreground hover:text-foreground"} cursor-pointer`}
-                                style={{ fontWeight: active ? 600 : 500 }}
-                              >
-                                {opt.sym} {opt.code}
-                              </button>
-                            );
-                          })}
-                        </div>
+                      <div style={{ paddingLeft: 26, display: "flex", gap: 4 }}>
+                        {([
+                          { key: "customer" as const, sym: getLibraryCurrency(customerCurrency)?.symbol ?? customerCurrency, code: customerCurrency },
+                          { key: "base" as const, sym: getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY, code: BASE_CURRENCY },
+                        ]).map(opt => {
+                          const active = printInCurrency === opt.key;
+                          return (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() => setPrintInCurrency(opt.key)}
+                              className={`inline-flex items-center px-2.5 rounded-full text-[10px] whitespace-nowrap transition-colors cursor-pointer border ${active ? "bg-[#EDF4FF] text-primary border-primary/40" : "bg-white text-muted-foreground border-border hover:text-foreground"}`}
+                              style={{ fontWeight: active ? 600 : 500, height: 22, lineHeight: 1 }}
+                            >
+                              {opt.sym} {opt.code}
+                            </button>
+                          );
+                        })}
                       </div>
-                    )}
+                    </div>
                     <div className="flex items-start justify-between" style={{ gap: 12 }}>
                       <div className="flex items-start" style={{ gap: 10 }}>
                         <span style={{ fontSize: "var(--text-base)", lineHeight: 1, marginTop: 2 }}>🕒</span>

@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import type { SalesOrder } from './types';
 import { MoneyConvertTooltip } from '../currency/MoneyConvertTooltip';
 import { makeFormatOrderMoney } from '../currency/formatOrderMoney';
+import { BASE_CURRENCY, convertBetween, getLibraryCurrency } from '@/app/data/currencyLibrary';
 
 // ── Types ──────────────────────────────────────────────────────────
 type VersionStatus = 'draft' | 'pending-review' | 'cleared' | 'shipped';
@@ -621,6 +622,8 @@ export function VersionHistoryTab({ so, viewMode = "base" }: VersionHistoryTabPr
           version={showRevertConfirm}
           nextVersion={versions[0].version + 1}
           hasShippedItems={versions.find(v => v.version === showRevertConfirm)?.snapshot.lineItems?.some(li => (li.shippedQty || 0) > 0) || false}
+          customerCurrency={customerCurrency}
+          versionLockedRate={lockedRate}
           onClose={() => setShowRevertConfirm(null)}
           onConfirm={(reason: string) => handleRevert(showRevertConfirm, reason)}
         />
@@ -768,10 +771,31 @@ function CompareView({ v1, v2, formatCurrency, onClose, customerCurrency, locked
 }
 
 // ── Revert Confirm Modal ──────────────────────────────────────────
-function RevertConfirmModal({ version, nextVersion, hasShippedItems, onClose, onConfirm }: {
-  version: number; nextVersion: number; hasShippedItems: boolean; onClose: () => void; onConfirm: (reason: string) => void;
+function RevertConfirmModal({ version, nextVersion, hasShippedItems, customerCurrency, versionLockedRate, onClose, onConfirm }: {
+  version: number; nextVersion: number; hasShippedItems: boolean;
+  /** Customer currency code (e.g. USD). Drives whether the FX disclosure appears. */
+  customerCurrency?: string;
+  /** Order-level rate locked at send time (BASE per 1 customer unit). Used as
+   *  the "vs locked rate" reference in the drift annotation. */
+  versionLockedRate?: number;
+  onClose: () => void; onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState('');
+  /* Reverts always re-lock at today's Mid-market rate, mirroring the Quotes
+   * module's RevertConfirmModal. The indicator below always reads
+   * "Mid-market" and uses the Mid-market color regardless of the active page
+   * rate. */
+  const upperCustomer = customerCurrency?.toUpperCase();
+  const showFx = !!upperCustomer && upperCustomer !== BASE_CURRENCY;
+  const todayRate = showFx ? convertBetween(1, upperCustomer, BASE_CURRENCY) : 0;
+  const lockedForCompare = showFx
+    ? (versionLockedRate ?? +(todayRate * 0.988).toFixed(4))
+    : 0;
+  const drift = showFx && lockedForCompare
+    ? +(((todayRate - lockedForCompare) / lockedForCompare) * 100).toFixed(1)
+    : 0;
+  const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
+  const REVERT_RATE_HEX = '#7c3aed';
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)' }} onClick={onClose} />
@@ -794,6 +818,45 @@ function RevertConfirmModal({ version, nextVersion, hasShippedItems, onClose, on
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', padding: '8px 10px', backgroundColor: 'rgba(39,185,115,0.08)', borderRadius: '6px', border: '1px solid rgba(39,185,115,0.2)' }}>
               <Truck style={{ width: '13px', height: '13px', color: '#059669', flexShrink: 0 }} />
               <span style={{ fontSize: '11px', color: '#065F46', lineHeight: '1.3' }}>Already-shipped items will be included as non-editable (locked) in the new draft.</span>
+            </div>
+          )}
+          {/* FX disclosure — reverts always re-lock at today's Mid-market
+              rate. Mirrors the Quotes module's RevertConfirmModal. */}
+          {showFx && (
+            <div
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                padding: '10px 12px', marginBottom: 14,
+                borderRadius: 8,
+                border: `1px solid color-mix(in srgb, ${REVERT_RATE_HEX} 22%, transparent)`,
+                backgroundColor: `color-mix(in srgb, ${REVERT_RATE_HEX} 6%, transparent)`,
+              }}
+            >
+              <div
+                style={{
+                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: `color-mix(in srgb, ${REVERT_RATE_HEX} 14%, transparent)`,
+                  marginTop: 1,
+                }}
+              >
+                <Send style={{ width: 11, height: 11, color: REVERT_RATE_HEX }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1F2937', lineHeight: 1.3, marginBottom: 3 }}>
+                  Today's Mid-market rate will be applied to this revert
+                </div>
+                <div style={{ fontSize: 11, color: '#4B5563', lineHeight: 1.5 }} className="tabular-nums">
+                  {todayRate
+                    ? <>1 {upperCustomer} = {baseSym} {todayRate.toFixed(2)} {BASE_CURRENCY}</>
+                    : 'The latest live mid-market rate will be locked when you confirm.'}
+                  {drift !== 0 && lockedForCompare > 0 && (
+                    <span style={{ marginLeft: 6, color: drift > 0 ? '#92400E' : '#065F46' }}>
+                      ({drift > 0 ? '+' : ''}{drift}% vs V{version} locked rate of {baseSym} {lockedForCompare.toFixed(2)})
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           )}
           <label style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>

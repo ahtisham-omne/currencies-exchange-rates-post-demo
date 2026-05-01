@@ -68,8 +68,8 @@ const INSIGHT_CATEGORIES: InsightCategory[] = [
     title: "FX Context",
     icon: RefreshCw,
     metrics: [
-      { label: "Mid-market Rate", value: "", active: true, description: "Live mid-market rates from Open Exchange Rates. Refreshed every 15 minutes. Display-only — drives the customer-currency hover conversions on the table." },
-      { label: "Corporate Rate", value: "", active: false, description: "Corporate book rates from Corporate Treasury (Q1 FY26). Refreshed quarterly — manual. Display-only — matches what finance uses for accruals and reporting." },
+      { label: "Mid-market Rate", value: "", active: true, description: "Live interbank rates sourced from Open Exchange Rates and synced automatically every 24 hours. The mid-market rate represents the midpoint between the global buy and sell prices of a currency pair.\n\nUpdated as of 30th April at 19:30 pm" },
+      { label: "Corporate Rate", value: "", active: false, description: "Fixed rates manually set by your team for specific currency pairs. A corporate rate stays in effect until someone on your team updates it, giving you a stable and predictable value for budgeting, intercompany transfers, and consistent reporting across documents.\n\nUpdated as of 23rd April at 12:00 pm" },
     ],
   },
 ];

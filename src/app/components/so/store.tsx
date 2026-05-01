@@ -716,7 +716,11 @@ function generateMockSOs(): SalesOrder[] {
       customerInitials: cust.initials,
       orderDate: soOrderDate,
       warehouse: i % 5 === 4 ? "East Hub" : i % 7 === 6 ? "West Depot" : "Main Warehouse",
-      currency: "USD",
+      // SO-000-000-000 settles in the base currency (PKR) so the table /
+      // detail page render the no-FX-context path: amounts have no dotted
+      // hover affordance, no popover, and the per-column "Show values as"
+      // toggle is effectively a no-op for this row.
+      currency: i === 0 ? "PKR" : "USD",
       paymentTerms: i % 4 === 0 ? "Net 30" : i % 4 === 1 ? "Net 60" : i % 4 === 2 ? "Due on Receipt" : "Net 45",
       shippingAddress: addresses[i % addresses.length],
       status,

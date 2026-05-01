@@ -1,16 +1,12 @@
 import React, { useState } from 'react';
-import { X, Clock, User, FileText, GitCompare, DollarSign, Package, Plus, Trash2, Edit, Tag, Send, CheckCircle2, Scale, RotateCcw, AlertCircle, Check, Truck, Lock, TrendingUp } from 'lucide-react';
+import { X, Clock, User, FileText, GitCompare, DollarSign, Package, Plus, Trash2, Edit, Tag, Send, CheckCircle2, Scale, RotateCcw, AlertCircle, Check, Truck, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSOStore } from './store';
 import {
   BASE_CURRENCY,
   convertBetween,
   getLibraryCurrency,
-  formatRate,
-  rateTypeLabel,
 } from '@/app/data/currencyLibrary';
-import { useRateContext } from '@/app/context/RateContext';
-import { RATE_TYPE_COLORS } from '../currency/MarketCorporateToggle';
 import { MoneyConvertTooltip } from '../currency/MoneyConvertTooltip';
 import { formatMoney } from '@/app/data/currencyLibrary';
 
@@ -930,22 +926,24 @@ function RevertConfirmModal({ version, nextVersion, hasShippedItems, soNumber, o
   const [reason, setReason] = useState('');
   const store = useSOStore();
   const so = store.salesOrders.find(s => s.soNumber === soNumber);
-  const { rateType } = useRateContext();
   const customerCurrency = so?.currency?.toUpperCase();
   const showFx = !!customerCurrency && customerCurrency !== BASE_CURRENCY;
+  /* Reverts always re-lock at today's Mid-market rate, mirroring the Quotes
+   * module's behavior, so the indicator below always reads "Mid-market" and
+   * uses the Mid-market rate-type color regardless of the active page rate. */
   const todayRate = showFx ? convertBetween(1, customerCurrency, BASE_CURRENCY) : 0;
-  // For the demo we mock the version's locked rate as a small offset from today's
-  // rate when we don't have a per-version snapshot.
+  // For the demo we mock the version's locked rate as a small offset from
+  // today's rate when no per-version snapshot exists. Order-level lockedRate
+  // wins when present.
   const versionLockedRate = showFx
     ? (so?.lockedRate ?? +(todayRate * 0.988).toFixed(4))
     : 0;
   const drift = showFx && versionLockedRate
     ? +(((todayRate - versionLockedRate) / versionLockedRate) * 100).toFixed(1)
     : 0;
-  const cur = showFx ? getLibraryCurrency(customerCurrency!) : null;
   const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
   const baseSym = baseCur.symbol ?? BASE_CURRENCY;
-  const colors = RATE_TYPE_COLORS[rateType];
+  const REVERT_RATE_HEX = '#7c3aed';
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 10002, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)' }} onClick={onClose} />
@@ -975,34 +973,43 @@ function RevertConfirmModal({ version, nextVersion, hasShippedItems, soNumber, o
             </div>
           )}
 
-          {/* FX disclosure — today's rate will apply to the reverted draft, not V{version}'s locked rate. */}
+          {/* FX disclosure — reverts always re-lock at today's Mid-market
+              rate (same behavior as the Quotes module's RevertConfirmModal). */}
           {showFx && (
             <div
               style={{
-                marginBottom: '12px',
-                padding: '10px 12px',
-                backgroundColor: `${colors.hex}0D`,
-                border: `1px solid ${colors.hex}33`,
-                borderRadius: '6px',
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                padding: '10px 12px', marginBottom: 14,
+                borderRadius: 8,
+                border: `1px solid color-mix(in srgb, ${REVERT_RATE_HEX} 22%, transparent)`,
+                backgroundColor: `color-mix(in srgb, ${REVERT_RATE_HEX} 6%, transparent)`,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                <TrendingUp style={{ width: '13px', height: '13px', color: colors.hex, flexShrink: 0 }} />
-                <span style={{ fontSize: '12px', color: colors.hex, fontWeight: 600, lineHeight: 1.3 }}>
-                  Today's {rateTypeLabel(rateType)} will be applied to this revert
-                </span>
+              <div
+                style={{
+                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: `color-mix(in srgb, ${REVERT_RATE_HEX} 14%, transparent)`,
+                  marginTop: 1,
+                }}
+              >
+                <Send style={{ width: 11, height: 11, color: REVERT_RATE_HEX }} />
               </div>
-              <div style={{ fontSize: '11.5px', color: '#1F2937', fontWeight: 500, lineHeight: 1.5 }} className="tabular-nums">
-                1 {customerCurrency} = {baseSym} {formatRate(todayRate)} {BASE_CURRENCY}
-              </div>
-              {versionLockedRate > 0 && (
-                <div style={{ fontSize: '11px', color: '#6B7280', lineHeight: 1.5 }} className="tabular-nums">
-                  <span style={{ color: drift >= 0 ? '#059669' : '#DC2626', fontWeight: 600 }}>
-                    {drift >= 0 ? '+' : ''}{drift}%
-                  </span>{' '}
-                  vs V{version} locked rate of {baseSym} {formatRate(versionLockedRate)}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1F2937', lineHeight: 1.3, marginBottom: 3 }}>
+                  Today's Mid-market rate will be applied to this revert
                 </div>
-              )}
+                <div style={{ fontSize: 11, color: '#4B5563', lineHeight: 1.5 }} className="tabular-nums">
+                  {todayRate
+                    ? <>1 {customerCurrency} = {baseSym} {todayRate.toFixed(2)} {BASE_CURRENCY}</>
+                    : 'The latest live mid-market rate will be locked when you confirm.'}
+                  {drift !== 0 && versionLockedRate > 0 && (
+                    <span style={{ marginLeft: 6, color: drift > 0 ? '#92400E' : '#065F46' }}>
+                      ({drift > 0 ? '+' : ''}{drift}% vs V{version} locked rate of {baseSym} {versionLockedRate.toFixed(2)})
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           )}
           <label style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>

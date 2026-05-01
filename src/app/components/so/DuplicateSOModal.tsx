@@ -5,7 +5,7 @@
  * understands what's carrying over and what's being reset.
  */
 import { useMemo, useState } from "react";
-import { X, Copy, Lock, TrendingUp, ArrowRight, Info } from "lucide-react";
+import { X, Copy, Lock, TrendingUp, Settings2 } from "lucide-react";
 import {
   BASE_CURRENCY,
   convertBetween,
@@ -15,10 +15,9 @@ import {
 } from "@/app/data/currencyLibrary";
 import { useRateContext } from "@/app/context/RateContext";
 import { RATE_TYPE_COLORS } from "../currency/MarketCorporateToggle";
-import { CurrencyFlag } from "../currency/CurrencyFlag";
 import type { SalesOrder } from "./types";
 
-export type DuplicateRateOption = "locked" | "today";
+export type DuplicateRateOption = "locked" | "today" | "change-pair";
 
 interface Props {
   so: SalesOrder;
@@ -47,7 +46,6 @@ export function DuplicateSOModal({ so, onClose, onConfirm, onChangeCurrencyPair 
   const initialRateOption: DuplicateRateOption = so.lockedRate ? "locked" : "today";
   const [rateOption, setRateOption] = useState<DuplicateRateOption>(initialRateOption);
 
-  const cur = getLibraryCurrency(customerCurrency);
   const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
   const baseSym = baseCur.symbol ?? BASE_CURRENCY;
   const colors = RATE_TYPE_COLORS[rateType];
@@ -131,7 +129,10 @@ export function DuplicateSOModal({ so, onClose, onConfirm, onChangeCurrencyPair 
             </Section>
           )}
 
-          {/* Currency-pair section */}
+          {/* Currency-pair section — outlined button hands off to the Currency
+              Configurator and flips the rate option to "change-pair" so the
+              summary below reflects that this duplicate's FX context will be
+              re-set rather than carried over. */}
           {showFx && (
             <Section title="NEED A DIFFERENT CURRENCY PAIR?">
               <p className="text-[11.5px] text-slate-500 leading-relaxed mb-2">
@@ -139,11 +140,30 @@ export function DuplicateSOModal({ so, onClose, onConfirm, onChangeCurrencyPair 
               </p>
               <button
                 type="button"
-                onClick={onChangeCurrencyPair}
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-slate-200 bg-white text-[12px] cursor-pointer hover:bg-slate-50 transition-colors"
-                style={{ fontWeight: 500 }}
+                onClick={() => {
+                  setRateOption("change-pair");
+                  onChangeCurrencyPair?.();
+                }}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "6px",
+                  alignSelf: "flex-start", width: "fit-content",
+                  height: "34px", padding: "0 12px", borderRadius: "6px",
+                  border: "1px solid #E5E7EB", backgroundColor: "#FFFFFF",
+                  color: "#1F2937", fontSize: "12px", fontWeight: 500,
+                  cursor: "pointer", transition: "all 150ms", lineHeight: "1",
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = "rgba(27, 110, 243, 0.3)";
+                  e.currentTarget.style.backgroundColor = "rgba(27, 110, 243, 0.06)";
+                  e.currentTarget.style.color = "#1B6EF3";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = "#E5E7EB";
+                  e.currentTarget.style.backgroundColor = "#FFFFFF";
+                  e.currentTarget.style.color = "#1F2937";
+                }}
               >
-                {cur && <CurrencyFlag currency={cur} size={14} />}
+                <Settings2 style={{ width: 13, height: 13, color: "#1B6EF3" }} />
                 Change currency pair
               </button>
             </Section>
@@ -155,13 +175,20 @@ export function DuplicateSOModal({ so, onClose, onConfirm, onChangeCurrencyPair 
               <SummaryRow label="Customer" value={customerMode === "same" ? so.customer : "To be selected"} />
               {showFx && (
                 <>
-                  <SummaryRow label="Currency pair" value={`${customerCurrency} → ${BASE_CURRENCY}`} />
+                  <SummaryRow
+                    label="Currency pair"
+                    value={rateOption === "change-pair"
+                      ? "To be configured"
+                      : `${customerCurrency} → ${BASE_CURRENCY} (unchanged)`}
+                  />
                   <SummaryRow
                     label="Exchange rate"
                     value={
                       rateOption === "locked"
-                        ? `Locked (${baseSym} ${formatRate(lockedRate)})`
-                        : `Today's ${rateTypeLabel(rateType)} (${baseSym} ${formatRate(todayRate)})`
+                        ? `Locked at 1 ${customerCurrency} = ${baseSym} ${formatRate(lockedRate)} ${BASE_CURRENCY}`
+                        : rateOption === "today"
+                          ? `Today's ${rateTypeLabel(rateType)} (1 ${customerCurrency} = ${baseSym} ${formatRate(todayRate)} ${BASE_CURRENCY})`
+                          : "Set in the Currency Configurator"
                     }
                   />
                 </>
