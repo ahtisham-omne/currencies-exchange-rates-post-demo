@@ -46,6 +46,8 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/app/components/
 import { Invoice } from '@/app/data/mockInvoices';
 import { mockVendors } from '@/app/data/mockVendors';
 import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
+import { InvoiceViewModeProvider, type InvoiceViewMode } from '@/app/components/currency/InvoiceViewModeContext';
+import { AmountColumnHeaderMenu } from '@/app/components/currency/AmountColumnHeaderMenu';
 
 interface ColumnConfig {
   id: string;
@@ -108,6 +110,7 @@ export function AdvancedInvoiceTable({
   const [resizing, setResizing] = useState<{ columnId: string; startX: number; startWidth: number } | null>(null);
   const [dragging, setDragging] = useState<{ columnId: string; startIndex: number } | null>(null);
   const [quickViewRecord, setQuickViewRecord] = useState<{ id: string; type: 'PO' | 'GRN' } | null>(null);
+  const [amountViewMode, setAmountViewMode] = useState<InvoiceViewMode>('base');
   const tableRef = useRef<HTMLDivElement>(null);
 
   // Render type with icon
@@ -292,6 +295,7 @@ export function AdvancedInvoiceTable({
   const cellPadding = densityMode === 'condensed' ? 'py-2 px-3' : densityMode === 'relaxed' ? 'py-4 px-4' : 'py-3 px-3';
 
   return (
+    <InvoiceViewModeProvider value={amountViewMode}>
     <div ref={tableRef} className="flex-1 overflow-hidden bg-white relative">
       <div className="overflow-auto h-full">
         <table className="w-full border-collapse">
@@ -309,36 +313,62 @@ export function AdvancedInvoiceTable({
 
               {/* Scrollable Columns */}
               {columns.filter(col => col.visible).map((column, index) => (
-                <th
-                  key={column.id}
-                  className="relative bg-gray-50 text-left group"
-                  style={{ width: column.width, minWidth: column.minWidth }}
-                  draggable
-                  onDragStart={(e) => handleDragStart(column.id, index, e)}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(index, e)}
-                >
-                  <div className="flex items-center gap-2 px-3 py-3 pointer-events-none">
-                    <GripVertical className="w-3.5 h-3.5 text-gray-400 cursor-move opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto" />
-                    <span className="text-xs font-medium text-gray-700 select-none">
-                      {column.label}
-                    </span>
-                  </div>
-                  
-                  {/* Resize Handle */}
-                  {column.resizable && (
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500 transition-colors z-10"
-                      style={{ 
-                        background: resizing?.columnId === column.id ? '#3b82f6' : undefined 
-                      }}
-                      onMouseDown={(e) => {
-                        e.stopPropagation();
-                        handleResizeStart(column.id, e.clientX, e);
-                      }}
+                column.id === 'amount' ? (
+                  <th
+                    key={column.id}
+                    className="relative bg-gray-50 text-left group"
+                    style={{ width: column.width, minWidth: column.minWidth }}
+                  >
+                    <AmountColumnHeaderMenu
+                      label={column.label}
+                      viewMode={amountViewMode}
+                      onViewModeChange={setAmountViewMode}
                     />
-                  )}
-                </th>
+                    {column.resizable && (
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500 transition-colors z-10"
+                        style={{
+                          background: resizing?.columnId === column.id ? '#3b82f6' : undefined
+                        }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleResizeStart(column.id, e.clientX, e);
+                        }}
+                      />
+                    )}
+                  </th>
+                ) : (
+                  <th
+                    key={column.id}
+                    className="relative bg-gray-50 text-left group"
+                    style={{ width: column.width, minWidth: column.minWidth }}
+                    draggable
+                    onDragStart={(e) => handleDragStart(column.id, index, e)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(index, e)}
+                  >
+                    <div className="flex items-center gap-2 px-3 py-3 pointer-events-none">
+                      <GripVertical className="w-3.5 h-3.5 text-gray-400 cursor-move opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto" />
+                      <span className="text-xs font-medium text-gray-700 select-none">
+                        {column.label}
+                      </span>
+                    </div>
+
+                    {/* Resize Handle */}
+                    {column.resizable && (
+                      <div
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-500 transition-colors z-10"
+                        style={{
+                          background: resizing?.columnId === column.id ? '#3b82f6' : undefined
+                        }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          handleResizeStart(column.id, e.clientX, e);
+                        }}
+                      />
+                    )}
+                  </th>
+                )
               ))}
 
               {/* Sticky Actions Column - Right */}
@@ -462,11 +492,12 @@ export function AdvancedInvoiceTable({
       </div>
 
       {/* Quick View Modal */}
-      <QuickViewModal 
-        record={quickViewRecord} 
-        onClose={() => setQuickViewRecord(null)} 
+      <QuickViewModal
+        record={quickViewRecord}
+        onClose={() => setQuickViewRecord(null)}
       />
     </div>
+    </InvoiceViewModeProvider>
   );
 }
 
