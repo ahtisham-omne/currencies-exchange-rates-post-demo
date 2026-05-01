@@ -25,6 +25,8 @@ interface VIMoneyCellRawProps {
   poRateAt?: string;
   /** Optional caption override for the primary rate line. */
   lockedRateLabel?: string;
+  /** "live" → forward-looking tooltip used in create flows. Default "locked". */
+  tooltipVariant?: "locked" | "live";
   className?: string;
 }
 
@@ -107,7 +109,7 @@ export function VIMoneyCell(props: VIMoneyCellProps) {
     );
   }
 
-  const { value, currency, lockedRate, lockedAt, poRate, poRateAt, lockedRateLabel, className } = props;
+  const { value, currency, lockedRate, lockedAt, poRate, poRateAt, lockedRateLabel, tooltipVariant, className } = props;
   const code = (currency || BASE_CURRENCY).toUpperCase();
   const isBase = code === BASE_CURRENCY;
 
@@ -132,6 +134,7 @@ export function VIMoneyCell(props: VIMoneyCellProps) {
       poRate={poRate}
       poRateAt={poRateAt}
       lockedRateLabel={lockedRateLabel ?? (lockedRate !== undefined ? "Invoice rate" : undefined)}
+      tooltipVariant={tooltipVariant}
       className={className}
     />
   );

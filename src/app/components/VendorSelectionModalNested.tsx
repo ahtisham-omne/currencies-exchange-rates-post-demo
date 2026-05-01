@@ -19,6 +19,60 @@ import { mockVendors, Vendor, VendorPO, VendorGRN, LineItem } from '@/app/data/m
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/app/components/ui/tooltip';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
+import { MARKET_RATES } from '@/app/data/currencyLibrary';
+
+/**
+ * Deterministic PO commitment rate keyed off the PO date and currency,
+ * shown alongside today's rate in the "PO locked rate: 1 USD = ₨ 278 (Jan
+ * 20, 2024)" footer of the create-flow tooltips. Sits a touch below the
+ * current market rate to mimic typical drift between commitment and
+ * invoicing.
+ */
+function getPOLockedRate(poDate: string, currencyCode: string): number | undefined {
+  const todayRate = MARKET_RATES.rates[currencyCode.toUpperCase()];
+  if (todayRate === undefined) return undefined;
+  const seed = poDate.split('-').reduce((acc, part) => acc + parseInt(part, 10), 0);
+  const variance = ((seed % 30) - 15) / 1000;
+  return Number((todayRate * (1 + variance - 0.014)).toFixed(2));
+}
+
+/**
+ * Forward-looking money cell used throughout this "Add Items to Invoice"
+ * modal. Wraps `VIMoneyCell` with `tooltipVariant="live"` and threads the
+ * originating PO (directly via `po`, or indirectly by resolving a GRN's
+ * `poNumber` against the vendor) so the hover panel can render the
+ * "PO locked rate" footer the spec calls for.
+ */
+function LiveMoneyCell({
+  value,
+  currency,
+  className,
+  po,
+  grn,
+  vendor,
+}: {
+  value: number;
+  currency: string;
+  className?: string;
+  po?: VendorPO;
+  grn?: VendorGRN;
+  vendor?: Vendor;
+}) {
+  const sourcePO =
+    po ?? (grn && vendor ? vendor.purchaseOrders.find(p => p.poNumber === grn.poNumber) : undefined);
+  const poRate = sourcePO ? getPOLockedRate(sourcePO.poDate, currency) : undefined;
+  const poRateAt = sourcePO?.poDate;
+  return (
+    <VIMoneyCell
+      value={value}
+      currency={currency}
+      tooltipVariant="live"
+      poRate={poRate}
+      poRateAt={poRateAt}
+      className={className}
+    />
+  );
+}
 
 // Material UI Imports
 import dayjs from 'dayjs';
@@ -1642,7 +1696,7 @@ function VendorNestedRow({
                                     : 'text-green-600 bg-green-50 border-green-100'
                                 } px-1.5 py-0.5 border rounded flex items-center gap-1`}>
                                   {isPreInvoiceEligible ? <Tag className="w-2.5 h-2.5" /> : <CheckCircle2 className="w-2.5 h-2.5" />}
-                                  {isPreInvoiceEligible ? 'Pre-Invoiced' : 'Invoiced'}: <VIMoneyCell value={po.invoicedAmount ?? 0} currency={vendor.currency} />
+                                  {isPreInvoiceEligible ? 'Pre-Invoiced' : 'Invoiced'}: <LiveMoneyCell value={po.invoicedAmount ?? 0} currency={vendor.currency} po={po} />
                                 </span>
                                 {isPreInvoiceEligible && (
                                   <Tooltip>
@@ -1656,7 +1710,7 @@ function VendorNestedRow({
                                 )}
                               </div>
                             )}
-                            <VIMoneyCell value={po.poAmount} currency={vendor.currency} className={`text-[14px] font-bold ${displayStatus === 'Closed' || displayStatus === 'Fully Invoiced' ? 'text-gray-400' : 'text-green-600'}`} />
+                            <LiveMoneyCell value={po.poAmount} currency={vendor.currency} po={po} className={`text-[14px] font-bold ${displayStatus === 'Closed' || displayStatus === 'Fully Invoiced' ? 'text-gray-400' : 'text-green-600'}`} />
                           </div>
                           <span className="text-[8px] text-gray-400 font-bold">PO Value</span>
                         </div>
@@ -1746,16 +1800,16 @@ function VendorNestedRow({
                                           {item.invoicedQty || 0} {item.uom}
                                         </span>
                                         {prevInvoicedAmt > 0 && (
-                                          <span className="text-[9px] text-emerald-700/60 font-medium italic underline decoration-emerald-200 decoration-dotted underline-offset-2">Prev: <VIMoneyCell value={prevInvoicedAmt} currency={vendor.currency} /></span>
+                                          <span className="text-[9px] text-emerald-700/60 font-medium italic underline decoration-emerald-200 decoration-dotted underline-offset-2">Prev: <LiveMoneyCell value={prevInvoicedAmt} currency={vendor.currency} po={po} /></span>
                                         )}
                                       </div>
                                     </td>
-                                    <td className="px-4 py-2.5 text-right font-medium text-gray-500"><VIMoneyCell value={item.unitPrice} currency={vendor.currency} /></td>
+                                    <td className="px-4 py-2.5 text-right font-medium text-gray-500"><LiveMoneyCell value={item.unitPrice} currency={vendor.currency} po={po} /></td>
                                     <td className="px-4 py-2.5 text-right font-bold text-blue-600">
                                       <div className="flex flex-col items-end">
-                                        <VIMoneyCell value={remainingAmt} currency={vendor.currency} />
+                                        <LiveMoneyCell value={remainingAmt} currency={vendor.currency} po={po} />
                                         {isPartiallyInvoiced && (
-                                          <span className="text-[9px] text-gray-300 font-normal line-through">orig: <VIMoneyCell value={item.totalPrice} currency={vendor.currency} /></span>
+                                          <span className="text-[9px] text-gray-300 font-normal line-through">orig: <LiveMoneyCell value={item.totalPrice} currency={vendor.currency} po={po} /></span>
                                         )}
                                       </div>
                                     </td>
@@ -1883,7 +1937,7 @@ function VendorNestedRow({
                                           </div>
                                           <div className="flex items-center gap-2">
                                             <div className="text-right">
-                                              <VIMoneyCell value={grnTotalAmt} currency={vendor.currency} className="text-[11px] font-bold text-gray-900" />
+                                              <LiveMoneyCell value={grnTotalAmt} currency={vendor.currency} po={po} className="text-[11px] font-bold text-gray-900" />
                                               <div className="text-[9px] text-gray-400 font-medium">{grn.grnDate}</div>
                                             </div>
                                           </div>
@@ -1940,8 +1994,8 @@ function VendorNestedRow({
                                                     </div>
                                                   </td>
                                                   <td className="px-4 py-2 text-right font-bold text-gray-900">{item.quantity} {item.uom}</td>
-                                                  <td className="px-4 py-2 text-right text-gray-500"><VIMoneyCell value={item.unitPrice} currency={vendor.currency} /></td>
-                                                  <td className="px-4 py-2 text-right font-bold text-gray-900"><VIMoneyCell value={item.totalPrice} currency={vendor.currency} /></td>
+                                                  <td className="px-4 py-2 text-right text-gray-500"><LiveMoneyCell value={item.unitPrice} currency={vendor.currency} po={po} /></td>
+                                                  <td className="px-4 py-2 text-right font-bold text-gray-900"><LiveMoneyCell value={item.totalPrice} currency={vendor.currency} po={po} /></td>
                                                 </tr>
                                               );
                                             })}
@@ -2053,7 +2107,7 @@ function VendorNestedRow({
                         </div>
 
                         <div className="flex flex-col items-end gap-0.5 px-2">
-                          <VIMoneyCell value={grnTotalAmt} currency={vendor.currency} className="text-[14px] font-bold text-gray-900" />
+                          <LiveMoneyCell value={grnTotalAmt} currency={vendor.currency} grn={grn} vendor={vendor} className="text-[14px] font-bold text-gray-900" />
                           <span className="text-[8px] text-gray-400 font-bold">Receiver value</span>
                         </div>
                       </div>
@@ -2117,12 +2171,12 @@ function VendorNestedRow({
                                       </div>
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                      <VIMoneyCell value={item.unitPrice} currency={vendor.currency} className="font-bold text-gray-900" />
+                                      <LiveMoneyCell value={item.unitPrice} currency={vendor.currency} grn={grn} vendor={vendor} className="font-bold text-gray-900" />
                                       <div className="text-[9px] font-bold text-gray-400 uppercase tracking-tight">Per {item.uom}</div>
                                     </td>
                                     <td className="px-4 py-3 text-right">
                                       <div className="font-bold text-gray-900">{item.quantity} {item.uom}</div>
-                                      <VIMoneyCell value={receivedValue} currency={vendor.currency} className="text-[10px] font-medium text-gray-500" />
+                                      <LiveMoneyCell value={receivedValue} currency={vendor.currency} grn={grn} vendor={vendor} className="text-[10px] font-medium text-gray-500" />
                                     </td>
                                     <td className="px-4 py-3 text-right bg-emerald-50/10">
                                       <div className="flex flex-col items-end">
@@ -2137,12 +2191,12 @@ function VendorNestedRow({
                                                 <div className="space-y-2 text-left">
                                                   <div className="flex items-center justify-between">
                                                     <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Linked Invoices</span>
-                                                    <span className="text-[9px] font-bold text-gray-400">Total: <VIMoneyCell value={invoicedValue} currency={vendor.currency} /></span>
+                                                    <span className="text-[9px] font-bold text-gray-400">Total: <LiveMoneyCell value={invoicedValue} currency={vendor.currency} grn={grn} vendor={vendor} /></span>
                                                   </div>
                                                   <div className="space-y-1">
                                                     <div className="flex items-center justify-between border-b border-gray-50 pb-1">
                                                       <span className="text-[10px] font-bold text-gray-900">PINV-001-V001</span>
-                                                      <VIMoneyCell value={invoicedValue} currency={vendor.currency} className="text-[10px] font-black text-emerald-600" />
+                                                      <LiveMoneyCell value={invoicedValue} currency={vendor.currency} grn={grn} vendor={vendor} className="text-[10px] font-black text-emerald-600" />
                                                     </div>
                                                   </div>
                                                   <p className="text-[10px] text-gray-500 font-medium">This quantity has already been recorded in preceding invoices.</p>
@@ -2151,12 +2205,12 @@ function VendorNestedRow({
                                             </HoverCard>
                                           )}
                                         </div>
-                                        <VIMoneyCell value={invoicedValue} currency={vendor.currency} className="text-[10px] font-bold text-emerald-700/70" />
+                                        <LiveMoneyCell value={invoicedValue} currency={vendor.currency} grn={grn} vendor={vendor} className="text-[10px] font-bold text-emerald-700/70" />
                                       </div>
                                     </td>
                                     <td className="px-4 py-3 text-right bg-blue-50/10">
                                       <div className="font-black text-blue-600">{remainingQty} {item.uom}</div>
-                                      <VIMoneyCell value={remainingValue} currency={vendor.currency} className="text-[10px] font-bold text-blue-700/70" />
+                                      <LiveMoneyCell value={remainingValue} currency={vendor.currency} grn={grn} vendor={vendor} className="text-[10px] font-bold text-blue-700/70" />
                                     </td>
                                   </tr>
                                 );

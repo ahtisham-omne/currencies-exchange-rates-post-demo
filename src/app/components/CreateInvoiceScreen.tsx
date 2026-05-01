@@ -67,6 +67,7 @@ import { Invoice } from '@/app/data/mockInvoices';
 
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
+import { MARKET_RATES } from '@/app/data/currencyLibrary';
 
 interface CreateInvoiceScreenProps {
   onClose: () => void;
@@ -2718,23 +2719,35 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
   );
 }
 
-function AddItemFromPOModal({ 
-  isOpen, 
-  onClose, 
-  poData, 
-  currentItems, 
-  onAdd 
-}: { 
-  isOpen: boolean; 
-  onClose: () => void; 
-  poData: VendorPO | null; 
-  currentItems: MockLineItem[]; 
+function AddItemFromPOModal({
+  isOpen,
+  onClose,
+  poData,
+  currentItems,
+  onAdd
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  poData: VendorPO | null;
+  currentItems: MockLineItem[];
   onAdd: (items: MockLineItem[]) => void;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const currentItemIds = new Set(currentItems.map(i => i.id));
-  
+
   const availableItems = poData?.items.filter(item => !currentItemIds.has(item.id)) || [];
+
+  // Derive a deterministic PO-locked rate from the PO date so the tooltip's
+  // "PO locked rate" row carries a believable, stable number across reloads.
+  // The PO commitment rate sits a touch below today's market rate to mimic
+  // typical drift between commitment and invoicing.
+  const poLockedRate = useMemo(() => {
+    if (!poData) return undefined;
+    const todayUsdRate = MARKET_RATES.rates.USD;
+    const seed = poData.poDate.split('-').reduce((acc, part) => acc + parseInt(part, 10), 0);
+    const variance = ((seed % 30) - 15) / 1000; // ±1.5%
+    return Number((todayUsdRate * (1 + variance - 0.014)).toFixed(2));
+  }, [poData]);
 
   const toggleSelection = (id: string) => {
     const next = new Set(selectedIds);
@@ -2813,7 +2826,14 @@ function AddItemFromPOModal({
                         <span className="text-[12px] font-black text-gray-900">{item.quantity} {item.uom}</span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <VIMoneyCell value={item.unitPrice} currency="USD" className="text-[12px] font-bold text-gray-600" />
+                        <VIMoneyCell
+                          value={item.unitPrice}
+                          currency="USD"
+                          tooltipVariant="live"
+                          poRate={poLockedRate}
+                          poRateAt={poData?.poDate}
+                          className="text-[12px] font-bold text-gray-600"
+                        />
                       </td>
                     </tr>
                   ))}

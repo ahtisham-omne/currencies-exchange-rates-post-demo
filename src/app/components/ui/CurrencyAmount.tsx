@@ -34,6 +34,13 @@ export interface CurrencyAmountProps {
   poRateAt?: string;
   /** Optional caption for the primary rate line — defaults to "Invoice rate" when `lockedRate` is provided, "Current rate" otherwise. */
   lockedRateLabel?: string;
+  /**
+   * "locked" (default) → captured-rate format used after the invoice exists
+   * (combined "rate · type" line, "Locked on …" footer).
+   * "live" → forward-looking format used in create flows ("Today's rate",
+   * stacked source/timestamp, optional PO commitment footer).
+   */
+  tooltipVariant?: "locked" | "live";
   signed?: boolean;
   className?: string;
 }
@@ -225,10 +232,22 @@ function formatLockedDate(input: string | Date | undefined | null): string {
 function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurrency }) {
   const c = props.currencyRecord;
   const flag = <CurrencyFlag currency={c} size={18} />;
+  const live = props.tooltipVariant === "live";
 
   if (props.mode === "listing-base") {
     const partner = getLibraryCurrency(props.partnerDefaultCurrency) ?? c;
     const partnerSymbol = partner.symbol ?? partner.code;
+    if (live) {
+      return (
+        <LiveTooltipBody
+          partnerCode={partner.code}
+          partnerSymbol={partnerSymbol}
+          partnerValue={props.partnerDefaultValue ?? 0}
+          poRate={props.poRate}
+          poRateAt={props.poRateAt}
+        />
+      );
+    }
     return (
       <>
         <HeaderLine flag={flag} name={c.name} code={c.code} tail="— base currency" />
@@ -251,9 +270,21 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
   if (props.mode === "listing-partner") {
     const baseCur = getLibraryCurrency(BASE_CURRENCY)!;
     const baseSymbol = baseCur.symbol ?? baseCur.code;
+    const partnerSymbol = c.symbol ?? c.code;
     const baseValue = props.lockedRate !== undefined
       ? props.value * props.lockedRate
       : convertBetween(props.value, c.code, BASE_CURRENCY);
+    if (live) {
+      return (
+        <LiveTooltipBody
+          partnerCode={c.code}
+          partnerSymbol={partnerSymbol}
+          partnerValue={props.value}
+          poRate={props.poRate}
+          poRateAt={props.poRateAt}
+        />
+      );
+    }
     return (
       <>
         <HeaderLine flag={flag} name={c.name} code={c.code} tail="— vendor currency" />
@@ -275,6 +306,74 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
 
   // single
   return <HeaderLine flag={flag} name={c.name} code={c.code} />;
+}
+
+/**
+ * Forward-looking tooltip body used in create flows. Layout (matches the
+ * vendor-invoicing spec):
+ *   Vendor currency: $ 6,450.00 USD
+ *   Today's rate: 1 USD = ₨ 282.00 PKR
+ *   ● Mid-market rate · Source: Open Exchange Rates
+ *   Updated as of May 1, 2026 19:30 pm
+ *
+ *   PO locked rate: 1 USD = ₨ 278.00 PKR (Jan 20, 2024)
+ */
+function LiveTooltipBody({
+  partnerCode,
+  partnerSymbol,
+  partnerValue,
+  poRate,
+  poRateAt,
+}: {
+  partnerCode: string;
+  partnerSymbol: string;
+  partnerValue: number;
+  poRate?: number;
+  poRateAt?: string;
+}) {
+  const snap = activeRateSnapshot();
+  const baseCur = getLibraryCurrency(BASE_CURRENCY);
+  const baseSym = baseCur?.symbol ?? BASE_CURRENCY;
+  const code = partnerCode.toUpperCase();
+  const todayRate = rateToBase(partnerCode);
+  const typeLabelText = rateTypeLabel(snap.type);
+  const hex = snap.type === "market" ? "#7c3aed" : "#d97706";
+  const updatedAs = formatRateUpdatedAs(snap.lastSyncAt);
+  const sameAsBase = code === BASE_CURRENCY;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="text-[12px] text-slate-700" dir="ltr">
+        <span className="text-slate-500" style={{ fontWeight: 500 }}>Vendor currency: </span>
+        <bdi>{partnerSymbol}</bdi> {formatNumber(partnerValue, code)} {code}
+      </div>
+      {!sameAsBase && (
+        <>
+          <div className="text-[12px] text-slate-700 tabular-nums leading-4" dir="ltr">
+            <span className="text-slate-500" style={{ fontWeight: 500 }}>Today's rate: </span>
+            1 {code} = <bdi>{baseSym}</bdi> {formatNumber(todayRate, BASE_CURRENCY)} {BASE_CURRENCY}
+          </div>
+          <div className="text-[10.5px] text-slate-500 flex items-center gap-1.5">
+            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: hex }} />
+            <span style={{ color: hex, fontWeight: 600 }}>{typeLabelText}</span>
+            <span className="text-slate-400">· Source: {snap.source}</span>
+          </div>
+          {updatedAs && (
+            <div className="text-[10.5px] text-slate-400">Updated as of {updatedAs}</div>
+          )}
+          {poRate !== undefined && (
+            <div className="mt-1.5 pt-1.5 border-t border-slate-100 text-[12px] text-slate-700 tabular-nums leading-4" dir="ltr">
+              <span className="text-slate-500" style={{ fontWeight: 500 }}>PO locked rate: </span>
+              1 {code} = <bdi>{baseSym}</bdi> {formatNumber(poRate, BASE_CURRENCY)} {BASE_CURRENCY}
+              {poRateAt && (
+                <span className="text-slate-400"> ({formatLockedDate(poRateAt)})</span>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 function formatNumber(value: number, code: string): string {
