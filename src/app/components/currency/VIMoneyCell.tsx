@@ -1,6 +1,6 @@
 import * as React from "react";
 import { CurrencyAmount } from "../ui/CurrencyAmount";
-import { BASE_CURRENCY } from "@/app/data/currencyLibrary";
+import { BASE_CURRENCY, rateToBase } from "@/app/data/currencyLibrary";
 import type { Invoice } from "@/app/data/mockInvoices";
 import { useInvoiceViewMode } from "./InvoiceViewModeContext";
 
@@ -119,6 +119,30 @@ export function VIMoneyCell(props: VIMoneyCellProps) {
         mode="single"
         currency={code}
         value={value}
+        className={className}
+      />
+    );
+  }
+
+  if (viewMode === "base") {
+    // Show the PKR equivalent; hover reveals the vendor currency line.
+    // Use the locked rate when supplied (captured at PO/invoice time);
+    // otherwise convert via today's market rate.
+    const rate = lockedRate ?? rateToBase(code);
+    const baseValue = value * rate;
+    return (
+      <CurrencyAmount
+        mode="listing-base"
+        currency={BASE_CURRENCY}
+        value={baseValue}
+        partnerDefaultCurrency={code}
+        partnerDefaultValue={value}
+        lockedRate={lockedRate}
+        lockedAt={lockedAt}
+        poRate={poRate}
+        poRateAt={poRateAt}
+        lockedRateLabel={lockedRateLabel ?? (lockedRate !== undefined ? "Invoice rate" : undefined)}
+        tooltipVariant={tooltipVariant}
         className={className}
       />
     );
