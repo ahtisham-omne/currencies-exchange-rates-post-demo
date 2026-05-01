@@ -336,18 +336,19 @@ function WhatToExpectSection({
     <div>
       <SectionLabel>What to expect</SectionLabel>
       <div
-        className="rounded-lg px-3.5 py-3 border"
+        className="rounded-lg px-3.5 py-3 border flex flex-col gap-2"
         style={{ backgroundColor: "#F8FAFF", borderColor: "#E0E7FF" }}
       >
+        <p className="text-[11.5px] text-slate-600 leading-snug m-0">
+          The currency setup is carried over from the PO. You can adjust it for this
+          invoice if needed.
+        </p>
         <ul className="m-0 pl-4 text-[12px] text-slate-800 leading-[1.7]" style={{ listStyle: "disc" }}>
           <li>
-            Invoice currency:{" "}
-            <strong>
-              {vendorCurrency} {isBaseInvoice ? "(base)" : "(carried over from PO)"}
-            </strong>
+            Vendor will receive in: <strong>{vendorCurrency}</strong>
           </li>
           <li>
-            Settlement currency: <strong>{settlementCurrency}</strong>
+            You will pay in: <strong>{settlementCurrency}</strong>
           </li>
           <li>
             Recording rate:{" "}
@@ -356,7 +357,7 @@ function WhatToExpectSection({
             ) : (
               <>
                 <strong>
-                  Today's mid-market: 1 {vendorCurrency} = {baseSym}{" "}
+                  Today's Mid-market — 1 {vendorCurrency} = {baseSym}{" "}
                   {formatNumber(todayRate, BASE_CURRENCY)} {BASE_CURRENCY}
                 </strong>
                 {variancePct !== null && Math.abs(variancePct) >= 0.05 && (
