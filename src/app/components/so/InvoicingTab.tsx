@@ -645,8 +645,9 @@ function CreateInvoiceModal({ so, onClose, onCreate }: {
 }
 
 /* ═══ Edit Invoice Modal ═══ */
-function EditInvoiceModal({ invoice, onClose, onSave }: {
+function EditInvoiceModal({ invoice, fmtMoney, onClose, onSave }: {
   invoice: Invoice;
+  fmtMoney: (n: number) => string;
   onClose: () => void;
   onSave: (updated: Partial<Invoice>) => void;
 }) {
@@ -1500,6 +1501,7 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
       {editInvoice && (
         <EditInvoiceModal
           invoice={editInvoice}
+          fmtMoney={fmtMoney}
           onClose={() => setEditInvoice(null)}
           onSave={(updates) => handleEditSave(editInvoice.id, updates)}
         />
