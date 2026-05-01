@@ -45,6 +45,8 @@ import {
   Search,
   Star,
   Users,
+  TrendingUp,
+  Settings2,
 } from "lucide-react";
 
 /* ── shadcn/ui component imports (Priority A) ── */
@@ -1926,9 +1928,16 @@ function DuplicatePODialog({
   const todayMarketRate = sourceVendorCurrency === BASE_CURRENCY
     ? 1
     : (MARKET_RATES.rates[sourceVendorCurrency] ?? sourceRate);
-  const todayLabel = new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
 
   const isBaseOnly = sourceVendorCurrency === BASE_CURRENCY;
+
+  // Drift between today's Mid-market rate and the source's locked rate.
+  const drift = !isBaseOnly && sourceRate
+    ? +(((todayMarketRate - sourceRate) / sourceRate) * 100).toFixed(1)
+    : 0;
+
+  // Base-currency symbol (e.g. "Rs") for the rate display, matching the SO UI.
+  const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
 
   const sourceConfigSummary = isBaseOnly
     ? `${sourceVendorCurrency}`
@@ -2070,12 +2079,17 @@ function DuplicatePODialog({
                   {rateChoice === "same" && <span className="size-1.5 rounded-full bg-white" />}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-foreground" style={st.uiLabel}>
-                    Use the locked rate from the original PO
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="size-3.5 shrink-0" style={{ color: "#047857" }} />
+                    <span className="text-foreground" style={st.uiLabel}>
+                      Use the locked rate from the original PO
+                    </span>
                   </div>
-                  <div className="text-muted-foreground tabular-nums" style={st.tiny}>
-                    1 {sourceVendorCurrency} = {sourceRate.toFixed(2)} PKR
-                    {sourceLockedAtLabel && <> · locked on {sourceLockedAtLabel}</>}
+                  <div className="text-muted-foreground tabular-nums mt-1" style={st.tiny}>
+                    1 {sourceVendorCurrency} = {baseSym} {sourceRate.toFixed(2)} {BASE_CURRENCY}
+                  </div>
+                  <div className="text-muted-foreground mt-0.5" style={st.tiny}>
+                    {sourceLockedAtLabel ? <>Locked on {sourceLockedAtLabel}</> : "Captured at order send-time"}
                   </div>
                 </div>
               </button>
@@ -2098,11 +2112,17 @@ function DuplicatePODialog({
                   {rateChoice === "refresh" && <span className="size-1.5 rounded-full bg-white" />}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-foreground" style={st.uiLabel}>
-                    Use today's Mid-market rate
+                  <div className="flex items-center gap-1.5">
+                    <TrendingUp className="size-3.5 shrink-0 text-primary" />
+                    <span className="text-foreground" style={st.uiLabel}>
+                      Use today's Mid-market rate
+                    </span>
                   </div>
-                  <div className="text-muted-foreground tabular-nums" style={st.tiny}>
-                    1 {sourceVendorCurrency} = {todayMarketRate.toFixed(2)} PKR · as of today ({todayLabel})
+                  <div className="text-muted-foreground tabular-nums mt-1" style={st.tiny}>
+                    1 {sourceVendorCurrency} = {baseSym} {todayMarketRate.toFixed(2)} {BASE_CURRENCY}
+                  </div>
+                  <div className="tabular-nums mt-0.5" style={{ ...st.tiny, color: drift === 0 ? "#6B7280" : drift >= 0 ? "#059669" : "#DC2626" }}>
+                    {drift === 0 ? "No movement vs locked rate" : `${drift >= 0 ? "+" : ""}${drift}% vs locked rate`}
                   </div>
                 </div>
               </button>
@@ -2127,7 +2147,7 @@ function DuplicatePODialog({
               style={st.uiLabel}
               onClick={handleChangePair}
             >
-              <BadgeDollarSign className="size-3.5 text-primary" />
+              <Settings2 className="size-3.5 text-primary" />
               Change currency pair
             </Button>
           </div>
