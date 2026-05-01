@@ -159,7 +159,12 @@ function generateInvoices(count: number): Invoice[] {
     const createdBy = users[Math.floor(seeded(i, 6) * users.length)];
     const apAccount = apAccounts[Math.floor(seeded(i, 7) * apAccounts.length)];
     const description = descriptions[Math.floor(seeded(i, 8) * descriptions.length)];
-    const currency = currencyMix[Math.floor(seeded(i, 9) * currencyMix.length)];
+    // Force INV-2024-1003 to be denominated in the base currency so the
+    // listing always contains an example of an in-base invoice (no FX
+    // tooltip on amounts, no Base/Vendor toggle on the detail page) — the
+    // behaviour mirrors the PO/Quotes/SO touchpoints when a partner's
+    // currency happens to equal the company base currency.
+    const currency = i === 3 ? BASE_CURRENCY : currencyMix[Math.floor(seeded(i, 9) * currencyMix.length)];
 
     let outstandingBalance = amount;
     if (status === 'Paid') {
