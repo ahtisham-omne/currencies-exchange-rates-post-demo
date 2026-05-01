@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-size: 16px;
+    --background: #ffffff;
+    --foreground: #0a0a0a;
+    --card: #ffffff;
+    --card-foreground: #0a0a0a;
+    --popover: #ffffff;
+    --popover-foreground: #0a0a0a;
+    --primary: #030213;
+    --primary-foreground: #ffffff;
+    --secondary: #eeeeee;
+    --secondary-foreground: #030213;
+    --muted: #ececf0;
+    --muted-foreground: #717182;
+    --accent: #e9ebef;
+    --accent-foreground: #030213;
+    --destructive: #d4183d;
+    --destructive-foreground: #ffffff;
+    --border: rgba(0, 0, 0, 0.1);
+    --input: transparent;
+    --input-background: #f3f3f5;
+    --switch-background: #cbced4;
+    --ring: #a1a1a1;
+    --radius: 0.625rem;
+
+    --sidebar-background: #fafafa;
+    --sidebar-foreground: #0a0a0a;
+    --sidebar-primary: #030213;
+    --sidebar-primary-foreground: #fafafa;
+    --sidebar-accent: #f5f5f5;
+    --sidebar-accent-foreground: #171717;
+    --sidebar-border: #e5e5e5;
+    --sidebar-ring: #a1a1a1;
+
+    --chart-1: #e76e50;
+    --chart-2: #2a9d90;
+    --chart-3: #264653;
+    --chart-4: #e9c46a;
+    --chart-5: #f4a261;
+  }
+
+  .dark {
+    --background: #0a0a0a;
+    --foreground: #fafafa;
+    --card: #0a0a0a;
+    --card-foreground: #fafafa;
+    --popover: #0a0a0a;
+    --popover-foreground: #fafafa;
+    --primary: #fafafa;
+    --primary-foreground: #171717;
+    --secondary: #262626;
+    --secondary-foreground: #fafafa;
+    --muted: #262626;
+    --muted-foreground: #a1a1a1;
+    --accent: #262626;
+    --accent-foreground: #fafafa;
+    --destructive: #7f1d1d;
+    --destructive-foreground: #ef4444;
+    --border: #262626;
+    --input: #262626;
+    --ring: #525252;
+    --sidebar-background: #171717;
+    --sidebar-foreground: #fafafa;
+    --sidebar-primary: #3b82f6;
+    --sidebar-primary-foreground: #fafafa;
+    --sidebar-accent: #262626;
+    --sidebar-accent-foreground: #fafafa;
+    --sidebar-border: #262626;
+    --sidebar-ring: #525252;
+  }
+
+  * {
+    @apply border-border;
+    outline-color: var(--ring);
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+  }
+
+  html {
+    font-size: var(--font-size);
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  h3 {
+    font-size: 1.125rem;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  h4 {
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+}
