@@ -30,6 +30,7 @@ import { ExportDialog } from '@/app/components/ExportDialog';
 import { AdvancedInvoiceTable } from '@/app/components/AdvancedInvoiceTable';
 import { toast } from 'sonner';
 import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
+import { BaseCurrencyKPI } from '@/app/components/currency/BaseCurrencyKPI';
 
 interface InvoiceListScreenProps {
   invoices: Invoice[];
@@ -466,7 +467,7 @@ export function InvoiceListScreen({ invoices, onCreateInvoice, onViewInvoice }: 
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-gray-500 mb-0.5">Total Invoices</div>
                 <div className="flex items-baseline gap-1.5">
-                  <div className="text-base font-semibold text-gray-900 leading-tight"><VIMoneyCell value={totalAmount} currency="PKR" /></div>
+                  <div className="text-base font-semibold text-gray-900 leading-tight"><BaseCurrencyKPI valuePKR={totalAmount} /></div>
                   <div className="text-[10px] text-gray-500 truncate">{totalCount} invoices</div>
                 </div>
               </div>
@@ -483,7 +484,7 @@ export function InvoiceListScreen({ invoices, onCreateInvoice, onViewInvoice }: 
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-gray-500 mb-0.5">Pending Review</div>
                 <div className="flex items-baseline gap-1.5">
-                  <div className="text-base font-semibold text-orange-600 leading-tight"><VIMoneyCell value={pendingAmount} currency="PKR" /></div>
+                  <div className="text-base font-semibold text-orange-600 leading-tight"><BaseCurrencyKPI valuePKR={pendingAmount} /></div>
                   <div className="text-[10px] text-gray-500 truncate">{pendingCount} invoices</div>
                 </div>
               </div>
@@ -500,7 +501,7 @@ export function InvoiceListScreen({ invoices, onCreateInvoice, onViewInvoice }: 
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-gray-500 mb-0.5">Paid</div>
                 <div className="flex items-baseline gap-1.5">
-                  <div className="text-base font-semibold text-green-600 leading-tight"><VIMoneyCell value={paidAmount} currency="PKR" /></div>
+                  <div className="text-base font-semibold text-green-600 leading-tight"><BaseCurrencyKPI valuePKR={paidAmount} /></div>
                   <div className="text-[10px] text-gray-500 truncate">{paidCount} invoices</div>
                 </div>
               </div>

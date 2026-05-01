@@ -72,7 +72,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
   const invoice = invoices.find(inv => inv.id === invoiceId);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [viewMode, setViewMode] = useState<InvoiceViewMode>('vendor');
+  const [viewMode, setViewMode] = useState<InvoiceViewMode>('base');
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
 
   const vendorData = useMemo(() => {
