@@ -5,6 +5,7 @@ import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import { Textarea } from '@/app/components/ui/textarea';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 import {
   Select,
   SelectContent,
@@ -382,15 +383,15 @@ export function CreateInvoiceFromPO({
                             <div className="grid grid-cols-4 gap-3 mb-4">
                               <div className="bg-white rounded-lg p-3 border border-gray-100 shadow-xs">
                                 <div className="text-[9px] font-bold text-gray-400 mb-1">PO Total</div>
-                                <div className="text-sm font-bold text-gray-900">${data.ordered.toLocaleString()}</div>
+                                <VIMoneyCell value={data.ordered} currency="USD" className="text-sm font-bold text-gray-900" />
                               </div>
                               <div className="bg-white rounded-lg p-3 border border-gray-100 shadow-xs">
                                 <div className="text-[9px] font-bold text-gray-400 mb-1">Receiving Doc Total</div>
-                                <div className="text-sm font-bold text-gray-900">${data.received.toLocaleString()}</div>
+                                <VIMoneyCell value={data.received} currency="USD" className="text-sm font-bold text-gray-900" />
                               </div>
                               <div className="bg-white rounded-lg p-3 border border-gray-100 shadow-xs">
                                 <div className="text-[9px] font-bold text-gray-400 mb-1">Invoice Total</div>
-                                <div className="text-sm font-bold text-gray-900">${data.invoiced.toLocaleString()}</div>
+                                <VIMoneyCell value={data.invoiced} currency="USD" className="text-sm font-bold text-gray-900" />
                               </div>
                               <div className={`rounded-lg p-3 border shadow-xs ${data.variance === 0 ? 'bg-green-50 border-green-100' : 'bg-orange-50 border-orange-100'}`}>
                                 <div className={`text-[9px] font-bold mb-1 ${data.variance === 0 ? 'text-green-400' : 'text-orange-400'}`}>Variance</div>
@@ -443,7 +444,7 @@ export function CreateInvoiceFromPO({
                                           <span className="text-blue-600 font-medium">{inv.date}</span>
                                         </div>
                                         <div className="text-right">
-                                          <span className="font-black text-blue-900 block">${inv.amount.toLocaleString()}</span>
+                                          <VIMoneyCell value={inv.amount} currency="USD" className="font-black text-blue-900 block" />
                                           <span className="text-[8px] font-bold text-blue-500 uppercase">{inv.status}</span>
                                         </div>
                                       </div>
@@ -467,7 +468,7 @@ export function CreateInvoiceFromPO({
                                           <span className="text-purple-600 font-medium">{pre.date}</span>
                                         </div>
                                         <div className="text-right">
-                                          <span className="font-black text-purple-900 block">${pre.amount.toLocaleString()}</span>
+                                          <VIMoneyCell value={pre.amount} currency="USD" className="font-black text-purple-900 block" />
                                           <span className="text-[8px] font-bold text-purple-500 uppercase">{pre.method}</span>
                                         </div>
                                       </div>
@@ -537,7 +538,7 @@ export function CreateInvoiceFromPO({
                         </div>
                         <div className="text-right">
                           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Net Liability</div>
-                          <div className="text-xl font-black text-blue-900">$15,500.00</div>
+                          <VIMoneyCell value={15500} currency="USD" className="text-xl font-black text-blue-900" />
                         </div>
                       </div>
                     </div>
@@ -768,7 +769,7 @@ export function CreateInvoiceFromPO({
                               </div>
                             </td>
                             <td className={`py-4 px-4 text-right font-black text-gray-900 border-b border-gray-100 ${!item.selected ? 'opacity-40 grayscale' : ''}`}>
-                              ${item.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              <VIMoneyCell value={item.total} currency="USD" />
                             </td>
                             <td className="sticky right-0 z-20 bg-gray-50/95 py-4 px-4 border-b border-gray-100 border-l border-gray-200 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)] group-hover:bg-gray-100 text-center">
                               <div className="flex justify-center items-center">
@@ -1149,15 +1150,15 @@ export function CreateInvoiceFromPO({
               <div className="grid grid-cols-3 gap-2 mb-6">
                 <div className="bg-gray-50/50 border border-gray-100 rounded-lg p-3 text-center">
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Subtotal</div>
-                  <div className="text-sm font-bold text-gray-900">${subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                  <VIMoneyCell value={subtotal} currency="USD" className="text-sm font-bold text-gray-900" />
                 </div>
                 <div className="bg-gray-50/50 border border-gray-100 rounded-lg p-3 text-center">
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Tax</div>
-                  <div className="text-sm font-bold text-gray-900">${tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                  <VIMoneyCell value={tax} currency="USD" className="text-sm font-bold text-gray-900" />
                 </div>
                 <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-center">
                   <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1">Total</div>
-                  <div className="text-sm font-bold text-blue-600">${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                  <VIMoneyCell value={total} currency="USD" className="text-sm font-bold text-blue-600" />
                 </div>
               </div>
 
@@ -1173,7 +1174,7 @@ export function CreateInvoiceFromPO({
                     </div>
                     <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-bold rounded">CR</span>
                   </div>
-                  <span className="text-xs font-bold text-green-700">${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                  <VIMoneyCell value={total} currency="USD" className="text-xs font-bold text-green-700" />
                 </div>
 
                 <div className="pt-2 border-t border-gray-100">
@@ -1210,21 +1211,21 @@ export function CreateInvoiceFromPO({
                       <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">DEBIT</div>
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-gray-600 font-medium">1200 Inventory</span>
-                        <span className="font-bold text-gray-900">${total.toLocaleString()}</span>
+                        <VIMoneyCell value={total} currency="USD" className="font-bold text-gray-900" />
                       </div>
                     </div>
                     <div>
                       <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">CREDIT</div>
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-gray-600 font-medium">2000 Accounts Payable</span>
-                        <span className="font-bold text-gray-900">${total.toLocaleString()}</span>
+                        <VIMoneyCell value={total} currency="USD" className="font-bold text-gray-900" />
                       </div>
                     </div>
                     <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-100 rounded-lg">
                       <Check className="w-4 h-4 text-green-600" />
                       <div className="flex-1 flex items-center justify-between text-[10px]">
                         <span className="font-bold text-green-700">Balanced</span>
-                        <span className="text-green-600 font-medium">Dr: ${total.toLocaleString()} | Cr: ${total.toLocaleString()}</span>
+                        <span className="text-green-600 font-medium">Dr: <VIMoneyCell value={total} currency="USD" /> | Cr: <VIMoneyCell value={total} currency="USD" /></span>
                       </div>
                     </div>
                   </div>
@@ -1263,7 +1264,7 @@ export function CreateInvoiceFromPO({
                         </div>
                         <span className="text-xs font-bold text-gray-900">PREP-2024-001</span>
                       </div>
-                      <span className="text-xs font-bold text-gray-900">$5,000.00</span>
+                      <VIMoneyCell value={5000} currency="USD" className="text-xs font-bold text-gray-900" />
                     </div>
                     <div className="text-[10px] text-gray-400 font-medium ml-8">Linked to PO-2024-004</div>
                   </div>
@@ -1278,15 +1279,15 @@ export function CreateInvoiceFromPO({
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-600">Credit Limit</span>
-                  <span className="text-gray-900">$50,000.00</span>
+                  <VIMoneyCell value={50000} currency="USD" className="text-gray-900" />
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-600">Current Balance</span>
-                  <span className="text-gray-900">$12,500.00</span>
+                  <VIMoneyCell value={12500} currency="USD" className="text-gray-900" />
                 </div>
                 <div className="flex items-center justify-between text-sm font-semibold">
                   <span className="text-gray-900">Available Credit</span>
-                  <span className="text-green-600">$37,500.00</span>
+                  <VIMoneyCell value={37500} currency="USD" className="text-green-600" />
                 </div>
               </div>
 
@@ -1303,7 +1304,7 @@ export function CreateInvoiceFromPO({
 
               <div className="mt-3 flex items-center gap-2 text-xs text-green-700">
                 <Check className="w-4 h-4" />
-                <span>Within credit limit ($25,700.00 still remains)</span>
+                <span>Within credit limit (<VIMoneyCell value={25700} currency="USD" /> still remains)</span>
               </div>
 
               <div className="mt-3 p-2 bg-orange-50 border border-orange-200 rounded-md">

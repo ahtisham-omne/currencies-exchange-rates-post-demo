@@ -13,6 +13,7 @@ import {
   TableRow,
 } from '@/app/components/ui/table';
 import { toast } from 'sonner';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 interface Payment {
   id: string;
@@ -154,15 +155,15 @@ export function PaymentsScreen() {
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-white rounded-lg p-4 border border-gray-200">
             <div className="text-sm text-gray-600 mb-1">Total Payments</div>
-            <div className="text-2xl font-semibold text-gray-900">$18,500.00</div>
+            <VIMoneyCell value={18500} currency="PKR" className="text-2xl font-semibold text-gray-900" />
           </div>
           <div className="bg-white rounded-lg p-4 border border-gray-200">
             <div className="text-sm text-gray-600 mb-1">Applied to Invoices</div>
-            <div className="text-2xl font-semibold text-blue-600">$17,000.00</div>
+            <VIMoneyCell value={17000} currency="PKR" className="text-2xl font-semibold text-blue-600" />
           </div>
           <div className="bg-white rounded-lg p-4 border border-gray-200">
             <div className="text-sm text-gray-600 mb-1">Unapplied Funds</div>
-            <div className="text-2xl font-semibold text-orange-600">$1,500.00</div>
+            <VIMoneyCell value={1500} currency="PKR" className="text-2xl font-semibold text-orange-600" />
           </div>
           <div className="bg-white rounded-lg p-4 border border-gray-200">
             <div className="text-sm text-gray-600 mb-1">Pending Payments</div>
@@ -208,16 +209,14 @@ export function PaymentsScreen() {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right font-medium">
-                  ${payment.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  <VIMoneyCell value={payment.amount} currency="USD" />
                 </TableCell>
                 <TableCell className="text-right text-blue-600">
-                  ${payment.appliedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  <VIMoneyCell value={payment.appliedAmount} currency="USD" />
                 </TableCell>
                 <TableCell className="text-right">
                   {payment.unappliedAmount > 0 ? (
-                    <span className="text-orange-600 font-medium">
-                      ${payment.unappliedAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </span>
+                    <VIMoneyCell value={payment.unappliedAmount} currency="USD" className="text-orange-600 font-medium" />
                   ) : (
                     <span className="text-gray-400">—</span>
                   )}

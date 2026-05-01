@@ -9,6 +9,7 @@ import { ReceivingDocumentsScreen } from '@/app/components/ReceivingDocumentsScr
 import { Toaster } from '@/app/components/ui/sonner';
 import { SafeMuiThemeProvider } from '@/app/components/MuiThemeContext';
 import { mockInvoices, Invoice } from '@/app/data/mockInvoices';
+import { RateProvider } from '@/app/context/RateContext';
 
 type Screen = 'invoices' | 'prepayments' | 'payments' | 'receiving';
 
@@ -24,7 +25,8 @@ export default function App() {
 
   return (
     <SafeMuiThemeProvider>
-      <Layout 
+      <RateProvider>
+      <Layout
         activeView={currentScreen}
         onViewChange={(view: any) => setCurrentScreen(view as Screen)}
       >
@@ -55,6 +57,7 @@ export default function App() {
         )}
       </Layout>
       <Toaster position="top-right" />
+      </RateProvider>
     </SafeMuiThemeProvider>
   );
 }

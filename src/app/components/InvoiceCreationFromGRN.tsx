@@ -4,6 +4,7 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import { Textarea } from '@/app/components/ui/textarea';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 interface InvoiceCreationFromReceivingDocProps {
   onClose: () => void;
@@ -333,8 +334,8 @@ export function InvoiceCreationFromGRN({ onClose }: InvoiceCreationFromReceiving
                             disabled={!item.selected}
                           />
                         </td>
-                        <td className="px-4 py-3 text-right text-sm text-gray-700">$ {item.price.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-base font-bold text-blue-600">${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-4 py-3 text-right text-sm text-gray-700"><VIMoneyCell value={item.price} currency={formData.currency} /></td>
+                        <td className="px-4 py-3 text-right text-base font-bold text-blue-600"><VIMoneyCell value={item.amount} currency={formData.currency} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -348,17 +349,17 @@ export function InvoiceCreationFromGRN({ onClose }: InvoiceCreationFromReceiving
                     <span className="font-semibold">{selectedItems.length}</span> of {lineItems.length} items selected
                   </div>
                   <div className="flex items-center gap-6">
-                    <div className="text-sm">
+                    <div className="text-sm inline-flex items-center gap-1">
                       <span className="text-gray-600">Subtotal: </span>
-                      <span className="font-bold text-gray-900">${subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <VIMoneyCell value={subtotal} currency={formData.currency} className="font-bold text-gray-900" />
                     </div>
-                    <div className="text-sm">
+                    <div className="text-sm inline-flex items-center gap-1">
                       <span className="text-gray-600">Tax: </span>
-                      <span className="font-bold text-gray-900">${tax.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <VIMoneyCell value={tax} currency={formData.currency} className="font-bold text-gray-900" />
                     </div>
-                    <div className="text-lg">
+                    <div className="text-lg inline-flex items-center gap-1">
                       <span className="text-gray-900 font-bold">Total: </span>
-                      <span className="font-bold text-blue-600">${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <VIMoneyCell value={total} currency={formData.currency} className="font-bold text-blue-600" />
                     </div>
                   </div>
                 </div>
@@ -655,7 +656,7 @@ export function InvoiceCreationFromGRN({ onClose }: InvoiceCreationFromReceiving
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                     <span className="text-xs font-semibold text-green-700 flex-1">AP Liability</span>
                     <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded">CR</span>
-                    <span className="text-sm font-bold text-green-900">${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                    <VIMoneyCell value={total} currency={formData.currency} className="text-sm font-bold text-green-900" />
                   </div>
                 </div>
                 

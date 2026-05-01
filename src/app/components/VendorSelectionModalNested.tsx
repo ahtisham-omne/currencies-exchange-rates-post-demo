@@ -18,6 +18,7 @@ import {
 import { mockVendors, Vendor, VendorPO, VendorGRN, LineItem } from '@/app/data/mockVendors';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/app/components/ui/tooltip';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 // Material UI Imports
 import dayjs from 'dayjs';
@@ -1641,7 +1642,7 @@ function VendorNestedRow({
                                     : 'text-green-600 bg-green-50 border-green-100'
                                 } px-1.5 py-0.5 border rounded flex items-center gap-1`}>
                                   {isPreInvoiceEligible ? <Tag className="w-2.5 h-2.5" /> : <CheckCircle2 className="w-2.5 h-2.5" />}
-                                  {isPreInvoiceEligible ? 'Pre-Invoiced' : 'Invoiced'}: ${po.invoicedAmount?.toLocaleString()}
+                                  {isPreInvoiceEligible ? 'Pre-Invoiced' : 'Invoiced'}: <VIMoneyCell value={po.invoicedAmount ?? 0} currency={vendor.currency} />
                                 </span>
                                 {isPreInvoiceEligible && (
                                   <Tooltip>
@@ -1655,9 +1656,7 @@ function VendorNestedRow({
                                 )}
                               </div>
                             )}
-                            <span className={`text-[14px] font-bold ${displayStatus === 'Closed' || displayStatus === 'Fully Invoiced' ? 'text-gray-400' : 'text-green-600'}`}>
-                              ${po.poAmount.toLocaleString()}
-                            </span>
+                            <VIMoneyCell value={po.poAmount} currency={vendor.currency} className={`text-[14px] font-bold ${displayStatus === 'Closed' || displayStatus === 'Fully Invoiced' ? 'text-gray-400' : 'text-green-600'}`} />
                           </div>
                           <span className="text-[8px] text-gray-400 font-bold">PO Value</span>
                         </div>
@@ -1747,16 +1746,16 @@ function VendorNestedRow({
                                           {item.invoicedQty || 0} {item.uom}
                                         </span>
                                         {prevInvoicedAmt > 0 && (
-                                          <span className="text-[9px] text-emerald-700/60 font-medium italic underline decoration-emerald-200 decoration-dotted underline-offset-2">Prev: ${prevInvoicedAmt.toLocaleString()}</span>
+                                          <span className="text-[9px] text-emerald-700/60 font-medium italic underline decoration-emerald-200 decoration-dotted underline-offset-2">Prev: <VIMoneyCell value={prevInvoicedAmt} currency={vendor.currency} /></span>
                                         )}
                                       </div>
                                     </td>
-                                    <td className="px-4 py-2.5 text-right font-medium text-gray-500">$ {item.unitPrice.toFixed(2)}</td>
+                                    <td className="px-4 py-2.5 text-right font-medium text-gray-500"><VIMoneyCell value={item.unitPrice} currency={vendor.currency} /></td>
                                     <td className="px-4 py-2.5 text-right font-bold text-blue-600">
                                       <div className="flex flex-col items-end">
-                                        <span>$ {remainingAmt.toLocaleString()}</span>
+                                        <VIMoneyCell value={remainingAmt} currency={vendor.currency} />
                                         {isPartiallyInvoiced && (
-                                          <span className="text-[9px] text-gray-300 font-normal line-through">orig: ${item.totalPrice.toFixed(2)}</span>
+                                          <span className="text-[9px] text-gray-300 font-normal line-through">orig: <VIMoneyCell value={item.totalPrice} currency={vendor.currency} /></span>
                                         )}
                                       </div>
                                     </td>
@@ -1884,7 +1883,7 @@ function VendorNestedRow({
                                           </div>
                                           <div className="flex items-center gap-2">
                                             <div className="text-right">
-                                              <div className="text-[11px] font-bold text-gray-900">${grnTotalAmt.toLocaleString()}</div>
+                                              <VIMoneyCell value={grnTotalAmt} currency={vendor.currency} className="text-[11px] font-bold text-gray-900" />
                                               <div className="text-[9px] text-gray-400 font-medium">{grn.grnDate}</div>
                                             </div>
                                           </div>
@@ -1941,8 +1940,8 @@ function VendorNestedRow({
                                                     </div>
                                                   </td>
                                                   <td className="px-4 py-2 text-right font-bold text-gray-900">{item.quantity} {item.uom}</td>
-                                                  <td className="px-4 py-2 text-right text-gray-500">${item.unitPrice.toFixed(2)}</td>
-                                                  <td className="px-4 py-2 text-right font-bold text-gray-900">${item.totalPrice.toFixed(2)}</td>
+                                                  <td className="px-4 py-2 text-right text-gray-500"><VIMoneyCell value={item.unitPrice} currency={vendor.currency} /></td>
+                                                  <td className="px-4 py-2 text-right font-bold text-gray-900"><VIMoneyCell value={item.totalPrice} currency={vendor.currency} /></td>
                                                 </tr>
                                               );
                                             })}
@@ -2054,9 +2053,7 @@ function VendorNestedRow({
                         </div>
 
                         <div className="flex flex-col items-end gap-0.5 px-2">
-                          <div className="text-[14px] font-bold text-gray-900">
-                            ${grnTotalAmt.toLocaleString()}
-                          </div>
+                          <VIMoneyCell value={grnTotalAmt} currency={vendor.currency} className="text-[14px] font-bold text-gray-900" />
                           <span className="text-[8px] text-gray-400 font-bold">Receiver value</span>
                         </div>
                       </div>
@@ -2120,12 +2117,12 @@ function VendorNestedRow({
                                       </div>
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                      <div className="font-bold text-gray-900">${item.unitPrice.toFixed(2)}</div>
+                                      <VIMoneyCell value={item.unitPrice} currency={vendor.currency} className="font-bold text-gray-900" />
                                       <div className="text-[9px] font-bold text-gray-400 uppercase tracking-tight">Per {item.uom}</div>
                                     </td>
                                     <td className="px-4 py-3 text-right">
                                       <div className="font-bold text-gray-900">{item.quantity} {item.uom}</div>
-                                      <div className="text-[10px] font-medium text-gray-500">${receivedValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                      <VIMoneyCell value={receivedValue} currency={vendor.currency} className="text-[10px] font-medium text-gray-500" />
                                     </td>
                                     <td className="px-4 py-3 text-right bg-emerald-50/10">
                                       <div className="flex flex-col items-end">
@@ -2140,12 +2137,12 @@ function VendorNestedRow({
                                                 <div className="space-y-2 text-left">
                                                   <div className="flex items-center justify-between">
                                                     <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Linked Invoices</span>
-                                                    <span className="text-[9px] font-bold text-gray-400">Total: ${invoicedValue.toLocaleString()}</span>
+                                                    <span className="text-[9px] font-bold text-gray-400">Total: <VIMoneyCell value={invoicedValue} currency={vendor.currency} /></span>
                                                   </div>
                                                   <div className="space-y-1">
                                                     <div className="flex items-center justify-between border-b border-gray-50 pb-1">
                                                       <span className="text-[10px] font-bold text-gray-900">PINV-001-V001</span>
-                                                      <span className="text-[10px] font-black text-emerald-600">${(invoicedValue).toLocaleString()}</span>
+                                                      <VIMoneyCell value={invoicedValue} currency={vendor.currency} className="text-[10px] font-black text-emerald-600" />
                                                     </div>
                                                   </div>
                                                   <p className="text-[10px] text-gray-500 font-medium">This quantity has already been recorded in preceding invoices.</p>
@@ -2154,12 +2151,12 @@ function VendorNestedRow({
                                             </HoverCard>
                                           )}
                                         </div>
-                                        <div className="text-[10px] font-bold text-emerald-700/70">${invoicedValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                        <VIMoneyCell value={invoicedValue} currency={vendor.currency} className="text-[10px] font-bold text-emerald-700/70" />
                                       </div>
                                     </td>
                                     <td className="px-4 py-3 text-right bg-blue-50/10">
                                       <div className="font-black text-blue-600">{remainingQty} {item.uom}</div>
-                                      <div className="text-[10px] font-bold text-blue-700/70">${remainingValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                      <VIMoneyCell value={remainingValue} currency={vendor.currency} className="text-[10px] font-bold text-blue-700/70" />
                                     </td>
                                   </tr>
                                 );

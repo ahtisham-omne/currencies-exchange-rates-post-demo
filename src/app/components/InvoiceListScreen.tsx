@@ -29,6 +29,7 @@ import { SavedViewsDialog } from '@/app/components/SavedViewsDialog';
 import { ExportDialog } from '@/app/components/ExportDialog';
 import { AdvancedInvoiceTable } from '@/app/components/AdvancedInvoiceTable';
 import { toast } from 'sonner';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 interface InvoiceListScreenProps {
   invoices: Invoice[];
@@ -465,7 +466,7 @@ export function InvoiceListScreen({ invoices, onCreateInvoice, onViewInvoice }: 
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-gray-500 mb-0.5">Total Invoices</div>
                 <div className="flex items-baseline gap-1.5">
-                  <div className="text-base font-semibold text-gray-900 leading-tight">${(totalAmount / 1000).toFixed(0)}k</div>
+                  <div className="text-base font-semibold text-gray-900 leading-tight"><VIMoneyCell value={totalAmount} currency="PKR" /></div>
                   <div className="text-[10px] text-gray-500 truncate">{totalCount} invoices</div>
                 </div>
               </div>
@@ -482,7 +483,7 @@ export function InvoiceListScreen({ invoices, onCreateInvoice, onViewInvoice }: 
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-gray-500 mb-0.5">Pending Review</div>
                 <div className="flex items-baseline gap-1.5">
-                  <div className="text-base font-semibold text-orange-600 leading-tight">${(pendingAmount / 1000).toFixed(0)}k</div>
+                  <div className="text-base font-semibold text-orange-600 leading-tight"><VIMoneyCell value={pendingAmount} currency="PKR" /></div>
                   <div className="text-[10px] text-gray-500 truncate">{pendingCount} invoices</div>
                 </div>
               </div>
@@ -499,7 +500,7 @@ export function InvoiceListScreen({ invoices, onCreateInvoice, onViewInvoice }: 
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-gray-500 mb-0.5">Paid</div>
                 <div className="flex items-baseline gap-1.5">
-                  <div className="text-base font-semibold text-green-600 leading-tight">${(paidAmount / 1000).toFixed(0)}k</div>
+                  <div className="text-base font-semibold text-green-600 leading-tight"><VIMoneyCell value={paidAmount} currency="PKR" /></div>
                   <div className="text-[10px] text-gray-500 truncate">{paidCount} invoices</div>
                 </div>
               </div>
@@ -1086,7 +1087,7 @@ export function InvoiceListScreen({ invoices, onCreateInvoice, onViewInvoice }: 
 
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                   <div className="text-lg font-semibold text-gray-900">
-                    ${invoice.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <VIMoneyCell value={invoice.amount} invoice={invoice} />
                   </div>
                   <StatusBadge status={invoice.status} />
                 </div>

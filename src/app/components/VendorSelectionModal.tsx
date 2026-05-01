@@ -4,6 +4,7 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import { mockVendors, Vendor, VendorPO, VendorGRN } from '@/app/data/mockVendors';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 interface VendorSelectionModalProps {
   isOpen: boolean;
@@ -613,9 +614,7 @@ function VendorTableRows({
               <span className="text-sm text-gray-700">{po.poDate}</span>
             </td>
             <td className="px-3 py-2">
-              <span className="text-sm font-semibold text-gray-900">
-                {vendor.currency} {po.poAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+              <VIMoneyCell value={po.poAmount} currency={vendor.currency} className="text-sm font-semibold text-gray-900" />
             </td>
             <td className="px-3 py-2">
               <span className={`px-2 py-1 text-xs font-medium rounded border ${statusColors[po.status]}`}>

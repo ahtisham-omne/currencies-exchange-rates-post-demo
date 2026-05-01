@@ -10,6 +10,7 @@ import {
   AlertDialogTitle,
 } from '@/app/components/ui/alert-dialog';
 import { Invoice } from '@/app/data/mockInvoices';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 interface BulkActionDialogProps {
   open: boolean;
@@ -126,9 +127,7 @@ export function BulkActionDialog({
               </div>
               <div>
                 <div className="text-xs text-gray-500 mb-0.5">Total Amount</div>
-                <div className="font-semibold text-gray-900">
-                  ${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
+                <VIMoneyCell value={totalAmount} currency="PKR" className="font-semibold text-gray-900" />
               </div>
             </div>
           </div>

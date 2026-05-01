@@ -45,6 +45,10 @@ import { Invoice } from '@/app/data/mockInvoices';
 import { mockVendors } from '@/app/data/mockVendors';
 import { toast } from 'sonner';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
+import { InvoiceViewModeProvider, type InvoiceViewMode } from '@/app/components/currency/InvoiceViewModeContext';
+import { VICurrencyHeaderControls } from '@/app/components/currency/VICurrencyHeaderControls';
+import VICurrencyConfigModal from '@/app/components/currency/VICurrencyConfigModal';
 
 interface InvoiceDetailScreenProps {
   invoiceId: string;
@@ -68,6 +72,8 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
   const invoice = invoices.find(inv => inv.id === invoiceId);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [viewMode, setViewMode] = useState<InvoiceViewMode>('vendor');
+  const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
 
   const vendorData = useMemo(() => {
     if (!invoice) return null;
@@ -93,6 +99,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
   ];
 
   return (
+    <InvoiceViewModeProvider value={viewMode}>
     <div className={`fixed inset-0 z-[60] flex items-center justify-center ${isFullScreen ? '' : 'bg-black/40 backdrop-blur-sm p-3'}`}>
       <div className={`bg-[#f8f9fb] flex flex-col transition-all duration-300 overflow-hidden shadow-2xl ${
         isFullScreen ? 'w-full h-full' : 'rounded-xl w-full max-w-[1360px] h-[94vh] border border-gray-200/60'
@@ -171,16 +178,24 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={() => setIsFullScreen(!isFullScreen)} className="h-8 w-8 text-gray-400 hover:text-gray-600">
-                <Maximize2 className="w-4 h-4" />
-              </Button>
-              <Button className="h-8 bg-[#2563eb] hover:bg-blue-700 text-white text-[12px] px-4 rounded-lg gap-1.5" style={{ fontWeight: 600 }}>
-                <Edit className="w-3.5 h-3.5" /> Edit
-              </Button>
-              <Button variant="outline" size="icon" className="h-8 w-8 border-gray-200 text-gray-400">
-                <MoreHorizontal className="w-4 h-4" />
-              </Button>
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon" onClick={() => setIsFullScreen(!isFullScreen)} className="h-8 w-8 text-gray-400 hover:text-gray-600">
+                  <Maximize2 className="w-4 h-4" />
+                </Button>
+                <Button className="h-8 bg-[#2563eb] hover:bg-blue-700 text-white text-[12px] px-4 rounded-lg gap-1.5" style={{ fontWeight: 600 }}>
+                  <Edit className="w-3.5 h-3.5" /> Edit
+                </Button>
+                <Button variant="outline" size="icon" className="h-8 w-8 border-gray-200 text-gray-400">
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </div>
+              <VICurrencyHeaderControls
+                invoice={invoice}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+                onOpenConfig={() => setCurrencyConfigOpen(true)}
+              />
             </div>
           </div>
         </div>
@@ -188,37 +203,37 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
         {/* ━━━ KPI METRICS STRIP ━━━ */}
         <div className="bg-white border-b border-gray-200 px-6 py-3 shrink-0">
           <div className="flex items-center gap-0 divide-x divide-gray-100">
-            <KpiMetric 
-              icon={<DollarSign className="w-4 h-4" />} 
-              iconColor="bg-emerald-50 text-emerald-600" 
-              label="Invoice Amount" 
-              value={`$${invoice.amount.toLocaleString()}`}
+            <KpiMetric
+              icon={<DollarSign className="w-4 h-4" />}
+              iconColor="bg-emerald-50 text-emerald-600"
+              label="Invoice Amount"
+              value={<VIMoneyCell value={invoice.amount} invoice={invoice} />}
             />
-            <KpiMetric 
-              icon={<TrendingDown className="w-4 h-4" />} 
-              iconColor="bg-blue-50 text-blue-600" 
-              label="Outstanding" 
-              value={`$${invoice.outstandingBalance.toLocaleString()}`}
+            <KpiMetric
+              icon={<TrendingDown className="w-4 h-4" />}
+              iconColor="bg-blue-50 text-blue-600"
+              label="Outstanding"
+              value={<VIMoneyCell value={invoice.outstandingBalance} invoice={invoice} />}
             />
-            <KpiMetric 
-              icon={<Clock className="w-4 h-4" />} 
-              iconColor="bg-orange-50 text-orange-600" 
-              label="Due Date" 
+            <KpiMetric
+              icon={<Clock className="w-4 h-4" />}
+              iconColor="bg-orange-50 text-orange-600"
+              label="Due Date"
               value={invoice.dueDate}
               sub={daysUntilDue > 0 ? `${daysUntilDue}d remaining` : 'Overdue'}
               subColor={daysUntilDue > 0 ? 'text-gray-400' : 'text-red-500'}
             />
-            <KpiMetric 
-              icon={<Receipt className="w-4 h-4" />} 
-              iconColor="bg-violet-50 text-violet-600" 
-              label="Avg Cost" 
-              value={`$${(subtotal / 12).toFixed(2)}`}
+            <KpiMetric
+              icon={<Receipt className="w-4 h-4" />}
+              iconColor="bg-violet-50 text-violet-600"
+              label="Avg Cost"
+              value={<VIMoneyCell value={subtotal / 12} invoice={invoice} />}
             />
-            <KpiMetric 
-              icon={<BarChart3 className="w-4 h-4" />} 
-              iconColor="bg-sky-50 text-sky-600" 
-              label="Total Value" 
-              value={`$${invoice.amount.toLocaleString()}`}
+            <KpiMetric
+              icon={<BarChart3 className="w-4 h-4" />}
+              iconColor="bg-sky-50 text-sky-600"
+              label="Total Value"
+              value={<VIMoneyCell value={invoice.amount} invoice={invoice} />}
             />
           </div>
         </div>
@@ -251,12 +266,12 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
               <div className="space-y-5">
                 {/* TOP KPI CARDS ROW (like reference: Open Purchase Orders, etc.) */}
                 <div className="grid grid-cols-4 gap-4">
-                  <OverviewKpiCard 
-                    label="Payment Progress" 
-                    value={`${paymentProgress}%`} 
-                    status={paymentProgress === 100 ? 'Paid' : paymentProgress > 0 ? 'Partial' : 'Unpaid'} 
+                  <OverviewKpiCard
+                    label="Payment Progress"
+                    value={`${paymentProgress}%`}
+                    status={paymentProgress === 100 ? 'Paid' : paymentProgress > 0 ? 'Partial' : 'Unpaid'}
                     statusColor={paymentProgress === 100 ? 'text-emerald-600' : paymentProgress > 0 ? 'text-blue-600' : 'text-gray-400'}
-                    sub={`$${(invoice.amount - invoice.outstandingBalance).toLocaleString()} of $${invoice.amount.toLocaleString()}`}
+                    sub={<><VIMoneyCell value={invoice.amount - invoice.outstandingBalance} invoice={invoice} /> of <VIMoneyCell value={invoice.amount} invoice={invoice} /></>}
                   />
                   <OverviewKpiCard 
                     label="Invoice Terms" 
@@ -325,17 +340,17 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
                       <span className="text-[11px] text-gray-500" style={{ fontWeight: 600 }}>Financial Breakdown</span>
                     </div>
                     <div className="p-4 space-y-3">
-                      <FinancialRow label="Items Subtotal" value={`$${subtotal.toLocaleString()}`} />
-                      <FinancialRow label="Tax (6%)" value={`$${tax.toLocaleString()}`} />
-                      <FinancialRow label="Freight" value={`$${freight.toLocaleString()}`} />
+                      <FinancialRow label="Items Subtotal" value={<VIMoneyCell value={subtotal} invoice={invoice} />} />
+                      <FinancialRow label="Tax (6%)" value={<VIMoneyCell value={tax} invoice={invoice} />} />
+                      <FinancialRow label="Freight" value={<VIMoneyCell value={freight} invoice={invoice} />} />
                       <Separator className="bg-gray-100" />
                       <div className="flex justify-between items-center pt-1">
                         <span className="text-[12px] text-gray-700" style={{ fontWeight: 600 }}>Total Amount</span>
-                        <span className="text-[16px] text-gray-900" style={{ fontWeight: 700 }}>${invoice.amount.toLocaleString()}</span>
+                        <span className="text-[16px] text-gray-900" style={{ fontWeight: 700 }}><VIMoneyCell value={invoice.amount} invoice={invoice} /></span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-[11px] text-gray-400" style={{ fontWeight: 500 }}>Outstanding Balance</span>
-                        <span className="text-[13px] text-blue-600" style={{ fontWeight: 600 }}>${invoice.outstandingBalance.toLocaleString()}</span>
+                        <span className="text-[13px] text-blue-600" style={{ fontWeight: 600 }}><VIMoneyCell value={invoice.outstandingBalance} invoice={invoice} /></span>
                       </div>
                       {/* Payment Progress Bar */}
                       <div className="pt-2">
@@ -426,7 +441,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
                         <InfoField label="Freight Carrier" value="FedEx Ground Express" />
                         <InfoField label="Tracking #" value="WB-9821037465-X" />
                         <InfoField label="Shipment Method" value="Direct-to-Warehouse" />
-                        <InfoField label="Freight Cost" value={`$${freight.toLocaleString()}`} highlight />
+                        <InfoField label="Freight Cost" value={<VIMoneyCell value={freight} invoice={invoice} />} highlight />
                       </div>
                     </div>
 
@@ -491,10 +506,10 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
                             <Badge className="mt-1 h-[16px] px-1.5 text-[8px] bg-emerald-50 text-emerald-600 border-0" style={{ fontWeight: 600 }}>Matched</Badge>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <p className="text-[12px] text-gray-800" style={{ fontWeight: 600 }}>$120.00</p>
+                            <p className="text-[12px] text-gray-800" style={{ fontWeight: 600 }}><VIMoneyCell value={120} invoice={invoice} /></p>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <p className="text-[13px] text-blue-600" style={{ fontWeight: 700 }}>${(120 * 10 * i).toLocaleString()}</p>
+                            <p className="text-[13px] text-blue-600" style={{ fontWeight: 700 }}><VIMoneyCell value={120 * 10 * i} invoice={invoice} /></p>
                           </td>
                         </tr>
                       ))}
@@ -505,16 +520,16 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
                   <div className="w-56 space-y-2">
                     <div className="flex justify-between items-center text-[11px]">
                       <span className="text-gray-400" style={{ fontWeight: 500 }}>Subtotal</span>
-                      <span className="text-gray-700" style={{ fontWeight: 600 }}>${subtotal.toLocaleString()}</span>
+                      <span className="text-gray-700" style={{ fontWeight: 600 }}><VIMoneyCell value={subtotal} invoice={invoice} /></span>
                     </div>
                     <div className="flex justify-between items-center text-[11px]">
                       <span className="text-gray-400" style={{ fontWeight: 500 }}>Variance</span>
-                      <span className="text-emerald-600" style={{ fontWeight: 600 }}>-$40.00</span>
+                      <span className="text-emerald-600" style={{ fontWeight: 600 }}>-<VIMoneyCell value={40} invoice={invoice} /></span>
                     </div>
                     <Separator className="bg-gray-200" />
                     <div className="flex justify-between items-center pt-1">
                       <span className="text-[12px] text-gray-700" style={{ fontWeight: 600 }}>Net Total</span>
-                      <span className="text-[16px] text-gray-900" style={{ fontWeight: 700 }}>${(subtotal - 40).toLocaleString()}</span>
+                      <span className="text-[16px] text-gray-900" style={{ fontWeight: 700 }}><VIMoneyCell value={subtotal - 40} invoice={invoice} /></span>
                     </div>
                   </div>
                 </div>
@@ -535,8 +550,8 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
                 </div>
                 
                 <div className="space-y-3">
-                  <LedgerCard title="Debit (DR)" account="1200 - Inventory Asset Material" amount={invoice.amount} color="emerald" />
-                  <LedgerCard title="Credit (CR)" account="2100 - Accounts Payable (Trade)" amount={invoice.amount} color="blue" />
+                  <LedgerCard title="Debit (DR)" account="1200 - Inventory Asset Material" amount={invoice.amount} invoice={invoice} color="emerald" />
+                  <LedgerCard title="Credit (CR)" account="2100 - Accounts Payable (Trade)" amount={invoice.amount} invoice={invoice} color="blue" />
                   
                   <div className="bg-white border border-gray-200 border-dashed rounded-xl p-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -654,6 +669,12 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
 
       </div>
     </div>
+    <VICurrencyConfigModal
+      open={currencyConfigOpen}
+      onOpenChange={setCurrencyConfigOpen}
+      invoice={invoice}
+    />
+    </InvoiceViewModeProvider>
   );
 }
 
@@ -661,8 +682,8 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices }: InvoiceDet
    HELPER COMPONENTS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-function KpiMetric({ icon, iconColor, label, value, sub, subColor }: { 
-  icon: React.ReactNode; iconColor: string; label: string; value: string; sub?: string; subColor?: string 
+function KpiMetric({ icon, iconColor, label, value, sub, subColor }: {
+  icon: React.ReactNode; iconColor: string; label: string; value: React.ReactNode; sub?: string; subColor?: string
 }) {
   return (
     <div className="flex items-center gap-3 flex-1 px-5 first:pl-0 last:pr-0">
@@ -679,7 +700,7 @@ function KpiMetric({ icon, iconColor, label, value, sub, subColor }: {
 }
 
 function OverviewKpiCard({ label, value, status, statusColor, sub, change }: {
-  label: string; value: string; status: string; statusColor: string; sub: string; change?: React.ReactNode;
+  label: string; value: string; status: string; statusColor: string; sub: React.ReactNode; change?: React.ReactNode;
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -698,7 +719,7 @@ function OverviewKpiCard({ label, value, status, statusColor, sub, change }: {
   );
 }
 
-function InfoField({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function InfoField({ label, value, highlight }: { label: string; value: React.ReactNode; highlight?: boolean }) {
   return (
     <div>
       <p className="text-[10px] text-gray-400 mb-1" style={{ fontWeight: 500 }}>{label}</p>
@@ -709,7 +730,7 @@ function InfoField({ label, value, highlight }: { label: string; value: string; 
   );
 }
 
-function FinancialRow({ label, value }: { label: string; value: string }) {
+function FinancialRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex justify-between items-center">
       <span className="text-[11px] text-gray-400" style={{ fontWeight: 500 }}>{label}</span>
@@ -737,7 +758,7 @@ function LinkedRecord({ label, type, muted }: { label: string; type: string; mut
   );
 }
 
-function LedgerCard({ title, account, amount, color }: { title: string; account: string; amount: number; color: 'emerald' | 'blue' }) {
+function LedgerCard({ title, account, amount, invoice, color }: { title: string; account: string; amount: number; invoice: Invoice; color: 'emerald' | 'blue' }) {
   const colors = {
     emerald: { header: 'bg-emerald-50 border-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
     blue: { header: 'bg-blue-50 border-blue-100 text-blue-700', dot: 'bg-blue-500' }
@@ -752,7 +773,7 @@ function LedgerCard({ title, account, amount, color }: { title: string; account:
       </div>
       <div className="px-4 py-3.5 flex justify-between items-center">
         <span className="text-[12px] font-mono text-gray-600" style={{ fontWeight: 500 }}>{account}</span>
-        <span className="text-[14px] font-mono text-gray-900" style={{ fontWeight: 700 }}>${amount.toLocaleString()}</span>
+        <span className="text-[14px] font-mono text-gray-900" style={{ fontWeight: 700 }}><VIMoneyCell value={amount} invoice={invoice} /></span>
       </div>
     </div>
   );

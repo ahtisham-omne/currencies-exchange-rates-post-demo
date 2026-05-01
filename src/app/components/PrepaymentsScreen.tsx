@@ -19,6 +19,7 @@ import {
 import { Checkbox } from '@/app/components/ui/checkbox';
 import { mockPrepayments, Prepayment } from '@/app/data/mockPrepayments';
 import { toast } from 'sonner';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 type DensityMode = 'condensed' | 'comfort' | 'relaxed' | 'card';
 
@@ -280,7 +281,7 @@ export function PrepaymentsScreen() {
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-gray-500 mb-0.5">Total Prepaid</div>
                 <div className="flex items-baseline gap-1.5">
-                  <div className="text-base font-semibold text-gray-900 leading-tight">${(totalAmount / 1000).toFixed(0)}k</div>
+                  <VIMoneyCell value={totalAmount} currency="PKR" className="text-base font-semibold text-gray-900 leading-tight" />
                   <div className="text-[10px] text-gray-500 truncate">{totalCount} prepayments</div>
                 </div>
               </div>
@@ -297,7 +298,7 @@ export function PrepaymentsScreen() {
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-gray-500 mb-0.5">Applied</div>
                 <div className="flex items-baseline gap-1.5">
-                  <div className="text-base font-semibold text-green-600 leading-tight">${(appliedAmount / 1000).toFixed(0)}k</div>
+                  <VIMoneyCell value={appliedAmount} currency="PKR" className="text-base font-semibold text-green-600 leading-tight" />
                   <div className="text-[10px] text-gray-500 truncate">{fullyAppliedCount} applied</div>
                 </div>
               </div>
@@ -314,7 +315,7 @@ export function PrepaymentsScreen() {
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] text-gray-500 mb-0.5">Remaining</div>
                 <div className="flex items-baseline gap-1.5">
-                  <div className="text-base font-semibold text-yellow-600 leading-tight">${(remainingAmount / 1000).toFixed(0)}k</div>
+                  <VIMoneyCell value={remainingAmount} currency="PKR" className="text-base font-semibold text-yellow-600 leading-tight" />
                   <div className="text-[10px] text-gray-500 truncate">{partialCount} partial</div>
                 </div>
               </div>
@@ -504,25 +505,25 @@ export function PrepaymentsScreen() {
                   'py-4'
                 }`}>{prepayment.date}</TableCell>
                 <TableCell className={`text-sm text-right font-semibold text-gray-900 ${
-                  densityMode === 'condensed' ? 'py-2 text-xs' : 
-                  densityMode === 'relaxed' ? 'py-6' : 
+                  densityMode === 'condensed' ? 'py-2 text-xs' :
+                  densityMode === 'relaxed' ? 'py-6' :
                   'py-4'
                 }`}>
-                  ${prepayment.originalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <VIMoneyCell value={prepayment.originalAmount} currency="USD" />
                 </TableCell>
                 <TableCell className={`text-sm text-right font-medium text-green-600 ${
-                  densityMode === 'condensed' ? 'py-2 text-xs' : 
-                  densityMode === 'relaxed' ? 'py-6' : 
+                  densityMode === 'condensed' ? 'py-2 text-xs' :
+                  densityMode === 'relaxed' ? 'py-6' :
                   'py-4'
                 }`}>
-                  ${prepayment.appliedAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <VIMoneyCell value={prepayment.appliedAmount} currency="USD" />
                 </TableCell>
                 <TableCell className={`text-sm text-right font-medium text-blue-600 ${
-                  densityMode === 'condensed' ? 'py-2 text-xs' : 
-                  densityMode === 'relaxed' ? 'py-6' : 
+                  densityMode === 'condensed' ? 'py-2 text-xs' :
+                  densityMode === 'relaxed' ? 'py-6' :
                   'py-4'
                 }`}>
-                  ${prepayment.remainingBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <VIMoneyCell value={prepayment.remainingBalance} currency="USD" />
                 </TableCell>
                 <TableCell className={
                   densityMode === 'condensed' ? 'py-2' : 

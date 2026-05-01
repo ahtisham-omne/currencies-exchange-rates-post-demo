@@ -23,6 +23,7 @@ import {
 } from "@/app/components/ui/hover-card";
 import { mockVendors, VendorGRN } from '@/app/data/mockVendors';
 import { toast } from 'sonner';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 export function ReceivingDocumentsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -227,7 +228,7 @@ export function ReceivingDocumentsScreen() {
                                                       </div>
                                                       <div className="flex items-center justify-between border-b border-gray-50 pb-1.5">
                                                         <span className="text-[11px] font-bold text-gray-900">PINV-001</span>
-                                                        <span className="text-[11px] font-black text-green-600">$ {(item.unitPrice * (item.invoicedQty || 0)).toLocaleString()}</span>
+                                                        <VIMoneyCell value={item.unitPrice * (item.invoicedQty || 0)} currency="USD" className="text-[11px] font-black text-green-600" />
                                                       </div>
                                                       <p className="text-[9px] text-gray-500 font-medium leading-tight">Pre-billing record for partial quantities. Offsets against this receiving document.</p>
                                                     </div>
@@ -246,7 +247,7 @@ export function ReceivingDocumentsScreen() {
                                                         </div>
                                                         <div className="flex items-center justify-between border-b border-gray-50 pb-1.5">
                                                           <span className="text-[11px] font-bold text-gray-900">PINV-002</span>
-                                                          <span className="text-[11px] font-black text-green-600">$ 2,400.00</span>
+                                                          <VIMoneyCell value={2400} currency="USD" className="text-[11px] font-black text-green-600" />
                                                         </div>
                                                         <p className="text-[9px] text-gray-500 font-medium leading-tight">Second billing record detected for this item. Offset logic applied.</p>
                                                       </div>
@@ -258,13 +259,13 @@ export function ReceivingDocumentsScreen() {
                                           </div>
                                         </TableCell>
                                         <TableCell className="text-xs font-bold text-green-600 text-right font-mono">
-                                          ${((item.invoicedQty || 0) * item.unitPrice).toFixed(2)}
+                                          <VIMoneyCell value={(item.invoicedQty || 0) * item.unitPrice} currency="USD" />
                                         </TableCell>
                                       </>
                                     )}
                                     <TableCell className="text-xs text-gray-500">{item.uom}</TableCell>
-                                    <TableCell className="text-xs text-gray-600 text-right font-mono">${item.unitPrice.toFixed(2)}</TableCell>
-                                    <TableCell className="text-xs font-semibold text-gray-900 text-right font-mono">${item.totalPrice.toFixed(2)}</TableCell>
+                                    <TableCell className="text-xs text-gray-600 text-right font-mono"><VIMoneyCell value={item.unitPrice} currency="USD" /></TableCell>
+                                    <TableCell className="text-xs font-semibold text-gray-900 text-right font-mono"><VIMoneyCell value={item.totalPrice} currency="USD" /></TableCell>
                                   </TableRow>
                                 ))}
                               </TableBody>

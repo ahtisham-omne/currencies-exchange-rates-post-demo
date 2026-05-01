@@ -66,6 +66,7 @@ import { toast } from 'sonner';
 import { Invoice } from '@/app/data/mockInvoices';
 
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 interface CreateInvoiceScreenProps {
   onClose: () => void;
@@ -816,7 +817,7 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                                   </div>
                                   <div className="text-right">
                                     <span className="text-[10px] font-black text-gray-900">{item.invoiceQty} units</span>
-                                    <p className="text-[8px] text-gray-400 font-bold tracking-tight">${item.unitPrice.toLocaleString()}/unit</p>
+                                    <p className="text-[8px] text-gray-400 font-bold tracking-tight"><VIMoneyCell value={item.unitPrice} currency={poData?.currency || 'USD'} />/unit</p>
                                   </div>
                                 </div>
                               ))}
@@ -829,7 +830,7 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                                </div>
                                <div>
                                   <p className="text-[8px] font-bold text-gray-400 leading-none uppercase tracking-tighter">Line items total</p>
-                                  <p className="text-[13px] font-black text-gray-900 mt-0.5 tracking-tight">${itemsForThisPO.reduce((sum, i) => sum + i.lineTotal, 0).toLocaleString()}</p>
+                                  <VIMoneyCell value={itemsForThisPO.reduce((sum, i) => sum + i.lineTotal, 0)} currency={poData?.currency || 'USD'} className="text-[13px] font-black text-gray-900 mt-0.5 tracking-tight" />
                                </div>
                              </div>
                              <div className="text-right bg-gray-50 px-2 py-1 rounded border border-gray-100">
@@ -1142,7 +1143,7 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                     </div>
                     <div className="text-right flex items-center gap-3">
                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total</span>
-                      <span className="text-[18px] font-bold text-gray-900 leading-none">${standaloneSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <VIMoneyCell value={standaloneSubtotal} currency={vendorData?.currency || standaloneVendor?.currency || 'USD'} className="text-[18px] font-bold text-gray-900 leading-none" />
                     </div>
                   </div>
                 </section>
@@ -1327,7 +1328,7 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                             <td className="px-2 py-1.5 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <span className="text-[10px] font-bold text-gray-900">{item.receivedQty} {item.uom}</span>
-                                <span className="text-[9px] font-medium text-gray-400">(${(item.receivedQty * item.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2 })})</span>
+                                <span className="text-[9px] font-medium text-gray-400">(<VIMoneyCell value={item.receivedQty * item.unitPrice} currency={currentPOsData.find(p => p.poNumber === item.poNumber)?.currency || vendorData?.currency || 'USD'} />)</span>
                               </div>
                             </td>
                             <td className="px-2 py-1.5">
@@ -1375,8 +1376,8 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                               </button>
                             </td>
                             <td className="px-3 py-1.5">
-                              <div className="text-right font-bold text-[11px] text-gray-900 pr-0.5">
-                                ${lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              <div className="text-right pr-0.5">
+                                <VIMoneyCell value={lineTotal} currency={currentPOsData.find(p => p.poNumber === item.poNumber)?.currency || vendorData?.currency || 'USD'} className="font-bold text-[11px] text-gray-900" />
                               </div>
                             </td>
                             {selectedIds.size <= 1 && (
@@ -1561,7 +1562,7 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                               <span className="text-[10px] font-medium text-gray-400">1200</span>
                               <span className="text-[11px] font-semibold text-gray-700 tracking-tight">Inventory</span>
                             </div>
-                            <span className="text-[12px] font-bold text-gray-900 tracking-tight">${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            <VIMoneyCell value={total} currency={vendorData?.currency || standaloneVendor?.currency || 'USD'} className="text-[12px] font-bold text-gray-900 tracking-tight" />
                           </div>
                         </div>
 
@@ -1572,7 +1573,7 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                               <span className="text-[10px] font-medium text-gray-400">{apAccount.split(' ')[0]}</span>
                               <span className="text-[11px] font-semibold text-gray-700 tracking-tight">{apAccount.substring(apAccount.split(' ')[0].length + 1)}</span>
                             </div>
-                            <span className="text-[12px] font-bold text-gray-900 tracking-tight">${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            <VIMoneyCell value={total} currency={vendorData?.currency || standaloneVendor?.currency || 'USD'} className="text-[12px] font-bold text-gray-900 tracking-tight" />
                           </div>
                         </div>
 
@@ -1582,7 +1583,7 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                               <span className="text-[9px] font-bold text-emerald-700 uppercase tracking-wider">Balanced</span>
                            </div>
                            <div className="text-[10px] font-semibold text-emerald-800 tracking-tight">
-                              Dr: ${total.toLocaleString()} | Cr: ${total.toLocaleString()}
+                              Dr: <VIMoneyCell value={total} currency={vendorData?.currency || standaloneVendor?.currency || 'USD'} /> | Cr: <VIMoneyCell value={total} currency={vendorData?.currency || standaloneVendor?.currency || 'USD'} />
                            </div>
                         </div>
                       </div>
@@ -1931,7 +1932,7 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                       <div className="pt-2 border-t border-gray-50">
                         <div className="flex items-center justify-between px-1">
                           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Total Additional Charges</span>
-                          <span className="text-[12px] font-bold text-gray-900">${additionalChargesTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <VIMoneyCell value={additionalChargesTotal} currency={vendorData?.currency || standaloneVendor?.currency || 'USD'} className="text-[12px] font-bold text-gray-900" />
                         </div>
                       </div>
                     </div>
@@ -2119,16 +2120,16 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                   <div className="space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
                     <div className="flex justify-between items-center">
                       <span className="text-[11px] font-bold text-gray-400">Subtotal (Items)</span>
-                      <span className="text-[12px] font-bold text-gray-700">${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <VIMoneyCell value={subtotal} currency={vendorData?.currency || standaloneVendor?.currency || 'USD'} className="text-[12px] font-bold text-gray-700" />
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-[11px] font-bold text-gray-400">Freight</span>
-                      <span className="text-[12px] font-bold text-gray-700">${freightAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <VIMoneyCell value={freightAmount} currency={vendorData?.currency || standaloneVendor?.currency || 'USD'} className="text-[12px] font-bold text-gray-700" />
                     </div>
                     {additionalCharges.map((charge) => charge.amount > 0 && (
                       <div key={charge.id} className="flex justify-between items-center">
                         <span className="text-[11px] font-bold text-gray-400">{charge.type}</span>
-                        <span className="text-[12px] font-bold text-gray-700">${charge.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <VIMoneyCell value={charge.amount} currency={vendorData?.currency || standaloneVendor?.currency || 'USD'} className="text-[12px] font-bold text-gray-700" />
                       </div>
                     ))}
                   </div>
@@ -2137,7 +2138,7 @@ export function CreateInvoiceScreen({ onClose, invoiceType, selectedPOsData = []
                 <div className="pt-3 mt-1 border-t border-gray-100 flex justify-between items-end">
                   <span className="text-[11px] font-bold text-gray-900 tracking-widest uppercase mb-1">Final Total</span>
                   <div className="text-right">
-                    <span className="text-[20px] font-bold text-gray-900 leading-none">${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <VIMoneyCell value={total} currency={vendorData?.currency || standaloneVendor?.currency || 'USD'} className="text-[20px] font-bold text-gray-900 leading-none" />
                   </div>
                 </div>
               </div>
@@ -2812,7 +2813,7 @@ function AddItemFromPOModal({
                         <span className="text-[12px] font-black text-gray-900">{item.quantity} {item.uom}</span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className="text-[12px] font-bold text-gray-600">${item.unitPrice.toFixed(2)}</span>
+                        <VIMoneyCell value={item.unitPrice} currency="USD" className="text-[12px] font-bold text-gray-600" />
                       </td>
                     </tr>
                   ))}

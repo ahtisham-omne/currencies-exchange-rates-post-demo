@@ -45,6 +45,7 @@ import {
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/app/components/ui/hover-card";
 import { Invoice } from '@/app/data/mockInvoices';
 import { mockVendors } from '@/app/data/mockVendors';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 interface ColumnConfig {
   id: string;
@@ -396,9 +397,7 @@ export function AdvancedInvoiceTable({
                       <span className="text-sm text-gray-900">{invoice.dueDate}</span>
                     )}
                     {column.id === 'amount' && (
-                      <span className="text-sm font-semibold text-gray-900 text-right block">
-                        ${invoice.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
+                      <VIMoneyCell value={invoice.amount} invoice={invoice} className="text-sm font-semibold text-gray-900 text-right block" />
                     )}
                     {column.id === 'linkedRecords' && renderLinkedRecords(invoice)}
                     {column.id === 'apAccount' && (
@@ -541,7 +540,7 @@ function QuickViewModal({ record, onClose }: { record: { id: string, type: 'PO' 
                 </div>
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-100">
                   <p className="text-[9px] font-black text-gray-400 mb-1">Total Amount</p>
-                  <p className="text-xl font-bold text-gray-900">${((data as any).poAmount || data.items.reduce((s: any, i: any) => s + (i.totalPrice || 0), 0)).toLocaleString()}</p>
+                  <VIMoneyCell value={(data as any).poAmount || data.items.reduce((s: any, i: any) => s + (i.totalPrice || 0), 0)} currency="USD" className="text-xl font-bold text-gray-900" />
                 </div>
                 <div className="p-3 rounded-lg bg-gray-50 border border-gray-100">
                   <p className="text-[9px] font-black text-gray-400 mb-1">Currency</p>
@@ -598,7 +597,7 @@ function QuickViewModal({ record, onClose }: { record: { id: string, type: 'PO' 
                                             </div>
                                             <div className="flex items-center justify-between border-b border-gray-50 pb-1.5">
                                               <span className="text-[11px] font-bold text-gray-900">PINV-001</span>
-                                              <span className="text-[11px] font-black text-green-600">$ {(item.unitPrice * (item.invoicedQty || 0)).toLocaleString()}</span>
+                                              <VIMoneyCell value={item.unitPrice * (item.invoicedQty || 0)} currency="USD" className="text-[11px] font-black text-green-600" />
                                             </div>
                                             <p className="text-[9px] text-gray-500 font-medium">Pre-billing record for partial quantities. Offsets against this receiving document.</p>
                                           </div>
@@ -617,7 +616,7 @@ function QuickViewModal({ record, onClose }: { record: { id: string, type: 'PO' 
                                               </div>
                                               <div className="flex items-center justify-between border-b border-gray-50 pb-1.5">
                                                 <span className="text-[11px] font-bold text-gray-900">PINV-002</span>
-                                                <span className="text-[11px] font-black text-green-600">$ 2,400.00</span>
+                                                <VIMoneyCell value={2400} currency="USD" className="text-[11px] font-black text-green-600" />
                                               </div>
                                               <p className="text-[9px] text-gray-500 font-medium">Second billing record detected for this item. Offset logic applied.</p>
                                             </div>
@@ -629,12 +628,12 @@ function QuickViewModal({ record, onClose }: { record: { id: string, type: 'PO' 
                                 </div>
                               </td>
                               <td className="px-3 py-2.5 text-right font-bold text-green-600">
-                                ${((item.invoicedQty || 0) * item.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                <VIMoneyCell value={(item.invoicedQty || 0) * item.unitPrice} currency="USD" />
                               </td>
                             </>
                           )}
-                          <td className="px-3 py-2.5 text-right font-medium text-gray-600">${item.unitPrice.toFixed(2)}</td>
-                          <td className="px-3 py-2.5 text-right font-bold text-gray-900">${item.totalPrice.toLocaleString()}</td>
+                          <td className="px-3 py-2.5 text-right font-medium text-gray-600"><VIMoneyCell value={item.unitPrice} currency="USD" /></td>
+                          <td className="px-3 py-2.5 text-right font-bold text-gray-900"><VIMoneyCell value={item.totalPrice} currency="USD" /></td>
                         </tr>
                       ))}
                     </tbody>

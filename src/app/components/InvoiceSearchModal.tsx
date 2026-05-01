@@ -5,6 +5,7 @@ import { Input } from '@/app/components/ui/input';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import { Label } from '@/app/components/ui/label';
 import { mockVendorSearchData, VendorSearchResult } from '@/app/data/mockVendorSearchData';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 interface InvoiceSearchModalProps {
   isOpen: boolean;
@@ -341,7 +342,7 @@ export function InvoiceSearchModal({ isOpen, onClose, onSelect, invoiceType, sel
                             <span>•</span>
                             <span>{vendor.totalReceivings} Receivings</span>
                             <span>•</span>
-                            <span>Balance: ${vendor.openBalance.toLocaleString()}</span>
+                            <span className="inline-flex items-center gap-1">Balance: <VIMoneyCell value={vendor.openBalance} currency="USD" /></span>
                           </div>
                         </div>
                         <Button
@@ -385,8 +386,8 @@ export function InvoiceSearchModal({ isOpen, onClose, onSelect, invoiceType, sel
                                       <span className="font-medium text-sm text-gray-900">{po.poNumber}</span>
                                       <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">{po.status}</span>
                                     </div>
-                                    <div className="text-xs text-gray-500 mt-0.5">
-                                      {po.date} • ${po.totalAmount.toLocaleString()} • {po.items.length} items
+                                    <div className="text-xs text-gray-500 mt-0.5 inline-flex items-center gap-1">
+                                      <span>{po.date} •</span> <VIMoneyCell value={po.totalAmount} currency="USD" /> <span>• {po.items.length} items</span>
                                     </div>
                                   </div>
                                   <Button
@@ -409,8 +410,8 @@ export function InvoiceSearchModal({ isOpen, onClose, onSelect, invoiceType, sel
                                           <div className="text-xs text-gray-900">
                                             <span className="font-medium">{item.itemCode}</span> - {item.description}
                                           </div>
-                                          <div className="text-xs text-gray-500 mt-0.5">
-                                            Qty: {item.quantity} • ${item.unitPrice} • Total: ${item.amount.toLocaleString()}
+                                          <div className="text-xs text-gray-500 mt-0.5 inline-flex items-center gap-1">
+                                            <span>Qty: {item.quantity} •</span> <VIMoneyCell value={item.unitPrice} currency="USD" /> <span>• Total:</span> <VIMoneyCell value={item.amount} currency="USD" />
                                           </div>
                                         </div>
                                         <Button
@@ -458,8 +459,8 @@ export function InvoiceSearchModal({ isOpen, onClose, onSelect, invoiceType, sel
                                       <span className="font-medium text-sm text-gray-900">{rec.receivingNumber}</span>
                                       <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">{rec.status}</span>
                                     </div>
-                                    <div className="text-xs text-gray-500 mt-0.5">
-                                      PO: {rec.poNumber} • {rec.date} • ${rec.totalAmount.toLocaleString()} • {rec.items.length} items
+                                    <div className="text-xs text-gray-500 mt-0.5 inline-flex items-center gap-1">
+                                      <span>PO: {rec.poNumber} • {rec.date} •</span> <VIMoneyCell value={rec.totalAmount} currency="USD" /> <span>• {rec.items.length} items</span>
                                     </div>
                                   </div>
                                   <Button
@@ -482,8 +483,8 @@ export function InvoiceSearchModal({ isOpen, onClose, onSelect, invoiceType, sel
                                           <div className="text-xs text-gray-900">
                                             <span className="font-medium">{item.itemCode}</span> - {item.description}
                                           </div>
-                                          <div className="text-xs text-gray-500 mt-0.5">
-                                            Qty: {item.quantity} • ${item.unitPrice} • Total: ${item.amount.toLocaleString()}
+                                          <div className="text-xs text-gray-500 mt-0.5 inline-flex items-center gap-1">
+                                            <span>Qty: {item.quantity} •</span> <VIMoneyCell value={item.unitPrice} currency="USD" /> <span>• Total:</span> <VIMoneyCell value={item.amount} currency="USD" />
                                           </div>
                                         </div>
                                         <Button

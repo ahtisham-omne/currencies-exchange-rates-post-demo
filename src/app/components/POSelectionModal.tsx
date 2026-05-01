@@ -4,6 +4,7 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import { Badge } from '@/app/components/ui/badge';
 import { mockVendorSearchData, PurchaseOrder } from '@/app/data/mockVendorSearchData';
+import { VIMoneyCell } from '@/app/components/currency/VIMoneyCell';
 
 interface POSelectionModalProps {
   isOpen: boolean;
@@ -166,7 +167,7 @@ export function POSelectionModal({
                               <span className="flex-1">
                                 <span className="font-medium text-gray-700">{item.itemCode}</span> - {item.description}
                                 <span className="text-gray-500 ml-2">
-                                  ({item.quantity} {item.quantity > 1 ? 'units' : 'unit'} @ ${item.unitPrice.toFixed(2)})
+                                  ({item.quantity} {item.quantity > 1 ? 'units' : 'unit'} @ <VIMoneyCell value={item.unitPrice} currency="USD" />)
                                 </span>
                               </span>
                             </div>
@@ -181,7 +182,7 @@ export function POSelectionModal({
                         {/* Total */}
                         <div className="flex items-center justify-between pt-2 border-t border-gray-200">
                           <span className="text-sm text-gray-600">PO Total</span>
-                          <span className="font-semibold text-gray-900">${po.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <VIMoneyCell value={po.totalAmount} currency="USD" className="font-semibold text-gray-900" />
                         </div>
                       </div>
                     </div>
@@ -201,7 +202,7 @@ export function POSelectionModal({
               </div>
               {selectedPOIds.size > 0 && (
                 <div className="text-lg font-semibold text-gray-900 mt-1">
-                  Total: ${totalSelectedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  Total: <VIMoneyCell value={totalSelectedAmount} currency="USD" />
                 </div>
               )}
             </div>
