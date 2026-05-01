@@ -3,14 +3,16 @@ import { InvoiceTypeSelectionModal } from '@/app/components/InvoiceTypeSelection
 import { VendorSelectionModalNested as VendorSelectionModal, SelectedPOData } from '@/app/components/VendorSelectionModalNested';
 import { StandaloneVendorSelectionModal, StandaloneVendorData } from '@/app/components/StandaloneVendorSelectionModal';
 import { CreateInvoiceScreen } from '@/app/components/CreateInvoiceScreen';
+import { RatePreviewModal } from '@/app/components/currency/RatePreviewModal';
 import { Invoice } from '@/app/data/mockInvoices';
+import { BASE_CURRENCY } from '@/app/data/currencyLibrary';
 
 interface InvoiceCreationFlowProps {
   onClose: () => void;
   onInvoicesCreated: (invoices: Invoice[]) => void;
 }
 
-type FlowStep = 'type-selection' | 'inventory-selection' | 'standalone-vendor-selection' | 'create-invoice';
+type FlowStep = 'type-selection' | 'inventory-selection' | 'standalone-vendor-selection' | 'rate-preview' | 'create-invoice';
 type InvoiceType = 'draft' | 'receiving' | 'po' | 'standalone';
 
 export function InvoiceCreationFlow({ onClose, onInvoicesCreated }: InvoiceCreationFlowProps) {
@@ -33,6 +35,15 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated }: InvoiceCreat
 
   const handleInventorySelection = (selectedData: SelectedPOData[]) => {
     setSelectedPOs(selectedData);
+    // Skip the rate-preview gate when every selected PO is already denominated
+    // in the base currency — there's no FX context worth previewing.
+    const hasNonBaseCurrency = selectedData.some(
+      (po) => (po.currency || '').toUpperCase() !== BASE_CURRENCY,
+    );
+    setCurrentStep(hasNonBaseCurrency ? 'rate-preview' : 'create-invoice');
+  };
+
+  const handleRatePreviewContinue = () => {
     setCurrentStep('create-invoice');
   };
 
@@ -46,6 +57,8 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated }: InvoiceCreat
       setCurrentStep('type-selection');
       setInvoiceType(null);
       setStandaloneVendor(null);
+    } else if (currentStep === 'rate-preview') {
+      setCurrentStep('inventory-selection');
     } else if (currentStep === 'create-invoice') {
       if (invoiceType === 'receiving' || invoiceType === 'po') {
         setCurrentStep('inventory-selection');
@@ -90,6 +103,15 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated }: InvoiceCreat
           isOpen={true}
           onClose={handleGoBack}
           onSelectVendor={handleStandaloneVendorSelection}
+        />
+      )}
+
+      {/* Step 2c: Rate Preview (only when at least one selected PO is in a foreign currency) */}
+      {currentStep === 'rate-preview' && (
+        <RatePreviewModal
+          selectedPOs={selectedPOs}
+          onCancel={handleGoBack}
+          onContinue={handleRatePreviewContinue}
         />
       )}
 
