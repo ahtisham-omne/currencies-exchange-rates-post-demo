@@ -165,7 +165,7 @@ export function QuoteCurrencyConfigModal({
 
         <div className="px-6 pt-4 pb-2 flex flex-col gap-3">
           <AmountField
-            label="Customer Amount"
+            label="Customer Pays"
             helper="The currency the customer pays in on their invoice. Changing this only applies to this quote."
             amount={customerAmount}
             currency={customerCurrency}
