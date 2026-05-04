@@ -257,7 +257,7 @@ function RowInverter({
     </motion.div>
   );
   const swapItem = (
-    <motion.div key="swap" layout transition={SWAP_SPRING} className="mt-5">
+    <motion.div key="swap" layout transition={SWAP_SPRING}>
       <TooltipProvider delayDuration={200}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -284,7 +284,7 @@ function RowInverter({
   );
 
   const items = isInverted ? [baseItem, swapItem, sourceItem] : [sourceItem, swapItem, baseItem];
-  return <div className={`flex items-end gap-4 ${indentClass}`}>{items}</div>;
+  return <div className={`flex items-center gap-4 ${indentClass}`}>{items}</div>;
 }
 
 /** Single combined search-and-trigger picker for the Add Corporate Rate modal.
