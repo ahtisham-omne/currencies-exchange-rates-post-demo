@@ -12,6 +12,7 @@ import { useModalShortcuts, KbdHint, ModalShell } from "./ModalKeyboard";
 import { Button } from "./ui/Button";
 import type { SalesOrder } from "./types";
 import { makeFormatOrderMoney } from "../currency/formatOrderMoney";
+import { MoneyConvertTooltip } from "../currency/MoneyConvertTooltip";
 
 /* ═══ Invoice types ═══ */
 export type InvoiceStatus = "Paid" | "Pending" | "Overdue" | "Draft" | "Partially Paid" | "Voided";
@@ -734,14 +735,32 @@ function EditInvoiceModal({ invoice, fmtMoney, onClose, onSave }: {
 }
 
 /* ═══ Invoice Detail Modal — replaces expanded rows ═══ */
-function InvoiceDetailModal({ invoice, fmtMoney, onClose, onRecordPayment, onEdit, onVoid }: {
+function InvoiceDetailModal({ invoice, fmtMoney, customerCurrency, lockedRate, lockedAt, viewMode, onClose, onRecordPayment, onEdit, onVoid }: {
   invoice: Invoice;
   fmtMoney: (n: number) => string;
+  /** FX context — drives the hover popovers on every amount in the modal. */
+  customerCurrency?: string;
+  lockedRate?: number;
+  lockedAt?: string;
+  viewMode: "base" | "customer";
   onClose: () => void;
   onRecordPayment: () => void;
   onEdit: () => void;
   onVoid: () => void;
 }) {
+  /* Wraps a base-currency amount with the FX hover popover. Mirrors the
+   * helper in InvoicingTab so the detail modal exposes the same context. */
+  const Money = ({ value, className }: { value: number; className?: string }) => (
+    <MoneyConvertTooltip
+      valuePKR={value}
+      customerCurrency={customerCurrency}
+      lockedRate={lockedRate}
+      lockedAt={lockedAt}
+      display={viewMode}
+    >
+      <span className={className}>{fmtMoney(value)}</span>
+    </MoneyConvertTooltip>
+  );
   const ss = STATUS_STYLES[invoice.status] || STATUS_STYLES.Draft;
   const ac = avatarColor(invoice.createdByInitials);
   const remaining = invoice.amount - invoice.paidAmount;
@@ -817,13 +836,15 @@ function InvoiceDetailModal({ invoice, fmtMoney, onClose, onRecordPayment, onEdi
               {/* Financial summary */}
               <div className="grid grid-cols-3" style={{ gap: "var(--space-inline-gap)" }}>
                 {[
-                  { label: "Invoice Amount", value: fmtMoney(invoice.amount), color: "text-foreground" },
-                  { label: "Paid", value: fmtMoney(invoice.paidAmount), color: "text-accent" },
-                  { label: "Outstanding", value: fmtMoney(remaining), color: remaining > 0 ? "text-chart-3" : "text-accent" },
+                  { label: "Invoice Amount", value: invoice.amount, color: "text-foreground" },
+                  { label: "Paid", value: invoice.paidAmount, color: "text-accent" },
+                  { label: "Outstanding", value: remaining, color: remaining > 0 ? "text-chart-3" : "text-accent" },
                 ].map(item => (
                   <div key={item.label} className="border border-border rounded-lg text-center" style={{ padding: "8px var(--space-inline-gap)" }}>
                     <div className="text-foreground/40 text-micro font-semibold tracking-wider" style={{ marginBottom: 3 }}>{item.label}</div>
-                    <div className={`font-semibold ${item.color}`} style={{ fontSize: "var(--text-label)" }}>{item.value}</div>
+                    <div className={`font-semibold ${item.color}`} style={{ fontSize: "var(--text-label)" }}>
+                      <Money value={item.value} />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -899,8 +920,8 @@ function InvoiceDetailModal({ invoice, fmtMoney, onClose, onRecordPayment, onEdi
                           <span className="text-caption text-foreground/50 truncate">{li.itemName}</span>
                         </div>
                         <div className="flex items-center shrink-0" style={{ gap: 8 }}>
-                          <span className="text-small text-foreground/40">{li.qty} × {fmtMoney(li.unitPrice)}</span>
-                          <span className="text-caption text-foreground font-semibold">{fmtMoney(li.qty * li.unitPrice)}</span>
+                          <span className="text-small text-foreground/40">{li.qty} × <Money value={li.unitPrice} /></span>
+                          <Money value={li.qty * li.unitPrice} className="text-caption text-foreground font-semibold" />
                         </div>
                       </div>
                     ))}
@@ -925,7 +946,7 @@ function InvoiceDetailModal({ invoice, fmtMoney, onClose, onRecordPayment, onEdi
                           </div>
                           <div className="flex items-center" style={{ gap: 12 }}>
                             <span className="text-small text-foreground/40">{sp.date}</span>
-                            <span className="text-caption text-foreground font-semibold">{fmtMoney(sp.amount)}</span>
+                            <Money value={sp.amount} className="text-caption text-foreground font-semibold" />
                           </div>
                         </div>
                       ))}
@@ -959,13 +980,13 @@ function InvoiceDetailModal({ invoice, fmtMoney, onClose, onRecordPayment, onEdi
                         <Check className="w-4 h-4 text-accent" />
                       </div>
                       <div>
-                        <div className="text-foreground text-label font-semibold">{fmtMoney(invoice.paidAmount)}</div>
+                        <div><Money value={invoice.paidAmount} className="text-foreground text-label font-semibold" /></div>
                         <div className="text-foreground/40 text-small">collected across {invoice.paymentHistory.length} payment{invoice.paymentHistory.length > 1 ? "s" : ""}</div>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className={`text-label font-semibold ${remaining > 0 ? "text-chart-3" : "text-accent"}`}>
-                        {remaining > 0 ? `${fmtMoney(remaining)} due` : "Fully paid"}
+                        {remaining > 0 ? <><Money value={remaining} /> due</> : "Fully paid"}
                       </div>
                       <div className="text-foreground/40 text-small">{collectedPct}% collected</div>
                     </div>
@@ -1000,7 +1021,7 @@ function InvoiceDetailModal({ invoice, fmtMoney, onClose, onRecordPayment, onEdi
                           <div className="border border-border rounded-lg hover:border-primary/20 transition-colors" style={{ padding: "var(--space-inline-gap) var(--space-card-padding)" }}>
                             <div className="flex items-center justify-between">
                               <div className="flex items-center" style={{ gap: 8 }}>
-                                <span className="text-foreground text-label font-semibold">{fmtMoney(ph.amount)}</span>
+                                <Money value={ph.amount} className="text-foreground text-label font-semibold" />
                                 <span className="text-small text-foreground/40 border border-border rounded px-1.5 py-px font-medium">{ph.method}</span>
                               </div>
                               <span className="text-foreground/40 text-caption font-medium">{ph.date}</span>
@@ -1038,7 +1059,7 @@ function InvoiceDetailModal({ invoice, fmtMoney, onClose, onRecordPayment, onEdi
                               <div className="border border-dashed border-border rounded-lg" style={{ padding: "var(--space-inline-gap) var(--space-card-padding)" }}>
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center" style={{ gap: 8 }}>
-                                    <span className="text-foreground/50 text-label font-semibold">{fmtMoney(sp.amount)}</span>
+                                    <Money value={sp.amount} className="text-foreground/50 text-label font-semibold" />
                                     {sp.note && <span className="text-small text-foreground/35 font-medium">{sp.note}</span>}
                                   </div>
                                   <div className="flex items-center" style={{ gap: 6 }}>
@@ -1102,6 +1123,20 @@ function InvoiceDetailModal({ invoice, fmtMoney, onClose, onRecordPayment, onEdi
 /* ═══ Main Component ═══ */
 export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMode?: "base" | "customer" }) {
   const fmtMoney = makeFormatOrderMoney(so.currency, viewMode);
+  /* Wraps any PKR amount with an FX hover popover that surfaces the alternate
+   * currency and the active rate context. Renders a no-op when the order is
+   * already settled in base, matching the rest of the SO surfaces. */
+  const Money = ({ value, className }: { value: number; className?: string }) => (
+    <MoneyConvertTooltip
+      valuePKR={value}
+      customerCurrency={so.currency}
+      lockedRate={so.lockedRate}
+      lockedAt={so.lockedAt}
+      display={viewMode}
+    >
+      <span className={className}>{fmtMoney(value)}</span>
+    </MoneyConvertTooltip>
+  );
   const [invoices, setInvoices] = useState<Invoice[]>(() => generateMockInvoices(so));
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InvFilter>("all");
@@ -1207,7 +1242,7 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
               className="text-foreground/50"
               style={{ fontSize: "var(--text-small)", fontWeight: "var(--font-weight-medium)" }}
             >
-              {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? "s" : ""} · {fmtMoney(totalInvoiced)}
+              {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? "s" : ""} · <Money value={totalInvoiced} />
             </span>
           }
         >
@@ -1231,7 +1266,7 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
               <span className="text-small text-foreground font-semibold">Collection Progress</span>
               <span className="text-micro text-foreground/50 bg-border rounded-full px-1.5 py-[1px] min-w-[16px] text-center font-medium">{paidPct}%</span>
             </div>
-            <span className="text-small text-foreground/70 font-medium">{fmtMoney(totalPaid)} of {fmtMoney(totalInvoiced)}</span>
+            <span className="text-small text-foreground/70 font-medium"><Money value={totalPaid} /> of <Money value={totalInvoiced} /></span>
           </div>
           <div className="bg-card px-3 py-2.5">
             <div className="flex rounded-full overflow-hidden" style={{ height: 5, background: "var(--secondary)" }}>
@@ -1242,12 +1277,12 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
               <div className="flex items-center gap-1">
                 <div className="w-1.5 h-1.5 rounded-full bg-accent" />
                 <span className="text-micro text-foreground/50 font-medium">Paid</span>
-                <span className="text-small text-accent font-semibold">{fmtMoney(totalPaid)}</span>
+                <Money value={totalPaid} className="text-small text-accent font-semibold" />
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-1.5 h-1.5 rounded-full bg-chart-3/40" />
                 <span className="text-micro text-foreground/50 font-medium">Outstanding</span>
-                <span className="text-small text-chart-3 font-semibold">{fmtMoney(totalPending)}</span>
+                <Money value={totalPending} className="text-small text-chart-3 font-semibold" />
               </div>
             </div>
 
@@ -1261,7 +1296,7 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
                     </span>
                   </div>
                   <span className="text-micro text-destructive/60 font-medium">
-                    {fmtMoney(overdueInvoices.reduce((s, inv) => s + (inv.amount - inv.paidAmount), 0))} total
+                    <Money value={overdueInvoices.reduce((s, inv) => s + (inv.amount - inv.paidAmount), 0)} /> total
                   </span>
                 </div>
                 <div className="flex flex-col" style={{ gap: 3 }}>
@@ -1274,7 +1309,7 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
                           <span className="text-micro text-foreground/40">Due {inv.dueDate}</span>
                         </div>
                         <div className="flex items-center" style={{ gap: 6 }}>
-                          <span className="text-small text-destructive font-semibold">{fmtMoney(bal)}</span>
+                          <Money value={bal} className="text-small text-destructive font-semibold" />
                           <button
                             onClick={() => setMarkPaidInvoice(inv)}
                             className="inline-flex items-center rounded bg-accent text-accent-foreground hover:bg-accent/90 transition-colors opacity-60 group-hover:opacity-100 text-micro font-semibold"
@@ -1304,7 +1339,7 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
                     <span className="text-small text-foreground font-semibold">Invoices</span>
                     <span className="text-micro text-foreground/50 bg-border rounded-full px-1.5 py-[1px] min-w-[16px] text-center font-medium">{filteredInvoices.length}</span>
                   </button>
-                  <span className="text-small text-foreground font-medium">{fmtMoney(filteredInvoices.reduce((s, inv) => s + inv.amount, 0))}</span>
+                  <Money value={filteredInvoices.reduce((s, inv) => s + inv.amount, 0)} className="text-small text-foreground font-medium" />
                 </div>
                 {open && (
                   <div className="overflow-x-auto bg-card" id="lt-invoices">
@@ -1353,15 +1388,15 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
                               <td className="py-2 px-3 pr-2 text-small whitespace-nowrap">
                                 <span className={inv.status === "Overdue" ? "text-destructive font-medium" : "text-foreground/50"}>{inv.dueDate}</span>
                               </td>
-                              <td className="py-2 px-3 pr-2 text-small text-foreground whitespace-nowrap text-right font-medium">{fmtMoney(inv.amount)}</td>
+                              <td className="py-2 px-3 pr-2 text-small text-foreground whitespace-nowrap text-right font-medium"><Money value={inv.amount} /></td>
                               <td className="py-2 px-3 pr-2 text-small whitespace-nowrap text-right">
                                 {inv.paidAmount > 0 ? (
-                                  <span className="text-accent font-medium">{fmtMoney(inv.paidAmount)}</span>
+                                  <Money value={inv.paidAmount} className="text-accent font-medium" />
                                 ) : (
                                   <span className="text-foreground/20">&mdash;</span>
                                 )}
                                 {remaining > 0 && inv.paidAmount > 0 && (
-                                  <span className="text-chart-3/70 ml-1 text-micro">({fmtMoney(remaining)} due)</span>
+                                  <span className="text-chart-3/70 ml-1 text-micro">(<Money value={remaining} /> due)</span>
                                 )}
                               </td>
                               <td className="py-2 px-3 pr-2 hidden lg:table-cell">
@@ -1416,7 +1451,7 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
                     <span className="text-small text-foreground font-semibold">Payment Receipts</span>
                     <span className="text-micro text-foreground/50 bg-border rounded-full px-1.5 py-[1px] min-w-[16px] text-center font-medium">{receiptSection.length}</span>
                   </button>
-                  <span className="text-small text-foreground font-medium">{fmtMoney(receiptSection.reduce((s, inv) => s + inv.paidAmount, 0))}</span>
+                  <Money value={receiptSection.reduce((s, inv) => s + inv.paidAmount, 0)} className="text-small text-foreground font-medium" />
                 </div>
                 {open && (
                   <div className="overflow-x-auto bg-card" id="lt-receipts">
@@ -1447,7 +1482,7 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
                               </td>
                               <td className="py-2 px-3 pr-2 text-small text-foreground">{inv.paymentMethod || "\u2014"}</td>
                               <td className="py-2 px-3 pr-2 text-small text-foreground/50 whitespace-nowrap">{inv.paymentDate || "\u2014"}</td>
-                              <td className="py-2 px-3 pr-2 text-small text-accent whitespace-nowrap text-right font-medium">{fmtMoney(inv.paidAmount)}</td>
+                              <td className="py-2 px-3 pr-2 text-small text-accent whitespace-nowrap text-right font-medium"><Money value={inv.paidAmount} /></td>
                               <td className="py-2 px-3 pr-2">
                                 {inv.receiptFiles && inv.receiptFiles.length > 0 ? (
                                   <div className="flex items-center gap-1">
@@ -1492,6 +1527,10 @@ export function InvoicingTab({ so, viewMode = "base" }: { so: SalesOrder; viewMo
         <InvoiceDetailModal
           invoice={detailInvoice}
           fmtMoney={fmtMoney}
+          customerCurrency={so.currency}
+          lockedRate={so.lockedRate}
+          lockedAt={so.lockedAt}
+          viewMode={viewMode}
           onClose={() => setDetailInvoice(null)}
           onRecordPayment={() => { setDetailInvoice(null); setMarkPaidInvoice(detailInvoice); }}
           onEdit={() => { setDetailInvoice(null); setEditInvoice(detailInvoice); }}
@@ -1520,6 +1559,19 @@ export function InvoiceSidebarSummary({ so, viewMode = "base", onOpenInvoicing }
   const totalPending = totalInvoiced - totalPaid;
   const overdueCount = invoices.filter(inv => inv.status === "Overdue").length;
   const fmt = makeFormatOrderMoney(so.currency, viewMode);
+  /* Same FX hover wrapper used inside the main tab — keeps every amount in
+   * the sidebar summary consistent with the table when the user hovers. */
+  const Money = ({ value, style }: { value: number; style?: React.CSSProperties }) => (
+    <MoneyConvertTooltip
+      valuePKR={value}
+      customerCurrency={so.currency}
+      lockedRate={so.lockedRate}
+      lockedAt={so.lockedAt}
+      display={viewMode}
+    >
+      <span style={style}>{fmt(value)}</span>
+    </MoneyConvertTooltip>
+  );
 
   if (totalInvoiced === 0) return null;
 
@@ -1527,15 +1579,15 @@ export function InvoiceSidebarSummary({ so, viewMode = "base", onOpenInvoicing }
     <div className="flex flex-col" style={{ gap: 6 }}>
       <div className="flex items-center justify-between">
         <span className="text-foreground/50" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" }}>Invoiced</span>
-        <span className="text-foreground" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>{fmt(totalInvoiced)}</span>
+        <Money value={totalInvoiced} style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)", color: "var(--foreground)" }} />
       </div>
       <div className="flex items-center justify-between">
         <span className="text-foreground/50" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" }}>Paid</span>
-        <span className="text-accent" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>{fmt(totalPaid)}</span>
+        <Money value={totalPaid} style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)", color: "var(--accent)" }} />
       </div>
       <div className="flex items-center justify-between">
         <span className="text-foreground/50" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" }}>Outstanding (Balance)</span>
-        <span className="text-chart-3" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>{fmt(totalPending)}</span>
+        <Money value={totalPending} style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)", color: "var(--chart-3)" }} />
       </div>
       {overdueCount > 0 && (
         <div className="flex items-center justify-between rounded-lg" style={{ gap: 6, padding: "8px 12px", marginTop: 4, backgroundColor: "rgba(255, 69, 58, 0.08)" }}>

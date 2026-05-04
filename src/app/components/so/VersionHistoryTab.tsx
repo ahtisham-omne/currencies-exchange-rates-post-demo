@@ -36,6 +36,13 @@ interface VersionSnapshot {
   lineItems?: { id: string; description: string; qty: number; uom: string; unitPrice: number; total: number; thumbColor?: string; shippedQty?: number }[];
 }
 
+interface VersionRateSnapshot {
+  /** Base-per-1-customer rate locked when this version was sent. */
+  lockedRate?: number;
+  /** ISO timestamp when the rate was captured. */
+  lockedAt?: string;
+}
+
 interface Version {
   version: number;
   versionStatus: VersionStatus;
@@ -49,6 +56,9 @@ interface Version {
   changes: VersionChange[];
   isRevert?: boolean;
   revertedFrom?: number;
+  /** FX context locked at the time this version was sent. Drives the
+   *  "Restore locked rate from V{n}" option in the revert modal. */
+  rateSnapshot?: VersionRateSnapshot;
 }
 
 function generateMockVersions(so?: SalesOrder): Version[] {
@@ -58,6 +68,12 @@ function generateMockVersions(so?: SalesOrder): Version[] {
   })) : [];
   const grandTotal = lines.reduce((s, l) => s + l.total, 0);
   const warehouse = so?.warehouse || 'Warehouse A — Dallas';
+
+  // Anchor each historical rate snapshot to the order's locked rate so the
+  // "Restore locked rate from V{n}" option always shows a meaningful value
+  // even on PKR-anchored mocks. Earlier versions trail today's rate slightly
+  // so reverting visibly differs from "Refresh to today's rate".
+  const anchorRate = typeof so?.lockedRate === 'number' && so.lockedRate > 0 ? so.lockedRate : 278;
 
   return [
     {
@@ -72,6 +88,7 @@ function generateMockVersions(so?: SalesOrder): Version[] {
         { id: 'C303', type: 'rule-applied', action: 'Added', subject: 'Pricing Rule', subjectDetail: 'Government Contract Pricing', detail: 'Eligible items flagged', timestamp: '10:18 AM', user: 'Michael Tran' },
         { id: 'C304', type: 'adjustment-applied', action: 'Added', subject: 'Adjustment', subjectDetail: 'Volume adjustment', detail: '−3% on total', timestamp: '10:15 AM', user: 'Sarah Lindquist' },
       ],
+      rateSnapshot: { lockedRate: +(anchorRate * 0.998).toFixed(4), lockedAt: '2026-02-05T10:30:00.000Z' },
     },
     {
       version: 2, versionStatus: 'cleared',
@@ -85,6 +102,7 @@ function generateMockVersions(so?: SalesOrder): Version[] {
         { id: 'C206', type: 'rule-applied', action: 'Added', subject: 'Pricing Rule', subjectDetail: 'Fleet Volume Pricing', detail: '−$1,000/unit on 2+ units', timestamp: '3:12 PM', user: 'Sarah Lindquist' },
         { id: 'C207', type: 'config-changed', action: 'Changed', subject: 'Payment Terms', detail: 'Net 30 → Net 45', timestamp: '2:40 PM', user: 'Sarah Lindquist' },
       ],
+      rateSnapshot: { lockedRate: +(anchorRate * 0.992).toFixed(4), lockedAt: '2026-01-28T15:15:00.000Z' },
     },
     {
       version: 1, versionStatus: 'cleared',
@@ -97,6 +115,7 @@ function generateMockVersions(so?: SalesOrder): Version[] {
         { id: 'C103', type: 'customer-changed', action: 'Changed', subject: 'Customer', detail: so?.customer || 'Customer', timestamp: '9:55 AM', user: 'Sarah Lindquist' },
         { id: 'C104', type: 'config-changed', action: 'Changed', subject: 'Payment Terms', detail: so?.paymentTerms || 'Net 30', timestamp: '9:50 AM', user: 'Sarah Lindquist' },
       ],
+      rateSnapshot: { lockedRate: +(anchorRate * 0.985).toFixed(4), lockedAt: '2026-01-22T14:15:00.000Z' },
     },
   ];
 }
@@ -140,7 +159,7 @@ export function VersionHistoryTab({ so, viewMode = "base" }: VersionHistoryTabPr
   const lastApprovedVersionNum = latestCleared?.version ?? 1;
   const latestVersionNum = versions[0]?.version ?? 1;
 
-  const [draftConflictRevert, setDraftConflictRevert] = useState<{ toVersion: number; reason: string } | null>(null);
+  const [draftConflictRevert, setDraftConflictRevert] = useState<{ toVersion: number; reason: string; rateChoice: 'locked' | 'refresh' } | null>(null);
 
   React.useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -169,34 +188,58 @@ export function VersionHistoryTab({ so, viewMode = "base" }: VersionHistoryTabPr
     });
   };
 
-  const doRevert = (toVersion: number, reason: string, overwriteExisting: boolean) => {
+  const doRevert = (toVersion: number, reason: string, overwriteExisting: boolean, rateChoice: 'locked' | 'refresh') => {
     const source = versions.find(v => v.version === toVersion)!;
     const latestVer = versions[0];
     const hasShipped = source.snapshot.lineItems?.some(li => (li.shippedQty || 0) > 0) || false;
 
+    // Pick the rate snapshot the new draft should carry forward. "locked"
+    // restores the rate captured in V{toVersion}; "refresh" stamps today's
+    // rate (mid-market is the default for SO reverts, mirroring Quotes).
+    const upperCustomer = (so.currency || '').toUpperCase();
+    const todayRate = upperCustomer && upperCustomer !== BASE_CURRENCY
+      ? convertBetween(1, upperCustomer, BASE_CURRENCY)
+      : undefined;
+    const newRateSnapshot: VersionRateSnapshot | undefined = rateChoice === 'locked'
+      ? source.rateSnapshot
+      : (typeof todayRate === 'number'
+          ? { lockedRate: todayRate, lockedAt: new Date().toISOString() }
+          : undefined);
+
     if (overwriteExisting && latestVer.versionStatus === 'draft') {
-      const updated: Version = { ...latestVer, reason: reason || `Reverted to Version ${toVersion}`, isRevert: true, revertedFrom: toVersion, snapshot: { ...source.snapshot }, changes: [{ id: `C${Date.now()}`, type: 'config-changed', action: 'Changed' as const, subject: 'Reverted Draft', detail: `Restored from V${toVersion}`, subjectDetail: reason || undefined, timestamp: 'Just now', user: 'Sarah Lindquist' }] };
+      const updated: Version = { ...latestVer, reason: reason || `Reverted to Version ${toVersion}`, isRevert: true, revertedFrom: toVersion, snapshot: { ...source.snapshot }, rateSnapshot: newRateSnapshot, changes: [{ id: `C${Date.now()}`, type: 'config-changed', action: 'Changed' as const, subject: 'Reverted Draft', detail: `Restored from V${toVersion}`, subjectDetail: reason || undefined, timestamp: 'Just now', user: 'Sarah Lindquist' }] };
       setVersions(prev => [updated, ...prev.slice(1)]);
       setExpandedVersions(new Set([latestVer.version]));
-      toast.success(`Updated V${latestVer.version} Draft with data from V${toVersion}`, { description: 'Draft content replaced.', position: 'top-right' });
+      toast.success(`Updated V${latestVer.version} Draft with data from V${toVersion}`, {
+        description: rateChoice === 'refresh'
+          ? "Draft content replaced. Today's rate applied."
+          : 'Draft content replaced. Locked rate restored.',
+        position: 'top-right',
+      });
     } else {
       const newV = latestVer.version + 1;
-      const newVersion: Version = { ...source, version: newV, versionStatus: 'draft', clearedAt: undefined, sentBy: 'Sarah Lindquist', reason: reason || `Reverted to Version ${toVersion}${hasShipped ? ' (shipped items locked)' : ''}`, isRevert: true, revertedFrom: toVersion, snapshot: { ...source.snapshot }, changes: [{ id: `C${Date.now()}`, type: 'config-changed', action: 'Changed' as const, subject: 'Reverted to Draft', detail: `Created from V${toVersion}`, subjectDetail: reason || undefined, timestamp: 'Just now', user: 'Sarah Lindquist' }] };
+      const newVersion: Version = { ...source, version: newV, versionStatus: 'draft', clearedAt: undefined, sentBy: 'Sarah Lindquist', reason: reason || `Reverted to Version ${toVersion}${hasShipped ? ' (shipped items locked)' : ''}`, isRevert: true, revertedFrom: toVersion, snapshot: { ...source.snapshot }, rateSnapshot: newRateSnapshot, changes: [{ id: `C${Date.now()}`, type: 'config-changed', action: 'Changed' as const, subject: 'Reverted to Draft', detail: `Created from V${toVersion}`, subjectDetail: reason || undefined, timestamp: 'Just now', user: 'Sarah Lindquist' }] };
       setVersions(prev => [newVersion, ...prev]);
       setExpandedVersions(new Set([newV]));
-      toast.success(`Reverted to Version ${toVersion} as new Draft (v${newV})`, { description: hasShipped ? 'Shipped items included as locked.' : 'Submit when ready.', position: 'top-right' });
+      const desc = rateChoice === 'refresh'
+        ? "Created as a new draft with today's rate applied."
+        : 'Created as a new draft with the locked rate restored.';
+      toast.success(`Reverted to Version ${toVersion} as new Draft (v${newV})`, {
+        description: hasShipped ? `${desc} Shipped items included as locked.` : desc,
+        position: 'top-right',
+      });
     }
     setShowRevertConfirm(null);
     setDraftConflictRevert(null);
   };
 
-  const handleRevert = (toVersion: number, reason: string) => {
+  const handleRevert = (toVersion: number, reason: string, rateChoice: 'locked' | 'refresh') => {
     const latestVer = versions[0];
     if (latestVer && latestVer.versionStatus === 'draft') {
-      setDraftConflictRevert({ toVersion, reason });
+      setDraftConflictRevert({ toVersion, reason, rateChoice });
       return;
     }
-    doRevert(toVersion, reason, false);
+    doRevert(toVersion, reason, false, rateChoice);
   };
 
   const changeTypeConfig: Record<string, { icon: any; color: string; bg: string }> = {
@@ -623,9 +666,10 @@ export function VersionHistoryTab({ so, viewMode = "base" }: VersionHistoryTabPr
           nextVersion={versions[0].version + 1}
           hasShippedItems={versions.find(v => v.version === showRevertConfirm)?.snapshot.lineItems?.some(li => (li.shippedQty || 0) > 0) || false}
           customerCurrency={customerCurrency}
-          versionLockedRate={lockedRate}
+          sourceRateSnapshot={versions.find(v => v.version === showRevertConfirm)?.rateSnapshot}
+          orderLockedRate={lockedRate}
           onClose={() => setShowRevertConfirm(null)}
-          onConfirm={(reason: string) => handleRevert(showRevertConfirm, reason)}
+          onConfirm={(reason: string, rateChoice: 'locked' | 'refresh') => handleRevert(showRevertConfirm, reason, rateChoice)}
         />
       )}
 
@@ -635,8 +679,8 @@ export function VersionHistoryTab({ so, viewMode = "base" }: VersionHistoryTabPr
           existingDraftVersion={versions[0].version}
           revertFromVersion={draftConflictRevert.toVersion}
           onClose={() => setDraftConflictRevert(null)}
-          onOverwrite={() => doRevert(draftConflictRevert.toVersion, draftConflictRevert.reason, true)}
-          onCreateNew={() => doRevert(draftConflictRevert.toVersion, draftConflictRevert.reason, false)}
+          onOverwrite={() => doRevert(draftConflictRevert.toVersion, draftConflictRevert.reason, true, draftConflictRevert.rateChoice)}
+          onCreateNew={() => doRevert(draftConflictRevert.toVersion, draftConflictRevert.reason, false, draftConflictRevert.rateChoice)}
         />
       )}
     </div>
@@ -771,35 +815,45 @@ function CompareView({ v1, v2, formatCurrency, onClose, customerCurrency, locked
 }
 
 // ── Revert Confirm Modal ──────────────────────────────────────────
-function RevertConfirmModal({ version, nextVersion, hasShippedItems, customerCurrency, versionLockedRate, onClose, onConfirm }: {
+function RevertConfirmModal({ version, nextVersion, hasShippedItems, customerCurrency, sourceRateSnapshot, orderLockedRate, onClose, onConfirm }: {
   version: number; nextVersion: number; hasShippedItems: boolean;
-  /** Customer currency code (e.g. USD). Drives whether the FX disclosure appears. */
+  /** Customer currency code (e.g. USD). Drives whether the FX choice appears. */
   customerCurrency?: string;
-  /** Order-level rate locked at send time (BASE per 1 customer unit). Used as
-   *  the "vs locked rate" reference in the drift annotation. */
-  versionLockedRate?: number;
-  onClose: () => void; onConfirm: (reason: string) => void;
+  /** Rate snapshot captured when the source version was sent. Drives the
+   *  "Restore locked rate from V{n}" option. */
+  sourceRateSnapshot?: VersionRateSnapshot;
+  /** Order-level locked rate fallback used when the source version doesn't
+   *  carry its own snapshot. */
+  orderLockedRate?: number;
+  onClose: () => void; onConfirm: (reason: string, rateChoice: 'locked' | 'refresh') => void;
 }) {
   const [reason, setReason] = useState('');
-  /* Reverts always re-lock at today's Mid-market rate, mirroring the Quotes
-   * module's RevertConfirmModal. The indicator below always reads
-   * "Mid-market" and uses the Mid-market color regardless of the active page
-   * rate. */
+  const [rateChoice, setRateChoice] = useState<'locked' | 'refresh'>('locked');
+
   const upperCustomer = customerCurrency?.toUpperCase();
   const showFx = !!upperCustomer && upperCustomer !== BASE_CURRENCY;
-  const todayRate = showFx ? convertBetween(1, upperCustomer, BASE_CURRENCY) : 0;
-  const lockedForCompare = showFx
-    ? (versionLockedRate ?? +(todayRate * 0.988).toFixed(4))
-    : 0;
-  const drift = showFx && lockedForCompare
-    ? +(((todayRate - lockedForCompare) / lockedForCompare) * 100).toFixed(1)
-    : 0;
   const baseSym = getLibraryCurrency(BASE_CURRENCY)?.symbol ?? BASE_CURRENCY;
-  const REVERT_RATE_HEX = '#7c3aed';
+
+  // Locked rate to restore. Prefer the version's own snapshot; fall back to
+  // the order's locked rate so the option still shows on records that
+  // pre-date per-version snapshotting.
+  const lockedRateToRestore = sourceRateSnapshot?.lockedRate ?? orderLockedRate;
+  const lockedAtToRestore = sourceRateSnapshot?.lockedAt;
+  const lockedDateLabel = (() => {
+    if (!lockedAtToRestore) return null;
+    try {
+      return new Date(lockedAtToRestore).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+    } catch { return null; }
+  })();
+
+  const todayRateValue = showFx ? convertBetween(1, upperCustomer!, BASE_CURRENCY) : 0;
+
+  const showRateChoice = showFx && typeof lockedRateToRestore === 'number';
+
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)' }} onClick={onClose} />
-      <div style={{ position: 'relative', backgroundColor: '#FFFFFF', borderRadius: '12px', width: '440px', boxShadow: '0 16px 48px rgba(0,0,0,0.12)', fontFamily: 'Inter, system-ui, sans-serif' }}>
+      <div style={{ position: 'relative', backgroundColor: '#FFFFFF', borderRadius: '12px', width: '480px', boxShadow: '0 16px 48px rgba(0,0,0,0.12)', fontFamily: 'Inter, system-ui, sans-serif' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #E5E7EB' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <RotateCcw style={{ width: '16px', height: '16px', color: '#D97706' }} />
@@ -820,45 +874,62 @@ function RevertConfirmModal({ version, nextVersion, hasShippedItems, customerCur
               <span style={{ fontSize: '11px', color: '#065F46', lineHeight: '1.3' }}>Already-shipped items will be included as non-editable (locked) in the new draft.</span>
             </div>
           )}
-          {/* FX disclosure — reverts always re-lock at today's Mid-market
-              rate. Mirrors the Quotes module's RevertConfirmModal. */}
-          {showFx && (
-            <div
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: 10,
-                padding: '10px 12px', marginBottom: 14,
-                borderRadius: 8,
-                border: `1px solid color-mix(in srgb, ${REVERT_RATE_HEX} 22%, transparent)`,
-                backgroundColor: `color-mix(in srgb, ${REVERT_RATE_HEX} 6%, transparent)`,
-              }}
-            >
-              <div
-                style={{
-                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: `color-mix(in srgb, ${REVERT_RATE_HEX} 14%, transparent)`,
-                  marginTop: 1,
-                }}
-              >
-                <Send style={{ width: 11, height: 11, color: REVERT_RATE_HEX }} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1F2937', lineHeight: 1.3, marginBottom: 3 }}>
-                  Today's Mid-market rate will be applied to this revert
-                </div>
-                <div style={{ fontSize: 11, color: '#4B5563', lineHeight: 1.5 }} className="tabular-nums">
-                  {todayRate
-                    ? <>1 {upperCustomer} = {baseSym} {todayRate.toFixed(2)} {BASE_CURRENCY}</>
-                    : 'The latest live mid-market rate will be locked when you confirm.'}
-                  {drift !== 0 && lockedForCompare > 0 && (
-                    <span style={{ marginLeft: 6, color: drift > 0 ? '#92400E' : '#065F46' }}>
-                      ({drift > 0 ? '+' : ''}{drift}% vs V{version} locked rate of {baseSym} {lockedForCompare.toFixed(2)})
-                    </span>
-                  )}
-                </div>
+
+          {/* Rate choice — mirrors the Purchase Orders module so users can
+              pick between restoring the historical locked rate or refreshing
+              to today's market snapshot. */}
+          {showRateChoice && (
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: 8, lineHeight: 1 }}>
+                Currency rate
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {([
+                  {
+                    key: 'locked' as const,
+                    title: `Restore locked rate from V${version}`,
+                    sub: `1 ${upperCustomer} = ${baseSym} ${(lockedRateToRestore as number).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${BASE_CURRENCY}${lockedDateLabel ? ` · locked on ${lockedDateLabel}` : ''}`,
+                  },
+                  {
+                    key: 'refresh' as const,
+                    title: "Refresh to today's rate",
+                    sub: showFx && todayRateValue
+                      ? `1 ${upperCustomer} = ${baseSym} ${todayRateValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${BASE_CURRENCY} · recompute against today's market snapshot`
+                      : "Recompute totals against today's market snapshot",
+                  },
+                ]).map((opt) => {
+                  const active = rateChoice === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setRateChoice(opt.key)}
+                      style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px',
+                        borderRadius: 8, border: `1px solid ${active ? '#1B6EF3' : '#E5E7EB'}`,
+                        backgroundColor: active ? '#EFF6FF' : '#FFFFFF',
+                        textAlign: 'left', cursor: 'pointer', fontFamily: 'Inter, system-ui, sans-serif',
+                      }}
+                    >
+                      <span style={{
+                        marginTop: 2, width: 14, height: 14, borderRadius: '50%',
+                        border: `1.5px solid ${active ? '#1B6EF3' : '#D1D5DB'}`,
+                        backgroundColor: active ? '#1B6EF3' : '#FFFFFF',
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        {active && <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#FFFFFF' }} />}
+                      </span>
+                      <span style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#111827', lineHeight: 1.3 }}>{opt.title}</span>
+                        <span className="tabular-nums" style={{ fontSize: 11, color: '#6B7280', lineHeight: 1.3 }}>{opt.sub}</span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
+
           <label style={{ fontSize: '11px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>
             Reason for revert <span style={{ color: '#9CA3AF', fontWeight: 400 }}>(optional)</span>
           </label>
@@ -870,7 +941,7 @@ function RevertConfirmModal({ version, nextVersion, hasShippedItems, customerCur
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '12px 20px', borderTop: '1px solid #E5E7EB' }}>
           <button onClick={onClose} style={{ height: '32px', padding: '0 14px', fontSize: '13px', fontWeight: 500, color: '#6B7280', backgroundColor: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Inter, system-ui, sans-serif' }}>Cancel</button>
-          <button onClick={() => onConfirm(reason.trim())} style={{ height: '32px', padding: '0 16px', fontSize: '13px', fontWeight: 500, color: '#FFFFFF', backgroundColor: '#D97706', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontFamily: 'Inter, system-ui, sans-serif', transition: 'background-color 150ms' }}>
+          <button onClick={() => onConfirm(reason.trim(), rateChoice)} style={{ height: '32px', padding: '0 16px', fontSize: '13px', fontWeight: 500, color: '#FFFFFF', backgroundColor: '#D97706', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontFamily: 'Inter, system-ui, sans-serif', transition: 'background-color 150ms' }}>
             <RotateCcw style={{ width: '14px', height: '14px' }} />Revert to V{version}
           </button>
         </div>

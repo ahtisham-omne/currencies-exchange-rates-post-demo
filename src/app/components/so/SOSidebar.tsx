@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, type CSSProperties, type ReactNode } from 
 import {
   Pencil, ChevronDown, Users, DollarSign, MapPinned, CalendarDays,
   CreditCard, Truck, Clock, AlertCircle, X,
-  UserCircle, Search, Star,
+  UserCircle, Search, Star, Lock,
 } from "lucide-react";
 import type { SalesOrder, SalesRep, SOStatus } from "./types";
 import { useSOStore } from "./store";
@@ -21,6 +21,7 @@ import {
   getLibraryCurrency,
   rateTypeLabel,
   formatRate,
+  formatMoney,
 } from "@/app/data/currencyLibrary";
 import { useRateContext } from "@/app/context/RateContext";
 import { CurrencyFlag } from "../currency/CurrencyFlag";
@@ -28,16 +29,24 @@ import { RATE_TYPE_COLORS } from "../currency/MarketCorporateToggle";
 import { OrderMoney } from "../currency/OrderMoney";
 
 /* ── Currency block at the top of Order Summary — mirrors the Quotes module's
- * summary FX section. Shows rate-type pill, customer-currency line, base-
- * currency line, the active rate, and a link to the configurator.
+ * summary FX section. Shows rate-type pill (and a Locked chip once the rate
+ * is captured), customer-currency line and base-currency line each with the
+ * Grand Total converted into that currency, the active rate, and a link to
+ * the configurator.
  * ─────────────────────────────────────────────────────────────────────── */
 function OrderSummaryCurrencyBlock({
   customerCurrency,
   lockedRate,
+  lockedAt,
+  grandTotalPKR,
   onOpenConfig,
 }: {
   customerCurrency?: string;
   lockedRate?: number;
+  lockedAt?: string;
+  /** Order Grand Total in base currency (PKR). Used to render the converted
+   *  amount on each currency row. */
+  grandTotalPKR: number;
   onOpenConfig?: () => void;
 }) {
   const { rateType } = useRateContext();
@@ -53,6 +62,16 @@ function OrderSummaryCurrencyBlock({
   const customerSym = cur?.symbol ?? code;
   const baseSym = baseCur.symbol ?? BASE_CURRENCY;
 
+  // Customer-side amount honors the locked rate when present so the row
+  // matches what the Grand Total shows in customer view.
+  const customerTotal = typeof lockedRate === "number"
+    ? grandTotalPKR / lockedRate
+    : convertBetween(grandTotalPKR, BASE_CURRENCY, code);
+
+  const lockedAtDisplay = lockedAt
+    ? new Date(lockedAt).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
+    : null;
+
   return (
     <div
       style={{
@@ -63,32 +82,44 @@ function OrderSummaryCurrencyBlock({
         marginBottom: 4,
       }}
     >
-      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 8, gap: 6 }}>
         <span style={{ fontSize: 10, fontWeight: 600, color: "#9CA3AF", letterSpacing: "0.06em", textTransform: "uppercase" }}>
           Currency
         </span>
-        <span
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
-          style={{ backgroundColor: `${colors.hex}10`, color: colors.hex, border: `1px solid ${colors.hex}30`, fontSize: 10, fontWeight: 600 }}
-        >
-          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colors.hex }} />
-          {rateTypeLabel(rateType)}
-        </span>
+        <div className="inline-flex items-center" style={{ gap: 6 }}>
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: `${colors.hex}10`, color: colors.hex, border: `1px solid ${colors.hex}30`, fontSize: 10, fontWeight: 600 }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colors.hex }} />
+            {rateTypeLabel(rateType)}
+          </span>
+          {typeof lockedRate === "number" && (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
+              style={{ backgroundColor: "#ECFDF5", color: "#047857", border: "1px solid #A7F3D0", fontSize: 10, fontWeight: 600 }}
+              title={lockedAtDisplay ? `Locked on ${lockedAtDisplay}` : "Rate locked"}
+            >
+              <Lock style={{ width: 10, height: 10 }} />
+              Locked
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col" style={{ gap: 6 }}>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between" style={{ gap: 8 }}>
           <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 400 }}>Customer pays in</span>
-          <span className="inline-flex items-center gap-1.5" style={{ fontSize: 12, color: "#1F2937", fontWeight: 600 }}>
+          <span className="inline-flex items-center gap-1.5 tabular-nums" style={{ fontSize: 12, color: "#1F2937", fontWeight: 600 }}>
             {cur && <CurrencyFlag currency={cur} size={14} />}
-            {customerSym} {code}
+            {customerSym} {formatMoney(customerTotal, code)} {code}
           </span>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between" style={{ gap: 8 }}>
           <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 400 }}>Base equivalent</span>
-          <span className="inline-flex items-center gap-1.5" style={{ fontSize: 12, color: "#1F2937", fontWeight: 600 }}>
+          <span className="inline-flex items-center gap-1.5 tabular-nums" style={{ fontSize: 12, color: "#1F2937", fontWeight: 600 }}>
             <CurrencyFlag currency={baseCur} size={14} />
-            {baseSym} {BASE_CURRENCY}
+            {baseSym} {formatMoney(grandTotalPKR, BASE_CURRENCY)} {BASE_CURRENCY}
           </span>
         </div>
         <div className="flex items-center justify-between">
@@ -942,6 +973,8 @@ export function SOSidebar({ so, viewMode = "base", onOpenInvoicing, onOpenCurren
           <OrderSummaryCurrencyBlock
             customerCurrency={so.currency}
             lockedRate={so.lockedRate}
+            lockedAt={so.lockedAt}
+            grandTotalPKR={grandTotal}
             onOpenConfig={onOpenCurrencyConfig}
           />
           {/* Subtotal */}
