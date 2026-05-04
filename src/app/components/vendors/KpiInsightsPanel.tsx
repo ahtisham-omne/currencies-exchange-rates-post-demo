@@ -27,7 +27,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { Vendor } from "../../data/vendors";
-import { BASE_CURRENCY, convertToBase, getLibraryCurrency, rateSnapshotFor } from "../../data/currencyLibrary";
+import { BASE_CURRENCY, convertToBase, getLibraryCurrency } from "../../data/currencyLibrary";
 
 /* ─── KPI definition type ─── */
 export interface KpiDefinition {
@@ -183,13 +183,13 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
   // full source / sync / last-synced context lives in the tooltip.
   {
     key: "market_rate",
-    label: "Market Rate",
+    label: "Mid-market Rate",
     category: "FX",
     iconName: "RefreshCw",
     iconBg: "#F5F3FF",
     iconColor: "#7C3AED",
     subtitle: "Live mid-market rates",
-    tooltip: "Live mid-market rates from Open Exchange Rates. Refreshed every 15 minutes. Display-only — drives the partner-currency hover conversions on the table.",
+    tooltip: "Live interbank rates sourced from Open Exchange Rates and synced automatically every 24 hours. The mid-market rate represents the midpoint between the global buy and sell prices of a currency pair.\n\nUpdated as of 30th April at 19:30 pm",
   },
   {
     key: "corporate_rate",
@@ -199,11 +199,11 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     iconBg: "#FFFBEB",
     iconColor: "#D97706",
     subtitle: "Treasury-locked book rates",
-    tooltip: "Corporate book rates from Corporate Treasury (Q1 FY26). Refreshed quarterly — manual. Display-only — matches what finance uses for accruals and reporting.",
+    tooltip: "Fixed rates manually set by your team for specific currency pairs. A corporate rate stays in effect until someone on your team updates it, giving you a stable and predictable value for budgeting, intercompany transfers, and consistent reporting across documents.\n\nUpdated as of 23rd April at 12:00 pm",
   },
 ];
 
-/* Default active KPIs — Market Rate is on by default; Corporate Rate is hidden
+/* Default active KPIs — Mid-market Rate is on by default; Corporate Rate is hidden
    and added via the "Add Insights" drawer like any optional KPI. */
 export const DEFAULT_ACTIVE_KPIS = [
   "total_credit_limit",
@@ -265,31 +265,12 @@ export function computeKpiValue(key: string, vendors: Vendor[]): string {
       return avg.toFixed(1);
     }
     case "market_rate":
-      return formatRelative(rateSnapshotFor("market").lastSyncAt);
+      return "Updated as of 30th April at 19:30 pm";
     case "corporate_rate":
-      return formatRelativeDays(rateSnapshotFor("corporate").lastSyncAt);
+      return "Updated as of 23rd April at 12:00 pm";
     default:
       return "–";
   }
-}
-
-function formatRelative(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const diffSec = Math.max(0, Math.round(diffMs / 1000));
-  if (diffSec < 45) return "Just now";
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `${diffMin} min ago`;
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? "" : "s"} ago`;
-  const diffDay = Math.round(diffHr / 24);
-  return `${diffDay} day${diffDay === 1 ? "" : "s"} ago`;
-}
-
-function formatRelativeDays(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const days = Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
-  if (days === 0) return "today";
-  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 /* ─── Icon mapper ─── */
@@ -562,11 +543,14 @@ export function KpiInsightsPanel({
                         </div>
                       </div>
 
-                      {/* Value */}
+                      {/* Value — rate KPIs use the long static "Updated as of …"
+                          string, so shrink the font and allow it to wrap. */}
                       <p
-                        className={`text-[15px] mt-1 transition-colors ${
-                          isActive ? "text-foreground" : "text-foreground/80"
-                        }`}
+                        className={`mt-1 transition-colors ${
+                          kpi.key === "market_rate" || kpi.key === "corporate_rate"
+                            ? "text-[12px] leading-snug"
+                            : "text-[15px]"
+                        } ${isActive ? "text-foreground" : "text-foreground/80"}`}
                         style={{ fontWeight: 550 }}
                       >
                         {value}

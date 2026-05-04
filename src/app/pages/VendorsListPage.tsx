@@ -3394,7 +3394,7 @@ function DraggableListKpiCard({ index, kpiKey, label, value, iconName, tooltip, 
                       <Info className="w-3 h-3 text-slate-300 hover:text-slate-400 transition-colors cursor-help" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom" sideOffset={6} className="max-w-[220px] text-[11px] z-[300]">
+                  <TooltipContent side="bottom" sideOffset={6} className="max-w-[260px] text-[11px] z-[300] whitespace-pre-line">
                     {tooltip}
                   </TooltipContent>
                 </Tooltip>
@@ -3403,10 +3403,15 @@ function DraggableListKpiCard({ index, kpiKey, label, value, iconName, tooltip, 
           </div>
           {iconName && <KpiIcon name={iconName} className="w-3.5 h-3.5 shrink-0" style={{ color: "#94A3B8" }} />}
         </div>
-        {/* Value */}
-        <div className="flex items-baseline gap-1.5">
-          <p className="text-[15px] text-slate-700 tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{value}</p>
-        </div>
+        {/* Value — rate KPIs render a long static "Updated as of …" label, so
+            allow wrapping and use a smaller font; other KPIs stay nowrap+15px. */}
+        {kpiKey === "market_rate" || kpiKey === "corporate_rate" ? (
+          <div className="text-[12px] text-slate-700 tracking-tight" style={{ fontWeight: 600, lineHeight: 1.3 }}>{value}</div>
+        ) : (
+          <div className="flex items-baseline gap-1.5">
+            <p className="text-[15px] text-slate-700 tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{value}</p>
+          </div>
+        )}
       </div>
       {/* Remove button — bottom-right on hover */}
       {onRemove && (
