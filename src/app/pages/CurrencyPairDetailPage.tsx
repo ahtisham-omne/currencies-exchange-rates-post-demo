@@ -1,6 +1,7 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { motion } from "framer-motion";
 import { useExchangeRates } from "../context/ExchangeRateContext";
 import {
   generatePairDetail,
@@ -658,92 +659,101 @@ function CustomizeKpiPanel({ open, onOpenChange, activeKpis, onToggleKpi, detail
 const ttStyle = { borderRadius: 8, border: "1px solid #E2E8F0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 };
 
 // ── ContentCard ──
-function ContentCard({ title, icon: Icon, children, action, tooltipText, dragRef, isDragging, currentSize, onSizeChange, onRemove }: {
+function ContentCard({ title, icon: Icon, children, action, tooltipText, currentSize, onSizeChange, onRemove, isDragging, isOver }: {
   title: string;
   icon?: React.ElementType;
   children: React.ReactNode;
   action?: React.ReactNode;
   tooltipText?: string;
-  dragRef?: (node: HTMLElement | null) => void;
-  isDragging?: boolean;
   currentSize?: "sm" | "md" | "lg";
   onSizeChange?: (size: "sm" | "md" | "lg") => void;
   onRemove?: () => void;
+  isDragging?: boolean;
+  isOver?: boolean;
 }) {
+  const [hovered, setHovered] = useState(false);
   return (
     <div
-      className="group rounded-xl border border-[#E2E8F0] bg-white overflow-hidden h-full flex flex-col shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)] transition-shadow"
-      style={{ opacity: isDragging ? 0.4 : 1 }}
+      className={`rounded-xl border bg-white overflow-hidden h-full flex flex-col transition-[box-shadow,border-color] duration-300 ${
+        isOver && !isDragging
+          ? "border-primary/30 shadow-[0_0_0_2px_rgba(10,119,255,0.10)]"
+          : "border-border shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)]"
+      }`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      <div className="px-4 py-2.5 border-b border-[#F1F5F9] flex items-center justify-between gap-2 shrink-0">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {dragRef && (
-            <button
-              type="button"
-              ref={dragRef as React.Ref<HTMLButtonElement>}
-              className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 rounded hover:bg-[#F1F5F9] transition-colors opacity-0 group-hover:opacity-100"
-              aria-label="Drag widget"
-              onClick={(e) => e.preventDefault()}
-            >
-              <GripVertical className="w-3.5 h-3.5 text-[#94A3B8]" />
-            </button>
-          )}
+      {/* Header — entire bar is the drag handle */}
+      <div className="px-4 py-2.5 border-b border-muted flex items-center justify-between shrink-0 cursor-grab active:cursor-grabbing select-none">
+        <div className="flex items-center gap-2 pointer-events-none min-w-0">
           {Icon && (
-            <div className="w-7 h-7 rounded-lg bg-[#EDF4FF] flex items-center justify-center shrink-0">
-              <Icon className="w-3.5 h-3.5 text-[#0A77FF]" />
+            <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center shrink-0">
+              <Icon className="w-3.5 h-3.5 text-primary" />
             </div>
           )}
-          <span className="text-[13px] text-[#0F172A] truncate" style={{ fontWeight: 600 }}>{title}</span>
+          <span className="text-[13px] text-foreground truncate" style={{ fontWeight: 600 }}>{title}</span>
           {tooltipText && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button type="button" className="inline-flex shrink-0" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-                    <Info className="w-3.5 h-3.5 text-[#CBD5E1] hover:text-[#94A3B8] transition-colors cursor-help" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" sideOffset={6} className="max-w-[300px] text-[11px] z-[300] whitespace-pre-line">{tooltipText}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <span className="pointer-events-auto">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" className="inline-flex" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+                      <Info className="w-3 h-3 text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={6} className="max-w-[300px] text-[11px] z-[300] whitespace-pre-line">{tooltipText}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {action && <div>{action}</div>}
-          {onSizeChange && currentSize && (
-            <div className="flex items-center gap-px p-0.5 rounded-md bg-[#F1F5F9] opacity-0 group-hover:opacity-100 transition-opacity">
-              {(["sm", "md", "lg"] as const).map((s) => {
-                const fullLabel = s === "sm" ? "Small" : s === "md" ? "Medium" : "Large";
-                return (
+        <div className="flex items-center gap-2 pointer-events-auto shrink-0">
+          {/* Size toggle — slides in from right on hover */}
+          <div
+            className={`flex items-center transition-all duration-200 ease-out pointer-events-auto ${
+              hovered && onSizeChange ? "opacity-100 translate-x-0" : "opacity-0 translate-x-2 pointer-events-none"
+            }`}
+          >
+            {onSizeChange && currentSize && (
+              <div className="flex items-center h-7 rounded-lg border border-border bg-slate-50 p-0.5 gap-0.5">
+                {(["sm", "md", "lg"] as const).map((s) => (
                   <button
                     key={s}
-                    type="button"
-                    onClick={() => onSizeChange(s)}
-                    className={`px-2 py-0.5 rounded text-[10.5px] transition-all duration-100 cursor-pointer ${
-                      currentSize === s ? "bg-white text-[#0F172A] shadow-sm" : "text-[#94A3B8] hover:text-[#64748B]"
+                    onClick={(e) => { e.stopPropagation(); onSizeChange(s); }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className={`h-6 px-2.5 rounded-md text-[11px] cursor-pointer transition-all duration-150 ${
+                      currentSize === s
+                        ? "bg-white text-primary shadow-sm border border-border"
+                        : "text-slate-400 hover:text-slate-700 hover:bg-white/60 border border-transparent"
                     }`}
                     style={{ fontWeight: currentSize === s ? 600 : 500 }}
-                    aria-label={`Set widget size ${fullLabel}`}
+                    aria-label={`Set widget size ${s === "sm" ? "Small" : s === "md" ? "Medium" : "Large"}`}
                     aria-pressed={currentSize === s}
                   >
-                    {fullLabel}
+                    {s === "sm" ? "Small" : s === "md" ? "Medium" : "Large"}
                   </button>
-                );
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
+          {action && <span className="pointer-events-auto">{action}</span>}
+          {/* Remove button — fades in on hover, inline in header flow */}
           {onRemove && (
             <button
               type="button"
-              onClick={onRemove}
-              className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[#94A3B8] hover:text-[#DC2626] hover:bg-[#FEF2F2] transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
+              onClick={(e) => { e.stopPropagation(); onRemove(); toast.success(`Removed "${title}" — re-enable in Customize Widgets`); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className={`group/rm w-7 h-7 rounded-md flex items-center justify-center text-slate-400 transition-all duration-150 cursor-pointer hover:bg-red-100 hover:text-destructive ${
+                hovered ? "opacity-100" : "opacity-0 pointer-events-none"
+              }`}
+              title={`Remove ${title}`}
               aria-label={`Remove ${title} widget`}
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-3.5 h-3.5 transition-transform duration-150 group-hover/rm:scale-110" />
             </button>
           )}
         </div>
       </div>
-      <div className="flex-1 p-4">{children}</div>
+      <div className={`flex-1 flex flex-col justify-between ${currentSize === "sm" ? "p-3" : currentSize === "lg" ? "p-5" : "p-4"}`}>{children}</div>
     </div>
   );
 }
@@ -755,10 +765,10 @@ function DraggableWidgetCard({ widgetKey, index, moveWidget, children }: {
   widgetKey: string;
   index: number;
   moveWidget: (from: number, to: number) => void;
-  children: (dragRef: (node: HTMLElement | null) => void, isDragging: boolean) => React.ReactNode;
+  children: (isDragging: boolean, isOver: boolean) => React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [{ isDragging }, drag] = useDrag({
+  const [{ isDragging }, drag, preview] = useDrag({
     type: DND_WIDGET_TYPE,
     item: () => ({ key: widgetKey, index }),
     collect: (monitor) => ({ isDragging: monitor.isDragging() }),
@@ -773,13 +783,16 @@ function DraggableWidgetCard({ widgetKey, index, moveWidget, children }: {
     },
     collect: (monitor) => ({ isOver: monitor.isOver() }),
   });
-  drop(ref);
+  preview(drop(ref));
+  drag(ref);
   return (
     <div
       ref={ref}
-      className={`transition-all duration-150 rounded-xl h-full ${isOver && !isDragging ? "ring-2 ring-[#0A77FF]/20 ring-offset-2" : ""}`}
+      data-widget-idx={index}
+      className={`transition-all duration-300 ease-out rounded-xl h-full ${isOver && !isDragging ? "ring-2 ring-primary/20 ring-offset-2 scale-[1.005]" : ""}`}
+      style={{ opacity: isDragging ? 0.3 : 1, transform: isDragging ? "scale(0.97) rotate(-0.5deg)" : undefined }}
     >
-      {children((node) => { drag(node); }, isDragging)}
+      {children(isDragging, isOver)}
     </div>
   );
 }
@@ -1186,33 +1199,60 @@ export function CurrencyPairDetailPage() {
                     if (headerRate === null) return null;
                     const sourceFlag = getFlagUrl(detail.sourceCurrency);
                     const baseFlag = getFlagUrl(BASE_CURRENCY);
-                    const fromAmount = headerInverted ? 1 / headerRate : 1;
-                    const toAmount = headerInverted ? 1 : headerRate;
                     const fmt = (n: number, dp: number) =>
                       n.toFixed(dp).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-                    return (
-                      <div className="flex items-center gap-2">
-                        {/* From card */}
-                        <div className="flex items-center gap-2 bg-white rounded-lg border border-[#E2E8F0] pl-2.5 pr-2 py-1.5 min-w-[200px] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
-                          {sourceFlag && (
-                            <img src={sourceFlag} alt={detail.sourceCurrency} className="w-6 h-[16px] rounded-[2px] object-cover shrink-0" />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11.5px] truncate" style={{ fontWeight: 600 }}>
-                              {detail.sourceCurrency}{" "}
-                              <span className="text-[#64748B]" style={{ fontWeight: 400 }}>{detail.sourceCurrencyName}</span>
-                            </p>
-                            <p className="text-[10px] text-[#94A3B8] truncate">{getCountryName(detail.sourceCurrency)}</p>
-                          </div>
-                          <div className="border-l border-[#E2E8F0] pl-2 ml-1">
-                            <p key={headerInverted ? "inv-from" : "std-from"} className="text-[12.5px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>
-                              {fmt(fromAmount, headerInverted ? 6 : 0)}
-                            </p>
-                          </div>
+                    const SWAP_SPRING = { type: "spring" as const, stiffness: 380, damping: 32 };
+
+                    const sourceCard = (
+                      <motion.div
+                        key="source"
+                        layout
+                        transition={SWAP_SPRING}
+                        className="flex items-center gap-2 bg-white rounded-lg border border-[#E2E8F0] pl-2.5 pr-2 py-1.5 min-w-[200px] shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+                      >
+                        {sourceFlag && (
+                          <img src={sourceFlag} alt={detail.sourceCurrency} className="w-6 h-[16px] rounded-[2px] object-cover shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11.5px] truncate" style={{ fontWeight: 600 }}>
+                            {detail.sourceCurrency}{" "}
+                            <span className="text-[#64748B]" style={{ fontWeight: 400 }}>{detail.sourceCurrencyName}</span>
+                          </p>
+                          <p className="text-[10px] text-[#94A3B8] truncate">{getCountryName(detail.sourceCurrency)}</p>
                         </div>
-                        {/* Swap button — accent fill when inverse view is active.
-                           When inverted, hovering reveals the inverse-rate
-                           explanation that previously lived on the pill below. */}
+                        <div className="border-l border-[#E2E8F0] pl-2 ml-1">
+                          <p key={headerInverted ? "inv-from" : "std-from"} className="text-[12.5px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>
+                            {fmt(headerInverted ? 1 / headerRate : 1, headerInverted ? 6 : 0)}
+                          </p>
+                        </div>
+                      </motion.div>
+                    );
+                    const baseCard = (
+                      <motion.div
+                        key="base"
+                        layout
+                        transition={SWAP_SPRING}
+                        className="flex items-center gap-2 bg-white rounded-lg border border-[#E2E8F0] pl-2.5 pr-2 py-1.5 min-w-[200px] shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+                      >
+                        {baseFlag && (
+                          <img src={baseFlag} alt={BASE_CURRENCY} className="w-6 h-[16px] rounded-[2px] object-cover shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11.5px] truncate" style={{ fontWeight: 600 }}>
+                            {BASE_CURRENCY}{" "}
+                            <span className="text-[#64748B]" style={{ fontWeight: 400 }}>{BASE_CURRENCY_NAME}</span>
+                          </p>
+                          <p className="text-[10px] text-[#94A3B8] truncate">{getCountryName(BASE_CURRENCY)}</p>
+                        </div>
+                        <div className="border-l border-[#E2E8F0] pl-2 ml-1">
+                          <p key={headerInverted ? "inv-to" : "std-to"} className="text-[12.5px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>
+                            {fmt(headerInverted ? 1 : headerRate, headerInverted ? 0 : 4)}
+                          </p>
+                        </div>
+                      </motion.div>
+                    );
+                    const swapBtn = (
+                      <motion.div key="swap" layout transition={SWAP_SPRING}>
                         <TooltipProvider delayDuration={200}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -1235,26 +1275,13 @@ export function CurrencyPairDetailPage() {
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-                        {/* To card */}
-                        <div className="flex items-center gap-2 bg-white rounded-lg border border-[#E2E8F0] pl-2.5 pr-2 py-1.5 min-w-[200px] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
-                          {baseFlag && (
-                            <img src={baseFlag} alt={BASE_CURRENCY} className="w-6 h-[16px] rounded-[2px] object-cover shrink-0" />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11.5px] truncate" style={{ fontWeight: 600 }}>
-                              {BASE_CURRENCY}{" "}
-                              <span className="text-[#64748B]" style={{ fontWeight: 400 }}>{BASE_CURRENCY_NAME}</span>
-                            </p>
-                            <p className="text-[10px] text-[#94A3B8] truncate">{getCountryName(BASE_CURRENCY)}</p>
-                          </div>
-                          <div className="border-l border-[#E2E8F0] pl-2 ml-1">
-                            <p key={headerInverted ? "inv-to" : "std-to"} className="text-[12.5px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>
-                              {fmt(toAmount, headerInverted ? 0 : 4)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
+                      </motion.div>
                     );
+
+                    const items = headerInverted
+                      ? [baseCard, swapBtn, sourceCard]
+                      : [sourceCard, swapBtn, baseCard];
+                    return <div className="flex items-center gap-2">{items}</div>;
                   })()}
                   {isStandardDetail && stdRecord && (
                     <button
@@ -1672,14 +1699,14 @@ export function CurrencyPairDetailPage() {
                     return (
                       <div key={wKey} className={`col-span-1 ${colSpan}`}>
                         <DraggableWidgetCard widgetKey={wKey} index={i} moveWidget={moveWidget}>
-                          {(dragRef, isDragging) => (
+                          {(isDragging, isOver) => (
                             <ContentCard
                               title={meta.title}
                               icon={meta.icon}
                               tooltipText={meta.tooltip}
                               action={meta.action}
-                              dragRef={dragRef}
                               isDragging={isDragging}
+                              isOver={isOver}
                               currentSize={sz}
                               onSizeChange={(s) => handleWidgetSizeChange(wKey, s)}
                               onRemove={() => handleToggleWidget(wKey)}

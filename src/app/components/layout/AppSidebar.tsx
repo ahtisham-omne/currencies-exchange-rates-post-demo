@@ -46,17 +46,7 @@ const navItems: NavItem[] = [
     label: "Partners Management",
     icon: Handshake,
     path: "/partners",
-    children: [
-      { label: "Overview", path: "/partners" },
-      { label: "Partners", path: "/vendors" },
-      { label: "Partner Groups", path: "/partners/groups" },
-      { label: "Contacts Directory", path: "/partners/contacts" },
-      { label: "Credit Management", path: "/partners/credit" },
-      { label: "Carrier Management", path: "/partners/carriers" },
-      { label: "Partner Locations", path: "/partners/locations" },
-      { label: "Qualified Vendors", path: "/partners/qualified-vendors" },
-      { label: "Reports & Analytics", path: "/partners/reports" },
-    ],
+    disabled: true,
   },
   {
     label: "Supply Chain Management",
@@ -130,7 +120,6 @@ function readStoredNumber(key: string, fallback: number, min: number, max: numbe
 export function AppSidebar() {
   const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<string[]>([
-    "Partners Management",
     "Accounting & Finance",
   ]);
   const [collapsed, setCollapsed] = useState(() => readStoredBoolean(STORAGE_KEY_COLLAPSED, false));

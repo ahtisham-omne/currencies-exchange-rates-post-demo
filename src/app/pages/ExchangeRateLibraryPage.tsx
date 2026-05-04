@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -172,6 +173,119 @@ const MIN_COL_WIDTH = 1;
 const CHEVRON_COL_WIDTH = 36;
 const CHECKBOX_COL_WIDTH = 40;
 const ACTIONS_COL_WIDTH = 60;
+
+/** Inline From↔To converter shown inside an expanded rate row.
+ * Cards smoothly swap places via framer-motion `layout` when the user
+ * clicks the inverse button. The full inverse-rate explanation lives on the
+ * swap button's tooltip (no separate "Inverse rate" pill). */
+function RowInverter({
+  sourceCurrency,
+  sourceCurrencyName,
+  baseCurrency,
+  baseCurrencyName,
+  rate,
+  isInverted,
+  onToggleInvert,
+  indentClass = "pl-10",
+}: {
+  sourceCurrency: string;
+  sourceCurrencyName: string;
+  baseCurrency: string;
+  baseCurrencyName: string;
+  rate: number;
+  isInverted: boolean;
+  onToggleInvert: () => void;
+  indentClass?: string;
+}) {
+  const sourceFlag = getFlagUrl(sourceCurrency);
+  const baseFlag = getFlagUrl(baseCurrency);
+  const fmt = (n: number, dp: number) => n.toFixed(dp).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const SWAP_SPRING = { type: "spring" as const, stiffness: 380, damping: 32 };
+
+  const card = (
+    role: "from" | "to",
+    code: string,
+    name: string,
+    flag: string | undefined,
+    amount: string
+  ) => (
+    <div>
+      <p
+        className={`text-[11px] mb-1.5 ${role === "from" ? "text-emerald-600" : "text-muted-foreground"}`}
+        style={{ fontWeight: 600 }}
+      >
+        {role === "from" ? "From" : "To"}
+      </p>
+      <div className="flex items-center gap-3 bg-white rounded-lg border border-border pl-4 pr-2 py-3 min-w-[280px]">
+        {flag && <img src={flag} alt={code} className="w-8 h-[22px] rounded-[3px] object-cover shrink-0" />}
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px]" style={{ fontWeight: 600 }}>
+            {code} <span style={{ fontWeight: 400 }}>{name}</span>
+          </p>
+          <p className="text-[11px] text-muted-foreground">{getCountryName(code)}</p>
+        </div>
+        <div className="border-l border-border pl-3 ml-2">
+          <p className="text-[10px] text-muted-foreground" style={{ fontWeight: 500 }}>Amount</p>
+          <p key={amount} className="text-[15px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>
+            {amount}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const sourceItem = (
+    <motion.div key="source" layout transition={SWAP_SPRING}>
+      {card(
+        isInverted ? "to" : "from",
+        sourceCurrency,
+        sourceCurrencyName,
+        sourceFlag,
+        isInverted ? fmt(1 / rate, 6) : fmt(1, 0)
+      )}
+    </motion.div>
+  );
+  const baseItem = (
+    <motion.div key="base" layout transition={SWAP_SPRING}>
+      {card(
+        isInverted ? "from" : "to",
+        baseCurrency,
+        baseCurrencyName,
+        baseFlag,
+        isInverted ? fmt(1, 0) : fmt(rate, 4)
+      )}
+    </motion.div>
+  );
+  const swapItem = (
+    <motion.div key="swap" layout transition={SWAP_SPRING} className="mt-5">
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onToggleInvert(); }}
+              aria-pressed={isInverted}
+              aria-label={isInverted ? "Restore default direction" : "Swap direction"}
+              className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer ${
+                isInverted
+                  ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
+                  : "bg-white text-muted-foreground border border-border hover:bg-muted/60"
+              }`}
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-[320px] text-[11.5px]">
+            {isInverted ? INVERSE_BADGE_TOOLTIP : "Swap direction"}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </motion.div>
+  );
+
+  const items = isInverted ? [baseItem, swapItem, sourceItem] : [sourceItem, swapItem, baseItem];
+  return <div className={`flex items-end gap-4 ${indentClass}`}>{items}</div>;
+}
 
 /** Single combined search-and-trigger picker for the Add Corporate Rate modal.
  * Replaces the previous trigger-button + popover-search pair. The input
@@ -1424,9 +1538,6 @@ export function ExchangeRateLibraryPage() {
                         const isExpanded = expandedRows.has(r.id);
                         const isInverted = invertedRows.has(r.id) !== globalInverted;
                         const flagUrl = getFlagUrl(r.sourceCurrency);
-                        const baseFlagUrl = getFlagUrl(r.baseCurrency);
-                        const fromAmount = isInverted ? (1 / r.rate) : 1;
-                        const toAmount = isInverted ? 1 : r.rate;
                         const colSpan = visibleColumns.length + 2;
                         const PINNED_BG = "#fffbf2";
                         const PINNED_BORDER = "3px solid #e65100";
@@ -1522,49 +1633,16 @@ export function ExchangeRateLibraryPage() {
                             {isExpanded && (
                               <TableRow className="bg-[#F8FBFF] hover:bg-[#F8FBFF] border-b border-border">
                                 <TableCell colSpan={colSpan} className="!py-4 !px-4">
-                                  <div className="flex items-center gap-4 pl-10">
-                                    <div>
-                                      <p className="text-[11px] text-emerald-600 mb-1.5" style={{ fontWeight: 600 }}>From</p>
-                                      <div className="flex items-center gap-3 bg-white rounded-lg border border-border pl-4 pr-2 py-3 min-w-[280px]">
-                                        {flagUrl && <img src={flagUrl} alt={r.sourceCurrency} className="w-8 h-[22px] rounded-[3px] object-cover shrink-0" />}
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-[13px]" style={{ fontWeight: 600 }}>{r.sourceCurrency} <span style={{ fontWeight: 400 }}>{r.sourceCurrencyName}</span></p>
-                                          <p className="text-[11px] text-muted-foreground">{getCountryName(r.sourceCurrency)}</p>
-                                        </div>
-                                        <div className="border-l border-border pl-3 ml-2">
-                                          <p className="text-[10px] text-muted-foreground" style={{ fontWeight: 500 }}>Amount</p>
-                                          <p key={isInverted ? "inv" : "std"} className="text-[15px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>{fromAmount.toFixed(isInverted ? 6 : 0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}</p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); toggleRowInvert(r.id); }}
-                                      aria-pressed={isInverted}
-                                      aria-label={isInverted ? "Restore default direction" : "Swap direction"}
-                                      className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer ${
-                                        isInverted
-                                          ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
-                                          : "bg-white text-muted-foreground border border-border hover:bg-muted/60"
-                                      }`}
-                                    >
-                                      <ArrowLeftRight className="w-3.5 h-3.5" />
-                                    </button>
-                                    <div>
-                                      <p className="text-[11px] text-muted-foreground mb-1.5" style={{ fontWeight: 600 }}>To</p>
-                                      <div className="flex items-center gap-3 bg-white rounded-lg border border-border pl-4 pr-2 py-3 min-w-[280px]">
-                                        {baseFlagUrl && <img src={baseFlagUrl} alt={BASE_CURRENCY} className="w-8 h-[22px] rounded-[3px] object-cover shrink-0" />}
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-[13px]" style={{ fontWeight: 600 }}>{BASE_CURRENCY} <span style={{ fontWeight: 400 }}>{BASE_CURRENCY_NAME}</span></p>
-                                          <p className="text-[11px] text-muted-foreground">{getCountryName(BASE_CURRENCY)}</p>
-                                        </div>
-                                        <div className="border-l border-border pl-3 ml-2">
-                                          <p className="text-[10px] text-muted-foreground" style={{ fontWeight: 500 }}>Amount</p>
-                                          <p key={isInverted ? "inv" : "std"} className="text-[15px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>{toAmount.toFixed(isInverted ? 0 : 4).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}</p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
+                                  <RowInverter
+                                    sourceCurrency={r.sourceCurrency}
+                                    sourceCurrencyName={r.sourceCurrencyName}
+                                    baseCurrency={BASE_CURRENCY}
+                                    baseCurrencyName={BASE_CURRENCY_NAME}
+                                    rate={r.rate}
+                                    isInverted={isInverted}
+                                    onToggleInvert={() => toggleRowInvert(r.id)}
+                                    indentClass="pl-10"
+                                  />
                                 </TableCell>
                               </TableRow>
                             )}
@@ -1590,10 +1668,6 @@ export function ExchangeRateLibraryPage() {
                           const isExpanded = expandedRows.has(r.id);
                           const isInverted = invertedRows.has(r.id) !== globalInverted;
                           const flagUrl = getFlagUrl(r.sourceCurrency);
-                          const baseFlagUrl = getFlagUrl(r.baseCurrency);
-                          // Normal: 1 source = rate base. Inverted: inverseRate source = 1 base.
-                          const fromAmount = isInverted ? (1 / r.rate) : 1;
-                          const toAmount = isInverted ? 1 : r.rate;
                           return (
                           <React.Fragment key={r.id}>
                           <TableRow
@@ -1684,73 +1758,16 @@ export function ExchangeRateLibraryPage() {
                           {isExpanded && (
                             <TableRow className="bg-[#F8FBFF] hover:bg-[#F8FBFF] border-b border-border">
                               <TableCell colSpan={visibleColumns.length + 2} className="!py-4 !px-4">
-                                <div className="flex items-center gap-4 pl-10">
-                                  {/* From card — always source currency */}
-                                  <div>
-                                    <p className="text-[11px] text-emerald-600 mb-1.5" style={{ fontWeight: 600 }}>From</p>
-                                    <div className="flex items-center gap-3 bg-white rounded-lg border border-border pl-4 pr-2 py-3 min-w-[280px]">
-                                      {flagUrl && <img src={flagUrl} alt={r.sourceCurrency} className="w-8 h-[22px] rounded-[3px] object-cover shrink-0" />}
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-[13px]" style={{ fontWeight: 600 }}>{r.sourceCurrency} <span style={{ fontWeight: 400 }}>{r.sourceCurrencyName}</span></p>
-                                        <p className="text-[11px] text-muted-foreground">{getCountryName(r.sourceCurrency)}</p>
-                                      </div>
-                                      <div className="border-l border-border pl-3 ml-2">
-                                        <p className="text-[10px] text-muted-foreground" style={{ fontWeight: 500 }}>Amount</p>
-                                        <p key={isInverted ? "inv" : "std"} className="text-[15px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>{fromAmount.toFixed(isInverted ? 6 : 0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  {/* Swap icon — accent fill when inverse view is active */}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); toggleRowInvert(r.id); }}
-                                    aria-pressed={isInverted}
-                                    aria-label={isInverted ? "Restore default direction" : "Swap direction"}
-                                    className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer ${
-                                      isInverted
-                                        ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
-                                        : "bg-white text-muted-foreground border border-border hover:bg-muted/60"
-                                    }`}
-                                  >
-                                    <ArrowLeftRight className="w-3.5 h-3.5" />
-                                  </button>
-                                  {/* To card — always base currency */}
-                                  <div>
-                                    <p className="text-[11px] text-muted-foreground mb-1.5" style={{ fontWeight: 600 }}>To</p>
-                                    <div className="flex items-center gap-3 bg-white rounded-lg border border-border pl-4 pr-2 py-3 min-w-[280px]">
-                                      {baseFlagUrl && <img src={baseFlagUrl} alt={BASE_CURRENCY} className="w-8 h-[22px] rounded-[3px] object-cover shrink-0" />}
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-[13px]" style={{ fontWeight: 600 }}>{BASE_CURRENCY} <span style={{ fontWeight: 400 }}>{BASE_CURRENCY_NAME}</span></p>
-                                        <p className="text-[11px] text-muted-foreground">{getCountryName(BASE_CURRENCY)}</p>
-                                      </div>
-                                      <div className="border-l border-border pl-3 ml-2">
-                                        <p className="text-[10px] text-muted-foreground" style={{ fontWeight: 500 }}>Amount</p>
-                                        <p key={isInverted ? "inv" : "std"} className="text-[15px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>{toAmount.toFixed(isInverted ? 0 : 4).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                                {isInverted && (
-                                  <div className="pl-10 mt-2 animate-inverse-badge-in" onClick={e => e.stopPropagation()}>
-                                    <TooltipProvider delayDuration={200}>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span
-                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF] cursor-help"
-                                            style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
-                                            tabIndex={0}
-                                          >
-                                            <ArrowLeftRight className="w-2.5 h-2.5" />
-                                            Inverse rate
-                                          </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="max-w-[320px] text-[11.5px]">
-                                          {INVERSE_BADGE_TOOLTIP}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  </div>
-                                )}
+                                <RowInverter
+                                  sourceCurrency={r.sourceCurrency}
+                                  sourceCurrencyName={r.sourceCurrencyName}
+                                  baseCurrency={BASE_CURRENCY}
+                                  baseCurrencyName={BASE_CURRENCY_NAME}
+                                  rate={r.rate}
+                                  isInverted={isInverted}
+                                  onToggleInvert={() => toggleRowInvert(r.id)}
+                                  indentClass="pl-10"
+                                />
                               </TableCell>
                             </TableRow>
                           )}
@@ -1762,11 +1779,7 @@ export function ExchangeRateLibraryPage() {
                           const isExpanded = expandedRows.has(r.id);
                           const isInverted = invertedRows.has(r.id) !== globalInverted;
                           const flagUrl = getFlagUrl(r.sourceCurrency);
-                          const baseFlagUrl = getFlagUrl(r.baseCurrency);
                           const midRate = midMarketRates.find(m => m.sourceCurrency === r.sourceCurrency);
-                          // Normal: 1 source = rate base. Inverted: inverseRate source = 1 base.
-                          const fromAmount = isInverted ? (1 / r.standardRate) : 1;
-                          const toAmount = isInverted ? 1 : r.standardRate;
                           return (
                           <React.Fragment key={r.id}>
                           <TableRow
@@ -1908,73 +1921,16 @@ export function ExchangeRateLibraryPage() {
                           {isExpanded && (
                             <TableRow className="bg-[#F8FBFF] hover:bg-[#F8FBFF] border-b border-border">
                               <TableCell colSpan={visibleColumns.length + 3} className="!py-4 !px-4">
-                                <div className="flex items-center gap-4 pl-16">
-                                  {/* From card — always source currency */}
-                                  <div>
-                                    <p className="text-[11px] text-emerald-600 mb-1.5" style={{ fontWeight: 600 }}>From</p>
-                                    <div className="flex items-center gap-3 bg-white rounded-lg border border-border pl-4 pr-2 py-3 min-w-[280px]">
-                                      {flagUrl && <img src={flagUrl} alt={r.sourceCurrency} className="w-8 h-[22px] rounded-[3px] object-cover shrink-0" />}
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-[13px]" style={{ fontWeight: 600 }}>{r.sourceCurrency} <span style={{ fontWeight: 400 }}>{r.sourceCurrencyName}</span></p>
-                                        <p className="text-[11px] text-muted-foreground">{getCountryName(r.sourceCurrency)}</p>
-                                      </div>
-                                      <div className="border-l border-border pl-3 ml-2">
-                                        <p className="text-[10px] text-muted-foreground" style={{ fontWeight: 500 }}>Amount</p>
-                                        <p key={isInverted ? "inv" : "std"} className="text-[15px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>{fromAmount.toFixed(isInverted ? 6 : 0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  {/* Swap icon — accent fill when inverse view is active */}
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); toggleRowInvert(r.id); }}
-                                    aria-pressed={isInverted}
-                                    aria-label={isInverted ? "Restore default direction" : "Swap direction"}
-                                    className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 mt-5 transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer ${
-                                      isInverted
-                                        ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
-                                        : "bg-white text-muted-foreground border border-border hover:bg-muted/60"
-                                    }`}
-                                  >
-                                    <ArrowLeftRight className="w-3.5 h-3.5" />
-                                  </button>
-                                  {/* To card — always base currency */}
-                                  <div>
-                                    <p className="text-[11px] text-muted-foreground mb-1.5" style={{ fontWeight: 600 }}>To</p>
-                                    <div className="flex items-center gap-3 bg-white rounded-lg border border-border pl-4 pr-2 py-3 min-w-[280px]">
-                                      {baseFlagUrl && <img src={baseFlagUrl} alt={BASE_CURRENCY} className="w-8 h-[22px] rounded-[3px] object-cover shrink-0" />}
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-[13px]" style={{ fontWeight: 600 }}>{BASE_CURRENCY} <span style={{ fontWeight: 400 }}>{BASE_CURRENCY_NAME}</span></p>
-                                        <p className="text-[11px] text-muted-foreground">{getCountryName(BASE_CURRENCY)}</p>
-                                      </div>
-                                      <div className="border-l border-border pl-3 ml-2">
-                                        <p className="text-[10px] text-muted-foreground" style={{ fontWeight: 500 }}>Amount</p>
-                                        <p key={isInverted ? "inv" : "std"} className="text-[15px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>{toAmount.toFixed(isInverted ? 0 : 4).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                                {isInverted && (
-                                  <div className="pl-16 mt-2 animate-inverse-badge-in" onClick={e => e.stopPropagation()}>
-                                    <TooltipProvider delayDuration={200}>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span
-                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF] cursor-help"
-                                            style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
-                                            tabIndex={0}
-                                          >
-                                            <ArrowLeftRight className="w-2.5 h-2.5" />
-                                            Inverse rate
-                                          </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" className="max-w-[320px] text-[11.5px]">
-                                          {INVERSE_BADGE_TOOLTIP}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  </div>
-                                )}
+                                <RowInverter
+                                  sourceCurrency={r.sourceCurrency}
+                                  sourceCurrencyName={r.sourceCurrencyName}
+                                  baseCurrency={BASE_CURRENCY}
+                                  baseCurrencyName={BASE_CURRENCY_NAME}
+                                  rate={r.standardRate}
+                                  isInverted={isInverted}
+                                  onToggleInvert={() => toggleRowInvert(r.id)}
+                                  indentClass="pl-16"
+                                />
                               </TableCell>
                             </TableRow>
                           )}
