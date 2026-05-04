@@ -46,7 +46,25 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '../ui/hover-card';
 import { AddQualifiedVendorDialog } from './AddQualifiedVendorDialog';
+import { CurrencyFlag } from './CurrencyFlag';
+import {
+  BASE_CURRENCY,
+  BASE_CURRENCY_NAME,
+  RATE_LAST_SYNC_ISO,
+  RATE_SOURCE,
+  RATE_TYPE_HEX,
+  RATE_TYPE_LABEL,
+  formatPartnerAmount,
+  formatRateUpdatedAs,
+  getLibraryCurrency,
+  rateToBase,
+} from '../../data/rateConstants';
 
 // Pricing Rules Data
 const PRICING_RULES = [
@@ -66,91 +84,96 @@ export function QualifiedVendorsTab({ partNumber }: QualifiedVendorsTabProps) {
 
   // State for managing vendors list
   const [vendors, setVendors] = useState([
-    { 
-      name: 'Global Supplies Ltd.', 
-      sku: 'GS-5512-A', 
+    {
+      name: 'Global Supplies Ltd.',
+      sku: 'GS-5512-A',
       uom: 'Box',
       baseUnit: 'EA',
       conversionFactor: 100,
       price: 2450.00,
+      currency: 'USD',
       minOrderQty: 5,
       maxOrderQty: 500,
       orderMultiples: 5,
       deviation: 2.5,
-      priority: 1, 
-      preferred: true, 
+      priority: 1,
+      preferred: true,
       rating: 4.8,
       rules: ['pr-4', 'pr-2'],
       leadTime: 7,
       vendorId: 'VND-01000'
     },
-    { 
-      name: 'Acme Corp', 
-      sku: 'ACM-992-B1', 
+    {
+      name: 'Acme Corp',
+      sku: 'ACM-992-B1',
       uom: 'Case',
       baseUnit: 'EA',
       conversionFactor: 500,
       price: 11750.00,
+      currency: 'USD',
       minOrderQty: 2,
       maxOrderQty: 200,
       orderMultiples: 2,
       deviation: 3.0,
-      priority: 2, 
-      preferred: false, 
+      priority: 2,
+      preferred: false,
       rating: 4.2,
       rules: ['pr-1'],
       leadTime: 10,
       vendorId: 'VND-01001'
     },
-    { 
-      name: 'Tech Components Ltd', 
-      sku: 'TCL-2201', 
+    {
+      name: 'Tech Components Ltd',
+      sku: 'TCL-2201',
       uom: 'Each',
       baseUnit: 'EA',
       conversionFactor: 1,
       price: 26.00,
+      currency: 'EUR',
       minOrderQty: 100,
       maxOrderQty: 10000,
       orderMultiples: 50,
       deviation: 1.5,
-      priority: 3, 
-      preferred: false, 
+      priority: 3,
+      preferred: false,
       rating: 4.9,
       rules: ['pr-3'],
       leadTime: 5,
       vendorId: 'VND-01002'
     },
-    { 
-      name: 'FastTrack Logistics', 
-      sku: 'FT-101-X', 
+    {
+      name: 'FastTrack Logistics',
+      sku: 'FT-101-X',
       uom: 'Pallet',
       baseUnit: 'EA',
       conversionFactor: 2000,
       price: 52000.00,
+      currency: 'USD',
       minOrderQty: 1,
       maxOrderQty: 50,
       orderMultiples: 1,
       deviation: 5.0,
-      priority: 4, 
-      preferred: false, 
+      priority: 4,
+      preferred: false,
       rating: 3.9,
       rules: [],
       leadTime: 14,
       vendorId: 'VND-01003'
     },
-    { 
-      name: 'Precision Parts Inc.', 
-      sku: 'PPI-8844', 
+    {
+      name: 'Precision Parts Inc.',
+      sku: 'PPI-8844',
       uom: 'Box',
       baseUnit: 'EA',
       conversionFactor: 250,
       price: 6125.00,
+      currency: 'GBP',
       minOrderQty: 4,
       maxOrderQty: 400,
       orderMultiples: 4,
       deviation: 2.0,
-      priority: 5, 
-      preferred: false, 
+      priority: 5,
+      preferred: false,
       rating: 4.5,
       rules: ['pr-5'],
       leadTime: 8,
@@ -167,6 +190,7 @@ export function QualifiedVendorsTab({ partNumber }: QualifiedVendorsTabProps) {
       baseUnit: 'EA',
       conversionFactor: 1,
       price: parseFloat(vendorData.pricePerUom) || 0,
+      currency: vendorData.currency || 'USD',
       minOrderQty: parseInt(vendorData.minOrderQty) || 0,
       maxOrderQty: parseInt(vendorData.maxOrderQty) || 0,
       orderMultiples: parseInt(vendorData.multiples) || 1,
@@ -285,12 +309,90 @@ export function QualifiedVendorsTab({ partNumber }: QualifiedVendorsTabProps) {
                     
                     {/* Price per UOM */}
                     <TableCell className="text-right">
-                      <div className="flex flex-col items-end gap-0.5">
-                        <span className="text-sm font-semibold text-foreground">
-                          ${vendor.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">per {vendor.uom}</span>
-                      </div>
+                      {(() => {
+                        const partner = getLibraryCurrency(vendor.currency);
+                        const partnerRate = rateToBase(vendor.currency);
+                        const showHover =
+                          vendor.price > 0 &&
+                          !!partner &&
+                          partnerRate !== undefined &&
+                          vendor.currency !== BASE_CURRENCY;
+                        const partnerValue = partnerRate ? vendor.price / partnerRate : 0;
+                        const partnerSymbol = partner?.symbol ?? vendor.currency;
+                        const trigger = (
+                          <span className="inline-flex flex-col items-end gap-0.5">
+                            <span className="inline-flex items-baseline whitespace-nowrap tabular-nums text-sm font-semibold text-foreground">
+                              <span
+                                className={cn(
+                                  'mr-1',
+                                  showHover && 'border-b border-dotted border-slate-400 leading-none pb-[1px]',
+                                )}
+                              >
+                                Rs
+                              </span>
+                              <span>
+                                {vendor.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">per {vendor.uom}</span>
+                          </span>
+                        );
+                        if (!showHover) return trigger;
+                        const ariaLabel = `${BASE_CURRENCY_NAME} (${BASE_CURRENCY}) Rs ${vendor.price} per ${vendor.uom}`;
+                        return (
+                          <HoverCard openDelay={150} closeDelay={80}>
+                            <HoverCardTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label={ariaLabel}
+                                className="inline-flex cursor-help bg-transparent p-0 m-0 border-0 text-right"
+                                style={{ font: 'inherit', color: 'inherit', letterSpacing: 'inherit', lineHeight: 'inherit' }}
+                              >
+                                {trigger}
+                              </button>
+                            </HoverCardTrigger>
+                            <HoverCardContent
+                              side="top"
+                              align="end"
+                              className="rounded-lg border border-slate-200 shadow-lg bg-white w-auto min-w-[260px] max-w-[320px] p-3"
+                            >
+                              {/* Header — flag + name + code + "— base currency" tail */}
+                              <div className="flex items-baseline gap-2 text-[13px] font-semibold text-slate-900">
+                                <span className="self-center">
+                                  <CurrencyFlag country="pk" size={20} />
+                                </span>
+                                <span>
+                                  {BASE_CURRENCY_NAME} ({BASE_CURRENCY})
+                                </span>
+                                <span className="text-slate-500 font-normal">— base currency</span>
+                              </div>
+                              <div className="border-t border-slate-100 my-2" />
+                              {/* Partner-currency equivalent */}
+                              <div className="text-[12px] text-slate-700">
+                                Partner currency: {partnerSymbol} {formatPartnerAmount(partnerValue)} {vendor.currency}
+                              </div>
+                              {/* RateLine — current rate + type badge + source + updated */}
+                              <div className="mt-1.5 px-2 py-1.5 rounded-md bg-slate-50 border border-slate-100">
+                                <div className="text-[11px] text-slate-700 tabular-nums leading-4">
+                                  <span className="text-slate-500" style={{ fontWeight: 500 }}>Current rate: </span>
+                                  1 {vendor.currency} = Rs {formatPartnerAmount(partnerRate!)} {BASE_CURRENCY}
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+                                  <span
+                                    className="inline-block w-1.5 h-1.5 rounded-full"
+                                    style={{ backgroundColor: RATE_TYPE_HEX }}
+                                  />
+                                  <span style={{ color: RATE_TYPE_HEX, fontWeight: 600 }}>{RATE_TYPE_LABEL}</span>
+                                  <span className="text-slate-400">· Source: {RATE_SOURCE}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 mt-0.5">
+                                  Updated as of {formatRateUpdatedAs(RATE_LAST_SYNC_ISO)}
+                                </div>
+                              </div>
+                            </HoverCardContent>
+                          </HoverCard>
+                        );
+                      })()}
                     </TableCell>
                     
                     {/* Min Order Qty */}

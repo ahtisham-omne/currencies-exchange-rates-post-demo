@@ -1,4 +1,5 @@
-import React, { useId, useState } from 'react';
+import React, { useState } from 'react';
+import { CurrencyFlag } from './CurrencyFlag';
 
 const FONT = 'Inter, system-ui, sans-serif';
 
@@ -13,52 +14,6 @@ interface CurrencySymbolProps {
   className?: string;
   /** Optional inline style for the visible symbol span. */
   style?: React.CSSProperties;
-}
-
-/**
- * Pakistan flag — 3:2 rectangle with a white hoist stripe (1/4 width), a dark
- * green field, and a white crescent + 5-point star. Rendered as SVG so it's
- * pixel-crisp at any size and doesn't depend on OS emoji fonts.
- */
-function PakistanFlagBadge({ width = 28, height = 20 }: { width?: number; height?: number }) {
-  const clipId = useId();
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox="0 0 24 16"
-      style={{ flexShrink: 0, display: 'block' }}
-      aria-hidden
-    >
-      <defs>
-        <clipPath id={clipId}>
-          <rect width="24" height="16" rx="2" />
-        </clipPath>
-      </defs>
-      <g clipPath={`url(#${clipId})`}>
-        {/* Dark green field */}
-        <rect width="24" height="16" fill="#01411C" />
-        {/* White hoist stripe — 1/4 of flag width */}
-        <rect width="6" height="16" fill="#FFFFFF" />
-        {/* Crescent: white circle with green cutout circle offset to make the curve */}
-        <circle cx="13.5" cy="8" r="3" fill="#FFFFFF" />
-        <circle cx="14.6" cy="7.5" r="2.5" fill="#01411C" />
-        {/* 5-point star, pointing up */}
-        <polygon
-          points="17,5.5 17.35,6.51 18.43,6.54 17.57,7.19 17.88,8.21 17,7.6 16.12,8.21 16.43,7.19 15.57,6.54 16.65,6.51"
-          fill="#FFFFFF"
-        />
-      </g>
-      <rect
-        width="24"
-        height="16"
-        rx="2"
-        fill="none"
-        stroke="rgba(15, 23, 42, 0.08)"
-        strokeWidth="0.75"
-      />
-    </svg>
-  );
 }
 
 /**
@@ -106,7 +61,7 @@ export function CurrencySymbol({
             cursor: 'default',
           }}
         >
-          <PakistanFlagBadge />
+          <CurrencyFlag country="pk" size={28} />
           <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6, lineHeight: 1.2 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>
               {name} ({code})

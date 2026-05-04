@@ -10,7 +10,8 @@ import {
   Info,
   ChevronDown,
   Clock,
-  Plus
+  Plus,
+  ArrowLeftRight
 } from 'lucide-react';
 import {
   Dialog,
@@ -24,13 +25,6 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../ui/select';
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -38,7 +32,18 @@ import {
 import { Checkbox } from '../ui/checkbox';
 import { Badge } from '../ui/badge';
 import { cn } from '../../../lib/utils';
-import { CurrencySymbol } from './CurrencySymbol';
+import {
+  BASE_CURRENCY,
+  RATE_LAST_SYNC_ISO,
+  RATE_SOURCE,
+  RATE_TYPE_HEX,
+  RATE_TYPE_LABEL,
+  formatPartnerAmount,
+  formatRateUpdatedAs,
+  getLibraryCurrency,
+  rateToBase,
+} from '../../data/rateConstants';
+import { CurrencyLibrarySelect } from './CurrencyLibrarySelect';
 
 // Mock vendor data
 const MOCK_VENDORS = [
@@ -66,7 +71,12 @@ interface VendorData {
   vendorName: string;
   leadTime: string;
   uom: string;
+  /** Price expressed in the base currency (PKR) — the persisted source of truth. */
   pricePerUom: string;
+  /** Same price expressed in the vendor's currency — kept in sync via the mid-market rate. */
+  pricePerUomVendor: string;
+  /** Vendor's transaction currency (ISO code). */
+  currency: string;
   minOrderQty: string;
   maxOrderQty: string;
   multiples: string;
@@ -99,6 +109,8 @@ export function AddQualifiedVendorDialog({
     leadTime: '',
     uom: baseUom,
     pricePerUom: '',
+    pricePerUomVendor: '',
+    currency: 'USD',
     minOrderQty: '',
     maxOrderQty: '',
     multiples: '1',
@@ -118,6 +130,61 @@ export function AddQualifiedVendorDialog({
 
   const handleFieldChange = (field: keyof VendorData, value: string | string[]) => {
     setFormData({ ...formData, [field]: value });
+  };
+
+  // Bidirectional price sync via the mid-market rate. The base-currency value
+  // (PKR) is the persisted source of truth; the vendor-currency value is kept
+  // in sync as the user types in either field or switches the currency. When
+  // the picked currency has no mid-market rate, both inputs are still editable
+  // — they just don't auto-fill from one another.
+  const handlePriceBaseChange = (value: string) => {
+    const rate = rateToBase(formData.currency);
+    if (value === '') {
+      setFormData({ ...formData, pricePerUom: '', pricePerUomVendor: '' });
+      return;
+    }
+    const num = parseFloat(value);
+    if (rate === undefined || isNaN(num)) {
+      setFormData({ ...formData, pricePerUom: value });
+      return;
+    }
+    setFormData({
+      ...formData,
+      pricePerUom: value,
+      pricePerUomVendor: (num / rate).toFixed(2),
+    });
+  };
+
+  const handlePriceVendorChange = (value: string) => {
+    const rate = rateToBase(formData.currency);
+    if (value === '') {
+      setFormData({ ...formData, pricePerUom: '', pricePerUomVendor: '' });
+      return;
+    }
+    const num = parseFloat(value);
+    if (rate === undefined || isNaN(num)) {
+      setFormData({ ...formData, pricePerUomVendor: value });
+      return;
+    }
+    setFormData({
+      ...formData,
+      pricePerUomVendor: value,
+      pricePerUom: (num * rate).toFixed(2),
+    });
+  };
+
+  const handleCurrencyChange = (currency: string) => {
+    const rate = rateToBase(currency);
+    const baseNum = parseFloat(formData.pricePerUom);
+    if (rate === undefined || isNaN(baseNum)) {
+      setFormData({ ...formData, currency });
+      return;
+    }
+    setFormData({
+      ...formData,
+      currency,
+      pricePerUomVendor: (baseNum / rate).toFixed(2),
+    });
   };
 
   const togglePricingRule = (ruleId: string) => {
@@ -150,6 +217,8 @@ export function AddQualifiedVendorDialog({
       leadTime: '',
       uom: baseUom,
       pricePerUom: '',
+      pricePerUomVendor: '',
+      currency: 'USD',
       minOrderQty: '',
       maxOrderQty: '',
       multiples: '1',
@@ -285,7 +354,7 @@ export function AddQualifiedVendorDialog({
                   <p className="text-xs text-muted-foreground">Expected delivery time from order placement</p>
                 </div>
 
-                {/* Price Per UOM */}
+                {/* Price Per UOM — base + vendor currencies, linked via mid-market rate */}
                 <div className="space-y-2.5">
                   <Label className="text-sm font-semibold flex items-center gap-2">
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -294,22 +363,105 @@ export function AddQualifiedVendorDialog({
                       Optional
                     </Badge>
                   </Label>
-                  <div className="flex items-center gap-3">
-                    <div className="relative flex-1">
-                      <CurrencySymbol
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold"
-                      />
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={formData.pricePerUom}
-                        onChange={(e) => handleFieldChange('pricePerUom', e.target.value)}
-                        className="pl-12 h-11 text-base border-[1.5px] border-[var(--border)]"
-                      />
+
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1 grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+                      {/* Base (PKR) */}
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide block">
+                          Base ({BASE_CURRENCY})
+                        </span>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold">
+                            Rs
+                          </span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={formData.pricePerUom}
+                            onChange={(e) => handlePriceBaseChange(e.target.value)}
+                            className="pl-10 h-11 text-base border-[1.5px] border-[var(--border)]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Bidirectional sync indicator */}
+                      <div className="flex items-center justify-center pb-3">
+                        <ArrowLeftRight className="h-4 w-4 text-muted-foreground/60" />
+                      </div>
+
+                      {/* Vendor currency */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                            Vendor
+                          </span>
+                          <CurrencyLibrarySelect
+                            value={formData.currency}
+                            onChange={handleCurrencyChange}
+                          />
+                        </div>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold">
+                            {getLibraryCurrency(formData.currency)?.symbol ?? formData.currency}
+                          </span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={formData.pricePerUomVendor}
+                            onChange={(e) => handlePriceVendorChange(e.target.value)}
+                            className="pl-10 h-11 text-base border-[1.5px] border-[var(--border)]"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-sm text-muted-foreground font-medium min-w-[60px]">per {formData.uom}</div>
+                    <div className="text-sm text-muted-foreground font-medium min-w-[60px] pb-3">
+                      per {formData.uom}
+                    </div>
                   </div>
+
+                  {/* Mid-market rate strip — noticeable violet callout. When the
+                      picked currency has no published rate, show an inline notice
+                      so the user knows both fields need manual entry. */}
+                  {(() => {
+                    const rate = rateToBase(formData.currency);
+                    if (formData.currency === BASE_CURRENCY) return null;
+                    if (rate === undefined) {
+                      return (
+                        <div className="px-3.5 py-2.5 rounded-md bg-amber-50 border border-amber-200">
+                          <div className="text-[12px] text-amber-900" style={{ fontWeight: 600 }}>
+                            No mid-market rate available for {formData.currency}
+                          </div>
+                          <div className="text-[10.5px] text-amber-800/80 mt-0.5">
+                            Both fields are independent — enter the base and vendor prices manually.
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="px-3.5 py-2.5 rounded-md bg-violet-50 border border-violet-200">
+                        <div className="text-[12px] text-slate-800 tabular-nums leading-4">
+                          <span className="text-slate-600" style={{ fontWeight: 500 }}>Current rate: </span>
+                          <span style={{ fontWeight: 600 }}>
+                            1 {formData.currency} = Rs {formatPartnerAmount(rate)} {BASE_CURRENCY}
+                          </span>
+                        </div>
+                        <div className="text-[10.5px] text-slate-600 mt-1 flex items-center gap-1.5">
+                          <span
+                            className="inline-block w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: RATE_TYPE_HEX }}
+                          />
+                          <span style={{ color: RATE_TYPE_HEX, fontWeight: 600 }}>{RATE_TYPE_LABEL}</span>
+                          <span className="text-slate-400">· Source: {RATE_SOURCE}</span>
+                        </div>
+                        <div className="text-[10.5px] text-slate-500 mt-0.5">
+                          Updated as of {formatRateUpdatedAs(RATE_LAST_SYNC_ISO)}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* UOM (View Only) */}
