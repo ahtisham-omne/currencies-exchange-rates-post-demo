@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Lock, Settings2 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip";
+import { CurrencyFlag } from "../ui/CurrencyFlag";
 import {
   BASE_CURRENCY,
   convertBetween,
@@ -179,14 +180,18 @@ export function POSummaryRateBadge({ po, onViewConfig }: Props) {
 
       {/* Currency amount rows */}
       <div className="flex flex-col gap-1">
-        {rows.map((r) => (
-          <div key={r.label} className="flex items-center justify-between gap-3 text-[11px]">
-            <span className="text-slate-500">{r.label}</span>
-            <span className="text-slate-800 tabular-nums" style={{ fontWeight: 500 }}>
-              {symbolFor(r.currency)} {fmt(r.amount, r.currency)} {r.currency}
-            </span>
-          </div>
-        ))}
+        {rows.map((r) => {
+          const cur = getLibraryCurrency(r.currency);
+          return (
+            <div key={r.label} className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="text-slate-500">{r.label}</span>
+              <span className="inline-flex items-center gap-1.5 text-slate-800 tabular-nums" style={{ fontWeight: 500 }}>
+                {cur && <CurrencyFlag currency={cur} size={16} />}
+                {symbolFor(r.currency)} {fmt(r.amount, r.currency)} {r.currency}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       {/* FX rate(s) */}

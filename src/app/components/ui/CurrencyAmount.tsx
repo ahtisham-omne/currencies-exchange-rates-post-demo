@@ -195,7 +195,7 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
         <HeaderLine flag={flag} name={c.name} code={c.code} tail="— base currency" />
         <div className="border-t border-slate-100 my-2" />
         <div className="text-[12px] text-slate-700">
-          Partner currency: {partnerSymbol} {formatNumber(props.partnerDefaultValue ?? 0, partner.code)} {partner.code}
+          Vendor currency: {partnerSymbol} {formatNumber(props.partnerDefaultValue ?? 0, partner.code)} {partner.code}
         </div>
         <RateLine partnerCode={partner.code} lockedRate={props.lockedRate} lockedAt={props.lockedAt} />
       </>
@@ -210,7 +210,7 @@ function TooltipBody(props: CurrencyAmountProps & { currencyRecord: LibraryCurre
       : convertBetween(props.value, c.code, BASE_CURRENCY);
     return (
       <>
-        <HeaderLine flag={flag} name={c.name} code={c.code} tail="— partner currency" />
+        <HeaderLine flag={flag} name={c.name} code={c.code} tail="— vendor currency" />
         <div className="border-t border-slate-100 my-2" />
         <div className="text-[12px] text-slate-700">
           Base equivalent: {baseSymbol} {formatNumber(baseValue, BASE_CURRENCY)} {baseCur.code}

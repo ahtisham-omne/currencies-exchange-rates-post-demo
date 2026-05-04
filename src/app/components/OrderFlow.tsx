@@ -969,9 +969,9 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, onC
                   }`}
                   style={{ fontWeight: effectiveViewMode === "partner" ? 600 : 500 }}
                 >
-                  Partner Currency
+                  Vendor Currency
                   <InfoTooltip side="bottom" iconClassName="w-3 h-3">
-                    Show amounts in this partner's own default transaction currency ({activeVendorCurrency || BASE_CURRENCY}). The base-currency equivalent remains available on hover for reporting.
+                    Show amounts in this vendor's own default transaction currency ({activeVendorCurrency || BASE_CURRENCY}). The base-currency equivalent remains available on hover for reporting.
                   </InfoTooltip>
                 </button>
               </div>
