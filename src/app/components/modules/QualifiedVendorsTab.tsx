@@ -354,7 +354,7 @@ export function QualifiedVendorsTab({ partNumber }: QualifiedVendorsTabProps) {
                             <HoverCardContent
                               side="top"
                               align="end"
-                              className="rounded-lg border border-slate-200 shadow-lg bg-white w-auto min-w-[260px] max-w-[320px] p-3"
+                              className="rounded-lg border border-slate-200 shadow-lg bg-white w-auto min-w-[260px] max-w-[320px] p-3 text-left"
                             >
                               {/* Header — flag + name + code + "— base currency" tail */}
                               <div className="flex items-baseline gap-2 text-[13px] font-semibold text-slate-900">
