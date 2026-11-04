@@ -1,0 +1,294 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+
+/* Omne Design System v2.0 — palette / spacing / radius / shadow / typography
+   tokens. Source of truth is src/styles/tokens.ts; this file is the hand-
+   mirrored CSS-variable mapping. The shadcn semantic variables below
+   (--primary, --success, …) reference the same hues so existing utility
+   classes continue to resolve correctly. */
+@import './styles/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-size: 16px;
+
+    /* ─── shadcn semantic vars now reference Omne DS palette tokens ───
+     *  Every shadcn primitive (Button, Input, Checkbox, Badge, Card,
+     *  Select, Dialog, …) reads `hsl(var(--X))`. By pointing each --X at
+     *  the HSL channel form of a palette stop, the entire shadcn layer
+     *  inherits from the design system — change palette.blue[500] in
+     *  tokens.ts (and the -hsl mirror in tokens.css) and every primary
+     *  button instantly updates.
+     */
+
+    /* Surfaces */
+    --background:           218 20% 97%;
+    --foreground:           var(--color-slate-900-hsl);
+    --card:                 0 0% 100%;
+    --card-foreground:      var(--color-slate-900-hsl);
+    --popover:              0 0% 100%;
+    --popover-foreground:   var(--color-slate-900-hsl);
+
+    /* Primary (palette.blue[500] = #0A77FF) */
+    --primary:              var(--color-blue-500-hsl);
+    --primary-foreground:   0 0% 100%;
+
+    /* Secondary / muted (palette.slate[100]) */
+    --secondary:            var(--color-slate-100-hsl);
+    --secondary-foreground: var(--color-slate-900-hsl);
+    --muted:                var(--color-slate-100-hsl);
+    --muted-foreground:     var(--color-slate-600-hsl);
+
+    /* Accent (palette.blue[50] for the surface, blue-700 for ink) */
+    --accent:               var(--color-blue-50-hsl);
+    --accent-foreground:    var(--color-blue-700-hsl);
+
+    /* Destructive (Theme.tokens.json colors/error = #DC2828) */
+    --destructive:          var(--color-theme-error-hsl);
+    --destructive-foreground: 0 0% 100%;
+
+    /* Semantic status — Theme.tokens.json (success #1F9860, warning #DB7706) */
+    --success:              var(--color-theme-success-hsl);
+    --success-foreground:   0 0% 100%;
+    --warning:              var(--color-theme-warning-hsl);
+    --warning-foreground:   0 0% 100%;
+    --violet:               var(--color-violet-600-hsl);
+    --violet-foreground:    0 0% 100%;
+    --orange:               var(--color-orange-700-hsl);
+    --orange-foreground:    0 0% 100%;
+    --purple:               var(--color-purple-600-hsl);
+    --purple-foreground:    0 0% 100%;
+    --fuchsia:              293 69% 49%;
+    --fuchsia-foreground:   0 0% 100%;
+
+    /* Borders & inputs (palette.slate[200] / [100]) */
+    --border:               var(--color-slate-200-hsl);
+    --input:                var(--color-slate-200-hsl);
+    --input-background:     var(--color-slate-100-hsl);
+    --switch-background:    var(--color-slate-200-hsl);
+    --ring:                 212 100% 74%;
+
+    /* Charts — pull from the same palette */
+    --chart-1:              var(--color-blue-500-hsl);
+    --chart-2:              var(--color-emerald-600-hsl);
+    --chart-3:              var(--color-amber-500-hsl);
+    --chart-4:              var(--color-violet-700-hsl);
+    --chart-5:              var(--color-red-500-hsl);
+
+    --radius: 0.5rem;
+
+    /* Sidebar — same token sources as the main surfaces */
+    --sidebar-background:           0 0% 100%;
+    --sidebar-foreground:           var(--color-slate-900-hsl);
+    --sidebar-primary:              var(--color-blue-500-hsl);
+    --sidebar-primary-foreground:   0 0% 100%;
+    --sidebar-accent:               var(--color-blue-50-hsl);
+    --sidebar-accent-foreground:    var(--color-blue-700-hsl);
+    --sidebar-border:               var(--color-slate-200-hsl);
+    --sidebar-ring:                 212 100% 74%;
+  }
+
+  .dark {
+    --background: 222 47% 9%;
+    --foreground: 210 40% 96%;
+    --card: 220 38% 15%;
+    --card-foreground: 210 40% 96%;
+    --popover: 220 38% 15%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 212 100% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 25% 63%;
+    --accent: 212 89% 19%;
+    --accent-foreground: 212 100% 74%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success: var(--color-theme-success-hsl);
+    --success-foreground: 0 0% 100%;
+    --warning: var(--color-theme-warning-hsl);
+    --warning-foreground: 0 0% 100%;
+    --violet: 262 83% 58%;
+    --violet-foreground: 0 0% 100%;
+    --orange: 21 100% 62%;
+    --orange-foreground: 0 0% 100%;
+    --purple: 244 93% 72%;
+    --purple-foreground: 0 0% 100%;
+    --fuchsia: 292 91% 73%;
+    --fuchsia-foreground: 0 0% 100%;
+    --border: 215 26% 24%;
+    --input: 215 26% 24%;
+    --input-background: 215 26% 24%;
+    --switch-background: 215 26% 24%;
+    --ring: 212 100% 62%;
+    --sidebar-background: 220 38% 15%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 212 100% 62%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 212 89% 19%;
+    --sidebar-accent-foreground: 212 100% 74%;
+    --sidebar-border: 215 26% 24%;
+    --sidebar-ring: 212 100% 62%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  html {
+    font-size: var(--font-size);
+  }
+
+  h1 { font-size: 1.5rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.025em; }
+  h2 { font-size: 1.25rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.02em; }
+  h3 { font-size: 1.125rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.015em; }
+  h4 { font-size: 1rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.01em; }
+  label { font-size: 1rem; font-weight: 500; line-height: 1.5; }
+  button { font-size: 1rem; font-weight: 500; line-height: 1.5; }
+  input { font-size: 1rem; font-weight: 400; line-height: 1.5; }
+}
+
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* custom-scrollbar — invisible scrollbar that still scrolls. Used on the
+ * Create Invoice modal body, the right sidebar, and a few internal
+ * lists. Hiding the track prevents the browser from reserving horizontal
+ * gutter space, which is what was causing the right-side accordion
+ * cards to squeeze when a section expanded and forced the scrollbar to
+ * appear. Wheel / touch / arrow-key scrolling still work. */
+.custom-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.custom-scrollbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* items-scroll — always-visible, space-reserving scrollbar for the Create
+ * Invoice line-items table. Giving ::-webkit-scrollbar an explicit width
+ * forces a classic (non-overlay) scrollbar in WebKit/Blink, so it stays
+ * painted at all times and reserves its own 10px gutter instead of
+ * floating over the sticky Action column. */
+.items-scroll {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #94A3B8 #EEF2F6;
+}
+.items-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+.items-scroll::-webkit-scrollbar-track {
+  background: #EEF2F6;
+}
+.items-scroll::-webkit-scrollbar-thumb {
+  background-color: #94A3B8;
+  border-radius: 999px;
+  border: 2px solid #EEF2F6;
+  min-height: 40px;
+}
+.items-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: #64748B;
+}
+
+/* Newly-created row flash — used after creating an invoice so the new
+   row briefly pulses to confirm the create. Ported from partners' CSS. */
+@keyframes row-flash {
+  0% { background-color: hsl(var(--primary) / 0.12); }
+  100% { background-color: transparent; }
+}
+.animate-row-flash { animation: row-flash 1.5s ease-out forwards; }
+
+/* Field-attention pulse — jumping from an issue/notification to the
+   control that needs fixing pulses it red (the invoice creation
+   quantity-field treatment, 8/5/26). Two beats, then it settles. */
+@keyframes field-attention {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
+  30% { box-shadow: 0 0 0 4px rgba(225, 29, 72, 0.28); }
+  60% { box-shadow: 0 0 0 1px rgba(225, 29, 72, 0.35); }
+}
+.animate-field-attention {
+  animation: field-attention 1.5s ease-in-out 2;
+  border-color: #FB7185 !important;
+}
+
+/* Modal animation: shadcn defaults (fade + zoom-95 → 100%) used for every
+   dialog — matches the Create Vendor Invoice modal exactly. No global
+   override added here. */
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; }
+
+/* ─── Sonner toasts — Omne gradient design ───
+   Soft per-type tint radiating from the icon corner over the white card,
+   matching the gradient headers on the confirm modals. Applied via the
+   Toaster's per-type classNames (src/app/components/ui/sonner.tsx). */
+.toast-grad-success { background-image: linear-gradient(135deg, rgba(31, 152, 96, 0.10) 0%, rgba(255, 255, 255, 0) 55%); }
+.toast-grad-info    { background-image: linear-gradient(135deg, rgba(10, 119, 255, 0.09) 0%, rgba(255, 255, 255, 0) 55%); }
+.toast-grad-warning { background-image: linear-gradient(135deg, rgba(219, 119, 6, 0.10) 0%, rgba(255, 255, 255, 0) 55%); }
+.toast-grad-error   { background-image: linear-gradient(135deg, rgba(220, 40, 40, 0.09) 0%, rgba(255, 255, 255, 0) 55%); }
+
+/* Close X moves to the top-right (sonner defaults to the top-left corner)
+   and reads as a quiet ghost button, like the reference toasts. */
+[data-sonner-toast] [data-close-button] {
+  left: auto;
+  right: 8px;
+  top: 12px;
+  transform: none;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--color-slate-400);
+}
+[data-sonner-toast] [data-close-button]:hover {
+  background: var(--color-slate-100);
+  color: var(--color-slate-600);
+}
+/* Keep text clear of the close X. */
+[data-sonner-toast][data-styled='true'] { padding-right: 30px; }
+
+/* Toasts stay clickable while a modal is open (user 9/23): Radix modals
+   set pointer-events: none on body, which the toaster inherits, so a
+   click on the toast X fell THROUGH to the dialog overlay behind it and
+   closed the modal. Re-enabling events per toast keeps the X working;
+   the ui/dialog outside-interaction guard ignores toaster targets. */
+[data-sonner-toast] { pointer-events: auto !important; }
+
+/* ─── Completion hero animation ───
+   Used on the confirm + "recorded" heroes: the icon tile spins in with a
+   springy settle, then (recorded only) the tick circle sweeps around and
+   the check strokes in. */
+@keyframes spin-in {
+  0% { transform: rotate(-180deg) scale(0.4); opacity: 0; }
+  100% { transform: rotate(0deg) scale(1); opacity: 1; }
+}
+@keyframes stroke-draw { to { stroke-dashoffset: 0; } }
+.animate-spin-in { animation: spin-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.tick-circle { stroke-dasharray: 63; stroke-dashoffset: 63; animation: stroke-draw 0.5s ease-out 0.45s forwards; }
+.tick-check { stroke-dasharray: 24; stroke-dashoffset: 24; animation: stroke-draw 0.35s ease-out 0.85s forwards; }
+
+/* Partner-details empty-state animations (ported): a soft fade-in for
+   the block and a slow float loop on the icon tile. */
+@keyframes csFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes csFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
