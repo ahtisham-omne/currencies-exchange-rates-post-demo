@@ -33,6 +33,12 @@ import {
   DropdownMenuTrigger,
 } from '@/app/components/ui/dropdown-menu';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/ui/hover-card';
+import { Money } from '@/app/components/currency/Money';
+import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { getCurrency } from '@/app/currency/currencies';
+import { formatCompactMoney, formatMoney } from '@/app/currency/money';
+import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { vendorCurrencyOf } from '@/app/currency/vendorCurrency';
 import { PaymentTermDetailsModal } from '@/app/components/PaymentTermDetailsModal';
 import {
   Dialog,
@@ -628,7 +634,8 @@ function getVendorStats(name: string) {
     // The vendor's OWN profile description (VI-49): deterministic from the
     // name so the quick/full card reads about the VENDOR, not the invoice.
     description: [
-      'Established supplier of industrial components with reliable lead times and USD settlements.',
+      // The settlement currency is the partner record's (spec 4.2), not a fixed USD.
+      `Established supplier of industrial components with reliable lead times and ${vendorCurrencyOf(name)} settlements.`,
       'Regional distributor specializing in bulk materials and fast, consistent fulfillment.',
       'Long-standing vendor for packaging and logistics consumables across domestic operations.',
       'Specialty manufacturer serving manufacturing lines with on-time delivery and flexible terms.',
@@ -864,7 +871,7 @@ function VendorFullCard({ vendor, description, open, onClose }: VendorFullCardPr
             </div>
             <div className="px-2.5 py-2 text-center border-l border-border/40">
               <p className="text-[16px] text-foreground " style={{ fontWeight: 600 }}>
-                ${(stats.outstanding / 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}K
+                {formatCompactMoney(stats.outstanding, vendorCurrencyOf(vendor))}
               </p>
               <p
                 className="text-[10px] text-muted-foreground mt-0.5"
@@ -875,7 +882,7 @@ function VendorFullCard({ vendor, description, open, onClose }: VendorFullCardPr
             </div>
             <div className="px-2.5 py-2 text-center border-l border-border/40">
               <p className="text-[16px] text-foreground " style={{ fontWeight: 600 }}>
-                ${(stats.paid / 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}K
+                {formatCompactMoney(stats.paid, vendorCurrencyOf(vendor))}
               </p>
               <p
                 className="text-[10px] text-muted-foreground mt-0.5"
@@ -1784,16 +1791,22 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
   {
     key: 'amount',
     label: 'Amount',
+    tooltip: "In each invoice's own currency. Sorting and the range filter use the PKR (base currency) equivalent.",
     minWidth: 120,
     defaultWidth: 160,
     sortable: true,
     filterType: 'range',
-    getValue: (row) => row.amount,
-    getSortValue: (row) => row.amount,
+    // Currency & Exchange Rates (spec 4.4): the amount is in the row's own
+    // currency (the symbol follows the Currency column), hover for its base
+    // equivalent and rate; rows sort and range-filter on that base
+    // equivalent, so a ¥ total never outranks a $ one on its face value.
+    getValue: (row) => toInvoiceBase(row, row.amount),
+    getSortValue: (row) => toInvoiceBase(row, row.amount),
+    searchText: (row) => `${row.amount} ${formatMoney(row.amount, row.currency)}`,
     render: (row, { searchQuery }) => (
-      <span className="text-foreground" style={{ fontWeight: 400 }}>
-        {highlightAmount(`$${row.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, searchQuery)}
-      </span>
+      <Money value={row.amount} currency={row.currency} fx={invoiceFx(row)} className="text-foreground">
+        {highlightAmount(formatMoney(row.amount, row.currency), searchQuery)}
+      </Money>
     ),
   },
   {
@@ -1813,7 +1826,7 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
       if (!terms || row.outstandingBalance <= 0) return '';
       if (!discountIsLive(terms)) return `${terms.percent}% Expired`;
       const d = discountAmountOn(row.outstandingBalance, terms);
-      return `${terms.percent}% · −$${d.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return `${terms.percent}% · ${formatMoney(-d, row.currency)}`;
     },
     // Early-pay discount from the invoice's PAYMENT TERM (8/28/26
     // evening), measured as of today on the listing; hover explains the
@@ -1847,7 +1860,7 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] cursor-help whitespace-nowrap"
                 style={{ fontWeight: 600 }}
               >
-                {terms.percent}% · −${discount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {terms.percent}% · {formatMoney(-discount, row.currency)}
               </span>
             </HoverCardTrigger>
             <HoverCardContent side="top" align="start" className="w-[280px] p-3 rounded-xl border border-border shadow-lg bg-white z-[300]">
@@ -1872,9 +1885,13 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     minWidth: 120,
     defaultWidth: 160,
     sortable: true,
+    tooltip: "In each invoice's own currency. Sorting and the range filter use the PKR (base currency) equivalent.",
     filterType: 'range',
-    getValue: (row) => row.outstandingBalance,
-    getSortValue: (row) => row.outstandingBalance,
+    // In the row's currency, sorted and range-filtered by base equivalent (as Amount).
+    getValue: (row) => toInvoiceBase(row, row.outstandingBalance),
+    getSortValue: (row) => toInvoiceBase(row, row.outstandingBalance),
+    searchText: (row) =>
+      row.outstandingBalance ? `${row.outstandingBalance} ${formatMoney(row.outstandingBalance, row.currency)}` : '',
     // Prepaid-origin note (9/2/26): an invoice that consumed a
     // prepayment at creation says so RIGHT WHERE its balance is read —
     // an inline violet wallet icon with the full math on hover.
@@ -1886,7 +1903,9 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
           // heavier font for money columns, design feedback 7/13/26).
           style={{ fontWeight: 400, color: row.outstandingBalance > 0 ? palette.slate[900] : palette.slate[400] }}
         >
-          {highlightAmount(`$${row.outstandingBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, searchQuery)}
+          <Money value={row.outstandingBalance} currency={row.currency} fx={invoiceFx(row)}>
+            {highlightAmount(formatMoney(row.outstandingBalance, row.currency), searchQuery)}
+          </Money>
         </span>
       </AmountWithPrepaidNote>
     ),
@@ -1912,7 +1931,15 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     filterType: 'multiselect',
     uniqueValues: (rows) => Array.from(new Set(rows.map((r) => r.currency))).sort(),
     getValue: (row) => row.currency,
-    render: (row, { searchQuery }) => <span className="text-muted-foreground">{highlightText(row.currency, searchQuery)}</span>,
+    // Flag + code, as the Currency & Exchange Rates module shows a currency;
+    // the name rides the tooltip.
+    searchText: (row) => `${row.currency} ${getCurrency(row.currency)?.name ?? ''}`,
+    render: (row, { searchQuery }) => (
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+        <CurrencyFlag code={row.currency} size={16} />
+        <span>{highlightText(row.currency, searchQuery)}</span>
+      </span>
+    ),
   },
   {
     key: 'description',

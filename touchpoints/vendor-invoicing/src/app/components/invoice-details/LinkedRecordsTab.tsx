@@ -35,6 +35,7 @@ import {
   type LinkedRecordStatus as RecordStatus,
 } from '@/app/data/invoiceLinkedRecords';
 import { CreatedByCell, highlightAmount, highlightText } from '@/app/components/InvoiceDataTable';
+import { formatMoney as formatInCurrency } from '@/app/currency/money';
 
 /** Search highlight for a record's amount (10/9/26): the filter matches the
  *  raw figure ("1250" or "1250.00"), so the digits only mark when that
@@ -109,9 +110,8 @@ function isExcludedRow(r: LinkedFinancialRecord): boolean {
     : !countsTowardBalance(r.status as LinkedApplicationStatus);
 }
 
-function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+// Each currency with its own symbol and decimals (Currency & Exchange Rates).
+const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
 
 // Linked-record dates show date + time (user 10/7), via the shared
 // date-time formatter seeded by the record date.

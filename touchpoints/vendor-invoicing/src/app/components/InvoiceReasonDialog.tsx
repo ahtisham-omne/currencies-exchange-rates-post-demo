@@ -25,6 +25,7 @@ import { Label } from '@/app/components/ui/label';
 import { exceptionOptionsFor, invoiceReasonKindOf, type InvoiceReasonKind } from '@/app/components/SubmittedFlagCard';
 import { HOLD_REASON_TYPES } from '@/app/data/holdReasons';
 import { NotifyToggleCard } from '@/app/components/vendors/SearchableUserPicker';
+import { formatMoney } from '@/app/currency/money';
 
 export type ReasonAction = 'reject' | 'cancel' | 'uncancel' | 'paymentHold' | 'flagException' | 'archive' | 'restore';
 
@@ -77,6 +78,9 @@ interface InvoiceReasonDialogProps {
    *  the cancellation backs the original posting out of the GL
    *  (feedback 7/21/26). Omit for unposted invoices / bulk actions. */
   glReversal?: { code: string; name: string; debit: number; credit: number }[];
+  /** The currency the reversal lines are in (Currency & Exchange Rates: a
+   *  vendor invoice's GL is in the base currency). Defaults to USD. */
+  glCurrency?: string;
   /** Copy/logic overrides merged over the action's config, so payment
    *  runs reuse the exact same dialog (8/4/26) with run wording, run
    *  reasons, and (for cancel) the notify block the invoice flavor
@@ -264,6 +268,7 @@ export function InvoiceReasonDialog({
   currentStatus,
   invoiceType,
   glReversal,
+  glCurrency = 'USD',
   configOverride,
   skipped = [],
   skipReason,
@@ -674,10 +679,10 @@ export function InvoiceReasonDialog({
                         <span className="text-slate-700 ml-1.5" style={{ fontWeight: 500 }}>{l.name}</span>
                       </td>
                       <td className="px-2.5 py-1 text-right ">
-                        {l.debit > 0 ? <span style={{ fontWeight: 600 }}>${l.debit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> : null}
+                        {l.debit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(l.debit, glCurrency)}</span> : null}
                       </td>
                       <td className="px-2.5 py-1 text-right ">
-                        {l.credit > 0 ? <span style={{ fontWeight: 600 }}>${l.credit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> : null}
+                        {l.credit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(l.credit, glCurrency)}</span> : null}
                       </td>
                     </tr>
                   ))}

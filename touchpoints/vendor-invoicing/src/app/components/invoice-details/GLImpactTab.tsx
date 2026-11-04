@@ -1,8 +1,12 @@
 import { useMemo } from 'react';
 import { CheckCircle2, AlertTriangle, CircleDashed, BookOpen, ArrowUp, ArrowDown, Info, Undo2 } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/app/components/ui/tooltip';
-import { Invoice } from '@/app/data/mockInvoices';
+import { Invoice, type InvoiceGlEntry } from '@/app/data/mockInvoices';
 import { PaymentRecord } from './ReversePaymentModal';
+import { formatMoney as formatInCurrency, formatRateDate, rateSentence } from '@/app/currency/money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { RATE_TYPE_LABEL, toBase } from '@/app/currency/rates';
+import { invoiceFx } from '@/app/currency/invoiceFx';
 
 // Plain-language direction of a journal line: does this account go up or
 // down? Normal balances by code prefix — 1xxx = asset, 2xxx = liability,
@@ -39,13 +43,14 @@ interface JournalLine {
   description: string;
   debit?: number;
   credit?: number;
+  /** The line in the invoice's currency when that isn't the base (debit/credit are base). */
+  foreign?: number;
 }
 
 type PostingStatus = 'not_posted' | 'posted' | 'exception' | 'deferred' | 'reversed';
 
-function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+// Each currency with its own symbol and decimals (Currency & Exchange Rates).
+const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
 
 export function GLImpactTab({
   invoice,
@@ -69,8 +74,14 @@ export function GLImpactTab({
   //   so the tab shows exactly what the cancellation booked. Cancelled
   //   pre-invoices never posted, so they keep just the defined entry.
   const isCancelledReversal = invoice.status === 'Cancelled' && invoice.type !== 'Pre-Invoice';
+  // The ledger is kept in the base currency (Currency & Exchange Rates, spec
+  // 4.4): a foreign-currency invoice posts every line at its rate, and each
+  // line keeps its invoice-currency amount for reference.
+  const fx = invoiceFx(invoice);
   const lines = useMemo<JournalLine[]>(() => {
     const round2 = (n: number) => Math.round(n * 100) / 100;
+    // A line of `amount` in the invoice currency, posted in base.
+    const posted = (amount: number) => (fx.isBase ? { amount } : { amount: toBase(amount, fx.rate), foreign: amount });
     // User-created records carry the exact snapshot the confirmation
     // showed (lib/glPosting.ts) — render it verbatim so the preview and
     // the saved entry can never disagree (9/22/26 review response).
@@ -81,24 +92,36 @@ export function GLImpactTab({
       const preScale = invoice.type === 'Pre-Invoice' && numbers.total > 0 && (numbers.credits ?? 0) > 0
         ? Math.max(0, (numbers.total - (numbers.credits ?? 0)) / numbers.total)
         : 1;
-      const snapshot: JournalLine[] = invoice.glEntries.map((e, i) => ({
-        id: `je-snap-${i}`,
-        accountCode: e.accountCode,
-        accountName: e.accountName,
-        description: isCancelledReversal ? 'Original posting' : e.description ?? '',
-        ...(e.debit !== undefined ? { debit: round2(e.debit * preScale) } : {}),
-        ...(e.credit !== undefined ? { credit: round2(e.credit * preScale) } : {}),
-      }));
+      // Snapshots saved in base carry their currency; an older one in the
+      // invoice's own currency converts at the invoice rate.
+      const inBase = (e: InvoiceGlEntry, v: number) =>
+        e.currency || fx.isBase ? { value: v, foreign: e.foreignAmount } : { value: toBase(v, fx.rate), foreign: v };
+      const snapshot: JournalLine[] = invoice.glEntries.map((e, i) => {
+        const side = inBase(e, (e.debit ?? e.credit ?? 0) * preScale);
+        return {
+          id: `je-snap-${i}`,
+          accountCode: e.accountCode,
+          accountName: e.accountName,
+          description: isCancelledReversal ? 'Original posting' : e.description ?? '',
+          ...(e.debit !== undefined ? { debit: round2(side.value) } : {}),
+          ...(e.credit !== undefined ? { credit: round2(side.value) } : {}),
+          ...(side.foreign != null && !fx.isBase ? { foreign: round2(side.foreign * (e.currency ? preScale : 1)) } : {}),
+        };
+      });
       if (isCancelledReversal) {
         snapshot.push(
-          ...invoice.glEntries.map((e, i) => ({
-            id: `je-snap-rev-${i}`,
-            accountCode: e.accountCode,
-            accountName: e.accountName,
-            description: 'Cancellation reversal',
-            ...(e.debit !== undefined ? { credit: round2(e.debit) } : {}),
-            ...(e.credit !== undefined ? { debit: round2(e.credit) } : {}),
-          })),
+          ...invoice.glEntries.map((e, i) => {
+            const side = inBase(e, e.debit ?? e.credit ?? 0);
+            return {
+              id: `je-snap-rev-${i}`,
+              accountCode: e.accountCode,
+              accountName: e.accountName,
+              description: 'Cancellation reversal',
+              ...(e.debit !== undefined ? { credit: round2(side.value) } : {}),
+              ...(e.credit !== undefined ? { debit: round2(side.value) } : {}),
+              ...(side.foreign != null && !fx.isBase ? { foreign: round2(side.foreign) } : {}),
+            };
+          }),
         );
       }
       return snapshot.filter((l) => (l.debit ?? l.credit ?? 0) > 0.004);
@@ -121,20 +144,23 @@ export function GLImpactTab({
     // A pre-invoice previews what it will actually be paid (BA 10/10): a
     // credit memo lowers the amount requested, so $38,005 less a $140
     // credit previews $37,865.
-    const lineAmount = isPre ? round2(numbers.total - (numbers.credits ?? 0)) : round2(numbers.total);
+    const lineAmount = posted(isPre ? round2(numbers.total - (numbers.credits ?? 0)) : round2(numbers.total));
+    const fullAmount = posted(round2(numbers.total));
     rows.push({
       id: 'je-1',
       accountCode: debitAccount.code,
       accountName: debitAccount.name,
       description: isCancelledReversal ? 'Original posting' : isPre ? 'At first payment' : '',
-      debit: lineAmount,
+      debit: lineAmount.amount,
+      foreign: lineAmount.foreign,
     });
     rows.push({
       id: 'je-ap',
       accountCode: creditAccount.code,
       accountName: creditAccount.name,
       description: isCancelledReversal ? 'Original posting' : isPre ? 'At first payment' : '',
-      credit: lineAmount,
+      credit: lineAmount.amount,
+      foreign: lineAmount.foreign,
     });
     if (isCancelledReversal) {
       rows.push({
@@ -142,18 +168,20 @@ export function GLImpactTab({
         accountCode: '2000',
         accountName: 'Accounts Payable',
         description: 'Cancellation reversal',
-        debit: round2(numbers.total),
+        debit: fullAmount.amount,
+        foreign: fullAmount.foreign,
       });
       rows.push({
         id: 'je-rev-1',
         accountCode: debitAccount.code,
         accountName: debitAccount.name,
         description: 'Cancellation reversal',
-        credit: round2(numbers.total),
+        credit: fullAmount.amount,
+        foreign: fullAmount.foreign,
       });
     }
     return rows.filter((l) => (l.debit ?? l.credit ?? 0) > 0.004);
-  }, [invoice.type, invoice.glEntries, numbers, isCancelledReversal]);
+  }, [invoice.type, invoice.glEntries, numbers, isCancelledReversal, fx.isBase, fx.rate]);
 
   // Inventory invoices carry no per-line descriptions, so the whole
   // Description column drops out of the table for them.
@@ -301,6 +329,13 @@ export function GLImpactTab({
           <div className="min-w-0 flex-1">
             <h3 className="text-[13px] text-foreground tracking-tight" style={{ fontWeight: 600 }}>GL Impact</h3>
             <p className="text-[11px] text-slate-400">How this invoice posts to the general ledger, account by account.</p>
+            {!fx.isBase && (
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                In {BASE_CURRENCY}, at {rateSentence(fx.currency, fx.rate)}{' '}
+                ({fx.provisional ? "today's mid-market rate; the payment date's rate applies" : `${RATE_TYPE_LABEL[fx.rateType].toLowerCase()}, ${formatRateDate(fx.rateDate)}`}).
+                Each line's {fx.currency} amount is under it.
+              </p>
+            )}
           </div>
           <span
             className="text-[10px] rounded-full px-2 py-0.5 bg-muted text-muted-foreground shrink-0"
@@ -373,12 +408,18 @@ export function GLImpactTab({
                 {showDescriptions && <td className="px-4 py-2.5 text-slate-500">{line.description}</td>}
                 <td className="px-4 py-2.5 text-right ">
                   {line.debit ? (
-                    <span className="text-foreground" style={{ fontWeight: 600 }}>{formatMoney(line.debit, invoice.currency)}</span>
+                    <>
+                      <span className="text-foreground" style={{ fontWeight: 600 }}>{formatMoney(line.debit, BASE_CURRENCY)}</span>
+                      {line.foreign != null && <span className="block text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{formatMoney(line.foreign, invoice.currency)}</span>}
+                    </>
                   ) : null}
                 </td>
                 <td className="px-4 py-2.5 pr-5 text-right ">
                   {line.credit ? (
-                    <span className="text-foreground" style={{ fontWeight: 600 }}>{formatMoney(line.credit, invoice.currency)}</span>
+                    <>
+                      <span className="text-foreground" style={{ fontWeight: 600 }}>{formatMoney(line.credit, BASE_CURRENCY)}</span>
+                      {line.foreign != null && <span className="block text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{formatMoney(line.foreign, invoice.currency)}</span>}
+                    </>
                   ) : null}
                 </td>
               </tr>
@@ -413,10 +454,10 @@ export function GLImpactTab({
                 </td>
               )}
               <td className="px-4 py-2.5 text-right text-foreground text-[13px]" style={{ fontWeight: 700 }}>
-                {formatMoney(totalDebits, invoice.currency)}
+                {formatMoney(totalDebits, BASE_CURRENCY)}
               </td>
               <td className="px-4 py-2.5 pr-5 text-right text-foreground text-[13px]" style={{ fontWeight: 700 }}>
-                {formatMoney(totalCredits, invoice.currency)}
+                {formatMoney(totalCredits, BASE_CURRENCY)}
               </td>
             </tr>
           </tfoot>

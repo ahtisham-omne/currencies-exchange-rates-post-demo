@@ -15,6 +15,12 @@ import {
 import { SubmittedFlagCard, exceptionTypeLabelsFromReason } from '@/app/components/SubmittedFlagCard';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { Invoice } from '@/app/data/mockInvoices';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatMoney as formatInCurrency, rateSentence } from '@/app/currency/money';
+import { RATE_TYPE_LABEL } from '@/app/currency/rates';
+import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
+import { Money } from '@/app/components/currency/Money';
 import { ADVANCES_ACCOUNT } from '@/app/data/glAccounts';
 import { CollapseReveal } from '@/app/components/ui/collapse-reveal';
 import { presetForVendor } from '@/app/data/paymentTermPresets';
@@ -53,10 +59,8 @@ type SectionKey =
   | 'linked'
   | 'timeline';
 
-function formatMoney(amount: number, currency: string) {
-  const symbol = currency === 'USD' ? '$' : `${currency} `;
-  return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+// Each currency with its own symbol and decimals (Currency & Exchange Rates).
+const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
 
 // MMM D, YYYY (date format standard 9/3/26) — the card previously showed
 // raw ISO dates; the partner-grid rebuild (user 9/25) formats them, now
@@ -152,6 +156,8 @@ interface InvoiceDetailSidebarProps {
 }
 
 export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, records = [], onResolveException, onReleaseHold }: InvoiceDetailSidebarProps) {
+  // The invoice's currency and the rate it posted at (Currency & Exchange Rates).
+  const fx = invoiceFx(invoice);
   // Payment term details modal (8/31/26).
   const [termDetailOpen, setTermDetailOpen] = useState(false);
   // Subtotal/Tax/Freight/Charges live in the creation form's breakdown
@@ -417,8 +423,45 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
             </div>
             <div className="min-w-0">
               <p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Currency</p>
-              <p className="text-[12px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>{invoice.currency}</p>
+              <p className="text-[12px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>
+                <CurrencyChip code={invoice.currency} size={14} />
+              </p>
             </div>
+            {/* The rate taken on the posting date (Currency & Exchange Rates,
+                spec 4.4): A/P posted in the base currency at it, and a
+                payment is later compared against it. */}
+            {!fx.isBase && (
+              <div className="min-w-0 col-span-2">
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <p className="inline-flex items-center gap-1 text-[11px] text-slate-400 cursor-help" style={{ fontWeight: 500 }}>
+                      Exchange Rate
+                      <Lock className="w-2.5 h-2.5 text-slate-300" />
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[260px] p-2.5 bg-white border border-border rounded-lg shadow-md z-[300]">
+                    <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 600 }}>Taken on the posting date</p>
+                    <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
+                      A/P posted in {BASE_CURRENCY} at this rate. A payment is later compared against it, and the difference is an FX gain or loss.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+                {fx.provisional ? (
+                  <>
+                    <p className="text-[12px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>Set when paid</p>
+                    <p className="text-[11px] text-slate-400 leading-snug">Today, {rateSentence(fx.currency, fx.rate)} (mid-market)</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[12px] text-foreground mt-0.5 tabular-nums" style={{ fontWeight: 600 }}>{rateSentence(fx.currency, fx.rate)}</p>
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      <span style={{ fontWeight: 600, color: fx.rateType === 'mid' ? '#6D28D9' : '#B45309' }}>{RATE_TYPE_LABEL[fx.rateType]}</span>
+                      {' · '}{fmtSidebarDate(fx.rateDate)} (posting date){invoice.rateEdited ? ' · changed on the invoice' : ''}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
           {termDetailOpen && (
             <PaymentTermDetailsModal
@@ -464,8 +507,14 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                 after every reduction; the gross value reads back as
                 "Original total" right under it. */}
             <p className="text-[22px] text-foreground mt-0.5" style={{ fontWeight: 700, lineHeight: 1.1 }}>
-              {formatMoney(amountAfterReductions, invoice.currency)}
+              <Money value={amountAfterReductions} currency={invoice.currency} fx={fx} />
             </p>
+            {/* The base-currency equivalent at the invoice rate (spec 4.4). */}
+            {!fx.isBase && (
+              <p className="text-[11px] text-slate-400 mt-1 tabular-nums" style={{ fontWeight: 500 }}>
+                ≈ {formatInCurrency(toInvoiceBase(invoice, amountAfterReductions), BASE_CURRENCY)} {BASE_CURRENCY}
+              </p>
+            )}
             {((numbers.credits ?? 0) > 0 || prepayTotal > 0) && (
               <p className="text-[11px] text-slate-400 mt-1" style={{ fontWeight: 500 }}>
                 Original Total {formatMoney(numbers.total, invoice.currency)}
@@ -517,7 +566,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               <div className="min-w-0">
                 <p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Outstanding</p>
                 <p className="text-[13px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>
-                  {formatMoney(numbers.outstanding, invoice.currency)}
+                  <Money value={numbers.outstanding} currency={invoice.currency} fx={fx} />
                 </p>
               </div>
               {hasCreditSplit && (

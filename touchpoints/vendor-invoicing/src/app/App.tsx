@@ -15,6 +15,7 @@ import { PaymentDetailScreen } from '@/app/components/PaymentDetailScreen';
 import { CreditMemoDetailScreen } from '@/app/components/CreditMemoDetailScreen';
 import type { CreditMemo } from '@/app/data/creditMemos';
 import type { InvoiceNote } from '@/app/components/invoice-details/NotesTab';
+import { stampRate } from '@/app/currency/invoiceFx';
 
 // Stable empty array so the detail screen's notes prop stays
 // referentially equal for invoices without notes.
@@ -173,9 +174,10 @@ export default function App() {
       setCreateVendorLock(qs.get('vendor'));
       setCreateTypeLock(create);
       setShowCreateInvoice(true);
-      window.history.replaceState({}, '', location.pathname);
+      // Through the router so its basename stays in the URL (embedded in the shell).
+      navigate(location.pathname, { replace: true });
     }
-  }, [currentScreen, location.search, location.pathname]);
+  }, [currentScreen, location.search, location.pathname, navigate]);
   const selectedInvoiceId = useMemo(() => {
     if (!params.invoiceNumber) return null;
     const decoded = decodeURIComponent(params.invoiceNumber);
@@ -447,6 +449,9 @@ export default function App() {
           // Credits never approve: the July 16 approve-via-payment rule
           // is about paying, not crediting.
           actionHistory: wasPending && !viaCredit ? [...(inv.actionHistory ?? []), approveEntry] : inv.actionHistory,
+          // A pre-invoice posts when it is first paid, so it takes its rate
+          // then (Currency & Exchange Rates, spec 4.4); later payments keep it.
+          ...(isPre && !viaCredit && !inv.exchangeRate ? stampRate(inv.currency, localTodayIso()) : {}),
         };
       }),
     );
@@ -1604,6 +1609,14 @@ export default function App() {
                         triggerDate: edited.triggerDate ?? inv.triggerDate,
                         triggerEvent: edited.triggerEvent ?? inv.triggerEvent,
                         postingDate: edited.postingDate ?? inv.postingDate,
+                        // Currency and the posting-date rate (Currency &
+                        // Exchange Rates, spec 4.4): the edit re-takes the
+                        // rate, so the saved figures move with it.
+                        currency: edited.currency || inv.currency,
+                        exchangeRate: edited.exchangeRate,
+                        rateType: edited.rateType,
+                        rateDate: edited.rateDate,
+                        rateEdited: edited.rateEdited,
                         // A cleared description stays cleared (Mahreen 10/10).
                         description: edited.description ?? inv.description,
                         amount: edited.amount,

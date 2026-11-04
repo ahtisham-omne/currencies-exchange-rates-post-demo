@@ -24,6 +24,9 @@ import {
   Users,
 } from 'lucide-react';
 import type { Invoice } from '@/app/data/mockInvoices';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatCompactMoney } from '@/app/currency/money';
+import { toInvoiceBase } from '@/app/currency/invoiceFx';
 import { palette } from '@/styles/tokens';
 import { highlightText } from '@/app/components/InvoiceDataTable';
 
@@ -241,15 +244,14 @@ function buildDelta(
   return { text: fmtPctDelta(current, previous), tone };
 }
 
-const fmtMoney = (n: number) =>
-  n >= 1_000_000
-    ? `$${(n / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`
-    : n >= 1000
-      ? `$${(n / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })}K`
-      : `$${Math.round(n).toLocaleString('en-US')}`;
+// Currency & Exchange Rates (spec 4.4): invoices come in many currencies, so
+// every money figure here is the BASE currency: each invoice converted at its
+// own rate (the one on its posting date), then summed. The insights band
+// labels the figures as base currency.
+const fmtMoney = (n: number) => formatCompactMoney(n, BASE_CURRENCY);
 
-const sum = (rows: Invoice[]) => rows.reduce((s, r) => s + r.amount, 0);
-const outstanding = (rows: Invoice[]) => rows.reduce((s, r) => s + r.outstandingBalance, 0);
+const sum = (rows: Invoice[]) => rows.reduce((s, r) => s + toInvoiceBase(r, r.amount), 0);
+const outstanding = (rows: Invoice[]) => rows.reduce((s, r) => s + toInvoiceBase(r, r.outstandingBalance), 0);
 // Singular when there's exactly one (copy audit: "1 invoices" read wrong).
 const fmtCount = (n: number, noun = 'invoices') =>
   `${n} ${n === 1 ? (noun.endsWith('s') ? noun.slice(0, -1) : noun) : noun}`;
@@ -348,7 +350,7 @@ export function computeInvoiceKpi(
     case 'top_vendor': {
       const byVendor = new Map<string, number>();
       for (const inv of invoicesInRange) {
-        byVendor.set(inv.vendor, (byVendor.get(inv.vendor) ?? 0) + inv.amount);
+        byVendor.set(inv.vendor, (byVendor.get(inv.vendor) ?? 0) + toInvoiceBase(inv, inv.amount));
       }
       let top: { name: string; total: number } | null = null;
       byVendor.forEach((total, name) => {

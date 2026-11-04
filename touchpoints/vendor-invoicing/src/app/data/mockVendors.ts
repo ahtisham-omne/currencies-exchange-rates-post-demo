@@ -1,5 +1,7 @@
 import { mulberry32 } from './seededRandom';
 import { presetForVendor } from './paymentTermPresets';
+import { currencyForVendorName } from '@/app/currency/invoiceFx';
+import { midRateOn } from '@/app/currency/rates';
 
 // Seeded so the vendor / PO / line-item dataset is stable across
 // reloads — see mockInvoices.ts for the rationale.
@@ -31,6 +33,11 @@ export interface VendorPO {
    *  by default, but a PO can carry its own. An invoice spanning POs with
    *  different terms is allowed and warns the user to pick one. */
   paymentTerms?: string;
+  /** The PO's currency: the vendor's when it was raised (spec 4.3). An
+   *  invoice from this PO defaults to it. */
+  currency?: string;
+  /** Base currency per one unit of `currency` on the PO date (mid-market). */
+  exchangeRate?: number;
 }
 
 export interface VendorGRN {
@@ -753,6 +760,12 @@ export const mockVendors: Vendor[] = Array.from({ length: 40 }, (_, index) => {
     }));
   }
 
+  // Currency & Exchange Rates (spec 4.2, 4.3): the partner record's default
+  // currency, which its POs are raised in. Each PO keeps the mid-market rate
+  // on its PO date, the commitment an invoice's own rate is compared with.
+  const currency = currencyForVendorName(vendorName);
+  pos = pos.map((po) => ({ ...po, currency, exchangeRate: midRateOn(currency, po.poDate) ?? undefined }));
+
   // First rows pinned to the real team (feedback 7/16/26; Irtaza above
   // Rida 8/12/26) — the same convention as mockInvoices/mockPayments, so
   // every data table leads with Ahtisham, Eli, Mahreen, Irtaza and Rida.
@@ -778,7 +791,7 @@ export const mockVendors: Vendor[] = Array.from({ length: 40 }, (_, index) => {
     vendorCode,
     vendorName,
     category,
-    currency: 'USD',
+    currency,
     // Terms come from the partner template catalog (8/12/26), the same
     // vendor-name hash the run authoring pool uses, so both agree.
     paymentTerms: presetForVendor(vendorName).name,

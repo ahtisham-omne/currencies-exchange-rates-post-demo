@@ -118,6 +118,11 @@ import {
   type InsightsRange,
 } from '@/app/components/InvoiceInsightsPanel';
 import { InsightsRangeMenu, INSIGHTS_RANGE_OPTIONS } from '@/app/components/InsightsRangeMenu';
+import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
+import { Money } from '@/app/components/currency/Money';
+import { formatMoney, moneyPrefix } from '@/app/currency/money';
+import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { InsightsResetButton } from '@/app/components/InsightsResetButton';
 import { InsightsRefresh } from '@/app/components/InsightsRefresh';
 import { BulkActionBar, type BulkAction } from '@/app/components/BulkActionBar';
@@ -755,8 +760,9 @@ export function InvoiceListScreen({
     }
     if (filters.dueFrom && new Date(invoice.dueDate) < new Date(filters.dueFrom)) return false;
     if (filters.dueTo && new Date(invoice.dueDate) > new Date(filters.dueTo)) return false;
-    if (filters.amountMin !== '' && invoice.amount < Number(filters.amountMin)) return false;
-    if (filters.amountMax !== '' && invoice.amount > Number(filters.amountMax)) return false;
+    // Base currency (spec 4.4): one range across invoices in several currencies.
+    if (filters.amountMin !== '' && toInvoiceBase(invoice, invoice.amount) < Number(filters.amountMin)) return false;
+    if (filters.amountMax !== '' && toInvoiceBase(invoice, invoice.amount) > Number(filters.amountMax)) return false;
     if (filters.types.length > 0 && !filters.types.includes(invoice.type)) return false;
     if (filters.statuses.length > 0 && !filters.statuses.includes(invoice.status)) return false;
     if (filters.vendors.length > 0 && !filters.vendors.includes(invoice.vendor)) return false;
@@ -839,7 +845,8 @@ export function InvoiceListScreen({
     Math.max(filters.createdBy.length, createdByQuickFilter.length) +
     filters.statuses.length +
     apAccountQuickFilter.length +
-    currencyQuickFilter.length +
+    // Currency is a toolbar filter again (spec 2.2), so like Vendor it no
+    // longer counts toward the modal-only badge.
     (discountOnly ? 1 : 0);
 
   // Table Empty & Error States Standard (11/3/26): every non-search filter
@@ -1558,6 +1565,8 @@ export function InvoiceListScreen({
                 onCustomChange={(from, to) => setInsightsCustom({ from, to })}
               />
               <InsightsRefresh />
+              {/* The cards' money is base currency (Currency & Exchange Rates, spec 4.4). */}
+              <BaseCurrencyNote />
             </div>
             <div className="flex items-center gap-2">
               <InsightsResetButton dirty={insightsDirty} onReset={handleInsightsReset} />
@@ -1832,6 +1841,15 @@ export function InvoiceListScreen({
           options={paymentTermsQuickOptions.map((v) => ({ id: v, label: v, count: paymentTermsQuickCounts[v] ?? 0 }))}
           selected={paymentTermsQuickFilter}
           onChange={(next) => { setPaymentTermsQuickFilter(next); setCurrentPage(1); }}
+        />
+        {/* Currency beside Vendor and Payment Terms (Currency & Exchange
+            Rates audit, spec 2.2): invoices come in several currencies now.
+            Same state as the Filters modal's Currency section. */}
+        <MultiSelectFilter
+          label="Currency"
+          options={currencyQuickOptions.map((v) => ({ id: v, label: v, count: currencyQuickCounts[v] ?? 0 }))}
+          selected={currencyQuickFilter}
+          onChange={(next) => { setCurrencyQuickFilter(next); setCurrentPage(1); }}
         />
         {/* Toolbar diet (Eli 9/8, global Billy Bob standard): Due date,
             Discount available, Created By, A/P Account and Currency moved
@@ -2150,7 +2168,9 @@ export function InvoiceListScreen({
               />
             </div>
 
-            {/* ── Currency — moved off the toolbar (Eli 9/8). ── */}
+            {/* ── Currency — moved off the toolbar (Eli 9/8), back on it
+                beside Payment Terms for Currency & Exchange Rates; this
+                section shares its state, like Vendor. ── */}
             <div>
               <p className="text-[13px] mb-2.5" style={{ fontWeight: 600, color: 'hsl(var(--foreground))' }}>
                 Currency
@@ -2340,10 +2360,11 @@ export function InvoiceListScreen({
               </div>
             </div>
 
-            {/* ── Amount range ── */}
+            {/* ── Amount range ── in the base currency, so one range spans
+                invoices in every currency (Currency & Exchange Rates). */}
             <div>
               <p className="text-[13px] mb-2.5" style={{ fontWeight: 600, color: 'hsl(var(--foreground))' }}>
-                Amount
+                Amount <span className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>in {BASE_CURRENCY}, base currency</span>
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2351,7 +2372,7 @@ export function InvoiceListScreen({
                     Min
                   </Label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">{moneyPrefix(BASE_CURRENCY)}</span>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -2367,7 +2388,7 @@ export function InvoiceListScreen({
                     Max
                   </Label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">{moneyPrefix(BASE_CURRENCY)}</span>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -2615,13 +2636,14 @@ export function InvoiceListScreen({
                           (user 10/1: the 700 read too dark against the
                           table's uniform 400 cells). */}
                       <p className={`${cardSize === 'small' ? 'text-[14px]' : 'text-[16px]'} text-foreground`} style={{ fontWeight: 500, lineHeight: 1.2 }}>
-                        ${invoice.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        {/* In the invoice's own currency, base equivalent on hover. */}
+                        <Money value={invoice.amount} currency={invoice.currency} fx={invoiceFx(invoice)} />
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0 min-w-0">
                       {invoice.outstandingBalance > 0.004 && invoice.outstandingBalance < invoice.amount - 0.004 && (
                         <p className="text-[11px] text-slate-500" style={{ fontWeight: 400 }}>
-                          {`$${invoice.outstandingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} due
+                          {formatMoney(invoice.outstandingBalance, invoice.currency)} due
                         </p>
                       )}
                       {/* The table's created-by cell on EVERY size (user

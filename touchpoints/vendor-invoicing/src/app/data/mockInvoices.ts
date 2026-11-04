@@ -1,6 +1,9 @@
 import { mulberry32 } from './seededRandom';
 import { daysForPreset, presetForVendor } from './paymentTermPresets';
 import { formatInvoiceId } from '@/app/lib/invoiceIds';
+import { resolveRegistryVendor } from './mockVendors';
+import { currencyForVendorName, stampRate } from '@/app/currency/invoiceFx';
+import type { RateType } from '@/app/currency/rates';
 
 // Seeded so the listing renders the same 100 invoices on every
 // reload — only state mutations (new invoice, status change, etc.)
@@ -88,6 +91,11 @@ export interface InvoiceGlEntry {
   description?: string;
   debit?: number;
   credit?: number;
+  /** Foreign-currency invoices (Currency & Exchange Rates): debit / credit
+   *  are base currency at `rate`; this is the line in the invoice currency. */
+  currency?: string;
+  foreignAmount?: number;
+  rate?: number;
 }
 
 export interface Invoice {
@@ -114,6 +122,17 @@ export interface Invoice {
   amount: number;
   outstandingBalance: number;
   currency: string;
+  /** Base currency per one unit of `currency`, taken on the posting date
+   *  (Currency & Exchange Rates, spec 4.4); 1 on base-currency invoices.
+   *  A/P posts at this rate, and a payment is later compared against it.
+   *  Unset until posted (a pre-invoice posts when it is paid). */
+  exchangeRate?: number;
+  /** Mid-market (read-only on the invoice) or corporate (editable). */
+  rateType?: RateType;
+  /** The day the rate is for: the posting date it was taken on. */
+  rateDate?: string;
+  /** A corporate rate changed on the invoice from the rate table. */
+  rateEdited?: boolean;
   apAccount: string;
   description: string;
   postingDate?: string;
@@ -922,9 +941,30 @@ function seedHoldDemo(list: Invoice[]): Invoice[] {
   });
 }
 
-export const mockInvoices = seedHoldDemo(migrateHoldStatus(arrangePayQueueDemo(backfillActionHistory(withMandatoryDates([
+/* Currency & Exchange Rates (spec 4.2, 4.4): each invoice is in its
+ * vendor's currency (the partner record's, which the registry and its POs
+ * carry too) with the mid-market rate on its posting date. Applied last,
+ * after the dates settle, so no earlier seed step or rand() stream changes.
+ * A pre-invoice posts when it is paid, so it takes its rate then: a paid one
+ * carries the rate of its last update (its payment, in the seeds), an unpaid
+ * one carries none yet. */
+const PAID_STATUSES = new Set(['Paid in Full', 'Partially Paid', 'Prepaid', 'Partially Prepaid']);
+function withVendorCurrency(list: Invoice[]): Invoice[] {
+  return list.map((inv) => {
+    const currency = resolveRegistryVendor(inv.vendor)?.currency ?? currencyForVendorName(inv.vendor);
+    const rateDay =
+      inv.type !== 'Pre-Invoice'
+        ? inv.postingDate ?? inv.invoiceDate
+        : PAID_STATUSES.has(inv.status)
+          ? inv.updatedDate ?? inv.postingDate ?? inv.invoiceDate
+          : undefined;
+    return { ...inv, currency, ...stampRate(currency, rateDay) };
+  });
+}
+
+export const mockInvoices = withVendorCurrency(seedHoldDemo(migrateHoldStatus(arrangePayQueueDemo(backfillActionHistory(withMandatoryDates([
   ...generateInvoices(100),
   ...generateReadyToPayInvoices(100),
   ...generateAcmePreInvoices(3),
   ...generatePrepayReconciliationDemo(),
-])))));
+]))))));

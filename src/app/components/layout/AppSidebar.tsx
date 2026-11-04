@@ -101,7 +101,8 @@ const navItems: NavItem[] = [
     children: [
       { label: "Overview", path: "/accounting" },
       { label: "Currency & Exchange Rates", path: "/accounting/currencies", also: ["/accounting/exchange-rates"] },
-      { label: "Vendor Invoices", path: "/accounting/vendor-invoicing" },
+      // Every page of the Vendor Invoicing app (payments, prepayments, …) keeps this link lit.
+      { label: "Vendor Invoices", path: "/accounting/vendor-invoicing/invoices", also: ["/accounting/vendor-invoicing"] },
     ],
   },
   {

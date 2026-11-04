@@ -13,6 +13,7 @@ import { ReceivingDocumentModal, type ReceivingDocumentLine } from './ReceivingD
 import { ItemImageWithPreview, ItemQuickViewModal } from './ItemQuickView';
 import { highlightText, highlightAmount } from '@/app/components/InvoiceDataTable';
 import { rowMatchesColumns } from '@/app/components/data-table/tableSearch';
+import { formatMoney as formatInCurrency } from '@/app/currency/money';
 
 // Read-only, short list → no row selection, no pagination. Shared empties so
 // the controlled DataTable props stay referentially stable.
@@ -576,9 +577,8 @@ function generateStandaloneLines(invoice: Invoice, subtotal: number): Standalone
   });
 }
 
-function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+// Each currency with its own symbol and decimals (Currency & Exchange Rates).
+const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
 
 // Detail-page line items for a Standalone invoice — mirrors the create
 // form's GL Account · Description · Amount table instead of the inventory

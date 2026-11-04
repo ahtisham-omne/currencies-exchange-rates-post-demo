@@ -19,7 +19,16 @@ npm run dev                   # main app + a live, hot-reloading server per touc
 ### Change a touchpoint
 
 1. Edit its source in `touchpoints/<name>/src`. `npm run dev` shows the change live.
-2. Run `npm run touchpoints:build` to rebuild the copies in `public/touchpoint-apps/`.
+2. Run `npm run touchpoints:build` to rebuild the copies in `public/touchpoint-apps/`. To rebuild only some, name them: `npm run touchpoints:build -- vendor-invoicing`.
 3. Commit the source change and the rebuilt copy together, then push.
 
 Lovable and deploys show the built copy, so a change that isn't rebuilt doesn't appear there. `npm run dev` warns when a built copy is older than its source.
+
+### Vendor Invoicing
+
+Vendor Invoicing is the redesigned app from [`vendor-invoicing-payments`](https://github.com/ahtisham-omne/vendor-invoicing-payments), added as a squashed subtree. [docs/vendor-invoicing-currency-touchpoints.md](docs/vendor-invoicing-currency-touchpoints.md) records:
+
+- its currency and exchange-rate touchpoints;
+- where each is defined;
+- how the earlier touchpoint maps onto it;
+- how to pull later design changes.

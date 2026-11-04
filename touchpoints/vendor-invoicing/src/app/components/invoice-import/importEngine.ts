@@ -23,6 +23,8 @@ import {
   type ImportObjectKey,
   type ImportRunConfig,
 } from './importModel';
+import { stampRate } from '@/app/currency/invoiceFx';
+import { getCurrency } from '@/app/currency/currencies';
 
 /* ── CSV parsing ── */
 
@@ -610,7 +612,10 @@ export function validateRows(rows: ImportInvoiceRow[], ctx: ValidationContext): 
       blocker(`Payment term "${termLabel}" does not exist in Omne. Terms are never created by an import`, 'payment_terms', termSuggestion(termLabel));
     }
 
-    // Currency.
+    // Currency: one the Currency Library lists (spec 2.3), so it has a rate.
+    if (h.currency && !getCurrency(h.currency.trim())) {
+      blocker(`Currency ${h.currency.trim().toUpperCase()} is not in the Currency Library`, 'currency');
+    }
     if (h.currency && h.currency.toUpperCase() !== 'USD' && !(h.exchange_rate ?? '').trim()) {
       blocker(`Exchange rate is required when the currency is ${h.currency.toUpperCase()}`, 'exchange_rate');
     }
@@ -967,6 +972,10 @@ export function buildCommitRecords(
         amount: owed,
         outstandingBalance: owed,
         currency: (h.currency || 'USD').toUpperCase(),
+        // The mid-market rate on the posting date (Currency & Exchange Rates,
+        // spec 4.4). The file's Exchange Rate column is checked above but
+        // not used: it doesn't say which way it is quoted.
+        ...stampRate((h.currency || 'USD').toUpperCase(), config.mode === 'migration' ? periodPostingDate : h.posting_date),
         apAccount: '2000 Accounts Payable',
         description,
         postingDate: config.mode === 'migration' ? periodPostingDate : h.posting_date,

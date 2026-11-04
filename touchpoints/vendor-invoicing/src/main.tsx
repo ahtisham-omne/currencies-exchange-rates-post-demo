@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { sharedStorageKey } from "./embedding";
 import App from "./App.tsx";
 import "./index.css";
 
@@ -14,7 +15,7 @@ import "./index.css";
 const APP_STORAGE_PREFIXES = ["omnesoft:", "omne.", "vendor-invoicing-"];
 try {
   for (const key of Object.keys(localStorage)) {
-    if (APP_STORAGE_PREFIXES.some((p) => key.startsWith(p))) {
+    if (APP_STORAGE_PREFIXES.some((p) => key.startsWith(p)) && !sharedStorageKey(key)) {
       localStorage.removeItem(key);
     }
   }

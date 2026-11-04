@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Wallet } from 'lucide-react';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/app/components/ui/hover-card';
 import type { Invoice } from '@/app/data/mockInvoices';
+import { formatMoney } from '@/app/currency/money';
 
 /* ── Prepaid origin note (9/2/26) ────────────────────────────────────
  * Reconciliation was visible at creation and on the invoice detail, but
@@ -16,7 +17,6 @@ import type { Invoice } from '@/app/data/mockInvoices';
  * the hover card he asked us to keep. */
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
-const fmt = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Total prepayment consumed at this invoice's creation. */
 export function prepaidTotalOf(invoice: Pick<Invoice, 'appliedPrepayments'>): number {
@@ -27,9 +27,11 @@ export function PrepaidOriginNote({
   invoice,
   className = '',
 }: {
-  invoice: Pick<Invoice, 'appliedPrepayments' | 'amount'>;
+  invoice: Pick<Invoice, 'appliedPrepayments' | 'amount'> & { currency?: string };
   className?: string;
 }) {
+  // In the invoice's own currency (Currency & Exchange Rates).
+  const fmt = (n: number) => formatMoney(n, invoice.currency ?? 'USD');
   const prepaid = prepaidTotalOf(invoice);
   if (prepaid <= 0.004) return null;
   const entries = invoice.appliedPrepayments ?? [];
@@ -95,7 +97,7 @@ export function AmountWithPrepaidNote({
   invoice,
   children,
 }: {
-  invoice: Pick<Invoice, 'appliedPrepayments' | 'amount'>;
+  invoice: Pick<Invoice, 'appliedPrepayments' | 'amount'> & { currency?: string };
   children: ReactNode;
 }) {
   const prepaid = prepaidTotalOf(invoice);

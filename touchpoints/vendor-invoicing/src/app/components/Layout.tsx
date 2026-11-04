@@ -36,6 +36,7 @@ import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { palette, accent } from '@/styles/tokens';
 import { CollapseReveal } from '@/app/components/ui/collapse-reveal';
+import { embedded } from '@/embedding';
 
 export type AppView =
   | 'overview'
@@ -743,7 +744,8 @@ const BREADCRUMB_LEAF: Record<AppView, string | undefined> = {
 export function Layout({ children, activeView, onViewChange }: LayoutProps) {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      <Sidebar activeView={activeView} onViewChange={onViewChange} />
+      {/* Inside the Currency & Exchange Rates shell, its sidebar stands in for this one. */}
+      {!embedded && <Sidebar activeView={activeView} onViewChange={onViewChange} />}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col relative z-0">
         <TopBar
           section="Accounting & Finance"

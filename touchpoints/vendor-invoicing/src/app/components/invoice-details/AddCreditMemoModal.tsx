@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/app/components/ui/select';
+import { formatMoney as formatInCurrency } from '@/app/currency/money';
 
 export interface AddCreditMemoSubmitPayload {
   creditMemoNumber: string;
@@ -92,9 +93,8 @@ function todayIso() {
   return localTodayIso();
 }
 
-function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+// Each currency with its own symbol and decimals (Currency & Exchange Rates).
+const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
 
 export function AddCreditMemoModal({
   open,

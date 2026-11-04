@@ -92,6 +92,10 @@ import { AttachmentsTab } from './invoice-details/AttachmentsTab';
 import { ComingSoonTab } from './invoice-details/ComingSoonTab';
 import { InvoiceDetailSidebar } from './invoice-details/InvoiceDetailSidebar';
 import { SegmentedCountPill } from '@/app/components/SegmentedCountPill';
+import { formatMoney, moneyPrefix } from '@/app/currency/money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { toBase } from '@/app/currency/rates';
+import { invoiceFx } from '@/app/currency/invoiceFx';
 
 interface InvoiceDetailScreenProps {
   invoiceId: string;
@@ -2236,7 +2240,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
             setStatusOverride(null);
             toast.success('Credit memo added', {
               description: [
-                inRunId ? `This pre-invoice is in a payment run. Lower the run amount to ${invoice.currency === 'USD' ? '$' : invoice.currency + ' '}${newOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} before it is paid.` : undefined,
+                inRunId ? `This pre-invoice is in a payment run. Lower the run amount to ${formatMoney(newOutstanding, invoice.currency)} before it is paid.` : undefined,
                 payload.notify ? notifyLine(payload.notifiedRecipientIds) : undefined,
               ].filter(Boolean).join(' ') || undefined,
             });
@@ -2247,7 +2251,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
             });
           } else {
             toast.success(`${payload.creditMemoNumber} created`, {
-              description: [`${payload.reason} · ${invoice.currency === 'USD' ? '$' : invoice.currency + ' '}${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, payload.notify ? notifyLine(payload.notifiedRecipientIds) : undefined].filter(Boolean).join(' · '),
+              description: [`${payload.reason} · ${formatMoney(payload.amount, invoice.currency)}`, payload.notify ? notifyLine(payload.notifiedRecipientIds) : undefined].filter(Boolean).join(' · '),
             });
           }
         }}
@@ -2279,7 +2283,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
           onReversePayment?.({ invoiceId: invoice.id, paymentReference: payload.paymentReference, amount: payload.reversalAmount, reason: payload.reason });
           setStatusOverride(null);
           toast.success(`${isPre ? 'Prepayment' : 'Payment'} ${payload.paymentReference} reversed`, {
-            description: [`${payload.reason} · ${invoice.currency === 'USD' ? '$' : invoice.currency + ' '}${payload.reversalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, payload.notify ? notifyLine(payload.notifiedRecipientIds) : undefined].filter(Boolean).join(' · '),
+            description: [`${payload.reason} · ${formatMoney(payload.reversalAmount, invoice.currency)}`, payload.notify ? notifyLine(payload.notifiedRecipientIds) : undefined].filter(Boolean).join(' · '),
           });
         }}
       />
@@ -2321,23 +2325,33 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
         // mirrored the 2100 accrual + 5205 variance lines): the saved
         // glEntries snapshot when the record carries one, the GL tab's
         // type fallback for seeds. Unposted invoices show nothing.
+        // In the base currency at the invoice rate, as the GL tab shows it
+        // (Currency & Exchange Rates): saved lines carrying a currency are
+        // already base; older ones and the seed fallback convert once.
+        glCurrency={BASE_CURRENCY}
         glReversal={
           reasonAction === 'cancel' &&
           ['Approved', 'Partially Paid', 'Paid in Full', 'Payment Hold'].includes(invoice.status)
-            ? (invoice.glEntries && invoice.glEntries.length > 0
-                ? invoice.glEntries.map((e) => ({
-                    code: e.accountCode,
-                    name: e.accountName,
-                    // The reversal flips each side of the original entry.
-                    debit: e.credit ?? 0,
-                    credit: e.debit ?? 0,
-                  }))
-                : [
-                    { code: '2000', name: 'Accounts Payable', debit: invoice.amount, credit: 0 },
-                    invoice.type === 'Standalone'
-                      ? { code: '6000', name: 'Operating Expenses', debit: 0, credit: invoice.amount }
-                      : { code: '2100', name: 'AP Accrual', debit: 0, credit: invoice.amount },
-                  ])
+            ? (() => {
+                const fx = invoiceFx(invoice);
+                const base = (v: number, saved?: { currency?: string }) =>
+                  saved?.currency || fx.isBase ? v : toBase(v, fx.rate);
+                const amount = base(invoice.amount);
+                return invoice.glEntries && invoice.glEntries.length > 0
+                  ? invoice.glEntries.map((e) => ({
+                      code: e.accountCode,
+                      name: e.accountName,
+                      // The reversal flips each side of the original entry.
+                      debit: base(e.credit ?? 0, e),
+                      credit: base(e.debit ?? 0, e),
+                    }))
+                  : [
+                      { code: '2000', name: 'Accounts Payable', debit: amount, credit: 0 },
+                      invoice.type === 'Standalone'
+                        ? { code: '6000', name: 'Operating Expenses', debit: 0, credit: amount }
+                        : { code: '2100', name: 'AP Accrual', debit: 0, credit: amount },
+                    ];
+              })()
             : undefined
         }
       />
@@ -2721,8 +2735,9 @@ interface JourneyNode {
 
 const SCHEDULED_COLORS = { solid: '#0866E0', glow: 'color-mix(in srgb, #0866E0 18%, transparent)' };
 
-function journeyMoney(amount: number) {
-  return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+/** Whole units in the invoice's currency, for the compact journey tooltips. */
+function journeyMoney(amount: number, currency: string) {
+  return `${moneyPrefix(currency)}${Math.round(amount).toLocaleString('en-US')}`;
 }
 
 interface JourneyTrackState {
@@ -2931,7 +2946,7 @@ function buildInvoiceJourney(args: {
         label: prepaid ? 'Partially Prepaid' : 'Partially Paid',
         icon: prepaid ? Wallet : Banknote,
         colors: STEP_COLORS[prepaid ? 'Partially Prepaid' : 'Partially Paid'],
-        detail: `${paidCount} payment${paidCount === 1 ? '' : 's'} · ${journeyMoney(coverage)} of ${journeyMoney(total)} settled`,
+        detail: `${paidCount} payment${paidCount === 1 ? '' : 's'} · ${journeyMoney(coverage, invoice.currency)} of ${journeyMoney(total, invoice.currency)} settled`,
       });
     }
     // Reversals join the trail as completed events (9/4/26 Eli, BB-29 —
@@ -2946,7 +2961,7 @@ function buildInvoiceJourney(args: {
           label: ev.kind === 'prepayment' ? 'Prepayment Reversed' : 'Payment Reversed',
           icon: Undo2,
           colors: { solid: '#E11D48', glow: 'color-mix(in srgb, #E11D48 18%, transparent)' },
-          detail: `${ev.ref} · ${journeyMoney(ev.amount)} returned to the balance`,
+          detail: `${ev.ref} · ${journeyMoney(ev.amount, invoice.currency)} returned to the balance`,
         });
       });
     // Live pending states render while they exist and disappear once
@@ -2959,7 +2974,7 @@ function buildInvoiceJourney(args: {
         label: coversRest ? 'Full Payment Scheduled' : 'Partial Payment Scheduled',
         icon: Clock,
         colors: SCHEDULED_COLORS,
-        detail: journeyMoney(scheduledTotal),
+        detail: journeyMoney(scheduledTotal, invoice.currency),
       });
     }
   } else if (!cancelled && !archived) {

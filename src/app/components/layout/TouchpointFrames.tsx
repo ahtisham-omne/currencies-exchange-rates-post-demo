@@ -9,8 +9,19 @@ import {
   type TouchpointMatch,
 } from "../../touchpoints";
 
-/* Touchpoint apps check for this flag to hide their own sidebar. */
-(window as unknown as { __OMNE_SHELL__: boolean }).__OMNE_SHELL__ = true;
+/* Touchpoint apps check for this to hide their own sidebar, and ask it for the
+   shell page of one of their URLs (a link opening in a new tab should show the
+   whole shell, not the bare touchpoint). */
+(window as unknown as { __OMNE_SHELL__: unknown }).__OMNE_SHELL__ = {
+  urlFor(frameUrl: string): string | null {
+    const url = new URL(frameUrl, window.location.origin);
+    const touchpoint = touchpoints.find(
+      (t) => url.pathname === frameBase(t) || url.pathname.startsWith(frameBase(t) + "/"),
+    );
+    if (!touchpoint) return null;
+    return toShellPath(touchpoint, url.pathname.slice(frameBase(touchpoint).length) || "/") + url.search + url.hash;
+  },
+};
 
 const appLocation = (touchpoint: Touchpoint, win: Window) => ({
   path: win.location.pathname.slice(frameBase(touchpoint).length) || "/",

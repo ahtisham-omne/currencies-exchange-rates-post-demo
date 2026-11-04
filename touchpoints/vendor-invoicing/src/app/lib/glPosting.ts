@@ -26,6 +26,12 @@ export interface GlEntryLine {
   description?: string;
   debit?: number;
   credit?: number;
+  /** A foreign-currency invoice's line (Currency & Exchange Rates): debit /
+   *  credit are base currency; this is the line in the invoice's currency,
+   *  posted at `rate`. */
+  currency?: string;
+  foreignAmount?: number;
+  rate?: number;
 }
 
 export interface InvoiceGlInput {

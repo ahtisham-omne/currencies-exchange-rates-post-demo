@@ -32,6 +32,7 @@ import {
 import { mockVendors } from '@/app/data/mockVendors';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import { highlightText as sharedHighlightText } from '@/app/components/InvoiceDataTable';
+import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 
 // "Create new partner" deep link — opens Partner Management in a new
 // tab when the search dead-ends. ?from=vendor-invoicing pre-tags the
@@ -522,6 +523,8 @@ export function StandaloneVendorSelectionModal({
                               {/* Searchable, so it highlights like every other matched cell (10/9/26). */}
                               {highlightText(vendor.category, search)}
                             </span>
+                            {/* The partner record's currency (spec 4.2): the invoice defaults to it. */}
+                            <CurrencyPill code={vendor.currency} note="The vendor's default currency, from its partner record" />
                           </div>
 
                           {/* Description with inline more / Show less toggle — same

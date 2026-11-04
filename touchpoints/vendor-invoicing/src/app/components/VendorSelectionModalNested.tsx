@@ -35,6 +35,10 @@ import { Calendar as CalendarPicker } from '@/app/components/ui/calendar';
 import type { DateRange } from 'react-day-picker';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import { CollapseReveal } from '@/app/components/ui/collapse-reveal';
+import { Money } from '@/app/components/currency/Money';
+import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
+import { formatMoney } from '@/app/currency/money';
+import { poRateFx } from '@/app/currency/invoiceFx';
 
 // Material UI Imports
 import dayjs from 'dayjs';
@@ -87,7 +91,10 @@ export interface SelectedPOData {
   vendorCode: string;
   vendorName: string;
   vendorCategory: string;
+  /** The PO's currency (else the vendor's): the invoice defaults to it. */
   currency: string;
+  /** The PO's rate on its PO date, which the invoice's rate is compared against. */
+  poExchangeRate?: number;
   paymentTerms: string;
   poNumber: string;
   poDate: string;
@@ -1280,7 +1287,9 @@ export function VendorSelectionModalNested(props: VendorSelectionModalProps) {
               vendorCode: vendor.vendorCode,
               vendorName: vendor.vendorName,
               vendorCategory: vendor.category,
-              currency: vendor.currency,
+              // The PO's currency, else the vendor's (spec 4.4): the invoice defaults to it.
+              currency: po.currency ?? vendor.currency,
+              poExchangeRate: po.exchangeRate,
               paymentTerms: vendor.paymentTerms,
               poNumber: po.poNumber,
               poDate: po.poDate,
@@ -3185,6 +3194,9 @@ function VendorNestedRow({
               {vendor.category}
             </span>
 
+            {/* The partner record's currency (spec 4.2); its POs are raised in it. */}
+            <CurrencyPill code={vendor.currency} note="The vendor's default currency, from its partner record" />
+
             {/* Selection summary chip — original segmented pill (colored
                 "Selected" tag + neutral count segments + clear ×). Forced to
                 the same height as the Active / category pills via an
@@ -3636,7 +3648,7 @@ function VendorNestedRow({
                                 <Tooltip delayDuration={150}>
                                   <TooltipTrigger asChild>
                                     <span className="text-[9px] font-bold px-1.5 py-0.25 rounded-sm border bg-violet-50 text-violet-700 border-violet-200 cursor-help">
-                                      {`Prepaid · $${ctx.amount.toLocaleString()}`}
+                                      {`Prepaid · ${formatMoney(ctx.amount, vendor.currency)}`}
                                     </span>
                                   </TooltipTrigger>
                                   {/* The full reconciliation story lives in
@@ -3647,7 +3659,7 @@ function VendorNestedRow({
                                     <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 500 }}>Prepaid on this PO</p>
                                     <p className="text-[11px] text-slate-500 leading-snug mt-0.5 ">
                                       <span className="text-violet-700" style={{ fontWeight: 600 }}>{ctx.preInvoiceNumber}</span> already paid{' '}
-                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>${ctx.amount.toLocaleString()}</span> against PO-{po.poNumber}. It's applied automatically when you invoice this receiving.
+                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>{formatMoney(ctx.amount, vendor.currency)}</span> against PO-{po.poNumber}. It's applied automatically when you invoice this receiving.
                                     </p>
                                   </TooltipContent>
                                 </Tooltip>
@@ -3690,7 +3702,7 @@ function VendorNestedRow({
                                     : 'text-green-600 bg-green-50 border-green-100'
                                 } px-1.5 py-0.5 border rounded flex items-center gap-1`}>
                                   {isPreInvoiceEligible ? <Tag className="w-2.5 h-2.5" /> : <CheckCircle2 className="w-2.5 h-2.5" />}
-                                  {isPreInvoiceEligible ? 'Pre-Invoice' : 'Invoiced'}: ${(po.invoicedAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  {isPreInvoiceEligible ? 'Pre-Invoice' : 'Invoiced'}: {formatMoney(po.invoicedAmount ?? 0, vendor.currency)}
                                   {isPreInvoiceEligible && (
                                     <Tooltip>
                                       <TooltipTrigger asChild>
@@ -3705,7 +3717,7 @@ function VendorNestedRow({
                               </div>
                             )}
                             <span className={`text-[14px] font-semibold ${isPOLocked ? 'text-slate-400' : 'text-green-600'}`}>
-                              ${po.poAmount.toLocaleString()}
+                              <Money value={po.poAmount} currency={po.currency ?? vendor.currency} fx={poRateFx(po)} role="PO currency" dateLabel="PO date" />
                             </span>
                           </div>
                           <span className="text-[8px] text-gray-400 font-bold">PO Value</span>
@@ -3907,7 +3919,7 @@ function VendorNestedRow({
                                     </td>
                                     <td className="px-4 py-3 text-right">
                                       <div className="font-semibold text-gray-900">{item.quantity} {item.uom}</div>
-                                      <div className="text-[10px] font-medium text-gray-500">${(item.quantity * item.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                      <div className="text-[10px] font-medium text-gray-500">{formatMoney(item.quantity * item.unitPrice, vendor.currency)}</div>
                                     </td>
                                     {/* Received Qty — BA UX feedback. Lights up
                                         red when received exceeds ordered (over-
@@ -3934,11 +3946,11 @@ function VendorNestedRow({
                                         <span className={`font-bold ${isFullyInvoiced ? 'text-success' : isPartiallyInvoiced ? 'text-success/80' : 'text-gray-400'}`}>
                                           {item.invoicedQty || 0} {item.uom}
                                         </span>
-                                        <span className={`text-[10px] font-semibold ${prevInvoicedAmt > 0 ? 'text-success/70' : 'text-gray-300'}`}>${prevInvoicedAmt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                        <span className={`text-[10px] font-semibold ${prevInvoicedAmt > 0 ? 'text-success/70' : 'text-gray-300'}`}>{formatMoney(prevInvoicedAmt, vendor.currency)}</span>
                                       </div>
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                      <div className="font-semibold text-gray-900">${item.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                      <div className="font-semibold text-gray-900">{formatMoney(item.unitPrice, vendor.currency)}</div>
                                       <div className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>per {item.uom}</div>
                                     </td>
                                     {/* Remaining Qty — quantity only (per BA:
@@ -4154,14 +4166,14 @@ function VendorNestedRow({
                                 <Tooltip delayDuration={150}>
                                   <TooltipTrigger asChild>
                                     <span className="text-[9px] font-bold px-1.5 py-0.25 rounded-sm border bg-violet-50 text-violet-700 border-violet-200 cursor-help">
-                                      {`Prepaid · $${ctx.amount.toLocaleString()}`}
+                                      {`Prepaid · ${formatMoney(ctx.amount, vendor.currency)}`}
                                     </span>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className="max-w-[290px] p-2.5 bg-white border border-border rounded-lg shadow-md">
                                     <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 500 }}>Prepaid on this PO</p>
                                     <p className="text-[11px] text-slate-500 leading-snug mt-0.5 ">
                                       <span className="text-violet-700" style={{ fontWeight: 600 }}>{ctx.preInvoiceNumber}</span> already paid{' '}
-                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>${ctx.amount.toLocaleString()}</span> against PO-{grn.poNumber}. It's applied automatically when you invoice this receiving.
+                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>{formatMoney(ctx.amount, vendor.currency)}</span> against PO-{grn.poNumber}. It's applied automatically when you invoice this receiving.
                                     </p>
                                   </TooltipContent>
                                 </Tooltip>
@@ -4191,7 +4203,7 @@ function VendorNestedRow({
                               numbers too (BA 9/7) — grey read odd inside
                               the emerald card. */}
                           <div className={`text-[14px] font-bold ${isGRNFullyInvoiced ? 'text-emerald-700' : 'text-slate-400'}`}>
-                            ${grnTotalAmt.toLocaleString()}
+                            {formatMoney(grnTotalAmt, vendor.currency)}
                           </div>
                           <span className={`text-[8px] font-bold ${isGRNFullyInvoiced ? 'text-emerald-600/70' : 'text-gray-400'}`}>Receiving Value</span>
                         </div>
@@ -4258,14 +4270,14 @@ function VendorNestedRow({
                                 <Tooltip delayDuration={150}>
                                   <TooltipTrigger asChild>
                                     <span className="text-[9px] font-bold px-1.5 py-0.25 rounded-sm border bg-violet-50 text-violet-700 border-violet-200 cursor-help">
-                                      {`Prepaid · $${ctx.amount.toLocaleString()}`}
+                                      {`Prepaid · ${formatMoney(ctx.amount, vendor.currency)}`}
                                     </span>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className="max-w-[290px] p-2.5 bg-white border border-border rounded-lg shadow-md">
                                     <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 500 }}>Prepaid on this PO</p>
                                     <p className="text-[11px] text-slate-500 leading-snug mt-0.5 ">
                                       <span className="text-violet-700" style={{ fontWeight: 600 }}>{ctx.preInvoiceNumber}</span> already paid{' '}
-                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>${ctx.amount.toLocaleString()}</span> against PO-{grn.poNumber}. It's applied automatically when you invoice this receiving.
+                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>{formatMoney(ctx.amount, vendor.currency)}</span> against PO-{grn.poNumber}. It's applied automatically when you invoice this receiving.
                                     </p>
                                   </TooltipContent>
                                 </Tooltip>
@@ -4292,7 +4304,7 @@ function VendorNestedRow({
 
                         <div className="flex flex-col items-end gap-0.5 px-2">
                           <div className="text-[14px] font-bold text-gray-900">
-                            ${grnTotalAmt.toLocaleString()}
+                            {formatMoney(grnTotalAmt, vendor.currency)}
                           </div>
                           <span className="text-[8px] text-gray-400 font-bold">Receiving Value</span>
                         </div>
@@ -4432,7 +4444,7 @@ function VendorNestedRow({
                                       </div>
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                      <div className="font-semibold text-gray-900">${item.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                      <div className="font-semibold text-gray-900">{formatMoney(item.unitPrice, vendor.currency)}</div>
                                       <div className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>per {item.uom}</div>
                                     </td>
                                     {/* Received, quantity only (per BA). */}
@@ -4452,12 +4464,12 @@ function VendorNestedRow({
                                                 <div className="space-y-2 text-left">
                                                   <div className="flex items-center justify-between">
                                                     <span className="text-[9px] font-bold text-success tracking-widest">Linked Invoices</span>
-                                                    <span className="text-[9px] font-semibold text-gray-400">Total: ${invoicedValue.toLocaleString()}</span>
+                                                    <span className="text-[9px] font-semibold text-gray-400">Total: {formatMoney(invoicedValue, vendor.currency)}</span>
                                                   </div>
                                                   <div className="space-y-1">
                                                     <div className="flex items-center justify-between border-b border-gray-50 pb-1">
                                                       <span className="text-[10px] font-semibold text-gray-900">PINV-001-V001</span>
-                                                      <span className="text-[10px] font-bold text-success">${(invoicedValue).toLocaleString()}</span>
+                                                      <span className="text-[10px] font-bold text-success">{formatMoney(invoicedValue, vendor.currency)}</span>
                                                     </div>
                                                   </div>
                                                   <p className="text-[10px] text-gray-500 font-medium">This quantity has already been recorded in preceding invoices.</p>
@@ -4466,7 +4478,7 @@ function VendorNestedRow({
                                             </HoverCard>
                                           )}
                                         </div>
-                                        <div className="text-[10px] font-semibold text-success/70">${invoicedValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                        <div className="text-[10px] font-semibold text-success/70">{formatMoney(invoicedValue, vendor.currency)}</div>
                                       </div>
                                     </td>
                                     {/* Remaining, quantity only (per BA). */}

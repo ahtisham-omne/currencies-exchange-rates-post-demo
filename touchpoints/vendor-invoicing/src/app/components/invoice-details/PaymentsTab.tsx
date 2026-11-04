@@ -15,6 +15,7 @@ import { Payment } from '@/app/data/mockPayments';
 import { LinkedFinancialRecord } from '@/app/data/invoiceLinkedRecords';
 import { LineItemsTable } from './LineItemsTab';
 import { highlightText } from '@/app/components/InvoiceDataTable';
+import { formatMoney as formatInCurrency } from '@/app/currency/money';
 
 // Payments tab — every money movement recorded against THIS invoice in one
 // place: posted payments, prepayments (anchored or applied), scheduled
@@ -71,9 +72,8 @@ export function prepaymentStatusLabel(status: string): string {
   return status;
 }
 
-function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+// Each currency with its own symbol and decimals (Currency & Exchange Rates).
+const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
 
 const PAYMENT_COLUMN_CATALOG = [
   { key: 'reference', label: 'Payment No.' },

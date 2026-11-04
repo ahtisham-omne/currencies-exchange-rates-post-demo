@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/app/components/ui/select';
+import { formatMoney as formatInCurrency } from '@/app/currency/money';
 
 /** Resolve a payment's funding account (a PAY_FROM id like
  *  "1210-Citibank" or a GL string) into a code + name for the reversal
@@ -140,9 +141,8 @@ function fmtShortDate(iso: string) {
     : d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
 }
 
-function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+// Each currency with its own symbol and decimals (Currency & Exchange Rates).
+const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
 
 export function ReversePaymentModal({
   open,

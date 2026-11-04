@@ -149,7 +149,13 @@ import { getVendorDefaultExpenseAccount, setVendorDefaultExpenseAccount } from '
 import { toast } from 'sonner';
 import { Invoice, mockInvoices, nextSystemInvoiceNumber, type InvoiceCharges, type SavedInvoiceLineItem } from '@/app/data/mockInvoices';
 import { partnerVendorUrl } from '@/app/data/mockVendors';
-import { buildInvoiceGl, toGlEntries } from '@/app/lib/glPosting';
+import { buildInvoiceGl } from '@/app/lib/glPosting';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { formatMoney, formatRate, moneyPrefix, rateSentence } from '@/app/currency/money';
+import { DEFAULT_RATE_TYPE, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from '@/app/currency/rates';
+import { baseGlEntries, glInBase } from '@/app/currency/glFx';
+import { InvoiceCurrencyField, InvoiceExchangeRateField } from '@/app/components/currency/InvoiceCurrencyFields';
+import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
 
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { PaymentTermDetailsModal } from '@/app/components/PaymentTermDetailsModal';
@@ -1757,6 +1763,71 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   );
   const totalDueAfterPrepay = Math.max(0, Math.round((sliceAdjustedTotal - prepayApplied) * 100) / 100);
 
+  // ── Currency & Exchange Rates (spec 4.4, 3.5) ─────────────────────────
+  // The invoice is written in one currency: its PO's, else the vendor's
+  // partner-record default (a reopened invoice keeps its own). The rate is
+  // taken on the posting date: mid-market is read-only, a corporate rate can
+  // be changed here. A/P posts in the base currency at this rate, the rate a
+  // later payment is compared against. A pre-invoice posts when it's paid,
+  // so its rate is taken then (today's stands in for the preview).
+  const poCurrency = !isStandalone ? currentPOsData[0]?.currency : undefined;
+  const vendorDefaultCurrency = vendorData?.currency || standaloneVendor?.currency || BASE_CURRENCY;
+  const [invoiceCurrency, setInvoiceCurrency] = useState<string>(
+    () => resubmitInvoice?.currency || poCurrency || vendorDefaultCurrency,
+  );
+  const [rateType, setRateType] = useState<RateType>(resubmitInvoice?.rateType ?? DEFAULT_RATE_TYPE);
+  // A corporate rate typed on the invoice; null keeps the rate table's.
+  const [typedRate, setTypedRate] = useState<string | null>(
+    resubmitInvoice?.rateEdited && resubmitInvoice.exchangeRate ? String(resubmitInvoice.exchangeRate) : null,
+  );
+  const [rateError, setRateError] = useState(false);
+  const invoiceIsBase = isBaseCurrency(invoiceCurrency);
+  const ratePending = invoiceKind === 'pre';
+  const rateDay = ratePending || !postingDate ? localTodayIso() : postingDate;
+  const tableQuote = useMemo(() => rateOn(invoiceCurrency, rateDay, rateType), [invoiceCurrency, rateDay, rateType]);
+  const midQuote = useMemo(() => rateOn(invoiceCurrency, rateDay, 'mid'), [invoiceCurrency, rateDay]);
+  const typedRateValue = typedRate != null && typedRate.trim() !== '' ? Number(typedRate) : null;
+  const invoiceRate: number | null = invoiceIsBase
+    ? 1
+    : rateType === 'corporate' && typedRate != null
+      ? typedRateValue != null && typedRateValue > 0
+        ? typedRateValue
+        : null
+      : tableQuote.rate;
+  const rateEdited = rateType === 'corporate' && typedRateValue != null && typedRateValue !== tableQuote.rate;
+  // Nothing to post at when a foreign invoice has no usable rate (blocks submit).
+  const rateMissing = !invoiceIsBase && !ratePending && invoiceRate == null;
+  /** An invoice-currency amount in the base currency, at the invoice rate. */
+  const inBase = (n: number) => toBase(n, invoiceRate ?? midQuote.rate ?? 1);
+  /** An invoice-currency amount as text: $12,400.00 · €980.50. */
+  const money = (n: number) => formatMoney(n, invoiceCurrency);
+  // Money inputs show the symbol on the left; their padding clears it (pl-5 fits "$").
+  const moneySymbol = moneyPrefix(invoiceCurrency).replace(/\u200E/g, '').trim();
+  const symbolPad = moneySymbol.length <= 1 ? 'pl-5' : moneySymbol.length === 2 ? 'pl-7' : 'pl-9';
+  const symbolPadWide = moneySymbol.length <= 1 ? 'pl-6' : moneySymbol.length === 2 ? 'pl-8' : 'pl-10';
+  /** The rate fields an invoice saved from this form carries. */
+  /** The rate fields an invoice saved from this form carries. `posted`:
+   *  a record that posts now (a split's receiving child does even on the
+   *  pre-invoice screen), at the rate its GL is built with. */
+  const invoiceFxFields = (
+    posted = !ratePending,
+  ): Pick<Invoice, 'currency' | 'exchangeRate' | 'rateType' | 'rateDate' | 'rateEdited'> => {
+    const rate = invoiceRate ?? (posted ? midQuote.rate : null);
+    return {
+      currency: invoiceCurrency,
+      ...(!posted || rate == null
+        ? {}
+        : { exchangeRate: rate, rateType: invoiceRate != null ? rateType : 'mid', rateDate: rateDay, rateEdited: rateEdited || undefined }),
+    };
+  };
+  // The PO's own rate, for the "vs PO" comparison on the rate field.
+  const poRateRef = !isStandalone && currentPOsData[0]?.poExchangeRate
+    ? { poNumber: currentPOsData[0].poNumber, rate: currentPOsData[0].poExchangeRate, date: currentPOsData[0].poDate }
+    : null;
+  // The currency and rate are editable state too: an edit that only changes
+  // them is still a change (the fingerprint above is built before them).
+  latestResubJsonRef.current += JSON.stringify([invoiceCurrency, rateType, typedRate]);
+
   const activePOOriginalData = useMemo(() => {
     if (!activePOTab) return null;
     for (const vendor of mockVendors) {
@@ -2126,6 +2197,12 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     if (vendorInvoiceNumberDuplicate) {
       missingFieldTargets.push('vendor-invoice-number-field');
     }
+    // A foreign-currency invoice needs a rate to post A/P at (spec 4.4):
+    // a corporate rate with none on file must be entered.
+    if (rateMissing) {
+      setRateError(true);
+      missingFieldTargets.push('invoice-exchange-rate-field');
+    }
     // "Other" additional charges must say what they are.
     const otherChargeMissingDesc = additionalCharges.find(
       (c) => c.type === 'Other' && !(c.description || '').trim()
@@ -2347,8 +2424,12 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     const savedAttachmentSizes = Object.fromEntries(
       invoiceAttachments.filter((f) => f.size !== undefined).map((f) => [f.name, f.size as number]),
     );
+    // A rate re-taken on reopening (a closed-period posting date moves to
+    // today) changes the posting even when no field was touched.
+    const rateUnchanged =
+      invoiceFxFields().exchangeRate === resubmitInvoice?.exchangeRate && invoiceCurrency === resubmitInvoice?.currency;
     const keepGlIfUnchanged = (created: Invoice[]): Invoice[] =>
-      isResubmit && resubSnapshotRef.current !== null && resubSnapshotRef.current === latestResubJsonRef.current
+      isResubmit && rateUnchanged && resubSnapshotRef.current !== null && resubSnapshotRef.current === latestResubJsonRef.current
         ? created.map((inv) => ({ ...inv, glEntries: undefined }))
         : created;
     const savedFromLineItems = (items: LineItem[]): SavedInvoiceLineItem[] =>
@@ -2372,8 +2453,12 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
           ...(i.poNumber ? { poNumber: i.poNumber } : {}),
           ...(i.grnNumbers?.length ? { grnNumbers: i.grnNumbers } : {}),
         }));
+    // The ledger is kept in the base currency: every snapshot posts at the
+    // invoice rate (Currency & Exchange Rates, spec 4.4).
+    const postInBase = (gl: ReturnType<typeof buildInvoiceGl>) =>
+      baseGlEntries(glInBase(gl, invoiceRate ?? midQuote.rate ?? 1, invoiceCurrency));
     const glForInventory = (items: LineItem[], docTotal: number, docSliceTotal: number) =>
-      toGlEntries(
+      postInBase(
         buildInvoiceGl({
           kind: items.some((i) => i.grnDate) ? 'received' : 'unreceived',
           lines: items
@@ -2414,7 +2499,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         type: 'Standalone' as any,
         amount: total,
         outstandingBalance: total,
-        currency: vendorData?.currency || standaloneVendor?.currency || 'USD',
+        ...invoiceFxFields(),
         date: currentDate,
         invoiceDate: invoiceDate,
         createdDate: currentDate,
@@ -2455,7 +2540,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
             lineTotal: i.amount,
             glAccount: i.glAccount,
           })),
-        glEntries: toGlEntries(
+        glEntries: postInBase(
           buildInvoiceGl({
             kind: 'standalone',
             lines: standaloneItems.filter((i) => i.amount > 0 && i.glAccount).map((i) => ({ glAccount: i.glAccount, amount: i.amount })),
@@ -2519,7 +2604,8 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         type: 'Pre-Invoice',
         amount: total,
         outstandingBalance: total,
-        currency: 'USD',
+        // A pre-invoice posts when it is paid, so it takes its rate then.
+        currency: invoiceCurrency,
         date: currentDate,
         // The vendor invoice date is the FORM'S date (GPT QC14, 9/30: a
         // trigger-only edit stamped today here and silently moved the
@@ -2566,7 +2652,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         type: 'Receiving-based',
         amount: standardAmount,
         outstandingBalance: standardAmount,
-        currency: 'USD',
+        ...invoiceFxFields(true),
         date: currentDate,
         // Form state, not today (GPT QC14).
         invoiceDate: invoiceDate,
@@ -2593,7 +2679,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         // the child carries exactly its received lines.
         charges: { tax: 0, freight: 0, freightGlAccount: DEFAULT_FREIGHT_GL_ACCOUNT, additional: [] },
         savedLineItems: savedFromLineItems(standardInvoiceItems),
-        glEntries: toGlEntries(
+        glEntries: postInBase(
           buildInvoiceGl({
             kind: standardInvoiceItems.some((i) => i.grnDate) ? 'received' : 'unreceived',
             lines: standardInvoiceItems
@@ -2644,7 +2730,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
               reconcilesPreInvoiceNumbers: appliedPrepayEntries.map((e) => e.invoiceNumber),
             }
           : {}),
-        currency: 'USD',
+        ...invoiceFxFields(),
         date: currentDate,
         // Form state, not today (GPT QC14).
         invoiceDate: invoiceDate,
@@ -2804,7 +2890,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
               </div>
               <div className="text-right shrink-0 ml-2">
                 <span className="text-[12px] text-slate-800" style={{ fontWeight: 600 }}>{item.invoiceQty} {item.uom}</span>
-                <p className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>${item.unitPrice.toLocaleString()}/unit</p>
+                <p className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>{money(item.unitPrice)}/unit</p>
               </div>
             </div>
           ))}
@@ -2816,10 +2902,11 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
             </div>
             <div>
               <p className="text-[10px] text-slate-400 leading-none" style={{ fontWeight: 500 }}>Line Items Total</p>
-              <p className="text-[14px] text-slate-800 mt-0.5" style={{ fontWeight: 600 }}>${items.reduce((sum, i) => sum + i.lineTotal, 0).toLocaleString()}</p>
+              <p className="text-[14px] text-slate-800 mt-0.5" style={{ fontWeight: 600 }}>{money(items.reduce((sum, i) => sum + i.lineTotal, 0))}</p>
             </div>
           </div>
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] text-slate-600 bg-slate-50 border border-slate-200" style={{ fontWeight: 600 }}>
+            <CurrencyFlag code={poData?.currency} size={12} className="mr-1" />
             {poData?.currency}
           </span>
         </div>
@@ -3588,6 +3675,47 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       stated-total capture is out of the design. The import
                       path keeps its supplied-total variance check. */}
 
+                  {/* Currency & Exchange Rate (Currency & Exchange Rates
+                      audit, spec 4.4 / 3.5): the currency defaults from the
+                      PO (locked to it) else the vendor; the rate is taken on
+                      the posting date, read-only on Mid-market and editable
+                      on Corporate. */}
+                  <div className="grid grid-cols-2 gap-4" id="invoice-exchange-rate-field">
+                    <InvoiceCurrencyField
+                      value={invoiceCurrency}
+                      onChange={(code) => {
+                        setInvoiceCurrency(code);
+                        setTypedRate(null);
+                        setRateError(false);
+                      }}
+                      source={
+                        poCurrency
+                          ? { kind: 'po', ref: currentPOsData[0]?.poNumber ? `PO-${currentPOsData[0].poNumber}` : 'the PO' }
+                          : { kind: 'vendor', ref: vendorDefaultCurrency }
+                      }
+                    />
+                    <InvoiceExchangeRateField
+                      currency={invoiceCurrency}
+                      rateType={rateType}
+                      onRateTypeChange={(t) => {
+                        setRateType(t);
+                        setTypedRate(null);
+                        setRateError(false);
+                      }}
+                      quote={tableQuote}
+                      midQuote={midQuote}
+                      typed={typedRate}
+                      onTypedChange={(v) => {
+                        setTypedRate(v);
+                        if (rateError) setRateError(false);
+                      }}
+                      rate={invoiceRate}
+                      pending={ratePending}
+                      error={rateError && rateMissing}
+                      po={poRateRef && invoiceCurrency === currentPOsData[0]?.currency ? { ...poRateRef, poNumber: `PO-${poRateRef.poNumber}` } : null}
+                    />
+                  </div>
+
                   {/* Row 3: Description */}
                   <div>
                     <Label className="text-xs sm:text-[13px] text-foreground flex items-center gap-1.5" style={{ fontWeight: 500 }}>
@@ -3787,13 +3915,13 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                 the inventory invoice's Unit Price input. */}
                             <td className="px-1.5 py-1.5">
                               <div className="relative w-full">
-                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-500" style={{ fontWeight: 600 }}>$</span>
+                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-500" style={{ fontWeight: 600 }}>{moneySymbol}</span>
                                 <MoneyInput
                                   fluid
                                   value={item.amount || 0}
                                   onValueChange={(n) => updateStandaloneItem(item.id, 'amount', n)}
                                   placeholder="0.00"
-                                  className={`flex h-8 w-full min-w-0 rounded-md border bg-white pl-5 pr-2 py-1 text-right font-bold text-[11px] shadow-none outline-none focus-visible:ring-1 focus-visible:ring-blue-100 ${
+                                  className={`flex h-8 w-full min-w-0 rounded-md border bg-white ${symbolPad} pr-2 py-1 text-right font-bold text-[11px] shadow-none outline-none focus-visible:ring-1 focus-visible:ring-blue-100 ${
                                     lineContentError && (item.amount || 0) <= 0 ? 'border-red-300 ring-2 ring-red-100' : 'border-border'
                                   }`}
                                 />
@@ -4292,14 +4420,14 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                           style={{ fontWeight: 600, fontFamily: 'inherit' }}
                                           aria-label={`Revert unit price to ${item.originalUnitPrice}`}
                                         >
-                                          ${item.originalUnitPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                          {money(item.originalUnitPrice)}
                                         </button>
                                         . Click the price to revert.
                                       </p>
                                     </HoverCardContent>
                                   </HoverCard>
                                 ) : (
-                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-500" style={{ fontWeight: 600 }}>$</span>
+                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-500" style={{ fontWeight: 600 }}>{moneySymbol}</span>
                                 )}
                                 <Input
                                   type="text"
@@ -4321,7 +4449,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                     updateLineItem(item.id, 'unitPrice', raw);
                                   }}
                                   onBlur={() => setPriceDrafts((prev) => { const next = { ...prev }; delete next[item.id]; return next; })}
-                                  className={`h-7 pl-5 text-right text-[11px] shadow-none rounded-md font-semibold focus-visible:ring-1 ${
+                                  className={`h-7 ${symbolPad} text-right text-[11px] shadow-none rounded-md font-semibold focus-visible:ring-1 ${
                                     priceChanged
                                       ? 'pl-7 bg-white border-amber-400 text-amber-700 focus-visible:ring-amber-100 focus-visible:border-amber-500'
                                       : 'text-gray-900 bg-white border-slate-200 hover:border-slate-300 focus-visible:ring-primary/20 focus-visible:border-primary'
@@ -4475,7 +4603,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                               </div>
                             </td>
                             <td className="px-2 py-2 text-right">
-                              <div className="text-[11px] font-semibold text-gray-900 whitespace-nowrap">${lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                              <div className="text-[11px] font-semibold text-gray-900 whitespace-nowrap">{money(lineTotal)}</div>
                             </td>
                             {invoiceKind !== 'pre' && (
                               <td className="px-3 py-2">
@@ -4683,6 +4811,23 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                             Auto-derived from this vendor's profile.
                           </span>
                         </div>
+                        {/* A/P posting (Currency & Exchange Rates, spec 4.4):
+                            A/P is posted in the base currency at the invoice
+                            rate, the rate a payment is later compared against. */}
+                        {!invoiceIsBase && (
+                          <div className="mt-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-2">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-[10px] text-slate-500" style={{ fontWeight: 600 }}>Posts to A/P in {BASE_CURRENCY}</span>
+                              <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }}>
+                                {formatMoney(inBase(sliceAdjustedTotal), BASE_CURRENCY)}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
+                              {money(sliceAdjustedTotal)} at {rateSentence(invoiceCurrency, invoiceRate ?? midQuote.rate ?? 1)}
+                              {invoiceRate == null ? ' (enter a rate)' : ''}. A payment is later compared against this rate.
+                            </p>
+                          </div>
+                        )}
                       </div>
                       )}
 
@@ -5494,7 +5639,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                               <div className="space-y-1">
                                 <Label className="text-[10px] text-slate-500" style={{ fontWeight: 500 }}>Amount</Label>
                                 <div className="relative">
-                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]" style={{ fontWeight: 500 }}>$</span>
+                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]" style={{ fontWeight: 500 }}>{moneySymbol}</span>
                                   <MoneyInput
                                     fluid
                                     value={charge.amount || 0}
@@ -5503,7 +5648,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                       newCharges[index].amount = n;
                                       setAdditionalCharges(newCharges);
                                     }}
-                                    className="flex h-9 w-full min-w-0 rounded-md border border-slate-200 bg-white pl-5 pr-2 py-1 text-[11px] shadow-none text-right font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/20 focus-visible:border-primary placeholder:text-slate-300"
+                                    className={`flex h-9 w-full min-w-0 rounded-md border border-slate-200 bg-white ${symbolPad} pr-2 py-1 text-[11px] shadow-none text-right font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/20 focus-visible:border-primary placeholder:text-slate-300`}
                                     placeholder="0.00"
                                   />
                                 </div>
@@ -5586,7 +5731,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       <div className="flex items-center justify-between pt-3 mt-1 border-t border-slate-100">
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Total Additional Charges</span>
                         <span className="text-[13px] text-foreground " style={{ fontWeight: 600 }}>
-                          ${additionalChargesTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {money(additionalChargesTotal)}
                         </span>
                       </div>
 
@@ -5662,12 +5807,12 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       <div className="space-y-1.5 min-w-0">
                         <Label className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Freight Charges</Label>
                         <div className="relative">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]" style={{ fontWeight: 500 }}>$</span>
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]" style={{ fontWeight: 500 }}>{moneySymbol}</span>
                           <MoneyInput
                             fluid
                             value={freightAmount || 0}
                             onValueChange={setFreightAmount}
-                            className="flex h-9 w-full min-w-0 rounded-md border border-slate-200 bg-white pl-6 pr-2.5 py-1 text-[12px] shadow-none text-right font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/20 focus-visible:border-primary"
+                            className={`flex h-9 w-full min-w-0 rounded-md border border-slate-200 bg-white ${symbolPadWide} pr-2.5 py-1 text-[12px] shadow-none text-right font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/20 focus-visible:border-primary`}
                             placeholder="0.00"
                           />
                         </div>
@@ -5735,7 +5880,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                               <span className="text-slate-700" style={{ fontWeight: 500 }}>Advance Payments</span>
                             </span>
                             <span className="text-[11px] text-foreground " style={{ fontWeight: 600 }}>
-                              ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {formatMoney(inBase(total), BASE_CURRENCY)}
                             </span>
                           </div>
                           <div className="flex items-center justify-between px-3 py-2">
@@ -5745,7 +5890,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                               <span className="text-slate-700" style={{ fontWeight: 500 }}>Cash / Bank</span>
                             </span>
                             <span className="text-[11px] text-foreground " style={{ fontWeight: 600 }}>
-                              ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {formatMoney(inBase(total), BASE_CURRENCY)}
                             </span>
                           </div>
                         </div>
@@ -5755,7 +5900,6 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       // buildInvoiceGl — the same builder the confirmation
                       // dialog shows and performSubmit persists, so the three
                       // surfaces can never disagree (GPT F55/RR11).
-                      const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                       const gl = buildInvoiceGl({
                         kind: isStandalone ? 'standalone' : hasReceivingDocs ? 'received' : 'unreceived',
                         lines: isStandalone
@@ -5781,7 +5925,18 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                         sliceAdjustedTotal,
                         sliceFraction,
                       });
-                      const drRows = [...gl.debits];
+                      // Posted in the base currency at the invoice rate (spec
+                      // 4.4); a foreign invoice shows each line's own amount under it.
+                      const posted = glInBase(gl, invoiceRate ?? midQuote.rate ?? 1, invoiceCurrency);
+                      const glAmount = (amount: number, foreign?: number) => (
+                        <span className="text-right">
+                          <span className="block">{formatMoney(amount, BASE_CURRENCY)}</span>
+                          {!invoiceIsBase && foreign != null && foreign > 0 && (
+                            <span className="block text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{money(foreign)}</span>
+                          )}
+                        </span>
+                      );
+                      const drRows: { code: string; name: string; amount: number; foreignAmount?: number }[] = [...posted.debits];
                       // Fallback: when nothing maps to a debit yet we still
                       // show a Dr placeholder so the panel has shape. Inventory
                       // invoices default to Inventory; standalone invoices
@@ -5792,13 +5947,19 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                           : { code: '1200', name: 'Inventory', amount: 0 });
                       }
                       // Credits: buildInvoiceGl returns [inventory correction?, A/P].
-                      const inventoryCreditRow = gl.credits.length > 1 ? gl.credits[0] : null;
-                      const apRow = gl.credits[gl.credits.length - 1];
+                      const inventoryCreditRow = posted.credits.length > 1 ? posted.credits[0] : null;
+                      const apRow = posted.credits[posted.credits.length - 1];
                       const apCode = apRow.code;
                       const apName = apRow.name;
                       const isBalanced = gl.balanced;
                       return (
                         <div className="border-t border-border bg-white">
+                          {!invoiceIsBase && (
+                            <div className="px-3.5 py-1.5 bg-slate-50/80 border-b border-border/60 text-[10px] text-slate-500 leading-snug" style={{ fontWeight: 500 }}>
+                              Posts in {BASE_CURRENCY} at {rateSentence(invoiceCurrency, invoiceRate ?? midQuote.rate ?? 1)}. Each
+                              line's {invoiceCurrency} amount is under it.
+                            </div>
+                          )}
                           {drRows.map((row, idx) => (
                             <div key={`dr-${row.code}-${idx}`}>
                               <div className="flex items-center gap-2.5 px-3.5 py-2.5">
@@ -5826,7 +5987,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                   {row.name}
                                 </span>
                                 <span className="text-[12px] text-foreground shrink-0" style={{ fontWeight: 600 }}>
-                                  ${fmt(row.amount)}
+                                  {glAmount(row.amount, row.foreignAmount)}
                                 </span>
                               </div>
                               <div className="h-px bg-border/60 mx-3.5" />
@@ -5852,7 +6013,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                   {inventoryCreditRow.name}
                                 </span>
                                 <span className="text-[12px] text-foreground shrink-0" style={{ fontWeight: 600 }}>
-                                  ${fmt(inventoryCreditRow.amount)}
+                                  {glAmount(inventoryCreditRow.amount, inventoryCreditRow.foreignAmount)}
                                 </span>
                               </div>
                               <div className="h-px bg-border/60 mx-3.5" />
@@ -5882,7 +6043,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                               {apName}
                             </span>
                             <span className="text-[12px] text-foreground shrink-0" style={{ fontWeight: 600 }}>
-                              ${fmt(sliceAdjustedTotal)}
+                              {glAmount(apRow.amount, apRow.foreignAmount)}
                             </span>
                           </div>
 
@@ -6032,11 +6193,11 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       )}
                       <div className="flex justify-between items-center">
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Subtotal</span>
-                        <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>{money(subtotal)}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Freight</span>
-                        <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>${freightAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>{money(freightAmount)}</span>
                       </div>
                       {/* Tax carried from the reopened record (QC14) — the
                           form has no tax field, so it rides read-only and
@@ -6044,7 +6205,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       {seededTax > 0 && (
                         <div className="flex justify-between items-center">
                           <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Tax (From Record)</span>
-                          <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>${seededTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>{money(seededTax)}</span>
                         </div>
                       )}
                       {/* Prepayment applied — totals-level line (Eli,
@@ -6053,13 +6214,13 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       {appliedPrepayEntries.map((e) => (
                         <div key={e.invoiceNumber} className="flex justify-between items-center">
                           <span className="text-[11px] text-violet-700" style={{ fontWeight: 500 }}>Prepayment applied · {e.invoiceNumber}</span>
-                          <span className="text-[12px] text-violet-700 " style={{ fontWeight: 600 }}>−${Math.min(e.amount, sliceAdjustedTotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="text-[12px] text-violet-700 " style={{ fontWeight: 600 }}>{money(-Math.min(e.amount, sliceAdjustedTotal))}</span>
                         </div>
                       ))}
                       {additionalCharges.map((charge) => charge.amount > 0 && (
                         <div key={charge.id} className="flex justify-between items-center">
                           <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>{charge.type || 'Charge'}</span>
-                          <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>${charge.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>{money(charge.amount)}</span>
                         </div>
                       ))}
                       {/* Split slice adjustment (Eli, 8/31/26 + 9/2/26): a
@@ -6076,11 +6237,11 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                               states the positive amount this slice pays. */}
                           <div className="flex justify-between items-center">
                             <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>{`Billed on the Other Slices · ${100 - activeSlice.percent}%`}</span>
-                            <span className="text-[12px] text-slate-500 " style={{ fontWeight: 500 }}>−${sliceReduction.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span className="text-[12px] text-slate-500 " style={{ fontWeight: 500 }}>{money(-sliceReduction)}</span>
                           </div>
                           <div className="flex justify-between items-center">
                             <span className="text-[11px] text-amber-700" style={{ fontWeight: 500 }}>{`This Slice · ${activeSlice.percent}% at ${activeSlice.triggerEvent}`}</span>
-                            <span className="text-[12px] text-amber-700 " style={{ fontWeight: 600 }}>${sliceAdjustedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            <span className="text-[12px] text-amber-700 " style={{ fontWeight: 600 }}>{money(sliceAdjustedTotal)}</span>
                           </div>
                         </>
                       )}
@@ -6094,9 +6255,20 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       the whole breakdown; one step above the row values.
                       Net of the slice adjustment AND applied prepayments. */}
                   <span className="text-[14px] text-foreground leading-none tracking-tight" style={{ fontWeight: 600 }}>
-                    ${totalDueAfterPrepay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {money(totalDueAfterPrepay)}
                   </span>
                 </div>
+                {/* The same total in the base currency (Currency & Exchange
+                    Rates, spec 4.4), at the invoice rate; the AR form's line. */}
+                {!invoiceIsBase && (
+                  <div className="flex justify-end mt-1">
+                    <span className="text-[11px] text-slate-400 text-right" style={{ fontWeight: 400 }}>
+                      ≈ {formatMoney(inBase(totalDueAfterPrepay), BASE_CURRENCY)} {BASE_CURRENCY} at{' '}
+                      {formatRate(invoiceRate ?? midQuote.rate ?? 1)}
+                      {ratePending ? ", today's rate" : invoiceRate == null ? '' : ` · ${RATE_TYPE_LABEL[rateType]}`}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Inline qty-mismatch / Exception alert banners removed per
@@ -6389,7 +6561,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                               <div key={i.id} className="text-[12px] text-slate-600" style={{ lineHeight: 1.5 }}>
                                 <span className="text-foreground" style={{ fontWeight: 600 }}>{i.sku}</span>
                                 <span className="block">
-                                  Price per Unit changed from ${i.originalUnitPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })} to ${i.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}.
+                                  Price per Unit changed from {money(i.originalUnitPrice)} to {money(i.unitPrice)}.
                                 </span>
                               </div>
                             ))}
@@ -6428,8 +6600,12 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                         </p>
                       )}
                       {(() => {
+                        // The AP journal is in the base currency, posted at the
+                        // invoice rate (Currency & Exchange Rates, spec 4.4).
                         const fmtGl = (n: number) =>
-                          `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                          ledger === 'ar'
+                            ? `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : formatMoney(n, BASE_CURRENCY);
                         // GL account strings are stored as "CODE Name"
                         // (e.g. "6000 Office Expense"); split on the first
                         // space to render code + name in their columns.
@@ -6484,17 +6660,26 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                 // Pre-invoice (BA 9/5, Option A): the first
                                 // entry is the PAYMENT — Dr Vendor Advance,
                                 // Cr Cash. Slice-adjusted for split terms.
-                                { code: '1205', name: 'Advance Payments', debit: sliceAdjustedTotal },
-                                { code: '1000', name: 'Cash / Bank', credit: sliceAdjustedTotal },
+                                { code: '1205', name: 'Advance Payments', debit: inBase(sliceAdjustedTotal) },
+                                { code: '1000', name: 'Cash / Bank', credit: inBase(sliceAdjustedTotal) },
                               ]
-                            : [
-                                ...apGl!.debits.map((r) => ({ code: r.code, name: r.name, debit: r.amount })),
-                                ...apGl!.credits.map((r) => ({ code: r.code, name: r.name, credit: r.amount })),
-                              ];
+                            : (() => {
+                                const posted = glInBase(apGl!, invoiceRate ?? midQuote.rate ?? 1, invoiceCurrency);
+                                return [
+                                  ...posted.debits.map((r) => ({ code: r.code, name: r.name, debit: r.amount })),
+                                  ...posted.credits.map((r) => ({ code: r.code, name: r.name, credit: r.amount })),
+                                ];
+                              })();
                         const drTotal = glLines.reduce((s, l) => s + (l.debit || 0), 0);
                         const crTotal = glLines.reduce((s, l) => s + (l.credit || 0), 0);
                         return (
                           <div className="mt-1.5 rounded-lg border border-slate-200 bg-white overflow-hidden text-left">
+                            {ledger !== 'ar' && !invoiceIsBase && (
+                              <p className="px-3 py-1.5 bg-slate-50/70 border-b border-slate-100 text-[10px] text-slate-500" style={{ fontWeight: 500 }}>
+                                In {BASE_CURRENCY}, at {rateSentence(invoiceCurrency, invoiceRate ?? midQuote.rate ?? 1)}
+                                {isPreInvoiceSubmit ? " (today's rate; the payment date's rate applies)" : ''}.
+                              </p>
+                            )}
                             <table className="w-full text-[12px]">
                               <thead className="bg-slate-50/70 border-b border-slate-100">
                                 <tr>
@@ -8679,7 +8864,7 @@ function AddItemFromPOModal({
                         <span className="text-[12px] font-semibold text-foreground">{item.quantity} {item.uom}</span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className="text-[12px] font-bold text-muted-foreground">${item.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="text-[12px] font-bold text-muted-foreground">{formatMoney(item.unitPrice, poData?.currency)}</span>
                       </td>
                     </tr>
                   ))}

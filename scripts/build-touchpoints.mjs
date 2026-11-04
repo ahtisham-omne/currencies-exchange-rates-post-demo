@@ -6,7 +6,15 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { HASH_FILE, isInstalled, run, sourceHash, touchpoints, viteBin } from "./touchpoints.mjs";
 
-for (const t of touchpoints) {
+// `npm run touchpoints:build -- vendor-invoicing` builds just the named ones.
+const only = process.argv.slice(2);
+const unknown = only.filter((slug) => !touchpoints.some((t) => t.slug === slug));
+if (unknown.length) {
+  console.error(`Unknown touchpoint: ${unknown.join(", ")} (see touchpoints/touchpoints.json)`);
+  process.exit(1);
+}
+
+for (const t of touchpoints.filter((t) => only.length === 0 || only.includes(t.slug))) {
   if (!isInstalled(t)) {
     console.error(`[${t.slug}] dependencies not installed (run \`npm run touchpoints:install\`)`);
     process.exit(1);
