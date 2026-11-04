@@ -1,0 +1,150 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design system - Items v2 theme with rgba values converted for TW3 compatibility */
+
+/* ── Item Quick View modal animations ──────────────────────────────────── */
+@keyframes itemQuickViewIn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes itemQuickViewOverlay {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Hide scrollbars (used inside the Quick View panel content) */
+.scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+@layer base {
+  :root {
+    --font-size: 16px;
+
+    /* Surfaces — aligned with Partners */
+    --background: 218 20% 97%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary — #0A77FF */
+    --primary: 212 100% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary */
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    /* Muted */
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 19% 35%;
+
+    /* Accent — tints of primary (was GREEN, now blue tint) */
+    --accent: 214 100% 96%;
+    --accent-foreground: 213 89% 33%;
+
+    /* Destructive */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders & inputs */
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --input-background: 0 0% 100%;
+    --ring: 212 100% 74%;
+
+    /* Charts */
+    --chart-1: 212 100% 52%;
+    --chart-2: 160 84% 39%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 263 70% 50%;
+    --chart-5: 0 84% 60%;
+
+    /* Radius */
+    --radius: 0.5rem;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 212 100% 52%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 214 100% 96%;
+    --sidebar-accent-foreground: 213 94% 41%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 212 100% 74%;
+
+    /* Items-V2-only tokens preserved for legacy screens (cleanup in Phases 2-5) */
+    --background-base-third: 218 20% 97%;
+    --text-base-second: 215 19% 35%;
+    --elevation-sm: 0px 2px 8px 0px rgba(0, 0, 0, 0.16);
+
+    /* Typography variables */
+    --text-h1: 40px;
+    --text-h2: 28px;
+    --text-h3: 24px;
+    --text-h4: 20px;
+    --text-base: 16px;
+    --text-label: 14px;
+    --font-weight-semibold: 600;
+    --font-weight-medium: 500;
+    --font-weight-normal: 400;
+  }
+
+  .dark {
+    --background: 222 47% 9%;
+    --foreground: 210 40% 96%;
+    --card: 220 38% 15%;
+    --card-foreground: 210 40% 96%;
+    --popover: 220 38% 15%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 212 100% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 25% 63%;
+    --accent: 212 89% 19%;
+    --accent-foreground: 212 100% 74%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 26% 24%;
+    --input: 215 26% 24%;
+    --input-background: 220 38% 15%;
+    --ring: 212 100% 62%;
+    --chart-1: 212 100% 62%;
+    --chart-2: 160 72% 51%;
+    --chart-3: 43 96% 56%;
+    --chart-4: 263 83% 76%;
+    --chart-5: 0 91% 71%;
+    --sidebar-background: 220 38% 15%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 212 100% 62%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 212 89% 19%;
+    --sidebar-accent-foreground: 212 100% 74%;
+    --sidebar-border: 215 26% 24%;
+    --sidebar-ring: 212 100% 62%;
+    --background-base-third: 222 47% 9%;
+    --text-base-second: 215 25% 63%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+html {
+  font-size: var(--font-size);
+}
