@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { FlagImage, flagEmojiCode } from "@/app/components/ui/FlagImage";
 import { createPortal } from "react-dom";
 import { ExpandableTextarea } from "./ExpandableTextarea";
 import {
@@ -761,7 +762,7 @@ export function CreatePartnerLocationModal({
                                 type="button"
                                 className="flex items-center gap-1.5 pl-2.5 pr-1.5 !h-10 rounded-l-lg border border-r-0 border-border bg-white text-sm shrink-0 cursor-pointer hover:border-slate-300 transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                               >
-                                <span className="text-base leading-none">{selectedPhoneCountry.flag}</span>
+                                <span className="text-base leading-none"><FlagImage code={flagEmojiCode(selectedPhoneCountry.flag)} /></span>
                                 <span className="text-xs text-slate-700" style={{ fontWeight: 600 }}>
                                   {phoneCountryCode}
                                 </span>
@@ -801,7 +802,7 @@ export function CreatePartnerLocationModal({
                                         : "hover:bg-slate-50 text-slate-700"
                                     }`}
                                   >
-                                    <span className="text-base">{c.flag}</span>
+                                    <span className="text-base"><FlagImage code={flagEmojiCode(c.flag)} /></span>
                                     <span className="text-sm flex-1 truncate" style={{ fontWeight: 500 }}>
                                       {c.country}
                                     </span>

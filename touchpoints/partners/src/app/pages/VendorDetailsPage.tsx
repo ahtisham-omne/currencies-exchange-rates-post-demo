@@ -1,4 +1,5 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { FlagImage, flagEmojiCode } from "@/app/components/ui/FlagImage";
 import { useVendors } from "../context/VendorContext";
 import fedexLogo from "@/assets/carriers/fedex.png";
 import dhlLogo from "@/assets/carriers/dhl.png";
@@ -1508,7 +1509,7 @@ function PartnerGroupHoverPill({ group }: { group: { id: string; name: string; d
         style={{ fontWeight: 600 }}
       >
         <Star className="w-2.5 h-2.5 fill-slate-400 text-slate-400" />
-        {group.countryFlag} {group.name}
+        <FlagImage code={flagEmojiCode(group.countryFlag)} /> {group.name}
         <span className="text-[10px] text-slate-400" style={{ fontWeight: 400 }}>· {group.memberCount}</span>
       </PopoverTrigger>
       <PopoverContent
@@ -1526,7 +1527,7 @@ function PartnerGroupHoverPill({ group }: { group: { id: string; name: string; d
             <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/[0.04]" />
             <div className="flex items-center justify-between relative">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-base shrink-0">{group.countryFlag}</span>
+                <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(group.countryFlag)} /></span>
                 <span className="text-white text-[13px] truncate" style={{ fontWeight: 600 }}>
                   {group.name}
                 </span>
@@ -1618,7 +1619,7 @@ function PartnerGroupOverflowPill({ groups }: { groups: { id: string; name: stri
                   onMouseEnter={() => setHoveredGroup(g.id)}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors cursor-default ${hoveredGroup === g.id ? "bg-slate-50" : "hover:bg-slate-50"}`}
                 >
-                  <span className="text-sm shrink-0">{g.countryFlag}</span>
+                  <span className="text-sm shrink-0"><FlagImage code={flagEmojiCode(g.countryFlag)} /></span>
                   <div className="min-w-0 flex-1">
                     <p className="text-[12px] text-slate-700 truncate" style={{ fontWeight: 600 }}>{g.name}</p>
                     <p className="text-[10px] text-slate-400">{g.memberCount} members · {g.country}</p>
@@ -1639,7 +1640,7 @@ function PartnerGroupOverflowPill({ groups }: { groups: { id: string; name: stri
                   <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/[0.04]" />
                   <div className="flex items-center justify-between relative">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-base shrink-0">{g.countryFlag}</span>
+                      <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(g.countryFlag)} /></span>
                       <span className="text-white text-[13px] truncate" style={{ fontWeight: 600 }}>{g.name}</span>
                     </div>
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-white/10 text-slate-400 shrink-0" style={{ fontWeight: 600 }}>
@@ -3267,7 +3268,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
             </div>
             <div className="min-w-0">
               <DashInfoLabel>Country</DashInfoLabel>
-              <p className="text-[12px] text-slate-700 truncate" style={{ fontWeight: 500 }}>{vendor.countryFlag} {vendor.country}</p>
+              <p className="text-[12px] text-slate-700 truncate" style={{ fontWeight: 500 }}><FlagImage code={flagEmojiCode(vendor.countryFlag)} /> {vendor.country}</p>
             </div>
           </div>
           {vendor.billingAddress.street && (
@@ -4723,7 +4724,7 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, initialLocationIdx, onIn
                             borderColor: "#CBD5E1",
                           }}
                         >
-                          <span className="text-[12px]">{getCountryFlag(loc.country)}</span>
+                          <span className="text-[12px]"><FlagImage code={flagEmojiCode(getCountryFlag(loc.country))} /></span>
                           {loc.country}
                         </span>
                       </div>
@@ -5322,7 +5323,7 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, initialLocationIdx, onIn
                           {loc.status === "active" ? "Active" : "Inactive"}
                         </span>
                         <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 shrink-0">
-                          <span className="text-[12px]">{getCountryFlag(loc.country)}</span> {loc.country}
+                          <span className="text-[12px]"><FlagImage code={flagEmojiCode(getCountryFlag(loc.country))} /></span> {loc.country}
                         </span>
                       </div>
                       <div className="flex items-center gap-3 mt-0.5">

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { FlagImage, flagEmojiCode } from "@/app/components/ui/FlagImage";
 import { ExpandableTextarea } from "./ExpandableTextarea";
 import {
   Plus, X, CreditCard, ChevronLeft, Check, Pencil, Trash2, Star, Archive,
@@ -251,7 +252,7 @@ export function PhoneFieldWithCountry({ e, updateEntry, defaultFormat }: {
                 phoneCountryOpen ? "border-primary bg-slate-50" : "border-border"
               }`}
             >
-              <span className="text-base">{activeFormat.flag}</span>
+              <span className="text-base"><FlagImage code={flagEmojiCode(activeFormat.flag)} /></span>
               <span style={{ fontWeight: 500 }}>{activeFormat.phoneCode}</span>
               <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${phoneCountryOpen ? "rotate-180" : ""}`} />
             </button>
@@ -284,7 +285,7 @@ export function PhoneFieldWithCountry({ e, updateEntry, defaultFormat }: {
                     }}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-slate-50 ${isActive ? "bg-accent/50" : ""}`}
                   >
-                    <span className="text-base shrink-0">{c.flag}</span>
+                    <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(c.flag)} /></span>
                     <span className="text-[12px] text-foreground flex-1" style={{ fontWeight: 500 }}>{c.country}</span>
                     <span className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>{c.phoneCode}</span>
                     {isActive && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}

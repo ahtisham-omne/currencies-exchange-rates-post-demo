@@ -1,13 +1,13 @@
 import * as React from "react";
-import { ChevronDown, ChevronUp, Search, Check, Globe } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, Check } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { cn } from "./utils";
 import {
   CURRENCY_LIBRARY,
-  flagUrlForCurrency,
   getLibraryCurrency,
   type LibraryCurrency,
 } from "@/app/data/currencyLibrary";
+import { CurrencyFlag } from "./CurrencyFlag";
 
 export interface CurrencyLibrarySelectProps {
   value: string | undefined;            // ISO 4217 alpha-3 (any case)
@@ -22,7 +22,7 @@ export interface CurrencyLibrarySelectProps {
 /**
  * Currency selector that mirrors the Currency Library dropdown:
  * - Full ISO 4217 list (156 active currencies).
- * - Each row: [country flag from flagcdn.com] [CODE bold] [Full name].
+ * - Each row: [country flag (CurrencyFlag)] [CODE bold] [Full name].
  * - Multi-country currencies (EUR, XAF, XOF, XCD, XCG, XPF) show a globe fallback.
  * - Search filters across code, name, and country/region in real time.
  */
@@ -146,31 +146,5 @@ export function CurrencyLibrarySelect({
 }
 
 function FlagOrGlobe({ currency, size = 20 }: { currency: LibraryCurrency; size?: number }) {
-  const url = flagUrlForCurrency(currency);
-  const height = Math.round((size * 3) / 4);
-  if (!url) {
-    return (
-      <span
-        className="inline-flex items-center justify-center rounded-sm bg-slate-100 text-slate-500 shrink-0"
-        style={{ width: size, height }}
-        aria-label={`${currency.code} multi-country`}
-      >
-        <Globe className="w-3 h-3" />
-      </span>
-    );
-  }
-  return (
-    <img
-      src={url}
-      width={size}
-      height={height}
-      loading="lazy"
-      alt={`${currency.code} flag`}
-      className="rounded-sm shrink-0 object-cover bg-slate-100"
-      style={{ width: size, height }}
-      onError={(e) => {
-        (e.currentTarget as HTMLImageElement).style.display = "none";
-      }}
-    />
-  );
+  return <CurrencyFlag currency={currency} size={size} />;
 }

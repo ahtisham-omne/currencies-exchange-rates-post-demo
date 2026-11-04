@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { FlagImage, flagEmojiCode } from "@/app/components/ui/FlagImage";
 import { createPortal } from "react-dom";
 import {
   X,
@@ -510,7 +511,7 @@ function LocationQuickView({ locationName, vendorName, subtitle, tableImageUrl, 
               style={{ fontWeight: 500 }}
             >
               {d.street}, {d.city}
-              <span className="text-slate-500"> • {d.country.flag} {d.country.name}</span>
+              <span className="text-slate-500"> • <FlagImage code={flagEmojiCode(d.country.flag)} /> {d.country.name}</span>
             </a>
           </div>
           <div className="flex items-center gap-2.5">

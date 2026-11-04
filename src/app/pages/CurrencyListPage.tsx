@@ -21,7 +21,7 @@ import { useCurrencies } from '../context/CurrencyContext'
 import { useExchangeRates } from '../context/ExchangeRateContext'
 import type { Currency } from '../data/currencies'
 import {
-  BASE, CURRENCY_STATUS_OPTIONS, countInUse, countOpenDocuments, countriesOf, countryFlagOf, flagOf, regionOf, statusOf,
+  BASE, CURRENCY_STATUS_OPTIONS, countInUse, countOpenDocuments, countriesOf, countryFlagOf, flagOf, placeFlagOf, regionOf, statusOf,
 } from './currency/model'
 import { useCurrencyLifecycle } from './currency/useCurrencyLifecycle'
 import { CurrencyFiltersModal, EMPTY_CURRENCY_FILTERS, applyCurrencyFilters, countCurrencyFilters, type CurrencyPanelFilters } from './currency/CurrencyFilters'
@@ -111,7 +111,7 @@ export function CurrencyLibraryPanel() {
           values={countriesOf(c).map((name, i) => ({
             name,
             subtitle: i === 0 ? regionOf(c) : undefined,
-            icon: <FlagImage code={i === 0 ? flagOf(c.code) : countryFlagOf(name)} className="text-base" />,
+            icon: <FlagImage code={i === 0 ? placeFlagOf(name, c.code) : countryFlagOf(name)} className="text-base" />,
           }))}
         />
       ),

@@ -5,7 +5,7 @@
  *
  * - `code`     ISO 4217 alpha-3, uppercase
  * - `name`     Full currency name as shown in the Currency Library
- * - `country`  ISO 3166-1 alpha-2 (lowercase) for flagcdn.com flag URL.
+ * - `country`  ISO 3166-1 alpha-2 (lowercase) for the flag (see flagCodeForCurrency).
  *              `null` for multi-country currencies (EUR, XAF, XOF, XCD, XCG, XPF) —
  *              the consumer should render a globe fallback icon.
  * - `region`   Country / region label used as additional search target.
@@ -185,14 +185,15 @@ export function getLibraryCurrency(code: string | undefined | null): LibraryCurr
   return BY_CODE.get(code.toUpperCase());
 }
 
-export function flagUrlFor(country: string | null): string | null {
-  if (!country) return null;
-  return `https://flagcdn.com/w40/${country}.png`;
-}
+/* Shared currencies take one member's flag, as the Currency & Exchange Rates
+   shell does (EUR the EU's, XCD Antigua and Barbuda's, ...). */
+const SHARED_CURRENCY_FLAG: Record<string, string> = {
+  EUR: "eu", XAF: "cm", XCD: "ag", XCG: "cw", XOF: "sn", XPF: "pf",
+};
 
-export function flagUrlForCurrency(currency: LibraryCurrency): string | null {
-  if (currency.code === "EUR") return "https://flagcdn.com/w40/eu.png";
-  return flagUrlFor(currency.country);
+/** A currency's flag (ISO 3166 alpha-2, lower case): its country's, or a shared currency's stand-in. */
+export function flagCodeForCurrency(currency: LibraryCurrency): string | null {
+  return currency.country ?? SHARED_CURRENCY_FLAG[currency.code] ?? null;
 }
 
 /**

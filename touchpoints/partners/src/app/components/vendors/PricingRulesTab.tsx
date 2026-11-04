@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from "react";
+import { FlagImage, flagEmojiCode } from "@/app/components/ui/FlagImage";
 import { ExpandableTextarea } from "./ExpandableTextarea";
 import { PctAmountToggle } from "./PctAmountToggle";
 import { InfoTooltip } from "../ui/info-tooltip";
@@ -1680,7 +1681,7 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                               {/* Country */}
                               <TableCell style={{ width: 150, minWidth: 150, maxWidth: 150, overflow: "hidden" }}>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-base">{v.countryFlag}</span>
+                                  <span className="text-base"><FlagImage code={flagEmojiCode(v.countryFlag)} /></span>
                                   <span className="text-sm">{v.country}</span>
                                 </div>
                               </TableCell>
@@ -2373,7 +2374,7 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                             </div>
                           </TableCell>
                           <TableCell className="bg-white group-hover:bg-[#F0F7FF]">
-                            <div className="flex items-center gap-2"><span className="text-base">{v.countryFlag}</span><span className="text-sm">{v.country}</span></div>
+                            <div className="flex items-center gap-2"><span className="text-base"><FlagImage code={flagEmojiCode(v.countryFlag)} /></span><span className="text-sm">{v.country}</span></div>
                           </TableCell>
                           <TableCell className="bg-white group-hover:bg-[#F0F7FF] text-right">
                             <span className="text-sm">$ {fmtC(v.creditLimit)}</span>

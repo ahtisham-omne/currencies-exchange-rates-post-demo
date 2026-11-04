@@ -96,9 +96,9 @@ export function getCountryName(currencyCode: string): string {
 // Country name → ISO 3166-1 alpha-2. Covers every name used in SEED_CURRENCIES
 // primary and additionalCountries arrays so the flag tooltip always resolves.
 const COUNTRY_NAME_TO_ALPHA2: Record<string, string> = {
-  "American Samoa": "AS", "Andorra": "AD", "Antigua and Barbuda": "AG",
+  "American Samoa": "AS", "Andorra": "AD", "Anguilla": "AI", "Antigua and Barbuda": "AG",
   "Ascension Island": "AC", "Austria": "AT", "Belgium": "BE",
-  "Bhutan": "BT", "Bonaire Sint Eustatius and Saba": "BQ", "Bouvet Island": "BV",
+  "Benin": "BJ", "Bhutan": "BT", "Bonaire Sint Eustatius and Saba": "BQ", "Bouvet Island": "BV",
   "British Indian Ocean Territory": "IO", "British Virgin Islands": "VG",
   "Bulgaria": "BG", "Burkina Faso": "BF", "Central African Republic": "CF",
   "Chad": "TD", "Christmas Island": "CX", "Cocos (Keeling) Islands": "CC",
@@ -122,7 +122,7 @@ const COUNTRY_NAME_TO_ALPHA2: Record<string, string> = {
   "Saint Vincent and the Grenadines": "VC", "San Marino": "SM",
   "Senegal": "SN", "Sint Maarten": "SX", "Slovakia": "SK", "Slovenia": "SI",
   "Spain": "ES", "Svalbard and Jan Mayen": "SJ", "Timor-Leste": "TL",
-  "Togo": "TG", "Tokelau": "TK", "Tristan da Cunha": "SH",
+  "Togo": "TG", "Tokelau": "TK", "Tristan da Cunha": "TA",
   "Turks and Caicos Islands": "TC", "Tuvalu": "TV",
   "US Virgin Islands": "VI", "United States Minor Outlying Islands": "UM",
   "Vatican City": "VA", "Wallis and Futuna": "WF", "Western Sahara": "EH",

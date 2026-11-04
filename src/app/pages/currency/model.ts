@@ -22,6 +22,10 @@ export const CURRENCY_STATUS_OPTIONS: StatusOption<CurrencyStatus>[] = [
 export const flagOf = (code: string) => (getCountryCode(code) ?? '').toLowerCase()
 /** Flag code for a country name, as the Countries / Regions list names it. */
 export const countryFlagOf = (country: string) => getFlagUrlByCountry(country).match(/\/([a-z]{2})\.png$/)?.[1] ?? ''
+/** The flag beside a currency's primary country: that country's own, else the
+ *  currency's. They differ for shared currencies (XCD lists Anguilla first, but
+ *  its flag is Antigua and Barbuda's). */
+export const placeFlagOf = (country: string, code: string) => countryFlagOf(country) || flagOf(code)
 
 export const regionOf = (c: Currency): string | undefined => getRegionForCountry(c.country)
 export const countriesOf = (c: Currency): string[] => [c.country, ...(c.additionalCountries ?? [])]

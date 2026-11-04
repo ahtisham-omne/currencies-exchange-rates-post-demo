@@ -30,7 +30,7 @@ import { API_PROVIDER, BASE_CURRENCY_NAME, LAST_SYNC } from '../data/exchangeRat
 import type { Currency } from '../data/currencies'
 import { RATE_TOOLTIPS } from '../utils/rateCopy'
 import {
-  BASE, CURRENCY_STATUS_OPTIONS, auditFacts, countInUse, countOpenDocuments, countriesOf, countryFlagOf, flagOf, fmtAmount, fmtRate,
+  BASE, CURRENCY_STATUS_OPTIONS, auditFacts, countInUse, countOpenDocuments, countriesOf, countryFlagOf, flagOf, fmtAmount, placeFlagOf, fmtRate,
   internalIdOf, linkedDocs, money, regionOf, statusOf, type LinkedDoc,
 } from './currency/model'
 import { useCurrencyLifecycle } from './currency/useCurrencyLifecycle'
@@ -106,7 +106,7 @@ export function CurrencyDetailPage() {
             numberLabel={c.code}
             title={c.name}
             tone={status === 'Inactive' ? 'warning' : 'default'}
-            typeLine={<><FlagImage code={flagOf(c.code)} className="text-[13px]" />{c.country} · {c.decimalPlaces} decimal {c.decimalPlaces === 1 ? 'place' : 'places'}</>}
+            typeLine={<><FlagImage code={placeFlagOf(c.country, c.code)} className="text-[13px]" />{c.country} · {c.decimalPlaces} decimal {c.decimalPlaces === 1 ? 'place' : 'places'}</>}
             titleBadges={
               <>
                 <StatusMenu status={status} options={CURRENCY_STATUS_OPTIONS} onPick={next => lifecycle.request(next, c)} />
@@ -295,7 +295,7 @@ function DashboardTab({ c, docs, mid, change, corporate, onOpenLinked, onSetCorp
               <div className="mt-0.5">
                 <OverflowPills
                   category="Countries / Regions"
-                  values={countriesOf(c).map((name, i) => ({ name, icon: <FlagImage code={i === 0 ? flagOf(c.code) : countryFlagOf(name)} className="text-[13px]" /> }))}
+                  values={countriesOf(c).map((name, i) => ({ name, icon: <FlagImage code={i === 0 ? placeFlagOf(name, c.code) : countryFlagOf(name)} className="text-[13px]" /> }))}
                 />
               </div>
             </div>

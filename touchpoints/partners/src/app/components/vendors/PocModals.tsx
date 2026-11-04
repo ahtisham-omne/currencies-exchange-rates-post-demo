@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef } from "react";
+import { FlagImage, flagEmojiCode } from "@/app/components/ui/FlagImage";
 import { ContactsDirectoryPage } from "../../pages/ContactsDirectoryPage";
 import {
   Dialog,
@@ -916,8 +917,8 @@ export function CreatePocModal({
                   </Select>
                   <div className="flex items-center rounded-lg border border-border bg-white overflow-hidden h-10 flex-1 min-w-0 hover:border-slate-300 transition-colors">
                     <Select value={row.code} onValueChange={(v) => handlePhoneChange(idx, "code", v)}>
-                      <SelectTrigger className="h-full border-0 border-r border-border rounded-none bg-[#FAFBFC] px-2 text-xs w-[68px] shrink-0 shadow-none focus:ring-0"><span className="text-[11px]">{getCountryFlag(row.code)} {row.code}</span></SelectTrigger>
-                      <SelectContent className="z-[350]">{COUNTRY_CODES.map((cc) => <SelectItem key={cc.code} value={cc.code}><span className="flex items-center gap-1"><span>{cc.flag}</span>{cc.code}</span></SelectItem>)}</SelectContent>
+                      <SelectTrigger className="h-full border-0 border-r border-border rounded-none bg-[#FAFBFC] px-2 text-xs w-[68px] shrink-0 shadow-none focus:ring-0"><span className="text-[11px]"><FlagImage code={flagEmojiCode(getCountryFlag(row.code))} /> {row.code}</span></SelectTrigger>
+                      <SelectContent className="z-[350]">{COUNTRY_CODES.map((cc) => <SelectItem key={cc.code} value={cc.code}><span className="flex items-center gap-1"><span><FlagImage code={flagEmojiCode(cc.flag)} /></span>{cc.code}</span></SelectItem>)}</SelectContent>
                     </Select>
                     <input value={row.number} onChange={(e) => handlePhoneChange(idx, "number", e.target.value)} placeholder="Phone number" className="flex-1 h-full px-2.5 text-sm text-foreground outline-none bg-transparent placeholder:text-[#B8C4D0]" />
                   </div>

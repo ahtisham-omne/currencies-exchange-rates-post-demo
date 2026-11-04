@@ -1,11 +1,11 @@
 import * as React from "react";
-import { Globe } from "lucide-react";
-import { flagUrlForCurrency, type LibraryCurrency } from "@/app/data/currencyLibrary";
+import { flagCodeForCurrency, type LibraryCurrency } from "@/app/data/currencyLibrary";
+import { FlagImage } from "./FlagImage";
 
 /**
- * Country flag for a currency from flagcdn.com. Multi-country currencies
- * (EUR, XAF, XOF, XCD, XCG, XPF — anything with `country: null`) render a
- * neutral globe icon instead, matching the Currency Library reference.
+ * A currency's flag, drawn by FlagImage the way the Currency & Exchange Rates
+ * shell draws it. Shared currencies (EUR, XAF, XOF, XCD, XCG, XPF) show the
+ * same stand-in flag the shell does. `size` is the flag's width in px.
  */
 export function CurrencyFlag({
   currency,
@@ -14,27 +14,6 @@ export function CurrencyFlag({
   currency: LibraryCurrency;
   size?: number;
 }) {
-  const url = flagUrlForCurrency(currency);
-  const height = Math.round((size * 3) / 4);
-  if (!url) {
-    return (
-      <span
-        className="inline-flex items-center justify-center rounded-sm bg-slate-100 text-slate-500 shrink-0"
-        style={{ width: size, height }}
-        aria-label={`${currency.code} multi-country`}
-      >
-        <Globe className="w-3 h-3" />
-      </span>
-    );
-  }
-  return (
-    <img
-      src={url}
-      alt={`${currency.code} flag`}
-      loading="lazy"
-      className="rounded-sm shrink-0 object-cover bg-slate-100"
-      style={{ width: size, height }}
-      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-    />
-  );
+  // FlagImage is 1.33em wide, so this font size makes it `size` px wide.
+  return <FlagImage code={flagCodeForCurrency(currency)} style={{ fontSize: size * 0.75 }} />;
 }

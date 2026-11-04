@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { cn } from '../../../lib/utils';
 import {
   CURRENCY_LIBRARY,
+  flagCodeForCurrency,
   getLibraryCurrency,
   type LibraryCurrency,
 } from '../../data/rateConstants';
@@ -152,12 +153,9 @@ export function CurrencyLibrarySelect({
 }
 
 function FlagInTrigger({ currency }: { currency: LibraryCurrency }) {
-  // Honour the EUR special-case (EU flag instead of globe).
-  if (currency.code === 'EUR') return <CurrencyFlag country="eu" size={16} />;
-  return <CurrencyFlag country={currency.country} size={16} />;
+  return <CurrencyFlag country={flagCodeForCurrency(currency)} size={16} />;
 }
 
 function FlagInRow({ currency }: { currency: LibraryCurrency }) {
-  if (currency.code === 'EUR') return <CurrencyFlag country="eu" size={18} />;
-  return <CurrencyFlag country={currency.country} size={18} />;
+  return <CurrencyFlag country={flagCodeForCurrency(currency)} size={18} />;
 }

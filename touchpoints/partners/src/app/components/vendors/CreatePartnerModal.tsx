@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, type ReactNode } from "react";
+import { FlagImage, flagEmojiCode } from "@/app/components/ui/FlagImage";
 import { createPortal } from "react-dom";
 import { cn } from "../ui/utils";
 import { ShippingMethodChipsRow } from "./ShippingMethodChipsRow";
@@ -182,10 +183,9 @@ import { SelectPocDictionaryModal, CreatePocModal } from "./PocModals";
 import { PocPillsRow } from "./PocPillComponents";
 import { AddressAutocomplete } from "./AddressAutocomplete";
 import { SearchableUserPicker } from "./SearchableUserPicker";
-import { Globe as GlobeIcon } from "lucide-react";
+import { CurrencyFlag } from "../ui/CurrencyFlag";
 import {
   CURRENCY_LIBRARY,
-  flagUrlForCurrency,
   getLibraryCurrency,
   type LibraryCurrency,
   BASE_CURRENCY,
@@ -196,29 +196,7 @@ import { CurrencySymbol } from "../ui/CurrencySymbol";
 import { useRateContext } from "../../context/RateContext";
 
 function CurrencyFlagOrGlobe({ currency, size = 20 }: { currency: LibraryCurrency; size?: number }) {
-  const url = flagUrlForCurrency(currency);
-  const height = Math.round((size * 3) / 4);
-  if (!url) {
-    return (
-      <span
-        className="inline-flex items-center justify-center rounded-sm bg-slate-100 text-slate-500 shrink-0"
-        style={{ width: size, height }}
-        aria-label={`${currency.code} multi-country`}
-      >
-        <GlobeIcon className="w-3 h-3" />
-      </span>
-    );
-  }
-  return (
-    <img
-      src={url}
-      alt={`${currency.code} flag`}
-      loading="lazy"
-      className="rounded-sm shrink-0 object-cover bg-slate-100"
-      style={{ width: size, height }}
-      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-    />
-  );
+  return <CurrencyFlag currency={currency} size={size} />;
 }
 
 /** Props for multi-step partner creation modal */
@@ -1128,7 +1106,7 @@ function Step1ChipWithPopover({
           {isPrimary && (
             <Star className="w-2.5 h-2.5 fill-primary text-primary" />
           )}
-          {group.countryFlag} {group.name}
+          <FlagImage code={flagEmojiCode(group.countryFlag)} /> {group.name}
           <span
             className="text-[10px] text-slate-400"
             style={{ fontWeight: 400 }}
@@ -1157,7 +1135,7 @@ function Step1ChipWithPopover({
             <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/[0.04]" />
             <div className="flex items-center justify-between relative">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-base shrink-0">{group.countryFlag}</span>
+                <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(group.countryFlag)} /></span>
                 <span className="text-white text-[13px] truncate" style={{ fontWeight: 600 }}>
                   {group.name}
                 </span>
@@ -1259,7 +1237,7 @@ function Step1OverflowChip({
                       isHovered ? "bg-accent" : "hover:bg-slate-50"
                     }`}
                   >
-                    <span className="shrink-0">{g.countryFlag}</span>
+                    <span className="shrink-0"><FlagImage code={flagEmojiCode(g.countryFlag)} /></span>
                     <span
                       className={`text-[12px] truncate ${isHovered ? "text-primary" : "text-slate-700"}`}
                       style={{ fontWeight: 500 }}
@@ -1290,7 +1268,7 @@ function Step1OverflowChip({
                   <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/[0.04]" />
                   <div className="flex items-center justify-between relative">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-base shrink-0">{hoveredGroup.countryFlag}</span>
+                      <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(hoveredGroup.countryFlag)} /></span>
                       <span className="text-white text-[13px] truncate" style={{ fontWeight: 600 }}>
                         {hoveredGroup.name}
                       </span>
@@ -2837,7 +2815,7 @@ function Step2PartnerForm({
                         type="button"
                         className="flex items-center gap-1.5 pl-2.5 pr-1.5 !h-10 rounded-l-lg border border-r-0 border-border bg-white text-sm shrink-0 cursor-pointer hover:border-slate-300 transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                       >
-                        <span className="text-base leading-none">{selectedCountry.flag}</span>
+                        <span className="text-base leading-none"><FlagImage code={flagEmojiCode(selectedCountry.flag)} /></span>
                         <span className="text-xs text-slate-700" style={{ fontWeight: 600 }}>{phoneCountryCode}</span>
                         <ChevronDown className="w-3 h-3 text-slate-400" />
                       </button>
@@ -2871,7 +2849,7 @@ function Step2PartnerForm({
                                 : "hover:bg-slate-50 text-slate-700"
                             }`}
                           >
-                            <span className="text-base">{c.flag}</span>
+                            <span className="text-base"><FlagImage code={flagEmojiCode(c.flag)} /></span>
                             <span className="text-sm flex-1 truncate" style={{ fontWeight: 500 }}>{c.country}</span>
                             <span className="text-xs text-slate-500" style={{ fontWeight: 500 }}>{c.code}</span>
                             {phoneCountryCode === c.code && selectedCountry.country === c.country && (

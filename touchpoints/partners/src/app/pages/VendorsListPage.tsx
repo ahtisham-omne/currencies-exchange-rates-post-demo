@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, cloneElement, useRef } from "react";
+import { FlagImage, flagEmojiCode } from "@/app/components/ui/FlagImage";
 import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useVendors } from "../context/VendorContext";
@@ -1797,7 +1798,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                               <div className="flex justify-between">
                                 <span>Country</span>
                                 <span className="text-foreground">
-                                  {vendor.countryFlag} {vendor.country}
+                                  <FlagImage code={flagEmojiCode(vendor.countryFlag)} /> {vendor.country}
                                 </span>
                               </div>
                               <div className="flex justify-between">
@@ -2526,7 +2527,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                 return (
                                   <TableCell key={colKey}>
                                     <div className={`flex items-center ${isRelaxed ? "gap-2.5" : "gap-2"}`}>
-                                      <span className={isRelaxed ? "text-lg" : "text-base"}>{vendor.countryFlag}</span>
+                                      <span className={isRelaxed ? "text-lg" : "text-base"}><FlagImage code={flagEmojiCode(vendor.countryFlag)} /></span>
                                       <div className="min-w-0 flex-1">
                                         <span className={`${isRelaxed ? "text-[13.5px]" : "text-sm"} block truncate`} style={{ fontWeight: isRelaxed ? 500 : undefined }}>{highlightText(vendor.country)}</span>
                                         {isRelaxed && vendor.billingAddress?.city && <span className="text-[10px] text-muted-foreground/50 truncate block">{vendor.billingAddress.city}{vendor.billingAddress.state ? `, ${vendor.billingAddress.state}` : ""}</span>}

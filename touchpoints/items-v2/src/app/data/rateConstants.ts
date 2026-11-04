@@ -17,7 +17,7 @@ export const RATE_LAST_SYNC_ISO = '2026-05-04T08:30:00Z';
  *
  * - `code`     ISO 4217 alpha-3, uppercase
  * - `name`     Full currency name
- * - `country`  ISO 3166-1 alpha-2 (lowercase) for flagcdn.com.
+ * - `country`  ISO 3166-1 alpha-2 (lowercase) for the flag (see flagCodeForCurrency).
  *              `null` for multi-country currencies (EUR, XAF, XOF, XCD, XCG, XPF) —
  *              the consumer should render a globe fallback icon.
  * - `region`   Country / region label used as additional search target.
@@ -367,20 +367,15 @@ export function rateToBase(code: string | null | undefined): number | undefined 
   return MARKET_RATES[code.toUpperCase()];
 }
 
-/** Builds a flagcdn.com URL — null country (multi-country currencies) returns null. */
-export function flagUrlFor(country: string | null): string | null {
-  if (!country) return null;
-  return `https://flagcdn.com/w40/${country}.png`;
-}
+/* Shared currencies take one member's flag, as the Currency & Exchange Rates
+   shell does (EUR the EU's, XCD Antigua and Barbuda's, ...). */
+const SHARED_CURRENCY_FLAG: Record<string, string> = {
+  EUR: 'eu', XAF: 'cm', XCD: 'ag', XCG: 'cw', XOF: 'sn', XPF: 'pf',
+};
 
-/**
- * Flag URL for a specific currency. Prefers the currency's country flag, but
- * supplies a representative flag for known multi-country currencies (the EU
- * flag for EUR) so the row doesn't fall back to a generic globe.
- */
-export function flagUrlForCurrency(currency: LibraryCurrency): string | null {
-  if (currency.code === 'EUR') return 'https://flagcdn.com/w40/eu.png';
-  return flagUrlFor(currency.country);
+/** A currency's flag (ISO 3166 alpha-2, lower case): its country's, or a shared currency's stand-in. */
+export function flagCodeForCurrency(currency: LibraryCurrency): string | null {
+  return currency.country ?? SHARED_CURRENCY_FLAG[currency.code] ?? null;
 }
 
 export function formatRateUpdatedAs(iso: string): string {

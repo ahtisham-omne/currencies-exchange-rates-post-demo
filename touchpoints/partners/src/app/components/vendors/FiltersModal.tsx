@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import type { ReactNode } from "react";
 import type { Vendor } from "../../data/vendors";
+import { FlagImage, flagEmojiCode } from "@/app/components/ui/FlagImage";
 import {
   Dialog,
   DialogPortal,
@@ -304,7 +305,7 @@ function SearchableMultiSelect({
   onToggle: (value: string) => void;
   getCount: (value: string) => number;
   placeholder?: string;
-  getPrefix?: (value: string) => string | undefined;
+  getPrefix?: (value: string) => ReactNode;
 }) {
   const [query, setQuery] = useState("");
 
@@ -625,7 +626,10 @@ export function FiltersModal({
                     onToggle={(v) => toggleMulti("countries", v)}
                     getCount={(val) => vendors.filter((v) => v.country === val).length}
                     placeholder="Search countries…"
-                    getPrefix={(val) => vendors.find((v) => v.country === val)?.countryFlag}
+                    getPrefix={(val) => {
+                      const flag = vendors.find((v) => v.country === val)?.countryFlag;
+                      return flag ? <FlagImage code={flagEmojiCode(flag)} /> : undefined;
+                    }}
                   />
                 </Section>
                 <Divider />
