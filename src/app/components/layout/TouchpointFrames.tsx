@@ -33,8 +33,8 @@ export function TouchpointFrames({ match }: { match: TouchpointMatch | null }) {
   const target = match ? match.appPath + location.search : null;
 
   // The frames' history hooks outlive renders, so they read these through a ref.
-  const latest = useRef({ activeSlug, shellUrl: "", navigate });
-  latest.current = { activeSlug, shellUrl: location.pathname + location.search, navigate };
+  const latest = useRef({ activeSlug, target, shellUrl: "", navigate });
+  latest.current = { activeSlug, target, shellUrl: location.pathname + location.search, navigate };
 
   // Open a frame the first time its touchpoint is visited.
   if (activeSlug && target && !(activeSlug in opened)) {
@@ -67,6 +67,15 @@ export function TouchpointFrames({ match }: { match: TouchpointMatch | null }) {
   const handleLoad = (touchpoint: Touchpoint) => {
     const win = frames.current[touchpoint.slug]?.contentWindow;
     if (!win) return;
+    // A frame always loads its index.html (the one path that exists both as a
+    // built file in public/ and on a live dev server); move it to the page asked
+    // for before its history is hooked, so the shell doesn't follow the detour.
+    const want = latest.current.activeSlug === touchpoint.slug ? latest.current.target : opened[touchpoint.slug];
+    const here = appLocation(touchpoint, win);
+    if (want && here.path + here.search !== want) {
+      win.history.replaceState(win.history.state, "", frameBase(touchpoint) + want);
+      win.dispatchEvent(new PopStateEvent("popstate", { state: win.history.state }));
+    }
     for (const method of ["pushState", "replaceState"] as const) {
       const original = win.history[method];
       win.history[method] = (...args: Parameters<History["pushState"]>) => {
@@ -90,7 +99,7 @@ export function TouchpointFrames({ match }: { match: TouchpointMatch | null }) {
           <iframe
             key={touchpoint.slug}
             ref={(el) => (frames.current[touchpoint.slug] = el)}
-            src={frameBase(touchpoint) + opened[touchpoint.slug]}
+            src={`${frameBase(touchpoint)}/index.html`}
             title={touchpoint.label}
             onLoad={() => handleLoad(touchpoint)}
             className="absolute inset-0 h-full w-full border-0"

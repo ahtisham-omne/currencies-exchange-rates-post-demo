@@ -1,3 +1,25 @@
 # Welcome to your Lovable project
 
 TODO: Document your project here
+
+## Touchpoints
+
+The modules under Items & Inventory, Partners Management, Supply Chain Management, Sales and Vendor Invoices are touchpoint apps. Each lives in `touchpoints/<name>/` as its own Vite app and opens inside this app's layout.
+
+The app serves each touchpoint from its built copy in `public/touchpoint-apps/<name>/`, so Lovable and any deploy show them with no extra setup.
+
+### Run locally
+
+```sh
+npm install --legacy-peer-deps
+npm run touchpoints:install   # once, for live editing of the touchpoints
+npm run dev                   # main app + a live, hot-reloading server per touchpoint
+```
+
+### Change a touchpoint
+
+1. Edit its source in `touchpoints/<name>/src`. `npm run dev` shows the change live.
+2. Run `npm run touchpoints:build` to rebuild the copies in `public/touchpoint-apps/`.
+3. Commit the source change and the rebuilt copy together, then push.
+
+Lovable and deploys show the built copy, so a change that isn't rebuilt doesn't appear there. `npm run dev` warns when a built copy is older than its source.

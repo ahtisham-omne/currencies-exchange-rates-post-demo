@@ -7,13 +7,14 @@
     "dev": "node scripts/dev.mjs",
     "dev:main": "vite",
     "build": "vite build",
-    "build:all": "vite build && node scripts/build-touchpoints.mjs",
+    "build:all": "npm run touchpoints:build && vite build",
     "build:dev": "vite build --mode development",
     "touchpoints:install": "node scripts/install-touchpoints.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "touchpoints:build": "node scripts/build-touchpoints.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

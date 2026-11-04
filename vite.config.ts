@@ -12,9 +12,14 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
-    // Each touchpoint runs its own dev server (scripts/dev.mjs); proxy it under /touchpoint-apps/<slug>/.
+    // A touchpoint whose dev server scripts/dev.mjs started (it lists them in
+    // TOUCHPOINTS_LIVE) is proxied under /touchpoint-apps/<slug>/, with hot reload.
+    // Every other touchpoint is served from its built copy in public/touchpoint-apps
+    // (npm run touchpoints:build), which is also all a host like Lovable runs.
     proxy: Object.fromEntries(
-      touchpoints.map((t) => [`/touchpoint-apps/${t.slug}/`, { target: `http://localhost:${t.port}`, ws: true }]),
+      touchpoints
+        .filter((t) => (process.env.TOUCHPOINTS_LIVE ?? "").split(",").includes(t.slug))
+        .map((t) => [`/touchpoint-apps/${t.slug}/`, { target: `http://localhost:${t.port}`, ws: true }]),
     ),
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
