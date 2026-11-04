@@ -8,17 +8,28 @@ interface LayoutProps {
   onViewChange: (view: 'invoices' | 'prepayments' | 'receiving' | 'payments') => void;
 }
 
+/* Inside the Currency & Exchange shell, the shell's sidebar and logo replace these. */
+const embedded = (() => {
+  try {
+    return window.self !== window.top && "__OMNE_SHELL__" in window.parent;
+  } catch {
+    return false;
+  }
+})();
+
 export function Layout({ children, activeView, onViewChange }: LayoutProps) {
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Top Navigation Bar */}
       <header className="h-12 bg-white text-gray-900 flex items-center justify-between px-4 border-b border-gray-200">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-[#2563eb] rounded flex items-center justify-center text-sm font-bold text-white">
-              O
+          {!embedded && (
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-[#2563eb] rounded flex items-center justify-center text-sm font-bold text-white">
+                O
+              </div>
             </div>
-          </div>
+          )}
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <span className="hover:text-gray-900 cursor-pointer">Accounting</span>
             <span>/</span>
@@ -49,6 +60,7 @@ export function Layout({ children, activeView, onViewChange }: LayoutProps) {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
+        {!embedded && (
         <aside className="w-56 bg-white border-r border-gray-200 flex flex-col">
           <nav className="p-3 space-y-1 flex-1">
             <NavItem icon={<Home />} label="Dashboard" />
@@ -75,6 +87,7 @@ export function Layout({ children, activeView, onViewChange }: LayoutProps) {
             </Button>
           </div>
         </aside>
+        )}
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden bg-gray-50 flex flex-col">

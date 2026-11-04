@@ -2,25 +2,82 @@ import { createContext, useContext, useState, useCallback, type ReactNode } from
 import {
   SEED_MID_MARKET_RATES,
   SEED_STANDARD_RATES,
+  SEED_RATE_AUDIT,
+  activeStandardRateFor,
   type MidMarketRate,
   type StandardRate,
+  type RateAuditEntry,
+  type RateAuditAction,
 } from "../data/exchangeRates";
+
+/** Who made a change, and why (the reason lands on its audit entry). */
+export interface RateChangeMeta {
+  by?: string;
+  reason?: string;
+}
+
+export const DEFAULT_ACTOR = "Ahtisham Ahmad";
 
 interface ExchangeRateContextValue {
   midMarketRates: MidMarketRate[];
   standardRates: StandardRate[];
-  addStandardRate: (rate: Omit<StandardRate, "id" | "createdAt" | "updatedAt" | "isStale">) => void;
-  updateStandardRate: (id: string, updates: Partial<StandardRate>) => void;
-  deleteStandardRate: (id: string) => void;
+  /** Every corporate rate change, newest last: Created / Updated / Archived / Restored. */
+  rateAudit: RateAuditEntry[];
+  /** Adds a corporate rate and logs "Created". Returns the new record. */
+  addStandardRate: (rate: Omit<StandardRate, "id" | "createdAt" | "updatedAt" | "isStale">, meta?: RateChangeMeta) => StandardRate;
+  /** Updates a corporate rate and logs "Updated" when its rate or effective date moved. */
+  updateStandardRate: (id: string, updates: Partial<StandardRate>, meta?: RateChangeMeta) => void;
+  /** Soft delete: archives the rate and logs "Archived". */
+  deleteStandardRate: (id: string, meta?: RateChangeMeta) => void;
+  /** Archives several rates at once (active ones only). */
+  archiveStandardRates: (ids: string[], meta?: RateChangeMeta) => void;
+  /** Brings an archived rate back and logs "Restored". */
+  restoreStandardRate: (id: string, meta?: RateChangeMeta) => void;
+  /** The active corporate rate for a currency; archived rates are never current. */
+  getActiveStandardRate: (code: string) => StandardRate | undefined;
 }
 
 const ExchangeRateContext = createContext<ExchangeRateContextValue | null>(null);
 
+interface RateState {
+  standardRates: StandardRate[];
+  rateAudit: RateAuditEntry[];
+}
+
+let auditSeq = 0;
+const auditId = () => `audit-${Date.now().toString(36)}-${(auditSeq++).toString(36)}`;
+
 export function ExchangeRateProvider({ children }: { children: ReactNode }) {
   const [midMarketRates] = useState<MidMarketRate[]>([...SEED_MID_MARKET_RATES]);
-  const [standardRates, setStandardRates] = useState<StandardRate[]>([...SEED_STANDARD_RATES]);
+  const [state, setState] = useState<RateState>(() => ({
+    standardRates: [...SEED_STANDARD_RATES],
+    rateAudit: [...SEED_RATE_AUDIT],
+  }));
 
-  const addStandardRate = useCallback((rate: Omit<StandardRate, "id" | "createdAt" | "updatedAt" | "isStale">) => {
+  const midFor = useCallback(
+    (code: string) => midMarketRates.find(m => m.sourceCurrency === code)?.rate ?? null,
+    [midMarketRates],
+  );
+
+  const entry = (
+    action: RateAuditAction,
+    r: StandardRate,
+    at: string,
+    meta: RateChangeMeta | undefined,
+    values: { oldValue: number | null; newValue: number | null; effectiveDate: string | null },
+  ): RateAuditEntry => ({
+    id: auditId(),
+    dateTime: at,
+    action,
+    user: meta?.by ?? DEFAULT_ACTOR,
+    reason: meta?.reason ?? "",
+    sourceCurrency: r.sourceCurrency,
+    rateId: r.id,
+    midRate: midFor(r.sourceCurrency),
+    ...values,
+  });
+
+  const addStandardRate = useCallback((rate: Omit<StandardRate, "id" | "createdAt" | "updatedAt" | "isStale">, meta?: RateChangeMeta) => {
     const now = new Date().toISOString();
     const newRate: StandardRate = {
       ...rate,
@@ -29,23 +86,90 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
       updatedAt: now,
       isStale: false,
     };
-    setStandardRates(prev => [...prev, newRate]);
-  }, []);
+    const log = entry("Created", newRate, now, { by: meta?.by ?? rate.createdBy, reason: meta?.reason ?? rate.notes }, {
+      oldValue: null, newValue: newRate.standardRate, effectiveDate: newRate.effectiveDate,
+    });
+    setState(prev => ({ standardRates: [...prev.standardRates, newRate], rateAudit: [...prev.rateAudit, log] }));
+    return newRate;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [midFor]);
 
-  const updateStandardRate = useCallback((id: string, updates: Partial<StandardRate>) => {
-    setStandardRates(prev =>
-      prev.map(r => r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r)
-    );
-  }, []);
+  const updateStandardRate = useCallback((id: string, updates: Partial<StandardRate>, meta?: RateChangeMeta) => {
+    const now = new Date().toISOString();
+    setState(prev => {
+      const current = prev.standardRates.find(r => r.id === id);
+      if (!current) return prev;
+      const next: StandardRate = { ...current, ...updates, updatedAt: now };
+      const moved = next.standardRate !== current.standardRate || next.effectiveDate !== current.effectiveDate;
+      const log = moved
+        ? [entry("Updated", next, now, { by: meta?.by, reason: meta?.reason ?? updates.notes }, {
+            oldValue: current.standardRate, newValue: next.standardRate, effectiveDate: next.effectiveDate,
+          })]
+        : [];
+      return {
+        standardRates: prev.standardRates.map(r => (r.id === id ? next : r)),
+        rateAudit: [...prev.rateAudit, ...log],
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [midFor]);
 
-  const deleteStandardRate = useCallback((id: string) => {
-    setStandardRates(prev =>
-      prev.map(r => r.id === id ? { ...r, status: "archived", updatedAt: new Date().toISOString() } : r)
-    );
-  }, []);
+  const archiveStandardRates = useCallback((ids: string[], meta?: RateChangeMeta) => {
+    const now = new Date().toISOString();
+    setState(prev => {
+      const targets = prev.standardRates.filter(r => ids.includes(r.id) && r.status === "active");
+      if (!targets.length) return prev;
+      const targetIds = new Set(targets.map(t => t.id));
+      return {
+        standardRates: prev.standardRates.map(r => (targetIds.has(r.id) ? { ...r, status: "archived" as const, updatedAt: now } : r)),
+        rateAudit: [
+          ...prev.rateAudit,
+          ...targets.map(t => entry("Archived", t, now, meta, { oldValue: t.standardRate, newValue: null, effectiveDate: null })),
+        ],
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [midFor]);
+
+  const deleteStandardRate = useCallback((id: string, meta?: RateChangeMeta) => archiveStandardRates([id], meta), [archiveStandardRates]);
+
+  const restoreStandardRate = useCallback((id: string, meta?: RateChangeMeta) => {
+    const now = new Date().toISOString();
+    setState(prev => {
+      const current = prev.standardRates.find(r => r.id === id);
+      if (!current || current.status !== "archived") return prev;
+      // Only one active corporate rate per currency.
+      if (activeStandardRateFor(current.sourceCurrency, prev.standardRates)) return prev;
+      return {
+        standardRates: prev.standardRates.map(r => (r.id === id ? { ...r, status: "active" as const, updatedAt: now } : r)),
+        rateAudit: [
+          ...prev.rateAudit,
+          entry("Restored", current, now, meta, { oldValue: null, newValue: current.standardRate, effectiveDate: null }),
+        ],
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [midFor]);
+
+  const getActiveStandardRate = useCallback(
+    (code: string) => activeStandardRateFor(code, state.standardRates),
+    [state.standardRates],
+  );
 
   return (
-    <ExchangeRateContext.Provider value={{ midMarketRates, standardRates, addStandardRate, updateStandardRate, deleteStandardRate }}>
+    <ExchangeRateContext.Provider
+      value={{
+        midMarketRates,
+        standardRates: state.standardRates,
+        rateAudit: state.rateAudit,
+        addStandardRate,
+        updateStandardRate,
+        deleteStandardRate,
+        archiveStandardRates,
+        restoreStandardRate,
+        getActiveStandardRate,
+      }}
+    >
       {children}
     </ExchangeRateContext.Provider>
   );

@@ -19,7 +19,7 @@ function EditQuoteWrapper() {
 export default function App() {
   return (
     <RateProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Routes>
           <Route path="/" element={<RootLayout />}>
             <Route index element={<QuotesListPage />} />

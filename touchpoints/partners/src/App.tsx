@@ -25,7 +25,7 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <PersonAvatarLightboxProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Loading…</div>}>
           <Routes>
             <Route element={<AppLayout />}>

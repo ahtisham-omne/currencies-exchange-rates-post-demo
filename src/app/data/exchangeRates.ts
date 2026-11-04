@@ -52,32 +52,17 @@ export interface AuditEntry {
   reason: string;
 }
 
-export interface CurrencyPairDetail {
-  pairCode: string;
+/** One change to a corporate rate, kept for the pair's history and activity. */
+export type RateAuditAction = "Created" | "Updated" | "Archived" | "Restored";
+export interface RateAuditEntry extends AuditEntry {
+  action: RateAuditAction;
   sourceCurrency: string;
-  baseCurrency: string;
-  sourceCurrencyName: string;
-  currentMidRate: number;
-  currentStdRate: number | null;
-  change24h: number;
-  change7d: number;
-  change30d: number;
-  changeYtd: number;
-  high30d: number;
-  low30d: number;
-  volatility30d: number;
-  avgRate30d: number;
-  high52w: number;
-  low52w: number;
-  transactions30d: number;
-  lastSyncTimestamp: string;
-  variance: number | null;
-  stdEffectiveDate: string | null;
-  stdSetBy: string | null;
-  rateHistory: RateHistoryEntry[];
-  auditLog: AuditEntry[];
-  // Time series for charts (daily close for last 90 days simplified)
-  timeSeries: { date: string; mid: number; std: number | null }[];
+  /** The StandardRate record the change was made to. */
+  rateId: string;
+  /** The date the rate took (or takes) effect; set on Created / Updated. */
+  effectiveDate: string | null;
+  /** The mid-market rate at the time of the change, for its variance. */
+  midRate: number | null;
 }
 
 // Base currency is PKR
@@ -86,80 +71,6 @@ export const BASE_CURRENCY_NAME = "Pakistani Rupee";
 export const API_PROVIDER = "Open Exchange Rates";
 export const SYNC_FREQUENCY = "Every 30 min";
 export const DEFAULT_RATE_TYPE: "MID" | "STD" = "MID";
-
-// Helper to generate a realistic rate with slight randomness
-function r(base: number, spread: number = 0.02): number {
-  return +(base * (1 + (Math.random() - 0.5) * spread)).toFixed(4);
-}
-
-// Generate time series data for a pair
-function generateTimeSeries(baseRate: number, days: number = 90, stdRate: number | null = null): { date: string; mid: number; std: number | null }[] {
-  const series: { date: string; mid: number; std: number | null }[] = [];
-  const now = new Date("2026-04-10");
-  let currentRate = baseRate * (1 + (Math.random() - 0.5) * 0.03);
-  for (let i = days; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    currentRate += currentRate * (Math.random() - 0.495) * 0.008;
-    series.push({
-      date: d.toISOString().slice(0, 10),
-      mid: +currentRate.toFixed(4),
-      std: stdRate ? +(stdRate * (1 + (Math.random() - 0.5) * 0.001)).toFixed(4) : null,
-    });
-  }
-  // ensure latest entry matches the actual rate
-  if (series.length > 0) series[series.length - 1].mid = baseRate;
-  return series;
-}
-
-// Generate rate history with 24h intervals (matching sync frequency)
-function generateRateHistory(midRate: number, stdRate: number | null): RateHistoryEntry[] {
-  const entries: RateHistoryEntry[] = [];
-  const now = new Date("2026-04-10T19:30:00+05:00");
-  // Generate 30 daily mid-market history entries (one per 24h sync)
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    entries.push({
-      id: `rh-mid-${i}`,
-      effectiveDate: d.toISOString(),
-      rateType: "MID",
-      rateValue: +(midRate * (1 + (Math.random() - 0.5) * 0.02)).toFixed(4),
-      varianceVsMid: null,
-      setBy: "API Sync",
-      source: API_PROVIDER,
-    });
-  }
-  // Ensure latest entry has the actual current rate
-  if (entries.length > 0) entries[entries.length - 1].rateValue = midRate;
-  if (stdRate) {
-    entries.push({
-      id: "rh-std-1",
-      effectiveDate: "2026-03-15T14:30:00+05:00",
-      rateType: "STD",
-      rateValue: stdRate,
-      varianceVsMid: +((stdRate - midRate) / midRate * 100).toFixed(2),
-      setBy: "Ahtisham Ahmad",
-      source: "Manual",
-    });
-  }
-  return entries.sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate));
-}
-
-function generateAuditLog(stdRate: number | null): AuditEntry[] {
-  if (!stdRate) return [];
-  return [
-    {
-      id: "audit-1",
-      dateTime: "2026-03-15T14:30:00Z",
-      action: "Created",
-      user: "Ahtisham Ahmad",
-      oldValue: null,
-      newValue: stdRate,
-      reason: "Initial corporate rate setup",
-    },
-  ];
-}
 
 // ─── Mid-Market Rates Seed Data ───
 // All rates are relative to PKR (base), so USD/PKR = 278.52 means 1 USD = 278.52 PKR.
@@ -261,48 +172,95 @@ export const SEED_STANDARD_RATES: StandardRate[] = [
   { id: "std-cny", baseCurrency: "PKR", sourceCurrency: "CNY", sourceCurrencyName: "Chinese Yuan", standardRate: 38.5000, midMarketRate: 38.3100, variance: 0.50, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
 ];
 
-// ─── Pair Detail Generator ───
-export function generatePairDetail(sourceCurrency: string): CurrencyPairDetail | null {
-  const mid = SEED_MID_MARKET_RATES.find(r => r.sourceCurrency === sourceCurrency);
-  if (!mid) return null;
-  const std = SEED_STANDARD_RATES.find(r => r.sourceCurrency === sourceCurrency);
+// ─── Corporate rate audit seed ───
+// One "Created" entry per seeded corporate rate: when it was set up, by whom,
+// and the rate and effective date it was set to.
+export const SEED_RATE_AUDIT: RateAuditEntry[] = SEED_STANDARD_RATES.map(r => ({
+  id: `audit-${r.id}-created`,
+  dateTime: `${r.createdAt}T14:30:00+05:00`,
+  action: "Created" as const,
+  user: r.createdBy,
+  oldValue: null,
+  newValue: r.standardRate,
+  reason: "Initial corporate rate setup",
+  sourceCurrency: r.sourceCurrency,
+  rateId: r.id,
+  effectiveDate: r.effectiveDate,
+  midRate: r.midMarketRate,
+}));
 
-  const baseRate = mid.rate;
-  const timeSeries = generateTimeSeries(baseRate, 90, std?.standardRate || null);
-  const mids = timeSeries.map(t => t.mid);
-  const high30 = Math.max(...mids.slice(-30));
-  const low30 = Math.min(...mids.slice(-30));
-  const avg30 = mids.slice(-30).reduce((s, v) => s + v, 0) / 30;
-  const dailyChanges = mids.slice(-30).map((v, i, a) => i > 0 ? (v - a[i - 1]) / a[i - 1] * 100 : 0).slice(1);
-  const mean = dailyChanges.reduce((s, v) => s + v, 0) / dailyChanges.length;
-  const volatility = Math.sqrt(dailyChanges.reduce((s, v) => s + (v - mean) ** 2, 0) / dailyChanges.length);
+/** The active corporate rate for a currency. Archived records are never current. */
+export function activeStandardRateFor(code: string, rates: StandardRate[]): StandardRate | undefined {
+  return rates.find(r => r.sourceCurrency === code && r.status === "active");
+}
 
-  return {
-    pairCode: `${sourceCurrency}/${BASE_CURRENCY}`,
-    sourceCurrency: mid.sourceCurrency,
-    baseCurrency: BASE_CURRENCY,
-    sourceCurrencyName: mid.sourceCurrencyName,
-    currentMidRate: baseRate,
-    currentStdRate: std?.standardRate || null,
-    change24h: mid.change24h,
-    change7d: +(mid.change24h * 3.2 + (Math.random() - 0.5) * 0.4).toFixed(2),
-    change30d: +(mid.change24h * 8.5 + (Math.random() - 0.5) * 1.2).toFixed(2),
-    changeYtd: +(mid.change24h * 22 + (Math.random() - 0.5) * 3).toFixed(2),
-    high30d: +high30.toFixed(4),
-    low30d: +low30.toFixed(4),
-    volatility30d: +volatility.toFixed(3),
-    avgRate30d: +avg30.toFixed(4),
-    high52w: +(baseRate * 1.08).toFixed(4),
-    low52w: +(baseRate * 0.92).toFixed(4),
-    transactions30d: Math.floor(Math.random() * 400) + 50,
-    lastSyncTimestamp: LAST_SYNC,
-    variance: std ? +((std.standardRate - baseRate) / baseRate * 100).toFixed(2) : null,
-    stdEffectiveDate: std?.effectiveDate || null,
-    stdSetBy: std?.createdBy || null,
-    rateHistory: generateRateHistory(baseRate, std?.standardRate || null),
-    auditLog: generateAuditLog(std?.standardRate || null),
-    timeSeries,
+// ─── Mid-market history (deterministic) ───
+// The provider's daily syncs for a pair, ending on the last sync. Seeded from the
+// currency code, so a pair reads the same on every visit: the last point is the
+// current rate and the one before it matches the stored 24h change.
+export const MID_HISTORY_DAYS = 6 * 365;
+
+function _mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+const _pad2 = (n: number) => String(n).padStart(2, "0");
+const _isoDay = (d: Date) => `${d.getUTCFullYear()}-${_pad2(d.getUTCMonth() + 1)}-${_pad2(d.getUTCDate())}`;
+
+export function midMarketHistory(rate: MidMarketRate, days: number = MID_HISTORY_DAYS): { date: string; mid: number }[] {
+  const end = new Date(`${rate.effectiveDate}T00:00:00Z`);
+  const n = Math.max(2, days + 1);
+  const values = new Array<number>(n);
+  if (rate.sourceCurrency === rate.baseCurrency) {
+    values.fill(rate.rate);
+  } else {
+    const rand = _mulberry32(_hash(`${rate.sourceCurrency}#series`) || 1);
+    // Daily volatility between 0.15% and 0.55%, and a slow upward drift of the
+    // foreign currency against the rupee (read backwards, the rate falls).
+    const vol = 0.0015 + (_hash(`${rate.sourceCurrency}#vol`) % 40) / 10000;
+    const drift = 0.00018;
+    values[n - 1] = rate.rate;
+    values[n - 2] = rate.rate / (1 + rate.change24h / 100);
+    for (let i = n - 3; i >= 0; i--) {
+      // Sum of three uniforms: a cheap, bounded bell curve.
+      const z = (rand() + rand() + rand() - 1.5) * 2;
+      values[i] = values[i + 1] / (1 + drift + z * vol);
+    }
+  }
+  const out: { date: string; mid: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(end);
+    d.setUTCDate(d.getUTCDate() - (n - 1 - i));
+    out.push({ date: _isoDay(d), mid: +values[i].toFixed(4) });
+  }
+  return out;
+}
+
+// Scrambles a hash so neighbouring keys (consecutive days) land far apart.
+function _mix(h: number): number {
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+/** Documents priced in this pair over the last 30 days (deterministic, 50 to 449). */
+export function pairTransactions30d(code: string): number {
+  return 50 + (_mix(_hash(`${code}#tx30`)) % 400);
+}
+
+/** Documents priced in this pair on one day (deterministic, 3 to 22). */
+export function pairTransactionsOn(code: string, isoDay: string): number {
+  return 3 + (_mix(_hash(`${code}#${isoDay}`)) % 20);
 }
 
 // Last sync timestamp

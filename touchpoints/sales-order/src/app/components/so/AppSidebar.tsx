@@ -240,32 +240,7 @@ export function AppSidebar() {
         <div className="border-t border-border shrink-0">
           {/* Persona toggle */}
           <div className="px-2 pt-2 pb-1">
-            <div className="flex items-center rounded-lg bg-secondary/60 p-0.5" style={{ height: 32 }}>
-              {([
-                { key: "creator" as Persona, label: "Sales View" },
-                { key: "reviewer" as Persona, label: "Ops View" },
-              ]).map(p => {
-                const isActive = persona === p.key;
-                return (
-                  <button
-                    key={p.key}
-                    onClick={() => setPersona(p.key)}
-                    className="flex-1 flex items-center justify-center rounded-md transition-all text-[11px]"
-                    style={{
-                      height: 26,
-                      fontWeight: isActive ? 600 : 400,
-                      backgroundColor: isActive ? "#FFFFFF" : "transparent",
-                      color: isActive ? "#0A77FF" : "#64748B",
-                      boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                      cursor: "pointer",
-                      border: "none",
-                    }}
-                  >
-                    {p.label}
-                  </button>
-                );
-              })}
-            </div>
+            <PersonaToggle />
           </div>
           <div className="px-2 py-1.5 flex items-center gap-1">
             <button className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" style={{ fontWeight: 400 }}>
@@ -368,6 +343,39 @@ export function AppSidebar() {
           <div className={`absolute inset-y-0 right-0 w-[2px] transition-colors duration-150 ${isResizing ? "bg-[#0A77FF]" : "bg-transparent group-hover:bg-[#0A77FF]/40"}`} />
         </div>
       )}
+    </div>
+  );
+}
+
+/* Sales View / Ops View switch — also rendered in the header when the sidebar is hidden. */
+export function PersonaToggle({ className = "" }: { className?: string }) {
+  const { persona, setPersona } = usePersona();
+  return (
+    <div className={`flex items-center rounded-lg bg-secondary/60 p-0.5 ${className}`} style={{ height: 32 }}>
+      {([
+        { key: "creator" as Persona, label: "Sales View" },
+        { key: "reviewer" as Persona, label: "Ops View" },
+      ]).map(p => {
+        const isActive = persona === p.key;
+        return (
+          <button
+            key={p.key}
+            onClick={() => setPersona(p.key)}
+            className="flex-1 flex items-center justify-center rounded-md transition-all text-[11px]"
+            style={{
+              height: 26,
+              fontWeight: isActive ? 600 : 400,
+              backgroundColor: isActive ? "#FFFFFF" : "transparent",
+              color: isActive ? "#0A77FF" : "#64748B",
+              boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+              cursor: "pointer",
+              border: "none",
+            }}
+          >
+            {p.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

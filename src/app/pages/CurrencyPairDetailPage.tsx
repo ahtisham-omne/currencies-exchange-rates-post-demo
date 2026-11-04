@@ -1,2035 +1,435 @@
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { createPortal } from "react-dom";
-import { motion } from "framer-motion";
-import { useExchangeRates } from "../context/ExchangeRateContext";
+// Currency pair detail (/accounting/exchange-rates/:code?type=mid|std), rebuilt on
+// the CoA kit's detail skeleton: sticky DetailHeaderCard with status and rate
+// type, Dashboard (range bar, insights tiles and chart widgets, rail cards),
+// Rate history as a table tab, then Notes, Attachments, Communications, Activity.
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  generatePairDetail,
-  BASE_CURRENCY,
-  BASE_CURRENCY_NAME,
-  API_PROVIDER,
-  LAST_SYNC,
-  SEED_MID_MARKET_RATES,
-  type CurrencyPairDetail,
-} from "../data/exchangeRates";
-import { getFlagUrl, getCountryName } from "../utils/currencyFlags";
-import { INVERSE_BADGE_TOOLTIP, RATE_TOOLTIPS } from "../utils/rateCopy";
+  Activity, Archive, ArchiveRestore, ArrowLeftRight, Check, ChevronDown, Download, FileText, Pencil, Plus, Star,
+} from 'lucide-react'
+import { useExchangeRates } from '../context/ExchangeRateContext'
+import { useCurrencies } from '../context/CurrencyContext'
+import { API_PROVIDER } from '../data/exchangeRates'
+import { CoaPage } from '../coa/components/CoaPage'
+import { DetailHeaderCard } from '../coa/components/DetailHeaderCard'
 import {
-  ArrowLeft,
-  ArrowLeftRight,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  ChevronDown,
-  ChevronUp,
-  Star,
-  Download,
-  Activity,
-  Clock,
-  BarChart3,
-  Calendar,
-  DollarSign,
-  Target,
-  Zap,
-  AlertTriangle,
-  FileText,
-  RefreshCw,
-  Pencil,
-  MoreHorizontal,
-  Printer,
-  Link2,
-  X,
-  Search,
-  Plus,
-  Check,
-  Info,
-  Sliders,
-  GripVertical,
-  Trash2,
-  ToggleLeft,
-  ToggleRight,
-  ChevronLeft,
-  Globe,
-  Eye,
-  ArrowDownRight,
-  MessageSquare,
-  ClipboardList,
-} from "lucide-react";
-import { format } from "date-fns";
-import { toast } from "sonner";
-import { AttachmentsTab } from "../components/AttachmentsTab";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-import { Textarea } from "../components/ui/textarea";
+  DetailPageLayout, DashboardGrid, DetailNotFound, InfoAuditGrid, InfoGrid, InfoPerson, InfoValue, useDetailFullView, useDetailTab,
+} from '../coa/components/DetailPageLayout'
+import { DetailInsightsSection, type DetailKpiFace } from '../coa/components/DetailInsights'
+import { DashInfoCard, DashInfoLabel } from '../coa/components/DashInfoCard'
+import { InternalIdField } from '../coa/components/InternalIdField'
+import { Menu, MenuItem } from '../coa/components/ui'
+import { StatusChip, StatusMenu } from '../coa/components/StatusChip'
+import { NotesTab, useRecordNotes } from '../coa/components/NotesTab'
+import { RecordAttachmentsTab, useRecordAttachmentCount } from '../coa/components/AttachmentsTab'
+import { CommsTab, useCommsCount, type Subject } from '../coa/components/CommsTab'
+import { ChartWidgetCard } from '../coa/components/ChartWidgetCard'
+import { ActivityFeed } from '../coa/components/ActivityFeed'
+import type { RangeValue } from '../coa/components/PeriodBar'
+import { InsightsRangeMenu, type InsightsRange } from './exchange/InsightsRangeMenu'
+import { parseISO, subMonths } from 'date-fns'
+import { recordKey } from '../coa/lib/recordStore'
+import { useCommsDirectorySync } from '../coa/store'
+import { cn, fmtDate, fmtDateTime, fmtNumber, todayIso } from '../coa/lib/utils'
+import { RATE_TOOLTIPS } from '../utils/rateCopy'
+import { fmtCompactMoney } from '../coa/components/chartKit'
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "../components/ui/table";
+  BASE, BASE_NAME, LAST_SYNC_DATE, LAST_SYNC_DAY, LAST_SYNC_TIME, SYNC_LINE, daysSince, fmtInverse, fmtRate, fmtSignedPct,
+  varianceColor, variancePct, pairPath,
+} from './exchange/rateModel'
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
+  DEFAULT_RANGE, buildPairSeries, corporateRecordFor, pairFacts, rangeLabel, rangeMetrics,
+  rateHistory, windowRange,
+} from './exchange/pairData'
 import {
-  Dialog, DialogContent, DialogTitle, DialogDescription,
-} from "../components/ui/dialog";
-import {
-  Tooltip, TooltipTrigger, TooltipContent, TooltipProvider,
-} from "../components/ui/tooltip";
-import {
-  LineChart, Line, AreaChart, Area, BarChart, Bar, Cell,
-  XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as ReTooltip, Legend, ReferenceLine,
-} from "recharts";
-import { DndProvider, useDrag, useDrop } from "react-dnd";
-import { HTML5Backend } from "react-dnd-html5-backend";
+  DEFAULT_MID_KPIS, DEFAULT_MID_WIDGETS, DEFAULT_STD_KPIS, DEFAULT_STD_WIDGETS, MID_KPI_KEYS, MID_WIDGET_KEYS, PAIR_KPIS,
+  STD_KPI_KEYS, STD_WIDGET_KEYS, pairWidgets, renderPairWidget,
+} from './exchange/pairInsights'
+import { CORPORATE_STATUS_OPTIONS, MID_STATUS_OPTIONS, useCorporateRateLifecycle } from './exchange/rateLifecycle'
+import { useCorporateRateForm } from './exchange/CorporateRateForm'
+import { PairInverter } from './exchange/PairInverter'
+import { RateHistoryTab } from './exchange/RateHistoryTab'
+import { exportRows } from './exchange/rateExport'
+import { corporatePairActivity, isSeededRate, midPairActivity, pairAttachments, pairNotes } from './exchange/recordSamples'
+import { commsAnchorIso } from './currency/recordSamples'
+import { CX_TITLE } from './CurrencyExchangeHeader'
 
-type TimeRange = "1D" | "5D" | "1M" | "1Y" | "5Y" | "MAX" | "CUSTOM";
-const DND_KPI_TYPE = "EXCHANGE_KPI";
-const TIME_RANGE_BUTTONS: { key: TimeRange; label: string }[] = [
-  { key: "1D", label: "1D" },
-  { key: "5D", label: "5D" },
-  { key: "1M", label: "1M" },
-  { key: "1Y", label: "1Y" },
-  { key: "5Y", label: "5Y" },
-  { key: "MAX", label: "Max" },
-  { key: "CUSTOM", label: "Custom" },
-];
-// Map a TimeRange to the number of days to slice from the tail of the time series.
-// The underlying series is 90 daily points, so 1Y / 5Y / Max all resolve to "everything we have".
-function daysForRange(r: TimeRange): number {
-  switch (r) {
-    case "1D": return 1;
-    case "5D": return 5;
-    case "1M": return 30;
-    case "1Y":
-    case "5Y":
-    case "MAX":
-    case "CUSTOM":
-    default: return 90;
+const TABS = ['dashboard', 'history', 'notes', 'attachments', 'communications', 'activity'] as const
+type Tab = typeof TABS[number]
+
+const ACTIONS_BTN = 'h-9 px-3.5 text-[13px] rounded-lg border border-border bg-white hover:bg-slate-50 text-slate-700 inline-flex items-center gap-1.5 transition-all duration-200 cursor-pointer shadow-sm'
+const PRIMARY_BTN = 'h-9 px-4 text-[13px] rounded-lg bg-primary hover:bg-[#0862D0] text-white inline-flex items-center gap-1.5 transition-all duration-200 cursor-pointer shadow-sm'
+
+export function CurrencyPairDetailPage() {
+  const { code: rawCode } = useParams<{ code: string }>()
+  const code = (rawCode ?? '').toUpperCase()
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  const { midMarketRates, standardRates, rateAudit } = useExchangeRates()
+  const { currencies } = useCurrencies()
+  useCommsDirectorySync(currencies, midMarketRates, standardRates)
+  const lifecycle = useCorporateRateLifecycle()
+  const form = useCorporateRateForm()
+
+  const mid = midMarketRates.find(m => m.sourceCurrency === code)
+  const isBase = code === BASE
+  const isStd = params.get('type') === 'std' && !isBase
+  const type = isStd ? 'std' : 'mid'
+  const record = corporateRecordFor(code, standardRates)
+  const active = record?.status === 'active' ? record : undefined
+
+  const [tab, setTab] = useDetailTab<Tab>(TABS, `${code}:${type}`)
+  const [fullscreen, toggleFullscreen] = useDetailFullView('fx.pair.fullView', tab, { history: true })
+  const [range, setRange] = useState<RangeValue>(DEFAULT_RANGE)
+  const [inverted, setInverted] = useState(false)
+
+  const key = recordKey('exchangeRate', `${code}:${type}`)
+  // What the record tabs open with, derived from the pair and its rate type
+  // (CoA's lib/notes and seeded attachments): the corporate record's own notes
+  // carried over with a tag, plus the history a rate in use would carry.
+  const derivedNotes = useMemo(() => pairNotes(code, type, record), [code, type, record])
+  const seedFiles = useCallback(() => pairAttachments(code, type, record), [code, type, record])
+  const noteCount = useRecordNotes(key, derivedNotes).length
+  const attachmentCount = useRecordAttachmentCount(key, seedFiles)
+  /* Read before the not-found return, because the thread is a hook. A corporate
+     rate set up in this session has nothing said about it yet. */
+  const commsSubject: Subject = {
+    subjectId: mid ? key : '',
+    kind: isStd ? 'corporate' : 'mid',
+    label: `${code}/${BASE} ${isStd ? 'corporate rate' : 'mid-market rate'}`,
+    anchorIso: commsAnchorIso(),
+    fresh: isStd && !isSeededRate(record),
   }
-}
+  const commsCount = useCommsCount(commsSubject)
 
-function rangeLabel(r: TimeRange, customRange?: { from: string; to: string }): string {
-  switch (r) {
-    case "1D": return "Over last 24 hours";
-    case "5D": return "Over last 5 days";
-    case "1M": return "Over last 30 days";
-    case "1Y": return "Over last year";
-    case "5Y": return "Over last 5 years";
-    case "MAX": return "Over full history";
-    case "CUSTOM":
-      if (customRange?.from && customRange?.to) return `${customRange.from} → ${customRange.to}`;
-      return "Custom range";
-    default: return "";
-  }
-}
+  const series = useMemo(() => (mid ? buildPairSeries(mid, rateAudit) : []), [mid, rateAudit])
+  // The range calendar opens on the month before the last sync, where the data is.
+  const rangeMonth = useMemo(() => (series.length ? subMonths(parseISO(series[series.length - 1].date), 1) : undefined), [series])
+  const history = useMemo(() => rateHistory(code, series, rateAudit), [code, series, rateAudit])
+  const facts = useMemo(() => pairFacts(code, series, rateAudit), [code, series, rateAudit])
+  const points = useMemo(() => windowRange(series, range), [series, range])
+  const metrics = useMemo(() => rangeMetrics(points), [points])
 
-// ── Analytics Widget definitions ──
-interface AnalyticsWidgetDef {
-  key: string; label: string; description: string; iconName: string; category: string;
-  previewType?: "line" | "area" | "bar" | "area-red";
-}
+  const crumbs = [{ label: 'Accounting', to: '/accounting' }, { label: CX_TITLE, to: '/accounting/exchange-rates' }, { label: code || 'Pair' }]
 
-const WIDGET_TOOLTIPS: Record<string, string> = {
-  rate_over_time: "Shows both rates side by side over time. The market rate is the live line; your corporate rate is the stepped line. Hover any date to see both values and the gap between them.",
-  variance_trend: "How far your corporate rate sits from the market each day. Colour bands: green within ±1%, amber 1–3%, red beyond 3%.",
-  daily_change: "Shows how much the mid-market rate moved each day — up (green) or down (red). Tall bars mean big moves that day.",
-  cumulative_return: "Shows the total movement of the mid-market rate since the start of the selected period. Answers: \"how much has this rate moved overall?\"",
-  conversion_trend: "Type an amount in the source currency to see what it would have converted to in the base currency on each day. Useful for seeing how timing would have affected a transaction.",
-  drawdown_from_peak: "Shows how far the mid-market rate has fallen from its recent high. 0% means it's at a new high; −2% means it's 2% below the highest point in the selected period.",
-  transaction_volume: "Bar chart of daily transaction count priced using this corporate rate.",
-};
-
-const ALL_ANALYTICS_WIDGETS: AnalyticsWidgetDef[] = [
-  { key: "rate_over_time", label: "Rate Over Time", description: "Mid-Market vs Corporate rate trends", iconName: "TrendingUp", category: "Charts", previewType: "line" },
-  { key: "variance_trend", label: "Corporate Variance Trend vs Mid-Market", description: "Bar chart of corporate vs mid-market variance (thresholds at ±1% / ±3%)", iconName: "BarChart3", category: "Charts", previewType: "bar" },
-  { key: "daily_change", label: "Daily % Change (Mid-Market)", description: "Area chart of daily percentage changes in the mid-market rate", iconName: "Activity", category: "Charts", previewType: "area" },
-  { key: "cumulative_return", label: "Cumulative Return (Mid-Market)", description: "Area chart of cumulative return over time", iconName: "TrendingUp", category: "Charts", previewType: "area" },
-  { key: "conversion_trend", label: "Conversion Trend (What-If)", description: "What-if conversion with amount input and summary", iconName: "DollarSign", category: "Charts", previewType: "line" },
-  { key: "drawdown_from_peak", label: "Drawdown from Peak (Mid-Market)", description: "Downward red area chart from all-time high", iconName: "TrendingDown", category: "Charts", previewType: "area-red" },
-  { key: "transaction_volume", label: "Corporate Rate Transaction Volume", description: "Daily transaction count using this corporate rate", iconName: "BarChart3", category: "Charts", previewType: "bar" },
-];
-
-// Widgets allowed per mode. Mid-Market view keeps Rate History locked-visible as a
-// dedicated section below the charts, so it is NOT exposed in Customize Widgets.
-const MID_WIDGET_KEYS = ["rate_over_time", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "variance_trend"];
-// Corporate mode: Rate History is a locked-visible section. The legacy
-// "Corporate Rate Change History" step chart duplicated the table, so it's removed.
-const STD_WIDGET_KEYS = ["rate_over_time", "variance_trend", "transaction_volume", "conversion_trend"];
-
-const DEFAULT_MID_WIDGETS = ["rate_over_time", "daily_change"];
-const DEFAULT_STD_WIDGETS = ["rate_over_time", "variance_trend"];
-
-// ── KPI definitions ──
-interface ExKpiDef {
-  key: string; label: string; category: string; iconName: string; tooltip?: string;
-  iconBg?: string; iconColor?: string;
-}
-
-const ALL_KPI_DEFS: ExKpiDef[] = [
-  { key: "current_mid", label: "Current Mid-Market Rate", category: "Rates", iconName: "Activity", iconBg: "#F5F3FF", iconColor: "#7C3AED" },
-  { key: "current_std", label: "Current Corporate Rate", category: "Rates", iconName: "Star", iconBg: "#FFFBEB", iconColor: "#D97706" },
-  // Consolidated time-range-driven KPIs (Mid-Market). All four respect the selected
-  // range from the selector above the KPI grid (1D / 5D / 1M / 1Y / 5Y / Max / Custom).
-  { key: "range_change", label: "Mid-Market Change", category: "Performance", iconName: "TrendingUp", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Percentage change in the mid-market rate over the currently selected range." },
-  { key: "range_high_low", label: "Mid-Market High / Low", category: "Analytics", iconName: "BarChart3", iconBg: "#FFF7ED", iconColor: "#EA580C", tooltip: "Highest and lowest mid-market rates within the selected range." },
-  { key: "range_volatility", label: "Mid-Market Volatility", category: "Analytics", iconName: "Zap", iconBg: "#FEF2F2", iconColor: "#DC2626", tooltip: "Standard deviation of daily rate changes within the selected range.\n\nLow: < 0.3% — Stable pair.\nModerate: 0.3–0.8% — Normal movement.\nHigh: > 0.8% — Elevated risk." },
-  { key: "range_avg_rate", label: "Mid-Market Average Rate", category: "Analytics", iconName: "Target", iconBg: "#F0FDF4", iconColor: "#16A34A", tooltip: "Average mid-market rate within the selected range." },
-  // Corporate-specific KPIs
-  { key: "variance", label: "Corporate Variance vs Mid-Market", category: "Rates", iconName: "Target", iconBg: "#FFFBEB", iconColor: "#D97706" },
-  { key: "days_since_update", label: "Days Since Corporate Rate Last Updated", category: "Operational", iconName: "Calendar", iconBg: "#EDF4FF", iconColor: "#0A77FF" },
-  { key: "corp_transactions_30d", label: "Corporate Rate Transactions (30d)", category: "Operational", iconName: "FileText", iconBg: "#EDF4FF", iconColor: "#0A77FF", tooltip: "Transactions priced using the corporate rate in the last 30 days." },
-  { key: "fx_exposure_30d", label: "FX Exposure (30d)", category: "Operational", iconName: "Globe", iconBg: "#F0FDF4", iconColor: "#16A34A", tooltip: "Total absolute value of all transactions denominated in this currency pair over the last 30 days, expressed in the base currency." },
-  { key: "max_variance_30d", label: "Max Corporate Variance (30d)", category: "Analytics", iconName: "TrendingUp", iconBg: "#FEF2F2", iconColor: "#DC2626" },
-  { key: "avg_variance_30d", label: "Average Corporate Variance (30d)", category: "Analytics", iconName: "Target", iconBg: "#FFFBEB", iconColor: "#D97706" },
-  { key: "change_count_30d", label: "Corporate Rate Change Count (30d)", category: "Operational", iconName: "Activity", iconBg: "#F5F3FF", iconColor: "#7C3AED" },
-];
-
-// KPIs relevant per context.
-// Mid-Market no longer exposes the fixed 24h / 7d / 30d change tiles; that role is
-// handled by range_change plus the shared range selector driving every
-// time-based metric in one place. FX Exposure replaces the old transaction count
-// tile so the default Mid-Market dashboard shows operational exposure at a glance.
-const MID_KPI_KEYS = ["current_mid", "range_change", "range_high_low", "range_volatility", "range_avg_rate", "fx_exposure_30d"];
-const STD_KPI_KEYS = ["current_std", "variance", "days_since_update", "corp_transactions_30d", "fx_exposure_30d", "max_variance_30d", "avg_variance_30d", "change_count_30d"];
-
-const DEFAULT_MID_KPIS = ["current_mid", "range_change", "range_high_low", "range_volatility", "fx_exposure_30d"];
-const DEFAULT_STD_KPIS = ["current_std", "variance", "days_since_update", "corp_transactions_30d", "fx_exposure_30d"];
-
-interface RangeMetrics {
-  change: number;
-  high: number;
-  low: number;
-  avg: number;
-  volatility: number;
-  label: string;
-}
-
-function computeKpiValue(key: string, detail: CurrencyPairDetail, rangeMetrics: RangeMetrics): { value: string; change?: string; changeColor?: string; sublabel?: string } {
-  switch (key) {
-    case "current_mid": return {
-      value: detail.currentMidRate.toFixed(4),
-      change: `${detail.change24h > 0 ? "+" : ""}${detail.change24h.toFixed(2)}%`,
-      changeColor: detail.change24h >= 0 ? "#059669" : "#EF4444",
-      sublabel: `as of ${format(new Date(LAST_SYNC), "dd MMM yyyy, HH:mm")} today`,
-    };
-    case "current_std": return {
-      value: detail.currentStdRate ? detail.currentStdRate.toFixed(4) : "Not Set",
-      sublabel: detail.stdEffectiveDate ? `Effective ${format(new Date(detail.stdEffectiveDate), "dd MMM yyyy")}` : undefined,
-    };
-    case "range_change": return {
-      value: `${rangeMetrics.change > 0 ? "+" : ""}${rangeMetrics.change.toFixed(2)}%`,
-      changeColor: rangeMetrics.change >= 0 ? "#059669" : "#EF4444",
-      sublabel: rangeMetrics.label,
-    };
-    case "range_high_low": {
-      const spread = (rangeMetrics.high - rangeMetrics.low).toFixed(4);
-      return {
-        value: `${rangeMetrics.high.toFixed(2)} / ${rangeMetrics.low.toFixed(2)}`,
-        sublabel: `Spread: ${spread} · ${rangeMetrics.label}`,
-      };
-    }
-    case "range_volatility": {
-      const label = rangeMetrics.volatility < 0.3 ? "Low" : rangeMetrics.volatility < 0.8 ? "Moderate" : "High";
-      return {
-        value: `${rangeMetrics.volatility.toFixed(3)}%`,
-        change: label,
-        changeColor: rangeMetrics.volatility < 0.3 ? "#059669" : rangeMetrics.volatility < 0.8 ? "#D97706" : "#EF4444",
-        sublabel: rangeMetrics.label,
-      };
-    }
-    case "range_avg_rate": return {
-      value: rangeMetrics.avg.toFixed(4),
-      sublabel: rangeMetrics.label,
-    };
-    case "variance":
-      return {
-        value: detail.variance !== null ? `${detail.variance > 0 ? "+" : ""}${detail.variance.toFixed(2)}%` : "N/A",
-        changeColor: detail.variance !== null ? (Math.abs(detail.variance) <= 1 ? "#059669" : Math.abs(detail.variance) <= 3 ? "#D97706" : "#EF4444") : undefined,
-      };
-    case "transactions_30d": return { value: String(detail.transactions30d) };
-    case "corp_transactions_30d": return { value: String(Math.floor(detail.transactions30d * 0.7)) };
-    case "days_since_update": {
-      if (!detail.stdEffectiveDate) return { value: "N/A" };
-      const days = Math.max(0, Math.floor((Date.now() - new Date(detail.stdEffectiveDate).getTime()) / 86400000));
-      return { value: `${days} days`, sublabel: `Since ${format(new Date(detail.stdEffectiveDate), "dd MMM yyyy")}` };
-    }
-    case "fx_exposure_30d": {
-      const exposure = detail.transactions30d * detail.avgRate30d * 1200; // rough value estimation
-      return {
-        value: `${BASE_CURRENCY} ${exposure.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
-        sublabel: `Across ${detail.transactions30d} documents`,
-      };
-    }
-    case "max_variance_30d": {
-      // Approximate: largest variance seen over the series window
-      if (detail.variance === null) return { value: "N/A" };
-      const max = Math.max(Math.abs(detail.variance) * 1.5, Math.abs(detail.variance));
-      return { value: `${max.toFixed(2)}%` };
-    }
-    case "avg_variance_30d": {
-      if (detail.variance === null) return { value: "N/A" };
-      return { value: `${detail.variance.toFixed(2)}%` };
-    }
-    case "change_count_30d": return { value: String(detail.auditLog.length) };
-    default: return { value: "–" };
-  }
-}
-
-// ── Icon mapper ──
-function KpiIconByName({ name, className, style }: { name: string; className?: string; style?: React.CSSProperties }) {
-  const p = { className, style };
-  switch (name) {
-    case "Activity": return <Activity {...p} />;
-    case "TrendingUp": return <TrendingUp {...p} />;
-    case "TrendingDown": return <TrendingDown {...p} />;
-    case "Calendar": return <Calendar {...p} />;
-    case "BarChart3": return <BarChart3 {...p} />;
-    case "Zap": return <Zap {...p} />;
-    case "Target": return <Target {...p} />;
-    case "FileText": return <FileText {...p} />;
-    case "Star": return <Star {...p} />;
-    case "DollarSign": return <DollarSign {...p} />;
-    case "Globe": return <Globe {...p} />;
-    default: return <Activity {...p} />;
-  }
-}
-
-// ── Mini chart previews for widget panel ──
-function MiniChartPreview({ type }: { type?: string }) {
-  if (type === "line") return (
-    <svg viewBox="0 0 120 40" className="w-full h-10">
-      <polyline points="5,30 20,25 35,28 50,18 65,22 80,12 95,15 115,8" fill="none" stroke="#0A77FF" strokeWidth="2" strokeLinecap="round" />
-      <polyline points="5,32 20,30 35,31 50,28 65,29 80,26 95,27 115,24" fill="none" stroke="#D97706" strokeWidth="1.5" strokeDasharray="4 3" strokeLinecap="round" />
-    </svg>
-  );
-  if (type === "area") return (
-    <svg viewBox="0 0 120 40" className="w-full h-10">
-      <defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7C3AED" stopOpacity="0.2" /><stop offset="100%" stopColor="#7C3AED" stopOpacity="0.02" /></linearGradient></defs>
-      <path d="M5,30 20,25 35,28 50,18 65,22 80,14 95,20 115,10 115,38 5,38Z" fill="url(#mg)" />
-      <polyline points="5,30 20,25 35,28 50,18 65,22 80,14 95,20 115,10" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-  if (type === "area-red") return (
-    <svg viewBox="0 0 120 40" className="w-full h-10">
-      <defs><linearGradient id="rg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#EF4444" stopOpacity="0.2" /><stop offset="100%" stopColor="#EF4444" stopOpacity="0.02" /></linearGradient></defs>
-      <path d="M5,8 20,12 35,10 50,20 65,18 80,28 95,25 115,32 115,38 5,38Z" fill="url(#rg)" />
-      <polyline points="5,8 20,12 35,10 50,20 65,18 80,28 95,25 115,32" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-  if (type === "bar") return (
-    <svg viewBox="0 0 120 40" className="w-full h-10">
-      {[10,20,30,45,60,75,90,105].map((x, i) => (
-        <rect key={i} x={x} y={12 + Math.random() * 12} width="8" height={16 + Math.random() * 10} rx="2" fill="#D97706" opacity="0.6" />
-      ))}
-    </svg>
-  );
-  return null;
-}
-
-// ── Draggable KPI Card ──
-function DraggableKpiCard({ index, kpiKey, label, value, tooltip, sublabel, change, changeColor, moveCard, onRemove, iconName, iconBg, iconColor }: {
-  index: number; kpiKey: string; label: string; value: string; tooltip?: string; sublabel?: string;
-  change?: string; changeColor?: string; moveCard: (from: number, to: number) => void; onRemove?: () => void; iconName?: string;
-  iconBg?: string; iconColor?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [{ isDragging }, drag, preview] = useDrag({
-    type: DND_KPI_TYPE,
-    item: () => ({ index }),
-    collect: (monitor) => ({ isDragging: monitor.isDragging() }),
-  });
-  const [{ isOver }, drop] = useDrop({
-    accept: DND_KPI_TYPE,
-    hover(item: { index: number }, monitor) {
-      if (!ref.current) return;
-      const dragIndex = item.index;
-      const hoverIndex = index;
-      if (dragIndex === hoverIndex) return;
-      const hoverRect = ref.current.getBoundingClientRect();
-      const hoverMiddleX = (hoverRect.right - hoverRect.left) / 2;
-      const hoverMiddleY = (hoverRect.bottom - hoverRect.top) / 2;
-      const clientOffset = monitor.getClientOffset();
-      if (!clientOffset) return;
-      const hoverClientX = clientOffset.x - hoverRect.left;
-      const hoverClientY = clientOffset.y - hoverRect.top;
-      if (dragIndex < hoverIndex && hoverClientY < hoverMiddleY && hoverClientX < hoverMiddleX) return;
-      if (dragIndex > hoverIndex && hoverClientY > hoverMiddleY && hoverClientX > hoverMiddleX) return;
-      moveCard(dragIndex, hoverIndex);
-      item.index = hoverIndex;
-    },
-    collect: (monitor) => ({ isOver: monitor.isOver() }),
-  });
-  preview(drop(ref));
-  drag(ref);
-
-  if (isDragging) {
-    return <div ref={ref} className="rounded-lg border border-dashed border-[#0A77FF]/20 bg-[#0A77FF]/[0.02] min-h-[52px] pointer-events-none" />;
+  if (!mid) {
+    return (
+      <CoaPage crumbs={crumbs}>
+        <DetailNotFound icon={<ArrowLeftRight size={20} />} title="Currency pair not found" onBack={() => navigate('/accounting/exchange-rates')} backLabel="Back to Exchange Rates" />
+      </CoaPage>
+    )
   }
 
-  return (
-    <div
-      ref={ref}
-      className={`border rounded-lg bg-white group relative min-w-0 transition-all duration-200 select-none overflow-hidden cursor-grab active:cursor-grabbing ${
-        isOver
-          ? "border-[#0A77FF]/30 bg-[#0A77FF]/[0.03] shadow-[0_0_0_2px_rgba(10,119,255,0.08)] scale-[1.02]"
-          : "border-[#E2E8F0] hover:-translate-y-[1px] hover:border-[#93B8F7] hover:shadow-[0_2px_8px_-3px_rgba(10,119,255,0.06)]"
-      }`}
-    >
-      {isOver && <div className="absolute inset-0 rounded-lg bg-[#0A77FF]/[0.02] pointer-events-none" />}
-      <div className="px-3 py-2">
-        <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-all duration-150 flex items-center bg-[#F1F5F9] rounded-md p-1 z-10 pointer-events-none">
-          <GripVertical className="w-3.5 h-3.5 text-[#64748B]" />
-        </div>
-        <div className="flex items-center justify-between gap-1 mb-1">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {iconName && (
-              <div className="w-5 h-5 rounded flex items-center justify-center shrink-0" style={{ backgroundColor: iconBg || "#EDF4FF" }}>
-                <KpiIconByName name={iconName} className="w-3 h-3" style={{ color: iconColor || "#0A77FF" }} />
-              </div>
-            )}
-            <p className="text-[10.5px] text-[#64748B] whitespace-nowrap truncate" style={{ fontWeight: 500 }}>{label}</p>
-            {tooltip && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button" className="inline-flex shrink-0" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-                      <Info className="w-3 h-3 text-[#CBD5E1] hover:text-[#94A3B8] transition-colors cursor-help" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" sideOffset={6} className="max-w-[280px] text-[11px] z-[300] whitespace-pre-line">{tooltip}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-          </div>
-        </div>
-        <div className="flex items-baseline gap-1.5">
-          {change && <span className="text-[10px] shrink-0" style={{ fontWeight: 500, color: changeColor || "#059669" }}>{change}</span>}
-          <p className="text-[15px] text-[#334155] tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{value}</p>
-        </div>
-        {sublabel && (
-          <p className="text-[9.5px] text-[#94A3B8] mt-0.5 truncate" style={{ fontWeight: 400 }}>{sublabel}</p>
+  const pair = `${code}/${BASE}`
+  const label = rangeLabel(range)
+  const archived = isStd && record?.status === 'archived'
+  const hasCorpHistory = series.some(p => p.corp != null) || !!active
+  const variance = active ? variancePct(active.standardRate, mid.rate) : null
+  const historyType = isStd ? 'Corporate' : 'Mid-market'
+
+  /* ── KPI tiles ── */
+  const colored = (text: string, color?: string) => <span style={color ? { color } : undefined}>{text}</span>
+  const face = (k: string): DetailKpiFace & { text: string } => {
+    switch (k) {
+      case 'current_mid': {
+        const c = mid.change24h >= 0 ? '#059669' : '#DC2626'
+        return { text: fmtRate(mid.rate), value: fmtRate(mid.rate), subDetail: <>{colored(fmtSignedPct(mid.change24h), c)} · as of {LAST_SYNC_DATE}</> }
+      }
+      case 'current_std':
+        return active
+          ? { text: fmtRate(active.standardRate), value: fmtRate(active.standardRate), subDetail: `Effective ${fmtDate(active.effectiveDate)}` }
+          : { text: 'Not set', value: 'Not set', subDetail: record ? 'Last rate archived' : undefined }
+      case 'range_change': {
+        const t = fmtSignedPct(metrics.change)
+        return { text: t, value: colored(t, metrics.change >= 0 ? '#059669' : '#DC2626'), subDetail: label }
+      }
+      case 'range_high_low': {
+        const f = (n: number) => (n < 1 ? n.toFixed(4) : n.toFixed(2))
+        const t = `${f(metrics.high)} / ${f(metrics.low)}`
+        return { text: t, value: t, subDetail: `Spread ${fmtRate(metrics.high - metrics.low)} · ${label}` }
+      }
+      case 'range_volatility': {
+        const v = metrics.volatility
+        const level = v < 0.3 ? 'Low' : v < 0.8 ? 'Moderate' : 'High'
+        const c = v < 0.3 ? '#059669' : v < 0.8 ? '#D97706' : '#DC2626'
+        return { text: `${v.toFixed(3)}%`, value: <>{v.toFixed(3)}% <span className="text-[12px]" style={{ color: c, fontWeight: 600 }}>{level}</span></>, subDetail: label }
+      }
+      case 'range_avg_rate':
+        return { text: fmtRate(metrics.avg), value: fmtRate(metrics.avg), subDetail: label }
+      case 'variance':
+        return variance == null
+          ? { text: 'N/A', value: 'N/A', subDetail: 'No corporate rate in effect' }
+          : { text: fmtSignedPct(variance), value: colored(fmtSignedPct(variance), varianceColor(variance)), subDetail: 'vs current mid-market' }
+      case 'days_since_update': {
+        if (!active) return { text: 'N/A', value: 'N/A' }
+        if (active.effectiveDate > todayIso()) return { text: '0 days', value: '0 days', subDetail: `Takes effect ${fmtDate(active.effectiveDate)}` }
+        const d = daysSince(active.effectiveDate)
+        const t = `${fmtNumber(d)} ${d === 1 ? 'day' : 'days'}`
+        return { text: t, value: t, subDetail: `Since ${fmtDate(active.effectiveDate)}` }
+      }
+      case 'corp_transactions_30d': {
+        const t = active ? fmtNumber(Math.floor(facts.transactions30d * 0.7)) : '0'
+        return { text: t, value: t, subDetail: active ? undefined : 'No corporate rate in effect' }
+      }
+      case 'fx_exposure_30d': {
+        const total = Math.round(facts.transactions30d * facts.avg30 * 1200)
+        const t = `${BASE} ${total.toLocaleString('en-US')}`
+        return { text: t, value: <span title={t}>{fmtCompactMoney(total, `${BASE} `)}</span>, subDetail: `Across ${fmtNumber(facts.transactions30d)} documents` }
+      }
+      case 'max_variance_30d':
+      case 'avg_variance_30d': {
+        const vs = facts.variances30
+        if (!vs.length) return { text: 'N/A', value: 'N/A', subDetail: 'No corporate rate in the last 30 synced days' }
+        const v = k === 'max_variance_30d' ? vs.reduce((m, x) => (Math.abs(x) > Math.abs(m) ? x : m), 0) : vs.reduce((s, x) => s + x, 0) / vs.length
+        return { text: fmtSignedPct(v), value: colored(fmtSignedPct(v), varianceColor(v)), subDetail: `Over ${vs.length} synced ${vs.length === 1 ? 'day' : 'days'}` }
+      }
+      case 'change_count_30d': {
+        const t = fmtNumber(facts.changes30)
+        return { text: t, value: t, subDetail: 'Last 30 days', onClick: () => setTab('activity') }
+      }
+      default: return { text: '-', value: '-' }
+    }
+  }
+
+  const kpiKeys = isStd ? STD_KPI_KEYS : MID_KPI_KEYS
+  const kpis = PAIR_KPIS.filter(k => kpiKeys.includes(k.key)).sort((a, b) => kpiKeys.indexOf(a.key) - kpiKeys.indexOf(b.key))
+  const widgetKeys = (isStd ? STD_WIDGET_KEYS : MID_WIDGET_KEYS).filter(k => k !== 'variance_trend' || hasCorpHistory)
+  const widgets = pairWidgets(isStd).filter(w => widgetKeys.includes(w.key)).sort((a, b) => widgetKeys.indexOf(a.key) - widgetKeys.indexOf(b.key))
+  const bodyProps = {
+    code, points, label, isStd, lastDay: LAST_SYNC_DAY, avg30: facts.avg30,
+    corporate: active ? { rate: active.standardRate, effectiveDate: active.effectiveDate } : null,
+  }
+
+  /* ── Header pieces ── */
+  const switchTo = (t: 'mid' | 'std') => navigate(pairPath(code, t))
+  const rateTypeChip = (() => {
+    const cls = isStd ? 'badge-orange' : 'badge-purple'
+    const Icon = isStd ? Star : Activity
+    const text = isStd ? 'Corporate rate' : 'Mid-market rate'
+    if (!record || isBase) return <span className={cn(cls, 'gap-1')}><Icon className="w-3 h-3" />{text}</span>
+    return (
+      <Menu align="left" trigger={
+        <button type="button" aria-haspopup="menu" aria-label={`Rate type: ${text}. Switch rate type`}
+          className={cn(cls, 'gap-1 cursor-pointer transition-all duration-150 hover:ring-2 hover:ring-offset-1 hover:ring-border')}>
+          <Icon className="w-3 h-3" />{text}<ChevronDown className="w-3 h-3" />
+        </button>
+      }>
+        {close => (
+          <>
+            <MenuItem icon={<Activity size={14} />} active={!isStd} onClick={() => { close(); if (isStd) switchTo('mid') }}>
+              <span className="flex-1">Mid-market rate</span>{!isStd && <Check size={14} className="text-primary ml-2" />}
+            </MenuItem>
+            <MenuItem icon={<Star size={14} />} active={isStd} onClick={() => { close(); if (!isStd) switchTo('std') }}>
+              <span className="flex-1">Corporate rate</span>{isStd && <Check size={14} className="text-primary ml-2" />}
+            </MenuItem>
+          </>
         )}
-      </div>
-      {onRemove && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-all duration-150 p-1 rounded cursor-pointer hover:bg-red-50 z-10"
-          title={`Remove ${label}`}
-        >
-          <Trash2 className="w-3 h-3 text-[#94A3B8] hover:text-[#EF4444]" />
+      </Menu>
+    )
+  })()
+
+  const statusBadge: ReactNode = isStd
+    ? record
+      ? <StatusMenu status={record.status === 'archived' ? 'Archived' : 'Active'} options={CORPORATE_STATUS_OPTIONS} onPick={next => lifecycle.request(next, record)} />
+      : <StatusChip status="Not set" tone="neutral" />
+    : <StatusMenu status="Active" options={MID_STATUS_OPTIONS} onPick={() => {}} readOnly />
+
+  const exportHistory = () => {
+    const rows = history.filter(r => r.type === historyType)
+    void exportRows({
+      fileBase: `${code.toLowerCase()}_${isStd ? 'corporate' : 'mid_market'}_rate_history`,
+      sheetName: 'Rate history',
+      title: `${pair} ${isStd ? 'corporate' : 'mid-market'} rate history`,
+      noun: 'entries', one: 'entry',
+      headers: ['Effective date', 'Rate type', 'Event', 'Rate value', 'Inverse rate', 'Change', 'Variance vs mid', 'Set by', 'Source', 'Note'],
+      rows: rows.map(r => [r.effectiveDate, r.type, r.event, fmtRate(r.rate), fmtInverse(r.rate), r.changePct == null ? '' : fmtSignedPct(r.changePct, 3), r.variance == null ? '' : fmtSignedPct(r.variance), r.by, r.source, r.note]),
+      widths: [14, 12, 10, 12, 12, 10, 14, 18, 20, 30],
+    }, 'csv')
+  }
+
+  const actions = (
+    <>
+      <Menu trigger={
+        <button type="button" aria-label="Rate actions" className={ACTIONS_BTN} style={{ fontWeight: 500 }}>
+          Actions
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+        </button>
+      }>
+        {close => (
+          <>
+            {record && !isBase && (
+              <MenuItem icon={<ArrowLeftRight size={14} />} onClick={() => { close(); switchTo(isStd ? 'mid' : 'std') }}>
+                {isStd ? 'View mid-market rate' : 'View corporate rate'}
+              </MenuItem>
+            )}
+            {!isStd && !isBase && (active
+              ? <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(active.id) }}>Update corporate rate</MenuItem>
+              : <MenuItem icon={<Plus size={14} />} onClick={() => { close(); form.openAdd(code) }}>Set corporate rate</MenuItem>)}
+            <MenuItem icon={<Download size={14} />} onClick={() => { close(); exportHistory() }}>Export rate history</MenuItem>
+            {isStd && active && <MenuItem icon={<Archive size={14} />} danger onClick={() => { close(); lifecycle.archive(active) }}>Archive rate</MenuItem>}
+            {isStd && archived && record && <MenuItem icon={<ArchiveRestore size={14} />} onClick={() => { close(); lifecycle.restore(record) }}>Restore rate</MenuItem>}
+          </>
+        )}
+      </Menu>
+      {isStd && active && (
+        <button type="button" onClick={() => form.openUpdate(active.id)} className={PRIMARY_BTN} style={{ fontWeight: 600 }}>
+          <Pencil className="w-3.5 h-3.5" />
+          Update rate
         </button>
       )}
-    </div>
-  );
-}
+      {isStd && !active && (
+        <button type="button" onClick={() => form.openAdd(code)} className={PRIMARY_BTN} style={{ fontWeight: 600 }}>
+          <Plus className="w-3.5 h-3.5" />
+          Set corporate rate
+        </button>
+      )}
+    </>
+  )
 
-// ── Widget Category Icon ──
-function WidgetCategoryIcon({ category }: { category: string }) {
-  switch (category) {
-    case "Rates": return <DollarSign className="w-4 h-4 text-muted-foreground" />;
-    case "Performance": return <TrendingUp className="w-4 h-4 text-muted-foreground" />;
-    case "Analytics": return <BarChart3 className="w-4 h-4 text-muted-foreground" />;
-    case "Operational": return <Globe className="w-4 h-4 text-muted-foreground" />;
-    case "Charts": return <Activity className="w-4 h-4 text-muted-foreground" />;
-    case "Tables": return <FileText className="w-4 h-4 text-muted-foreground" />;
-    default: return <Activity className="w-4 h-4 text-muted-foreground" />;
-  }
-}
-
-// ── Customize Widgets Panel (with previews like Partners) ──
-function CustomizeKpiPanel({ open, onOpenChange, activeKpis, onToggleKpi, detail, rangeMetrics, allowedKeys, allowedWidgetKeys, activeWidgets, onToggleWidget }: {
-  open: boolean; onOpenChange: (open: boolean) => void; activeKpis: string[]; onToggleKpi: (key: string) => void; detail: CurrencyPairDetail;
-  rangeMetrics: RangeMetrics;
-  allowedKeys: string[]; allowedWidgetKeys: string[]; activeWidgets: string[]; onToggleWidget: (key: string) => void;
-}) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"kpis" | "widgets">("kpis");
-  const [mounted, setMounted] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (open) { setMounted(true); if (timeoutRef.current) clearTimeout(timeoutRef.current); requestAnimationFrame(() => { requestAnimationFrame(() => setVisible(true)); }); }
-    else { setVisible(false); timeoutRef.current = setTimeout(() => setMounted(false), 280); }
-    return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
-  }, [open]);
-
-  const allowedDefs = useMemo(() => ALL_KPI_DEFS.filter(k => allowedKeys.includes(k.key)), [allowedKeys]);
-
-  const kpiCategories = useMemo(() => {
-    const catMap = new Map<string, ExKpiDef[]>();
-    for (const kpi of allowedDefs) {
-      if (searchQuery && !kpi.label.toLowerCase().includes(searchQuery.toLowerCase()) && !kpi.category.toLowerCase().includes(searchQuery.toLowerCase())) continue;
-      if (!catMap.has(kpi.category)) catMap.set(kpi.category, []);
-      catMap.get(kpi.category)!.push(kpi);
-    }
-    return Array.from(catMap.entries()).map(([name, kpis]) => ({ name, kpis }));
-  }, [searchQuery, allowedDefs]);
-
-  const widgetCategories = useMemo(() => {
-    const available = ALL_ANALYTICS_WIDGETS.filter(w => {
-      if (!allowedWidgetKeys.includes(w.key)) return false;
-      // Variance Trend only surfaces when a corporate rate exists for this pair
-      if (w.key === "variance_trend" && !detail.currentStdRate) return false;
-      if (searchQuery && !w.label.toLowerCase().includes(searchQuery.toLowerCase()) && !w.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      return true;
-    });
-    const catMap = new Map<string, AnalyticsWidgetDef[]>();
-    for (const w of available) {
-      if (!catMap.has(w.category)) catMap.set(w.category, []);
-      catMap.get(w.category)!.push(w);
-    }
-    return { categories: Array.from(catMap.entries()).map(([name, widgets]) => ({ name, widgets })), available };
-  }, [searchQuery, allowedWidgetKeys, detail.currentStdRate]);
-
-  if (!mounted) return null;
-
-  const totalKpis = allowedDefs.length;
-  const totalWidgets = widgetCategories.available.length;
-
-  return createPortal(
+  /* ── Rail ── */
+  const shownRate = isStd ? (record?.standardRate ?? null) : mid.rate
+  const rail = (
     <>
-      <div className="fixed inset-0 z-[200] transition-opacity duration-[250ms] ease-in-out" style={{ backgroundColor: visible ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0)", pointerEvents: visible ? "auto" : "none" }} onClick={() => onOpenChange(false)} />
-      <div className="fixed right-0 top-0 bottom-0 z-[200] w-full max-w-[400px] bg-white flex flex-col shadow-2xl transition-transform duration-[280ms] ease-[cubic-bezier(0.32,0.72,0,1)]" style={{ transform: visible ? "translateX(0)" : "translateX(100%)" }}>
-        <div className="px-5 pt-5 pb-0 shrink-0">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: "#EDF4FF" }}>
-                <Sliders className="w-5 h-5" style={{ color: "#0A77FF" }} />
-              </div>
-              <div>
-                <h2 className="text-base text-foreground" style={{ fontWeight: 600 }}>Customize Widgets</h2>
-                <p className="text-[13px] text-muted-foreground mt-0.5">Manage your dashboard KPI widgets.</p>
-              </div>
-            </div>
-            <button onClick={() => onOpenChange(false)} className="p-1.5 rounded-md hover:bg-muted/50 transition-colors cursor-pointer -mt-0.5 -mr-1">
-              <X className="w-4 h-4 text-muted-foreground" />
-            </button>
+      <DashInfoCard title="Rate information" icon={FileText}>
+        <InfoGrid>
+          <div className="min-w-0"><DashInfoLabel>Pair</DashInfoLabel><InfoValue strong>{code} / {BASE}</InfoValue></div>
+          <div className="min-w-0"><DashInfoLabel align="right" tooltip={isStd ? RATE_TOOLTIPS.corporate : RATE_TOOLTIPS.midMarket}>Rate type</DashInfoLabel><InfoValue>{isStd ? 'Corporate rate' : 'Mid-market rate'}</InfoValue></div>
+          <div className="min-w-0">
+            <DashInfoLabel>{archived ? 'Rate (archived)' : 'Rate'}</DashInfoLabel>
+            {shownRate != null ? <InfoValue strong className="tabular-nums">{fmtRate(shownRate)} {BASE}</InfoValue> : <InfoValue empty>Not set</InfoValue>}
           </div>
-
-          {/* Count + Enable All */}
-          <div className="flex items-center justify-between mt-4 px-1">
-            <span className="text-[12px] text-muted-foreground" style={{ fontWeight: 500 }}>
-              {activeTab === "kpis" ? `${activeKpis.length} of ${totalKpis} KPIs active` : `${activeWidgets.filter(w => widgetCategories.available.some(aw => aw.key === w)).length} of ${totalWidgets} widgets active`}
-            </span>
-            <button
-              onClick={() => {
-                if (activeTab === "kpis") {
-                  const allKeys = allowedDefs.map(k => k.key);
-                  const allActive = allKeys.every(k => activeKpis.includes(k));
-                  if (allActive) { activeKpis.forEach(k => onToggleKpi(k)); } else { allKeys.filter(k => !activeKpis.includes(k)).forEach(k => onToggleKpi(k)); }
-                } else {
-                  const allKeys = widgetCategories.available.map(w => w.key);
-                  const allActive = allKeys.every(k => activeWidgets.includes(k));
-                  if (allActive) { allKeys.forEach(k => onToggleWidget(k)); } else { allKeys.filter(k => !activeWidgets.includes(k)).forEach(k => onToggleWidget(k)); }
-                }
-              }}
-              className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-full border transition-all duration-200 cursor-pointer bg-[#F8FAFC] border-[#E2E8F0] text-[#64748B] hover:bg-[#EBF3FF] hover:border-[#0A77FF]/25 hover:text-[#0A77FF]"
-              style={{ fontWeight: 600 }}
-            >
-              <Eye className="w-4 h-4" />
-              <span>Enable All</span>
-            </button>
+          <div className="min-w-0">
+            <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.inverse}>Inverse rate</DashInfoLabel>
+            {shownRate != null ? <InfoValue className="tabular-nums">{fmtInverse(shownRate)} {code}</InfoValue> : <InfoValue empty>-</InfoValue>}
           </div>
-
-          {/* Search */}
-          <div className="mt-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50 pointer-events-none" />
-              <input placeholder="Search metrics..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full h-10 pl-10 pr-3 rounded-lg border border-border bg-white text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-colors" />
-            </div>
+          <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{isStd ? 'Set by your team' : API_PROVIDER}</InfoValue></div>
+          <div className="min-w-0">
+            <DashInfoLabel align="right" tooltip={isStd ? RATE_TOOLTIPS.effectiveDate : undefined}>Effective date</DashInfoLabel>
+            {isStd ? (record ? <InfoValue>{fmtDate(record.effectiveDate)}</InfoValue> : <InfoValue empty>-</InfoValue>) : <InfoValue>{fmtDate(mid.effectiveDate)}</InfoValue>}
           </div>
-
-          {/* Tabs */}
-          <div className="flex items-center gap-0 mt-3 px-1">
-            {(["kpis", "widgets"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-2 text-[12px] text-center transition-all cursor-pointer border-b-2 ${
-                  activeTab === tab
-                    ? "border-[#0A77FF] text-[#0A77FF]"
-                    : "border-transparent text-[#94A3B8] hover:text-[#64748B]"
-                }`}
-                style={{ fontWeight: activeTab === tab ? 600 : 500 }}
-              >
-                {tab === "kpis" ? "KPIs" : "Widgets"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="border-b border-[#F1F5F9] shrink-0" />
-
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto px-4 pb-4 scrollbar-hide">
-          {activeTab === "kpis" ? (
+          {isStd ? (
             <>
-              {kpiCategories.length === 0 && (<div className="flex flex-col items-center py-12 text-muted-foreground"><Search className="w-5 h-5 mb-2 opacity-40" /><p className="text-xs text-muted-foreground/60">No metrics found</p></div>)}
-              {kpiCategories.map((cat) => (
-                <div key={cat.name} className="mt-5 first:mt-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <WidgetCategoryIcon category={cat.name} />
-                    <span className="text-[12px] text-muted-foreground/70 uppercase tracking-wide" style={{ fontWeight: 600 }}>{cat.name}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {cat.kpis.map((kpi) => {
-                      const isActive = activeKpis.includes(kpi.key);
-                      const computed = computeKpiValue(kpi.key, detail, rangeMetrics);
-                      return (
-                        <button
-                          key={kpi.key}
-                          onClick={() => onToggleKpi(kpi.key)}
-                          className={`relative text-left rounded-lg border px-3 py-2.5 transition-all duration-150 cursor-pointer group ${
-                            isActive
-                              ? "border-[#0A77FF]/25 bg-[#0A77FF]/[0.04] shadow-[0_0_0_1px_rgba(10,119,255,0.08)]"
-                              : "border-border/60 bg-white hover:border-border hover:bg-muted/20 hover:shadow-sm"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-1">
-                            <span className={`text-[11.5px] truncate transition-colors ${isActive ? "text-[#0A77FF]" : "text-muted-foreground/70"}`} style={{ fontWeight: 500 }} title={kpi.label}>{kpi.label}</span>
-                            <div className="shrink-0">
-                              {isActive ? <Check className="w-3.5 h-3.5" style={{ color: "#0A77FF" }} /> : <Plus className="w-3.5 h-3.5 text-muted-foreground/25 group-hover:text-muted-foreground/50 transition-colors" />}
-                            </div>
-                          </div>
-                          <p className={`text-[15px] mt-1 transition-colors ${isActive ? "text-foreground" : "text-foreground/80"}`} style={{ fontWeight: 550 }}>{computed.value}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+              <div className="min-w-0"><DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-market rate</DashInfoLabel><InfoValue className="tabular-nums">{fmtRate(mid.rate)} {BASE}</InfoValue></div>
+              <div className="min-w-0">
+                <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.variance}>Variance</DashInfoLabel>
+                {variance != null ? <InfoValue className="tabular-nums"><span style={{ color: varianceColor(variance) }}>{fmtSignedPct(variance)}</span></InfoValue> : <InfoValue empty>-</InfoValue>}
+              </div>
             </>
           ) : (
             <>
-              {widgetCategories.categories.length === 0 && (<div className="flex flex-col items-center py-12 text-muted-foreground"><Search className="w-5 h-5 mb-2 opacity-40" /><p className="text-xs text-muted-foreground/60">No widgets found</p></div>)}
-              {widgetCategories.categories.map((cat) => (
-                <div key={cat.name} className="mt-5 first:mt-4">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <WidgetCategoryIcon category={cat.name} />
-                    <span className="text-[12px] text-muted-foreground/70 uppercase tracking-wide" style={{ fontWeight: 600 }}>{cat.name}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {cat.widgets.map((widget) => {
-                      const isActive = activeWidgets.includes(widget.key);
-                      return (
-                        <button
-                          key={widget.key}
-                          onClick={() => onToggleWidget(widget.key)}
-                          className={`relative text-left rounded-xl border overflow-hidden transition-all duration-150 cursor-pointer group ${
-                            isActive
-                              ? "border-[#0A77FF]/25 bg-[#0A77FF]/[0.04] shadow-[0_0_0_1px_rgba(10,119,255,0.08)]"
-                              : "border-border/60 bg-white hover:border-border hover:bg-muted/20 hover:shadow-sm"
-                          }`}
-                        >
-                          {/* Preview area */}
-                          <div className={`px-3 pt-3 pb-1 ${isActive ? "bg-[#EDF4FF]/50" : "bg-[#F8FAFC]"}`}>
-                            <MiniChartPreview type={widget.previewType} />
-                            {/* Toggle indicator */}
-                            <div className="absolute top-2 right-2">
-                              {isActive ? (
-                                <div className="w-5 h-5 rounded-full bg-[#0A77FF] flex items-center justify-center">
-                                  <Check className="w-3 h-3 text-white" />
-                                </div>
-                              ) : (
-                                <div className="w-5 h-5 rounded-full border-2 border-[#CBD5E1] bg-white" />
-                              )}
-                            </div>
-                          </div>
-                          {/* Info */}
-                          <div className="px-3 py-2.5">
-                            <span className={`text-[12px] transition-colors block ${isActive ? "text-foreground" : "text-foreground/80"}`} style={{ fontWeight: 600 }}>{widget.label}</span>
-                            <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{widget.description}</p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+              <div className="min-w-0">
+                <DashInfoLabel tooltip={RATE_TOOLTIPS.change24h}>Change (24h)</DashInfoLabel>
+                <InfoValue className="tabular-nums"><span style={{ color: mid.change24h > 0 ? '#059669' : mid.change24h < 0 ? '#DC2626' : undefined }}>{fmtSignedPct(mid.change24h)}</span></InfoValue>
+              </div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={SYNC_LINE}>Last sync</DashInfoLabel><InfoValue>{LAST_SYNC_DATE}, {LAST_SYNC_TIME} PKT</InfoValue></div>
             </>
           )}
-        </div>
-      </div>
-    </>,
-    document.body
-  );
-}
-
-// ── Chart tooltip style ──
-const ttStyle = { borderRadius: 8, border: "1px solid #E2E8F0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 };
-
-// ── ContentCard ──
-function ContentCard({ title, icon: Icon, children, action, tooltipText, currentSize, onSizeChange, onRemove, isDragging, isOver }: {
-  title: string;
-  icon?: React.ElementType;
-  children: React.ReactNode;
-  action?: React.ReactNode;
-  tooltipText?: string;
-  currentSize?: "sm" | "md" | "lg";
-  onSizeChange?: (size: "sm" | "md" | "lg") => void;
-  onRemove?: () => void;
-  isDragging?: boolean;
-  isOver?: boolean;
-}) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <div
-      className={`rounded-xl border bg-white overflow-hidden h-full flex flex-col transition-[box-shadow,border-color] duration-300 ${
-        isOver && !isDragging
-          ? "border-primary/30 shadow-[0_0_0_2px_rgba(10,119,255,0.10)]"
-          : "border-border shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)]"
-      }`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* Header — entire bar is the drag handle */}
-      <div className="px-4 py-2.5 border-b border-muted flex items-center justify-between shrink-0 cursor-grab active:cursor-grabbing select-none">
-        <div className="flex items-center gap-2 pointer-events-none min-w-0">
-          {Icon && (
-            <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center shrink-0">
-              <Icon className="w-3.5 h-3.5 text-primary" />
-            </div>
-          )}
-          <span className="text-[13px] text-foreground truncate" style={{ fontWeight: 600 }}>{title}</span>
-          {tooltipText && (
-            <span className="pointer-events-auto">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button" className="inline-flex" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-                      <Info className="w-3 h-3 text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" sideOffset={6} className="max-w-[300px] text-[11px] z-[300] whitespace-pre-line">{tooltipText}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 pointer-events-auto shrink-0">
-          {/* Size toggle — slides in from right on hover */}
-          <div
-            className={`flex items-center transition-all duration-200 ease-out pointer-events-auto ${
-              hovered && onSizeChange ? "opacity-100 translate-x-0" : "opacity-0 translate-x-2 pointer-events-none"
-            }`}
-          >
-            {onSizeChange && currentSize && (
-              <div className="flex items-center h-7 rounded-lg border border-border bg-slate-50 p-0.5 gap-0.5">
-                {(["sm", "md", "lg"] as const).map((s) => (
-                  <button
-                    key={s}
-                    onClick={(e) => { e.stopPropagation(); onSizeChange(s); }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className={`h-6 px-2.5 rounded-md text-[11px] cursor-pointer transition-all duration-150 ${
-                      currentSize === s
-                        ? "bg-white text-primary shadow-sm border border-border"
-                        : "text-slate-400 hover:text-slate-700 hover:bg-white/60 border border-transparent"
-                    }`}
-                    style={{ fontWeight: currentSize === s ? 600 : 500 }}
-                    aria-label={`Set widget size ${s === "sm" ? "Small" : s === "md" ? "Medium" : "Large"}`}
-                    aria-pressed={currentSize === s}
-                  >
-                    {s === "sm" ? "Small" : s === "md" ? "Medium" : "Large"}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {action && <span className="pointer-events-auto">{action}</span>}
-          {/* Remove button — fades in on hover, inline in header flow */}
-          {onRemove && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onRemove(); toast.success(`Removed "${title}" — re-enable in Customize Widgets`); }}
-              onMouseDown={(e) => e.stopPropagation()}
-              className={`group/rm w-7 h-7 rounded-md flex items-center justify-center text-slate-400 transition-all duration-150 cursor-pointer hover:bg-red-100 hover:text-destructive ${
-                hovered ? "opacity-100" : "opacity-0 pointer-events-none"
-              }`}
-              title={`Remove ${title}`}
-              aria-label={`Remove ${title} widget`}
-            >
-              <Trash2 className="w-3.5 h-3.5 transition-transform duration-150 group-hover/rm:scale-110" />
-            </button>
-          )}
-        </div>
-      </div>
-      <div className={`flex-1 flex flex-col justify-between ${currentSize === "sm" ? "p-3" : currentSize === "lg" ? "p-5" : "p-4"}`}>{children}</div>
-    </div>
-  );
-}
-
-// ── Draggable Widget wrapper ──
-const DND_WIDGET_TYPE = "PAIR_DASHBOARD_WIDGET";
-
-function DraggableWidgetCard({ widgetKey, index, moveWidget, children }: {
-  widgetKey: string;
-  index: number;
-  moveWidget: (from: number, to: number) => void;
-  children: (isDragging: boolean, isOver: boolean) => React.ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [{ isDragging }, drag, preview] = useDrag({
-    type: DND_WIDGET_TYPE,
-    item: () => ({ key: widgetKey, index }),
-    collect: (monitor) => ({ isDragging: monitor.isDragging() }),
-  });
-  const [{ isOver }, drop] = useDrop({
-    accept: DND_WIDGET_TYPE,
-    drop(item: { key: string; index: number }) {
-      if (item.index !== index) {
-        moveWidget(item.index, index);
-        item.index = index;
-      }
-    },
-    collect: (monitor) => ({ isOver: monitor.isOver() }),
-  });
-  preview(drop(ref));
-  drag(ref);
-  return (
-    <div
-      ref={ref}
-      data-widget-idx={index}
-      className={`transition-all duration-300 ease-out rounded-xl h-full ${isOver && !isDragging ? "ring-2 ring-primary/20 ring-offset-2 scale-[1.005]" : ""}`}
-      style={{ opacity: isDragging ? 0.3 : 1, transform: isDragging ? "scale(0.97) rotate(-0.5deg)" : undefined }}
-    >
-      {children(isDragging, isOver)}
-    </div>
-  );
-}
-
-// ── Tab definitions ──
-const PAIR_TABS = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "communications", label: "Communications" },
-  { id: "attachments", label: "Attachments" },
-  { id: "audit_log", label: "Audit Log" },
-] as const;
-
-type PairTabId = (typeof PAIR_TABS)[number]["id"];
-
-function PairTabEmptyState({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center" style={{ animation: "csFade 0.4s ease-out both" }}>
-      <div className="relative mb-3">
-        <div
-          className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#F8FAFC] to-[#F1F5F9] border border-[#E2E8F0] flex items-center justify-center shadow-sm"
-          style={{ animation: "csFloat 4s ease-in-out infinite" }}
-        >
-          <Icon className="w-5 h-5 text-[#94A3B8]" />
-        </div>
-      </div>
-      <p className="text-[13px] text-[#334155] mb-0.5" style={{ fontWeight: 600 }}>{title}</p>
-      <p className="text-[12px] text-[#94A3B8] max-w-xs leading-relaxed">{description}</p>
-      <style>{`
-        @keyframes csFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
-        @keyframes csFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-      `}</style>
-    </div>
-  );
-}
-
-export function CurrencyPairDetailPage() {
-  const { code } = useParams<{ code: string }>();
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const { midMarketRates, standardRates, updateStandardRate } = useExchangeRates();
-
-  const rateType = searchParams.get("type") || "mid";
-
-  const [activeTab, setActiveTab] = useState<PairTabId>("dashboard");
-  const [timeRange, setTimeRange] = useState<TimeRange>("1M");
-  const [customRange, setCustomRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
-  const [customPopoverOpen, setCustomPopoverOpen] = useState(false);
-  const [customizePanelOpen, setCustomizePanelOpen] = useState(false);
-  const [activeKpis, setActiveKpis] = useState<string[]>(rateType === "std" ? [...DEFAULT_STD_KPIS] : [...DEFAULT_MID_KPIS]);
-  const [activeWidgets, setActiveWidgets] = useState<string[]>(rateType === "std" ? [...DEFAULT_STD_WIDGETS] : [...DEFAULT_MID_WIDGETS]);
-  const [conversionAmount, setConversionAmount] = useState("1000");
-
-  // Edit modal state
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ standardRate: "", effectiveDate: "", notes: "" });
-
-  // Header pair-converter — same widget that appears in the Exchange Rate
-  // Library expanded row, lifted into the right side of the detail header.
-  const [headerInverted, setHeaderInverted] = useState(false);
-
-  const detail = useMemo(() => {
-    if (!code) return null;
-    return generatePairDetail(code);
-  }, [code]);
-
-  const chartData = useMemo(() => {
-    if (!detail) return [];
-    if (timeRange === "CUSTOM" && customRange.from && customRange.to) {
-      return detail.timeSeries.filter(p => p.date >= customRange.from && p.date <= customRange.to);
-    }
-    const days = daysForRange(timeRange);
-    return detail.timeSeries.slice(-days - 1);
-  }, [detail, timeRange, customRange]);
-
-  // Range-aware metrics powering the consolidated time-based KPIs. Recomputed
-  // from the current chartData slice so a single selector drives both the
-  // charts and the KPI tiles above them.
-  const rangeMetrics: RangeMetrics = useMemo(() => {
-    const label = rangeLabel(timeRange, customRange);
-    if (!chartData || chartData.length === 0) {
-      return { change: 0, high: 0, low: 0, avg: 0, volatility: 0, label };
-    }
-    const mids = chartData.map(d => d.mid);
-    const start = mids[0];
-    const end = mids[mids.length - 1];
-    const change = start !== 0 ? +((end - start) / start * 100).toFixed(2) : 0;
-    const high = Math.max(...mids);
-    const low = Math.min(...mids);
-    const avg = mids.reduce((s, v) => s + v, 0) / mids.length;
-    const dailyChanges = mids
-      .map((v, i, a) => (i > 0 ? ((v - a[i - 1]) / a[i - 1]) * 100 : 0))
-      .slice(1);
-    const denom = Math.max(1, dailyChanges.length);
-    const mean = dailyChanges.reduce((s, v) => s + v, 0) / denom;
-    const variance = dailyChanges.reduce((s, v) => s + (v - mean) ** 2, 0) / denom;
-    const volatility = Math.sqrt(variance);
-    return { change, high, low, avg, volatility: +volatility.toFixed(3), label };
-  }, [chartData, timeRange, customRange]);
-
-  const varianceData = useMemo(() => {
-    return chartData.map(d => ({
-      date: d.date,
-      variance: d.std ? +((d.std - d.mid) / d.mid * 100).toFixed(2) : 0,
-    }));
-  }, [chartData]);
-
-  // Drawdown data
-  const drawdownData = useMemo(() => {
-    let peak = 0;
-    return chartData.map(d => {
-      if (d.mid > peak) peak = d.mid;
-      const drawdown = peak > 0 ? -((peak - d.mid) / peak * 100) : 0;
-      return { date: d.date, drawdown: +drawdown.toFixed(3) };
-    });
-  }, [chartData]);
-
-  // Daily transaction volume (deterministic pseudo-data keyed off the date string)
-  const transactionVolumeData = useMemo(() => {
-    return chartData.map(d => {
-      let h = 0;
-      for (let i = 0; i < d.date.length; i++) h = ((h << 5) - h + d.date.charCodeAt(i)) | 0;
-      const count = 3 + (Math.abs(h) % 20); // 3..22 txns per day
-      return { date: d.date, count };
-    });
-  }, [chartData]);
-
-  // Conversion trend data
-  const conversionData = useMemo(() => {
-    const amt = parseFloat(conversionAmount) || 1000;
-    return chartData.map(d => ({
-      date: d.date,
-      converted: +(amt * d.mid).toFixed(2),
-    }));
-  }, [chartData, conversionAmount]);
-
-  const handleToggleKpi = useCallback((key: string) => {
-    setActiveKpis(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
-  }, []);
-
-  const handleToggleWidget = useCallback((key: string) => {
-    setActiveWidgets(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
-  }, []);
-
-  const moveKpi = useCallback((fromIndex: number, toIndex: number) => {
-    setActiveKpis(prev => { const next = [...prev]; const [moved] = next.splice(fromIndex, 1); next.splice(toIndex, 0, moved); return next; });
-  }, []);
-
-  const moveWidget = useCallback((fromIndex: number, toIndex: number) => {
-    setActiveWidgets(prev => { const next = [...prev]; const [moved] = next.splice(fromIndex, 1); next.splice(toIndex, 0, moved); return next; });
-  }, []);
-
-  const [widgetSizes, setWidgetSizes] = useState<Record<string, "sm" | "md" | "lg">>({});
-  const handleWidgetSizeChange = useCallback((key: string, size: "sm" | "md" | "lg") => {
-    setWidgetSizes(prev => ({ ...prev, [key]: size }));
-  }, []);
-
-  const restoreDashboardDefaults = useCallback(() => {
-    if (rateType === "std") {
-      setActiveKpis([...DEFAULT_STD_KPIS]);
-      setActiveWidgets([...DEFAULT_STD_WIDGETS]);
-    } else {
-      setActiveKpis([...DEFAULT_MID_KPIS]);
-      setActiveWidgets([...DEFAULT_MID_WIDGETS]);
-    }
-    setWidgetSizes({});
-  }, [rateType]);
-
-  const activeKpiDefs = useMemo(
-    () => activeKpis.map(k => ALL_KPI_DEFS.find(d => d.key === k)).filter(Boolean) as ExKpiDef[],
-    [activeKpis]
-  );
-
-  const hasActiveCharts = useMemo(
-    () => activeWidgets.some(w => ["rate_over_time", "variance_trend", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "transaction_volume"].includes(w)),
-    [activeWidgets]
-  );
-  const dashboardEmpty = activeKpiDefs.length === 0 && !hasActiveCharts;
-
-  // Scrolled state for compact header
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  const [isScrolled, setIsScrolled] = useState(false);
-
-  useEffect(() => {
-    const el = sentinelRef.current;
-    const root = scrollContainerRef.current;
-    if (!el || !root) return;
-    const io = new IntersectionObserver(
-      ([entry]) => setIsScrolled(!entry.isIntersecting),
-      { root, threshold: 0, rootMargin: "-44px 0px 0px 0px" }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  const isStandardDetail = rateType === "std";
-  const stdRecord = standardRates.find(r => r.sourceCurrency === code);
-  const midRecord = midMarketRates.find(r => r.sourceCurrency === code);
-
-  const openEditModal = useCallback(() => {
-    if (!stdRecord) return;
-    setEditForm({
-      standardRate: String(stdRecord.standardRate),
-      effectiveDate: stdRecord.effectiveDate,
-      notes: stdRecord.notes,
-    });
-    setEditModalOpen(true);
-  }, [stdRecord]);
-
-  const handleEditSave = useCallback(() => {
-    if (!stdRecord || !code) return;
-    const rateVal = parseFloat(editForm.standardRate);
-    if (isNaN(rateVal) || rateVal <= 0 || !editForm.effectiveDate) {
-      toast.error("Please fill all required fields with valid values");
-      return;
-    }
-    const midRate = midRecord?.rate || 0;
-    const variance = midRate > 0 ? +((rateVal - midRate) / midRate * 100).toFixed(2) : 0;
-    updateStandardRate(stdRecord.id, {
-      standardRate: rateVal,
-      effectiveDate: editForm.effectiveDate,
-      notes: editForm.notes,
-      midMarketRate: midRate,
-      variance,
-    });
-    toast.success(`Corporate rate for ${code} updated`);
-    setEditModalOpen(false);
-  }, [stdRecord, code, editForm, midRecord, updateStandardRate]);
-
-  const editLiveVariance = useMemo(() => {
-    const rateVal = parseFloat(editForm.standardRate);
-    if (isNaN(rateVal) || !midRecord) return null;
-    return +((rateVal - midRecord.rate) / midRecord.rate * 100).toFixed(2);
-  }, [editForm.standardRate, midRecord]);
-
-  const statusConfig = { color: "#065F46", bg: "#ECFDF5", border: "#A7F3D0", label: "Active" };
-
-  if (!detail) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-        <div className="w-16 h-16 rounded-2xl bg-[#F1F5F9] flex items-center justify-center">
-          <ArrowLeftRight className="w-8 h-8 text-[#94A3B8]" />
-        </div>
-        <p className="text-[#64748B] text-sm">Currency pair not found.</p>
-        <Button variant="outline" onClick={() => navigate("/accounting/exchange-rates")} className="gap-1.5">
-          <ArrowLeft className="w-4 h-4" />
-          Back to Exchange Rates
-        </Button>
-      </div>
-    );
-  }
-
-  
+        </InfoGrid>
+        {isStd && record?.notes && (
+          <div className="mb-2.5 min-w-0"><DashInfoLabel>Notes</DashInfoLabel><p className="text-[12px] text-slate-700 mt-0.5 leading-relaxed" style={{ fontWeight: 500 }}>{record.notes}</p></div>
+        )}
+        {(!isStd || record) && (
+        <InfoAuditGrid>
+          <div className="min-w-0"><DashInfoLabel>Created by</DashInfoLabel><InfoPerson name={isStd && record ? record.createdBy : 'System'} /></div>
+          <div className="min-w-0"><DashInfoLabel align="right">{isStd ? 'Created on' : 'Last synced on'}</DashInfoLabel><InfoValue>{isStd && record ? fmtDate(record.createdAt) : LAST_SYNC_DATE}</InfoValue></div>
+          {isStd && record && <div className="min-w-0"><DashInfoLabel>Last updated</DashInfoLabel><InfoValue>{fmtDateTime(record.updatedAt)}</InfoValue></div>}
+          <InternalIdField id={(isStd && record ? record.id : mid.id).toUpperCase()} help="The system's ID for this rate. Quote it when you contact support." />
+        </InfoAuditGrid>
+        )}
+      </DashInfoCard>
+      <DashInfoCard title="Pair converter" icon={ArrowLeftRight} tooltip="One unit of either currency at this rate. Swap to read the inverse.">
+        {shownRate != null ? (
+          <PairInverter layout="stack" code={code} name={mid.sourceCurrencyName} rate={isStd && active ? active.standardRate : isStd && record ? record.standardRate : mid.rate}
+            inverted={inverted} onToggle={() => setInverted(v => !v)} note={isStd ? (archived ? 'At the archived corporate rate' : 'At the corporate rate') : 'At the mid-market rate'} />
+        ) : (
+          <p className="text-[12px] text-slate-400">No corporate rate is set for this pair yet.</p>
+        )}
+      </DashInfoCard>
+    </>
+  )
 
   return (
-    <div ref={scrollContainerRef} className="flex-1 flex flex-col overflow-y-auto bg-[#F8FAFC]">
-      {/* ══ TOP NAV BAR ══ */}
-      <div className="bg-white border-b border-[#E2E8F0] shrink-0 sticky top-0 z-30">
-        <div className="flex items-center justify-between px-4 lg:px-6 h-11">
-          <div className="flex items-center gap-2 text-[13px] text-[#64748B]">
-            <button onClick={() => navigate("/accounting")} className="hover:text-[#0F172A] transition-colors cursor-pointer" style={{ fontWeight: 500 }}>Accounting</button>
-            <span className="text-[#CBD5E1]">/</span>
-            <button onClick={() => navigate("/accounting/exchange-rates")} className="hover:text-[#0F172A] transition-colors cursor-pointer" style={{ fontWeight: 500 }}>Exchange Rate Library</button>
-            <span className="text-[#CBD5E1]">/</span>
-            <span className="text-[#0F172A]" style={{ fontWeight: 500 }}>{detail.sourceCurrency}</span>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden border-2 border-[#E2E8F0]" style={{ backgroundColor: '#0A77FF' }}>
-              <span className="text-[11px] text-white" style={{ fontWeight: 600 }}>AA</span>
-            </div>
-            <div className="hidden sm:block">
-              <p className="text-[13px] text-[#0F172A]" style={{ fontWeight: 500 }}>Ahtisham Ahmad</p>
-              <p className="text-[11px] text-[#94A3B8] leading-tight">Product Designer</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sentinel for scroll detection */}
-      <div ref={sentinelRef} className="shrink-0 h-px" />
-
-      {/* ══ STICKY HEADER ══ */}
-      <div className="shrink-0 sticky top-[44px] z-20 bg-[#F8FAFC]">
-        <div style={{ paddingTop: isScrolled ? "8px" : "12px", paddingBottom: "4px", transition: "padding-top 250ms ease" }}>
-          <div className="mx-auto px-4 lg:px-6 xl:px-8 max-w-[1440px] 2xl:max-w-[1600px]">
-            <div className={`bg-white border border-[#E2E8F0] rounded-xl overflow-hidden transition-shadow duration-250 ${isScrolled ? "shadow-[0_1px_3px_0_rgba(0,0,0,0.04),0_4px_12px_-4px_rgba(0,0,0,0.05)]" : "shadow-sm"}`}>
-              <div
-                className="flex items-center justify-between gap-4 px-4 lg:px-5 transition-all duration-250 ease-in-out"
-                style={{ padding: isScrolled ? "6px 16px" : "12px 16px" }}
-              >
-                {/* Left: Back + Icon + Info */}
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <button
-                    onClick={() => navigate("/accounting/exchange-rates")}
-                    className="rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] flex items-center justify-center shrink-0 cursor-pointer shadow-[0_1px_3px_0_rgba(0,0,0,0.04),0_1px_2px_-1px_rgba(0,0,0,0.03)] transition-all duration-250"
-                    style={{ width: isScrolled ? 32 : 44, height: isScrolled ? 32 : 44 }}
-                  >
-                    <ChevronLeft className="text-[#94A3B8] transition-all duration-250" style={{ width: isScrolled ? 16 : 20, height: isScrolled ? 16 : 20 }} />
-                  </button>
-
-                  <div
-                    className="rounded-xl flex items-center justify-center shrink-0 border border-white shadow-[0_1px_3px_0_rgba(0,0,0,0.06),0_0_0_2px_rgba(10,119,255,0.10)] transition-all duration-250"
-                    style={{
-                      width: isScrolled ? 32 : 44, height: isScrolled ? 32 : 44,
-                      backgroundColor: isStandardDetail ? "#FFFBEB" : "#F5F3FF",
-                    }}
-                  >
-                    <ArrowLeftRight
-                      className="transition-all duration-250"
-                      style={{ width: isScrolled ? 14 : 20, height: isScrolled ? 14 : 20, color: isStandardDetail ? "#D97706" : "#7C3AED" }}
-                    />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center flex-wrap gap-1.5 transition-all duration-250" style={{ gap: isScrolled ? 6 : 8 }}>
-                      <h1
-                        className="text-[#0F172A] truncate transition-all duration-250"
-                        style={{ fontSize: isScrolled ? 13 : 16, fontWeight: isScrolled ? 600 : 700, lineHeight: isScrolled ? "18px" : "22px" }}
-                      >
-                        {detail.sourceCurrency} — {detail.sourceCurrencyName}
-                      </h1>
-
-                      <span
-                        className="inline-flex items-center rounded-full border transition-all duration-250"
-                        style={{ padding: isScrolled ? "1px 6px" : "2px 8px", fontSize: isScrolled ? 10 : 11, fontWeight: 500, backgroundColor: statusConfig.bg, color: statusConfig.color, borderColor: statusConfig.border }}
-                      >
-                        {statusConfig.label}
-                      </span>
-
-                      {(() => {
-                        const hasBothRates = !!midRecord && !!stdRecord;
-                        const styleStd = "border-[#FDE68A] bg-[#FFFBEB] text-[#D97706] hover:bg-[#FEF3C7]";
-                        const styleMid = "border-[#DDD6FE] bg-[#F5F3FF] text-[#7C3AED] hover:bg-[#EDE9FE]";
-                        const padding = isScrolled ? "1px 6px" : "2px 8px";
-                        const fontSize = isScrolled ? 10 : 11;
-                        const iconSize = isScrolled ? 10 : 12;
-                        const ActiveIcon = isStandardDetail ? Star : Activity;
-                        const activeLabel = isStandardDetail ? "Corporate Rate" : "Mid-Market Rate";
-                        const activeStyle = isStandardDetail ? styleStd : styleMid;
-
-                        if (!hasBothRates) {
-                          return (
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-md border transition-all duration-250 ${activeStyle.replace(/ hover:[^\s]+/g, "")}`}
-                              style={{ padding, fontSize, fontWeight: 600 }}
-                            >
-                              <ActiveIcon className="transition-all duration-250" style={{ width: iconSize, height: iconSize }} />
-                              {activeLabel}
-                            </span>
-                          );
-                        }
-
-                        return (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                className={`inline-flex items-center gap-1 rounded-md border transition-all duration-250 cursor-pointer ${activeStyle}`}
-                                style={{ padding, fontSize, fontWeight: 600 }}
-                                aria-label="Switch rate type"
-                              >
-                                <ActiveIcon className="transition-all duration-250" style={{ width: iconSize, height: iconSize }} />
-                                {activeLabel}
-                                <ChevronDown className="transition-all duration-250" style={{ width: iconSize, height: iconSize, marginLeft: 1 }} />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="w-[180px]">
-                              <DropdownMenuItem
-                                onClick={() => navigate(`/accounting/exchange-rates/${code}?type=mid`)}
-                                className="text-[12.5px] cursor-pointer"
-                              >
-                                <Activity className="w-3.5 h-3.5 mr-2 text-[#7C3AED]" />
-                                Mid-Market Rate
-                                {!isStandardDetail && <Check className="w-3.5 h-3.5 ml-auto text-[#0A77FF]" />}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => navigate(`/accounting/exchange-rates/${code}?type=std`)}
-                                className="text-[12.5px] cursor-pointer"
-                              >
-                                <Star className="w-3.5 h-3.5 mr-2 text-[#D97706]" />
-                                Corporate Rate
-                                {isStandardDetail && <Check className="w-3.5 h-3.5 ml-auto text-[#0A77FF]" />}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        );
-                      })()}
-                    </div>
-                    {!isScrolled && (
-                      <p className="text-[12px] text-[#64748B] mt-0.5">Quoted against {BASE_CURRENCY} ({BASE_CURRENCY_NAME})</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right: Live pair converter + Actions. The converter mirrors
-                   the expanded-row widget on the Exchange Rate Library and is
-                   hidden when the header collapses on scroll to keep the
-                   sticky bar lean. Update Rate stays on corporate detail only. */}
-                <div className="flex items-center gap-3 shrink-0">
-                  {!isScrolled && (() => {
-                    const headerRate = isStandardDetail
-                      ? (stdRecord?.standardRate ?? null)
-                      : (midRecord?.rate ?? null);
-                    if (headerRate === null) return null;
-                    const sourceFlag = getFlagUrl(detail.sourceCurrency);
-                    const baseFlag = getFlagUrl(BASE_CURRENCY);
-                    const fmt = (n: number, dp: number) =>
-                      n.toFixed(dp).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-                    const SWAP_SPRING = { type: "spring" as const, stiffness: 380, damping: 32 };
-
-                    const sourceCard = (
-                      <motion.div
-                        key="source"
-                        layout
-                        transition={SWAP_SPRING}
-                        className="flex items-center gap-2 bg-white rounded-lg border border-[#E2E8F0] pl-2.5 pr-2 py-1.5 min-w-[200px] shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
-                      >
-                        {sourceFlag && (
-                          <img src={sourceFlag} alt={detail.sourceCurrency} className="w-6 h-[16px] rounded-[2px] object-cover shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11.5px] truncate" style={{ fontWeight: 600 }}>
-                            {detail.sourceCurrency}{" "}
-                            <span className="text-[#64748B]" style={{ fontWeight: 400 }}>{detail.sourceCurrencyName}</span>
-                          </p>
-                          <p className="text-[10px] text-[#94A3B8] truncate">{getCountryName(detail.sourceCurrency)}</p>
-                        </div>
-                        <div className="border-l border-[#E2E8F0] pl-2 ml-1">
-                          <p key={headerInverted ? "inv-from" : "std-from"} className="text-[12.5px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>
-                            {fmt(headerInverted ? 1 / headerRate : 1, headerInverted ? 6 : 0)}
-                          </p>
-                        </div>
-                      </motion.div>
-                    );
-                    const baseCard = (
-                      <motion.div
-                        key="base"
-                        layout
-                        transition={SWAP_SPRING}
-                        className="flex items-center gap-2 bg-white rounded-lg border border-[#E2E8F0] pl-2.5 pr-2 py-1.5 min-w-[200px] shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
-                      >
-                        {baseFlag && (
-                          <img src={baseFlag} alt={BASE_CURRENCY} className="w-6 h-[16px] rounded-[2px] object-cover shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11.5px] truncate" style={{ fontWeight: 600 }}>
-                            {BASE_CURRENCY}{" "}
-                            <span className="text-[#64748B]" style={{ fontWeight: 400 }}>{BASE_CURRENCY_NAME}</span>
-                          </p>
-                          <p className="text-[10px] text-[#94A3B8] truncate">{getCountryName(BASE_CURRENCY)}</p>
-                        </div>
-                        <div className="border-l border-[#E2E8F0] pl-2 ml-1">
-                          <p key={headerInverted ? "inv-to" : "std-to"} className="text-[12.5px] tabular-nums animate-fade-in" style={{ fontWeight: 700 }}>
-                            {fmt(headerInverted ? 1 : headerRate, headerInverted ? 0 : 4)}
-                          </p>
-                        </div>
-                      </motion.div>
-                    );
-                    const swapBtn = (
-                      <motion.div key="swap" layout transition={SWAP_SPRING}>
-                        <TooltipProvider delayDuration={200}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={() => setHeaderInverted(v => !v)}
-                                aria-pressed={headerInverted}
-                                aria-label={headerInverted ? "Restore default direction" : "Swap direction"}
-                                className={`flex items-center justify-center w-7 h-7 rounded-full shrink-0 transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer ${
-                                  headerInverted
-                                    ? "bg-[#0A77FF] text-white border border-[#0A77FF] hover:bg-[#0862D0]"
-                                    : "bg-white text-[#64748B] border border-[#E2E8F0] hover:bg-[#F8FAFC]"
-                                }`}
-                              >
-                                <ArrowLeftRight className="w-3 h-3" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom" className="max-w-[320px] text-[11.5px]">
-                              {headerInverted ? INVERSE_BADGE_TOOLTIP : "Swap direction"}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </motion.div>
-                    );
-
-                    const items = headerInverted
-                      ? [baseCard, swapBtn, sourceCard]
-                      : [sourceCard, swapBtn, baseCard];
-                    return <div className="flex items-center gap-2">{items}</div>;
-                  })()}
-                  {isStandardDetail && stdRecord && (
-                    <button
-                      onClick={openEditModal}
-                      className={`rounded-lg bg-[#0A77FF] hover:bg-[#0862D0] text-white inline-flex items-center gap-1.5 transition-all duration-200 cursor-pointer shadow-sm ${isScrolled ? "h-8 px-3.5 text-[12px]" : "h-9 px-4 text-[13px]"}`}
-                      style={{ fontWeight: 600 }}
-                    >
-                      <Pencil className={isScrolled ? "w-3 h-3" : "w-3.5 h-3.5"} />
-                      Update Rate
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Tab bar — always visible at the bottom of the card */}
-              <div className="flex items-center gap-0 overflow-x-auto scrollbar-hide border-t border-[#F1F5F9] px-4 lg:px-5">
-                {PAIR_TABS.map((tab) => {
-                  const isActive = activeTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex items-center px-3.5 border-b-2 transition-all duration-200 whitespace-nowrap cursor-pointer ${
-                        isActive
-                          ? "border-[#0A77FF] text-[#0A77FF]"
-                          : "border-transparent text-[#64748B] hover:text-[#334155] hover:border-[#CBD5E1]"
-                      }`}
-                      style={{
-                        padding: isScrolled ? "8px 14px" : "10px 14px",
-                        fontSize: isScrolled ? 12 : 13,
-                        fontWeight: isActive ? 600 : 400,
-                        transition: "padding 250ms ease, font-size 250ms ease",
-                      }}
-                    >
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Scroll to top FAB */}
-      <button
-        onClick={() => { scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" }); }}
-        className="fixed bottom-6 right-6 z-40 rounded-full bg-white border border-[#E2E8F0] shadow-[0_2px_12px_-3px_rgba(0,0,0,0.12)] flex items-center justify-center cursor-pointer hover:bg-[#F8FAFC] active:scale-95 transition-all duration-300"
-        style={{ width: 40, height: 40, opacity: isScrolled ? 1 : 0, transform: isScrolled ? "translateY(0) scale(1)" : "translateY(16px) scale(0.9)", pointerEvents: isScrolled ? "auto" : "none" }}
-        aria-label="Scroll to top"
+    <CoaPage crumbs={crumbs}>
+      <DetailPageLayout
+        fullscreen={fullscreen}
+        fillsWindow={tab === 'history'}
+        header={
+          <DetailHeaderCard
+            fullscreen={fullscreen}
+            onToggleFullscreen={toggleFullscreen}
+            onBack={() => navigate('/accounting/exchange-rates')}
+            backTitle="Back to Exchange Rates"
+            numberLabel={code}
+            title={mid.sourceCurrencyName}
+            tone={archived ? 'danger' : 'default'}
+            typeLine={`Quoted against ${BASE} (${BASE_NAME})`}
+            titleBadges={<>{statusBadge}{rateTypeChip}</>}
+            actions={actions}
+            tabs={[
+              { id: 'dashboard', label: 'Dashboard' },
+              { id: 'history', label: 'Rate history', count: history.filter(r => r.type === historyType).length },
+              { id: 'notes', label: 'Notes', count: noteCount },
+              { id: 'attachments', label: 'Attachments', count: attachmentCount },
+              { id: 'communications', label: 'Communications', count: commsCount },
+              { id: 'activity', label: 'Activity' },
+            ]}
+            activeTab={tab}
+            onTabChange={id => setTab(id as Tab)}
+          />
+        }
+        overlays={<>{lifecycle.modal}{form.modal}</>}
       >
-        <ChevronUp className="w-5 h-5 text-[#64748B]" />
-      </button>
-
-      {/* ══ BODY ══ */}
-      <div className="flex-1">
-        <div className="mx-auto px-4 lg:px-6 xl:px-8 pt-3 pb-5 space-y-4 max-w-[1440px] 2xl:max-w-[1600px]">
-          {activeTab === "dashboard" && (
-            <>
-          {/* Info bar */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[12px] text-[#64748B]">
-              <span className="text-[11px] text-[#94A3B8]" style={{ fontWeight: 400 }}>
-                Synced every 24h from {API_PROVIDER} · Updated as of {format(new Date(LAST_SYNC), "dd MMM yyyy")} at {format(new Date(LAST_SYNC), "HH:mm")} PKT
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  restoreDashboardDefaults();
-                  toast.success("Dashboard reset to defaults");
-                }}
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#334155] text-[12px] shadow-sm transition-all cursor-pointer"
-                style={{ fontWeight: 500 }}
-                aria-label="Reset KPIs and widgets to defaults"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-[#94A3B8]" /> Reset
-              </button>
-              <button
-                onClick={() => setCustomizePanelOpen(true)}
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] text-[#334155] text-[12px] shadow-sm transition-all cursor-pointer"
-                style={{ fontWeight: 500 }}
-              >
-                <Sliders className="w-3.5 h-3.5 text-[#94A3B8]" /> Customize Widgets
-              </button>
-            </div>
-          </div>
-
-          {/* ══ Unified time-range selector ══
-             Drives all range-aware KPI tiles and every chart below. Positioned
-             above the KPI grid so users see it applies to the whole section. */}
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center flex-wrap gap-1">
-              {TIME_RANGE_BUTTONS.map(({ key: r, label }) => {
-                const isCustom = r === "CUSTOM";
-                if (isCustom) {
-                  return (
-                    <div key={r} className="relative">
-                      <button
-                        onClick={() => setCustomPopoverOpen(o => !o)}
-                        className={`px-3 py-1 rounded-md text-[12px] transition-all inline-flex items-center gap-1 ${
-                          timeRange === r ? "bg-[#0A77FF] text-white shadow-sm" : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
-                        }`}
-                        style={{ fontWeight: timeRange === r ? 600 : 500 }}
-                      >
-                        <Calendar className="w-3 h-3" />
-                        {label}
-                        {timeRange === "CUSTOM" && customRange.from && customRange.to && (
-                          <span className="text-[11px]">: {format(new Date(customRange.from), "dd MMM")} – {format(new Date(customRange.to), "dd MMM")}</span>
-                        )}
-                      </button>
-                      {customPopoverOpen && (
-                        <div className="absolute top-full mt-2 left-0 z-30 w-[280px] rounded-xl border border-[#E2E8F0] bg-white shadow-[0_12px_32px_rgba(0,0,0,0.10)] p-3">
-                          <p className="text-[11px] text-muted-foreground mb-2" style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Custom Range</p>
-                          <div className="space-y-2">
-                            <div>
-                              <Label className="text-[11px] text-muted-foreground mb-1">From</Label>
-                              <Input type="date" value={customRange.from} onChange={e => setCustomRange(p => ({ ...p, from: e.target.value }))} className="h-8 text-[12px]" />
-                            </div>
-                            <div>
-                              <Label className="text-[11px] text-muted-foreground mb-1">To</Label>
-                              <Input type="date" value={customRange.to} onChange={e => setCustomRange(p => ({ ...p, to: e.target.value }))} className="h-8 text-[12px]" />
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 mt-3">
-                            <Button
-                              size="sm"
-                              className="flex-1 h-8 text-[12px]"
-                              disabled={!customRange.from || !customRange.to}
-                              onClick={() => { setTimeRange("CUSTOM"); setCustomPopoverOpen(false); }}
-                            >
-                              Apply
-                            </Button>
-                            <Button size="sm" variant="outline" className="h-8 text-[12px]" onClick={() => setCustomPopoverOpen(false)}>Cancel</Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-                return (
-                  <button
-                    key={r}
-                    onClick={() => setTimeRange(r)}
-                    className={`px-3 py-1 rounded-md text-[12px] transition-all ${
-                      timeRange === r ? "bg-[#0A77FF] text-white shadow-sm" : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
-                    }`}
-                    style={{ fontWeight: timeRange === r ? 600 : 500 }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-            <span className="text-[11px] text-[#94A3B8]" style={{ fontWeight: 500 }}>{rangeMetrics.label}</span>
-          </div>
-
-          {/* ══ Dashboard empty state ══
-             Pinned at the top so the dashboard's status is the first thing
-             users see when every KPI and chart has been removed. Rate History
-             still renders below this card so the page is never fully blank. */}
-          {dashboardEmpty && (
-            <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-white flex flex-col items-center text-center px-6 py-10">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: "#F1F5F9" }}>
-                <BarChart3 className="w-6 h-6" style={{ color: "#94A3B8" }} />
-              </div>
-              <h3 className="text-[15px]" style={{ fontWeight: 600, color: "#0F172A" }}>Your dashboard is empty</h3>
-              <p className="text-[13px] text-[#64748B] mt-1 max-w-[320px]">Add widgets to monitor item performance</p>
-              <button
-                onClick={restoreDashboardDefaults}
-                className="mt-4 inline-flex items-center gap-1.5 h-9 px-4 rounded-lg bg-[#0A77FF] hover:bg-[#0862D0] text-white text-[13px] shadow-sm transition-colors cursor-pointer"
-                style={{ fontWeight: 600 }}
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Restore Defaults
-              </button>
-            </div>
-          )}
-
-          {/* KPI Cards — draggable, 5 in a row */}
-          {activeKpiDefs.length > 0 && (
-            <DndProvider backend={HTML5Backend}>
-              <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${Math.min(activeKpiDefs.length, 5)}, 1fr)` }}>
-                {activeKpiDefs.map((kpi, idx) => {
-                  const computed = computeKpiValue(kpi.key, detail, rangeMetrics);
-                  return (
-                    <DraggableKpiCard
-                      key={kpi.key}
-                      index={idx}
-                      kpiKey={kpi.key}
-                      label={kpi.label}
-                      value={computed.value}
-                      iconName={kpi.iconName}
-                      iconBg={kpi.iconBg}
-                      iconColor={kpi.iconColor}
-                      tooltip={kpi.tooltip}
-                      sublabel={computed.sublabel}
-                      change={computed.change}
-                      changeColor={computed.changeColor}
-                      moveCard={moveKpi}
-                      onRemove={() => handleToggleKpi(kpi.key)}
+        {tab === 'dashboard' && (
+          <DashboardGrid
+            main={
+              <>
+                <DetailInsightsSection
+                  titleExtra={
+                    <InsightsRangeMenu
+                      range={range.kind === 'custom' ? 'custom' : (range.key as InsightsRange)}
+                      onRangeChange={k => { if (k !== 'custom') setRange({ kind: 'preset', key: k }) }}
+                      customFrom={range.kind === 'custom' ? range.from : ''}
+                      customTo={range.kind === 'custom' ? range.to : ''}
+                      onCustomChange={(from, to) => setRange({ kind: 'custom', from, to })}
+                      defaultMonth={rangeMonth}
                     />
-                  );
-                })}
-              </div>
-            </DndProvider>
-          )}
-
-          {/* ══ Analytics Widgets (Charts) — drag/resize/remove ══ */}
-          {(() => {
-            const CHART_KEYS = ["rate_over_time", "variance_trend", "daily_change", "cumulative_return", "conversion_trend", "drawdown_from_peak", "transaction_volume"];
-            // Visible widgets in the user-defined order. variance_trend hides when there's no corporate rate to compare against.
-            const visibleWidgetKeys = activeWidgets.filter(k =>
-              CHART_KEYS.includes(k) && (k !== "variance_trend" || !!detail.currentStdRate)
-            );
-            if (visibleWidgetKeys.length === 0) return null;
-
-            const heightFor = (key: string, sz: "sm" | "md" | "lg") => {
-              if (key === "conversion_trend") return sz === "sm" ? 150 : sz === "lg" ? 280 : 200;
-              return sz === "sm" ? 180 : sz === "lg" ? 320 : 250;
-            };
-
-            const renderBody = (key: string, height: number): React.ReactNode => {
-              switch (key) {
-                case "rate_over_time":
-                  return (
-                    <div style={{ height }} className="-ml-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
-                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} domain={["auto", "auto"]} />
-                          <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
-                          <Line type="monotone" dataKey="mid" name="Mid-Market" stroke="#0A77FF" strokeWidth={2} dot={false} />
-                          {detail.currentStdRate && <Line type="stepAfter" dataKey="std" name="Corporate" stroke="#D97706" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />}
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  );
-                case "variance_trend":
-                  return (
-                    <div style={{ height }} className="-ml-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={varianceData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
-                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} unit="%" />
-                          <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} />
-                          <ReferenceLine y={1} stroke="#94A3B8" strokeDasharray="2 3" />
-                          <ReferenceLine y={-1} stroke="#94A3B8" strokeDasharray="2 3" />
-                          <ReferenceLine y={3} stroke="#DC2626" strokeDasharray="2 3" />
-                          <ReferenceLine y={-3} stroke="#DC2626" strokeDasharray="2 3" />
-                          <Bar dataKey="variance" name="Variance %" radius={[4, 4, 0, 0]}>
-                            {varianceData.map((d, i) => {
-                              const abs = Math.abs(d.variance);
-                              const color = abs <= 1 ? "#059669" : abs <= 3 ? "#D97706" : "#DC2626";
-                              return <Cell key={i} fill={color} />;
-                            })}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  );
-                case "daily_change":
-                  return (
-                    <div style={{ height }} className="-ml-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData.map((d, i, a) => {
-                          const curr = d.mid;
-                          const prev = i > 0 ? a[i - 1].mid : curr;
-                          return { date: d.date, change: i > 0 ? +((curr - prev) / prev * 100).toFixed(3) : 0 };
-                        }).slice(1)}>
-                          <defs><linearGradient id="dailyGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7C3AED" stopOpacity={0.15} /><stop offset="100%" stopColor="#7C3AED" stopOpacity={0.01} /></linearGradient></defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
-                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} unit="%" />
-                          <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} />
-                          <Area type="monotone" dataKey="change" name="Daily Change" stroke="#7C3AED" fill="url(#dailyGrad)" strokeWidth={2} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  );
-                case "cumulative_return":
-                  return (
-                    <div style={{ height }} className="-ml-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData.map((d) => ({
-                          date: d.date,
-                          cumReturn: +((d.mid - chartData[0].mid) / chartData[0].mid * 100).toFixed(3),
-                        }))}>
-                          <defs><linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#059669" stopOpacity={0.15} /><stop offset="100%" stopColor="#059669" stopOpacity={0.01} /></linearGradient></defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
-                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} unit="%" />
-                          <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} />
-                          <Area type="monotone" dataKey="cumReturn" name="Cumulative %" stroke="#059669" fill="url(#cumGrad)" strokeWidth={2} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  );
-                case "conversion_trend":
-                  return (
-                    <>
-                      <div className="flex items-center gap-4 mb-3 text-[12px]">
-                        <div className="bg-[#F0FDF4] rounded-lg px-3 py-1.5 border border-[#A7F3D0]">
-                          <span className="text-[10px] text-[#059669]" style={{ fontWeight: 500 }}>Current</span>
-                          <p className="text-[14px] tabular-nums text-[#065F46]" style={{ fontWeight: 700 }}>
-                            {((parseFloat(conversionAmount) || 0) * detail.currentMidRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} {BASE_CURRENCY}
-                          </p>
-                        </div>
-                        <div className="bg-[#F8FAFC] rounded-lg px-3 py-1.5 border border-[#E2E8F0]">
-                          <span className="text-[10px] text-[#64748B]" style={{ fontWeight: 500 }}>30d Avg</span>
-                          <p className="text-[14px] tabular-nums text-[#334155]" style={{ fontWeight: 600 }}>
-                            {((parseFloat(conversionAmount) || 0) * detail.avgRate30d).toLocaleString(undefined, { maximumFractionDigits: 2 })} {BASE_CURRENCY}
-                          </p>
-                        </div>
-                      </div>
-                      <div style={{ height }} className="-ml-2">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={conversionData}>
-                            <defs><linearGradient id="convGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0A77FF" stopOpacity={0.15} /><stop offset="100%" stopColor="#0A77FF" stopOpacity={0.01} /></linearGradient></defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                            <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
-                            <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                            <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} formatter={(val: number) => [`${val.toLocaleString()} ${BASE_CURRENCY}`, "Converted"]} />
-                            <Area type="monotone" dataKey="converted" name="Converted" stroke="#0A77FF" fill="url(#convGrad)" strokeWidth={2} />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </>
-                  );
-                case "drawdown_from_peak":
-                  return (
-                    <div style={{ height }} className="-ml-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={drawdownData}>
-                          <defs><linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#EF4444" stopOpacity={0.2} /><stop offset="100%" stopColor="#EF4444" stopOpacity={0.02} /></linearGradient></defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
-                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} unit="%" domain={["auto", 0]} />
-                          <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} />
-                          <Area type="monotone" dataKey="drawdown" name="Drawdown %" stroke="#EF4444" fill="url(#ddGrad)" strokeWidth={2} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  );
-                case "transaction_volume":
-                  return (
-                    <div style={{ height }} className="-ml-2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={transactionVolumeData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={v => format(new Date(v), "dd MMM")} />
-                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} allowDecimals={false} />
-                          <ReTooltip contentStyle={ttStyle} labelFormatter={v => format(new Date(v), "dd MMM yyyy")} />
-                          <Bar dataKey="count" name="Transactions" fill="#0A77FF" radius={[3, 3, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  );
-                default:
-                  return null;
-              }
-            };
-
-            const widgetMeta = (key: string): { title: string; icon: React.ElementType; tooltip?: string; action?: React.ReactNode } => {
-              switch (key) {
-                case "rate_over_time":
-                  return { title: isStandardDetail ? "Corporate Rate Over Time vs Mid-Market" : "Rate Over Time — Mid-Market vs Corporate", icon: TrendingUp, tooltip: WIDGET_TOOLTIPS.rate_over_time };
-                case "variance_trend":
-                  return { title: "Corporate Variance Trend vs Mid-Market", icon: BarChart3, tooltip: WIDGET_TOOLTIPS.variance_trend };
-                case "daily_change":
-                  return { title: "Daily % Change — Mid-Market", icon: Activity, tooltip: WIDGET_TOOLTIPS.daily_change };
-                case "cumulative_return":
-                  return { title: "Cumulative Return", icon: TrendingUp, tooltip: WIDGET_TOOLTIPS.cumulative_return };
-                case "conversion_trend":
-                  return {
-                    title: isStandardDetail ? "Corporate Rate Conversion Trend" : "Mid-Market Rate Conversion Trend",
-                    icon: DollarSign,
-                    tooltip: isStandardDetail
-                      ? "Historical trend of corporate rates set by your team for this currency pair."
-                      : "Historical mid-market rate movement sourced from your configured provider.",
-                    action: (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-[#64748B]" style={{ fontWeight: 500 }}>Amount:</span>
-                        <input
-                          type="number"
-                          value={conversionAmount}
-                          onChange={e => setConversionAmount(e.target.value)}
-                          className="w-20 h-6 px-2 rounded border border-border text-[11px] tabular-nums outline-none focus:border-[#0A77FF]/40"
-                          onClick={e => e.stopPropagation()}
-                        />
-                        <span className="text-[10px] text-[#94A3B8]">{code}</span>
-                      </div>
-                    ),
-                  };
-                case "drawdown_from_peak":
-                  return { title: "Drawdown from Peak (Mid-Market)", icon: ArrowDownRight, tooltip: WIDGET_TOOLTIPS.drawdown_from_peak };
-                case "transaction_volume":
-                  return { title: isStandardDetail ? "Corporate Rate Transaction Volume" : "Transaction Volume in this Pair", icon: BarChart3, tooltip: WIDGET_TOOLTIPS.transaction_volume };
-                default:
-                  return { title: key, icon: Activity };
-              }
-            };
-
-            return (
-              <DndProvider backend={HTML5Backend}>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 auto-rows-min">
-                  {visibleWidgetKeys.map((wKey, i) => {
-                    const sz = widgetSizes[wKey] || "md";
-                    const colSpan = sz === "lg" ? "lg:col-span-2" : "lg:col-span-1";
-                    const meta = widgetMeta(wKey);
-                    const height = heightFor(wKey, sz);
-                    return (
-                      <div key={wKey} className={`col-span-1 ${colSpan}`}>
-                        <DraggableWidgetCard widgetKey={wKey} index={i} moveWidget={moveWidget}>
-                          {(isDragging, isOver) => (
-                            <ContentCard
-                              title={meta.title}
-                              icon={meta.icon}
-                              tooltipText={meta.tooltip}
-                              action={meta.action}
-                              isDragging={isDragging}
-                              isOver={isOver}
-                              currentSize={sz}
-                              onSizeChange={(s) => handleWidgetSizeChange(wKey, s)}
-                              onRemove={() => handleToggleWidget(wKey)}
-                            >
-                              {renderBody(wKey, height)}
-                            </ContentCard>
-                          )}
-                        </DraggableWidgetCard>
-                      </div>
-                    );
-                  })}
-                </div>
-              </DndProvider>
-            );
-          })()}
-
-          {/* ══ Rate History — always visible on the Dashboard ══ */}
-          <div>
-            <h2 className="text-[15px] mb-3" style={{ fontWeight: 600 }}>Rate History</h2>
-            <div className="rounded-xl border border-[#E2E8F0] bg-white overflow-clip shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-[#F8FAFC] hover:bg-[#F8FAFC]">
-                    <TableHead>
-                      <span className="inline-flex items-center gap-1 text-[12px]" style={{ fontWeight: 600 }}>
-                        Effective Date
-                        <TooltipProvider delayDuration={200}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.effectiveDate}</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </span>
-                    </TableHead>
-                    <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Rate Type</span></TableHead>
-                    <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Rate Value</span></TableHead>
-                    {isStandardDetail && (
-                      <TableHead>
-                        <span className="inline-flex items-center gap-1 text-[12px]" style={{ fontWeight: 600 }}>
-                          Variance vs Mid
-                          <TooltipProvider delayDuration={200}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.variance}</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </span>
-                      </TableHead>
-                    )}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.rateHistory
-                    .filter(entry => isStandardDetail ? entry.rateType === "STD" : entry.rateType === "MID")
-                    .slice(0, 30)
-                    .map(entry => (
-                    <TableRow key={entry.id} className="hover:bg-[#F0F7FF]">
-                      <TableCell className="text-[12px]">{format(new Date(entry.effectiveDate), "dd MMM yyyy, HH:mm")}</TableCell>
-                      <TableCell>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                          entry.rateType === "MID"
-                            ? "text-[#7C3AED] bg-[#F5F3FF] border-[#DDD6FE]"
-                            : "text-[#D97706] bg-[#FFFBEB] border-[#FDE68A]"
-                        }`} style={{ fontWeight: 500 }}>
-                          {entry.rateType === "MID" ? "Mid-Market" : "Corporate"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-[13px] tabular-nums" style={{ fontWeight: 600 }}>{entry.rateValue.toFixed(4)}</TableCell>
-                      {isStandardDetail && (
-                        <TableCell className="text-[12px] tabular-nums text-[#64748B]">
-                          {entry.varianceVsMid !== null ? `${entry.varianceVsMid > 0 ? "+" : ""}${entry.varianceVsMid.toFixed(2)}%` : "—"}
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-            </>
-          )}
-
-          {activeTab === "communications" && (
-            <div className="bg-white border border-[#E2E8F0] rounded-xl shadow-sm">
-              <div className="px-5 py-3.5 border-b border-[#E2E8F0]">
-                <h3 className="text-[14px] text-[#0F172A]" style={{ fontWeight: 600 }}>Communications</h3>
-              </div>
-              <PairTabEmptyState
-                icon={MessageSquare}
-                title="No communications yet"
-                description={`Messages, calls, and notes related to ${detail.pairCode} will appear here once added.`}
-              />
-            </div>
-          )}
-
-          {activeTab === "attachments" && (
-            <AttachmentsTab />
-          )}
-
-          {activeTab === "audit_log" && (
-            <div className="pb-4">
-              <h2 className="text-[15px] mb-3" style={{ fontWeight: 600 }}>Audit Log</h2>
-              {isStandardDetail && detail.auditLog.length > 0 ? (
-              <div className="rounded-xl border border-[#E2E8F0] bg-white overflow-clip shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-[#F8FAFC] hover:bg-[#F8FAFC]">
-                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Date & Time</span></TableHead>
-                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Action</span></TableHead>
-                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>User</span></TableHead>
-                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Old Value</span></TableHead>
-                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>New Value</span></TableHead>
-                      <TableHead><span className="text-[12px]" style={{ fontWeight: 600 }}>Reason</span></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {detail.auditLog.map(entry => (
-                      <TableRow key={entry.id} className="hover:bg-[#F0F7FF]">
-                        <TableCell className="text-[12px]">{format(new Date(entry.dateTime), "dd MMM yyyy, HH:mm")}</TableCell>
-                        <TableCell>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full border border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF]" style={{ fontWeight: 500 }}>
-                            {entry.action}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-[12px]">{entry.user}</TableCell>
-                        <TableCell className="text-[12px] tabular-nums text-[#64748B]">{entry.oldValue?.toFixed(4) || "—"}</TableCell>
-                        <TableCell className="text-[12px] tabular-nums" style={{ fontWeight: 600 }}>{entry.newValue?.toFixed(4) || "—"}</TableCell>
-                        <TableCell className="text-[12px] text-[#64748B]">{entry.reason}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              ) : (
-                <div className="bg-white border border-[#E2E8F0] rounded-xl shadow-sm">
-                  <PairTabEmptyState
-                    icon={ClipboardList}
-                    title="No audit entries yet"
-                    description={
-                      isStandardDetail
-                        ? `Rate changes for ${detail.pairCode} will be logged here.`
-                        : `Mid-Market rates are sourced from ${API_PROVIDER}; manual changes are tracked on the Corporate rate detail.`
-                    }
-                  />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Customize Widgets Panel */}
-      <CustomizeKpiPanel
-        open={customizePanelOpen}
-        onOpenChange={setCustomizePanelOpen}
-        activeKpis={activeKpis}
-        onToggleKpi={handleToggleKpi}
-        detail={detail}
-        rangeMetrics={rangeMetrics}
-        allowedKeys={isStandardDetail ? STD_KPI_KEYS : MID_KPI_KEYS}
-        allowedWidgetKeys={isStandardDetail ? STD_WIDGET_KEYS : MID_WIDGET_KEYS}
-        activeWidgets={activeWidgets}
-        onToggleWidget={handleToggleWidget}
-      />
-
-      {/* Edit Corporate Rate Modal — Archive-pattern */}
-      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
-        <DialogContent className="sm:max-w-[480px] p-0 gap-0 overflow-hidden rounded-2xl border-0 bg-white shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)]" hideCloseButton>
-          <div className="relative flex flex-col items-center pt-10 pb-6 text-center" style={{ background: "linear-gradient(180deg, #EFF6FF 0%, rgba(239,246,255,0.3) 70%, transparent 100%)" }}>
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[180px] h-[80px] rounded-full blur-[50px] opacity-25" style={{ backgroundColor: "#3B82F6" }} />
-            <div className="relative w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: "#DBEAFE" }}>
-              <Pencil className="w-7 h-7" style={{ color: "#2563EB" }} />
-            </div>
-            <span
-              className="mt-4 px-3 py-1 rounded-full text-[11px]"
-              style={{ fontWeight: 600, backgroundColor: "#EFF6FF", color: "#1E40AF", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}
-            >
-              Update Rate
-            </span>
-            <DialogTitle className="mt-3 text-[18px] tracking-[-0.02em]" style={{ fontWeight: 600, color: "#0F172A" }}>
-              Update Corporate Rate — {code}
-            </DialogTitle>
-            <DialogDescription className="text-[13px] mt-1.5 max-w-[320px] mx-auto" style={{ color: "#475569", lineHeight: "1.65" }}>
-              Update the corporate rate for {code} / {BASE_CURRENCY}.
-            </DialogDescription>
-          </div>
-          <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto bg-white">
-            <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
-                Base Currency
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.baseCurrency}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </Label>
-              <div className="h-9 px-3 rounded-md border border-border bg-muted/30 flex items-center text-[13px]">
-                <span style={{ fontWeight: 600 }}>{BASE_CURRENCY}</span>
-                <span className="ml-1.5 text-muted-foreground">— {BASE_CURRENCY_NAME}</span>
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
-                Source Currency
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.sourceCurrency}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </Label>
-              <div className="h-9 px-3 rounded-md border border-border bg-muted/30 flex items-center text-[13px]">
-                <span style={{ fontWeight: 600 }}>{code}</span>
-                <span className="ml-1.5 text-muted-foreground">— {detail.sourceCurrencyName}</span>
-              </div>
-            </div>
-
-            {midRecord && (
-              <div className="rounded-lg border border-border bg-muted/20 p-3">
-                <p className="text-[11px] text-muted-foreground mb-1 inline-flex items-center gap-1" style={{ fontWeight: 500 }}>
-                  Mid-Market Reference
-                  <TooltipProvider delayDuration={200}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.midMarket}</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  }
+                  storageKey={`fx.pair.${code}.${type}.insights.v1`}
+                  kpis={kpis}
+                  widgets={widgets}
+                  defaultKpis={isStd ? DEFAULT_STD_KPIS : DEFAULT_MID_KPIS}
+                  defaultWidgets={(isStd ? DEFAULT_STD_WIDGETS : DEFAULT_MID_WIDGETS).filter(k => widgetKeys.includes(k))}
+                  kpiValue={k => { const { text: _t, ...f } = face(k); return f }}
+                  kpiPreview={k => face(k).text}
+                  renderWidget={k => renderPairWidget(k, bodyProps)}
+                  noun={isStd ? 'corporate rate' : 'exchange rate'}
+                />
+              </>
+            }
+            rail={rail}
+          />
+        )}
+        {tab === 'history' && <RateHistoryTab rows={history} code={code} defaultType={historyType} />}
+        {tab === 'notes' && <NotesTab noteKey={key} noun="rate" derived={derivedNotes} />}
+        {tab === 'attachments' && (
+          <RecordAttachmentsTab recordKey={key} seed={seedFiles} document={{ recordLabel: `${pair} ${isStd ? 'corporate rate' : 'mid-market rate'}`, recordKind: 'exchange rate' }} />
+        )}
+        {tab === 'communications' && <CommsTab {...commsSubject} />}
+        {tab === 'activity' && (
+          <ChartWidgetCard title="Activity Timeline" icon={Activity}>
+            {isStd ? (
+              <ActivityFeed items={corporatePairActivity(code, rateAudit, record, mid.rate)} />
+            ) : (
+              <>
+                <ActivityFeed items={midPairActivity(code, series)} />
+                <p className="mt-4 pt-3 border-t border-muted text-[12px] text-slate-400">
+                  Mid-market rates are sourced from {API_PROVIDER}; manual changes are tracked on the Corporate rate detail.
                 </p>
-                <p className="text-[15px] tabular-nums" style={{ fontWeight: 700 }}>{midRecord.rate.toFixed(4)}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">As of {format(new Date(midRecord.effectiveDate), "dd MMM yyyy")}</p>
-              </div>
+              </>
             )}
-
-            <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
-                Corporate Exchange Rate *
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.corporate}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </Label>
-              <Input
-                type="number"
-                step="0.0001"
-                placeholder="e.g., 279.0000"
-                value={editForm.standardRate}
-                onChange={e => setEditForm(p => ({ ...p, standardRate: e.target.value }))}
-                className="h-9 text-[13px] tabular-nums"
-              />
-              {editLiveVariance !== null && (
-                <p className="text-[11px] mt-1.5 text-amber-600" style={{ fontWeight: 500 }}>
-                  Variance from mid-market: {editLiveVariance > 0 ? "+" : ""}{editLiveVariance.toFixed(2)}%
-                </p>
-              )}
-            </div>
-
-            <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5 inline-flex items-center gap-1">
-                Effective Date *
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex"><Info className="w-3 h-3 text-muted-foreground/60 cursor-help" /></span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[300px] text-[11.5px]">{RATE_TOOLTIPS.effectiveDate}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </Label>
-              <Input
-                type="date"
-                value={editForm.effectiveDate}
-                onChange={e => setEditForm(p => ({ ...p, effectiveDate: e.target.value }))}
-                className="h-9 text-[13px]"
-              />
-            </div>
-
-            <div>
-              <Label className="text-[12px] text-muted-foreground mb-1.5">Notes (optional)</Label>
-              <Textarea
-                placeholder="Add notes about this rate..."
-                value={editForm.notes}
-                onChange={e => setEditForm(p => ({ ...p, notes: e.target.value.slice(0, 500) }))}
-                className="text-[13px] resize-none"
-                rows={3}
-              />
-              <p className="text-[10px] text-muted-foreground mt-1 text-right">{editForm.notes.length}/500</p>
-            </div>
-          </div>
-          <div className="px-8 py-5 border-t border-border flex flex-col gap-2.5 bg-white">
-            <Button
-              className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors hover:opacity-90"
-              style={{ fontWeight: 600, backgroundColor: "#0A77FF", color: "#fff" }}
-              onClick={handleEditSave}
-            >
-              Update Rate
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors"
-              style={{ fontWeight: 500, backgroundColor: "#F1F5F9", color: "#334155" }}
-              onClick={() => setEditModalOpen(false)}
-            >
-              Cancel
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+          </ChartWidgetCard>
+        )}
+      </DetailPageLayout>
+    </CoaPage>
+  )
 }

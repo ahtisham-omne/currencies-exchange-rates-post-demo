@@ -4,13 +4,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "./app/components/layout/AppLayout";
 import { CurrencyProvider } from "./app/context/CurrencyContext";
 import { ExchangeRateProvider } from "./app/context/ExchangeRateContext";
+import { touchpointPrefixes } from "./app/touchpoints";
 import { lazy, Suspense } from "react";
 
 const AccountingHomePage = lazy(() => import("./app/pages/AccountingHomePage").then(m => ({ default: m.AccountingHomePage })));
-const CurrencyListPage = lazy(() => import("./app/pages/CurrencyListPage").then(m => ({ default: m.CurrencyListPage })));
+const CurrencyExchangePage = lazy(() => import("./app/pages/CurrencyExchangePage").then(m => ({ default: m.CurrencyExchangePage })));
 const CurrencyDetailPage = lazy(() => import("./app/pages/CurrencyDetailPage").then(m => ({ default: m.CurrencyDetailPage })));
-const ExchangeRateLibraryPage = lazy(() => import("./app/pages/ExchangeRateLibraryPage").then(m => ({ default: m.ExchangeRateLibraryPage })));
 const CurrencyPairDetailPage = lazy(() => import("./app/pages/CurrencyPairDetailPage").then(m => ({ default: m.CurrencyPairDetailPage })));
+const CoaKitDemo = lazy(() => import("./app/coa/demo/CoaKitDemo").then(m => ({ default: m.CoaKitDemo })));
 
 const queryClient = new QueryClient();
 
@@ -25,14 +26,16 @@ const App = () => (
                 <Route element={<AppLayout />}>
                   <Route path="/" element={<Navigate to="/accounting" replace />} />
                   <Route path="/accounting" element={<AccountingHomePage />} />
-                  <Route path="/accounting/currencies" element={<CurrencyListPage />} />
+                  {/* Currency & Exchange Rates: one page, a tab per path. */}
+                  <Route path="/accounting/currencies" element={<CurrencyExchangePage />} />
                   <Route path="/accounting/currencies/:code" element={<CurrencyDetailPage />} />
-                  <Route path="/accounting/exchange-rates" element={<ExchangeRateLibraryPage />} />
+                  <Route path="/accounting/exchange-rates" element={<CurrencyExchangePage />} />
                   <Route path="/accounting/exchange-rates/:code" element={<CurrencyPairDetailPage />} />
-                  {/* Partners module is restricted in this build — any direct
-                     URL navigation falls back to the Accounting overview. */}
-                  <Route path="/partners/*" element={<Navigate to="/accounting" replace />} />
-                  <Route path="/vendors/*" element={<Navigate to="/accounting" replace />} />
+                  <Route path="/accounting/coa-kit/*" element={<CoaKitDemo />} />
+                  {/* Touchpoint modules render in AppLayout (TouchpointFrames), not here. */}
+                  {touchpointPrefixes.map((prefix) => (
+                    <Route key={prefix} path={`${prefix}/*`} element={null} />
+                  ))}
                   <Route path="*" element={<Navigate to="/accounting" replace />} />
                 </Route>
               </Routes>

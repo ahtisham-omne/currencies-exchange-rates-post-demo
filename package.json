@@ -4,9 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:main": "vite",
     "build": "vite build",
+    "build:all": "vite build && node scripts/build-touchpoints.mjs",
     "build:dev": "vite build --mode development",
+    "touchpoints:install": "node scripts/install-touchpoints.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
@@ -73,7 +76,8 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
     "xlsx": "^0.18.5",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

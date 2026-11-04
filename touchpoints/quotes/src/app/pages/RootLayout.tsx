@@ -3,6 +3,15 @@ import { Search } from "lucide-react";
 import { Sidebar } from "../components/Sidebar";
 import { Toaster } from "sonner";
 
+/* Inside the Currency & Exchange shell, the shell's sidebar replaces this one. */
+const embedded = (() => {
+  try {
+    return window.self !== window.top && "__OMNE_SHELL__" in window.parent;
+  } catch {
+    return false;
+  }
+})();
+
 /* Build breadcrumb segments from current path */
 function useBreadcrumbs() {
   const { pathname } = useLocation();
@@ -30,7 +39,7 @@ export function RootLayout() {
   return (
     <div className="flex h-screen w-full bg-background compact-module overflow-hidden">
       {/* Left Sidebar — collapsible nav */}
-      <Sidebar />
+      {!embedded && <Sidebar />}
 
       {/* Right side: header + content */}
       <div className="flex-1 flex flex-col min-w-0 h-screen">

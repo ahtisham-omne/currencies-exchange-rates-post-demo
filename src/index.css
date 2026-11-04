@@ -1,3 +1,5 @@
+/* Base styles, tokens and primitives are Chart of Accounts' (chart-of-accounts-v2.1/src/index.css),
+   so the Currency & Exchange screens match it exactly. Currency-app extras follow at the end. */
 @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
 
 @tailwind base;
@@ -5,10 +7,10 @@
 @tailwind utilities;
 
 @layer base {
+  /* ─── Omnesoft ERP design tokens - shared with Partner Management - Vendors ─── */
   :root {
     --font-size: 16px;
 
-    /* Surfaces */
     --background: 218 20% 97%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
@@ -16,42 +18,50 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    /* Primary — #0A77FF */
+    /* Primary - #0A77FF */
     --primary: 212 100% 52%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary */
     --secondary: 210 40% 96%;
     --secondary-foreground: 222 47% 11%;
 
-    /* Muted */
     --muted: 210 40% 96%;
     --muted-foreground: 215 19% 35%;
 
-    /* Accent — tints of primary */
+    /* Placeholder text, module-wide. Deliberately much lighter than
+       --muted-foreground: an unfilled field read as already answered when its
+       hint was struck at full foreground strength. Flat rather than an alpha of
+       the foreground so a field over a tinted panel reads the same as one over
+       white. Every placeholder in the module resolves here - the two base rules
+       and .coa-placeholder below are the only things that may set it. */
+    --placeholder: 214 11% 61%;
+
+    /* Accent - tints of primary */
     --accent: 214 100% 96%;
     --accent-foreground: 213 89% 33%;
 
-    /* Destructive */
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders & inputs */
+    --success: 152 66% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 95% 44%;
+    --warning-foreground: 0 0% 100%;
+    --violet: 262 83% 58%;
+    --violet-foreground: 0 0% 100%;
+    --orange: 23 83% 47%;
+    --orange-foreground: 0 0% 100%;
+    --purple: 243 71% 59%;
+    --purple-foreground: 0 0% 100%;
+    --fuchsia: 293 69% 49%;
+    --fuchsia-foreground: 0 0% 100%;
+
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 212 100% 74%;
 
-    /* Charts */
-    --chart-1: 212 100% 52%;
-    --chart-2: 160 84% 39%;
-    --chart-3: 38 92% 50%;
-    --chart-4: 263 70% 50%;
-    --chart-5: 0 84% 60%;
-
-    /* Radius */
     --radius: 0.5rem;
 
-    /* Sidebar */
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 222 47% 11%;
     --sidebar-primary: 212 100% 52%;
@@ -60,6 +70,45 @@
     --sidebar-accent-foreground: 213 94% 41%;
     --sidebar-border: 214 32% 91%;
     --sidebar-ring: 212 100% 74%;
+
+    /* ─── Table controls (spec §9) ──────────────────────────────────────────
+       The density menu, the Columns panel and the Configure Visuals switches
+       name these. Declared as finished colours rather than as the HSL triplets
+       the rest of this block uses, because every one is read by a color-mix()
+       or by an inline style in the ported components, and color-mix takes a
+       colour, not three numbers. Build against the token; the hexes in the spec
+       are there so a screenshot can be checked, not so they can be typed in. */
+    --surface-secondary: #F9FAFB;   /* card hover fill, stripe tint, stuck band floor */
+    --border-strong: #CBD5E1;       /* card hover border - this module's strong rule */
+    --text-secondary: #68727D;      /* Configure Visuals ink, back arrow, unselected card label */
+    --text-tertiary: #9CA3AF;       /* menu icons at rest */
+    --elevation-xs: 0 1px 2px 0 rgba(16, 24, 40, 0.05);
+    --primary-50: #ECF4FC;          /* the chosen picture card's ground */
+    --color-blue-50: #EFF6FF;       /* the eye tiles and the count badge */
+    --color-slate-28: #FAFBFC;      /* the Columns panel header strip */
+    --color-slate-300: #CBD5E1;     /* the picture cards' lighter bars */
+    --color-slate-400: #94A3B8;     /* the picture cards' leading bar, section captions */
+    --color-slate-500: #64748B;     /* PINNED / COLUMNS captions */
+    --color-gray-800: #1F2937;      /* a shown column's name in the panel */
+    /* The crosshair band. A slate carries it and the red is a whisper: at any
+       more than this the pair reads as pink rather than as a shaded cross. */
+    --color-slate-50: #F8FAFC;
+    --color-slate-100: #F1F5F9;
+    --color-slate-200: #E2E8F0;
+    --color-red-400: #F87171;
+    --row-hover: #F0F7FF;           /* the table's own row hover, which the crosshair paints over */
+    --row-selected: #F8FAFF;        /* the fill a selected row already carries */
+    /* The gutter Row numbers opens: 16px in, 8px per tabular digit, 16px out,
+       never under two digits. A host past 99 rows raises it to 56 or 64. */
+    --fr-rownum-w: 48px;
+    --fr-rownum-pad: 16px;
+
+    /* Charts (Currency & Exchange) */
+    --chart-1: 212 100% 52%;
+    --chart-2: 160 84% 39%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 263 70% 50%;
+    --chart-5: 0 84% 60%;
   }
 
   .dark {
@@ -96,40 +145,950 @@
     --sidebar-border: 215 26% 24%;
     --sidebar-ring: 212 100% 62%;
   }
-}
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-
+  html, body, #root { height: 100%; }
   body {
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
     @apply bg-background text-foreground;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-optical-sizing: auto;
-    font-feature-settings: 'cv01', 'cv02', 'cv03', 'cv04', 'cv11', 'ss01', 'ss03';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'cv01', 'cv02', 'cv03', 'cv04', 'cv11', 'ss01', 'ss03';
     text-rendering: optimizeLegibility;
   }
-
-  html {
-    font-size: var(--font-size);
+  *:focus-visible {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 2px;
   }
-
-  h1 { font-size: 1.5rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.025em; }
-  h2 { font-size: 1.25rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.02em; }
-  h3 { font-size: 1.125rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.015em; }
-  h4 { font-size: 1rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.01em; }
-  label { font-size: 1rem; font-weight: 500; line-height: 1.5; }
-  button { font-size: 1rem; font-weight: 500; line-height: 1.5; }
-  input { font-size: 1rem; font-weight: 400; line-height: 1.5; }
-
-  table td, table th, .tabular-nums {
-    font-variant-numeric: tabular-nums;
+  /* The one placeholder colour. Every native field inherits it, so a new input
+     is right without its author having to remember a class - which is how the
+     module drifted to nine different greys. Nothing else in the codebase may
+     set a placeholder colour; a `placeholder:text-*` utility would outrank this
+     rule on specificity and reopen the drift. */
+  input::placeholder,
+  textarea::placeholder {
+    color: hsl(var(--placeholder));
+    opacity: 1;  /* Firefox dims placeholders by default */
+  }
+  /* The comms composers are contenteditable, so their hint is a ::before drawn
+     from data-placeholder rather than a real placeholder. Same token, so a reply
+     box reads as empty the way a text field does. */
+  [data-placeholder]:empty::before {
+    color: hsl(var(--placeholder));
   }
 }
 
+/* ─── Responsive down-scaling for small laptops (≈13" and under) ───
+   The app chrome (AppShell sidebar/topbar) is built with fixed-px sizing and
+   stays put. Page content - cards, buttons, inputs, tables and the setup
+   wizard - uses rem-based Tailwind utilities, so nudging the root font-size
+   scales all of it down proportionally to fit smaller displays, without
+   per-component media queries. 16px is the baseline for large monitors. */
+/* ─── Communications palette, lifted from the financial reporting module ────
+   The Communication tab is a 1:1 port of that module's surface, and its markup
+   names these primitives directly. They are declared here so the port keeps the
+   exact colours it was designed in rather than being re-tinted into the COA
+   scale, which is what made an earlier attempt drift.
+
+   Values are the winning ones from that app's cascade: it declares some of
+   these twice, in a vendored design-system layer and again in a pin layer that
+   overrides it, and these are the pin layer's. Only the tokens the ported files
+   actually reference are here.
+
+   Scoped to the tab. A COA surface that wants a colour uses the COA scale in
+   tailwind.config.js; these are not a second palette for the module. */
+[data-comms] {
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-500: #f59e0b;
+  --color-amber-50: #fffbeb;
+  --color-amber-600: #d97706;
+  --color-amber-700: #b45309;
+  --color-amber-800: #92400e;
+  --color-amber-900: #78350f;
+  --color-blue-100: #dbeafe;
+  --color-blue-200: #bfdbfe;
+  --color-blue-50: #eff6ff;
+  --color-blue-650: #085fcc;
+  --color-blue-800: #1e40af;
+  --color-blue-accent-600: #2563eb;
+  --color-brand-150: #d6e8ff;
+  --color-brand-175: #c8def9;
+  --color-brand-250: #add1ff;
+  --color-brand-25: #f6faff;
+  --color-brand-500: #0a77ff;
+  --color-brand-50: #ecf4fc;
+  --color-brand-600: #0869e2;
+  --color-brand-700: #0656bc;
+  --color-brand-75: #edf4ff;
+  --color-brand-800: #044396;
+  --color-carbon-700: #252525;
+  --color-carbon-800: #27272a;
+  --color-carbon-900: #171717;
+  --color-cyan-200: #a5f3fc;
+  --color-cyan-50: #ecfeff;
+  --color-emerald-100: #d1fae5;
+  --color-emerald-200: #a7f3d0;
+  --color-emerald-500: #10b981;
+  --color-emerald-50: #ecfdf5;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  --color-emerald-800: #065f46;
+  --color-gray-200: #e5e7eb;
+  --color-green-100: #dcfce7;
+  --color-green-200: #bbf7d0;
+  --color-green-500: #22c55e;
+  --color-green-600: #16a34a;
+  --color-green-800: #166534;
+  --color-grey-300: #d1d5db;
+  --color-grey-400: #9ca3af;
+  --color-grey-50: #f9fafb;
+  --color-grey-600: #4b5563;
+  --color-indigo-500: #6366f1;
+  --color-indigo-50: #eef2ff;
+  --color-indigo-800: #3730a3;
+  --color-ink-900: #0b0b0d;
+  --color-mist-200: #f4f6f9;
+  --color-mist-25: #fcfdfe;
+  --color-mist-300: #eef0f3;
+  --color-mist-450: #e8ecf1;
+  --color-orange-100: #ffedd5;
+  --color-orange-200: #fed7aa;
+  --color-orange-50: #fff7ed;
+  --color-orange-600: #ea580c;
+  --color-orange-800: #9a3412;
+  --color-purple-100: #e1deff;
+  --color-purple-200: #c4c0ff;
+  --color-purple-600: #9739c6;
+  --color-red-100: #fee2e2;
+  --color-red-200: #fecaca;
+  --color-red-25: #fef6f7;
+  --color-red-300: #fca5a5;
+  --color-red-50: #fef2f2;
+  --color-red-600: #dc2626;
+  --color-red-800: #991b1b;
+  --color-rose-200: #fecdd3;
+  --color-sky-100: #cfe6ff;
+  --color-sky-300: #7fbfff;
+  --color-sky-500: #0ea5e9;
+  --color-sky-700: #075ccc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-28: #fafbfc;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-50: #f8fafc;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-tint-image: #f8f5fd;
+  --color-violet-100: #ede9fe;
+  --color-violet-200: #ddd6fe;
+  --color-violet-300: #c4b5fd;
+  --color-violet-50: #f5f3ff;
+  --color-violet-600: #7c3aed;
+  --color-violet-700: #6d28d9;
+  --color-violet-800: #5b21b6;
+  --color-white: #ffffff;
+
+  /* The sender-avatar pool. Deliberately holds no blue: a selected thread row
+     is filled brand, and a blue avatar would dissolve into it. */
+  --avatar-bg-green: #7ac663;
+  --avatar-bg-sky: #aed3dc;
+  --avatar-bg-warm: #e8d6ca;
+  --avatar-bg-amber: #ffb145;
+  --avatar-bg-teal: #44978a;
+}
+
+@media (max-width: 1536px) {  /* 13"–14" laptops (e.g. 1470, 1512) + 1080p@125% */
+  html { font-size: 15px; }
+  /* Borders don't scale with rem, so a 1px line reads heavier against the
+     shrunken text. Lighten the L channel a touch to keep the proportions even.
+     --border feeds both border.DEFAULT and border.subtle (same var). */
+  :root { --border: 214 32% 93%; }
+}
+@media (max-width: 1366px) {  /* common small/older laptops (1366×768, 1280×800) */
+  html { font-size: 14px; }
+  :root { --border: 214 32% 94%; }
+}
+@media (max-width: 1180px) {  /* very narrow - keep content legible as it stacks */
+  html { font-size: 13px; }
+  :root { --border: 214 32% 95%; }
+}
+
+@layer components {
+  .card {
+    /* Partner detail card token: rounded-xl, flat (no shadow) */
+    @apply bg-card border border-border rounded-xl;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border border-border bg-white text-fg-muted hover:bg-bg-subtle transition-colors;
+  }
+  .pill-active {
+    @apply bg-primary text-primary-foreground border-primary hover:bg-primary;
+  }
+  .chip {
+    /* Partner pills: fully rounded, 11px, weight 500. Fixed height so all
+       chips in a row align regardless of text size or borders. */
+    @apply inline-flex items-center gap-1 px-2 h-[22px] rounded-full text-2xs font-medium;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+  .btn-secondary {
+    @apply btn bg-white border border-border text-fg hover:bg-bg-subtle;
+  }
+  .btn-ghost {
+    @apply btn text-fg-muted hover:bg-bg-subtle hover:text-fg;
+  }
+  .btn-danger {
+    @apply btn bg-danger-600 text-white hover:bg-danger-700;
+  }
+  .btn-sm {
+    @apply h-8 px-3 text-xs;
+  }
+  .btn-icon {
+    @apply inline-flex items-center justify-center w-8 h-8 rounded-md text-fg-muted hover:bg-bg-subtle hover:text-fg transition-colors;
+  }
+  .input {
+    @apply h-9 w-full px-3 text-sm bg-white border border-border rounded-md focus:outline-none focus:border-fg/40 focus:ring-2 focus:ring-fg/5 transition-all disabled:bg-bg-subtle/60 disabled:text-fg-muted disabled:cursor-not-allowed;
+  }
+  .select {
+    @apply input appearance-none pr-8 bg-no-repeat bg-right;
+  }
+  .label {
+    @apply text-xs font-medium text-fg-muted;
+  }
+  .badge-success { @apply chip bg-success-50 text-success-700 border border-success-100; }
+  .badge-warning { @apply chip bg-warning-50 text-warning-700 border border-warning-100; }
+  .badge-danger { @apply chip bg-danger-50 text-danger-700 border border-danger-100; }
+  .badge-info { @apply chip bg-info-50 text-info-700 border border-info-100; }
+  .badge-neutral { @apply chip bg-bg-muted text-fg-muted border border-border; }
+  .badge-brand { @apply chip bg-brand-50 text-brand-700 border border-brand-100; }
+  .badge-purple { @apply chip bg-purple-50 text-purple-700 border border-purple-100; }
+  .badge-teal { @apply chip bg-teal-50 text-teal-700 border border-teal-100; }
+  /* Extra tones reserved for the Account Type column so its chips never share a
+     colour with the Category/Subcategory column. */
+  .badge-indigo { @apply chip bg-indigo-50 text-indigo-700 border border-indigo-100; }
+  .badge-sky { @apply chip bg-sky-50 text-sky-700 border border-sky-100; }
+  .badge-rose { @apply chip bg-rose-50 text-rose-700 border border-rose-100; }
+  .badge-slate { @apply chip bg-slate-100 text-slate-600 border border-slate-200; }
+  .badge-orange { @apply chip bg-orange-50 text-orange-700 border border-orange-100; }
+}
+
+@layer utilities {
+  .scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #D6D3D1; border-radius: 3px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #A8A29E; }
+  .mark { background: #FEF08A; color: #854d0e; border-radius: 2px; padding: 0 1px; }
+  /* The same yellow over text a How it works search found - see ReadingRoom. */
+  ::highlight(guide-search) { background-color: #FEF08A; color: #854d0e; }
+
+  /* A Select trigger, a date field and the comboboxes draw their placeholder as
+     a <span>, which ::placeholder cannot reach. This is how those spans say the
+     field is empty, so they land on the same token as a native one. */
+  .coa-placeholder { color: hsl(var(--placeholder)); }
+
+  /* Selection checkbox (account table): custom-drawn so the unchecked state is a
+     light grey and the checked / indeterminate states use the primary fill,
+     matching the Partners table. Fixed 16px box so header and row align. */
+  .coa-check {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border: 1px solid hsl(var(--border));
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    display: inline-grid;
+    place-content: center;
+    vertical-align: middle;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+  }
+  .coa-check:hover { border-color: hsl(var(--border-strong, var(--border))); }
+  .coa-check::before {
+    content: "";
+    width: 14px;
+    height: 14px;
+    transform: scale(0);
+    background-color: #fff;
+    -webkit-mask: center / 14px 14px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+    mask: center / 14px 14px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+    transition: transform 0.12s ease;
+  }
+  .coa-check:checked {
+    background: hsl(var(--primary));
+    border-color: hsl(var(--primary));
+  }
+  .coa-check:checked::before { transform: scale(1); }
+  /* Partial selection (some but not all rows): a plain grey check on a white
+     box with the default grey border - distinct from the solid blue "all
+     selected" fill (matches Partners). */
+  .coa-check:indeterminate {
+    background: #fff;
+    border-color: hsl(var(--border));
+  }
+  .coa-check:indeterminate::before {
+    transform: scale(1);
+    background-color: #64748b;
+  }
+
+  /* Entrance for the wizard's live chart-of-accounts tree rows: fade in and
+     settle from a small left/up offset. Runs once per row on mount, so newly
+     added accounts animate in while existing rows stay put. */
+  @keyframes treeRowIn {
+    from { opacity: 0; transform: translateX(-4px) translateY(2px); }
+    to   { opacity: 1; transform: translateX(0) translateY(0); }
+  }
+  .tree-row-in { animation: treeRowIn 600ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  @media (prefers-reduced-motion: reduce) { .tree-row-in { animation: none; } }
+
+  /* Fiscal-year calendar band: slide the month tiles in when the start month
+     changes (keyed remount replays it). Reduced motion snaps instantly. */
+  @keyframes fyStripIn { from { opacity: 0.4; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+  .fy-strip-in { animation: fyStripIn 200ms ease-out both; }
+  @media (prefers-reduced-motion: reduce) { .fy-strip-in { animation: none; } }
+
+  /* The label a "Dimension" answer asks for, revealed under its dropdown in
+     the import mapper. Grid rows are animated rather than a height, so the field
+     opens to whatever it actually measures without one being hard-coded here;
+     the child carries the overflow clip that makes 0fr collapse. */
+  @keyframes coaSlotLabelIn {
+    from { grid-template-rows: 0fr; opacity: 0; }
+    to   { grid-template-rows: 1fr; opacity: 1; }
+  }
+  .coa-slot-label-in { display: grid; animation: coaSlotLabelIn 180ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+  @media (prefers-reduced-motion: reduce) { .coa-slot-label-in { animation: none; grid-template-rows: 1fr; } }
+
+  /* Wizard right-pane "How this shapes your chart" tree. Accounts fade in on
+     add (staggered per section) and fade/collapse out on removal. */
+  @keyframes coaAcctIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes coaAcctOut { from { opacity: 1; max-height: 28px; } to { opacity: 0; max-height: 0; transform: translateY(-2px); } }
+  .coa-acct-in { animation: coaAcctIn 250ms ease-out both; }
+  .coa-acct-out { animation: coaAcctOut 200ms ease-in both; overflow: hidden; }
+
+  /* Wizard right-pane "preview surface": muted background with a subtle
+     blueprint dot grid. Content (cards, illustrations) renders on top with its
+     own opaque background so the dots only show in the gutters. */
+  .wizard-right-pane {
+    background-color: hsl(var(--muted));
+    background-image: radial-gradient(circle, rgb(15 23 42 / 0.08) 1px, transparent 1px);
+    background-size: 16px 16px;
+    background-position: 0 0;
+  }
+
+  /* Decorative dashed vertical guide line beside a section's children, with a
+     slow leftward shimmer loop. */
+  .coa-guide { background-image: repeating-linear-gradient(to bottom, #93B8F7 0 3px, transparent 3px 6px); background-size: 1px 6px; }
+  .coa-guide-shimmer { animation: coaGuideShimmer 4s linear infinite; }
+  @keyframes coaGuideShimmer { from { background-position-y: 0; } to { background-position-y: -60px; } }
+
+  /* Horizontal dotted connector from the spine to each account row. */
+  .coa-guide-h { background-image: repeating-linear-gradient(to right, #93B8F7 0 3px, transparent 3px 6px); background-size: 6px 1px; }
+  .coa-guide-h-shimmer { animation: coaGuideShimmerH 4s linear infinite; }
+  @keyframes coaGuideShimmerH { from { background-position-x: 0; } to { background-position-x: -60px; } }
+
+  /* Brief scale bump for the "N accounts" counter when it changes. */
+  @keyframes coaCountBump { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+  .coa-count-bump { animation: coaCountBump 400ms ease-in-out; }
+
+  /* Connected-check pop, used by the Connect a bank feed flow. */
+  @keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+
+  /* Ebbing glow for the floating "first-time view" control. */
+  @keyframes coaPulseGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0), 0 6px 16px -4px rgba(0, 0, 0, 0.18); }
+    50% { box-shadow: 0 0 22px 5px rgba(16, 185, 129, 0.45), 0 6px 16px -4px rgba(0, 0, 0, 0.18); }
+  }
+  .coa-glow { animation: coaPulseGlow 2.6s ease-in-out infinite; }
+
+  /* The field a refused submit took the reader to - see lib/formErrors.ts. Its
+     own border blinks red three times, following its own corners, and then the
+     field's error styling holds it red (Eli, 2026-10-08). With motion reduced,
+     the border is simply red for the same moment. */
+  @keyframes formErrorFlash {
+    0%, 100% { border-color: rgb(220, 38, 38); box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1); }
+    50% { border-color: rgb(220, 38, 38); box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.45); }
+  }
+  .form-error-flash { border-color: rgb(220, 38, 38) !important; animation: formErrorFlash 0.45s ease-in-out 3; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .coa-acct-in, .coa-acct-out, .coa-guide-shimmer, .coa-guide-h-shimmer,
+    .coa-glow, .animate-float { animation: none !important; }
+    .coa-acct-out { max-height: 0; opacity: 0; }
+    .form-error-flash { animation: none; box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.45); }
+  }
+}
+
+/* Horizontal freezing (GL account no., GL account name, Actions) is applied as
+   an inline style on those specific cells - see leftPinStyle / rightPinStyle in
+   AccountTable.tsx. Positional :first-child / :last-child selectors can't do it:
+   the full-width colSpan rows (insert handles, "Add row", the list's category
+   band) are simultaneously the first AND last cell of their row, so they got
+   pinned to both edges by accident. */
+
+/* Sticky table header - pins the header row to the top of the scroll container
+   on vertical scroll so column labels stay visible. The header cells carry an
+   opaque fill so body rows never show through them. Sits above the pinned
+   category rows (z-index 6); the horizontally pinned header cells raise
+   themselves higher still inline. */
+.coa-frozen-first thead th,
+.coa-frozen-2 thead th {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  /* A flat colour, not the layered muted-over-white this used to be: the layers
+     are a background-image, and that channel belongs to the Row numbers
+     gutter's rule and row line. */
+  background-color: color-mix(in srgb, hsl(var(--muted)) 30%, #ffffff);
+}
+
+/* Sticky category header rows (tree view). Each category group lives in its own
+   <tbody>, so a sticky category cell stays pinned only while its group is in
+   view - as the next group scrolls up, its header pushes the previous one off,
+   producing the stacking/push effect. Offset below the frozen thead via the
+   measured --coa-cat-top.
+
+   Gated on `fr-report--pingroups`: this IS the Pin group headings switch, which
+   starts off. The table carries the class when the switch is on, so the rule and
+   the switch are one thing rather than two behaviours that have to agree. */
+.coa-frozen-first.fr-report--pingroups tr.coa-cat-sticky td {
+  position: sticky;
+  top: var(--coa-cat-top, 28px);
+  background-color: #fff;
+}
+/* Only raise the anchor above body content once it's actually pinned. At rest
+   it keeps z-index:auto so the between-row insert "+" handles (z-index 5) that
+   straddle the boundary below it (e.g. between "Assets" and "Total Assets" in
+   the setup flows) paint on top instead of hiding behind it. When pinned it
+   sits above scrolling body content - including those insert handles - so
+   nothing behind the pinned category row shows through or stays clickable. The
+   column header (below) is raised higher still so it always covers the
+   sub-pixel seam above this row. */
+.coa-frozen-first tr.coa-cat-sticky.is-stuck td {
+  z-index: 6;
+}
+/* The row is otherwise identical to its resting state, so the soft downward drop
+   shadow is the only cue that it's pinned - applied only once JS marks it
+   `is-stuck` (i.e. actually pinned on scroll), never while it sits in its natural
+   place.
+
+   Drawn as an absolutely positioned pseudo-element rather than a box-shadow on the
+   cells: Chrome doesn't paint cell box-shadow in a border-collapse table, and on the
+   frozen columns an inline box-shadow would have to fight the pinned edge shadow
+   those cells already carry. The sliver sits just below each sticky cell and adjacent
+   slivers line up into one continuous shadow across the row.
+
+   Both views share the rule, so the category row pins identically whichever way you
+   are reading the chart. The list positions its own sticky cells inline (it measures
+   its header height at runtime), so only the shadow is shared here. */
+.coa-frozen-first tr.coa-cat-sticky.is-stuck td::after,
+.coa-frozen-2 tr.coa-cat-sticky.is-stuck td::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  box-shadow: 0 4px 8px 0 rgba(15, 23, 42, 0.32);
+  pointer-events: none;
+}
+
+/* Reveal animation for the rows uncovered by expanding a summary account - a
+   subtle fade + slide so they ease in rather than snapping into place. */
+@keyframes coaRowReveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.coa-row-reveal {
+  animation: coaRowReveal 0.24s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .coa-row-reveal { animation: none; }
+}
+
+/* A widget's stat row restating itself. The Posting activity footer swaps from
+   the window's totals to the selected bar's, and the figures used to change in
+   place: the same three slots, suddenly different numbers, with nothing to
+   connect them to the bar that was clicked. The stagger reads left to right, so
+   the row looks like it is being rewritten rather than blinking. */
+@keyframes coaStatSwap {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.coa-stat-swap { animation: coaStatSwap 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* The entry list a bar opens under the chart. Height is animated as well as
+   opacity because the panel pushes the stat row down when it appears, and a
+   panel that fades in over a layout that has already jumped is the abrupt part.
+   The max-height ceiling is above the panel's tallest form - a header plus
+   ACTIVITY_LIST_MAX rows plus the overflow line. */
+@keyframes coaEntryPanelIn {
+  from { opacity: 0; transform: translateY(-4px); max-height: 0; margin-top: 0; }
+  to { opacity: 1; transform: translateY(0); max-height: 320px; margin-top: 0.75rem; }
+}
+.coa-entry-panel-in { animation: coaEntryPanelIn 280ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .coa-stat-swap, .coa-entry-panel-in { animation: none; }
+}
+
+/* Journal-entry expand/collapse - the General Ledger list view, and the account
+   register, which unrolls the other side of an entry the same way. Child rows
+   fade + slide down on mount (with a tiny stagger driven by inline
+   animationDelay) and fade + slide up on close. During close the row keeps a
+   `gl-je-child-out` class for the duration of the animation, then unmounts.
+   Because <tr> can't animate height, the effect is opacity/translate only - the
+   row height still snaps, but the child content easing masks it. */
+@keyframes glJeChildIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes glJeChildOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-4px); }
+}
+.gl-je-child-in {
+  animation: glJeChildIn 200ms ease-out both;
+}
+.gl-je-child-out {
+  animation: glJeChildOut 180ms ease-in both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gl-je-child-in, .gl-je-child-out { animation: none; }
+}
+
+/* General Ledger list view - horizontal pinning. The chevron gutter + Date
+   column freeze to the left; Debit + Credit freeze to the right. Each row
+   carries its background as a CSS custom property so the pinned cells stay
+   opaque and update on hover in lockstep with the un-pinned cells. */
+tr.gl-list-header-row {
+  --gl-row-bg: color-mix(in srgb, hsl(var(--muted)) 30%, #fff);
+}
+tr.gl-list-parent-row { --gl-row-bg: #fff; }
+tr.gl-list-parent-row:hover { --gl-row-bg: #F0F7FF; }
+tr.gl-list-child-row { --gl-row-bg: rgb(248 250 252); }
+tr.gl-list-child-row:hover { --gl-row-bg: #F0F7FF; }
+/* The longhand throughout this block, never the `background` shorthand: the
+   shorthand resets background-image, and that is the channel the Row numbers
+   gutter paints its rule and its row line into on the row's first cell. */
+.gl-list-pin { background-color: var(--gl-row-bg); }
+
+/* ── General Ledger tree view ──────────────────────────────────────────────
+   Each account group is its own <tbody data-acct>, holding one parent row and
+   its child postings. Opaque cell fills (parent = muted tint, child = white)
+   so pinned rows never show scrolling content through them. */
+tbody.gl-group > tr.gl-parent > td {
+  background-color: color-mix(in srgb, hsl(var(--muted)) 22%, #fff);
+}
+tbody.gl-group > tr.gl-child > td {
+  background-color: #fff;
+}
+/* The closing total row that ends an expanded account. Carries the parent row's
+   tint so the group reads as bracketed between the two, and stays opaque for the
+   same reason every other cell here does - its Debit/Credit/Balance cells are
+   horizontally pinned, and scrolling columns pass beneath them. Deliberately no
+   hover fill: it is a summary, not a row to act on. */
+tbody.gl-group > tr.gl-total > td {
+  background-color: color-mix(in srgb, hsl(var(--muted)) 22%, #fff);
+}
+/* Hovering a single row highlights just that row. Same specificity as the
+   fills above, placed later so it wins on hover. */
+tbody.gl-group > tr.gl-parent:hover > td,
+tbody.gl-group > tr.gl-child:hover > td {
+  background-color: #F0F7FF;
+}
+/* The connector guide, drawn from the account row down to the hovered posting.
+   Every posting carries both shapes; these rules show the right one, so hovering
+   changes no React state and re-renders nothing - it used to re-render the whole
+   ledger on every row the pointer crossed. The rows between the account and the
+   hovered one (a posting with a hovered posting after it) draw the trunk; the
+   hovered one draws the elbow; the account row draws the stub into its first
+   posting while any of its postings is hovered. */
+tbody.gl-group .gl-guide { display: none; }
+tbody.gl-group.gl-lines > tr.gl-child:has(~ tr.gl-child:hover) .gl-guide-through,
+tbody.gl-group.gl-lines > tr.gl-child:hover .gl-guide-elbow,
+tbody.gl-group.gl-lines:has(> tr.gl-child:hover) > tr.gl-parent .gl-guide-stub {
+  display: block;
+}
+/* When a group is expanded its parent row pins just beneath the column header
+   (measured --gl-head-top) and stays put while the group's postings scroll.
+   A sticky cell is constrained by the whole table, not by its own row group, so
+   left to the browser every expanded parent would stay pinned for the rest of the
+   ledger - long after its own postings had scrolled by. --gl-pin-top is written
+   per-group on scroll (see GeneralLedger.tsx) and carries that missing constraint:
+   it drops below --gl-head-top as the group's <tbody> runs out, sliding the parent
+   up and away exactly when its last posting leaves. */
+/* Gated on Pin group headings, which ships off (spec §7). Unpinned the account
+   row keeps its tint, its total and its place - it simply scrolls away. */
+.fr-report--pingroups tbody.gl-group.gl-expanded > tr.gl-parent > td {
+  position: sticky;
+  top: var(--gl-pin-top, var(--gl-head-top, 41px));
+  z-index: 2;
+}
+/* The pinned parent is opaque but otherwise identical to its resting state, so
+   a drop shadow is the only cue it's stuck - drawn only on the single frontmost
+   pinned group (JS-marked `is-stuck`). Border-collapse tables don't paint
+   box-shadow on cells, so use an absolutely-positioned sliver below each cell;
+   adjacent slivers line up into one continuous shadow. The pinned cell is
+   already `position: sticky`, so it anchors the absolute sliver directly. */
+tbody.gl-group.is-stuck > tr.gl-parent > td::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  box-shadow: 0 4px 8px 0 rgba(15, 23, 42, 0.24);
+  pointer-events: none;
+}
+
+/* Both tables use border-separate. The list table adopted it to kill the
+   sticky-column jitter border-collapse causes on horizontal scroll; the tree
+   table adopted it to kill the faint ghost lines border-collapse leaves on the
+   sticky header + sticky category rows during vertical scroll (collapsed borders
+   are painted on the table grid, so they don't travel with a sticky cell). With
+   separate borders, row separators must live on the cells rather than the <tr>. */
+.coa-frozen-2 thead th,
+.coa-frozen-2 tbody td,
+.coa-frozen-first thead th,
+.coa-frozen-first tbody td {
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+/* ── Reference sheet ───────────────────────────────────────────────────────
+   A reading panel that slides in over a modal (the importer's "How this
+   works"). It starts past its own right edge plus the inset, so the leading
+   corner is already off-panel and the panel appears to arrive from outside
+   rather than to unfold in place. The scrim washes the form out underneath it
+   instead of dimming it, because the form is still the thing being read
+   against. */
+@keyframes coaSheetIn {
+  from { transform: translateX(calc(100% + 24px)); }
+  to { transform: translateX(0); }
+}
+@keyframes coaSheetScrimIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.coa-sheet { animation: coaSheetIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.coa-sheet-scrim { animation: coaSheetScrimIn 0.4s ease-out both; }
+
+/* The one backdrop behind every side sheet and modal in the module: the
+   Customize insights panel's, a plain 25% black with no blur and no white wash
+   (Mahad, 2026-10-08: *"the background should be exactly like how it is when we
+   click on add insights"*). The insights panels set the same value inline. */
+.coa-scrim { background-color: rgba(0, 0, 0, 0.25); }
+@media (prefers-reduced-motion: reduce) {
+  .coa-sheet, .coa-sheet-scrim { animation: none; }
+}
+
+/* The row at the foot of the sheet that starts the walkthrough. It is the one
+   control on a surface that is otherwise all reading, so on hover it tints its
+   fill and darkens its border, the same flat move the app's other cards make. */
+.coa-replay-row {
+  border-color: hsl(var(--border));
+  background: #fff;
+}
+.coa-replay-row:hover {
+  border-color: var(--border-strong);
+  background: hsl(var(--muted));
+}
+
+/* --border-strong is a hex colour, not hsl parts: inside hsl() it was invalid,
+   and the border fell back to the text colour on hover.
+
+   A section of How it works, lifting as the replay row does while its header
+   is under the pointer or the keyboard. Only a shut card takes the fill: an
+   open one has a body of prose and tables that should stay on white. */
+.coa-guide-card:has(> .coa-guide-head:hover),
+.coa-guide-card:has(> .coa-guide-head:focus-visible) {
+  border-color: var(--border-strong);
+}
+.coa-guide-card[data-open="false"]:has(> .coa-guide-head:hover),
+.coa-guide-card[data-open="false"]:has(> .coa-guide-head:focus-visible) {
+  background: hsl(var(--muted));
+}
+
+/* ── Overflow hover card ───────────────────────────────────────────────────
+   The card a "+2" in a listing cell opens. It grows the last few percent into
+   place rather than fading flat, so it reads as coming out of the pill it is
+   anchored to. Short, because it is on a hover and the reader is already
+   looking at where it lands. */
+@keyframes coaOverflowTipIn {
+  from { opacity: 0; transform: scale(0.96) translateY(2px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ── Attachment shimmer ────────────────────────────────────────────────────
+   The placeholder card shown while a file is being read. The sheen travels
+   right to left across a surface three times the card's width, so the pass is
+   a sweep rather than a pulse. */
+@keyframes coaAttShimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.coa-att-shimmer {
+  background-image: linear-gradient(110deg, #F7F7F8 8%, hsl(210 16% 93%) 18%, #F7F7F8 33%);
+  background-size: 300% 100%;
+  animation: coaAttShimmer 1.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .coa-att-shimmer { animation: none; }
+}
+
+/* ══ Table look: the Configure Visuals switches ═════════════════════════════
+   A port of the financial reporting module's report-look.css, kept to its own
+   class and attribute names on purpose: these rules and the ones over there are
+   meant to be the same object, so a striped row, a grid line, a row number and
+   a clipped cell mean the same thing in both modules. Renaming them would make
+   the two drift the moment either is touched.
+
+   The contract the markup has to hold up:
+     tr[data-export-row="leaf|section|total"]  what kind of row it is
+     tr[data-tree-account]                     an account, so it takes a number
+     tr[data-export-indent="0"]                an outermost band
+     tr[data-row-hover] / tr[data-selected]    states that outrank a stripe
+     td[data-actions-cell]                     exempt from truncation
+     thead tr[data-grid-head-row]              the column headings
+   The wrapper carries fr-report--zebra | --grid | --rownum | --pingroups |
+   --truncate, one class per switch. */
+
+/* ── Striped rows ──────────────────────────────────────────────────────────
+   Every second VISIBLE row, so a collapsed group never leaves two stripes
+   touching. The stripe goes on the row, and a frozen cell inherits its
+   background-color, so it carries straight across the freeze line.
+
+   Selection and hover are written out rather than left to the row's own
+   Tailwind classes: `:nth-child()` counts as a class, so the stripe outranks a
+   bare `hover:bg-*` utility and would have swallowed both states. Neither uses
+   !important - the crosshair shades inline as it passes, and has to win. */
+.fr-report--zebra tbody tr:nth-child(even of :not([hidden])) {
+  background-color: color-mix(in srgb, var(--surface-secondary) 60%, transparent);
+}
+.fr-report--zebra tbody tr[data-selected]:nth-child(even of :not([hidden])) {
+  background-color: var(--row-selected);
+}
+.fr-report--zebra tbody tr[data-row-hover]:nth-child(even of :not([hidden])):hover {
+  background-color: var(--row-hover);
+}
+/* Engines without `nth-child(... of S)` fall back to plain even rows. */
+@supports not selector(:nth-child(1 of :not([hidden]))) {
+  .fr-report--zebra tbody tr:nth-child(even) {
+    background-color: color-mix(in srgb, var(--surface-secondary) 60%, transparent);
+  }
+  .fr-report--zebra tbody tr[data-selected]:nth-child(even) { background-color: var(--row-selected); }
+  .fr-report--zebra tbody tr[data-row-hover]:nth-child(even):hover { background-color: var(--row-hover); }
+}
+
+/* The ledger paints its rows CELL by cell, not row by row - it has to, because
+   both of its views freeze columns and a frozen cell must be opaque. A cell's
+   own background always covers the row's, so the rule above would have striped
+   only the cells nobody had painted: in the journal-entry list, the ones
+   outside the freeze line, and in the tree, none at all. These carry the same
+   stripe into the two channels the ledger actually paints through.
+
+   Opaque where the general rule is a 60% wash, for the same reason: a frozen
+   cell you can see the scrolling table through is not frozen.
+
+   Hover is written out again beside each, because a stripe selector carrying an
+   extra class outranks the plain hover rule it would otherwise defer to. */
+.fr-report--zebra tbody tr.gl-list-parent-row:nth-child(even),
+.fr-report--zebra tbody tr.gl-list-child-row:nth-child(even) {
+  --gl-row-bg: color-mix(in srgb, var(--surface-secondary) 60%, #fff);
+}
+.fr-report--zebra tbody tr.gl-list-parent-row:nth-child(even):hover,
+.fr-report--zebra tbody tr.gl-list-child-row:nth-child(even):hover {
+  --gl-row-bg: var(--row-hover);
+}
+/* In the tree the stripe counts postings only. Its tbody opens with the account
+   band and closes with the account's total, and neither is a row in the run
+   being striped - the band and the total are what bracket it. */
+.fr-report--zebra tbody.gl-group > tr.gl-child:nth-child(even) > td {
+  background-color: color-mix(in srgb, var(--surface-secondary) 60%, #fff);
+}
+.fr-report--zebra tbody.gl-group > tr.gl-child:nth-child(even):hover > td {
+  background-color: var(--row-hover);
+}
+
+/* ── Lines between columns ─────────────────────────────────────────────────
+   One paint for every rule on the table: the row line, the freeze line and
+   these all read --border, so a column rule is exactly as visible as the row
+   rule it crosses.
+
+   Drawn as an inset shadow, the way the frozen edge is, and not as a border: a
+   border-right would sit outside the padding box beside the frozen cell's own
+   inset shadow and double the line there, and it would move every column by a
+   pixel each time the switch is thrown. The frozen cells set their shadow
+   inline, which beats this rule, so the freeze line stays single. The last
+   column is skipped - the card's own edge is already there - and so is the
+   empty one in front of Actions, which holds no column to rule off. */
+.fr-report--grid td:not(:last-child):not([data-actions-filler]),
+.fr-report--grid th:not(:last-child):not([data-actions-filler]) {
+  box-shadow: inset -1px 0 0 0 hsl(var(--border));
+}
+
+/* ── Row numbers ───────────────────────────────────────────────────────────
+   A CSS counter, not a thirteenth column: the module draws tables from several
+   different bodies, each with its own widths and frozen offsets, and a real
+   column would have had to be threaded through all of them and kept in step.
+
+   The room comes from a transparent LEFT BORDER rather than from padding:
+   every name cell sets padding-left inline (that is what draws the tree
+   indentation) and inline beats a stylesheet, so a padding rule here would
+   either be ignored or would flatten the indent. Nothing sets border-left
+   inline, so this one is ours, and with border-box sizing it comes out of the
+   column rather than widening the table.
+
+   What counts is `data-tree-account`: a row standing for one account. On this
+   tree a Summary is an account with a number of its own, so it counts like the
+   accounts under it even though it keeps its `section` role for the exports.
+   What does not: an insert handle, an add-account line, the empty state.
+
+   Counted on the table, not on the tbody: these views open a tbody per
+   category, and a reset per group would restart the numbering at every
+   heading. */
+.fr-report--rownum { counter-reset: fr-row; }
+.fr-report--rownum tbody tr[data-tree-account] {
+  counter-increment: fr-row;
+}
+.fr-report--rownum tbody tr[data-tree-account] > td:first-child::before {
+  content: counter(fr-row);
+  position: absolute;
+  /* Out into the border, then back in by the standard cell inset, so the
+     numbers stand on the same left edge the headings do. Left aligned: a
+     right-aligned column of numbers pulls the eye off the text it belongs to. */
+  left: calc(-1 * var(--fr-rownum-w));
+  padding-left: var(--fr-rownum-pad);
+  text-align: left;
+  color: hsl(var(--muted-foreground));
+  /* The table's own size, not the smaller caption: the number reads as part of
+     the row it numbers. Its own weight, though - a Summary row's cells are
+     bold, and the number is not part of the row's emphasis. */
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+/* The room is opened on every row whose first cell is a real cell, numbered or
+   not: the column headings, the bands, and the add-a-row lines that sit between
+   categories all have to stand on the same left edge as the rows they belong
+   with. The only rows left out are the full-width ones - an insert handle, the
+   empty state - whose single cell spans the table and takes no gutter at all.
+
+   The number is positioned against this cell. A frozen first column already
+   sets position: sticky inline, which is a containing block too, so `relative`
+   only has to cover the unfrozen case. */
+.fr-report--rownum thead tr[data-grid-head-row] th:first-child:not([colspan]),
+.fr-report--rownum tbody tr > td:first-child:not([colspan]) {
+  border-left: var(--fr-rownum-w) solid transparent;
+  position: relative;
+}
+/* The gutter is a column, and it is separated like one. The rule runs the full
+   height, heading included, so it reads as its own strip rather than as padding
+   that grew. It is NOT the Lines between columns switch: that draws a rule
+   between every pair of columns, this marks one structural edge, the same way
+   the freeze line draws whether or not grid lines are on.
+
+   Painted as a background-image because the other two channels are spoken for:
+   the transparent border IS the gutter, and the frozen cells set an inset
+   box-shadow inline for the freeze line. Two layers - the vertical rule on the
+   gutter's edge, and the row line across it. That second one is not decoration:
+   the cell's 1px border-bottom meets the 48px border-left at a mitred corner,
+   so across the gutter the row line is a sliver tapering from nothing to 1px,
+   which antialiases into a fade. A solid line under it fills the wedge. */
+.fr-report--rownum thead tr[data-grid-head-row] th:first-child:not([colspan]),
+.fr-report--rownum tbody tr > td:first-child:not([colspan]) {
+  background-image: linear-gradient(hsl(var(--border)), hsl(var(--border))), linear-gradient(hsl(var(--border)), hsl(var(--border)));
+  background-repeat: no-repeat;
+  background-size: 1px 100%, var(--fr-rownum-w) 1px;
+  background-position: calc(var(--fr-rownum-w) - 1px) 0, 0 100%;
+  /* Measured from the BORDER box, because the gutter is the border. The
+     default origin is the padding box, which starts 48px in, so the rule would
+     paint at 48 + 47 = 95px: in the middle of the first column's text and
+     through the tree's indent guides. */
+  background-origin: border-box;
+}
+
+/* ── Pin group headings ────────────────────────────────────────────────────
+   Halfway down a long category the band scrolls away and nothing says which
+   category you are in. Switched on, the outermost band sticks directly under
+   the column headings while its own rows pass beneath it.
+
+   This module already draws that, and draws more of it than the report tables
+   do: the band is a real account row, only the frontmost one carries the drop
+   shadow, and each category stacks its own out of the way. So the switch turns
+   THAT on instead of a second implementation - `.coa-frozen-first.fr-report--pingroups
+   tr.coa-cat-sticky td` above, and the list view's inline offsets, which the
+   table withholds unless the switch is on. Adding the report rule here as well
+   would have given a pinned heading two grounds and two z-indexes.
+
+   Depth 0 only, the same as over there: it is the band you lose track of, and
+   it is the only one that already paints an opaque ground, which a stuck row
+   must have or the figures slide under the words. */
+
+/* ── Truncate long text ────────────────────────────────────────────────────
+   Off, text wraps inside its column and the row grows. On, every cell and
+   heading clips at its own column edge and ends in an ellipsis, so every row is
+   one line tall; how much shows is the column's width, which is what dragging a
+   column edge is for. */
+.fr-report--truncate td:not([data-actions-cell]),
+.fr-report--truncate th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The ellipsis has to land on the element holding the words. A name cell is
+   `td > span.flex > span`, with the text a flex item beside the tree disc, and
+   an ellipsis on the td alone clips that item hard with no dots. So the wrapper
+   may shrink, and the text item itself clips and ends the line. */
+.fr-report--truncate td:not([data-actions-cell]) > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fr-report--truncate td:not([data-actions-cell]) > * > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── The toolbar buttons ───────────────────────────────────────────────────
+   !important because every one of these buttons sets its resting background
+   inline, so a plain hover rule never reaches it. Not while pressed or open:
+   that state paints its own fill, and a hover on top of it read as a release. */
+.fr-tool-btn {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.fr-tool-btn:hover:not([data-active="true"]) {
+  background-color: color-mix(in srgb, hsl(var(--muted)) 40%, hsl(var(--background))) !important;
+}
+/* Its icons in the Insights button's icon grey (text-muted-foreground/80), so
+   the toolbar's buttons read as one set. The text stays dark (TOOL_BTN). */
+.fr-tool-btn > svg {
+  color: hsl(var(--muted-foreground) / 0.8);
+}
+
+/* A header's action hint, lifted while the pointer is anywhere in its column -
+   see lib/columnHoverHint.ts. */
+th[data-col-hover] .coa-col-hint { opacity: 1; }
+
+/* ─── Currency & Exchange extras ─── */
 /* ─── Utility: hide scrollbar ─── */
 .scrollbar-hide {
   -ms-overflow-style: none;
@@ -245,11 +1204,6 @@ input[type="number"] {
 .animate-coming-soon-orbit { animation: comingSoonOrbit 8s linear infinite; }
 
 /* ─── Pair converter — subtle motion on amount changes & swap toggle ─── */
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(3px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-in { animation: fade-in 240ms cubic-bezier(0.16, 1, 0.3, 1); }
 
 @keyframes amount-flip {
   0%   { opacity: 0; transform: translateY(-5px) scale(0.96); }

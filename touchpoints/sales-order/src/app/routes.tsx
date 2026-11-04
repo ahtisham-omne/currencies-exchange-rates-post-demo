@@ -15,4 +15,4 @@ export const router = createBrowserRouter([
       { path: "*", Component: SalesHomePage },
     ],
   },
-]);
+], { basename: import.meta.env.BASE_URL });

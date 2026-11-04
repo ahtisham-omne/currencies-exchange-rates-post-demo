@@ -2,7 +2,6 @@
 import { useNavigate } from "react-router-dom";
 import {
   Coins,
-  ArrowLeftRight,
   BookOpen,
   Receipt,
   ArrowRight,
@@ -23,21 +22,12 @@ interface ModuleCard {
 
 const modules: ModuleCard[] = [
   {
-    title: "Currency Library",
-    description: "Manage currencies available across the system.",
+    title: "Currency & Exchange Rates",
+    description: "Manage currencies and the exchange rates used to convert between them.",
     icon: Coins,
     iconColor: "#0A77FF",
     iconBg: "#EDF4FF",
     path: "/accounting/currencies",
-    enabled: true,
-  },
-  {
-    title: "Exchange Rates",
-    description: "Configure exchange rate types and rates.",
-    icon: ArrowLeftRight,
-    iconColor: "#059669",
-    iconBg: "#ECFDF5",
-    path: "/accounting/exchange-rates",
     enabled: true,
   },
   {

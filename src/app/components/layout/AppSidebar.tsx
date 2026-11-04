@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import type { ComponentType, MouseEvent as ReactMouseEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import logoWordmark from "@/assets/2d714e5c28dc2bd9f7623aa6a3775402653c048e.png";
-import logoIcon from "@/assets/62fad9647d1ac360c4b31106f9625b8201efb089.png";
+import logoIcon from "@/assets/omne-mark.png";
 import {
   ChevronDown,
   ChevronsLeft,
@@ -25,6 +25,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip";
 interface NavChild {
   label: string;
   path: string;
+  /** Other path prefixes that also mark this link active (one page spanning several paths). */
+  also?: string[];
 }
 
 interface NavItem {
@@ -35,24 +37,46 @@ interface NavItem {
   children?: NavChild[];
 }
 
+/* Modules other than Accounting are touchpoint apps mounted at these paths
+   (see src/app/touchpoints.ts). */
 const navItems: NavItem[] = [
   {
     label: "Items & Inventory",
     icon: Boxes,
-    path: "/items",
-    disabled: true,
+    path: "/inventory",
+    children: [
+      { label: "Overview", path: "/inventory/dashboard" },
+      { label: "Items Library", path: "/inventory/items" },
+      { label: "Qualified Vendors", path: "/inventory/vendors" },
+      { label: "Sales Overview", path: "/inventory/sales" },
+    ],
   },
   {
     label: "Partners Management",
     icon: Handshake,
     path: "/partners",
-    disabled: true,
+    children: [
+      { label: "Overview", path: "/partners" },
+      { label: "Partners", path: "/vendors" },
+      { label: "Partner Groups", path: "/partners/groups" },
+      { label: "Contacts Directory", path: "/partners/contacts" },
+      { label: "Credit Management", path: "/partners/credit" },
+      { label: "Carrier Management", path: "/partners/carriers" },
+      { label: "Partner Locations", path: "/partners/locations" },
+      { label: "Qualified Vendors", path: "/partners/qualified-vendors" },
+      { label: "Reports & Analytics", path: "/partners/reports" },
+    ],
   },
   {
     label: "Supply Chain Management",
     icon: Truck,
     path: "/supply-chain",
-    disabled: true,
+    children: [
+      { label: "Overview", path: "/supply-chain" },
+      { label: "Purchase Orders", path: "/supply-chain/purchase-orders" },
+      { label: "Receiving Docs", path: "/supply-chain/receiving-documents" },
+      { label: "Emails", path: "/supply-chain/emails" },
+    ],
   },
   {
     label: "Production & Planning",
@@ -64,7 +88,11 @@ const navItems: NavItem[] = [
     label: "Sales",
     icon: ShoppingCart,
     path: "/sales",
-    disabled: true,
+    children: [
+      { label: "Overview", path: "/sales" },
+      { label: "Quotes", path: "/sales/quotes" },
+      { label: "Sales Orders", path: "/sales/sales-orders" },
+    ],
   },
   {
     label: "Accounting & Finance",
@@ -72,8 +100,8 @@ const navItems: NavItem[] = [
     path: "/accounting",
     children: [
       { label: "Overview", path: "/accounting" },
-      { label: "Currency Library", path: "/accounting/currencies" },
-      { label: "Exchange Rates", path: "/accounting/exchange-rates" },
+      { label: "Currency & Exchange Rates", path: "/accounting/currencies", also: ["/accounting/exchange-rates"] },
+      { label: "Vendor Invoices", path: "/accounting/vendor-invoicing" },
     ],
   },
   {
@@ -96,6 +124,27 @@ const MAX_WIDTH = 420;
 const DEFAULT_WIDTH = 272;
 const STORAGE_KEY_COLLAPSED = "omnesoft:sidebar-collapsed";
 const STORAGE_KEY_WIDTH = "omnesoft:sidebar-width";
+
+function isPathInItem(pathname: string, item: NavItem) {
+  if (item.path === "/partners") {
+    return (
+      pathname === "/partners" ||
+      pathname.startsWith("/partners/") ||
+      pathname === "/vendors" ||
+      pathname.startsWith("/vendors/")
+    );
+  }
+  return pathname === item.path || pathname.startsWith(item.path + "/");
+}
+
+function isPathInAlso(pathname: string, child: NavChild) {
+  return !!child.also?.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
+
+/* A child is matched exactly when a sibling lives under its path (e.g. Overview). */
+function isEndLink(item: NavItem, child: NavChild) {
+  return item.children!.some((c) => c.path.startsWith(child.path + "/"));
+}
 
 function readStoredBoolean(key: string, fallback: boolean): boolean {
   try {
@@ -161,26 +210,15 @@ export function AppSidebar() {
     );
   };
 
-  const isItemActive = (item: NavItem) => {
-    if (item.path === "/partners") {
-      return (
-        location.pathname === "/partners" ||
-        location.pathname.startsWith("/partners/") ||
-        location.pathname === "/vendors" ||
-        location.pathname.startsWith("/vendors/")
-      );
+  const isItemActive = (item: NavItem) => isPathInItem(location.pathname, item);
+
+  /* Expand the module you're in, including after cross-module links. */
+  useEffect(() => {
+    const active = navItems.find((item) => item.children && isPathInItem(location.pathname, item));
+    if (active) {
+      setExpandedItems((prev) => (prev.includes(active.label) ? prev : [...prev, active.label]));
     }
-    if (item.path === "/accounting") {
-      return (
-        location.pathname === "/accounting" ||
-        location.pathname.startsWith("/accounting/")
-      );
-    }
-    return (
-      location.pathname === item.path ||
-      location.pathname.startsWith(item.path + "/")
-    );
-  };
+  }, [location.pathname]);
 
   /* ─── Resize ─── */
   const startResize = useCallback(
@@ -331,23 +369,24 @@ export function AppSidebar() {
                           <NavLink
                             key={child.path}
                             to={child.path}
-                            end={
-                              child.path === "/vendors" ||
-                              child.path === "/partners"
-                            }
-                            className={({ isActive: linkActive }) =>
-                              `block px-2.5 py-1 rounded-md text-[13px] transition-all duration-150 ${
+                            end={isEndLink(item, child)}
+                            className={({ isActive }) => {
+                              const linkActive = isActive || isPathInAlso(location.pathname, child);
+                              return `block px-2.5 py-1 rounded-md text-[13px] transition-all duration-150 ${
                                 linkActive
                                   ? "text-[#0A77FF]"
                                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                              }`
-                            }
-                            style={({ isActive: linkActive }) => ({
-                              fontWeight: linkActive ? 500 : 400,
-                              backgroundColor: linkActive
-                                ? "rgba(10, 119, 255, 0.05)"
-                                : undefined,
-                            })}
+                              }`;
+                            }}
+                            style={({ isActive }) => {
+                              const linkActive = isActive || isPathInAlso(location.pathname, child);
+                              return {
+                                fontWeight: linkActive ? 500 : 400,
+                                backgroundColor: linkActive
+                                  ? "rgba(10, 119, 255, 0.05)"
+                                  : undefined,
+                              };
+                            }}
                           >
                             {child.label}
                           </NavLink>
@@ -456,7 +495,7 @@ export function AppSidebar() {
                 className="w-9 h-9 rounded-lg flex items-center justify-center transition-all hover:ring-2 hover:ring-[#0A77FF]/20"
                 aria-label="Expand sidebar"
               >
-                <img src={logoIcon} alt="Omnesoft" className="w-7 h-7" />
+                <img src={logoIcon} alt="Omnesoft" className="w-7 h-7 object-contain" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right" sideOffset={8}>

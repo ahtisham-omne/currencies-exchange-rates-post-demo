@@ -79,4 +79,4 @@ export const router = createBrowserRouter([
     path: "/docs/business-logic",
     Component: BusinessLogicDoc,
   },
-]);
+], { basename: import.meta.env.BASE_URL });

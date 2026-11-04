@@ -2,8 +2,18 @@ import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Search } from "lucide-react";
 import { SOStoreProvider } from "./store";
 import { ToastProvider } from "./ui/Toast";
-import { AppSidebar } from "./AppSidebar";
+import { AppSidebar, PersonaToggle } from "./AppSidebar";
 import { PersonaProvider } from "./PersonaContext";
+
+/* Inside the Currency & Exchange shell, the shell's sidebar replaces this one
+   and the persona toggle moves into the header. */
+const embedded = (() => {
+  try {
+    return window.self !== window.top && "__OMNE_SHELL__" in window.parent;
+  } catch {
+    return false;
+  }
+})();
 
 /* Build breadcrumb segments from current path */
 function useBreadcrumbs() {
@@ -35,7 +45,7 @@ export function AppLayout() {
     <PersonaProvider>
     <div className="flex h-screen w-full bg-background compact-module overflow-hidden">
       {/* Left Sidebar — Partner-style collapsible nav */}
-      <AppSidebar />
+      {!embedded && <AppSidebar />}
 
       {/* Right side: header + content */}
       <div className="flex-1 flex flex-col min-w-0 h-screen">
@@ -64,6 +74,7 @@ export function AppLayout() {
             }).flat().filter(Boolean)}
           </div>
           <div className="flex items-center gap-3.5">
+            {embedded && <PersonaToggle className="w-[180px]" />}
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-secondary border border-border rounded-md text-foreground/35 cursor-pointer hover:border-foreground/20 transition-colors" style={{ fontSize: "var(--text-caption)" }}>
               <Search className="w-3 h-3" />
               <span>Search</span>

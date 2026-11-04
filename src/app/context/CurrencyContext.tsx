@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react";
 import { SEED_CURRENCIES, type Currency, type AuditLogEntry, hasOpenDocuments } from "../data/currencies";
 
 interface CurrencyContextType {
@@ -12,103 +12,66 @@ interface CurrencyContextType {
 
 const CurrencyContext = createContext<CurrencyContextType | null>(null);
 
+const ACTOR = "Ahtisham Ahmad";
+
+/** A status change and its audit entry, written together. Only a currency whose
+ *  status actually changes is touched, so the audit log never records a change
+ *  that did not happen. */
+function withStatus(c: Currency, status: Currency["status"], entry: AuditLogEntry): Currency {
+  if (c.status === status) return c;
+  return { ...c, status, auditLog: [entry, ...c.auditLog] };
+}
+
 export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [currencies, setCurrencies] = useState<Currency[]>(() =>
     [...SEED_CURRENCIES].sort((a, b) => a.code.localeCompare(b.code))
   );
+  // The latest list, so the bulk actions decide what changes from what is on
+  // screen and report counts computed outside the state updater.
+  const latest = useRef(currencies);
+  latest.current = currencies;
 
   const getCurrency = useCallback(
     (code: string) => currencies.find((c) => c.code === code),
     [currencies]
   );
 
-  const addAuditEntry = (code: string, entry: AuditLogEntry) => {
-    setCurrencies((prev) =>
-      prev.map((c) =>
-        c.code === code ? { ...c, auditLog: [entry, ...c.auditLog] } : c
-      )
-    );
+  const setStatus = (codes: Set<string>, status: Currency["status"], entry: AuditLogEntry) => {
+    if (!codes.size) return;
+    setCurrencies((prev) => prev.map((c) => (codes.has(c.code) ? withStatus(c, status, entry) : c)));
   };
 
-  const activateCurrency = useCallback((code: string, by = "Ahtisham Ahmad") => {
-    const now = new Date().toISOString();
-    setCurrencies((prev) =>
-      prev.map((c) =>
-        c.code === code ? { ...c, status: "active" } : c
-      )
-    );
-    addAuditEntry(code, { dateTime: now, action: "Activated", changedBy: by, reason: "Manually activated" });
+  const activateCurrency = useCallback((code: string, by = ACTOR) => {
+    const cur = latest.current.find((c) => c.code === code);
+    if (!cur || cur.status === "active") return;
+    setStatus(new Set([code]), "active", { dateTime: new Date().toISOString(), action: "Activated", changedBy: by, reason: "Manually activated" });
   }, []);
 
-  const deactivateCurrency = useCallback((code: string, by = "Ahtisham Ahmad", reason = "Manually deactivated") => {
-    const now = new Date().toISOString();
-    setCurrencies((prev) =>
-      prev.map((c) =>
-        c.code === code ? { ...c, status: "inactive" } : c
-      )
-    );
-    addAuditEntry(code, { dateTime: now, action: "Deactivated", changedBy: by, reason });
+  const deactivateCurrency = useCallback((code: string, by = ACTOR, reason = "Manually deactivated") => {
+    const cur = latest.current.find((c) => c.code === code);
+    if (!cur || cur.status === "inactive") return;
+    setStatus(new Set([code]), "inactive", { dateTime: new Date().toISOString(), action: "Deactivated", changedBy: by, reason });
   }, []);
 
   const bulkActivate = useCallback((codes: string[]) => {
-    let activated = 0;
-    let alreadyActive = 0;
-    setCurrencies((prev) =>
-      prev.map((c) => {
-        if (codes.includes(c.code)) {
-          if (c.status === "inactive") {
-            activated++;
-            return { ...c, status: "active" };
-          } else {
-            alreadyActive++;
-          }
-        }
-        return c;
-      })
-    );
-    const now = new Date().toISOString();
-    codes.forEach((code) => {
-      addAuditEntry(code, { dateTime: now, action: "Activated", changedBy: "Ahtisham Ahmad", reason: "Bulk activation" });
+    const picked = latest.current.filter((c) => codes.includes(c.code));
+    const toActivate = picked.filter((c) => c.status === "inactive");
+    setStatus(new Set(toActivate.map((c) => c.code)), "active", {
+      dateTime: new Date().toISOString(), action: "Activated", changedBy: ACTOR, reason: "Bulk activation",
     });
-    return { activated, alreadyActive };
+    return { activated: toActivate.length, alreadyActive: picked.length - toActivate.length };
   }, []);
 
   const bulkDeactivate = useCallback((codes: string[]) => {
-    let deactivated = 0;
-    let skippedBase = 0;
-    const skippedOpenDocs: string[] = [];
-
-    // Pre-check which currencies have open documents
-    const currMap = new Map(currencies.map(c => [c.code, c]));
-
-    setCurrencies((prev) =>
-      prev.map((c) => {
-        if (codes.includes(c.code)) {
-          if (c.isBaseCurrency) {
-            skippedBase++;
-            return c;
-          }
-          if (hasOpenDocuments(c)) {
-            skippedOpenDocs.push(c.code);
-            return c;
-          }
-          if (c.status === "active") {
-            deactivated++;
-            return { ...c, status: "inactive" };
-          }
-        }
-        return c;
-      })
-    );
-    const now = new Date().toISOString();
-    codes.forEach((code) => {
-      const cur = currMap.get(code);
-      if (cur && !cur.isBaseCurrency && !hasOpenDocuments(cur) && cur.status === "active") {
-        addAuditEntry(code, { dateTime: now, action: "Deactivated", changedBy: "Ahtisham Ahmad", reason: "Bulk deactivation" });
-      }
+    const picked = latest.current.filter((c) => codes.includes(c.code));
+    const skippedBase = picked.filter((c) => c.isBaseCurrency).length;
+    const skippedOpenDocs = picked.filter((c) => !c.isBaseCurrency && hasOpenDocuments(c)).map((c) => c.code);
+    const toDeactivate = picked.filter((c) => !c.isBaseCurrency && !hasOpenDocuments(c) && c.status === "active");
+    setStatus(new Set(toDeactivate.map((c) => c.code)), "inactive", {
+      dateTime: new Date().toISOString(), action: "Deactivated", changedBy: ACTOR, reason: "Bulk deactivation",
     });
-    return { deactivated, skippedBase, skippedOpenDocs };
-  }, [currencies]);
+    return { deactivated: toDeactivate.length, skippedBase, skippedOpenDocs };
+  }, []);
 
   return (
     <CurrencyContext.Provider value={{ currencies, getCurrency, activateCurrency, deactivateCurrency, bulkActivate, bulkDeactivate }}>
