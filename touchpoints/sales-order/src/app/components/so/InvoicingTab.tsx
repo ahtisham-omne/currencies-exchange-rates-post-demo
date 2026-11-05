@@ -4,7 +4,7 @@ import {
   FileText, Plus, Check, AlertTriangle, Upload,
   X, DollarSign, Paperclip, Copy, Receipt, CreditCard, Pencil, Banknote,
   Calendar, CalendarPlus, ArrowUpRight, Clock, ExternalLink, History,
-  Ban, Printer, Download,
+  Ban, Printer, Download, Info,
 } from "lucide-react";
 import { HighlightText, TabSearchBar, FilterPills } from "./SearchHighlight";
 import { ThTooltip, Tooltip } from "./Tooltip";
@@ -14,6 +14,7 @@ import { TabHeader } from "@/app/components/shared/TabHeader";
 import { ComingSoonBanner } from "@/app/components/shared/ComingSoonBanner";
 import { EmptyPlaceholder } from "@/app/components/shared/EmptyPlaceholder";
 import type { SalesOrder } from "./types";
+import { DocMoney } from "@/app/components/currency/DocCurrency";
 
 /* ═══ Invoice types ═══ */
 export type InvoiceStatus = "Paid" | "Pending" | "Overdue" | "Draft" | "Partially Paid" | "Voided";
@@ -1585,13 +1586,19 @@ export function InvoiceSidebarSummary({ so, onOpenInvoicing }: { so: SalesOrder;
       <div className="flex items-center justify-between">
         <p style={{ fontSize: 11, fontWeight: 500, color: "#64748B", fontFamily: "Inter, system-ui, sans-serif" }}>Invoiced</p>
         <p className="tabular-nums" style={{ fontSize: 12, fontWeight: 600, color: "#334155", fontFamily: "Inter, system-ui, sans-serif" }}>
-          ${totalInvoiced.toLocaleString()}
+          {/* In the order's currency (spec 4.4), with its rate on hover. */}
+          <DocMoney value={totalInvoiced} />
         </p>
       </div>
       <div className="flex items-center justify-between">
-        <p style={{ fontSize: 11, fontWeight: 500, color: "#64748B", fontFamily: "Inter, system-ui, sans-serif" }}>Paid</p>
+        <p className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 500, color: "#64748B", fontFamily: "Inter, system-ui, sans-serif" }}>
+          Paid
+          <Tooltip text={`Received in ${so.currency}. A payment settled at a rate other than the order's is where realized FX gain or loss comes from; Customer Payments books it.`} position="top">
+            <Info className="w-3 h-3 text-slate-300 cursor-help" />
+          </Tooltip>
+        </p>
         <p className="tabular-nums text-success" style={{ fontSize: 12, fontWeight: 500, fontFamily: "Inter, system-ui, sans-serif" }}>
-          ${totalPaid.toLocaleString()}
+          <DocMoney value={totalPaid} />
         </p>
       </div>
       <div className="flex items-center justify-between">
@@ -1604,7 +1611,7 @@ export function InvoiceSidebarSummary({ so, onOpenInvoicing }: { so: SalesOrder;
             fontFamily: "Inter, system-ui, sans-serif",
           }}
         >
-          ${totalPending.toLocaleString()}
+          <DocMoney value={totalPending} />
         </p>
       </div>
       {overdueCount > 0 && (

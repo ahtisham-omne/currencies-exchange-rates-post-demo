@@ -12,6 +12,7 @@ import { Info } from 'lucide-react';
 import { evaluateRuleForLine } from './pricingRulesData';
 import type { PricingRulesAPI } from './usePricingRules';
 import type { AdjustmentsAPI } from './useAdjustments';
+import { useRuleMoney } from "@/app/components/currency/useRuleMoney";
 
 type Placement = 'top' | 'bottom';
 
@@ -24,6 +25,8 @@ interface PriceBreakdownHoverCardProps {
 }
 
 export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, formatCurrency, children }: PriceBreakdownHoverCardProps) {
+  /* "$" rule tiers are USD; convert into the order's currency. */
+  const ruleFactor = useRuleMoney().factor;
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number; placement: Placement } | null>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -38,7 +41,7 @@ export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, form
       if (pricingAPI.state.deactivatedRuleIds.has(rule.id)) continue;
       const activeOnThisLine = pricingAPI.state.activatedLineIdsByRule.get(rule.id)?.has(line.id) ?? false;
       if (!activeOnThisLine) continue;
-      const { applies, amount } = evaluateRuleForLine(rule, line);
+      const { applies, amount } = evaluateRuleForLine(rule, line, ruleFactor);
       if (!applies || amount === 0) continue;
       ruleRows.push({ name: rule.name, amount, type: rule.type });
     }

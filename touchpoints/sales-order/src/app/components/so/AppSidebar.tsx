@@ -103,10 +103,43 @@ function readStoredNumber(key: string, fallback: number, min: number, max: numbe
   return fallback;
 }
 
+/** Sales View / Approver View. In the sidebar, or in the header when the
+ *  Currency & Exchange shell draws the sidebar (AppLayout). */
+export function PersonaToggle({ width }: { width?: number }) {
+  const { persona, setPersona } = usePersona();
+  return (
+    <div className="flex items-center rounded-lg bg-secondary/60 p-0.5" style={{ height: 32, width }}>
+      {([
+        { key: "creator" as Persona, label: "Sales View" },
+        { key: "reviewer" as Persona, label: "Approver View" },
+      ]).map(p => {
+        const isActive = persona === p.key;
+        return (
+          <button
+            key={p.key}
+            onClick={() => setPersona(p.key)}
+            className="flex-1 flex items-center justify-center rounded-md transition-all text-[11px]"
+            style={{
+              height: 26,
+              fontWeight: isActive ? 600 : 400,
+              backgroundColor: isActive ? "#FFFFFF" : "transparent",
+              color: isActive ? "#0A77FF" : "#64748B",
+              boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+              cursor: "pointer",
+              border: "none",
+            }}
+          >
+            {p.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { persona, setPersona } = usePersona();
   const [expandedItems, setExpandedItems] = useState<string[]>(["Sales"]);
   /* Default expanded (matches Partner Management's open-by-default
      state). The collapsed flag is still persisted, so users who pin
@@ -323,32 +356,7 @@ export function AppSidebar() {
         <div className="border-t border-border shrink-0">
           {/* Persona toggle */}
           <div className="px-2 pt-2 pb-1">
-            <div className="flex items-center rounded-lg bg-secondary/60 p-0.5" style={{ height: 32 }}>
-              {([
-                { key: "creator" as Persona, label: "Sales View" },
-                { key: "reviewer" as Persona, label: "Approver View" },
-              ]).map(p => {
-                const isActive = persona === p.key;
-                return (
-                  <button
-                    key={p.key}
-                    onClick={() => setPersona(p.key)}
-                    className="flex-1 flex items-center justify-center rounded-md transition-all text-[11px]"
-                    style={{
-                      height: 26,
-                      fontWeight: isActive ? 600 : 400,
-                      backgroundColor: isActive ? "#FFFFFF" : "transparent",
-                      color: isActive ? "#0A77FF" : "#64748B",
-                      boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                      cursor: "pointer",
-                      border: "none",
-                    }}
-                  >
-                    {p.label}
-                  </button>
-                );
-              })}
-            </div>
+            <PersonaToggle />
           </div>
           <div className="px-2 py-1.5 flex items-center gap-1">
             <button className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" style={{ fontWeight: 400 }}>

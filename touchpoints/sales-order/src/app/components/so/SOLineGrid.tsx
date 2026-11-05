@@ -18,6 +18,9 @@ import { toast } from "sonner";
 import { EmptyPlaceholder } from "@/app/components/shared/EmptyPlaceholder";
 import type { SalesOrder, SOLine } from "./types";
 import { Button } from "./ui/Button";
+import { itemListPrice } from "./soMoney";
+import { useDocCurrency, useDocMoney } from "@/app/components/currency/docCurrencyContext";
+import { formatAmount, moneyPrefix } from "@/app/currency/money";
 import { getLineItemImage } from "./lineItemImage";
 import "./line-table-responsive.css";
 
@@ -87,19 +90,11 @@ export function uomScaleFactor(oldCode: string, newCode: string): number {
   return newMult / oldMult;
 }
 
-const DOLLAR = "\u0024";
-
 function formatCompactValue(value: number) {
   // Always return the full grouped number (e.g. "1,400,000") so users can
   // read every digit. CSS truncation + tooltip handles cells that get
   // genuinely too wide (≥100s of billions).
   return value.toLocaleString();
-}
-
-function formatCurrencyValue(value: number, _compact = false) {
-  // Always render full currency (e.g. "$1,400,000.00"). The legacy
-  // `compact` flag is ignored; CSS truncation + tooltip handles overflow.
-  return `${DOLLAR}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /* ═══ PPU capsule — matches Quote module: $ + price in outlined capsule, unit label BELOW ═══ */
@@ -126,6 +121,10 @@ function PriceCapsule({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(price));
+  /* In the order's currency (spec 4.3): its symbol or code, and its minor unit. */
+  const { currency } = useDocCurrency();
+  const money = useDocMoney();
+  const prefix = moneyPrefix(currency).trim();
   const [showPriceConfirm, setShowPriceConfirm] = useState(false);
   const [pendingPrice, setPendingPrice] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -151,7 +150,7 @@ function PriceCapsule({
     }
     setEditing(false);
   };
-  const formatted = formatCurrencyValue(price, true);
+  const formatted = money(price);
   const isCan = !!cancelled;
   const uomLabel = UOM_OPTIONS.find(u => u.code === unit)?.label || unit;
 
@@ -162,9 +161,9 @@ function PriceCapsule({
           and absolutely-positioned UOM stay in editable mode. */}
       {!editing && !editable ? (
         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 4, fontFamily: "Inter, system-ui, sans-serif" }}>
-          <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1 }}>$</span>
+          <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1 }}>{prefix}</span>
           <span className={isCan ? "line-through" : ""} style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", lineHeight: 1, whiteSpace: "nowrap" }}>
-            {price.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            {formatAmount(price, currency)}
           </span>
           <span style={{ fontSize: 11, fontWeight: 500, color: "var(--muted-foreground)", lineHeight: 1, whiteSpace: "nowrap" }}>
             {uomLabel}
@@ -179,7 +178,7 @@ function PriceCapsule({
             boxShadow: "0 0 0 2px rgba(59,130,246,0.10)",
           }}
         >
-          <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>$</span>
+          <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>{prefix}</span>
           <input ref={inputRef} type="text" inputMode="decimal" value={draft}
             onChange={e => { const v = e.target.value; if (/^[0-9]*\.?[0-9]*$/.test(v) || v === '') setDraft(v); }}
             onBlur={commit}
@@ -202,15 +201,15 @@ function PriceCapsule({
             cursor: editable ? "text" : "default", transition: "all 100ms",
           }}
           tabIndex={editable ? 0 : -1}
-          title={formatCurrencyValue(price)}
+          title={money(price)}
         >
-          <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>$</span>
+          <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>{prefix}</span>
           {/* Long values truncate with an ellipsis inside the capsule
              rather than spilling into the next column. The `title`
              attribute on the parent button surfaces the full value on
              hover. */}
           <span className={isCan ? "line-through" : ""} style={{ fontSize: 13, fontWeight: 600, color: "#1F2937", lineHeight: 1, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>
-            {price.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            {formatAmount(price, currency)}
           </span>
         </button>
       )}
@@ -416,6 +415,7 @@ function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds
   adjustmentsAPI?: import('./useAdjustments').AdjustmentsAPI;
   isNewlyAdded?: boolean;
 }) {
+  const formatCurrencyValue = useDocMoney();
   const isExp = expandedRows.has(line.id);
   const isCan = line.cancelled;
   const isSel = selectedLineIds.has(line.id);
@@ -591,7 +591,7 @@ function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds
                         <span>On-Hand: <b>{previewTokens.onHand.toLocaleString()}</b></span>
                       </div>
                       <span className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>
-                        ${previewTokens.unitPrice.toFixed(2)}
+                        {itemListPrice(previewTokens.unitPrice)}
                         <span className="text-slate-400 ml-1" style={{ fontWeight: 400 }}>/ unit</span>
                       </span>
                     </div>
@@ -815,8 +815,8 @@ export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDel
 
   // Item peek modal — opens from any line thumbnail in the grid.
   const { open: openItemQuickView, modal: itemQuickViewModal } = useItemQuickView();
+  const money = useDocMoney();
   const previewLine = (line: SOLine) => {
-    const fmtUSD = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     openItemQuickView({
       code: line.itemCode,
       description: line.itemName,
@@ -824,7 +824,7 @@ export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDel
       uom: line.uom,
       onHand: line.allocatedQty,
       metrics: [
-        { label: "Unit Price", value: fmtUSD(line.unitPrice), caption: "Unit Price" },
+        { label: "Unit Price", value: money(line.unitPrice), caption: "Unit Price" },
         { label: "Ordered", value: `${line.orderedQty} ${line.uom}`, caption: "Ordered" },
         { label: "Allocated", value: `${line.allocatedQty} ${line.uom}`, caption: "Allocated" },
         { label: "Shipped", value: `${line.shippedQty} ${line.uom}`, caption: "Shipped" },

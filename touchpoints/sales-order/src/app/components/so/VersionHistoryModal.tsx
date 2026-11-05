@@ -7,6 +7,7 @@ import { ConfirmDiscardModal } from '../shared/ConfirmDiscardModal';
 import { SOStatusBadge } from './StatusBadge';
 import { StateTransitionOverlay } from '@/app/components/shared/StateTransitionOverlay';
 import type { SOStatus } from './types';
+import { useDesignMoney } from "@/app/components/currency/docCurrencyContext";
 
 /* Right-pane "Order Status" badge mapping.
    The version's internal status (draft / pending-review / cleared /
@@ -132,8 +133,8 @@ const changeKindConfig: Record<'Added' | 'Removed' | 'Changed', { icon: React.El
   Changed: { icon: Pencil, color: '#D97706', bg: '#FEF3C7' },
 };
 
-const formatCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+/* The version history here is the design's mock, written in USD; it is
+   restated in the order's currency (useDesignMoney) inside the components. */
 
 const versionStatusConfig: Record<SOVersionStatus, { label: string; bg: string; color: string; icon: React.ElementType }> = {
   draft: { label: 'Draft', bg: '#F3F4F6', color: '#374151', icon: FileText },
@@ -247,6 +248,7 @@ function generateSOVersions(): SOVersionEntry[] {
 }
 
 export function VersionHistoryModal({ soNumber, currentVersion, onClose, onRevert }: VersionHistoryModalProps) {
+  const formatCurrency = useDesignMoney().whole;
   /* Remap the rich `generateSOVersions()` templates onto the SO's
      actual version count so the modal's row list matches what the
      SO listing badge ("v4") shows for this record. Without this
@@ -660,6 +662,7 @@ function SingleVersionView({ version, currentVersionNum, latestVersionNum, lastA
   getUserInitials: (name: string) => string;
   onRevert: (version: number) => void;
 }) {
+  const design = useDesignMoney();
   // vsCfg kept on the props list for backward compatibility with
   // other callers; the right-pane pill now uses the listing's
   // SOStatusBadge so the chrome matches the row the user clicked.
@@ -862,7 +865,7 @@ function SingleVersionView({ version, currentVersionNum, latestVersionNum, lastA
                     {change.itemRef && <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748B' }}>on {change.itemRef}</span>}
                   </div>
                   {change.subjectDetail && <div style={{ fontSize: '12px', color: '#6B7280', lineHeight: '1.3', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{change.subjectDetail}</div>}
-                  {change.detail && <div style={{ fontSize: '12px', color: '#9CA3AF', lineHeight: '1.3', marginTop: '2px' }}>{change.detail}</div>}
+                  {change.detail && <div style={{ fontSize: '12px', color: '#9CA3AF', lineHeight: '1.3', marginTop: '2px' }}>{design.text(change.detail)}</div>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                   <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: userColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 700, color: '#FFFFFF' }}>{userInitials}</div>
@@ -884,6 +887,7 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeKindConfig: ctCfg, ver
   changeKindConfig: Record<"Added" | "Removed" | "Changed", { icon: React.ElementType; color: string; bg: string }>;
   versionStatusConfig: Record<SOVersionStatus, { label: string; bg: string; color: string; icon: React.ElementType }>;
 }) {
+  const design = useDesignMoney();
   const v1Map = new Map(v1.snapshot.lineItems.map(li => [li.id, li]));
   const v2Map = new Map(v2.snapshot.lineItems.map(li => [li.id, li]));
   const allIds = Array.from(new Set([...v1.snapshot.lineItems.map(li => li.id), ...v2.snapshot.lineItems.map(li => li.id)]));
@@ -1090,7 +1094,7 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeKindConfig: ctCfg, ver
                   {change.itemRef && <span style={{ fontWeight: 500, color: '#6B7280' }}>on {change.itemRef}</span>}
                 </div>
                 {change.subjectDetail && <div style={{ fontSize: '10px', color: '#6B7280', lineHeight: '1.3', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{change.subjectDetail}</div>}
-                {change.detail && <div style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1.3', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{change.detail}</div>}
+                {change.detail && <div style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1.3', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{design.text(change.detail)}</div>}
               </div>
               <span style={{ fontSize: '10px', color: '#9CA3AF', flexShrink: 0, marginTop: '3px', whiteSpace: 'nowrap' as const }}>{change.timestamp}</span>
             </div>

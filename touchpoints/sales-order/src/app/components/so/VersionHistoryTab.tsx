@@ -19,6 +19,9 @@ import { ConfirmDiscardModal } from '@/app/components/shared/ConfirmDiscardModal
 import { compareNumbers, compareValueText, compareValuesDiffer, isNumericCompare, type CompareField } from '@/app/components/shared/versionCompare';
 import type { SalesOrder } from './types';
 import { getWarehouseNamesForSelection } from './WarehouseSelectionModal';
+import { useDocWhole } from "@/app/components/currency/docCurrencyContext";
+import { soFx } from "@/app/currency/soFx";
+import { restateDesign, restateDesignText } from "./soMoney";
 
 // ── Types ──────────────────────────────────────────────────────────
 type VersionStatus = 'draft' | 'pending-review' | 'cleared' | 'shipped';
@@ -79,6 +82,11 @@ function getPickupWarehouseNames(so: SalesOrder): string[] {
 }
 
 function generateMockVersions(so?: SalesOrder): Version[] {
+  /* The mock history's fixed figures are the design's USD: restated in the
+     order's currency at its rate date, like the live lines they sit beside. */
+  const fx = so ? soFx(so) : null;
+  const r = (usd: number) => (fx ? restateDesign(usd, fx.currency, fx.rateDate) : usd);
+  const t = (text: string) => (fx ? restateDesignText(text, fx.currency, fx.rateDate) : text);
   const lines = so ? so.lines.filter(l => !l.cancelled).map(l => ({
     id: l.itemCode, description: l.itemName, qty: l.orderedQty, uom: 'EA',
     unitPrice: l.unitPrice, total: l.unitPrice * l.orderedQty, thumbColor: 'var(--accent)', shippedQty: l.shippedQty,
@@ -97,10 +105,10 @@ function generateMockVersions(so?: SalesOrder): Version[] {
       clearedAt: '02/05/2026 · 10:30 AM', createdAt: '02/04/2026',
       sentBy: 'Sarah Lindquist', avatar: 'SL', avatarColor: 'var(--primary)',
       reason: 'Added emergency items per customer request. Applied volume adjustment.',
-      snapshot: { lineItemCount: lines.length + 2, grandTotal: grandTotal + 9070, rulesCount: 2, adjustmentsCount: 1, pricingRulesTotal: -8400, adjustmentsTotal: -3120, warehouse, pickupWarehouses, lineItems: [...lines, { id: '501-100-006', description: 'Linear Super-LED lightbar.', qty: 2, uom: 'EA', unitPrice: 3200, total: 6400 }, { id: '501-100-007', description: 'Auto-eject shoreline, 30A.', qty: 3, uom: 'EA', unitPrice: 890, total: 2670 }] },
+      snapshot: { lineItemCount: lines.length + 2, grandTotal: grandTotal + r(9070), rulesCount: 2, adjustmentsCount: 1, pricingRulesTotal: r(-8400), adjustmentsTotal: r(-3120), warehouse, pickupWarehouses, lineItems: [...lines, { id: '501-100-006', description: 'Linear Super-LED lightbar.', qty: 2, uom: 'EA', unitPrice: r(3200), total: r(6400) }, { id: '501-100-007', description: 'Auto-eject shoreline, 30A.', qty: 3, uom: 'EA', unitPrice: r(890), total: r(2670) }] },
       changes: [
-        { id: 'C301', type: 'line-item-added', action: 'Added', subject: '501-100-006', subjectDetail: 'Linear Super-LED lightbar.', detail: 'Qty: 2 EA · $3,200/EA', timestamp: '10:25 AM', user: 'Sarah Lindquist' },
-        { id: 'C302', type: 'line-item-added', action: 'Added', subject: '501-100-007', subjectDetail: 'Auto-eject shoreline, 30A.', detail: 'Qty: 3 EA · $890/EA', timestamp: '10:22 AM', user: 'Sarah Lindquist' },
+        { id: 'C301', type: 'line-item-added', action: 'Added', subject: '501-100-006', subjectDetail: 'Linear Super-LED lightbar.', detail: t('Qty: 2 EA · $3,200/EA'), timestamp: '10:25 AM', user: 'Sarah Lindquist' },
+        { id: 'C302', type: 'line-item-added', action: 'Added', subject: '501-100-007', subjectDetail: 'Auto-eject shoreline, 30A.', detail: t('Qty: 3 EA · $890/EA'), timestamp: '10:22 AM', user: 'Sarah Lindquist' },
         { id: 'C303', type: 'rule-applied', action: 'Added', subject: 'Pricing Rule', subjectDetail: 'Government Contract Pricing', detail: 'Eligible items flagged', timestamp: '10:18 AM', user: 'Michael Tran' },
         { id: 'C304', type: 'adjustment-applied', action: 'Added', subject: 'Adjustment', subjectDetail: 'Volume adjustment', detail: '−3% on total', timestamp: '10:15 AM', user: 'Sarah Lindquist' },
       ],
@@ -110,11 +118,11 @@ function generateMockVersions(so?: SalesOrder): Version[] {
       clearedAt: '01/28/2026 · 3:15 PM', createdAt: '01/27/2026',
       sentBy: 'Sarah Lindquist', avatar: 'SL', avatarColor: 'var(--primary)',
       reason: 'Added medical equipment per build spec. Fleet volume pricing applied.',
-      snapshot: { lineItemCount: lines.length, grandTotal, rulesCount: 1, adjustmentsCount: 0, pricingRulesTotal: -2000, adjustmentsTotal: 0, warehouse, pickupWarehouses: pickupV2, lineItems: lines },
+      snapshot: { lineItemCount: lines.length, grandTotal, rulesCount: 1, adjustmentsCount: 0, pricingRulesTotal: r(-2000), adjustmentsTotal: 0, warehouse, pickupWarehouses: pickupV2, lineItems: lines },
       changes: [
         { id: 'C201', type: 'line-item-modified', action: 'Changed', subject: 'Qty', detail: '1 → 2', itemRef: lines[0]?.id, timestamp: '3:10 PM', user: 'David Kowalski' },
-        { id: 'C202', type: 'pricing-changed', action: 'Changed', subject: 'Unit Price', detail: '$49,200 → $48,200', itemRef: lines[0]?.id, subjectDetail: 'Fleet Volume Pricing', timestamp: '3:08 PM', user: 'Sarah Lindquist' },
-        { id: 'C206', type: 'rule-applied', action: 'Added', subject: 'Pricing Rule', subjectDetail: 'Fleet Volume Pricing', detail: '−$1,000/unit on 2+ units', timestamp: '3:12 PM', user: 'Sarah Lindquist' },
+        { id: 'C202', type: 'pricing-changed', action: 'Changed', subject: 'Unit Price', detail: t('$49,200 → $48,200'), itemRef: lines[0]?.id, subjectDetail: 'Fleet Volume Pricing', timestamp: '3:08 PM', user: 'Sarah Lindquist' },
+        { id: 'C206', type: 'rule-applied', action: 'Added', subject: 'Pricing Rule', subjectDetail: 'Fleet Volume Pricing', detail: t('−$1,000/unit on 2+ units'), timestamp: '3:12 PM', user: 'Sarah Lindquist' },
         { id: 'C207', type: 'config-changed', action: 'Changed', subject: 'Payment Terms', detail: 'Net 30 → Net 45', timestamp: '2:40 PM', user: 'Sarah Lindquist' },
       ],
     },
@@ -306,7 +314,7 @@ export function VersionHistoryTab({ so, onEditAsDraft }: VersionHistoryTabProps)
     return true;
   };
 
-  const formatCurrency = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  const formatCurrency = useDocWhole();
 
   const toggleExpanded = (v: number) => {
     setExpandedVersions(prev => { const next = new Set(prev); if (next.has(v)) next.delete(v); else next.add(v); return next; });

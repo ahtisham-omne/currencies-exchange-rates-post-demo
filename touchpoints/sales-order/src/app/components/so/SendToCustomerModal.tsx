@@ -23,6 +23,7 @@ import { PrintPageCount } from "@/app/components/shared/printPages";
 import { getSOPrintAttachments } from "./AttachmentsTab";
 import { getExternalLinksList } from "@/app/data/linksRepository";
 import { FIELD_RULES } from "@/app/components/shared/fieldRequirements";
+import { formatMoney } from "@/app/currency/money";
 
 /* ── Styling tokens ── */
 const caption: React.CSSProperties = { fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" };
@@ -123,15 +124,13 @@ interface SendToCustomerModalProps {
   advancesToPendingReview?: boolean;
 }
 
-/* ── Currency formatter ── */
-function fmtCurrency(n: number): string {
-  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 /* ═══════════════════════════════════════════════
    Main Modal — multi-page PDF preview with page navigation
    ═══════════════════════════════════════════════ */
 export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClose, onSend, advancesToPendingReview = true }: SendToCustomerModalProps) {
+  /* The document is in the order's currency (spec 4.3). */
+  const fmtCurrency = (n: number) => formatMoney(n, so.currency);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   /* Which action triggered the active overlay — drives the heading

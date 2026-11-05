@@ -4313,13 +4313,13 @@ export function PricingRulesLibrary({
                               <div>
                                 <div className="flex items-center justify-between mb-1.5">
                                   <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>
-                                    {isDis ? "Discount" : "Premium"} {tier.fixRate ? "Amount" : "Rate"}
+                                    {isDis ? "Discount" : "Premium"} {tier.fixRate ? "Amount (USD)" : "Rate"}
                                   </label>
                                   <PctAmountToggle
                                     isFixed={tier.fixRate}
                                     onChange={(fixed) => updateTier(idx, { fixRate: fixed })}
                                     percentTooltip={`${isDis ? "Discount" : "Premium"} applied as a percentage of the line value.`}
-                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed dollar amount.`}
+                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in USD, the currency the rule book is written in.`}
                                   />
                                 </div>
                                 <div className="relative">
@@ -4362,10 +4362,10 @@ export function PricingRulesLibrary({
                               <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-muted">
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
-                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Min Qty" : "Min Order Value"}</label>
+                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Min Qty" : "Min Order Value (USD)"}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The smallest order quantity at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."
-                                      : "The smallest order value (in $) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
+                                      : "The smallest order value (in USD) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
@@ -4381,10 +4381,10 @@ export function PricingRulesLibrary({
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
-                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Max Qty" : "Max Order Value"}</label>
+                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Max Qty" : "Max Order Value (USD)"}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The largest order quantity this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."
-                                      : "The largest order value (in $) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
+                                      : "The largest order value (in USD) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (

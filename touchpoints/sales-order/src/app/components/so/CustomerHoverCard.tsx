@@ -7,6 +7,9 @@ import {
 import { getAvatarTint } from "./avatarTints";
 import { isSparseCustomer } from "@/app/components/shared/customerDefaults";
 import { FIELD_RULES } from "@/app/components/shared/fieldRequirements";
+import { formatCompactMoney } from "@/app/currency/money";
+import { LAST_SYNC_DAY, customerCurrency } from "@/app/currency/soFx";
+import { restateDesign } from "./soMoney";
 
 /* ─── Mock data generator (deterministic per customer name) ─── */
 function hashStr(s: string): number {
@@ -34,8 +37,11 @@ function mockCustomerData(name: string) {
   return { industry, city, street, phone, email, openOrders, totalRevenue, avgOrderValue };
 }
 
-function formatCurrency(n: number): string {
-  return n >= 1000 ? `$${(n / 1000).toFixed(0)}K` : `$${n}`;
+/* A customer's revenue is in its default currency (spec 4.3); the demo
+   figures are the design's USD, restated at the last sync's rate. */
+function formatCurrency(usd: number, customerName: string): string {
+  const code = customerCurrency(customerName);
+  return formatCompactMoney(restateDesign(usd, code, LAST_SYNC_DAY), code);
 }
 
 /* ─── KPI Card ─── */
@@ -151,8 +157,8 @@ export function CustomerHoverCard({ customerName, customerInitials, children }: 
             {!sparse && (
             <div className="px-4 pt-3 pb-2 flex gap-2">
               <KpiCard label="Open Orders" value={`${d.openOrders}`} color="#0A77FF" />
-              <KpiCard label="Revenue" value={formatCurrency(d.totalRevenue)} color="#16A34A" />
-              <KpiCard label="Avg. Order" value={formatCurrency(d.avgOrderValue)} color="#7C3AED" />
+              <KpiCard label="Revenue" value={formatCurrency(d.totalRevenue, customerName)} color="#16A34A" />
+              <KpiCard label="Avg. Order" value={formatCurrency(d.avgOrderValue, customerName)} color="#7C3AED" />
             </div>
             )}
 

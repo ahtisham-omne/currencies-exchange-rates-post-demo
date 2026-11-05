@@ -1,3 +1,5 @@
+import type { RateType } from "@/app/currency/rates";
+
 // ===== SO Types =====
 export type SOStatus =
   | "Draft"
@@ -183,7 +185,17 @@ export interface SalesOrder {
   primaryPocId?: string;
   orderDate: string;
   warehouse: string;
+  /** The order's currency (spec 4.3): the quote's when converted from one,
+   *  else the customer's default; changed from Order Summary. Every amount
+   *  on the order is in it. See src/app/currency/soFx.ts. */
   currency: string;
+  /** Base currency per one unit of `currency`, taken on the order date. */
+  exchangeRate?: number;
+  rateType?: RateType;
+  /** The day the rate is for (ISO): the order date. */
+  rateDate?: string;
+  /** A corporate rate typed on this order instead of finance's. */
+  rateEdited?: boolean;
   paymentTerms: string;
   shippingAddress: string;
   /** Bill-to address captured at creation. Optional because older
@@ -306,6 +318,9 @@ export interface LinkedTransaction {
   date: string;
   status: string;
   amount: number;
+  /** The document's currency when it is not the order's (a quote, or an
+   *  invoice raised before the order's currency was changed). */
+  currency?: string;
   createdBy: string;
   createdByInitials: string;
   /** e.g. "via SO-2026-0089" — back-reference displayed in some rows */

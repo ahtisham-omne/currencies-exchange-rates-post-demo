@@ -3,7 +3,8 @@ import { Search } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Toaster } from "sonner";
 import { SOStoreProvider } from "./store";
-import { AppSidebar } from "./AppSidebar";
+import { AppSidebar, PersonaToggle } from "./AppSidebar";
+import { embedded } from "@/embedding";
 import { PersonaProvider } from "./PersonaContext";
 import { Avatar } from "@/app/components/shared/Avatar";
 import {
@@ -93,8 +94,10 @@ export function AppLayout() {
   return (
     <PersonaProvider>
     <div className="flex h-screen w-full bg-background compact-module overflow-hidden">
-      {/* Left Sidebar — Partner-style collapsible nav */}
-      <AppSidebar />
+      {/* Left Sidebar — Partner-style collapsible nav. Inside the Currency &
+          Exchange shell, the shell's sidebar replaces it and the persona
+          toggle moves into the header. */}
+      {!embedded && <AppSidebar />}
 
       <div className="flex-1 flex flex-col min-w-0 h-screen">
         {/* Top app bar — Partner pattern: dynamic breadcrumb on the left,
@@ -144,6 +147,7 @@ export function AppLayout() {
           </Breadcrumb>
 
           <div className="flex items-center gap-3">
+            {embedded && <PersonaToggle width={200} />}
             <div className="relative hidden md:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" style={{ opacity: 0.6 }} />
               <input

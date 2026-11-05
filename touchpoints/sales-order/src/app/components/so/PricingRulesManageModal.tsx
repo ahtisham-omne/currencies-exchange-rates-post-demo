@@ -19,6 +19,8 @@ import {
 } from './pricingRulesData';
 import type { PricingRulesAPI } from './usePricingRules';
 import { InactiveItemPill } from "../shared/InactiveItemPill";
+import { useDocWhole } from "@/app/components/currency/docCurrencyContext";
+import { useRuleMoney } from "@/app/components/currency/useRuleMoney";
 
 /* The shape this modal uses for its line-item table. Built from real
    SOLine data via `buildItemsFromLines`. Replaces the old hard-coded
@@ -102,8 +104,11 @@ const LIBRARY_RULES: LibraryRule[] = [
   { id: 'early-pay', name: 'Early Payment Incentive', description: '2% discount for payment within 10 days', type: 'discount', category: 'custom', adjustmentType: 'percentage', adjustmentValue: 2 },
 ];
 
-const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+/* Amounts are in the SO's currency (useDocWhole, inside each component).
+   A "$" rule's own amount is written in USD (useRuleMoney): "$200.00 (≈ €182.73)". */
+type RuleAmount = { value: number; amountType: '%' | '$' };
+const ruleValueText = (money: ReturnType<typeof useRuleMoney>, r: RuleAmount) =>
+  money.tierText({ rate: r.value, unit: r.amountType });
 
 // ── Compact Item Row ── thumbnail + ID + description (shared mini-table style)
 function CompactItemRow({ item, checked, onToggle, showCheckbox = false, trailing }: {
@@ -208,6 +213,8 @@ interface PricingRulesManageModalProps {
 }
 
 export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, lines, pricingAPI, onRulesChange, onMaterialEvent, shippedLineIds, stageLibraryChanges = false, customerName, startEmpty }: PricingRulesManageModalProps) {
+  const fmtCurrency = useDocWhole();
+  const ruleMoney = useRuleMoney();
   /* Derive the modal's display-shaped items from real SO lines. Single
      source of truth replacing the old hard-coded LINE_ITEMS. */
   const items = useMemo(() => buildItemsFromLines(lines), [lines]);
@@ -231,7 +238,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, lin
       const amount = appliedTo.reduce((s, lineId) => {
         const ln = lines.find((l) => l.id === lineId);
         if (!ln) return s;
-        const ev = evaluateRuleForLine(cr, ln);
+        const ev = evaluateRuleForLine(cr, ln, ruleMoney.factor);
         return s + (ev.applies ? ev.amount : 0);
       }, 0);
       const firstTier = cr.tiers[0];
@@ -256,7 +263,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, lin
         },
       };
     });
-  }, [pricingAPI.state, lines, startEmpty]);
+  }, [pricingAPI.state, lines, startEmpty, ruleMoney.factor]);
 
   /* Backward-compat shim: the existing modal code uses `setRules(prev =>
      ...)` in many places. Route those calls through the API so we don't
@@ -464,7 +471,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, lin
     for (const lineId of newAppliedTo) {
       const ln = lines.find((l) => l.id === lineId);
       if (!ln) continue;
-      const ev = evaluateRuleForLine(customerRule, ln);
+      const ev = evaluateRuleForLine(customerRule, ln, ruleMoney.factor);
       if (ev.applies) sum += ev.amount;
     }
     return Math.round(sum);
@@ -500,7 +507,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, lin
     const numericValue = t0 ? parseFloat(t0.discount.replace(/[^\d.]/g, '')) || 0 : 0;
     const appliedTo = items.map((i) => i.id);
     const applicableSubtotal = items.reduce((s, i) => s + i.subtotal, 0);
-    const amount = isFixed ? numericValue : Math.round(applicableSubtotal * (numericValue / 100));
+    const amount = isFixed ? Math.round(numericValue * ruleMoney.factor) : Math.round(applicableSubtotal * (numericValue / 100));
     return {
       id: lib.id,
       name: lib.name,
@@ -787,7 +794,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, lin
                         )}
                       </div>
                       <div style={{ fontSize: '11px', color: '#9CA3AF', lineHeight: '1.2', marginTop: '2px' }}>
-                        {rule.appliedTo.length} item{rule.appliedTo.length !== 1 ? 's' : ''} · {rule.value}{rule.amountType}
+                        {rule.appliedTo.length} item{rule.appliedTo.length !== 1 ? 's' : ''} · {ruleValueText(ruleMoney, rule)}
                       </div>
                       {/* Applicability condition badge — hidden when unapplied; show reason instead */}
                       {!isUnapplied && rule.condition && (
@@ -1160,7 +1167,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, lin
           basis: r.condition?.type === 'volume' ? 'volume' : 'value',
           tierType: 'single',
           totalTiers: 1,
-          description: r.condition?.label ?? `${r.value}${r.amountType} ${r.type === 'discount' ? 'off' : 'markup'}`,
+          description: r.condition?.label ?? `${ruleValueText(ruleMoney, r)} ${r.type === 'discount' ? 'off' : 'markup'}`,
           aboutText: '',
           status: r.isApplied ? 'Active' : 'Inactive',
           scope: 'customer',
@@ -1171,7 +1178,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, lin
           itemCount: r.appliedTo.length,
           categoryCount: 0,
           partnerCount: 1,
-          tiers: [{ minQty: '—', maxQty: '—', discount: `${r.value}${r.amountType}` }],
+          tiers: [{ minQty: '—', maxQty: '—', discount: ruleMoney.tierRate({ rate: r.value, unit: r.amountType }) }],
           createdBy: 'You',
           createdDate: '',
           isPreset: false,
@@ -1383,7 +1390,8 @@ function SummaryRuleCard({ rule, onOpenItemsModal, onDeactivate, onReactivate, r
     const r = el.getBoundingClientRect();
     setMenuAnchor({ top: r.top, right: window.innerWidth - r.right });
   }, [menuOpen]);
-  const heroValue = `${rule.value}${rule.amountType}`;
+  const ruleMoney = useRuleMoney();
+  const heroValue = ruleMoney.tierShort({ rate: rule.value, unit: rule.amountType });
   const dimStyle: React.CSSProperties = isDeactivated
     ? { opacity: 0.55, transition: 'opacity 150ms' }
     : { opacity: 1, transition: 'opacity 150ms' };
@@ -1502,6 +1510,10 @@ function SummaryRuleCard({ rule, onOpenItemsModal, onDeactivate, onReactivate, r
             </span>
             <span className="shrink-0 ml-2 text-slate-700" style={{ fontWeight: 600 }}>
               {heroValue}
+              {/* A "$" tier is USD; its amount in the order's currency. */}
+              {ruleMoney.tierConverted({ rate: rule.value, unit: rule.amountType }) && (
+                <span className="text-slate-400" style={{ fontWeight: 500 }}> ({ruleMoney.tierConverted({ rate: rule.value, unit: rule.amountType })})</span>
+              )}
             </span>
           </div>
         </div>
@@ -1626,6 +1638,8 @@ function RuleItemsSubModal({ rule, allItems, onClose, onRequestToggle, readOnly,
    *  the user can see why they're greyed out. */
   shippedLineIds?: string[];
 }) {
+  const fmtCurrency = useDocWhole();
+  const ruleMoney = useRuleMoney();
   const shippedSet = useMemo(() => new Set(shippedLineIds ?? []), [shippedLineIds]);
   const isShipped = (id: string) => shippedSet.has(id);
   /* Scope the visible table to the items the rule touches at open time
@@ -1671,7 +1685,7 @@ function RuleItemsSubModal({ rule, allItems, onClose, onRequestToggle, readOnly,
 
   // Per-item Impact $ — same formula as the rule's total (rate * subtotal).
   const impactFor = (subtotal: number) =>
-    rule.amountType === '%' ? Math.round(subtotal * (rule.value / 100)) : rule.value;
+    rule.amountType === '%' ? Math.round(subtotal * (rule.value / 100)) : Math.round(rule.value * ruleMoney.factor);
 
   /* Split selected ids by current rule state. Drives state-aware bulk
      buttons — Activate only fires on items currently deactivated;
@@ -1747,7 +1761,7 @@ function RuleItemsSubModal({ rule, allItems, onClose, onRequestToggle, readOnly,
                 ? <TrendingDown className="w-3.5 h-3.5" style={{ color: pill.text }} />
                 : <TrendingUp className="w-3.5 h-3.5" style={{ color: pill.text }} />}
               <span className="text-[10px] tabular-nums leading-none" style={{ color: pill.text, fontWeight: 700 }}>
-                {rule.value}{rule.amountType}
+                {ruleValueText(ruleMoney, rule)}
               </span>
             </div>
             <div className="min-w-0 flex-1">
@@ -2259,7 +2273,9 @@ function PartnerRuleCardSO({ rule, onDeactivate, onReactivate, readOnly }: {
     ? { text: '#047857', bg: '#ECFDF5', border: '#D1FAE5' }
     : { text: '#6D28D9', bg: '#F5F3FF', border: '#EDE9FE' };
   const basis = rule.condition?.type === 'volume' ? 'Volume' : 'Value';
-  const heroValue = `${rule.value}${rule.amountType}`;
+  const fmtCurrency = useDocWhole();
+  const ruleMoney = useRuleMoney();
+  const heroValue = ruleMoney.tierShort({ rate: rule.value, unit: rule.amountType });
 
   const dimStyle: React.CSSProperties = isDeactivated
     ? { opacity: 0.45, transition: 'opacity 150ms' }

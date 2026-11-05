@@ -71,7 +71,7 @@ function QtyStepper({ value, onChange, min = 1, max, ariaLabel = "Quantity" }: {
     </div>
   );
 }
-import { useSOStore, CATALOG } from "./store";
+import { useSOStore, CATALOG as STORE_CATALOG } from "./store";
 import { ItemTypeBadge, DuplicateBadge } from "./StatusBadge";
 import { InactiveItemPill } from "../shared/InactiveItemPill";
 import { isItemInactive } from "../shared/inactiveItems";
@@ -89,8 +89,6 @@ import type { CatalogItem } from "./types";
 /* ═══ Typography — CSS variable tokens only ═══ */
 const font: React.CSSProperties = {};
 
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
 
 interface Props { soId: string; onClose: () => void; }
 
@@ -122,6 +120,9 @@ import {
   findUomById,
   multiplierWithinSet,
 } from '../../data/uomSets';
+import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
+import { soFx } from "@/app/currency/soFx";
+import { restateDesign } from "./soMoney";
 const PENDING_UOM_OPTIONS = UOM_SETS.discrete;
 type UomOption = ImportedUomOption;
 
@@ -295,11 +296,18 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
 
   const so = store.salesOrders.find(s => s.id === soId);
   const [search, setSearch] = useState("");
+  /* The catalog's list prices are the design's USD; on this order they are
+     in its currency, at the mid-market rate on its order date (spec 4.3). */
+  const formatCurrency = useDocMoney();
+  const fx = so ? soFx(so) : null;
+  const CATALOG = useMemo(
+    () => (fx ? STORE_CATALOG.map((c) => ({ ...c, unitPrice: restateDesign(c.unitPrice, fx.currency, fx.rateDate) })) : STORE_CATALOG),
+    [fx?.currency, fx?.rateDate], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   /* Item peek modal — opens when the user taps any catalog or
      selected-card thumbnail. Same chrome as SOLineGrid. */
   const { open: openItemQuickView, modal: itemQuickViewModal } = useItemQuickView();
-  const fmtUSD = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const previewCatalogItem = (item: CatalogItem) => {
     const primaryName = findUomById(getPrimaryUomForProduct(item))?.name || 'EA';
     openItemQuickView({
@@ -310,7 +318,7 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
       uom: primaryName,
       onHand: item.inStock,
       metrics: [
-        { label: "Unit Price", value: fmtUSD(item.unitPrice), caption: "Unit Price" },
+        { label: "Unit Price", value: formatCurrency(item.unitPrice), caption: "Unit Price" },
         { label: "In Stock", value: `${item.inStock.toLocaleString()} ${primaryName}`, caption: "In Stock" },
       ],
     });
@@ -397,12 +405,12 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
       alreadyAdded: CATALOG.filter(i => onOrderCodes.has(i.code)),
       recentlyOrdered: CATALOG.filter(i => i.isRecentlyOrdered && !onOrderCodes.has(i.code)),
     };
-  }, [pending]);
+  }, [pending, CATALOG]);
 
   const searchResults = useMemo(() => {
     if (!search.trim()) return [];
     return CATALOG.filter(matchesItem);
-  }, [search, matchesItem]);
+  }, [search, matchesItem, CATALOG]);
 
   const filtered = useMemo(() =>
     search.trim()

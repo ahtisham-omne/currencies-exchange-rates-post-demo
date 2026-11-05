@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/app/components/ui/tooltip";
 import type { SalesOrder, SalesRep, SOStatus } from "./types";
-import { useSOStore } from "./store";
+import { useSOStore, getImportedAdjustments, setImportedAdjustments } from "./store";
 import { InvoiceSidebarSummary } from "./InvoicingTab";
 import { PricingRulesManageModal } from "./PricingRulesManageModal";
 import { ManageAdjustmentsModal, AddOrderLevelAdjustmentModal } from "./ManageAdjustmentsModal";
@@ -46,6 +46,14 @@ import { getCustomerDefaults, isSparseCustomer } from "@/app/components/shared/c
 import { FIELD_RULES, isMissing } from "@/app/components/shared/fieldRequirements";
 import { SO_SALES_REP_ROSTER } from "./salesRepRoster";
 import { ArrowRight } from "lucide-react";
+import { SOCurrencyFields, type SOCurrencyChange, type SOCurrencyTotals } from "@/app/components/currency/SOCurrencyFields";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatMoney, formatRate } from "@/app/currency/money";
+import { toBase } from "@/app/currency/rates";
+import { isoDay, roundTo, ruleAmountFactor, soFx, stampSoRate } from "@/app/currency/soFx";
+import { withSOCurrency, type SOCurrencyChoice } from "./soCurrency";
+import { computeLineBreakdowns } from "./pricingRulesData";
+import { formatWhole } from "./soMoney";
 import { toast } from "sonner";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1208,8 +1216,58 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
   // can read every digit. Cells that are too narrow CSS-truncate with `…`
   // and surface the full value via the `title` attribute on the surrounding
   // span (see usage sites — each value carries a `title`).
-  const fmtCurrency = (n: number) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  /* In the order's currency (spec 4.3), whole amounts as the design shows them. */
+  const fmtCurrency = (n: number) => formatWhole(n, so.currency);
+  const fx = soFx(so);
+
+  /* Currency or rate changed in Order Summary (SOCurrencyFields). Another
+     currency converts every price and freight charge (withSOCurrency) and
+     the fixed one-time adjustments, which live on the SO page. */
+  const handleCurrencyChange = ({ next, subject }: SOCurrencyChange) => {
+    const { updates, factor } = withSOCurrency(so, next);
+    const after = { ...so, ...updates };
+    const afterFx = soFx(after);
+    const detail = subject === "Currency"
+      ? `${fx.currency} → ${afterFx.currency}${afterFx.isBase ? "" : ` · 1 ${afterFx.currency} = ${formatRate(afterFx.rate)} ${BASE_CURRENCY}`}`
+      : `1 ${afterFx.currency} = ${formatRate(afterFx.rate)} ${BASE_CURRENCY} (${afterFx.source})`;
+    store.updateSO(so.id, {
+      ...updates,
+      activityLog: [
+        ...so.activityLog,
+        { id: `ACT-${Date.now()}-fx`, timestamp: new Date().toLocaleString(), user: "Current User", action: `${subject} Changed`, details: detail },
+      ],
+    });
+    if (factor !== 1) {
+      const converted = adjustmentsAPI.adjustments.map((a) =>
+        a.amountType === "$" ? { ...a, amount: roundTo(afterFx.currency, a.amount * factor) } : a);
+      converted.forEach((a, i) => { if (a !== adjustmentsAPI.adjustments[i]) adjustmentsAPI.updateAdjustment(a.id, { amount: a.amount }); });
+      /* An imported order reopens with the adjustments its file carried
+         (SODetail seeds from this map): keep them in the new currency. */
+      if (getImportedAdjustments(so.id)) setImportedAdjustments(so.id, converted);
+    }
+    toast.success(subject === "Currency" ? `Order converted to ${afterFx.currency}` : "Exchange rate updated", { position: "top-right" });
+  };
+  const currencyLocked = so.status !== "Draft";
+  /* The confirmation's "after" column: the order as it would be, with flat
+     USD rule amounts at the new currency's cross rate (ruleAmountFactor),
+     % rules and one-time adjustments scaling with the converted prices. */
+  const totalsFor = (next: SOCurrencyChoice): SOCurrencyTotals => {
+    const { updates, factor } = withSOCurrency(so, next);
+    const after = { ...so, ...updates } as SalesOrder;
+    const s = summarizeSO(after);
+    let rulesNet = 0;
+    if (pricingAPI) {
+      const activation = new Map<string, Set<string>>();
+      for (const r of pricingAPI.state.attached) {
+        activation.set(r.id, pricingAPI.state.deactivatedRuleIds.has(r.id) ? new Set() : (pricingAPI.state.activatedLineIdsByRule.get(r.id) ?? new Set()));
+      }
+      rulesNet = computeLineBreakdowns(after.lines, pricingAPI.state.attached, activation, ruleAmountFactor(soFx(after)))
+        .reduce((t, b) => t + b.discountAmount - b.premiumAmount, 0);
+    }
+    const sub = s.subtotal + s.tax;
+    const adj = adjustmentsNet * factor;
+    return { subtotal: sub, adjustments: adj - rulesNet, freight: s.freight, total: sub - rulesNet + adj + s.freight };
+  };
 
   return (
     <>
@@ -1442,8 +1500,29 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
             </p>
             <p className="text-slate-500 mt-1 truncate" style={{ fontSize: 11, fontWeight: 400, fontFamily: "Inter, system-ui, sans-serif" }}>
               {so.lines.length} item{so.lines.length !== 1 ? "s" : ""}
+              {/* The total's base equivalent, at the order's rate. */}
+              {!fx.isBase && (
+                <span className="tabular-nums" title={`At 1 ${fx.currency} = ${formatRate(fx.rate)} ${BASE_CURRENCY}`}>
+                  {" · ≈ "}{formatMoney(toBase(grandTotal, fx.rate), BASE_CURRENCY)} {BASE_CURRENCY}
+                </span>
+              )}
             </p>
           </div>
+
+          {/* Currency and exchange rate (spec 4.3) — same pattern as Purchase Orders. */}
+          <SOCurrencyFields
+            so={so}
+            canEdit={!currencyLocked}
+            lockReason={currencyLocked ? "The currency and rate are fixed once the order leaves Draft." : undefined}
+            totals={{
+              subtotal,
+              adjustments: adjustmentsNet - pricingRulesAmount,
+              freight: soSummary.freight,
+              total: grandTotal,
+            }}
+            totalsFor={totalsFor}
+            onChange={handleCurrencyChange}
+          />
 
           {/* Breakdown rows — PO's canonical recipe */}
           <div className="border-t border-muted pt-3" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1976,7 +2055,14 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
               // Persist the new requested date back to the SO. orderDate is the
               // storage field for the customer-requested date (renamed to
               // "Requested On" in the UI).
-              store.updateSO(so.id, { orderDate: config.absoluteValue });
+              /* The rate is taken on the order date (spec 4.3): a Draft re-takes
+                 it, unless a corporate rate was typed on the order. Amounts stay. */
+              const restamp = so.status !== "Draft"
+                ? {}
+                : so.rateEdited
+                  ? { rateDate: isoDay(config.absoluteValue) }
+                  : (({ currency: _c, ...rest }) => rest)(stampSoRate(so.currency, config.absoluteValue, so.rateType));
+              store.updateSO(so.id, { orderDate: config.absoluteValue, ...restamp });
             }
             toast.success("Date updated");
             setEditingDateKey(null);

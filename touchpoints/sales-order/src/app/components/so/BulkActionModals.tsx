@@ -9,6 +9,13 @@ import { useModalShortcuts, KbdHint } from "./ModalKeyboard";
 import { Button } from "./ui/Button";
 import { SOStatusBadge } from "./StatusBadge";
 import type { SalesOrder, CancellationReason } from "./types";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatMoney } from "@/app/currency/money";
+import { toSOBase } from "@/app/currency/soFx";
+
+/* Orders are in different currencies: totals across them are in base, each
+   order at its own rate (spec 4.3); an order's own figures are in its currency. */
+const fmtBase = (n: number) => formatMoney(n, BASE_CURRENCY);
 
 /* ═══════════════════════════════════════════════════════
    Shared styles — design system tokens only
@@ -74,7 +81,7 @@ function OrderAccordionRow({
           {activeLines.length} item{activeLines.length !== 1 ? "s" : ""}
         </span>
         <span style={{ ...captionStyle, color: "var(--foreground)" }}>
-          ${soSubtotal.toLocaleString()}
+          {formatMoney(soSubtotal, so.currency)}
         </span>
         {isExpanded
           ? <ChevronUp className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--foreground)", opacity: 0.4 }} />
@@ -103,7 +110,7 @@ function OrderAccordionRow({
               <span className="truncate pr-2" style={{ color: "var(--foreground)", opacity: 0.7 }}>{line.itemName}</span>
               <span className="text-center" style={{ color: "var(--foreground)" }}>{line.orderedQty}</span>
               <span className="text-right" style={{ color: "var(--foreground)", fontWeight: "var(--font-weight-medium)" }}>
-                ${(line.orderedQty * line.unitPrice).toLocaleString()}
+                {formatMoney(line.orderedQty * line.unitPrice, so.currency)}
               </span>
             </div>
           ))}
@@ -135,7 +142,7 @@ export function BulkSubmitForReviewModal({ orders, onConfirm, onClose }: BulkSub
 
   const totalLines = eligible.reduce((s, so) => s + so.lines.filter(l => !l.cancelled).length, 0);
   const grandTotal = eligible.reduce(
-    (s, so) => s + so.lines.filter(l => !l.cancelled).reduce((ls, l) => ls + l.orderedQty * l.unitPrice, 0),
+    (s, so) => s + toSOBase(so, so.lines.filter(l => !l.cancelled).reduce((ls, l) => ls + l.orderedQty * l.unitPrice, 0)),
     0,
   );
 
@@ -196,7 +203,7 @@ export function BulkSubmitForReviewModal({ orders, onConfirm, onClose }: BulkSub
                 className="rounded bg-primary/10 text-primary"
                 style={{ ...captionStyle, fontWeight: "var(--font-weight-semibold)", padding: "2px 8px" }}
               >
-                ${grandTotal.toLocaleString()}
+                {fmtBase(grandTotal)}
               </span>
             </div>
             {eligible.map(so => (
@@ -241,7 +248,7 @@ export function BulkSubmitForReviewModal({ orders, onConfirm, onClose }: BulkSub
         {/* Footer */}
         <div className="flex items-center justify-between shrink-0 border-t border-border" style={{ padding: "12px 24px" }}>
           <span style={{ ...captionNormal, color: "var(--foreground)", opacity: 0.5 }}>
-            {eligible.length} order{eligible.length !== 1 ? "s" : ""} &middot; {totalLines} items &middot; ${grandTotal.toLocaleString()}
+            {eligible.length} order{eligible.length !== 1 ? "s" : ""} &middot; {totalLines} items &middot; {fmtBase(grandTotal)}
           </span>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={onClose} icon={<X className="w-3.5 h-3.5" />}>
@@ -281,7 +288,7 @@ export function BulkCloseOrdersModal({ orders, onConfirm, onClose }: BulkClosePr
 
   const totalLines = eligible.reduce((s, so) => s + so.lines.filter(l => !l.cancelled).length, 0);
   const grandTotal = eligible.reduce(
-    (s, so) => s + so.lines.filter(l => !l.cancelled).reduce((ls, l) => ls + l.orderedQty * l.unitPrice, 0),
+    (s, so) => s + toSOBase(so, so.lines.filter(l => !l.cancelled).reduce((ls, l) => ls + l.orderedQty * l.unitPrice, 0)),
     0,
   );
 
@@ -353,7 +360,7 @@ export function BulkCloseOrdersModal({ orders, onConfirm, onClose }: BulkClosePr
                 className="rounded bg-chart-4/10 text-chart-4"
                 style={{ ...captionStyle, fontWeight: "var(--font-weight-semibold)", padding: "2px 8px" }}
               >
-                ${grandTotal.toLocaleString()}
+                {fmtBase(grandTotal)}
               </span>
             </div>
             {eligible.map(so => (
@@ -391,7 +398,7 @@ export function BulkCloseOrdersModal({ orders, onConfirm, onClose }: BulkClosePr
             <span style={{ fontWeight: "var(--font-weight-semibold)", opacity: 1, color: "var(--foreground)" }}>
               {eligible.length} order{eligible.length !== 1 ? "s" : ""}
             </span>{" "}
-            ({totalLines} line item{totalLines !== 1 ? "s" : ""}, ${grandTotal.toLocaleString()}) will be marked as Closed and locked from further edits.
+            ({totalLines} line item{totalLines !== 1 ? "s" : ""}, {fmtBase(grandTotal)}) will be marked as Closed and locked from further edits.
             Closed orders can still be archived.
           </div>
         </div>
@@ -399,7 +406,7 @@ export function BulkCloseOrdersModal({ orders, onConfirm, onClose }: BulkClosePr
         {/* Footer */}
         <div className="flex items-center justify-between shrink-0 border-t border-border" style={{ padding: "12px 24px" }}>
           <span style={{ ...captionNormal, color: "var(--foreground)", opacity: 0.5 }}>
-            {eligible.length} order{eligible.length !== 1 ? "s" : ""} &middot; {totalLines} items &middot; ${grandTotal.toLocaleString()}
+            {eligible.length} order{eligible.length !== 1 ? "s" : ""} &middot; {totalLines} items &middot; {fmtBase(grandTotal)}
           </span>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={onClose} icon={<X className="w-3.5 h-3.5" />}>
@@ -458,7 +465,7 @@ export function BulkCancellationModal({ orders, onConfirm, onClose }: BulkCancel
 
   const totalLines = eligible.reduce((s, so) => s + so.lines.filter(l => !l.cancelled && l.shippedQty < l.orderedQty).length, 0);
   const grandTotal = eligible.reduce(
-    (s, so) => s + so.lines.filter(l => !l.cancelled).reduce((ls, l) => ls + l.orderedQty * l.unitPrice, 0),
+    (s, so) => s + toSOBase(so, so.lines.filter(l => !l.cancelled).reduce((ls, l) => ls + l.orderedQty * l.unitPrice, 0)),
     0,
   );
 
@@ -531,7 +538,7 @@ export function BulkCancellationModal({ orders, onConfirm, onClose }: BulkCancel
                   className="rounded bg-destructive/10 text-destructive"
                   style={{ ...captionStyle, fontWeight: "var(--font-weight-semibold)", padding: "2px 8px" }}
                 >
-                  ${grandTotal.toLocaleString()}
+                  {fmtBase(grandTotal)}
                 </span>
               </div>
               <div className="flex-1 overflow-y-auto">
@@ -694,7 +701,7 @@ export function BulkCancellationModal({ orders, onConfirm, onClose }: BulkCancel
                     <div className="flex items-center justify-between" style={captionNormal}>
                       <span style={{ color: "var(--foreground)", opacity: 0.5 }}>Cancellation value</span>
                       <span style={{ color: "var(--destructive)", fontWeight: "var(--font-weight-semibold)" }}>
-                        -${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        -{fmtBase(grandTotal)}
                       </span>
                     </div>
                   </div>
@@ -719,7 +726,7 @@ export function BulkCancellationModal({ orders, onConfirm, onClose }: BulkCancel
           {/* Footer */}
           <div className="flex items-center justify-between shrink-0 border-t border-border" style={{ padding: "12px 24px" }}>
             <span style={{ ...captionNormal, color: "var(--foreground)", opacity: 0.5 }}>
-              {eligible.length} order{eligible.length !== 1 ? "s" : ""} &middot; {totalLines} lines &middot; -${grandTotal.toLocaleString()}
+              {eligible.length} order{eligible.length !== 1 ? "s" : ""} &middot; {totalLines} lines &middot; -{fmtBase(grandTotal)}
             </span>
             <div className="flex items-center gap-2">
               <Button variant="secondary" size="sm" onClick={onClose} icon={<X className="w-3.5 h-3.5" />}>

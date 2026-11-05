@@ -6,6 +6,7 @@
 import type { SalesOrder, SOLine } from "./types";
 import { FIELD_RULES, isMissing } from "@/app/components/shared/fieldRequirements";
 import { isSparseCustomer } from "@/app/components/shared/customerDefaults";
+import { formatMoney } from "@/app/currency/money";
 
 export const DOC_C = {
   bg: "#ffffff",
@@ -30,8 +31,9 @@ export const DOC_C = {
   headerBg: "#111827",
 };
 
-export function fmtCurrency(n: number): string {
-  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** An amount on the printed order, in the order's currency (spec 4.3). */
+export function fmtCurrency(n: number, currency: string): string {
+  return formatMoney(n, currency);
 }
 
 export function escHtml(s: string): string {

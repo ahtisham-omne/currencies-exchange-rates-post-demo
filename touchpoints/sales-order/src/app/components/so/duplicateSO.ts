@@ -1,4 +1,5 @@
 import type { SalesOrder, SOLine, SOStatus, SOVersion } from './types';
+import { convertOn, customerCurrency, localTodayIso } from '@/app/currency/soFx';
 
 /* ════════════════════════════════════════════════════════════════════
    Shared duplicate-SO builder. Produces the `Partial<SalesOrder>`
@@ -86,6 +87,17 @@ export function buildDuplicateSOPayload(
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0].replace(/-/g, '/');
   const customerName = options.newCustomerId ? options.newCustomerName : source.customer;
+  /* Same customer: the copy keeps the order's currency. Another customer:
+     it opens in that customer's default currency (spec 4.3), prices
+     converted at today's mid-market rates. Either way it takes today's
+     rate, as a new order does (createSO). */
+  const currency = options.newCustomerId ? customerCurrency(customerName) : source.currency;
+  const convert = (n: number) => convertOn(n, source.currency, currency, localTodayIso());
+  const lines = resetLines(source.lines).map((l) => currency === source.currency ? l : {
+    ...l,
+    unitPrice: convert(l.unitPrice),
+    ...(typeof l.shipmentCost === 'number' && { shipmentCost: convert(l.shipmentCost) }),
+  });
   const customerInitials = options.newCustomerId
     ? options.newCustomerName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
     : source.customerInitials;
@@ -108,9 +120,9 @@ export function buildDuplicateSOPayload(
     pocs: source.pocs,
     primaryPocId: source.primaryPocId,
     description: `Copy of ${source.soNumber} (${versionMeta})`,
-    lines: resetLines(source.lines),
+    lines,
     warehouse: source.warehouse,
-    currency: source.currency,
+    currency,
     paymentTerms: source.paymentTerms,
     shippingAddress: source.shippingAddress,
     salesRep: source.salesRep,

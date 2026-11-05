@@ -27,6 +27,11 @@ import {
   Minimize2,
 } from "lucide-react";
 import { FIELD_RULES } from "@/app/components/shared/fieldRequirements";
+import { Money } from "@/app/components/currency/Money";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatCompactMoney } from "@/app/currency/money";
+import { soFx, toSOBase } from "@/app/currency/soFx";
+import { SODocCurrency } from "@/app/components/currency/SODocCurrency";
 
 /* ═══ Kanban column definitions — persona-aware ═══ */
 const CREATOR_COLUMNS: { status: SOStatus; label: string; dotColor: string; tint: string; tintBorder: string; matchStatuses?: SOStatus[] }[] = [
@@ -113,7 +118,8 @@ function sortSOs(items: SalesOrder[], sortBy: SortOption, sortDir: SortDir = "de
         break;
       }
       case "SO Value":
-        delta = summarizeSO(b).grandTotal - summarizeSO(a).grandTotal;
+        /* Orders are in different currencies: compare them in base. */
+        delta = toSOBase(b, summarizeSO(b).grandTotal) - toSOBase(a, summarizeSO(a).grandTotal);
         break;
       case "Creation Date": {
         const pa = a.createdDate.split("/").map(Number);
@@ -498,7 +504,7 @@ export function SOKanbanBoard({ salesOrders, search, columnVisibility = {}, grou
         />
       )}
 
-      {versionHistorySO && <VersionHistoryModal soNumber={versionHistorySO.soNumber} currentVersion={versionHistorySO.version?.number ?? 1} onClose={() => setVersionHistorySO(null)} />}
+      {versionHistorySO && <SODocCurrency so={versionHistorySO}><VersionHistoryModal soNumber={versionHistorySO.soNumber} currentVersion={versionHistorySO.version?.number ?? 1} onClose={() => setVersionHistorySO(null)} /></SODocCurrency>}
 
       {/* Column Config Sidebar */}
       <BoardColumnConfigSidebar isOpen={showColumnConfig} onClose={() => setShowColumnConfig(false)} visibleColumns={visibleColumns} onSave={() => {}} allColumns={KANBAN_COLUMNS} />
@@ -558,7 +564,9 @@ function KanbanColumn({ status, label, dotColor, tint, tintBorder, orders, allOr
 
   /* Column total = sum of grand totals so the Kanban header agrees
      with the SO listing's grand-total column for the same records. */
-  const totalValue = orders.reduce((s, so) => s + summarizeSO(so).grandTotal, 0);
+  /* Orders are in different currencies: the column adds them up in base,
+     each at its own rate (spec 4.3). */
+  const totalValue = orders.reduce((s, so) => s + toSOBase(so, summarizeSO(so).grandTotal), 0);
 
   let processedOrders = orders;
   const activeSearch = localSearch || search;
@@ -679,8 +687,8 @@ function KanbanColumn({ status, label, dotColor, tint, tintBorder, orders, allOr
         )}
 
         <div className="flex items-center justify-between" style={{ padding: "8px 12px", backgroundColor: "#F9FAFB", borderRadius: 6 }}>
-          <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 500 }}>Total Value</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#1F2937" }}>${totalValue.toLocaleString()}</span>
+          <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 500 }}>Total Value <span style={{ fontWeight: 400, color: "#9CA3AF" }}>({BASE_CURRENCY})</span></span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#1F2937" }}>{formatCompactMoney(totalValue, BASE_CURRENCY)}</span>
         </div>
       </div>
 
@@ -961,7 +969,7 @@ function SOKanbanCard({ so, soIdx, columnStatus, accentColor, onOrderClick, sear
             {/* Order Value on the card = grand total, same number the
                 listing's `Order Value` column and the detail sidebar's
                 Grand Total tile render. */}
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#1F2937", lineHeight: "1.2" }}>${summarizeSO(so).grandTotal.toLocaleString()}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#1F2937", lineHeight: "1.2" }}><Money value={summarizeSO(so).grandTotal} currency={so.currency} fx={soFx(so)} /></div>
             <div style={{ fontSize: 10, color: "#9CA3AF", fontWeight: 400, marginTop: 2, lineHeight: "1" }}>Order Value</div>
           </div>
           <div style={{ flexShrink: 0, textAlign: "right" }}>

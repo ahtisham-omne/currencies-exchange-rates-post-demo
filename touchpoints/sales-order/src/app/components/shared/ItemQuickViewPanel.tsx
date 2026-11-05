@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, ZoomIn, ChevronLeft, ChevronRight, Layers, Warehouse as WarehouseIcon, ExternalLink, Star } from "lucide-react";
+import { itemListPrice } from "@/app/components/so/soMoney";
 
 /**
  * Item Quick View — Partner v7 item-lightbox parity.
@@ -212,7 +213,7 @@ export function ItemQuickViewPanel({ data, onClose, onGoToItem }: Props) {
               <div style={{ fontSize: 10.5, color: "#94A3B8", marginTop: 2 }}>Partner</div>
             </div>
             <div style={{ padding: "10px 12px", borderRight: "1px solid #E2E8F0" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>${data.unitPrice.toFixed(2)}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0F172A" }}>{itemListPrice(data.unitPrice)}</div>
               <div style={{ fontSize: 10.5, color: "#94A3B8", marginTop: 2 }}>Unit Price</div>
             </div>
             <div style={{ padding: "10px 12px", borderRight: "1px solid #E2E8F0" }}>

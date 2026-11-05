@@ -73,27 +73,27 @@ export interface AdjustmentsAPI {
 
 /* Seed a couple of demo adjustments tied to real line ids so the summary
    modal starts with meaningful coverage rather than an empty state. */
-function seedInitial(lines: SOLine[]): Adjustment[] {
+function seedInitial(lines: SOLine[], restate: (usd: number) => number = (n) => n): Adjustment[] {
   const active = lines.filter((l) => !l.cancelled);
   const first = active[0]?.id;
   const third = active[2]?.id;
   const seed: Adjustment[] = [
-    { id: 'A003', label: 'Expedited Build Schedule', type: 'premium', amountType: '$', amount: 4500, scope: 'quote', isApplied: true },
-    { id: 'A004', label: 'Returning Customer Credit', type: 'discount', amountType: '$', amount: 2500, scope: 'quote', isApplied: true },
+    { id: 'A003', label: 'Expedited Build Schedule', type: 'premium', amountType: '$', amount: restate(4500), scope: 'quote', isApplied: true },
+    { id: 'A004', label: 'Returning Customer Credit', type: 'discount', amountType: '$', amount: restate(2500), scope: 'quote', isApplied: true },
   ];
-  if (first) seed.unshift({ id: 'A001', label: 'Chassis Delivery & Prep', type: 'premium', amountType: '$', amount: 2400, scope: 'item', appliedTo: [first], isApplied: true });
-  if (third) seed.splice(1, 0, { id: 'A002', label: 'Radio Programming & Encryption', type: 'premium', amountType: '$', amount: 1350, scope: 'item', appliedTo: [third], isApplied: true });
+  if (first) seed.unshift({ id: 'A001', label: 'Chassis Delivery & Prep', type: 'premium', amountType: '$', amount: restate(2400), scope: 'item', appliedTo: [first], isApplied: true });
+  if (third) seed.splice(1, 0, { id: 'A002', label: 'Radio Programming & Encryption', type: 'premium', amountType: '$', amount: restate(1350), scope: 'item', appliedTo: [third], isApplied: true });
   return seed;
 }
 
-export function useAdjustments(lines: SOLine[], options?: { skipSeed?: boolean; /** Records that arrive with adjustments already on them (today: the legacy importer) open with these instead of the demo seed. */ seed?: Adjustment[] }): AdjustmentsAPI {
+export function useAdjustments(lines: SOLine[], options?: { skipSeed?: boolean; /** The demo seed is written in USD; this restates it in the SO's currency. */ restateSeed?: (usd: number) => number; /** Records that arrive with adjustments already on them (today: the legacy importer) open with these instead of the demo seed. */ seed?: Adjustment[] }): AdjustmentsAPI {
   /* Lazy initializer pulls from `lines` once on first render. Adding /
      removing lines after that doesn't re-seed (intentional — the user's
      manual adjustments shouldn't be silently rewritten by a line edit).
      Newly-created orders pass `skipSeed: true` so they open with zero
      adjustments — only mock demo SOs get the seed. */
   const [adjustments, setAdjustments] = useState<Adjustment[]>(() =>
-    options?.seed ?? (options?.skipSeed ? [] : seedInitial(lines)),
+    options?.seed ?? (options?.skipSeed ? [] : seedInitial(lines, options?.restateSeed)),
   );
 
   /* Derived: per-line breakdown for item-scope adjustments. Uses the

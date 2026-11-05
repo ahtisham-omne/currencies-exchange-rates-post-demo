@@ -5,11 +5,10 @@
 
 import { useState, useEffect } from "react";
 import { DollarSign } from "lucide-react";
+import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
 
 export type PriceScope = "order" | "master";
 
-const formatCurrencyValue = (value: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 
 interface PriceScopeModalProps {
   newPrice: number;
@@ -18,6 +17,7 @@ interface PriceScopeModalProps {
 }
 
 export function PriceScopeModal({ newPrice, onApply, onCancel }: PriceScopeModalProps) {
+  const formatCurrencyValue = useDocMoney();
   const [choice, setChoice] = useState<PriceScope>("order");
 
   useEffect(() => {

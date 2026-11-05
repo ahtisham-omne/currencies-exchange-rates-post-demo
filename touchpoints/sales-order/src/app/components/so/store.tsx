@@ -8,6 +8,8 @@ import type {
   SORejectionReason,
 } from "./types";
 import { ARCHIVABLE_STATES } from "./types";
+import { DESIGN_CURRENCY, convertOn, customerCurrency, stampSoRate } from "@/app/currency/soFx";
+import { formatWhole } from "./soMoney";
 import { seedLineItemAttachments } from "./lineItemAttachmentsStore";
 import { getCustomerDefaults, SAMPLE_EMPTY_CUSTOMER } from "@/app/components/shared/customerDefaults";
 import { getMissingFields, type FieldRule } from "@/app/components/shared/fieldRequirements";
@@ -1616,6 +1618,30 @@ function applyEmptyCustomerDemo(sos: SalesOrder[]): void {
   });
 }
 
+/** The design's seeded orders are written in USD. Restate one in its
+ *  customer's currency (prices, freight, its documents) at the mid-market
+ *  rate on its order date, and stamp that rate. Applied last, so no seed
+ *  sequence changes. */
+function inCustomerCurrency(so: SalesOrder): SalesOrder {
+  const stamp = stampSoRate(customerCurrency(so.customer), so.orderDate);
+  if (stamp.currency === DESIGN_CURRENCY) return { ...so, ...stamp };
+  const restate = (n: number) => convertOn(n, DESIGN_CURRENCY, stamp.currency, so.orderDate);
+  return {
+    ...so,
+    ...stamp,
+    /* The generated description quotes the total ("totalling $18,268"). */
+    description: so.description.replace(/totalling \$([\d,]+)/, (_m, n: string) => `totalling ${formatWhole(restate(Number(n.replace(/,/g, ""))), stamp.currency)}`),
+    total: restate(so.total),
+    ...(typeof so.freightCost === "number" && { freightCost: restate(so.freightCost) }),
+    lines: so.lines.map((l) => ({
+      ...l,
+      unitPrice: restate(l.unitPrice),
+      ...(typeof l.shipmentCost === "number" && { shipmentCost: restate(l.shipmentCost) }),
+    })),
+    linkedTransactions: so.linkedTransactions.map((t) => ({ ...t, amount: restate(t.amount) })),
+  };
+}
+
 function initializeMockData(): { sos: SalesOrder[]; shipments: Shipment[] } {
   const rawSOs = generateMockSOs();
   applyEmptyCustomerDemo(rawSOs);
@@ -1655,7 +1681,7 @@ function initializeMockData(): { sos: SalesOrder[]; shipments: Shipment[] } {
     sos.splice(2, 0, hero);
   }
 
-  return { sos, shipments };
+  return { sos: sos.map(inCustomerCurrency), shipments };
 }
 
 const _initData = initializeMockData();
@@ -1906,7 +1932,11 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
       primaryPocId: partial.primaryPocId,
       orderDate: partial.orderDate || new Date().toISOString().split("T")[0].replace(/-/g, "/"),
       warehouse: partial.warehouse || "Main Warehouse",
-      currency: partial.currency || "USD",
+      /* The quote's currency and rate when converted from one (spec 4.3),
+         else the customer's default at the rate on the order date. */
+      ...(partial.currency && partial.exchangeRate
+        ? { currency: partial.currency, exchangeRate: partial.exchangeRate, rateType: partial.rateType, rateDate: partial.rateDate, rateEdited: partial.rateEdited }
+        : stampSoRate(partial.currency || customerCurrency(partial.customer), partial.orderDate || new Date().toISOString().split("T")[0], partial.rateType)),
       /* `??` not `||`: an explicit "" means "not set" (e.g. a name-only
          customer) and must stay empty instead of becoming Net 30. */
       paymentTerms: partial.paymentTerms ?? "Net 30",

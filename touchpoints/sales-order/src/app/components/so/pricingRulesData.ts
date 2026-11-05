@@ -186,6 +186,9 @@ export function pickTier(rule: CustomerPricingRule, qty: number): PricingRuleTie
 export function evaluateRuleForLine(
   rule: CustomerPricingRule,
   line: { itemCode: string; orderedQty: number; unitPrice: number },
+  /** A "$" tier's amount is written in USD; this turns it into the SO's
+   *  currency (ruleAmountFactor in src/app/currency/soFx.ts). */
+  flatFactor = 1,
 ): { applies: boolean; amount: number; tier: PricingRuleTier | null } {
   if (!rule.appliesToItemCodes.includes(line.itemCode)) {
     return { applies: false, amount: 0, tier: null };
@@ -195,7 +198,7 @@ export function evaluateRuleForLine(
     return { applies: false, amount: 0, tier: null };
   }
   const subtotal = line.orderedQty * line.unitPrice;
-  const amount = tier.unit === '%' ? subtotal * (tier.rate / 100) : tier.rate * line.orderedQty;
+  const amount = tier.unit === '%' ? subtotal * (tier.rate / 100) : tier.rate * flatFactor * line.orderedQty;
   return { applies: true, amount, tier };
 }
 
@@ -216,6 +219,7 @@ export function computeLineBreakdowns(
   lines: Array<{ id: string; itemCode: string; orderedQty: number; unitPrice: number }>,
   rules: CustomerPricingRule[],
   activatedItemsByRule: Map<string, Set<string>>,
+  flatFactor = 1,
 ): LinePricingBreakdown[] {
   return lines.map((line) => {
     const baseSubtotal = line.orderedQty * line.unitPrice;
@@ -224,7 +228,7 @@ export function computeLineBreakdowns(
     for (const rule of rules) {
       const activeOnThisLine = activatedItemsByRule.get(rule.id)?.has(line.id) ?? false;
       if (!activeOnThisLine) continue;
-      const { applies, amount } = evaluateRuleForLine(rule, line);
+      const { applies, amount } = evaluateRuleForLine(rule, line, flatFactor);
       if (!applies) continue;
       if (rule.type === 'discount') discountAmount += amount;
       else premiumAmount += amount;

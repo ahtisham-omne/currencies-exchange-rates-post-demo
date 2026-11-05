@@ -9,6 +9,8 @@ import {
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { FiltersButton } from '@/app/components/shared/FiltersButton';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { moneyPrefix } from '@/app/currency/money';
 import {
   SOActiveFilters,
   EMPTY_SO_FILTERS,
@@ -354,8 +356,10 @@ export function SOFilterBar({ filters, onFiltersChange, isKanbanView, salesOrder
               <Divider />
 
               {/* Order Value — range */}
-              <Section title="Order value range" subtitle="Filter by total order value.">
-                <RangeInput min={valueMin} max={valueMax} onMinChange={handleValueMinChange} onMaxChange={handleValueMaxChange} />
+              {/* Orders are in different currencies, so the range is in base:
+                  each order's total at its own rate (SOList passes grandTotal in base). */}
+              <Section title="Order value range" subtitle={`Filter by total order value, in ${BASE_CURRENCY}.`}>
+                <RangeInput min={valueMin} max={valueMax} onMinChange={handleValueMinChange} onMaxChange={handleValueMaxChange} prefix={moneyPrefix(BASE_CURRENCY).trim()} />
               </Section>
 
               <Divider />

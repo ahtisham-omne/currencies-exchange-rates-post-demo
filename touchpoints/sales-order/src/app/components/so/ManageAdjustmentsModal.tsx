@@ -9,6 +9,7 @@ import { EmptyPlaceholder } from '../shared/EmptyPlaceholder';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../ui/tooltip';
 import type { SOLine } from './types';
 import type { AdjustmentsAPI, Adjustment as ApiAdjustment } from './useAdjustments';
+import { useDocWhole } from "@/app/components/currency/docCurrencyContext";
 
 /* Stable thumb tint per itemCode so the same item gets the same color
    across the SO every time. */
@@ -48,8 +49,7 @@ interface Adjustment {
   unappliedReason?: 'USER_UNAPPLIED' | 'EXCEEDS_100_PERCENT';
 }
 
-const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+/* Amounts are in the SO's currency (useDocWhole in each component). */
 
 // The AdjustmentFormModal is now shared from /src/app/components/shared/AdjustmentFormModal.tsx
 
@@ -90,6 +90,7 @@ export function ManageAdjustmentsModal({
   lines,
   adjustmentsAPI,
 }: ManageAdjustmentsModalProps) {
+  const fmtCurrency = useDocWhole();
   /* Display-shaped lines drive the item picker, per-line listing, and
      totals. Single source of truth replacing the old mock LINE_ITEMS. */
   const lineItems = useMemo(() => buildLineItemsForSelection(lines), [lines]);
@@ -662,6 +663,7 @@ function AdjustmentRow({
    *  instead of misleading the user with the raw percent number. */
   dollarImpact?: number;
 }) {
+  const fmtCurrency = useDocWhole();
   const isPremium = adjustment.type === 'premium';
   const isUnapplied = !adjustment.isApplied;
   const isPct = adjustment.amountType === '%';

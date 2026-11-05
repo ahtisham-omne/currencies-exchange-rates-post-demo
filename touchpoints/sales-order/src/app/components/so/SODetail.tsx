@@ -76,6 +76,9 @@ import {
 } from "@/app/components/ui/dropdown-menu";
 import { DateEditModal, type SODateType, type DateConfig } from "./ui/DateEditModal";
 import type { SOLine, CancellationReason, SOPriority } from "./types";
+import { DocCurrencyProvider } from "@/app/components/currency/DocCurrency";
+import { formatMoney } from "@/app/currency/money";
+import { DESIGN_CURRENCY, convertOn, roundTo, ruleAmountFactor, soFx } from "@/app/currency/soFx";
 import { ARCHIVABLE_STATES } from "./types";
 import { getLineItemImage } from "./lineItemImage";
 import { InactiveItemsWarningModal, type InactiveWarningMode } from "../shared/InactiveItemsWarningModal";
@@ -122,7 +125,10 @@ export function SODetail() {
      toggling it) from either surface updates this single source of
      truth, so totals + applicability stay in lockstep. Safe defaults
      when `so` hasn't resolved yet so we don't break rules-of-hooks. */
-  const pricingAPI = usePricingRules(so?.customer ?? '', so?.lines ?? []);
+  /* The order's currency and rate (spec 4.3): every amount on the page is
+     in it (DocCurrencyProvider below); flat "$" rule tiers convert into it. */
+  const fx = so ? soFx(so) : null;
+  const pricingAPI = usePricingRules(so?.customer ?? '', so?.lines ?? [], fx ? ruleAmountFactor(fx) : 1);
 
   /* Shared one-time-adjustments state — parallel to pricingAPI, lifted
      here so the summary modal and the line item configurator share the
@@ -136,6 +142,7 @@ export function SODetail() {
   const adjustmentsAPI = useAdjustments(so?.lines ?? [], {
     skipSeed: !!so?.createdViaUI,
     seed: importedAdjustments as any,
+    restateSeed: fx ? (n) => convertOn(n, DESIGN_CURRENCY, fx.currency, fx.rateDate) : undefined,
   });
 
   const [activeTab, setActiveTab] = useState("lines");
@@ -405,8 +412,8 @@ export function SODetail() {
     if (!totalIsNegative) return false;
     toast.error(
       `Cannot ${intent}. Projected total is ${
-        new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(projectedTotal)
-      }. Deactivate one or more rules or one-time discounts to bring the total back to $0 or above.`,
+        formatMoney(projectedTotal, so?.currency)
+      }. Deactivate one or more rules or one-time discounts to bring the total back to ${formatMoney(0, so?.currency)} or above.`,
       { duration: 6000 },
     );
     return true;
@@ -582,7 +589,7 @@ export function SODetail() {
   /* ── Stepper uses resolvedStepIdx from above ── */
 
   return (
-    <>
+    <DocCurrencyProvider currency={fx!.currency} fx={fx!.isBase ? null : fx} rateDate={fx!.rateDate} dateLabel="order date" role="order currency">
       {/* Page container — Partner Management `VendorDetailsPage` parity.
           The OUTER wrapper spans the full width of the AppLayout's
           `<main>` scroll container and paints a slate-50 page
@@ -1734,8 +1741,8 @@ export function SODetail() {
                   const line = so.lines.find(l => l.id === lineId);
                   const isMaterial = updates.orderedQty !== undefined || updates.unitPrice !== undefined;
                   if (isMaterial && requiresNewDraftFirst(so.status)) {
-                    const oldVal = updates.orderedQty !== undefined ? `Qty: ${line?.orderedQty}` : updates.unitPrice !== undefined ? `$${line?.unitPrice}` : undefined;
-                    const newVal = updates.orderedQty !== undefined ? `Qty: ${updates.orderedQty}` : updates.unitPrice !== undefined ? `$${updates.unitPrice}` : undefined;
+                    const oldVal = updates.orderedQty !== undefined ? `Qty: ${line?.orderedQty}` : updates.unitPrice !== undefined ? formatMoney(line?.unitPrice ?? 0, so.currency) : undefined;
+                    const newVal = updates.orderedQty !== undefined ? `Qty: ${updates.orderedQty}` : updates.unitPrice !== undefined ? formatMoney(updates.unitPrice, so.currency) : undefined;
                     setPendingVersionChange({ fieldLabel: updates.orderedQty !== undefined ? "Quantity" : "Unit Price", oldValue: oldVal, newValue: newVal, action: () => store.updateSOLine(so.id, lineId, updates) });
                     setAutoVersionField(updates.orderedQty !== undefined ? "Quantity" : "Unit Price");
                     setShowAutoVersionConfirm(true);
@@ -1762,8 +1769,8 @@ export function SODetail() {
                   const line = so.lines.find(l => l.id === lineId);
                   setPendingVersionChange({
                     fieldLabel: "Unit Price",
-                    oldValue: `$${line?.unitPrice}`,
-                    newValue: `$${newPrice}`,
+                    oldValue: formatMoney(line?.unitPrice ?? 0, so.currency),
+                    newValue: formatMoney(newPrice, so.currency),
                     action: applyCallback,
                   });
                   setAutoVersionField("Unit Price");
@@ -1783,8 +1790,8 @@ export function SODetail() {
                      until the user agrees). */
                   if (!line.uom || line.uom === newUom) return;
                   const scale = uomScaleFactor(line.uom, newUom);
-                  const scaledPpu = Math.round(line.unitPrice * scale * 100) / 100;
-                  const fmt = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  const scaledPpu = roundTo(so.currency, line.unitPrice * scale);
+                  const fmt = (n: number) => formatMoney(n, so.currency);
                   const apply = () => {
                     store.updateSOLine(so.id, line.id, { uom: newUom, unitPrice: scaledPpu });
                     toast.success(`Unit changed to ${newUom} (PPU rescaled to ${fmt(scaledPpu)} / ${newUom})`);
@@ -2041,8 +2048,8 @@ export function SODetail() {
                needs to be explicitly forwarded. */
             const updates: Partial<typeof configureLine> = { orderedQty, unitPrice, shipmentCost };
             if (requiresNewDraftFirst(so.status)) {
-              const oldVal = `Qty: ${configureLine.orderedQty}, $${configureLine.unitPrice}`;
-              const newVal = `Qty: ${orderedQty}, $${unitPrice}`;
+              const oldVal = `Qty: ${configureLine.orderedQty}, ${formatMoney(configureLine.unitPrice, so.currency)}`;
+              const newVal = `Qty: ${orderedQty}, ${formatMoney(unitPrice, so.currency)}`;
               setPendingVersionChange({ fieldLabel: "Line Item Configuration", oldValue: oldVal, newValue: newVal, action: () => { store.updateSOLine(so.id, configureLine.id, updates); toast.success(`${configureLine.itemCode} updated`); } });
               setAutoVersionField("Line Item Configuration");
               setConfigureLine(null);
@@ -2416,7 +2423,7 @@ export function SODetail() {
           setOutdatedBannerVisible(false);
         }}
       />
-    </>
+    </DocCurrencyProvider>
   );
 }
 

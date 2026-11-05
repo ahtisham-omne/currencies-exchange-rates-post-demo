@@ -31,6 +31,9 @@ import { openPartnerTab } from "@/app/components/external/partners/openPartnerTa
 import StateTransitionOverlay from "@/app/components/shared/StateTransitionOverlay";
 import { SAMPLE_EMPTY_CUSTOMER, getCustomerDefaults } from "@/app/components/shared/customerDefaults";
 import { FIELD_RULES, FieldErrorText, FieldLaterHint, isMissing } from "@/app/components/shared/fieldRequirements";
+import { DocCurrencyProvider } from "@/app/components/currency/DocCurrency";
+import { isBaseCurrency } from "@/app/currency/currencies";
+import { convertOn, customerCurrency, localTodayIso, todayFx } from "@/app/currency/soFx";
 
 /* ═══ Typography — CSS variable tokens only ═══ */
 const font: React.CSSProperties = {};
@@ -500,6 +503,20 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
   const [tags, setTags] = useState<string[]>(["Engine Companies", "Hydraulics"]);
   const [tagInput, setTagInput] = useState("");
   const [selectedItems, setSelectedItems] = useState<SOLineItem[]>([]);
+  /* Lines picked before the customer changed move into the new customer's
+     currency at today's rate. */
+  const orderCurrency = customerCurrency(selectedCustomer?.name);
+  const pricedIn = useRef(orderCurrency);
+  useEffect(() => {
+    const from = pricedIn.current;
+    pricedIn.current = orderCurrency;
+    if (from === orderCurrency) return;
+    const day = localTodayIso();
+    setSelectedItems((items) => items.map((it) => {
+      const unitPrice = convertOn(it.unitPrice, from, orderCurrency, day);
+      return { ...it, unitPrice, total: unitPrice * it.quantity * (1 - (it.discount || 0) / 100) };
+    }));
+  }, [orderCurrency]);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   /* ── Location selection state ── */
@@ -1196,11 +1213,14 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
              mode actually fills the screen instead of leaving slate
              gutters on either side. */
           <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column" }}>
-            <CreateSOStep2
-              lineItems={selectedItems}
-              onLineItemsChange={setSelectedItems}
-              hasCustomer={!!selectedCustomer}
-            />
+            {/* The new order is in the customer's currency (spec 4.3), at today's rate. */}
+            <DocCurrencyProvider currency={orderCurrency} fx={isBaseCurrency(orderCurrency) ? null : todayFx(orderCurrency)} rateDate={localTodayIso()} dateLabel="today" role="customer currency">
+              <CreateSOStep2
+                lineItems={selectedItems}
+                onLineItemsChange={setSelectedItems}
+                hasCustomer={!!selectedCustomer}
+              />
+            </DocCurrencyProvider>
           </div>
         )}
 

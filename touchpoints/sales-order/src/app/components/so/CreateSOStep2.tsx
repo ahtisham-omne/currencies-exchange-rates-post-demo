@@ -145,6 +145,9 @@ import {
   findUomById,
   multiplierWithinSet,
 } from '../../data/uomSets';
+import { useDocCurrency, useDocMoney } from "@/app/components/currency/docCurrencyContext";
+import { localTodayIso } from "@/app/currency/soFx";
+import { restateDesign } from "./soMoney";
 const UNITS_OF_MEASURE = UOM_SETS.discrete;
 type UomOption = ImportedUomOption;
 
@@ -315,17 +318,19 @@ function QtyUomCapsule({
   );
 }
 
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
-
 export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Step2Props) {
   const { inventory } = useSOStore();
+  /* The order will be in the customer's currency (CreateSOModal provides
+     it): catalog list prices, written in USD, are shown and added in it at
+     today's mid-market rate, the rate the new order takes. */
+  const formatCurrency = useDocMoney();
+  const { currency } = useDocCurrency();
+  const listPrice = useCallback((usd: number) => restateDesign(usd, currency, localTodayIso()), [currency]);
 
   /* Item peek modal — opens when the user taps any catalog or
      selected-card thumbnail. Same chrome as the SO details picker. */
   const { open: openItemQuickView, modal: itemQuickViewModal } = useItemQuickView();
   const previewCatalogProduct = (product: any) => {
-    const fmtUSD = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const peek: ItemQuickViewItem = {
       code: product.code,
       description: product.name,
@@ -334,7 +339,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
       uom: findUomById(getPrimaryUomForProduct(product))?.name || 'EA',
       onHand: product.inStock,
       metrics: [
-        { label: 'Unit Price', value: fmtUSD(product.unitPrice), caption: 'Unit Price' },
+        { label: 'Unit Price', value: formatCurrency(listPrice(product.unitPrice)), caption: 'Unit Price' },
         ...(typeof product.inStock === 'number'
           ? [{ label: 'In Stock', value: `${product.inStock.toLocaleString()} ${findUomById(getPrimaryUomForProduct(product))?.name || 'EA'}`, caption: 'In Stock' }]
           : []),
@@ -414,7 +419,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
     const primaryUom = findUomById(getPrimaryUomForProduct(product));
     const newItem: SOLineItem = {
       id: newId, productId: product.code, name: product.name, description: product.description,
-      quantity: 1, unitPrice: product.unitPrice, discount: 0, total: product.unitPrice,
+      quantity: 1, unitPrice: listPrice(product.unitPrice), discount: 0, total: listPrice(product.unitPrice),
       uom: primaryUom?.name || 'EA',
     };
 
@@ -451,7 +456,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
       const el = cardRefsMap.current.get(newId);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
-  }, [lineItems, onLineItemsChange]);
+  }, [lineItems, onLineItemsChange, listPrice]);
 
   const handleAddQuantityToExisting = useCallback((product: typeof EXTENDED_CATALOG[0]) => {
     if (isItemInactive(product.code)) return;
@@ -867,7 +872,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                         </div>
                         <div className="text-right shrink-0">
                           <span style={{ fontSize: 'var(--text-caption)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }}>
-                            {formatCurrency(product.unitPrice)}
+                            {formatCurrency(listPrice(product.unitPrice))}
                           </span>
                           <span style={{ fontSize: 'var(--text-micro)', color: 'var(--foreground)', opacity: 0.4, marginLeft: 4 }}>/ {findUomById(getPrimaryUomForProduct(product))?.name || 'EA'}</span>
                         </div>

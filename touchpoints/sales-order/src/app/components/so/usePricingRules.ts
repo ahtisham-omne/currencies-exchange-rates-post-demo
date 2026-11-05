@@ -73,7 +73,12 @@ export interface PricingRulesAPI {
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Hook
  * ═══════════════════════════════════════════════════════════════════════════ */
-export function usePricingRules(customerName: string, lines: SOLine[]): PricingRulesAPI {
+export function usePricingRules(
+  customerName: string,
+  lines: SOLine[],
+  /** USD "$" tier amounts → the SO's currency (ruleAmountFactor). */
+  flatFactor = 1,
+): PricingRulesAPI {
   /* Seed: attach every customer rule and activate it on every matching line.
      The user can later deactivate per-rule or per-line. We compute the seed
      once via lazy initializer so re-renders don't reset the state.
@@ -109,8 +114,8 @@ export function usePricingRules(customerName: string, lines: SOLine[]): PricingR
   }, [state]);
 
   const breakdowns = useMemo(
-    () => computeLineBreakdowns(lines, state.attached, effectiveActivationByRule),
-    [lines, state.attached, effectiveActivationByRule],
+    () => computeLineBreakdowns(lines, state.attached, effectiveActivationByRule, flatFactor),
+    [lines, state.attached, effectiveActivationByRule, flatFactor],
   );
   const soSubtotal = useMemo(() => computeSOSubtotal(breakdowns), [breakdowns]);
   const totalDiscount = useMemo(() => breakdowns.reduce((s, b) => s + b.discountAmount, 0), [breakdowns]);

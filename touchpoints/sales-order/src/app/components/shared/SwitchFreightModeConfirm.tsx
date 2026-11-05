@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowRightLeft } from 'lucide-react';
+import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
 
 /* ════════════════════════════════════════════════════════════════════
    Switch-freight-mode confirmation — Partner-faithful pattern shared
@@ -38,11 +39,6 @@ export interface SwitchFreightModeConfirmProps {
   onConfirm: () => void;
 }
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency', currency: 'USD',
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  }).format(n);
 
 export function SwitchFreightModeConfirm({
   target,
@@ -55,6 +51,7 @@ export function SwitchFreightModeConfirm({
   onCancel,
   onConfirm,
 }: SwitchFreightModeConfirmProps) {
+  const fmt = useDocMoney();
   const isToPerLine = target === 'per-line';
   const total = isToPerLine ? defaultCost : perLineSum;
   const title = isToPerLine

@@ -12,6 +12,9 @@ import {
 } from "lucide-react";
 import { useSOStore } from "./store";
 import { IMPORT_EXPORT_ENABLED } from "@/app/config/featureFlags";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatCompactMoney } from "@/app/currency/money";
+import { toSOBase } from "@/app/currency/soFx";
 
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Module cards
@@ -333,7 +336,8 @@ export function SalesHomePage() {
   /* Pipeline stat cards — meaningful cross-module metrics */
   const pipelineValue = salesOrders
     .filter(so => ["Draft", "Pending Review", "Cleared"].includes(so.status))
-    .reduce((sum, so) => sum + so.total, 0);
+    /* In base: each order at its own rate (spec 4.3). */
+    .reduce((sum, so) => sum + toSOBase(so, so.total), 0);
   const awaitingVerification = salesOrders.filter(so => so.status === "Pending Review").length;
   const shippedThisMonth = salesOrders.filter(so => {
     if (so.status !== "Shipped" && so.status !== "Partially Shipped") return false;
@@ -345,7 +349,7 @@ export function SalesHomePage() {
   const pendingQuotes = 8;   // mock — quotes not yet converted
 
   const pipelineStats = [
-    { label: "Pipeline Value", value: `$${(pipelineValue / 1000).toFixed(0)}k`, color: "var(--primary)" },
+    { label: `Pipeline Value (${BASE_CURRENCY})`, value: formatCompactMoney(pipelineValue, BASE_CURRENCY), color: "var(--primary)" },
     { label: "Pending Quotes", value: String(pendingQuotes), color: "var(--chart-4)" },
     { label: "Awaiting Verification", value: String(awaitingVerification), color: "var(--chart-3)" },
     { label: "Conversion Rate", value: `${conversionRate}%`, color: "var(--success)" },

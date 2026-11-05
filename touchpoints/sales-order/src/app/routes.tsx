@@ -1,4 +1,5 @@
 import { createBrowserRouter, useParams } from "react-router-dom";
+import { setInAppNavigator } from "@/embedding";
 import { AppLayout } from "./components/so/AppLayout";
 import { SalesHomePage } from "./components/so/SalesHomePage";
 import { SOList } from "./components/so/SOList";
@@ -32,4 +33,7 @@ export const router = createBrowserRouter([
       { path: "*", Component: SalesHomePage },
     ],
   },
-]);
+  // basename: the shell serves this app under /touchpoint-apps/sales-order/ (see src/embedding.ts).
+], { basename: import.meta.env.BASE_URL });
+
+setInAppNavigator((path) => { void router.navigate(path); });

@@ -10,7 +10,7 @@
 
 import type { SalesOrder, SOLine } from "./types";
 import {
-  DOC_C, fmtCurrency, escHtml,
+  DOC_C, fmtCurrency as fmtDocCurrency, escHtml,
   getLineShipment, shipStatusColors,
   getLineComments, getLinePricingRules,
   statusBadgeColors, getPaymentInfo, getHeaderMeta, getParties, docPaymentTerms, docPaymentMethod, docPaymentTermsSentence,
@@ -51,6 +51,7 @@ export function printSalesOrder(so: SalesOrder): void {
 
 /* ── HTML Generation ── */
 function generatePrintHTML(so: SalesOrder): string {
+  const fmtCurrency = (n: number) => fmtDocCurrency(n, so.currency);
   const activeLines = so.lines.filter(l => !l.cancelled);
   const cancelledLines = so.lines.filter(l => l.cancelled);
   const subtotal = activeLines.reduce((s, l) => s + l.orderedQty * l.unitPrice, 0);
@@ -71,7 +72,7 @@ function generatePrintHTML(so: SalesOrder): string {
   const payment = getPaymentInfo(so, grandTotal);
   const sb = statusBadgeColors(so.status);
 
-  const itemRowsHTML = activeLines.map((li, idx) => itemRowHTML(li, idx)).join("");
+  const itemRowsHTML = activeLines.map((li, idx) => itemRowHTML(li, idx, so.currency)).join("");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -342,7 +343,8 @@ function tableHeader(): string {
   ).join("");
 }
 
-function itemRowHTML(li: SOLine, idx: number): string {
+function itemRowHTML(li: SOLine, idx: number, currency: string): string {
+  const fmtCurrency = (n: number) => fmtDocCurrency(n, currency);
   const lineTotal = li.orderedQty * li.unitPrice;
   const ship = getLineShipment(li, idx);
   const comments = getLineComments(li);

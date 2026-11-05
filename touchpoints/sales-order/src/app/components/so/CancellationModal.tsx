@@ -15,6 +15,7 @@ import { Button } from "./ui/Button";
 import { DisabledCTATooltip } from "./DisabledCTATooltip";
 import { CancellationConfirmDialog, useDiscardGuard } from "./ui/DiscardChangesDialog";
 import type { SalesOrder, SOLine, CancellationReason, LineCancelAction } from "./types";
+import { formatMoney } from "@/app/currency/money";
 
 /* ═══════════════════════════════════════════════════════
    Constants & Helpers
@@ -396,7 +397,7 @@ export function CancellationModal({ so, mode: initialMode, preselectedLineIds, o
                 </button>
                 <span className="text-foreground/50 ml-1" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" }}>of {sel.maxCancelQty} EA</span>
                 <span className="text-foreground/50 ml-auto" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>
-                  ${(sel.cancelQty * line.unitPrice).toLocaleString()}
+                  {formatMoney(sel.cancelQty * line.unitPrice, so.currency)}
                 </span>
               </div>
             </div>
@@ -809,7 +810,7 @@ export function CancellationModal({ so, mode: initialMode, preselectedLineIds, o
                       <div className="flex items-center justify-between" style={captionNormal}>
                         <span className="text-foreground/50">Cancellation value</span>
                         <span className="text-destructive" style={{ fontWeight: "var(--font-weight-semibold)" }}>
-                          -${totalCancelValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          -{formatMoney(totalCancelValue, so.currency)}
                         </span>
                       </div>
                     </div>
@@ -853,7 +854,7 @@ export function CancellationModal({ so, mode: initialMode, preselectedLineIds, o
           {/* ══ Footer ══ */}
           <div className="flex items-center justify-between shrink-0 border-t border-border bg-secondary" style={{ padding: "12px 20px" }}>
             <div className="text-foreground/50" style={captionNormal}>
-              {selectedCount} of {cancellableLines.length} lines · ${totalCancelValue.toLocaleString()}
+              {selectedCount} of {cancellableLines.length} lines · {formatMoney(totalCancelValue, so.currency)}
             </div>
             <div className="flex items-center gap-2">
               <Button variant="secondary" size="sm" onClick={guardedClose} icon={<X className="w-3.5 h-3.5" />}>

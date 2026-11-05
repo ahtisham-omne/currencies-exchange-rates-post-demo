@@ -59,3 +59,12 @@ Items is the redesigned app from [`nimble-palette`](https://github.com/ahtisham-
 - where each is defined;
 - how the earlier touchpoint maps onto it;
 - how to pull later design changes.
+
+### Sales Orders
+
+Sales Orders is the redesigned app from [`Sales-Order-V5`](https://github.com/ahtisham-omne/Sales-Order-V5), added as a squashed subtree. [docs/sales-orders-currency-touchpoints.md](docs/sales-orders-currency-touchpoints.md) records:
+
+- its currency and exchange-rate touchpoints;
+- where each is defined;
+- how the earlier touchpoint maps onto it;
+- how to pull later design changes.

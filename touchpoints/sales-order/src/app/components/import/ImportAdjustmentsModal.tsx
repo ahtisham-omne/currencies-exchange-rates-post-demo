@@ -13,6 +13,10 @@ import {
   adjustmentImpact, netImpact, parseAdjustmentList, serializeAdjustmentList, type ParsedAdjustment,
 } from "./importAdjustments";
 import type { ImportRecord } from "./importModel";
+import { DocCurrencyProvider } from "@/app/components/currency/DocCurrency";
+import { useDocWhole } from "@/app/components/currency/docCurrencyContext";
+import { formatWhole } from "@/app/components/so/soMoney";
+import { customerCurrency } from "@/app/currency/soFx";
 
 /**
  * One-time adjustments on an import row, scoped to the cell you opened.
@@ -31,8 +35,10 @@ import type { ImportRecord } from "./importModel";
  * edit form IS the module's, unforked.
  */
 
-const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+/* Amounts are in the record's currency: the file's, else the customer's
+   default (as importMaterialize sets it). The add/edit form reads it too. */
+const recordCurrency = (record: ImportRecord) =>
+  (record.values.currencyCode ?? "").trim().toUpperCase() || customerCurrency((record.values.customerName ?? "").trim());
 
 export type AdjustmentTarget = { kind: "record" } | { kind: "line"; lineId: string };
 
@@ -48,6 +54,8 @@ export function ImportAdjustmentsModal({
   onCommit: (value: string) => void;
   onClose: () => void;
 }) {
+  const currency = recordCurrency(record);
+  const fmtCurrency = (n: number) => formatWhole(n, currency);
   const isRecordScope = target.kind === "record";
   const lineIndex = isRecordScope ? -1 : record.lines.findIndex((l) => l.id === target.lineId);
   const line = lineIndex >= 0 ? record.lines[lineIndex] : null;
@@ -126,7 +134,7 @@ export function ImportAdjustmentsModal({
     : undefined;
 
   return createPortal(
-    <>
+    <DocCurrencyProvider currency={currency} fx={null}>
       <div
         className="fixed inset-0 flex items-center justify-center"
         style={{ zIndex: 12600, backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(2px)" }}
@@ -327,7 +335,7 @@ export function ImportAdjustmentsModal({
           onCancel={() => setEditingAt(null)}
         />
       )}
-    </>,
+    </DocCurrencyProvider>,
     document.body,
   );
 }
@@ -343,6 +351,7 @@ function AdjustmentRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const fmtCurrency = useDocWhole();
   const isAdd = adjustment.type === "premium";
   const isPct = adjustment.amountType === "%";
   const sign = isAdd ? "+" : "-";

@@ -4,6 +4,9 @@ import {
   AlertCircle, Package, Truck, Search, ToggleLeft, ToggleRight, ChartColumn,
   FileText, RefreshCw,
 } from "lucide-react";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { LAST_SYNC_DAY } from "@/app/currency/soFx";
+import { restateDesignText } from "./soMoney";
 
 interface InsightMetric {
   label: string;
@@ -310,7 +313,9 @@ export function InsightsPanel({ open = true, onClose, onActiveChange }: { open?:
                           }`}
                           style={{ fontWeight: 550 }}
                         >
-                          {metric.value}
+                          {/* The catalog's sample figures are the design's USD; the listing's
+                              money KPIs are in base, so the samples are too. */}
+                          {restateDesignText(metric.value, BASE_CURRENCY, LAST_SYNC_DAY, true)}
                         </p>
                       </button>
 

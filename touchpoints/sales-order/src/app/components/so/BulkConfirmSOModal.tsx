@@ -3,6 +3,13 @@ import { X, Calendar, CheckCircle, AlertTriangle, ChevronDown, ChevronUp } from 
 import { useModalShortcuts, KbdHint } from "./ModalKeyboard";
 import { Button } from "./ui/Button";
 import type { SalesOrder } from "./types";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatMoney } from "@/app/currency/money";
+import { toSOBase } from "@/app/currency/soFx";
+
+/* Orders are in different currencies: totals across them are in base, each
+   order at its own rate (spec 4.3); an order's own figures are in its currency. */
+const fmtBase = (n: number) => formatMoney(n, BASE_CURRENCY);
 
 interface Props {
   orders: SalesOrder[];
@@ -33,7 +40,7 @@ export function BulkConfirmSOModal({ orders, onConfirm, onClose }: Props) {
 
   const totalLines = approvable.reduce((s, so) => s + so.lines.filter(l => !l.cancelled).length, 0);
   const grandTotal = approvable.reduce(
-    (s, so) => s + so.lines.filter(l => !l.cancelled).reduce((ls, l) => ls + l.orderedQty * l.unitPrice, 0),
+    (s, so) => s + toSOBase(so, so.lines.filter(l => !l.cancelled).reduce((ls, l) => ls + l.orderedQty * l.unitPrice, 0)),
     0,
   );
   const taxRate = 0.0825;
@@ -132,7 +139,7 @@ export function BulkConfirmSOModal({ orders, onConfirm, onClose }: Props) {
                 Orders to Release ({approvable.length})
               </span>
               <span className="rounded bg-success/10 text-success" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)", padding: "2px 8px" }}>
-                ${grandTotal.toLocaleString()}
+                {fmtBase(grandTotal)}
               </span>
             </div>
 
@@ -160,7 +167,7 @@ export function BulkConfirmSOModal({ orders, onConfirm, onClose }: Props) {
                       {activeLines.length} items
                     </span>
                     <span style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)", color: "var(--foreground)" }}>
-                      ${soSubtotal.toLocaleString()}
+                      {formatMoney(soSubtotal, so.currency)}
                     </span>
                     {isExpanded ? <ChevronUp className="w-3.5 h-3.5" style={{ color: "var(--foreground)", opacity: 0.4 }} /> : <ChevronDown className="w-3.5 h-3.5" style={{ color: "var(--foreground)", opacity: 0.4 }} />}
                   </button>
@@ -182,7 +189,7 @@ export function BulkConfirmSOModal({ orders, onConfirm, onClose }: Props) {
                           <span className="truncate pr-2" style={{ color: "var(--foreground)", opacity: 0.7 }}>{line.itemName}</span>
                           <span className="text-center" style={{ color: "var(--foreground)" }}>{line.orderedQty}</span>
                           <span className="text-right" style={{ color: "var(--foreground)", fontWeight: "var(--font-weight-medium)" }}>
-                            ${(line.orderedQty * line.unitPrice).toLocaleString()}
+                            {formatMoney(line.orderedQty * line.unitPrice, so.currency)}
                           </span>
                         </div>
                       ))}
@@ -195,15 +202,15 @@ export function BulkConfirmSOModal({ orders, onConfirm, onClose }: Props) {
             <div className="px-4 py-3 border-t border-border flex items-center justify-end" style={{ gap: 24, fontSize: "var(--text-caption)" }}>
               <div className="text-right">
                 <div style={{ color: "var(--foreground)", opacity: 0.5 }}>Subtotal</div>
-                <div style={{ color: "var(--foreground)", fontWeight: "var(--font-weight-medium)" }}>${grandTotal.toLocaleString()}</div>
+                <div style={{ color: "var(--foreground)", fontWeight: "var(--font-weight-medium)" }}>{fmtBase(grandTotal)}</div>
               </div>
               <div className="text-right">
                 <div style={{ color: "var(--foreground)", opacity: 0.5 }}>Tax ({(taxRate * 100).toFixed(2)}%)</div>
-                <div style={{ color: "var(--foreground)", fontWeight: "var(--font-weight-medium)" }}>${tax.toLocaleString()}</div>
+                <div style={{ color: "var(--foreground)", fontWeight: "var(--font-weight-medium)" }}>{fmtBase(tax)}</div>
               </div>
               <div className="text-right">
                 <div style={{ color: "var(--foreground)", opacity: 0.5 }}>Total</div>
-                <div style={{ color: "var(--success)", fontWeight: "var(--font-weight-semibold)" }}>${total.toLocaleString()}</div>
+                <div style={{ color: "var(--success)", fontWeight: "var(--font-weight-semibold)" }}>{fmtBase(total)}</div>
               </div>
             </div>
           </div>
@@ -236,14 +243,14 @@ export function BulkConfirmSOModal({ orders, onConfirm, onClose }: Props) {
             <span style={{ fontWeight: "var(--font-weight-medium)", opacity: 1, color: "var(--foreground)" }}>
               {totalLines} line items
             </span>{" "}
-            (${total.toLocaleString()} incl. tax) will be ready for fulfillment.
+            ({fmtBase(total)} incl. tax) will be ready for fulfillment.
           </div>
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-3 border-t border-border shrink-0">
           <span style={{ fontSize: "var(--text-caption)", color: "var(--foreground)", opacity: 0.5 }}>
-            {approvable.length} orders &middot; {totalLines} items &middot; ${total.toLocaleString()} total
+            {approvable.length} orders &middot; {totalLines} items &middot; {fmtBase(total)} total
           </span>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={onClose} icon={<X className="w-3.5 h-3.5" />}>

@@ -4,6 +4,7 @@ import { ITEM_BY_CODE, priceListPrice } from "./importCatalog";
 import { parseAdjustment } from "./importParse";
 import { toModuleAdjustments, type ModuleAdjustment } from "./importAdjustments";
 import { MOCK_CUSTOMERS } from "@/app/components/so/CreateSOModal";
+import { DESIGN_CURRENCY, convertOn, customerCurrency, isoDay } from "@/app/currency/soFx";
 
 /**
  * Turning a reviewed import row into a real sales order.
@@ -153,13 +154,18 @@ export function materializeSO(
   const repName = (v.salesRep ?? "").trim();
   const secondaryReps = splitList(v.secondarySalesReps);
 
+  /* The file's currency, else the customer's default (spec 4.3). A line
+     with no price takes the price list's, written in USD, in that currency. */
+  const orderCurrency = ((v.currencyCode ?? "").trim().toUpperCase()) || customerCurrency(customerName);
+  const orderDay = toSODate(v.requestedOn) || undefined;
+
   const lines: SOLine[] = record.lines.map((line, i) => {
     const lv = line.values;
     const code = (lv.lineItem ?? "").trim();
     const row = ITEM_BY_CODE[code];
     const qty = parseFloat((lv.lineQuantity ?? "").trim()) || 0;
     const priced = parseFloat((lv.linePricePerUnit ?? "").trim());
-    const unitPrice = Number.isNaN(priced) ? (priceListPrice(code) ?? 0) : priced;
+    const unitPrice = Number.isNaN(priced) ? convertOn(priceListPrice(code) ?? 0, DESIGN_CURRENCY, orderCurrency, isoDay(orderDay)) : priced;
     /* Lines stay raw. One-time adjustments are a separate layer the
        module's own adjustments engine applies (percentages resolve
        against each line's own subtotal), so folding them into the unit
@@ -191,7 +197,7 @@ export function materializeSO(
        timestamp is ours, and it goes on the pill, not on the order. */
     orderDate: toSODate(v.requestedOn) || undefined,
     requestedDeliveryDate: toSODate(v.deliveryDate),
-    currency: (v.currencyCode ?? "").trim() || "USD",
+    currency: orderCurrency,
     paymentTerms: (v.paymentTerms ?? "").trim() || "Net 30",
     shippingAddress: locationName || (customer as any)?.address || "",
     description: (v.externalNotes ?? "").trim(),

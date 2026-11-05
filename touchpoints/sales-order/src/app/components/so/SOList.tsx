@@ -22,6 +22,13 @@ import { SOFilterBar } from "./SOFilterBar";
 import { DatePickerField } from "./date-picker-field";
 import { InsightsRangeMenu, InsightsRefresh, type InsightsRange } from "@/app/components/shared/InsightsControls";
 import { summarizeSO } from "./summarizeSO";
+import { Money } from "@/app/components/currency/Money";
+import { BaseCurrencyNote } from "@/app/components/currency/BaseCurrencyNote";
+import { CurrencyFlag } from "@/app/components/currency/CurrencyChip";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatCompactMoney, formatMoney } from "@/app/currency/money";
+import { soFx, toSOBase } from "@/app/currency/soFx";
+import { itemListPrice, txInOrderCurrency } from "./soMoney";
 // SOFilterPills removed — filters managed via modal only
 import { EMPTY_SO_FILTERS, countActiveSOFilters, soMatchesAdvancedFilters, type SOActiveFilters } from "./SOFilterUtils";
 import { FilterPill as SharedFilterPill } from "@/app/components/shared/FilterPill";
@@ -153,6 +160,7 @@ const LAST_UPDATED_BY = [
 
 /* Version badge — now using shared component */
 import { VersionBadge } from "./VersionBadge";
+import { SODocCurrency } from "@/app/components/currency/SODocCurrency";
 
 /* ═══ Density config matching Partner module ═══ */
 type DensityOption = "condensed" | "comfort" | "kanban";
@@ -493,7 +501,7 @@ export function SOList() {
         soNumber: so.soNumber,
         customerName: so.customer,
         orderStatus: so.status,
-        currencyCode: 'USD',
+        currencyCode: so.currency,
         requestedOn: so.orderDate || so.createdDate,
         priority: so.priority,
       },
@@ -933,7 +941,8 @@ export function SOList() {
      match count against the staged draft including the value
      filter. Memoised so we don't re-summarise on every keystroke. */
   const salesOrdersForFilterPreview = useMemo(
-    () => salesOrders.map(so => ({ ...so, grandTotal: summarizeSO(so).grandTotal })),
+    /* In base: orders in different currencies compare at their own rates. */
+    () => salesOrders.map(so => ({ ...so, grandTotal: toSOBase(so, summarizeSO(so).grandTotal) })),
     [salesOrders],
   );
 
@@ -996,7 +1005,7 @@ export function SOList() {
        filter compares against the real summarised total. */
     if (countActiveSOFilters(advancedFilters) > 0) {
       list = list.filter(so => soMatchesAdvancedFilters(
-        { ...so, grandTotal: summarizeSO(so).grandTotal } as any,
+        { ...so, grandTotal: toSOBase(so, summarizeSO(so).grandTotal) } as any,
         advancedFilters,
       ));
     }
@@ -1042,7 +1051,7 @@ export function SOList() {
           case "customer": aVal = a.customer; bVal = b.customer; break;
           case "status": aVal = a.status; bVal = b.status; break;
           case "salesrep": aVal = a.salesRep; bVal = b.salesRep; break;
-          case "value": aVal = summarizeSO(a).grandTotal; bVal = summarizeSO(b).grandTotal; break;
+          case "value": aVal = toSOBase(a, summarizeSO(a).grandTotal); bVal = toSOBase(b, summarizeSO(b).grandTotal); break;
           case "priority": aVal = a.priority; bVal = b.priority; break;
           case "linecount": aVal = a.lines.length; bVal = b.lines.length; break;
           case "orderdate": aVal = a.orderDate; bVal = b.orderDate; break;
@@ -1068,7 +1077,8 @@ export function SOList() {
      `so.total` only included line subtotals with tax. */
   const activeSOs = useMemo(() => salesOrders.filter(s => s.status !== "Archived"), [salesOrders]);
   const stats = useMemo(() => {
-    const grand = (so: typeof activeSOs[number]) => summarizeSO(so).grandTotal;
+    /* Each order in base at its own rate before adding up (spec 4.3). */
+    const grand = (so: typeof activeSOs[number]) => toSOBase(so, summarizeSO(so).grandTotal);
     const totalRevenue = activeSOs.reduce((s, so) => s + grand(so), 0);
     const totalOrders = activeSOs.length;
     const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
@@ -1080,26 +1090,27 @@ export function SOList() {
   }, [activeSOs]);
 
   const insightCardData = useMemo(() => {
-    const grand = (so: typeof activeSOs[number]) => summarizeSO(so).grandTotal;
+    const grand = (so: typeof activeSOs[number]) => toSOBase(so, summarizeSO(so).grandTotal);
+    const base = (n: number) => formatCompactMoney(n, BASE_CURRENCY);
     const highPriorityCount = activeSOs.filter(s => s.priority === "High").length;
     const readyToShipCount = activeSOs.filter(s => s.status === "Cleared" && s.lines.every(l => l.cancelled || l.allocatedQty >= l.orderedQty)).length;
     const pipelineValue = activeSOs.filter(s => !["Cancelled", "Archived"].includes(s.status)).reduce((s, so) => s + grand(so), 0);
     const clearedValue = activeSOs.filter(s => s.status === "Cleared").reduce((s, so) => s + grand(so), 0);
     const valueMap: Record<string, string> = {
-      "Total Projected Revenue": `$${(stats.totalRevenue / 1000).toFixed(0)}K`,
-      "Average Order Value": `$${(stats.avgOrderValue / 1000).toFixed(1)}K`,
+      "Total Projected Revenue": base(stats.totalRevenue),
+      "Average Order Value": base(stats.avgOrderValue),
       "Total Orders": String(stats.totalOrders),
       "Pending Approval": String(stats.pendingApproval),
       "Overdue Orders": String(stats.overdueOrders),
-      "Open Order Value": `$${(stats.openOrderValue / 1000).toFixed(0)}K`,
-      "Revenue at Risk": `$${(stats.revenueAtRisk / 1000).toFixed(0)}K`,
+      "Open Order Value": base(stats.openOrderValue),
+      "Revenue at Risk": base(stats.revenueAtRisk),
       "High Priority Orders": String(highPriorityCount),
       "Ready to Ship": String(readyToShipCount),
       "Avg. Days to Fulfill": "3.2 days",
       "Order Fill Rate": "87%",
       "Order Revisions": String(activeSOs.filter(s => !["Cancelled", "Shipped"].includes(s.status) && s.version && s.version.number > 1).length),
-      "Pipeline Value": pipelineValue >= 1000000 ? `$${(pipelineValue / 1000000).toFixed(1)}M` : `$${(pipelineValue / 1000).toFixed(0)}K`,
-      "Cleared Value": clearedValue >= 1000000 ? `$${(clearedValue / 1000000).toFixed(1)}M` : `$${(clearedValue / 1000).toFixed(0)}K`,
+      "Pipeline Value": base(pipelineValue),
+      "Cleared Value": base(clearedValue),
     };
     return activeInsights.map(ins => ({ label: ins.label, value: valueMap[ins.label] || ins.value, trending: ins.trending, description: ins.description }));
   }, [activeInsights, stats, activeSOs]);
@@ -1357,15 +1368,16 @@ export function SOList() {
         /* Listing's "Order Value" is the GRAND TOTAL (subtotal + tax +
            freight + adjustments − rules), not the line-subtotal-with-tax.
            Same number the detail sidebar's "Grand Total" tile shows. */
-        return <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }}>${summary.grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
+        /* In the order's own currency (spec 4.3), with its rate on hover. */
+        return <Money value={summary.grandTotal} currency={so.currency} fx={soFx(so)} className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }} />;
       case "invoiced": {
-        const invoiced = so.linkedTransactions.filter(t => t.type === "Invoice").reduce((s, t) => s + t.amount, 0);
+        const invoiced = so.linkedTransactions.filter(t => t.type === "Invoice").reduce((s, t) => s + txInOrderCurrency(t, so), 0);
         const invoiceList = so.linkedTransactions.filter(t => t.type === "Invoice");
         return (
           <div className="relative group/inv">
             <div className="flex items-center gap-1">
               <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 500, color: invoiced > 0 ? '#0F172A' : '#94A3B8' }}>
-                {invoiced > 0 ? `$${invoiced.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                {invoiced > 0 ? <Money value={invoiced} currency={so.currency} fx={soFx(so)} /> : '—'}
               </span>
               {invoiceList.length > 0 && (
                 <ArrowUpRight className="w-3 h-3 text-primary/40 group-hover/inv:text-primary transition-colors" />
@@ -1378,7 +1390,7 @@ export function SOList() {
                   {invoiceList.map((inv, i) => (
                     <div key={i} className="flex items-center justify-between py-1 px-2 rounded-md hover:bg-muted/40 transition-colors cursor-pointer">
                       <span className="text-[12px] text-primary" style={{ fontWeight: 500 }}>{inv.number}</span>
-                      <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }}>${inv.amount.toLocaleString()}</span>
+                      <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }}>{formatMoney(inv.amount, inv.currency || so.currency)}</span>
                     </div>
                   ))}
                 </div>
@@ -1388,8 +1400,8 @@ export function SOList() {
         );
       }
       case "payments": {
-        const payments = so.linkedTransactions.filter(t => t.type === "Payment Receipt").reduce((s, t) => s + t.amount, 0);
-        return <span className="whitespace-nowrap tabular-nums text-left" style={{ fontSize: '13px', fontWeight: 500, color: payments > 0 ? '#0F172A' : '#94A3B8' }}>{payments > 0 ? `$${payments.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</span>;
+        const payments = so.linkedTransactions.filter(t => t.type === "Payment Receipt").reduce((s, t) => s + txInOrderCurrency(t, so), 0);
+        return <span className="whitespace-nowrap tabular-nums text-left" style={{ fontSize: '13px', fontWeight: 500, color: payments > 0 ? '#0F172A' : '#94A3B8' }}>{payments > 0 ? <Money value={payments} currency={so.currency} fx={soFx(so)} /> : '—'}</span>;
       }
       case "orderdate": return <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{dates.orderDate}</span>;
       case "shipby": return <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{dates.shipBy}</span>;
@@ -1509,7 +1521,7 @@ export function SOList() {
         return <span className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 400, color: '#334155' }}>{so.rejectedBy}</span>;
       }
       case "priority": return <PriorityBadge priority={so.priority} />;
-      case "currency": return <span className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{so.currency}</span>;
+      case "currency": return <span className="whitespace-nowrap inline-flex items-center gap-1.5" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}><CurrencyFlag code={so.currency} />{so.currency}</span>;
       case "tags": {
         /* Tags cell — Partner Management chrome
            (PartnersVendorsListPage.tsx:1946). Explicit slate colors
@@ -1650,7 +1662,7 @@ export function SOList() {
                       <span>On-Hand: <b>{previewTokens.onHand.toLocaleString()}</b></span>
                     </div>
                     <span className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>
-                      ${previewTokens.unitPrice.toFixed(2)}
+                      {itemListPrice(previewTokens.unitPrice)}
                       <span className="text-slate-400 ml-1" style={{ fontWeight: 400 }}>/ unit</span>
                     </span>
                   </div>
@@ -1850,6 +1862,7 @@ export function SOList() {
                   onCustomChange={(from, to) => setInsightsCustom({ from, to })}
                 />
                 <InsightsRefresh toastLabel="Sales order insights refreshed" />
+                <BaseCurrencyNote />
               </div>
               <button onClick={() => setShowInsights(true)} className="inline-flex items-center gap-1 text-[11px] hover:bg-muted/50 px-2 py-0.5 rounded-md transition-colors cursor-pointer" style={{ fontWeight: 500, color: "hsl(var(--primary))" }}>
                 <Plus className="w-3 h-3" /> Add Insights
@@ -2611,6 +2624,7 @@ export function SOList() {
                 <div className="flex items-center justify-between mb-2.5">
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground" style={{ fontWeight: 500 }}>Performance Insights</span>
+                    <BaseCurrencyNote />
                   </div>
                   <button onClick={() => setInsightsCollapsed(true)} className="p-1.5 rounded-md hover:bg-muted/40 text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
                     <X className="w-3.5 h-3.5" />
@@ -3063,6 +3077,7 @@ export function SOList() {
       />
       {showBulkSubmitReview && <BulkSubmitForReviewModal orders={selectedSOs} onConfirm={handleBulkSubmitConfirmed} onClose={() => setShowBulkSubmitReview(false)} />}
       {versionModalSO && (
+        <SODocCurrency so={versionModalSO}>
         <VersionHistoryModal
           soNumber={versionModalSO.soNumber}
           currentVersion={versionModalSO.version?.number ?? 1}
@@ -3072,6 +3087,7 @@ export function SOList() {
             setVersionModalSO(prev => prev ? { ...prev, version: prev.version ? { ...prev.version, number: toVersion } : { number: toVersion, label: 'Latest', date: '' } } : prev);
           }}
         />
+        </SODocCurrency>
       )}
       {printSO && (
         <SendToCustomerModal
