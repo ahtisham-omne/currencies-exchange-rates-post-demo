@@ -184,7 +184,9 @@ export function OverflowCard({ category, items, icon: RowIcon = Layers, children
 
   return (
     <>
-      <span ref={trigger} onMouseEnter={enter} onMouseLeave={leave} className="shrink-0 cursor-default">
+      {/* inline-flex: a pill inside sits level with its neighbours instead of
+          dropping to the text baseline (the "+N" beside a value pill). */}
+      <span ref={trigger} onMouseEnter={enter} onMouseLeave={leave} className="inline-flex shrink-0 cursor-default">
         {children}
       </span>
 
