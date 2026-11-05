@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import {
   Check,
   Search,
@@ -418,7 +419,7 @@ function GroupCard({
             className="text-[14px] leading-none mt-1.5 shrink-0"
             title={group.country}
           >
-            {group.countryFlag}
+            <FlagImage code={flagEmojiCode(group.countryFlag)} className="text-[13px]" />
           </span>
         )}
       </div>

@@ -1,4 +1,6 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { appHref } from "@/embedding";
+import { FlagImage, flagEmojiCode } from "../components/currency/FlagImage";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
@@ -114,6 +116,9 @@ import {
 import { AttachmentsTab, type AttachmentFile } from "../components/vendors/AttachmentsTab";
 import { enrichGroup } from "./PartnerGroupsPage";
 import { VendorsListPage } from "./VendorsListPage";
+import { BASE_CURRENCY } from "../currency/currencies";
+import { formatCompactMoney, formatMoney } from "../currency/money";
+import { partnerCurrencyOf, toBaseNow } from "../currency/partnerCurrency";
 
 /* ─── Tabs (Dashboard first to match Partner Detail) */
 const PG_TABS = [
@@ -499,7 +504,7 @@ function PartnerGroupDetailsPageInner() {
                 }}
               >
                 {group.countryFlag ? (
-                  <span className="leading-none transition-all duration-250" style={{ fontSize: isScrolled ? 14 : 18 }}>{group.countryFlag}</span>
+                  <span className="leading-none transition-all duration-250" style={{ fontSize: isScrolled ? 14 : 18 }}><FlagImage code={flagEmojiCode(group.countryFlag)} /></span>
                 ) : (
                   <Users className="transition-all duration-250" style={{ width: isScrolled ? 16 : 20, height: isScrolled ? 16 : 20, color: typePalette.fg }} />
                 )}
@@ -577,7 +582,7 @@ function PartnerGroupDetailsPageInner() {
                   {/* Region — shows the country flag emoji + name (Partner-detail "Americas 🇺🇸" style) */}
                   {group.country && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-slate-50 text-slate-600 border border-border" style={{ fontWeight: 500 }}>
-                      {group.countryFlag && <span className="text-[12px] leading-none">{group.countryFlag}</span>}
+                      {group.countryFlag && <span className="text-[12px] leading-none"><FlagImage code={flagEmojiCode(group.countryFlag)} className="text-[13px]" /></span>}
                       {group.country}
                     </span>
                   )}
@@ -617,7 +622,7 @@ function PartnerGroupDetailsPageInner() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-[210px]">
-                  <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link copied"); }}>
+                  <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(appHref()); toast.success("Link copied"); }}>
                     <Link2 className="w-4 h-4 mr-2" /> Copy Link
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -1310,6 +1315,8 @@ function DashboardTab({
   customTo: string;
   onCustomChange: (from: string, to: string) => void;
 }) {
+  // Partner currencies come from their groups, as the store has them.
+  const { groups: partnerGroups } = usePartnerGroups();
   /* Chart bucketing still thinks in the legacy 7d/30d/90d/1y windows —
    * map the shared InsightsRange onto them (All time + Custom fall back
    * to the yearly buckets until the analytics feed lands). */
@@ -1398,8 +1405,11 @@ function DashboardTab({
     const active = linkedPartners.filter((v) => v.status === "active").length;
     const inactive = linkedPartners.filter((v) => v.status === "inactive").length;
     const archived = linkedPartners.filter((v) => v.status === "archived").length;
-    const totalSpend = linkedPartners.reduce((sum, v) => sum + (v.totalSpent || 0), 0);
-    const outstanding = linkedPartners.reduce((sum, v) => sum + (v.outstandingBalance || 0), 0);
+    // Partners keep their figures in their own currencies; group totals add
+    // them up in the base currency (each converted at today's mid-market rate).
+    const inBase = (v: Vendor, amount: number | undefined) => toBaseNow(amount || 0, partnerCurrencyOf(v, partnerGroups));
+    const totalSpend = linkedPartners.reduce((sum, v) => sum + inBase(v, v.totalSpent), 0);
+    const outstanding = linkedPartners.reduce((sum, v) => sum + inBase(v, v.outstandingBalance), 0);
     const totalOrders = linkedPartners.reduce((sum, v) => sum + (v.totalOrders || 0), 0);
     // Orders split by trade direction per BA pass — POs to vendor-side
     // partners, SOs from customer-side. Total kept only as the
@@ -1410,12 +1420,14 @@ function DashboardTab({
     // No rating system in product — Avg Rating KPI removed per
     // stakeholder feedback ("we have no rating system, AI keeps
     // inserting it").
-    const creditUtil = linkedPartners.length === 0
-      ? 0
-      : linkedPartners.reduce((sum, v) => sum + (v.creditUtilization || 0), 0) / linkedPartners.length;
+    // Credit used across the group, as a share of its credit limits (both in base).
+    const creditLimitTotal = linkedPartners.reduce((sum, v) => sum + inBase(v, v.creditLimit), 0);
+    const creditUtil = creditLimitTotal > 0
+      ? (linkedPartners.reduce((sum, v) => sum + inBase(v, v.creditUtilization), 0) / creditLimitTotal) * 100
+      : 0;
     const uniqueRegions = new Set(linkedPartners.map((v) => v.country).filter(Boolean)).size || 1;
     return { vendor, customer, active, inactive, archived, totalSpend, outstanding, creditUtil, uniqueRegions, totalOrders, purchaseOrders, salesOrders, avgOrderValue };
-  }, [linkedPartners]);
+  }, [linkedPartners, partnerGroups]);
 
   // Group-level data series — mirrors the Partner Detail dashboard
   // (SPEND_TREND_DATA / ORDER_ACTIVITY_DATA_PO|SO), scaled to aggregate
@@ -1699,8 +1711,8 @@ function DashboardTab({
                         <defs><linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={stroke} stopOpacity={0.15} /><stop offset="100%" stopColor={stroke} stopOpacity={0.01} /></linearGradient></defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--muted))" vertical={false} />
                         <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                        <ReTooltip contentStyle={ttStyle} formatter={(val: number) => [`$${val.toLocaleString()}`, seriesLabel]} labelFormatter={(label, payload) => (payload?.[0]?.payload as { range?: string })?.range ?? label} />
+                        <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => formatCompactMoney(v, BASE_CURRENCY)} />
+                        <ReTooltip contentStyle={ttStyle} formatter={(val: number) => [formatMoney(val, BASE_CURRENCY), seriesLabel]} labelFormatter={(label, payload) => (payload?.[0]?.payload as { range?: string })?.range ?? label} />
                         <Area type="monotone" dataKey="amount" stroke={stroke} strokeWidth={2} fill={`url(#${gradId})`} />
                       </AreaChart>
                     </ResponsiveContainer>
@@ -2737,7 +2749,7 @@ function GroupInformationCard({ group }: { group: PartnerGroupTemplateSummary })
         <div className="min-w-0">
           <PgInfoLabel>Region</PgInfoLabel>
           <p className="text-[12px] text-slate-700 truncate" style={{ fontWeight: 500 }}>
-            {group.countryFlag ? <span className="mr-1">{group.countryFlag}</span> : null}{group.country || "—"}
+            {group.countryFlag ? <span className="mr-1"><FlagImage code={flagEmojiCode(group.countryFlag)} className="text-[13px]" /></span> : null}{group.country || "—"}
           </p>
         </div>
         <div className="min-w-0">
@@ -2928,10 +2940,9 @@ function RecentActivitySidebarCard() {
   );
 }
 
+/** A group total, in the base currency (its partners trade in different ones). */
 function formatCurrency(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
-  return `$${Math.round(n).toLocaleString()}`;
+  return formatCompactMoney(n, BASE_CURRENCY);
 }
 
 /* ─── Communications tab — internal channel for the group ───────────

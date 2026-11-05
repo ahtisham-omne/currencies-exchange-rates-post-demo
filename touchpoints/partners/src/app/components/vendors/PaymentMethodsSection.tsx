@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import { ExpandableTextarea } from "./ExpandableTextarea";
 import {
   Plus, X, CreditCard, ChevronLeft, Check, Pencil, Trash2, Star,
@@ -24,6 +25,10 @@ import {
   PAYMENT_TYPE_CARDS,
 } from "./partnerConstants";
 import { createEmptyPaymentEntry, containsSensitiveNumber } from "./config-helpers";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { moneyPrefix } from "@/app/currency/money";
+import { CurrencySymbol } from "../currency/CurrencySymbol";
+import { BaseCurrencyPreview } from "../currency/BaseCurrencyPreview";
 
 const inputCls = "mt-1.5 rounded-lg border-border !h-10 bg-white text-sm text-foreground placeholder:text-slate-300 focus:border-primary focus:ring-1 focus:ring-primary/20";
 
@@ -337,7 +342,7 @@ export function PhoneFieldWithCountry({ e, updateEntry, defaultFormat }: {
                 phoneCountryOpen ? "border-primary bg-slate-50" : "border-border"
               }`}
             >
-              <span className="text-base">{activeFormat.flag}</span>
+              <span className="text-base"><FlagImage code={flagEmojiCode(activeFormat.flag)} className="text-[13px]" /></span>
               <span style={{ fontWeight: 500 }}>{activeFormat.phoneCode}</span>
               <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${phoneCountryOpen ? "rotate-180" : ""}`} />
             </button>
@@ -370,7 +375,7 @@ export function PhoneFieldWithCountry({ e, updateEntry, defaultFormat }: {
                     }}
                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-slate-50 ${isActive ? "bg-accent/50" : ""}`}
                   >
-                    <span className="text-base shrink-0">{c.flag}</span>
+                    <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(c.flag)} className="text-[13px]" /></span>
                     <span className="text-[12px] text-foreground flex-1" style={{ fontWeight: 500 }}>{c.country}</span>
                     <span className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>{c.phoneCode}</span>
                     {isActive && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
@@ -397,16 +402,21 @@ function PaymentFormFields({
   e,
   updateEntry,
   countryFormat,
+  currency = BASE_CURRENCY,
   readOnly = false,
 }: {
   e: PaymentMethodEntry;
   updateEntry: (id: string, updates: Partial<PaymentMethodEntry>) => void;
   countryFormat?: CountryBankFormat;
+  /** The partner's currency (ISO code): fixed amounts are in it. */
+  currency?: string;
   /** View-only mode — native controls are disabled via the
    *  wrapping fieldset; the discount toggle guards its own click. */
   readOnly?: boolean;
 }) {
   const fmt = countryFormat || DEFAULT_FORMAT;
+  // Fixed amounts are in the partner's currency; a code prefix (MXN) needs more room than a symbol.
+  const fixedPad = moneyPrefix(currency).trim().length > 2 ? "pl-12 pr-3" : "pl-8 pr-3";
   const [walletIdBlocked, setWalletIdBlocked] = useState(false);
   const descError = e.type === "other" && containsSensitiveNumber(e.description)
     ? "Remove the card or account number, this is a free-text record only."
@@ -651,18 +661,19 @@ function PaymentFormFields({
                 isFixed={(e.discountMode ?? "percent") === "fixed"}
                 onChange={(fixed) => updateEntry(e.id, { discountMode: fixed ? "fixed" : "percent" })}
                 percentTooltip="Discount applied as a percentage of the transaction amount."
-                amountTooltip="Discount applied as a fixed dollar amount."
+                amountTooltip={`Discount applied as a fixed amount in ${currency}.`}
               />
             </div>
             <div className="relative mt-1.5">
               {(e.discountMode ?? "percent") === "fixed" && (
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
+                <CurrencySymbol code={currency} className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" />
               )}
-              <Input value={e.discountPercent} onChange={(ev) => updateEntry(e.id, { discountPercent: ev.target.value })} aria-invalid={!!discountErr} placeholder={`e.g. ${(e.discountMode ?? "percent") === "percent" ? "5" : "25.00"}`} className={`rounded-lg !h-10 bg-white text-sm text-foreground placeholder:text-slate-300 ${discountErr ? "border-destructive focus:border-destructive focus:ring-1 focus:ring-destructive/20" : "border-border focus:border-primary focus:ring-1 focus:ring-primary/20"} ${(e.discountMode ?? "percent") === "fixed" ? "pl-7 pr-3" : "pr-8"}`} />
+              <Input value={e.discountPercent} onChange={(ev) => updateEntry(e.id, { discountPercent: ev.target.value })} aria-invalid={!!discountErr} placeholder={`e.g. ${(e.discountMode ?? "percent") === "percent" ? "5" : "25.00"}`} className={`rounded-lg !h-10 bg-white text-sm text-foreground placeholder:text-slate-300 ${discountErr ? "border-destructive focus:border-destructive focus:ring-1 focus:ring-destructive/20" : "border-border focus:border-primary focus:ring-1 focus:ring-primary/20"} ${(e.discountMode ?? "percent") === "fixed" ? fixedPad : "pr-8"}`} />
               {(e.discountMode ?? "percent") === "percent" && (
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
               )}
             </div>
+            {!discountErr && (e.discountMode ?? "percent") === "fixed" && <BaseCurrencyPreview raw={e.discountPercent ?? ""} fromCode={currency} />}
             {discountErr && (
               <p className="mt-1 text-[10px] text-destructive" style={{ fontWeight: 500 }}>{discountErr}</p>
             )}
@@ -674,18 +685,19 @@ function PaymentFormFields({
                 isFixed={(e.additionalChargesMode ?? "percent") === "fixed"}
                 onChange={(fixed) => updateEntry(e.id, { additionalChargesMode: fixed ? "fixed" : "percent" })}
                 percentTooltip="Additional charges added as a percentage of the transaction amount."
-                amountTooltip="Additional charges added as a fixed dollar amount."
+                amountTooltip={`Additional charges added as a fixed amount in ${currency}.`}
               />
             </div>
             <div className="relative mt-1.5">
               {(e.additionalChargesMode ?? "percent") === "fixed" && (
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
+                <CurrencySymbol code={currency} className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" />
               )}
-              <Input value={e.additionalCharges} onChange={(ev) => updateEntry(e.id, { additionalCharges: ev.target.value })} aria-invalid={!!chargesErr} placeholder={`e.g. ${(e.additionalChargesMode ?? "percent") === "percent" ? "2" : "50.00"}`} className={`rounded-lg !h-10 bg-white text-sm text-foreground placeholder:text-slate-300 ${chargesErr ? "border-destructive focus:border-destructive focus:ring-1 focus:ring-destructive/20" : "border-border focus:border-primary focus:ring-1 focus:ring-primary/20"} ${(e.additionalChargesMode ?? "percent") === "fixed" ? "pl-7 pr-3" : "pr-8"}`} />
+              <Input value={e.additionalCharges} onChange={(ev) => updateEntry(e.id, { additionalCharges: ev.target.value })} aria-invalid={!!chargesErr} placeholder={`e.g. ${(e.additionalChargesMode ?? "percent") === "percent" ? "2" : "50.00"}`} className={`rounded-lg !h-10 bg-white text-sm text-foreground placeholder:text-slate-300 ${chargesErr ? "border-destructive focus:border-destructive focus:ring-1 focus:ring-destructive/20" : "border-border focus:border-primary focus:ring-1 focus:ring-primary/20"} ${(e.additionalChargesMode ?? "percent") === "fixed" ? fixedPad : "pr-8"}`} />
               {(e.additionalChargesMode ?? "percent") === "percent" && (
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
               )}
             </div>
+            {!chargesErr && (e.additionalChargesMode ?? "percent") === "fixed" && <BaseCurrencyPreview raw={e.additionalCharges ?? ""} fromCode={currency} />}
             {chargesErr && (
               <p className="mt-1 text-[10px] text-destructive" style={{ fontWeight: 500 }}>{chargesErr}</p>
             )}
@@ -811,8 +823,11 @@ export function PaymentMethodCard({
   onView,
   onEdit,
   onSetPrimary,
+  currency = BASE_CURRENCY,
 }: {
   entry: PaymentMethodEntry;
+  /** The partner's currency (ISO code) a fixed discount or charge is in. */
+  currency?: string;
   /** Whole-card click opens the read-only view modal. */
   onView: () => void;
   /** Top-right Edit (pencil) action button — jumps straight into
@@ -909,14 +924,14 @@ export function PaymentMethodCard({
               <span className="text-[10px] text-slate-500" style={{ fontWeight: 500 }}>Discount</span>
               <span className="text-[10px] text-foreground" style={{ fontWeight: 600 }}>
                 {hasDiscountVal
-                  ? `${(pe.discountMode ?? "percent") === "fixed" ? "$" : ""}${pe.discountPercent}${(pe.discountMode ?? "percent") === "percent" ? "%" : ""}`
+                  ? `${(pe.discountMode ?? "percent") === "fixed" ? moneyPrefix(currency) : ""}${pe.discountPercent}${(pe.discountMode ?? "percent") === "percent" ? "%" : ""}`
                   : "—"}
               </span>
               <span className="text-[10px] text-slate-300 mx-1">|</span>
               <span className="text-[10px] text-slate-500" style={{ fontWeight: 500 }}>Charges</span>
               <span className="text-[10px] text-foreground ml-1" style={{ fontWeight: 600 }}>
                 {hasChargesVal
-                  ? `${(pe.additionalChargesMode ?? "percent") === "fixed" ? "$" : ""}${pe.additionalCharges}${(pe.additionalChargesMode ?? "percent") === "percent" ? "%" : ""}`
+                  ? `${(pe.additionalChargesMode ?? "percent") === "fixed" ? moneyPrefix(currency) : ""}${pe.additionalCharges}${(pe.additionalChargesMode ?? "percent") === "percent" ? "%" : ""}`
                   : "—"}
               </span>
             </div>
@@ -949,6 +964,8 @@ interface PaymentMethodsSectionProps {
   savePaymentEntry: (id: string) => void;
   removePaymentEntry: (id: string) => void;
   country?: string;
+  /** The partner's currency (ISO code): fixed discounts and charges are in it. */
+  currency?: string;
   /** Hide the built-in count + Add CTA toolbar. Use when the
    *  parent surfaces those affordances on its own outer toolbar
    *  (the partner-detail tab does this so the F&L sub-tabs row
@@ -969,6 +986,7 @@ export const PaymentMethodsSection = forwardRef<PaymentMethodsSectionHandle, Pay
   savePaymentEntry,
   removePaymentEntry,
   country,
+  currency = BASE_CURRENCY,
   hideToolbar,
   confirmMutations = false,
 }, ref) {
@@ -1173,6 +1191,7 @@ export const PaymentMethodsSection = forwardRef<PaymentMethodsSectionHandle, Pay
               onView={() => openViewModal(pe.id)}
               onEdit={() => openEditModal(pe.id)}
               onSetPrimary={() => handleSetPrimary(pe.id)}
+              currency={currency}
             />
           ))}
         </div>
@@ -1320,7 +1339,7 @@ export const PaymentMethodsSection = forwardRef<PaymentMethodsSectionHandle, Pay
                 </div>
               ) : modalEntry ? (
                 <div className="space-y-3">
-                  <PaymentFormFields e={modalEntry} updateEntry={updatePaymentEntry} countryFormat={countryFormat} readOnly={pmFormMode === "view"} />
+                  <PaymentFormFields e={modalEntry} updateEntry={updatePaymentEntry} countryFormat={countryFormat} currency={currency} readOnly={pmFormMode === "view"} />
                 </div>
               ) : null}
             </div>

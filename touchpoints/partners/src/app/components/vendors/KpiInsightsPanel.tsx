@@ -24,8 +24,18 @@ import {
   ToggleLeft,
   ToggleRight,
   Sliders,
+  RefreshCw,
 } from "lucide-react";
 import type { Vendor } from "../../data/vendors";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatCompactMoney } from "@/app/currency/money";
+import { CORPORATE_RATE_EFFECTIVE, MID_RATE_UPDATED, partnerCurrencyOf, toBaseNow } from "@/app/currency/partnerCurrency";
+import { usePartnerCurrencyOf } from "@/app/currency/usePartnerCurrency";
+
+/* Money KPIs add up partners that trade in different currencies, so each
+   partner's amount is converted to the base currency (at today's mid-market
+   rate) before summing, and the total is shown in base. */
+const BASE_NOTE = `Shown in the base currency (${BASE_CURRENCY}). Each partner's amount is converted from its own currency at today's mid-market rate.`;
 
 /* ─── KPI definition type ─── */
 export interface KpiDefinition {
@@ -103,8 +113,8 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     iconBg: "#EBF3FF",
     iconColor: "#0548A3",
     subtitle: "Vendor credit exposure",
-    tooltip: "Combined credit limit across all active vendors. The credit your organization has extended to its supplier base.",
-    formula: "sum(creditLimit)\nwhere partnerTypes ∋ Vendor",
+    tooltip: `Combined credit limit across all active vendors. The credit your organization has extended to its supplier base. ${BASE_NOTE}`,
+    formula: "sum(creditLimit in PKR)\nwhere partnerTypes ∋ Vendor",
   },
   {
     key: "total_credit_limit_customers",
@@ -114,8 +124,8 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     iconBg: "#ECFDF5",
     iconColor: "#065F46",
     subtitle: "Customer credit exposure",
-    tooltip: "Combined credit limit across all active customers. The credit your organization has extended to its buyer base.",
-    formula: "sum(creditLimit)\nwhere partnerTypes ∋ Customer",
+    tooltip: `Combined credit limit across all active customers. The credit your organization has extended to its buyer base. ${BASE_NOTE}`,
+    formula: "sum(creditLimit in PKR)\nwhere partnerTypes ∋ Customer",
   },
   {
     key: "avg_credit_limit_vendors",
@@ -125,8 +135,8 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     iconBg: "#F5F3FF",
     iconColor: "rgb(var(--violet))",
     subtitle: "Average per vendor",
-    tooltip: "Total vendor credit limit divided by number of vendors. Benchmarks individual supplier allocations against the vendor portfolio.",
-    formula: "sum(creditLimit) ÷ count(vendors)",
+    tooltip: `Total vendor credit limit divided by number of vendors. Benchmarks individual supplier allocations against the vendor portfolio. ${BASE_NOTE}`,
+    formula: "sum(creditLimit in PKR) ÷ count(vendors)",
   },
   {
     key: "avg_credit_limit_customers",
@@ -136,8 +146,8 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     iconBg: "#FEF3F2",
     iconColor: "#9F1239",
     subtitle: "Average per customer",
-    tooltip: "Total customer credit limit divided by number of customers. Benchmarks individual buyer allocations against the customer portfolio.",
-    formula: "sum(creditLimit) ÷ count(customers)",
+    tooltip: `Total customer credit limit divided by number of customers. Benchmarks individual buyer allocations against the customer portfolio. ${BASE_NOTE}`,
+    formula: "sum(creditLimit in PKR) ÷ count(customers)",
   },
   {
     key: "total_credit_utilization",
@@ -147,8 +157,8 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     iconBg: "#FFF7ED",
     iconColor: "#EA580C",
     subtitle: "Total utilization amount",
-    tooltip: "Sum of all credit currently being used across partners. A high utilization relative to the total limit may indicate elevated risk.",
-    formula: "sum(creditUtilization)",
+    tooltip: `Sum of all credit currently being used across partners. A high utilization relative to the total limit may indicate elevated risk. ${BASE_NOTE}`,
+    formula: "sum(creditUtilization in PKR)",
   },
   {
     key: "total_outstanding",
@@ -158,8 +168,8 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     iconBg: "#FEF2F2",
     iconColor: "rgb(var(--destructive))",
     subtitle: "Total outstanding",
-    tooltip: "Total unpaid balance across all partners. Includes invoices pending payment, overdue amounts, and scheduled disbursements.",
-    formula: "sum(outstandingBalance)",
+    tooltip: `Total unpaid balance across all partners. Includes invoices pending payment, overdue amounts, and scheduled disbursements. ${BASE_NOTE}`,
+    formula: "sum(outstandingBalance in PKR)",
   },
   {
     key: "total_spent",
@@ -169,19 +179,19 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     iconBg: "#F0FDF4",
     iconColor: "#16A34A",
     subtitle: "Across all partners",
-    tooltip: "Cumulative spend across the whole partner portfolio.",
-    formula: "sum(totalSpent)",
+    tooltip: `Cumulative spend across the whole partner portfolio. ${BASE_NOTE}`,
+    formula: "sum(totalSpent in PKR)",
   },
   {
     key: "avg_net_profit",
-    label: "Avg Net Margin",
+    label: "Avg Net Profit",
     category: "Financial",
     iconName: "TrendingUp",
     iconBg: "#ECFDF5",
     iconColor: "rgb(var(--success))",
-    subtitle: "Average profit margin",
-    tooltip: "Average net profit margin calculated across all partner transactions. Factors in revenue, cost of goods, and operational expenses per partner.",
-    formula: "avg(netProfitMargin)",
+    subtitle: "Average per partner",
+    tooltip: `Average net profit per partner across the portfolio. ${BASE_NOTE}`,
+    formula: "sum(netProfit in PKR) ÷ count(partners)",
   },
   // Status
   {
@@ -242,7 +252,43 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     tooltip: "Sales orders received from customer-side partners across the portfolio.",
     formula: "sum(orders) over customer-side partners",
   },
+  // FX — one card per rate type, from the Currency & Exchange Rates module.
+  {
+    key: "market_rate",
+    label: "Mid-market Rate",
+    category: "FX",
+    iconName: "RefreshCw",
+    iconBg: "#F5F3FF",
+    iconColor: "#7C3AED",
+    subtitle: "Live mid-market rates",
+    tooltip: `The midpoint between global buy and sell prices, synced automatically from Open Exchange Rates every 24 hours. Partner amounts are converted to the base currency (${BASE_CURRENCY}) at this rate.`,
+  },
+  {
+    key: "corporate_rate",
+    label: "Corporate Rate",
+    category: "FX",
+    iconName: "RefreshCw",
+    iconBg: "#FFFBEB",
+    iconColor: "#D97706",
+    subtitle: "Rates set by your team",
+    tooltip: "Fixed rates your team sets for specific currencies in Currency & Exchange Rates. A corporate rate stays in effect until someone updates it, giving a stable, predictable value.",
+  },
 ];
+
+/** KPIs that are amounts (added up in the base currency). */
+export const MONEY_KPI_KEYS = new Set([
+  "total_credit_limit_vendors",
+  "total_credit_limit_customers",
+  "avg_credit_limit_vendors",
+  "avg_credit_limit_customers",
+  "total_credit_utilization",
+  "total_outstanding",
+  "total_spent",
+  "avg_net_profit",
+]);
+
+/** KPIs that show when exchange rates were last updated. */
+export const RATE_KPI_KEYS = new Set(["market_rate", "corporate_rate"]);
 
 /** Split a partner's order count by trade direction. Vendor-only
  *  partners are all POs, customer-only all SOs; dual-direction
@@ -271,6 +317,8 @@ export const DEFAULT_ACTIVE_KPIS = [
   "avg_credit_limit_vendors",
   "avg_credit_limit_customers",
   "active_partners",
+  // Mid-market Rate is on by default; Corporate Rate is added from Add Insights.
+  "market_rate",
 ];
 
 /* ─── Period-over-period delta (Vendor Invoicing listing pattern) ─── */
@@ -342,51 +390,39 @@ export function insightsRangePeriodLabel(range: string): string | undefined {
   }
 }
 
-const formatCompact = (val: number): string => {
-  if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`;
-  if (val >= 1_000) return `$${(val / 1_000).toFixed(0)}K`;
-  return `$${val.toFixed(0)}`;
-};
+const formatCompact = (val: number): string => formatCompactMoney(val, BASE_CURRENCY);
+
+/** A partner's currency (ISO code). Pages pass the store-aware one (usePartnerCurrencyOf). */
+export type CurrencyOf = (v: Vendor) => string;
+const defaultCurrencyOf: CurrencyOf = (v) => partnerCurrencyOf(v);
+
+const isVendorSide = (v: Vendor) => !!v.partnerTypes?.includes("vendor");
+const isCustomerSide = (v: Vendor) => !!v.partnerTypes?.includes("customer");
+
+/** The partners a money KPI adds up. */
+export function kpiMoneySubset(key: string, vendors: Vendor[]): Vendor[] {
+  if (key.endsWith("_vendors")) return vendors.filter(isVendorSide);
+  if (key.endsWith("_customers")) return vendors.filter(isCustomerSide);
+  return vendors;
+}
+
+/** Sum of one amount over partners, each converted from its currency to base. */
+function sumInBase(vendors: Vendor[], pick: (v: Vendor) => number, currencyOf: CurrencyOf): number {
+  return vendors.reduce((s, v) => s + toBaseNow(pick(v) || 0, currencyOf(v)), 0);
+}
 
 /* ─── Compute KPI value from vendors data ─── */
-export function computeKpiValue(key: string, vendors: Vendor[]): string {
+export function computeKpiValue(key: string, vendors: Vendor[], currencyOf: CurrencyOf = defaultCurrencyOf): string {
+  if (MONEY_KPI_KEYS.has(key)) return formatCompact(kpiNumeric(key, vendors, currencyOf));
   switch (key) {
     case "total_partners":
       return String(vendors.length);
     case "total_vendors":
-      return String(vendors.filter((v) => v.partnerTypes?.includes("vendor")).length);
+      return String(vendors.filter(isVendorSide).length);
     case "total_customers":
-      return String(vendors.filter((v) => v.partnerTypes?.includes("customer")).length);
+      return String(vendors.filter(isCustomerSide).length);
     case "total_both":
-      return String(vendors.filter((v) => v.partnerTypes?.includes("vendor") && v.partnerTypes?.includes("customer")).length);
-    case "total_credit_limit_vendors": {
-      const subset = vendors.filter((v) => v.partnerTypes?.includes("vendor"));
-      return formatCompact(subset.reduce((s, v) => s + (v.creditLimit || 0), 0));
-    }
-    case "total_credit_limit_customers": {
-      const subset = vendors.filter((v) => v.partnerTypes?.includes("customer"));
-      return formatCompact(subset.reduce((s, v) => s + (v.creditLimit || 0), 0));
-    }
-    case "avg_credit_limit_vendors": {
-      const subset = vendors.filter((v) => v.partnerTypes?.includes("vendor"));
-      const total = subset.reduce((s, v) => s + (v.creditLimit || 0), 0);
-      return formatCompact(subset.length > 0 ? total / subset.length : 0);
-    }
-    case "avg_credit_limit_customers": {
-      const subset = vendors.filter((v) => v.partnerTypes?.includes("customer"));
-      const total = subset.reduce((s, v) => s + (v.creditLimit || 0), 0);
-      return formatCompact(subset.length > 0 ? total / subset.length : 0);
-    }
-    case "total_credit_utilization":
-      return formatCompact(vendors.reduce((s, v) => s + (v.creditUtilization || 0), 0));
-    case "total_outstanding":
-      return formatCompact(vendors.reduce((s, v) => s + (v.outstandingBalance || 0), 0));
-    case "total_spent":
-      return formatCompact(vendors.reduce((s, v) => s + (v.totalSpent || 0), 0));
-    case "avg_net_profit": {
-      const total = vendors.reduce((s, v) => s + (v.netProfitMargin || 0), 0);
-      return vendors.length > 0 ? `${(total / vendors.length).toFixed(1)}%` : "0%";
-    }
+      return String(vendors.filter((v) => isVendorSide(v) && isCustomerSide(v)).length);
     case "active_partners":
       return String(vendors.filter((v) => v.status === "active").length);
     case "inactive_partners":
@@ -397,33 +433,34 @@ export function computeKpiValue(key: string, vendors: Vendor[]): string {
       return String(vendors.reduce((s, v) => s + splitVendorOrders(v).po, 0));
     case "sales_orders":
       return String(vendors.reduce((s, v) => s + splitVendorOrders(v).so, 0));
+    case "market_rate":
+      return MID_RATE_UPDATED;
+    case "corporate_rate":
+      return CORPORATE_RATE_EFFECTIVE;
     default:
       return "–";
   }
 }
 
 /** Raw numeric behind the headline — feeds the seeded delta so the
- *  drift suppresses itself on empty metrics (current = 0 → no chip). */
-function kpiNumeric(key: string, vendors: Vendor[]): number {
+ *  drift suppresses itself on empty metrics (current = 0 → no chip).
+ *  Money KPIs are in the base currency. */
+export function kpiNumeric(key: string, vendors: Vendor[], currencyOf: CurrencyOf = defaultCurrencyOf): number {
+  const subset = kpiMoneySubset(key, vendors);
+  const avg = (total: number) => (subset.length ? total / subset.length : 0);
   switch (key) {
     case "total_partners": return vendors.length;
-    case "total_vendors": return vendors.filter((v) => v.partnerTypes?.includes("vendor")).length;
-    case "total_customers": return vendors.filter((v) => v.partnerTypes?.includes("customer")).length;
-    case "total_both": return vendors.filter((v) => v.partnerTypes?.includes("vendor") && v.partnerTypes?.includes("customer")).length;
-    case "total_credit_limit_vendors": return vendors.filter((v) => v.partnerTypes?.includes("vendor")).reduce((s, v) => s + (v.creditLimit || 0), 0);
-    case "total_credit_limit_customers": return vendors.filter((v) => v.partnerTypes?.includes("customer")).reduce((s, v) => s + (v.creditLimit || 0), 0);
-    case "avg_credit_limit_vendors": {
-      const subset = vendors.filter((v) => v.partnerTypes?.includes("vendor"));
-      return subset.length ? subset.reduce((s, v) => s + (v.creditLimit || 0), 0) / subset.length : 0;
-    }
-    case "avg_credit_limit_customers": {
-      const subset = vendors.filter((v) => v.partnerTypes?.includes("customer"));
-      return subset.length ? subset.reduce((s, v) => s + (v.creditLimit || 0), 0) / subset.length : 0;
-    }
-    case "total_credit_utilization": return vendors.reduce((s, v) => s + (v.creditUtilization || 0), 0);
-    case "total_outstanding": return vendors.reduce((s, v) => s + (v.outstandingBalance || 0), 0);
-    case "total_spent": return vendors.reduce((s, v) => s + (v.totalSpent || 0), 0);
-    case "avg_net_profit": return vendors.length ? vendors.reduce((s, v) => s + (v.netProfitMargin || 0), 0) / vendors.length : 0;
+    case "total_vendors": return vendors.filter(isVendorSide).length;
+    case "total_customers": return vendors.filter(isCustomerSide).length;
+    case "total_both": return vendors.filter((v) => isVendorSide(v) && isCustomerSide(v)).length;
+    case "total_credit_limit_vendors":
+    case "total_credit_limit_customers": return sumInBase(subset, (v) => v.creditLimit, currencyOf);
+    case "avg_credit_limit_vendors":
+    case "avg_credit_limit_customers": return avg(sumInBase(subset, (v) => v.creditLimit, currencyOf));
+    case "total_credit_utilization": return sumInBase(vendors, (v) => v.creditUtilization, currencyOf);
+    case "total_outstanding": return sumInBase(vendors, (v) => v.outstandingBalance, currencyOf);
+    case "total_spent": return sumInBase(vendors, (v) => v.totalSpent, currencyOf);
+    case "avg_net_profit": return avg(sumInBase(vendors, (v) => v.netProfitMargin, currencyOf));
     case "active_partners": return vendors.filter((v) => v.status === "active").length;
     case "inactive_partners": return vendors.filter((v) => v.status === "inactive").length;
     case "archived_partners": return vendors.filter((v) => v.status === "archived").length;
@@ -435,24 +472,24 @@ function kpiNumeric(key: string, vendors: Vendor[]): number {
 
 /** Complement line under the headline — count for money-led cards,
  *  money for count-led cards (Vendor Invoicing card pattern). */
-function kpiSub(key: string, vendors: Vendor[]): string {
+function kpiSub(key: string, vendors: Vendor[], currencyOf: CurrencyOf): string {
   const pctOfPortfolio = (n: number) => vendors.length ? `${Math.round((n / vendors.length) * 100)}% of portfolio` : "";
   switch (key) {
     case "total_partners": {
-      const v = vendors.filter((x) => x.partnerTypes?.includes("vendor")).length;
-      const c = vendors.filter((x) => x.partnerTypes?.includes("customer")).length;
+      const v = vendors.filter(isVendorSide).length;
+      const c = vendors.filter(isCustomerSide).length;
       return `${v} vendors · ${c} customers`;
     }
-    case "total_vendors": return formatCompact(kpiNumeric("total_credit_limit_vendors", vendors)) + " credit limit";
-    case "total_customers": return formatCompact(kpiNumeric("total_credit_limit_customers", vendors)) + " credit limit";
+    case "total_vendors": return formatCompact(kpiNumeric("total_credit_limit_vendors", vendors, currencyOf)) + " credit limit";
+    case "total_customers": return formatCompact(kpiNumeric("total_credit_limit_customers", vendors, currencyOf)) + " credit limit";
     case "total_both": return `of ${vendors.length} partners`;
     case "total_credit_limit_vendors": return `${kpiNumeric("total_vendors", vendors)} vendors`;
     case "total_credit_limit_customers": return `${kpiNumeric("total_customers", vendors)} customers`;
     case "avg_credit_limit_vendors": return `across ${kpiNumeric("total_vendors", vendors)} vendors`;
     case "avg_credit_limit_customers": return `across ${kpiNumeric("total_customers", vendors)} customers`;
     case "total_credit_utilization": {
-      const limit = vendors.reduce((s, v) => s + (v.creditLimit || 0), 0);
-      const util = kpiNumeric("total_credit_utilization", vendors);
+      const limit = sumInBase(vendors, (v) => v.creditLimit, currencyOf);
+      const util = kpiNumeric("total_credit_utilization", vendors, currencyOf);
       return limit ? `${Math.round((util / limit) * 100)}% of ${formatCompact(limit)} limit` : "";
     }
     case "total_outstanding": {
@@ -466,6 +503,8 @@ function kpiSub(key: string, vendors: Vendor[]): string {
     case "archived_partners": return pctOfPortfolio(kpiNumeric("archived_partners", vendors));
     case "purchase_orders": return `to ${kpiNumeric("total_vendors", vendors)} vendors`;
     case "sales_orders": return `from ${kpiNumeric("total_customers", vendors)} customers`;
+    case "market_rate": return "Open Exchange Rates · every 24h";
+    case "corporate_rate": return "Set in Currency & Exchange Rates";
     default: return "";
   }
 }
@@ -473,11 +512,11 @@ function kpiSub(key: string, vendors: Vendor[]): string {
 /** Full computed KPI — headline + complement sub-line + range-scoped
  *  delta. The Vendor Invoicing listing card consumes this exact shape;
  *  the partner surfaces now share it. */
-export function computeKpi(key: string, vendors: Vendor[], range: string): ComputedKpi {
+export function computeKpi(key: string, vendors: Vendor[], range: string, currencyOf: CurrencyOf = defaultCurrencyOf): ComputedKpi {
   return {
-    value: computeKpiValue(key, vendors),
-    sub: kpiSub(key, vendors),
-    delta: buildSeededDelta(key, range, kpiNumeric(key, vendors)),
+    value: computeKpiValue(key, vendors, currencyOf),
+    sub: kpiSub(key, vendors, currencyOf),
+    delta: buildSeededDelta(key, range, kpiNumeric(key, vendors, currencyOf)),
   };
 }
 
@@ -499,6 +538,7 @@ function KpiIcon({ name, className, style }: { name: string; className?: string;
     case "ArchiveRestore": return <ArchiveRestore {...props} />;
     case "Package": return <Package {...props} />;
     case "Star": return <Star {...props} />;
+    case "RefreshCw": return <RefreshCw {...props} />;
     default: return <ChartColumn {...props} />;
   }
 }
@@ -510,6 +550,7 @@ function CategoryIcon({ category }: { category: string }) {
     case "Financial": return <DollarSign className="w-4 h-4 text-muted-foreground" />;
     case "Status": return <Clock className="w-4 h-4 text-muted-foreground" />;
     case "Operational": return <Globe className="w-4 h-4 text-muted-foreground" />;
+    case "FX": return <RefreshCw className="w-4 h-4 text-muted-foreground" />;
     default: return <ChartColumn className="w-4 h-4 text-muted-foreground" />;
   }
 }
@@ -531,6 +572,7 @@ export function KpiInsightsPanel({
   vendors,
 }: KpiInsightsPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const currencyOf = usePartnerCurrencyOf();
 
   const categories = useMemo(() => {
     const cats: { name: string; kpis: KpiDefinition[] }[] = [];
@@ -717,7 +759,7 @@ export function KpiInsightsPanel({
               <div className="grid grid-cols-2 gap-2">
                 {cat.kpis.map((kpi) => {
                   const isActive = activeKpis.includes(kpi.key);
-                  const value = computeKpiValue(kpi.key, vendors);
+                  const value = computeKpiValue(kpi.key, vendors, currencyOf);
 
                   return (
                     <button
@@ -749,9 +791,10 @@ export function KpiInsightsPanel({
                         </div>
                       </div>
 
-                      {/* Value */}
+                      {/* Value — the rate insights' "Updated as of …" is long, so
+                          it wraps in a smaller size. */}
                       <p
-                        className={`text-[15px] mt-1 transition-colors ${
+                        className={`${RATE_KPI_KEYS.has(kpi.key) ? "text-[12px] leading-snug" : "text-[15px]"} mt-1 transition-colors ${
                           isActive ? "text-foreground" : "text-foreground/80"
                         }`}
                         style={{ fontWeight: 550 }}

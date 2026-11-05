@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import { Star, Users, Globe } from "lucide-react";
 import { PrimaryPill } from "./PrimaryPill";
 import {
@@ -26,7 +27,7 @@ function GroupQuickViewCard({
         <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/[0.04]" />
         <div className="flex items-center justify-between relative">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-base shrink-0">{group.countryFlag}</span>
+            <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(group.countryFlag)} className="text-[13px]" /></span>
             <span
               className="text-white text-[13px] truncate"
               style={{ fontWeight: 600 }}
@@ -95,7 +96,7 @@ function GroupChipWithPopover({
         {isPrimary && (
           <Star className="w-2.5 h-2.5 fill-primary text-primary" />
         )}
-        {group.countryFlag} {group.name}
+        <FlagImage code={flagEmojiCode(group.countryFlag)} className="text-[13px]" /> {group.name}
         <span
           className="text-[10px] text-slate-400"
           style={{ fontWeight: 400 }}
@@ -196,7 +197,7 @@ function OverflowChip({
                       isHovered ? "bg-accent" : "hover:bg-slate-50"
                     }`}
                   >
-                    <span className="shrink-0">{g.countryFlag}</span>
+                    <span className="shrink-0"><FlagImage code={flagEmojiCode(g.countryFlag)} className="text-[13px]" /></span>
                     <span
                       className={`text-[12px] truncate ${
                         isHovered ? "text-primary" : "text-slate-700"

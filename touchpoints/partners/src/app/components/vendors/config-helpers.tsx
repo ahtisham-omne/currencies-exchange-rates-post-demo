@@ -34,6 +34,8 @@ import {
   FUNDED_BY_ITEMS,
   CURRENCY_OPTIONS,
 } from "./partnerConstants";
+import { getCurrency } from "@/app/currency/currencies";
+import { FlagImage } from "../currency/FlagImage";
 
 // ── Reusable pill-style option button ──
 export function PillOption({ label, isSelected, onClick }: { label: string; isSelected: boolean; onClick: () => void }) {
@@ -470,10 +472,11 @@ export function CurrencyDropdown({
   const [search, setSearch] = useState("");
   const selected = CURRENCY_OPTIONS.find((c) => c.id === selectedId);
 
+  // Code, name or the country the Currency Library lists it under.
   const filtered = useMemo(() => {
     if (!search.trim()) return CURRENCY_OPTIONS;
     const q = search.toLowerCase();
-    return CURRENCY_OPTIONS.filter((c) => c.label.toLowerCase().includes(q));
+    return CURRENCY_OPTIONS.filter((c) => c.label.toLowerCase().includes(q) || (getCurrency(c.id)?.country ?? "").toLowerCase().includes(q));
   }, [search]);
 
   return (
@@ -502,7 +505,7 @@ export function CurrencyDropdown({
           >
             {selected ? (
               <span className="flex items-center gap-2 text-foreground truncate" style={{ fontWeight: 500 }}>
-                <span className="text-base shrink-0">{(selected as any).flag || ""}</span>
+                <FlagImage code={selected.flag} className="shrink-0 text-[13px]" />
                 {selected.label}
               </span>
             ) : (
@@ -527,13 +530,25 @@ export function CurrencyDropdown({
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search currency..."
+                placeholder="Search by code, name, or country…"
                 className="w-full h-9 pl-9 pr-3 rounded-lg border border-border bg-white text-sm text-foreground placeholder:text-slate-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
                 autoFocus
               />
             </div>
           </div>
-          <div className="border-t border-muted" style={{ maxHeight: 300, overflowY: "auto" }}>
+          <div
+            className="border-t border-muted overscroll-contain"
+            style={{ maxHeight: 300, overflowY: "auto" }}
+            // A Radix Dialog's scroll lock swallows wheel events on portaled
+            // popovers; scroll the list by hand so it scrolls inside Configure.
+            onWheelCapture={(e) => {
+              const el = e.currentTarget;
+              if (el.scrollHeight <= el.clientHeight) return;
+              el.scrollTop += e.deltaY;
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
             {filtered.length === 0 ? (
               <div className="py-6 text-center text-xs text-slate-400">No results found</div>
             ) : (
@@ -549,7 +564,7 @@ export function CurrencyDropdown({
                     selectedId === c.id ? "bg-accent/50" : ""
                   }`}
                 >
-                  <span className="text-base shrink-0">{(c as any).flag || ""}</span>
+                  <FlagImage code={c.flag} className="shrink-0 text-[13px]" />
                   <span className="w-7 text-center text-[12px] text-slate-500 shrink-0" style={{ fontWeight: 600 }}>{c.symbol}</span>
                   <span className="text-sm text-foreground truncate" style={{ fontWeight: 500 }}>{c.label}</span>
                   {selectedId === c.id && <Check className="w-4 h-4 text-primary ml-auto shrink-0" />}

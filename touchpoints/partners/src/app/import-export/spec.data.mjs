@@ -62,14 +62,23 @@ export const COUNTRY_CODES = [
   { code: "+48", country: "Poland", flag: "🇵🇱" },
 ];
 
-/** CURRENCY_OPTIONS ids (partnerConstants.tsx), in order. The file value is
- *  the upper-cased code ("USD"); apply maps it back to the id ("usd"). */
+/** CURRENCY_OPTIONS ids (partnerConstants.tsx), in order: every active currency
+ *  in the Currency Library (the Currency & Exchange Rates module). The file
+ *  value is the upper-cased code ("USD"); apply maps it back to the id ("usd"). */
 export const CURRENCY_IDS = [
-  "usd", "eur", "gbp", "jpy", "chf", "cad", "aud", "cny",
-  "inr", "krw", "sgd", "hkd", "twd", "thb", "myr", "idr", "php", "vnd", "nzd", "pkr", "bdt", "lkr", "mmk", "khr", "lak", "fjd", "pgk",
-  "mxn", "brl", "ars", "clp", "cop", "pen", "uyu", "jmd",
-  "sek", "nok", "dkk", "pln", "czk", "huf", "ron", "bgn", "hrk", "rsd", "try", "rub", "uah", "isk",
-  "aed", "sar", "qar", "kwd", "bhd", "omr", "jod", "ils", "egp", "zar", "ngn", "kes", "ghs", "mad", "tnd", "kzt", "gel",
+  "aed", "afn", "all", "amd", "aoa", "ars", "aud", "awg", "azn", "bam", "bbd", "bdt",
+  "bgn", "bhd", "bif", "bmd", "bnd", "bob", "brl", "bsd", "btn", "bwp", "byn", "bzd",
+  "cad", "cdf", "chf", "clp", "cny", "cop", "crc", "cup", "cve", "czk", "djf", "dkk",
+  "dop", "dzd", "egp", "ern", "etb", "eur", "fjd", "fkp", "gbp", "gel", "ghs", "gip",
+  "gmd", "gnf", "gtq", "gyd", "hkd", "hnl", "htg", "huf", "idr", "ils", "inr", "iqd",
+  "irr", "isk", "jmd", "jod", "jpy", "kes", "kgs", "khr", "kmf", "kpw", "krw", "kwd",
+  "kyd", "kzt", "lak", "lbp", "lkr", "lrd", "lsl", "lyd", "mad", "mdl", "mga", "mkd",
+  "mmk", "mnt", "mop", "mru", "mur", "mvr", "mwk", "mxn", "myr", "mzn", "nad", "ngn",
+  "nio", "nok", "npr", "nzd", "omr", "pab", "pen", "pgk", "php", "pkr", "pln", "pyg",
+  "qar", "ron", "rsd", "rub", "rwf", "sar", "sbd", "scr", "sdg", "sek", "sgd", "shp",
+  "sle", "sos", "srd", "ssp", "stn", "svc", "syp", "szl", "thb", "tjs", "tmt", "tnd",
+  "top", "try", "ttd", "twd", "tzs", "uah", "ugx", "usd", "uyu", "uzs", "ved", "ves",
+  "vnd", "vuv", "wst", "xaf", "xcd", "xcg", "xof", "xpf", "yer", "zar", "zmw", "zwg",
 ];
 export const CURRENCY_CODES = CURRENCY_IDS.map((id) => id.toUpperCase());
 
@@ -302,7 +311,7 @@ const PARTNER_COLUMNS = [
   {
     key: "currency", label: "Currency", kind: "select", options: CURRENCY_CODES, width: 12,
     aliases: ["billing currency"],
-    description: "Three-letter currency code, such as USD or EUR. Blank inherits the primary group's currency, else USD.",
+    description: "Three-letter currency code, such as USD or EUR. Blank inherits the primary group's currency, else the base currency (PKR).",
     ref: { format: "Set value", validValues: "ISO code from the Valid Values sheet", example: "USD" },
     example1: "USD", example2: "SEK",
   },
@@ -417,7 +426,7 @@ export const PARTNERS_DATA = {
     { heading: "Vendor Sub-Types", subHeader: ["Value", "What It Means"], rows: VENDOR_SUB_TYPES.map((s) => [s.label, s.id === "vendor_rules" ? "The base vendor profile. Always on for a vendor." : s.id === "carrier" ? "The partner also acts as a shipping carrier." : "Coming soon in Omne. Accepted and stored, not yet configurable."]) },
     { heading: "Customer Sub-Types", subHeader: ["Value", "What It Means"], rows: CUSTOMER_SUB_TYPES.map((s) => [s.label, s.id === "customer_rules" ? "The base customer profile. Always on for a customer." : "Coming soon in Omne. Accepted and stored, not yet configurable."]) },
     { heading: "Phone Country Code", subHeader: ["Value", "Country"], rows: COUNTRY_CODES.map((c) => [c.code, c.country]) },
-    { heading: "Currency", subHeader: ["Value", "What It Means"], rows: [["ISO Code", listOf(CURRENCY_CODES)], ["(blank)", "Inherits the primary group's currency, else USD."]] },
+    { heading: "Currency", subHeader: ["Value", "What It Means"], rows: [["ISO Code", listOf(CURRENCY_CODES)], ["(blank)", "Inherits the primary group's currency, else the base currency (PKR)."]] },
     { heading: "Credit Enforcement", subHeader: ["Value", "What It Means"], rows: [["None", "No credit limit is enforced."], ["Soft Warning", "Transactions past the limit go through with a warning."], ["Hard Block", "Transactions past the limit are blocked."], ["(blank)", "None."]] },
     { heading: "Payment Term", subHeader: ["Value", "What It Means"], rows: PAYMENT_TERM_PRESETS.map((p) => [p.name, `Payment term preset ${p.id}.`]), note: "Blank inherits the primary group's payment term." },
     { heading: "Pricing Rules", subHeader: ["Value", "What It Means"], rows: PRICING_RULE_PRESETS.map((p) => [p.name, `Pricing rule preset ${p.id}.`]), note: "Blank inherits the primary group's pricing rules." },
@@ -549,7 +558,7 @@ const GROUP_COLUMNS = [
   {
     key: "currency", label: "Currency", kind: "select", options: CURRENCY_CODES, width: 12,
     aliases: ["default currency"],
-    description: "Three-letter currency code inherited by partners in this group. Blank means USD.",
+    description: "Three-letter currency code inherited by partners in this group. Blank means the base currency (PKR).",
     ref: { format: "Set value", validValues: "ISO code from the Valid Values sheet", example: "USD" },
     example1: "USD", example2: "SEK",
   },
@@ -632,7 +641,7 @@ export const PARTNER_GROUPS_DATA = {
         heading: "How Partner Groups Are Matched",
         intro: "Omne matches each row by Group Name, then decides whether to create a new group or update an existing one. Matching is not case sensitive and ignores surrounding spaces.",
         items: [
-          ["New Group", "The name is not in Omne yet, so a new group is created. Status: blank means Active. Billing Type: blank means Domestic. Currency: blank means USD. Credit Enforcement: blank means None."],
+          ["New Group", "The name is not in Omne yet, so a new group is created. Status: blank means Active. Billing Type: blank means Domestic. Currency: blank means the base currency (PKR). Credit Enforcement: blank means None."],
           ["Existing Group", "The name already belongs to a group, so that group is updated. Any blank cell leaves the existing value unchanged. Only the Group Name is required on an update row."],
           ["Group Name", "The name is the matching key and is never changed by an import. A different spelling is treated as a different group."],
         ],
@@ -659,7 +668,7 @@ export const PARTNER_GROUPS_DATA = {
       ["Blank Cell", "Fields left blank are simply empty on the new group, or take the default noted below.", "A blank cell leaves the existing value unchanged."],
       ["Status", "Blank means Active.", "Blank keeps the current status."],
       ["Linked Partners", "Blank creates the group with no members.", "Blank keeps the current members. A value replaces them."],
-      ["Template Defaults", "Billing Type Domestic, Currency USD, Credit Enforcement None when blank.", "Blank keeps the current template values."],
+      ["Template Defaults", "Billing Type Domestic, Currency PKR (the base currency), Credit Enforcement None when blank.", "Blank keeps the current template values."],
     ],
     mergedLast: ["Archived", "If the name belongs to an archived group, the row updates that group but does not restore it. Unarchive it from the listing afterwards if needed."],
   },
@@ -678,7 +687,7 @@ export const PARTNER_GROUPS_DATA = {
     { heading: "Customer Profiles", subHeader: ["Value", "What It Means"], rows: CUSTOMER_SUB_TYPES.map((s) => [s.label, s.id === "customer_rules" ? "The base customer profile." : "Coming soon in Omne. Accepted and stored, not yet configurable."]) },
     { heading: "Country", subHeader: ["Value", "What It Means"], rows: [["Country Name", listOf(names(GROUP_COUNTRIES))]] },
     { heading: "Billing Type", subHeader: ["Value", "What It Means"], rows: [["Domestic", "Partners in the group are billed domestically."], ["International", "Partners in the group are billed internationally."], ["(blank)", "Domestic."]] },
-    { heading: "Currency", subHeader: ["Value", "What It Means"], rows: [["ISO Code", listOf(CURRENCY_CODES)], ["(blank)", "USD."]] },
+    { heading: "Currency", subHeader: ["Value", "What It Means"], rows: [["ISO Code", listOf(CURRENCY_CODES)], ["(blank)", "PKR, the base currency."]] },
     { heading: "Credit Enforcement", subHeader: ["Value", "What It Means"], rows: [["None", "No credit limit is enforced."], ["Soft Warning", "Transactions past the limit go through with a warning."], ["Hard Block", "Transactions past the limit are blocked."], ["(blank)", "None."]] },
     { heading: "Payment Term", subHeader: ["Value", "What It Means"], rows: PAYMENT_TERM_PRESETS.map((p) => [p.name, `Payment term preset ${p.id}.`]) },
     { heading: "Pricing Rules", subHeader: ["Value", "What It Means"], rows: PRICING_RULE_PRESETS.map((p) => [p.name, `Pricing rule preset ${p.id}.`]) },
@@ -705,7 +714,7 @@ export const PARTNER_GROUPS_DATA = {
         lead: "A new partner group is created.",
         items: [
           ["Status", "Blank means Active."],
-          ["Template", "Billing Type Domestic, Currency USD, and Credit Enforcement None when blank."],
+          ["Template", "Billing Type Domestic, Currency PKR (the base currency), and Credit Enforcement None when blank."],
           ["Members", "Linked Partners are attached by name; unknown names are dropped with a warning."],
         ],
       },

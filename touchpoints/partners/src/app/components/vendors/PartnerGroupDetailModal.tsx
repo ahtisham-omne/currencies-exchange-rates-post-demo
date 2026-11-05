@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import {
   Dialog,
   DialogContent,
@@ -2244,7 +2245,7 @@ function PartnerRow({
       {show("country") && (
       <td {...tdProps("country")}>
         <div className="flex items-center gap-1.5 text-[12px] text-slate-600" style={{ fontWeight: 500 }}>
-          <span className="text-[14px] leading-none">{v.countryFlag}</span>
+          <span className="text-[14px] leading-none"><FlagImage code={flagEmojiCode(v.countryFlag)} className="text-[13px]" /></span>
           {v.country}
         </div>
       </td>

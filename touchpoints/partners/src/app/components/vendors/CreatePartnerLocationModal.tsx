@@ -47,6 +47,7 @@
  * ─────────────────────────────────────────────────────────────────────
  */
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import { createPortal } from "react-dom";
 import { ExpandableTextarea } from "./ExpandableTextarea";
 import { useVendors } from "../../context/VendorContext";
@@ -125,6 +126,9 @@ import { SelectPocDictionaryModal, CreatePocModal } from "./PocModals";
 import { PocPillsRow } from "./PocPillComponents";
 import { AddressAutocomplete } from "./AddressAutocomplete";
 import { ModifiedPill } from "./ModifiedPill";
+import { getCurrency } from "@/app/currency/currencies";
+import { CurrencyFlag } from "../currency/CurrencyFlag";
+import { useProfileMoney } from "../currency/ProfileCurrency";
 // Note on Configure surface parity: we visually mirror the partner-creation
 // Configure right pane (46×46 flow nodes with currency symbol + partner-
 // logo blocks + rich hover cards, identical headings/spacing). We do NOT
@@ -231,6 +235,9 @@ export function CreatePartnerLocationModal({
   editData,
 }: CreatePartnerLocationModalProps) {
   const isEditMode = !!editData;
+  // A location trades in its partner's currency (set on the partner).
+  const locationCurrency = useProfileMoney().partnerCurrency;
+  const locationCurrencyInfo = getCurrency(locationCurrency);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
 
@@ -1317,7 +1324,7 @@ export function CreatePartnerLocationModal({
                                 type="button"
                                 className="flex items-center gap-1.5 pl-2.5 pr-1.5 !h-10 rounded-l-lg border border-r-0 border-border bg-white text-sm shrink-0 cursor-pointer hover:border-slate-300 transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                               >
-                                <span className="text-base leading-none">{selectedPhoneCountry.flag}</span>
+                                <span className="text-base leading-none"><FlagImage code={flagEmojiCode(selectedPhoneCountry.flag)} className="text-[13px]" /></span>
                                 <span className="text-xs text-slate-700" style={{ fontWeight: 600 }}>
                                   {phoneCountryCode}
                                 </span>
@@ -1357,7 +1364,7 @@ export function CreatePartnerLocationModal({
                                         : "hover:bg-slate-50 text-slate-700"
                                     }`}
                                   >
-                                    <span className="text-base">{c.flag}</span>
+                                    <span className="text-base"><FlagImage code={flagEmojiCode(c.flag)} className="text-[13px]" /></span>
                                     <span className="text-sm flex-1 truncate" style={{ fontWeight: 500 }}>
                                       {c.country}
                                     </span>
@@ -2010,20 +2017,20 @@ export function CreatePartnerLocationModal({
                             {
                               key: "currency" as const,
                               label: "Currency",
-                              sublabel: "USD",
+                              sublabel: locationCurrency,
                               hasData: true,
                               locked: true,
                               active: true,
                               color: "rgb(var(--primary))",
                               bgActive: "#EBF3FF",
-                              renderIcon: () => <span className="text-[18px]" style={{ fontWeight: 700 }}>$</span>,
+                              renderIcon: () => <span className="text-[18px]" style={{ fontWeight: 700 }}>{locationCurrencyInfo?.symbol ?? locationCurrency}</span>,
                               hover: (
-                                <div className="w-[200px] bg-white rounded-xl border border-[#E8ECF1] shadow-lg p-3">
+                                <div className="w-[220px] bg-white rounded-xl border border-[#E8ECF1] shadow-lg p-3">
                                   <div className="flex items-center gap-2.5 mb-2">
-                                    <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center text-primary text-[18px]" style={{ fontWeight: 700 }}>$</div>
-                                    <div>
-                                      <p className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>USD</p>
-                                      <p className="text-[11px] text-slate-500">US Dollar</p>
+                                    <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0"><CurrencyFlag code={locationCurrency} className="text-[21px]" /></div>
+                                    <div className="min-w-0">
+                                      <p className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>{locationCurrency} <span className="text-slate-400" style={{ fontWeight: 500 }}>· {locationCurrencyInfo?.symbol}</span></p>
+                                      <p className="text-[11px] text-slate-500 truncate">{locationCurrencyInfo?.name}</p>
                                     </div>
                                   </div>
                                   <div className="px-2 py-1 bg-slate-50 rounded-md">

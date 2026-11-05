@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, cloneElement, useRef } from "react";
+import { formatCompactMoney } from "@/app/currency/money";
+import { partnerCurrencyOf } from "@/app/currency/partnerCurrency";
 import { createPortal } from "react-dom";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
@@ -4938,7 +4940,8 @@ export function AddItemModal({
                   const pName = p.displayName || p.companyName;
                   const initials = pName.split(" ").filter(Boolean).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
                   const pTypes = p.partnerTypes || [];
-                  const fmtMoney = (n: number) => (n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n / 1_000).toFixed(0)}K` : `$${n.toFixed(0)}`);
+                  // The partner's amounts are in its own currency.
+                  const fmtMoney = (n: number) => formatCompactMoney(n, partnerCurrencyOf(p));
                   const openPartner = (e: React.MouseEvent) => {
                     e.stopPropagation();
                     window.open(`/vendors/${p.id}`, "_blank", "noopener");

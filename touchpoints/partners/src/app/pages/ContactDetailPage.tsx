@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { appHref } from "@/embedding";
 import { useParams, useNavigate } from "react-router-dom";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
@@ -1727,7 +1728,7 @@ export function ContactDetailPage() {
                         <button className={`rounded-lg border border-border bg-white hover:bg-slate-50 text-slate-700 inline-flex items-center gap-1.5 cursor-pointer shadow-sm transition-all duration-250 ${isCompact ? "h-8 px-3 text-[12px]" : "h-9 px-3.5 text-[13px]"}`} style={{ fontWeight: 500 }}>Actions <ChevronDown className="w-3.5 h-3.5 text-slate-400" /></button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-[210px]">
-                        <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link copied"); }}><Link2 className="w-4 h-4 mr-2" /> Copy Link</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(appHref()); toast.success("Link copied"); }}><Link2 className="w-4 h-4 mr-2" /> Copy Link</DropdownMenuItem>
                         <DropdownMenuSeparator />
                         {/* Canonical lifecycle set: Mark as Active /
                             Mark as Inactive / Archive / Unarchive,

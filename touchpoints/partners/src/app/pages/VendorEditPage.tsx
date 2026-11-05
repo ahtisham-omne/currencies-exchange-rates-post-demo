@@ -61,6 +61,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { toAAAColor } from "../utils/colors";
+import { partnerCurrencyOf } from "../currency/partnerCurrency";
 
 type EditSection = "basic" | "contact" | "address" | "financial" | "config";
 
@@ -592,7 +593,7 @@ export function VendorEditPage() {
                     <div className="rounded-lg border border-border p-3 space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Currency</span>
-                        <span style={{ fontWeight: 500 }}>{cfg.creditLimitConfig.currency || "USD"}</span>
+                        <span style={{ fontWeight: 500 }}>{partnerCurrencyOf(vendor)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Enforcement</span>

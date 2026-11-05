@@ -24,6 +24,7 @@ import { PartnerGroupsProvider, usePartnerGroups } from "../../context/PartnerGr
 import { emptyRow, PARTNER_GROUPS_IMPORT_SPEC, PARTNERS_IMPORT_SPEC } from "../spec";
 import { buildVendorFromImport, patchVendorFromImport } from "../partnersApply";
 import { buildGroupPayloadFromImport } from "../partnerGroupsApply";
+import { partnerCurrencyOf } from "../../currency/partnerCurrency";
 
 const NOW = "2026-09-29T12:00:00.000Z";
 const groups = [
@@ -69,7 +70,10 @@ describe("buildVendorFromImport", () => {
     const v = buildVendorFromImport({ ...emptyRow(PARTNERS_IMPORT_SPEC), partnerName: "Inherit Co", primaryPartnerGroup: "Tier 1 Automotive OEMs" }, { groups, now: NOW }, { id: "v-1", code: "VND-1" });
     expect(v.partnerTypes).toEqual(["vendor", "customer"]);
     expect(v.status).toBe("active");
-    expect(v.configData?.creditLimitConfig).toMatchObject({ currency: "eur", enforcement: "soft_warning" });
+    expect(v.configData?.creditLimitConfig).toMatchObject({ enforcement: "soft_warning" });
+    // A blank currency is stored as none, so the partner follows its group's (spec 4.2).
+    expect(v.configData?.creditLimitConfig?.currency).toBeUndefined();
+    expect(partnerCurrencyOf(v, groups)).toBe("EUR");
     expect(v.configData?.paymentTermConfig?.id).toBe("pt-3");
     expect(v.configData?.pricingRules?.map((r) => r.id)).toEqual(["pr-2"]);
     expect(v.configData?.paymentMethods?.map((m) => m.type)).toEqual(["wire"]);
@@ -78,7 +82,9 @@ describe("buildVendorFromImport", () => {
     const bare = buildVendorFromImport({ ...emptyRow(PARTNERS_IMPORT_SPEC), partnerName: "Bare", primaryPartnerGroup: "Unknown Group" }, { groups, now: NOW }, { id: "v-2", code: "VND-2" });
     expect(bare.partnerTypes).toEqual(["vendor"]);
     expect(bare.partnerGroup).toBe("");
-    expect(bare.configData?.creditLimitConfig?.currency).toBe("usd");
+    // No group: the base currency.
+    expect(bare.configData?.creditLimitConfig?.currency).toBeUndefined();
+    expect(partnerCurrencyOf(bare, groups)).toBe("PKR");
   });
   it("falls back to the seed PARTNER_GROUPS when no groups are passed", () => {
     const v = buildVendorFromImport({ ...emptyRow(PARTNERS_IMPORT_SPEC), partnerName: "Seed", primaryPartnerGroup: PARTNER_GROUPS[0].name }, { now: NOW }, { id: "v-3", code: "VND-3" });
@@ -122,7 +128,7 @@ describe("buildGroupPayloadFromImport", () => {
     expect((p.configPaymentMethods as { type: string }[]).map((m) => m.type)).toEqual(["card"]);
     expect((p.configShipping as { vendorPreferences: { carrier: string }[] }).vendorPreferences[0].carrier).toBe("dhl");
     const bare = buildGroupPayloadFromImport({ ...emptyRow(PARTNER_GROUPS_IMPORT_SPEC), groupName: "Bare" }, {});
-    expect(bare).toMatchObject({ status: "Active", configBillingType: "domestic", configCreditLimit: { currency: "usd", enforcement: "none" } });
+    expect(bare).toMatchObject({ status: "Active", configBillingType: "domestic", configCreditLimit: { currency: "pkr", enforcement: "none" } });
     expect(bare.memberIds).toBeUndefined();
   });
   it("update: only non-blank fields are in the payload", () => {

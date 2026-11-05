@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlagImage, flagEmojiCode } from "../components/currency/FlagImage";
 import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
@@ -136,6 +137,9 @@ type TemplateType = "vendor" | "customer" | "both";
 type GroupStatus = "Active" | "Inactive" | "Archived";
 
 import type { CreatedByPerson } from "../data/currentUser";
+import { CurrencyFlag } from "../components/currency/CurrencyFlag";
+import { getCurrency } from "../currency/currencies";
+import { groupCurrencyOf } from "../currency/partnerCurrency";
 export type { CreatedByPerson };
 
 export interface EnrichedGroup extends PartnerGroup {
@@ -185,6 +189,8 @@ const QUICK_FILTER_OPTIONS: { key: QuickFilter; label: string; showCount: boolea
 const COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align?: "left" | "right" })[] = [
   { key: "group", label: "Partner Groups", minWidth: "320px", sortable: true },
   { key: "type", label: "Partner Group Type", minWidth: "200px", sortable: true },
+  // The group's default currency, which its partners inherit (spec 4.2).
+  { key: "currency", label: "Currency", minWidth: "200px", sortable: true },
   { key: "partners", label: "Linked Partners", minWidth: "220px", sortable: true },
   { key: "description", label: "Description", minWidth: "280px" },
   { key: "last_updated_by", label: "Last Updated By", minWidth: "220px", sortable: true },
@@ -209,7 +215,7 @@ const MIN_COL_WIDTH = 1;
 const CHECKBOX_COL_WIDTH = 44;
 
 /** Column keys that should render as multiselect filters */
-const MULTISELECT_COLUMNS = new Set(["type", "status", "country", "created_by", "last_updated_by"]);
+const MULTISELECT_COLUMNS = new Set(["type", "currency", "status", "country", "created_by", "last_updated_by"]);
 /** Column keys that render as date filters */
 const DATE_COLUMNS = new Set(["created_on", "last_updated_on"]);
 /** Column keys that render as numeric range filters */
@@ -257,6 +263,7 @@ const groupCellValue: CellAccessor<EnrichedGroup> = (g, columnKey) => {
     case "partners": return g.partnerCount;
     case "description": return g.description;
     case "country": return g.country;
+    case "currency": return groupCurrencyOf(g);
     case "created_by": return g.createdBy?.name;
     case "created_on": return g.createdOn;
     case "last_updated_by": return getLastUpdated(g.id, g.createdOn).name;
@@ -818,6 +825,7 @@ export function PartnerGroupsPage() {
         case "last_updated_by": av = getLastUpdated(a.id, a.createdOn).name; bv = getLastUpdated(b.id, b.createdOn).name; break;
         case "status": av = a.status; bv = b.status; break;
         case "country": av = a.country || ""; bv = b.country || ""; break;
+        case "currency": av = groupCurrencyOf(a); bv = groupCurrencyOf(b); break;
         default: av = a.name; bv = b.name;
       }
       if (typeof av === "number" && typeof bv === "number") return direction === "asc" ? av - bv : bv - av;
@@ -2835,7 +2843,7 @@ function GroupsListingTable({
                                     <div className="flex items-center gap-2.5 text-[12px] text-slate-700">
                                       <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                       <span className="truncate">
-                                        <span className="mr-1">{first.countryFlag}</span>{first.country}
+                                        <span className="mr-1"><FlagImage code={flagEmojiCode(first.countryFlag)} className="text-[13px]" /></span>{first.country}
                                       </span>
                                     </div>
                                   </div>
@@ -2982,9 +2990,20 @@ function GroupsListingTable({
                           {g.status}
                         </span>
                       )}
+                      {key === "currency" && (() => {
+                        // A group without a currency of its own uses the base currency.
+                        const code = groupCurrencyOf(g);
+                        return (
+                          <div className="flex items-center gap-1.5 text-[12px] text-slate-600 min-w-0" style={{ fontWeight: 500 }}>
+                            <CurrencyFlag code={code} />
+                            <span className="text-foreground" style={{ fontWeight: 600 }}>{code}</span>
+                            <span className="truncate text-slate-500">{g.template?.currency ? getCurrency(code)?.name : "Base currency (default)"}</span>
+                          </div>
+                        );
+                      })()}
                       {key === "country" && (
                         <div className="flex items-center gap-1.5 text-[12px] text-slate-500" style={{ fontWeight: 500 }}>
-                          <span className="text-[15px] leading-none">{g.countryFlag}</span>
+                          <span className="text-[15px] leading-none"><FlagImage code={flagEmojiCode(g.countryFlag)} className="text-[13px]" /></span>
                           {g.country}
                         </div>
                       )}
@@ -3108,7 +3127,7 @@ function CardGrid({ groups, size, onSelect, selected, onOpen, loading, emptyStat
               title={g.country}
             >
               {g.countryFlag ? (
-                <span className="text-[16px] leading-none">{g.countryFlag}</span>
+                <span className="text-[16px] leading-none"><FlagImage code={flagEmojiCode(g.countryFlag)} className="text-[13px]" /></span>
               ) : (
                 <Building2 className={`w-4 h-4 transition-colors ${isSelected ? "text-primary" : "text-slate-500"}`} />
               )}

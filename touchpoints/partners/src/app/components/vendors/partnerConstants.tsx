@@ -24,6 +24,7 @@ import {
   Banknote,
   FileText,
 } from "lucide-react";
+import { CURRENCIES } from "@/app/currency/currencies";
 
 // ── Partner Group Data ──
 
@@ -36,7 +37,9 @@ import {
 export interface PartnerGroupTemplate {
   /** Default currency for Billing & Shipping. Currency is the only field
    *  inherited from Billing & Shipping — Pay To / Ship To / Funded By are
-   *  always partner-specific and must be set on each partner. */
+   *  always partner-specific and must be set on each partner. Lower-case
+   *  ISO code ("usd"); unset means the base currency (spec 4.2, see
+   *  currency/partnerCurrency.ts). */
   currency?: string;
   /** Default payment term preset id. */
   paymentTermId?: string;
@@ -57,7 +60,7 @@ export interface PartnerGroup {
   memberCount: number;
   /** Optional templated defaults pre-populated onto partners created under
    *  this group. Only a few regional groups are seeded today; missing values
-   *  fall back to country-based defaults or system defaults. */
+   *  fall back to system defaults (the base currency for currency). */
   template?: PartnerGroupTemplate;
 }
 
@@ -740,152 +743,16 @@ export const FUNDED_BY_ITEMS: PartnerLocationItem[] = [
   { id: "pl-15", name: "Hyundai Motor Company", type: "partner", logoColor: "#002C5F", logoText: "HY", logoUrl: L("hyundai.com"), location: "12 Heolleung-ro, Seocho-gu, Seoul 06797, South Korea" },
 ];
 
-export const CURRENCY_OPTIONS: { id: string; label: string; symbol: string; flag: string }[] = [
-  // Major currencies
-  { id: "usd", label: "USD, US Dollar", symbol: "$", flag: "🇺🇸" },
-  { id: "eur", label: "EUR, Euro", symbol: "€", flag: "🇪🇺" },
-  { id: "gbp", label: "GBP, British Pound", symbol: "£", flag: "🇬🇧" },
-  { id: "jpy", label: "JPY, Japanese Yen", symbol: "¥", flag: "🇯🇵" },
-  { id: "chf", label: "CHF, Swiss Franc", symbol: "CHF", flag: "🇨🇭" },
-  { id: "cad", label: "CAD, Canadian Dollar", symbol: "C$", flag: "🇨🇦" },
-  { id: "aud", label: "AUD, Australian Dollar", symbol: "A$", flag: "🇦🇺" },
-  { id: "cny", label: "CNY, Chinese Yuan", symbol: "¥", flag: "🇨🇳" },
-  // Asia Pacific
-  { id: "inr", label: "INR, Indian Rupee", symbol: "₹", flag: "🇮🇳" },
-  { id: "krw", label: "KRW, South Korean Won", symbol: "₩", flag: "🇰🇷" },
-  { id: "sgd", label: "SGD, Singapore Dollar", symbol: "S$", flag: "🇸🇬" },
-  { id: "hkd", label: "HKD, Hong Kong Dollar", symbol: "HK$", flag: "🇭🇰" },
-  { id: "twd", label: "TWD, Taiwan Dollar", symbol: "NT$", flag: "🇹🇼" },
-  { id: "thb", label: "THB, Thai Baht", symbol: "฿", flag: "🇹🇭" },
-  { id: "myr", label: "MYR, Malaysian Ringgit", symbol: "RM", flag: "🇲🇾" },
-  { id: "idr", label: "IDR, Indonesian Rupiah", symbol: "Rp", flag: "🇮🇩" },
-  { id: "php", label: "PHP, Philippine Peso", symbol: "₱", flag: "🇵🇭" },
-  { id: "vnd", label: "VND, Vietnamese Dong", symbol: "₫", flag: "🇻🇳" },
-  { id: "nzd", label: "NZD, New Zealand Dollar", symbol: "NZ$", flag: "🇳🇿" },
-  { id: "pkr", label: "PKR, Pakistani Rupee", symbol: "₨", flag: "🇵🇰" },
-  { id: "bdt", label: "BDT, Bangladeshi Taka", symbol: "৳", flag: "🇧🇩" },
-  { id: "lkr", label: "LKR, Sri Lankan Rupee", symbol: "Rs", flag: "🇱🇰" },
-  { id: "mmk", label: "MMK, Myanmar Kyat", symbol: "K", flag: "🇲🇲" },
-  { id: "khr", label: "KHR, Cambodian Riel", symbol: "៛", flag: "🇰🇭" },
-  { id: "lak", label: "LAK, Lao Kip", symbol: "₭", flag: "🇱🇦" },
-  { id: "fjd", label: "FJD, Fijian Dollar", symbol: "FJ$", flag: "🇫🇯" },
-  { id: "pgk", label: "PGK, Papua New Guinean Kina", symbol: "K", flag: "🇵🇬" },
-  // Americas
-  { id: "mxn", label: "MXN, Mexican Peso", symbol: "MX$", flag: "🇲🇽" },
-  { id: "brl", label: "BRL, Brazilian Real", symbol: "R$", flag: "🇧🇷" },
-  { id: "ars", label: "ARS, Argentine Peso", symbol: "AR$", flag: "🇦🇷" },
-  { id: "clp", label: "CLP, Chilean Peso", symbol: "CL$", flag: "🇨🇱" },
-  { id: "cop", label: "COP, Colombian Peso", symbol: "CO$", flag: "🇨🇴" },
-  { id: "pen", label: "PEN, Peruvian Sol", symbol: "S/.", flag: "🇵🇪" },
-  { id: "uyu", label: "UYU, Uruguayan Peso", symbol: "UY$", flag: "🇺🇾" },
-  { id: "jmd", label: "JMD, Jamaican Dollar", symbol: "J$", flag: "🇯🇲" },
-  // Europe
-  { id: "sek", label: "SEK, Swedish Krona", symbol: "kr", flag: "🇸🇪" },
-  { id: "nok", label: "NOK, Norwegian Krone", symbol: "kr", flag: "🇳🇴" },
-  { id: "dkk", label: "DKK, Danish Krone", symbol: "kr", flag: "🇩🇰" },
-  { id: "pln", label: "PLN, Polish Zloty", symbol: "zł", flag: "🇵🇱" },
-  { id: "czk", label: "CZK, Czech Koruna", symbol: "Kč", flag: "🇨🇿" },
-  { id: "huf", label: "HUF, Hungarian Forint", symbol: "Ft", flag: "🇭🇺" },
-  { id: "ron", label: "RON, Romanian Leu", symbol: "lei", flag: "🇷🇴" },
-  { id: "bgn", label: "BGN, Bulgarian Lev", symbol: "лв", flag: "🇧🇬" },
-  { id: "hrk", label: "HRK, Croatian Kuna", symbol: "kn", flag: "🇭🇷" },
-  { id: "rsd", label: "RSD, Serbian Dinar", symbol: "din", flag: "🇷🇸" },
-  { id: "try", label: "TRY, Turkish Lira", symbol: "₺", flag: "🇹🇷" },
-  { id: "rub", label: "RUB, Russian Ruble", symbol: "₽", flag: "🇷🇺" },
-  { id: "uah", label: "UAH, Ukrainian Hryvnia", symbol: "₴", flag: "🇺🇦" },
-  { id: "isk", label: "ISK, Icelandic Króna", symbol: "kr", flag: "🇮🇸" },
-  // Middle East & Africa
-  { id: "aed", label: "AED, UAE Dirham", symbol: "د.إ", flag: "🇦🇪" },
-  { id: "sar", label: "SAR, Saudi Riyal", symbol: "﷼", flag: "🇸🇦" },
-  { id: "qar", label: "QAR, Qatari Riyal", symbol: "﷼", flag: "🇶🇦" },
-  { id: "kwd", label: "KWD, Kuwaiti Dinar", symbol: "د.ك", flag: "🇰🇼" },
-  { id: "bhd", label: "BHD, Bahraini Dinar", symbol: "BD", flag: "🇧🇭" },
-  { id: "omr", label: "OMR, Omani Rial", symbol: "﷼", flag: "🇴🇲" },
-  { id: "jod", label: "JOD, Jordanian Dinar", symbol: "JD", flag: "🇯🇴" },
-  { id: "ils", label: "ILS, Israeli Shekel", symbol: "₪", flag: "🇮🇱" },
-  { id: "egp", label: "EGP, Egyptian Pound", symbol: "E£", flag: "🇪🇬" },
-  { id: "zar", label: "ZAR, South African Rand", symbol: "R", flag: "🇿🇦" },
-  { id: "ngn", label: "NGN, Nigerian Naira", symbol: "₦", flag: "🇳🇬" },
-  { id: "kes", label: "KES, Kenyan Shilling", symbol: "KSh", flag: "🇰🇪" },
-  { id: "ghs", label: "GHS, Ghanaian Cedi", symbol: "GH₵", flag: "🇬🇭" },
-  { id: "mad", label: "MAD, Moroccan Dirham", symbol: "MAD", flag: "🇲🇦" },
-  { id: "tnd", label: "TND, Tunisian Dinar", symbol: "DT", flag: "🇹🇳" },
-  // Central Asia
-  { id: "kzt", label: "KZT, Kazakhstani Tenge", symbol: "₸", flag: "🇰🇿" },
-  { id: "gel", label: "GEL, Georgian Lari", symbol: "₾", flag: "🇬🇪" },
-];
-
-// Country → Currency mapping (used to auto-select currency from partner group)
-export const COUNTRY_CURRENCY_MAP: Record<string, string> = {
-  "USA": "usd", "United States": "usd",
-  "UK": "gbp", "United Kingdom": "gbp",
-  "Germany": "eur", "France": "eur", "Italy": "eur", "Spain": "eur", "Netherlands": "eur",
-  "Belgium": "eur", "Austria": "eur", "Ireland": "eur", "Portugal": "eur", "Greece": "eur",
-  "Finland": "eur", "Estonia": "eur", "Malta": "eur", "Cyprus": "eur",
-  "Japan": "jpy",
-  "Switzerland": "chf",
-  "Canada": "cad",
-  "Australia": "aud",
-  "China": "cny",
-  "India": "inr",
-  "South Korea": "krw",
-  "Singapore": "sgd",
-  "Taiwan": "twd",
-  "Thailand": "thb",
-  "Malaysia": "myr",
-  "Indonesia": "idr",
-  "Philippines": "php",
-  "Vietnam": "vnd",
-  "New Zealand": "nzd",
-  "Pakistan": "pkr",
-  "Bangladesh": "bdt",
-  "Sri Lanka": "lkr",
-  "Myanmar": "mmk",
-  "Cambodia": "khr",
-  "Laos": "lak",
-  "Fiji": "fjd",
-  "Papua New Guinea": "pgk",
-  "Mexico": "mxn",
-  "Brazil": "brl",
-  "Argentina": "ars",
-  "Chile": "clp",
-  "Colombia": "cop",
-  "Peru": "pen",
-  "Uruguay": "uyu",
-  "Jamaica": "jmd",
-  "Sweden": "sek",
-  "Norway": "nok",
-  "Denmark": "dkk",
-  "Poland": "pln",
-  "Czech Republic": "czk",
-  "Hungary": "huf",
-  "Romania": "ron",
-  "Bulgaria": "bgn",
-  "Croatia": "hrk",
-  "Serbia": "rsd",
-  "Turkey": "try",
-  "Russia": "rub",
-  "Ukraine": "uah",
-  "Iceland": "isk",
-  "UAE": "aed",
-  "Saudi Arabia": "sar",
-  "Qatar": "qar",
-  "Kuwait": "kwd",
-  "Bahrain": "bhd",
-  "Oman": "omr",
-  "Jordan": "jod",
-  "Israel": "ils",
-  "Egypt": "egp",
-  "South Africa": "zar",
-  "Nigeria": "ngn",
-  "Kenya": "kes",
-  "Ghana": "ghs",
-  "Morocco": "mad",
-  "Tunisia": "tnd",
-  "Kazakhstan": "kzt",
-  "Georgia": "gel",
-  "Venezuela": "usd",
-};
+/* Every active currency in the Currency Library (the Currency & Exchange
+   Rates module), so every currency choice offers the full list (spec 2.3, 4.2).
+   The id is the lower-case ISO code, as partners and groups store it ("usd");
+   `flag` is the flag-icons code the shell draws (see components/currency). */
+export const CURRENCY_OPTIONS: { id: string; label: string; symbol: string; flag: string }[] = CURRENCIES.map((c) => ({
+  id: c.code.toLowerCase(),
+  label: `${c.code}, ${c.name}`,
+  symbol: c.symbol,
+  flag: c.flag ?? "",
+}));
 
 // ── Payment Method Types ──
 export type PaymentMethodType = "ach" | "wire" | "card" | "digital_wallet" | "check" | "cash" | "other";

@@ -49,6 +49,7 @@
  */
 
 import React, { Fragment, useState, cloneElement } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import { format } from "date-fns";
 import {
   Search,
@@ -710,7 +711,7 @@ export default function DataTableStyleReference() {
         return (
           <TableCell key={colKey}>
             <div className="flex items-center gap-2">
-              <span className="text-base">{vendor.countryFlag}</span>
+              <span className="text-base"><FlagImage code={flagEmojiCode(vendor.countryFlag)} className="text-[13px]" /></span>
               <span className="text-sm">{hl(vendor.country)}</span>
             </div>
           </TableCell>
@@ -1090,7 +1091,7 @@ export default function DataTableStyleReference() {
                         <div className="flex justify-between">
                           <span>Country</span>
                           <span className="text-foreground">
-                            {vendor.countryFlag} {vendor.country}
+                            <FlagImage code={flagEmojiCode(vendor.countryFlag)} className="text-[13px]" /> {vendor.country}
                           </span>
                         </div>
                         <div className="flex justify-between">

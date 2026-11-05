@@ -51,8 +51,8 @@ For a New Group (Name Not in Omne)
 A new partner group is created.
 
   Status     Blank means Active.
-  Template   Billing Type Domestic, Currency USD, and Credit
-             Enforcement None when blank.
+  Template   Billing Type Domestic, Currency PKR (the base
+             currency), and Credit Enforcement None when blank.
   Members    Linked Partners are attached by name; unknown names
              are dropped with a warning.
 
@@ -163,7 +163,7 @@ Template Configuration
 Billing Type  Domestic or International. Blank means Domestic.
 
 Currency  Three-letter currency code inherited by partners in this
-          group. Blank means USD.
+          group. Blank means the base currency (PKR).
 
 Credit Enforcement  What happens when a partner in this group
                     reaches its credit limit. Blank means None.
@@ -255,13 +255,22 @@ International   Partners in the group are billed internationally.
 
 Currency
 --------
-ISO Code   USD, EUR, GBP, JPY, CHF, CAD, AUD, CNY, INR, KRW, SGD,
-           HKD, TWD, THB, MYR, IDR, PHP, VND, NZD, PKR, BDT, LKR,
-           MMK, KHR, LAK, FJD, PGK, MXN, BRL, ARS, CLP, COP, PEN,
-           UYU, JMD, SEK, NOK, DKK, PLN, CZK, HUF, RON, BGN, HRK,
-           RSD, TRY, RUB, UAH, ISK, AED, SAR, QAR, KWD, BHD, OMR,
-           JOD, ILS, EGP, ZAR, NGN, KES, GHS, MAD, TND, KZT, GEL
-(blank)    USD.
+ISO Code   AED, AFN, ALL, AMD, AOA, ARS, AUD, AWG, AZN, BAM, BBD,
+           BDT, BGN, BHD, BIF, BMD, BND, BOB, BRL, BSD, BTN, BWP,
+           BYN, BZD, CAD, CDF, CHF, CLP, CNY, COP, CRC, CUP, CVE,
+           CZK, DJF, DKK, DOP, DZD, EGP, ERN, ETB, EUR, FJD, FKP,
+           GBP, GEL, GHS, GIP, GMD, GNF, GTQ, GYD, HKD, HNL, HTG,
+           HUF, IDR, ILS, INR, IQD, IRR, ISK, JMD, JOD, JPY, KES,
+           KGS, KHR, KMF, KPW, KRW, KWD, KYD, KZT, LAK, LBP, LKR,
+           LRD, LSL, LYD, MAD, MDL, MGA, MKD, MMK, MNT, MOP, MRU,
+           MUR, MVR, MWK, MXN, MYR, MZN, NAD, NGN, NIO, NOK, NPR,
+           NZD, OMR, PAB, PEN, PGK, PHP, PKR, PLN, PYG, QAR, RON,
+           RSD, RUB, RWF, SAR, SBD, SCR, SDG, SEK, SGD, SHP, SLE,
+           SOS, SRD, SSP, STN, SVC, SYP, SZL, THB, TJS, TMT, TND,
+           TOP, TRY, TTD, TWD, TZS, UAH, UGX, USD, UYU, UZS, VED,
+           VES, VND, VUV, WST, XAF, XCD, XCG, XOF, XPF, YER, ZAR,
+           ZMW, ZWG
+(blank)    PKR, the base currency.
 
 Credit Enforcement
 ------------------

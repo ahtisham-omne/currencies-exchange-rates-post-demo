@@ -1,4 +1,5 @@
 import { Fragment, useState, useMemo, useCallback, useEffect, cloneElement, useRef } from "react";
+import { FlagImage, flagEmojiCode } from "../components/currency/FlagImage";
 import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useVendors } from "../context/VendorContext";
@@ -20,8 +21,20 @@ import {
   DEFAULT_ACTIVE_KPIS,
   computeKpi,
   insightsRangePeriodLabel,
+  kpiMoneySubset,
+  kpiNumeric,
+  MONEY_KPI_KEYS,
+  RATE_KPI_KEYS,
   type KpiDelta,
 } from "../components/vendors/KpiInsightsPanel";
+import { CurrencyAmount } from "../components/currency/CurrencyAmount";
+import { RateKpiValue } from "../components/currency/RateKpiValue";
+import { BASE_CURRENCY } from "../currency/currencies";
+import { formatCompactMoney } from "../currency/money";
+import { toBaseNow } from "../currency/partnerCurrency";
+import { currencyBreakdown, partnerAmount, type CurrencyView } from "../currency/partnerAmounts";
+import { usePartnerCurrencyOf } from "../currency/usePartnerCurrency";
+import { appUrl } from "@/embedding";
 import { InsightsRangeMenu, InsightsRefresh, InsightsResetButton, type InsightsRange } from "../components/vendors/InsightsControls";
 import {
   ColumnHeaderMenu,
@@ -138,10 +151,21 @@ import { CreatePartnerModal } from "../components/vendors/CreatePartnerModal";
 import { PrimaryPill } from "../components/vendors/PrimaryPill";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
-import type { PartnerType } from "../data/vendors";
+import type { PartnerType, Vendor } from "../data/vendors";
 import { CATEGORY_LABELS } from "../data/vendors";
 
 const DND_LIST_KPI = "LIST_KPI_CARD";
+
+/* The money columns: each shows its amounts in the base currency (the
+   default, comparable across partners) or in each partner's own currency,
+   chosen from the column's header menu. Sorting and range filters always
+   use the base-currency amount. */
+type MoneyColumn = "net_profit" | "credit_limit" | "credit_utilization";
+const isMoneyColumn = (key: string): key is MoneyColumn =>
+  key === "net_profit" || key === "credit_limit" || key === "credit_utilization";
+
+/** The money columns' note, shown in their header menu. */
+const MONEY_COLUMN_NOTE = `Each partner's amount is kept in its own currency. Base shows it in ${BASE_CURRENCY} at today's mid-market rate; sorting and range filters use that.`;
 
 // Module refresh v7
 type QuickFilter = "all" | "customers" | "vendors" | "both" | "active" | "inactive" | "archived";
@@ -182,9 +206,9 @@ const COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align
   { key: "partner_locations", label: "Partner Locations", minWidth: "260px", sortable: true },
   { key: "global_contacts", label: "Points of Contact", minWidth: "280px" },
   { key: "partner_group", label: "Partner Group", minWidth: "240px" },
-  { key: "net_profit", label: "Net Profit ($)", minWidth: "150px", sortable: true, align: "right" },
-  { key: "credit_limit", label: "Credit Limit ($)", minWidth: "160px", sortable: true, align: "right" },
-  { key: "credit_utilization", label: "Credit Util. ($)", minWidth: "160px", sortable: true, align: "right" },
+  { key: "net_profit", label: "Net Profit", minWidth: "150px", sortable: true, align: "right" },
+  { key: "credit_limit", label: "Credit Limit", minWidth: "160px", sortable: true, align: "right" },
+  { key: "credit_utilization", label: "Credit Utilization", minWidth: "180px", sortable: true, align: "right" },
   { key: "services", label: "Services", minWidth: "200px" },
   { key: "carrier_vendor", label: "Carrier (Vendor)", minWidth: "240px" },
   { key: "carrier_customer", label: "Carrier (Customer)", minWidth: "240px" },
@@ -292,6 +316,19 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
   // When embedded, prefer the supplied vendors subset; otherwise use the full context list.
   const vendors = embeddedVendors ?? ctx.vendors;
   const { groups: partnerGroupsStore } = usePartnerGroups();
+  // Each partner's currency: its own, else its primary group's (spec 4.2).
+  const currencyOf = usePartnerCurrencyOf();
+  /** A partner's amount (in its currency) in the base currency. */
+  const inBase = useCallback((v: Vendor, amount: number | undefined) => toBaseNow(amount ?? 0, currencyOf(v)), [currencyOf]);
+  const [columnCurrencyView, setColumnCurrencyView] = useState<Record<MoneyColumn, CurrencyView>>({
+    net_profit: "base",
+    credit_limit: "base",
+    credit_utilization: "base",
+  });
+  /** A partner's amount in a money column, in the view that column is set to. */
+  const listingMoney = (v: Vendor, amount: number | undefined, column: MoneyColumn) => (
+    <CurrencyAmount {...partnerAmount(amount ?? 0, currencyOf(v), columnCurrencyView[column])} />
+  );
 
   const [searchQuery, setSearchQuery] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
@@ -363,7 +400,18 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
       const configPaymentTerm = data.configPaymentTerm as Record<string, unknown> | undefined;
       const configPricingRules = data.configPricingRules as any[] | undefined;
       const configPointsOfContact = data.configPointsOfContact as any[] | undefined;
-      const configCreditLimit = data.configCreditLimit as Record<string, unknown> | undefined;
+      // A partner has one currency (spec 4.2), saved with its credit limit.
+      // An override made in either side's Billing & Shipping is kept (the
+      // vendor side's first). Left as inherited, no currency is saved, so the
+      // partner follows its group's.
+      const customerSideConfig = (data.customerConfig as Record<string, unknown> | undefined) ?? {};
+      const configuredSides = [data as Record<string, unknown>, customerSideConfig].filter((c) => c.configCreditLimit);
+      const overrideSide = configuredSides.find((c) => c.currencyInherited === false);
+      const sideCreditLimit = configuredSides[0]?.configCreditLimit as Record<string, unknown> | undefined;
+      const configCreditLimit = sideCreditLimit && {
+        ...sideCreditLimit,
+        currency: (overrideSide?.configCreditLimit as { currency?: string } | undefined)?.currency,
+      };
       const configShipping = data.configShipping as Record<string, unknown> | undefined;
 
       // Build initials from partner name
@@ -913,17 +961,17 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
       // Created By (multiselect)
       if (f.createdBy.length > 0 && !f.createdBy.includes(v.createdByContact?.name || "")) return false;
 
-      // Net Profit range
-      if (f.netProfitMin && v.netProfitMargin < Number(f.netProfitMin)) return false;
-      if (f.netProfitMax && v.netProfitMargin > Number(f.netProfitMax)) return false;
+      // Net Profit range (amounts in base currency, as the modal labels them)
+      if (f.netProfitMin && inBase(v, v.netProfitMargin) < Number(f.netProfitMin)) return false;
+      if (f.netProfitMax && inBase(v, v.netProfitMargin) > Number(f.netProfitMax)) return false;
 
       // Credit Limit range
-      if (f.creditLimitMin && v.creditLimit < Number(f.creditLimitMin)) return false;
-      if (f.creditLimitMax && v.creditLimit > Number(f.creditLimitMax)) return false;
+      if (f.creditLimitMin && inBase(v, v.creditLimit) < Number(f.creditLimitMin)) return false;
+      if (f.creditLimitMax && inBase(v, v.creditLimit) > Number(f.creditLimitMax)) return false;
 
       // Credit Utilization range
-      if (f.creditUtilMin && v.creditUtilization < Number(f.creditUtilMin)) return false;
-      if (f.creditUtilMax && v.creditUtilization > Number(f.creditUtilMax)) return false;
+      if (f.creditUtilMin && inBase(v, v.creditUtilization) < Number(f.creditUtilMin)) return false;
+      if (f.creditUtilMax && inBase(v, v.creditUtilization) > Number(f.creditUtilMax)) return false;
 
       // Email text search
       if (f.email && !(v.emailAddress || "").toLowerCase().includes(f.email.toLowerCase())) return false;
@@ -963,9 +1011,10 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
           case "partner_type": aVal = (a.partnerTypes || []).join(","); bVal = (b.partnerTypes || []).join(","); break;
           case "num_items": aVal = (a.itemCodes || []).length; bVal = (b.itemCodes || []).length; break;
           case "partner_locations": aVal = (a.partnerLocations || []).length; bVal = (b.partnerLocations || []).length; break;
-          case "net_profit": aVal = a.netProfitMargin ?? 0; bVal = b.netProfitMargin ?? 0; break;
-          case "credit_limit": aVal = a.creditLimit ?? 0; bVal = b.creditLimit ?? 0; break;
-          case "credit_utilization": aVal = a.creditUtilization ?? 0; bVal = b.creditUtilization ?? 0; break;
+          // Money columns sort on the base-currency amount, whichever view is shown.
+          case "net_profit": aVal = inBase(a, a.netProfitMargin); bVal = inBase(b, b.netProfitMargin); break;
+          case "credit_limit": aVal = inBase(a, a.creditLimit); bVal = inBase(b, b.creditLimit); break;
+          case "credit_utilization": aVal = inBase(a, a.creditUtilization); bVal = inBase(b, b.creditUtilization); break;
           case "created_on": aVal = new Date(a.createdAt).getTime(); bVal = new Date(b.createdAt).getTime(); break;
           case "last_updated_on": aVal = new Date(getLastUpdated(a.id, a.createdAt).date).getTime(); bVal = new Date(getLastUpdated(b.id, b.createdAt).date).getTime(); break;
           case "last_updated_by": aVal = getLastUpdated(a.id, a.createdAt).name; bVal = getLastUpdated(b.id, b.createdAt).name; break;
@@ -980,7 +1029,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
     }
 
     return result;
-  }, [vendors, searchQuery, quickFilter, advFilters, columnFiltersList, sortConfig]);
+  }, [vendors, searchQuery, quickFilter, advFilters, columnFiltersList, sortConfig, inBase]);
 
   // "All" is represented by recordsPerPage === -1; resolve to the full set
   // length so the page math (totalPages/slice) still works as a single page.
@@ -1140,7 +1189,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
           </>
         )}
         {/* Utilities — always visible */}
-        <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/vendors/${vendor.id}`); toast.success("Link copied"); }}>
+        <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(new URL(appUrl(`/vendors/${vendor.id}`), window.location.origin).href); toast.success("Link copied"); }}>
           <Link2 className="w-4 h-4 mr-2" />
           Copy Link
         </DropdownMenuItem>
@@ -1494,11 +1543,6 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
       : { onCreate: () => setCreateModalOpen(true), createLabel: "Create New Partner" }),
   };
 
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(val);
 
   const formatDate = (dateStr: string) => {
     try {
@@ -1739,14 +1783,34 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
             <DndProvider backend={HTML5Backend}>
               <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
                 {activeKpiDefs.map((kpi, idx) => {
-                  const computed = computeKpi(kpi.key, vendors, insightsDateRange);
+                  const computed = computeKpi(kpi.key, vendors, insightsDateRange, currencyOf);
+                  // Money KPIs: the base-currency total, with a hover listing
+                  // the currencies of the partners it adds up. Rate KPIs: when
+                  // the rates were last updated.
+                  const value: React.ReactNode = insightsFailed
+                    ? "—"
+                    : MONEY_KPI_KEYS.has(kpi.key)
+                      ? (
+                        <CurrencyAmount
+                          mode="aggregated-base"
+                          compact
+                          value={kpiNumeric(kpi.key, vendors, currencyOf)}
+                          currency={BASE_CURRENCY}
+                          partnerBreakdown={currencyBreakdown(kpiMoneySubset(kpi.key, vendors).map(currencyOf))}
+                        />
+                      )
+                      : RATE_KPI_KEYS.has(kpi.key)
+                        ? <RateKpiValue rateType={kpi.key === "market_rate" ? "mid" : "corporate"} />
+                        : computed.value;
                   // Populate rich tooltip breakdowns with live data (only for complex KPIs)
                   const tooltipData = KPI_TOOLTIP_DATA[kpi.key];
                   if (tooltipData) {
-                    const totalCredit = vendors.reduce((s, v) => s + (v.creditLimit || 0), 0);
-                    const totalUtil = vendors.reduce((s, v) => s + (v.creditUtilization || 0), 0);
-                    const totalOutstanding = vendors.reduce((s, v) => s + (v.outstandingBalance || 0), 0);
-                    const fmt = (n: number) => n >= 1_000_000 ? `$${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n/1_000).toFixed(0)}K` : `$${n.toFixed(0)}`;
+                    // In the base currency, each partner converted from its own.
+                    const sumInBase = (pick: (v: Vendor) => number | undefined) => vendors.reduce((s, v) => s + inBase(v, pick(v)), 0);
+                    const totalCredit = sumInBase((v) => v.creditLimit);
+                    const totalUtil = sumInBase((v) => v.creditUtilization);
+                    const totalOutstanding = sumInBase((v) => v.outstandingBalance);
+                    const fmt = (n: number) => formatCompactMoney(n, BASE_CURRENCY);
                     if (kpi.key === "total_credit_utilization") {
                       tooltipData.breakdown = [
                         { label: "Total Credit Limit", value: fmt(totalCredit) },
@@ -1771,7 +1835,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                       index={idx}
                       kpiKey={kpi.key}
                       label={kpi.label}
-                      value={insightsFailed ? "—" : computed.value}
+                      value={value}
                       sub={insightsFailed ? "Couldn't load" : computed.sub}
                       delta={insightsFailed ? undefined : computed.delta}
                       rangeLabel={insightsRangePeriodLabel(insightsDateRange)}
@@ -2196,13 +2260,13 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                               <div className="flex justify-between">
                                 <span>Credit Limit</span>
                                 <span className="text-foreground" style={{ fontWeight: 500 }}>
-                                  $ {formatCurrency(vendor.creditLimit)}
+                                  {listingMoney(vendor, vendor.creditLimit, "credit_limit")}
                                 </span>
                               </div>
                               <div className="flex justify-between">
                                 <span>Country</span>
                                 <span className="text-foreground">
-                                  {vendor.countryFlag} {vendor.country}
+                                  <FlagImage code={flagEmojiCode(vendor.countryFlag)} className="text-[13px]" /> {vendor.country}
                                 </span>
                               </div>
                               <div className="flex justify-between">
@@ -2298,6 +2362,9 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                   filter={columnFilters[key] ?? null}
                                   vendors={vendors}
                                   onFilterChange={handleColumnFilterChange}
+                                  currencyView={isMoneyColumn(key) ? columnCurrencyView[key] : undefined}
+                                  onCurrencyViewChange={isMoneyColumn(key) ? (view) => setColumnCurrencyView((prev) => ({ ...prev, [key]: view })) : undefined}
+                                  currencyNote={isMoneyColumn(key) ? MONEY_COLUMN_NOTE : undefined}
                                 >
                                   <div className={`inline-flex items-center gap-1 ${def.align === "right" ? "w-full justify-end" : ""}`}>
                                     <span className="text-[13px]" style={currentColSort || hasFilter ? { color: "rgb(var(--primary))" } : undefined}>{def.label}</span>
@@ -2781,7 +2848,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                           </div>
                                           <div className="bg-white px-3.5 py-3 space-y-2">
                                             <div className="flex items-center gap-2.5 text-[12px] text-slate-700"><Users className="w-3.5 h-3.5 text-slate-400 shrink-0" /><span className="truncate">{primaryGroup.memberCount} members</span></div>
-                                            <div className="flex items-center gap-2.5 text-[12px] text-slate-700"><MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" /><span className="truncate"><span className="mr-1">{primaryGroup.countryFlag}</span>{primaryGroup.country}</span></div>
+                                            <div className="flex items-center gap-2.5 text-[12px] text-slate-700"><MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" /><span className="truncate"><span className="mr-1"><FlagImage code={flagEmojiCode(primaryGroup.countryFlag)} className="text-[13px]" /></span>{primaryGroup.country}</span></div>
                                           </div>
                                         </HoverCardContent>
                                       </HoverCard>
@@ -2818,11 +2885,11 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                 );
                               }
                               case "net_profit":
-                                return (<TableCell key={colKey} className="text-right"><span className={isRelaxed ? "text-[13px]" : "text-sm"}>{(vendor.netProfitMargin ?? 0).toFixed(2)}</span></TableCell>);
+                                return (<TableCell key={colKey} className="text-right tabular-nums"><span className={isRelaxed ? "text-[13px]" : "text-sm"}>{listingMoney(vendor, vendor.netProfitMargin, "net_profit")}</span></TableCell>);
                               case "credit_limit":
-                                return (<TableCell key={colKey} className="text-right"><span className={isRelaxed ? "text-[13px]" : "text-sm"}>$ {formatCurrency(vendor.creditLimit)}</span></TableCell>);
+                                return (<TableCell key={colKey} className="text-right tabular-nums"><span className={isRelaxed ? "text-[13px]" : "text-sm"}>{listingMoney(vendor, vendor.creditLimit, "credit_limit")}</span></TableCell>);
                               case "credit_utilization":
-                                return (<TableCell key={colKey} className="text-right"><span className={isRelaxed ? "text-[13px]" : "text-sm"}>{formatCurrency(vendor.creditUtilization)}</span></TableCell>);
+                                return (<TableCell key={colKey} className="text-right tabular-nums"><span className={isRelaxed ? "text-[13px]" : "text-sm"}>{listingMoney(vendor, vendor.creditUtilization, "credit_utilization")}</span></TableCell>);
                               case "services":
                                 return (
                                   <TableCell key={colKey}>
@@ -2943,7 +3010,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                 return (
                                   <TableCell key={colKey}>
                                     <div className={`flex items-center ${isRelaxed ? "gap-2.5" : "gap-2"}`}>
-                                      <span className={isRelaxed ? "text-lg" : "text-base"}>{vendor.countryFlag}</span>
+                                      <span className={isRelaxed ? "text-lg" : "text-base"}><FlagImage code={flagEmojiCode(vendor.countryFlag)} className="text-[13px]" /></span>
                                       <div className="min-w-0 flex-1">
                                         <span className={`${isRelaxed ? "text-[13px]" : "text-sm"} block truncate`} style={{ fontWeight: isRelaxed ? 500 : undefined }}>{highlightText(vendor.country)}</span>
                                         {isRelaxed && vendor.billingAddress?.city && <span className="text-[10px] text-muted-foreground/50 truncate block">{vendor.billingAddress.city}{vendor.billingAddress.state ? `, ${vendor.billingAddress.state}` : ""}</span>}
@@ -3733,11 +3800,13 @@ interface KpiTooltipData {
   formula: string;
 }
 
+const BASE_CURRENCY_NOTE = `Shown in the base currency (${BASE_CURRENCY}); each partner's amount is converted from its own currency at today's mid-market rate.`;
+
 // Only complex/calculated KPIs get the rich tooltip — simple counts use plain tooltips
 const KPI_TOOLTIP_DATA: Record<string, KpiTooltipData> = {
   total_credit_utilization: {
     title: "Credit Utilization",
-    description: "Sum of all credit currently being used across the partner portfolio. High utilization relative to the total limit indicates elevated financial risk.",
+    description: `Sum of all credit currently being used across the partner portfolio. High utilization relative to the total limit indicates elevated financial risk. ${BASE_CURRENCY_NOTE}`,
     breakdown: [
       { label: "Total Credit Limit", value: "—" },
       { label: "Currently Utilized", value: "—" },
@@ -3747,7 +3816,7 @@ const KPI_TOOLTIP_DATA: Record<string, KpiTooltipData> = {
   },
   total_outstanding: {
     title: "Outstanding Balance",
-    description: "Total unpaid amount across all partners. Includes pending invoices, overdue payments, and scheduled disbursements.",
+    description: `Total unpaid amount across all partners. Includes pending invoices, overdue payments, and scheduled disbursements. ${BASE_CURRENCY_NOTE}`,
     breakdown: [
       { label: "Pending Invoices", value: "—" },
       { label: "Overdue Payments", value: "—" },
@@ -3757,15 +3826,15 @@ const KPI_TOOLTIP_DATA: Record<string, KpiTooltipData> = {
     formula: "Outstanding = Pending + Overdue + Scheduled",
   },
   avg_net_profit: {
-    title: "Average Net Margin",
-    description: "Average net profit margin calculated across all partner transactions. Factors in revenue, cost of goods, and operational expenses.",
+    title: "Average Net Profit",
+    description: `Average net profit per partner across the portfolio. ${BASE_CURRENCY_NOTE}`,
     breakdown: [
       { label: "Gross Revenue", value: "—" },
       { label: "Cost of Goods", value: "—" },
       { label: "Operational Costs", value: "—" },
-      { label: "Net Margin", value: "—", isResult: true },
+      { label: "Net Profit", value: "—", isResult: true },
     ],
-    formula: "Margin = (Revenue - COGS - Costs) ÷ Revenue × 100",
+    formula: "Avg Net Profit = sum(Net Profit in PKR) ÷ Partners",
   },
 };
 
@@ -3888,7 +3957,7 @@ function CarrierIcon({ carrier, large }: { carrier: string; large?: boolean }) {
  *  delta prefix, complement sub-line with the "vs prior X" anchor, and a
  *  Calculation block inside the tooltip. */
 function DraggableListKpiCard({ index, kpiKey, label, value, sub, delta, rangeLabel, iconName, tooltip, formula, moveCard, onRemove }: {
-  index: number; kpiKey: string; label: string; value: string; sub?: string; delta?: KpiDelta; rangeLabel?: string; iconName?: string; tooltip?: string; formula?: string;
+  index: number; kpiKey: string; label: string; value: React.ReactNode; sub?: string; delta?: KpiDelta; rangeLabel?: string; iconName?: string; tooltip?: string; formula?: string;
   moveCard: (from: number, to: number) => void; onRemove?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -4006,7 +4075,12 @@ function DraggableListKpiCard({ index, kpiKey, label, value, sub, delta, rangeLa
               {delta.text}
             </span>
           )}
-          <p className="text-[15px] text-slate-700 tracking-tight truncate" style={{ fontWeight: 600, lineHeight: 1.2 }}>{value}</p>
+          {/* The rate insights' "Updated as of …" is long: smaller, and it wraps. */}
+          {RATE_KPI_KEYS.has(kpiKey) ? (
+            <p className="text-[12px] text-slate-700 tracking-tight" style={{ fontWeight: 600, lineHeight: 1.3 }}>{value}</p>
+          ) : (
+            <p className="text-[15px] text-slate-700 tracking-tight truncate" style={{ fontWeight: 600, lineHeight: 1.2 }}>{value}</p>
+          )}
         </div>
         {/* Sub-line — complement metric with the period anchor appended
             inline. All-time range drops the anchor clause. */}

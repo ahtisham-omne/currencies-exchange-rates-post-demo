@@ -3,6 +3,7 @@ import { PARTNER_GROUPS, type PartnerGroup, type PartnerGroupTemplate } from "..
 import { CURRENT_USER, type CreatedByPerson } from "../data/currentUser";
 import type { ImportRow } from "../import-export/spec";
 import { buildGroupPayloadFromImport, findGroupByName, type GroupsApplyContext } from "../import-export/partnerGroupsApply";
+import { syncPartnerGroups } from "../currency/partnerCurrency";
 
 export interface ImportUpsertResult {
   created: number;
@@ -352,6 +353,9 @@ export function PartnerGroupsProvider({ children }: { children: React.ReactNode 
       return { ...g };
     });
   });
+
+  // Currency resolution outside React reads the store's groups (see syncPartnerGroups).
+  syncPartnerGroups(groups);
 
   const getGroup = useCallback((id: string) => groups.find((g) => g.id === id), [groups]);
 

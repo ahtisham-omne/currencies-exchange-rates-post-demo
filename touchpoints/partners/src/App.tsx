@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { PersonAvatarLightboxProvider } from "./app/components/vendors/PersonAvatarLightbox";
 import { AppLayout } from "./app/components/layout/AppLayout";
 import { DocumentTitle } from "./app/components/layout/DocumentTitle";
+import { EmbeddingBridge } from "./EmbeddingBridge";
 import { lazy, Suspense } from "react";
 
 const PartnersHomePage = lazy(() => import("./app/pages/PartnersHomePage").then(m => ({ default: m.PartnersHomePage })));
@@ -29,7 +30,9 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <PersonAvatarLightboxProvider>
-      <BrowserRouter>
+      {/* basename: the shell serves this app under /touchpoint-apps/partners/ (see src/embedding.ts). */}
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <EmbeddingBridge />
         <DocumentTitle />
         <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Loading…</div>}>
           <Routes>

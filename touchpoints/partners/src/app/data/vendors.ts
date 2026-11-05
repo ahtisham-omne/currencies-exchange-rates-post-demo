@@ -1,3 +1,7 @@
+import { PARTNER_GROUPS as GROUP_RECORDS } from "../components/vendors/partnerConstants";
+import type { CurrencyStream } from "../currency/partnerAmounts";
+import { convertNow, groupCurrencyOf } from "../currency/partnerCurrency";
+
 export type VendorStatus = "active" | "inactive" | "archived";
 export type PartnerType = "vendor" | "customer";
 export type VendorCategory =
@@ -105,7 +109,9 @@ export interface VendorConfigData {
   pricingRules?: SavedPricingRule[];
   pointsOfContact?: EnrichedContactPerson[];
   creditLimitConfig?: {
-    currency: string;
+    /** Lower-case ISO code, set when the partner overrides its group's
+     *  currency; absent, it inherits (currency/partnerCurrency.ts). */
+    currency?: string;
     maxCreditLimit: number;
     warningThreshold: number;
     enforcement: string;
@@ -165,6 +171,10 @@ export interface Vendor {
   updatedAt: string;
   // Optional enriched config data from creation modal Step 3
   configData?: VendorConfigData;
+  /** A partner that trades in several currencies: its transactions per
+   *  currency, for the profile's rolled-up hover. Amounts are in each stream's
+   *  own currency. Absent for a single-currency partner. */
+  currencyBreakdown?: CurrencyStream[];
 }
 
 export const CATEGORY_LABELS: Record<VendorCategory, string> = {
@@ -1633,7 +1643,67 @@ function generateAdditionalVendors(): Vendor[] {
 }
 
 const _additionalVendors = generateAdditionalVendors();
-export const mockVendors: Vendor[] = [..._manualVendors, ..._additionalVendors];
+
+/* ── Partner currencies (spec 4.2) ──────────────────────────────────────
+ * A partner trades in its primary group's currency unless it sets its own
+ * (Configure → Billing & Shipping, stored in creditLimitConfig). The hand-
+ * written partners keep the currencies the earlier Partners touchpoint gave
+ * them; where that differs from their group's (Tier 1 Automotive OEMs: USD)
+ * it is set on the partner. The generated partners inherit their group's,
+ * so groups without one (Chassis & Suspension) give base-currency partners.
+ * Applied last, so no seed sequence changes. */
+const PARTNER_CURRENCY: Record<string, string> = {
+  "v-001": "USD", "v-002": "CNY", "v-003": "MXN", "v-004": "MYR", "v-005": "EUR",
+  "v-006": "EUR", "v-007": "EUR", "v-008": "LKR", "v-009": "RUB", "v-010": "GEL",
+  "v-011": "USD", "v-012": "RSD", "v-013": "USD", "v-014": "SGD", "v-015": "USD",
+  "v-016": "USD", "v-017": "USD", "v-018": "USD", "v-019": "AUD",
+};
+
+/** Two partners trade in several currencies: each stream's share of the
+ *  partner's Total Spent. Its amount is that share in the stream's own
+ *  currency, at today's rates, so the rolled-up hover adds up to Total Spent. */
+const CURRENCY_STREAMS: Record<string, { code: string; txCount: number; share: number }[]> = {
+  "v-001": [
+    { code: "USD", txCount: 96, share: 0.64 },
+    { code: "EUR", txCount: 42, share: 0.24 },
+    { code: "JPY", txCount: 18, share: 0.12 },
+  ],
+  "v-003": [
+    { code: "MXN", txCount: 64, share: 0.72 },
+    { code: "USD", txCount: 26, share: 0.22 },
+    { code: "CAD", txCount: 8, share: 0.06 },
+  ],
+};
+
+function withPartnerCurrency(v: Vendor): Vendor {
+  const group = GROUP_RECORDS.find((g) => g.id === v.partnerGroup);
+  const own = PARTNER_CURRENCY[v.id];
+  const currency = own ?? groupCurrencyOf(group);
+  const streams: CurrencyStream[] | undefined = CURRENCY_STREAMS[v.id]?.map(({ code, txCount, share }) => ({
+    code,
+    txCount,
+    amount: Math.round(convertNow(v.totalSpent * share, currency, code) * 100) / 100,
+  }));
+  if ((!own || own === groupCurrencyOf(group)) && !streams) return v;
+  return {
+    ...v,
+    ...(streams && { currencyBreakdown: streams }),
+    ...(own && own !== groupCurrencyOf(group) && {
+      configData: {
+        ...v.configData,
+        // The importer's defaults for the rest, with the partner's own limit.
+        creditLimitConfig: {
+          currency: own.toLowerCase(),
+          maxCreditLimit: v.creditLimit,
+          warningThreshold: 0,
+          enforcement: group?.template?.creditEnforcement ?? "none",
+        },
+      },
+    }),
+  };
+}
+
+export const mockVendors: Vendor[] = [..._manualVendors, ..._additionalVendors].map(withPartnerCurrency);
 
 let vendorIdCounter = 120;
 

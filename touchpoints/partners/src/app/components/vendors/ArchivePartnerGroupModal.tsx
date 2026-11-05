@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import {
   Dialog,
   DialogContent,
@@ -406,7 +407,7 @@ export function ArchivePartnerGroupModal({
                               </div>
                               <div className="flex items-center gap-2.5 text-[12px] text-slate-700">
                                 <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span className="truncate"><span className="mr-1">{p.countryFlag}</span>{p.country}</span>
+                                <span className="truncate"><span className="mr-1"><FlagImage code={flagEmojiCode(p.countryFlag)} className="text-[13px]" /></span>{p.country}</span>
                               </div>
                             </div>
                           </HoverCardContent>
@@ -527,7 +528,7 @@ export function ArchivePartnerGroupModal({
                               </div>
                               <div className="flex items-center gap-2.5 text-[12px] text-slate-700">
                                 <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span className="truncate"><span className="mr-1">{g.countryFlag}</span>{g.country}</span>
+                                <span className="truncate"><span className="mr-1"><FlagImage code={flagEmojiCode(g.countryFlag)} className="text-[13px]" /></span>{g.country}</span>
                               </div>
                             </div>
                           </HoverCardContent>

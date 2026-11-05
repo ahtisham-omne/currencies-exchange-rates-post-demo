@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import { createPortal } from "react-dom";
 import {
   X,
@@ -30,6 +31,10 @@ import {
 import { usePersonLightbox } from "./PersonAvatarLightbox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip";
 import type { OverflowItem } from "./OverflowTooltip";
+import { useVendors } from "../../context/VendorContext";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatCompactMoney, formatMoney } from "@/app/currency/money";
+import { usePartnerCurrencyOf } from "@/app/currency/usePartnerCurrency";
 
 /* ─────────── Types ─────────── */
 
@@ -282,8 +287,9 @@ function deptPalette(dept: string) {
 
 /* ─────────── Formatting ─────────── */
 
-function formatCurrency(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+/** An amount in the partner's currency (its item prices and credit are in it). */
+function formatCurrency(n: number, currency: string): string {
+  return formatMoney(n, currency);
 }
 
 function formatNumber(n: number): string {
@@ -317,7 +323,7 @@ function InfoRow({ icon: Icon, label, value }: { icon: typeof Mail; label: strin
 
 /* ─────────── Item Quick View — large image carousel + detail card ─────────── */
 
-function ItemQuickView({ code, vendorName, tableImageUrl }: { code: string; vendorName: string; tableImageUrl?: string }) {
+function ItemQuickView({ code, vendorName, tableImageUrl, currency }: { code: string; vendorName: string; tableImageUrl?: string; currency: string }) {
   const d = mockItemData(code);
   const rsc = RECORD_STATUS_COLORS[d.recordStatus] || RECORD_STATUS_COLORS.Active;
   // Use the table's image as the first photo so images match; append others from the pool
@@ -416,7 +422,7 @@ function ItemQuickView({ code, vendorName, tableImageUrl }: { code: string; vend
             <div className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>Partner</div>
           </div>
           <div className="px-2.5 py-2.5 text-center">
-            <div className="text-[15px] text-foreground" style={{ fontWeight: 700 }}>{formatCurrency(d.unitPrice)}</div>
+            <div className="text-[15px] text-foreground" style={{ fontWeight: 700 }}>{formatCurrency(d.unitPrice, currency)}</div>
             <div className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>Unit Price</div>
           </div>
           <div className="px-2.5 py-2.5 text-center">
@@ -470,7 +476,7 @@ function getLocationPhoto(name: string): string {
   return LOCATION_PHOTOS[hashStr(name) % LOCATION_PHOTOS.length];
 }
 
-function LocationQuickView({ locationName, vendorName, subtitle, tableImageUrl }: { locationName: string; vendorName: string; subtitle?: string; tableImageUrl?: string; locationIdx?: number }) {
+function LocationQuickView({ locationName, vendorName, subtitle, tableImageUrl, currency }: { locationName: string; vendorName: string; subtitle?: string; tableImageUrl?: string; locationIdx?: number; currency: string }) {
   // Title is the real location name — matches the row/hover card the user
   // opened from. The partner name lives in the stat row's Partner cell.
   const displayName = locationName;
@@ -538,7 +544,7 @@ function LocationQuickView({ locationName, vendorName, subtitle, tableImageUrl }
               style={{ fontWeight: 500 }}
             >
               {d.street}, {d.city}
-              <span className="text-slate-500"> • {d.country.flag} {d.country.name}</span>
+              <span className="text-slate-500"> • <FlagImage code={flagEmojiCode(d.country.flag)} className="text-[13px]" /> {d.country.name}</span>
             </a>
           </div>
           <div className="flex items-center gap-2.5">
@@ -621,7 +627,7 @@ function LocationQuickView({ locationName, vendorName, subtitle, tableImageUrl }
             <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden">
               <div className="h-full rounded-full" style={{ width: `${Math.min(100, d.creditUsedPct)}%`, backgroundColor: creditPalette.bar }} />
             </div>
-            <div className="text-[10px] text-slate-500 mt-1" style={{ fontWeight: 500 }}>{formatCurrency(d.creditAvailable)} available</div>
+            <div className="text-[10px] text-slate-500 mt-1" style={{ fontWeight: 500 }}>{formatCurrency(d.creditAvailable, currency)} available</div>
           </div>
         </div>
       </div>
@@ -1053,6 +1059,10 @@ function CarrierQuickView({ carrierName, carrierRole, vendorName }: { carrierNam
  * the card never renders holes. */
 function PartnerQuickView({ partnerName, meta }: { partnerName: string; meta?: Record<string, unknown> }) {
   const h = hashStr(partnerName);
+  const { vendors } = useVendors();
+  const currencyOf = usePartnerCurrencyOf();
+  const quickPartner = vendors.find((v) => v.id === meta?.id) ?? vendors.find((v) => v.displayName === partnerName || v.companyName === partnerName);
+  const partnerCurrency = quickPartner ? currencyOf(quickPartner) : BASE_CURRENCY;
   const types = (meta?.types as string[] | undefined) ?? ["vendor"];
   const status = (meta?.status as string | undefined) ?? "active";
   const code = (meta?.code as string | undefined) ?? "";
@@ -1066,8 +1076,8 @@ function PartnerQuickView({ partnerName, meta }: { partnerName: string; meta?: R
 
   const initials = partnerName.split(" ").filter(Boolean).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   const isActive = status === "active";
-  const fmtMoney = (n: number) =>
-    n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `$${(n / 1_000).toFixed(0)}K` : `$${n.toFixed(0)}`;
+  // The partner's credit limit and spend are in its own currency.
+  const fmtMoney = (n: number) => formatCompactMoney(n, partnerCurrency);
 
   return (
     <>
@@ -1166,6 +1176,11 @@ function PartnerQuickView({ partnerName, meta }: { partnerName: string; meta?: R
 }
 
 export function QuickViewPanel({ data, onClose, zIndex = 200 }: QuickViewPanelProps) {
+  // The partner's currency, for its item prices and location credit.
+  const { vendors } = useVendors();
+  const currencyOf = usePartnerCurrencyOf();
+  const quickViewPartner = data ? vendors.find((v) => v.id === data.vendorId) ?? vendors.find((v) => v.displayName === data.vendorName) : undefined;
+  const partnerCurrency = quickViewPartner ? currencyOf(quickViewPartner) : BASE_CURRENCY;
   // Close on Escape
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === "Escape") onClose();
@@ -1236,8 +1251,8 @@ export function QuickViewPanel({ data, onClose, zIndex = 200 }: QuickViewPanelPr
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto scrollbar-hide">
-          {type === "item" && <ItemQuickView code={item.name} vendorName={vendorName} tableImageUrl={item.imageUrl} />}
-          {type === "location" && <LocationQuickView locationName={item.name} vendorName={vendorName} subtitle={item.subtitle} tableImageUrl={item.imageUrl} locationIdx={locationIdx} />}
+          {type === "item" && <ItemQuickView code={item.name} vendorName={vendorName} tableImageUrl={item.imageUrl} currency={partnerCurrency} />}
+          {type === "location" && <LocationQuickView locationName={item.name} vendorName={vendorName} subtitle={item.subtitle} tableImageUrl={item.imageUrl} locationIdx={locationIdx} currency={partnerCurrency} />}
           {type === "carrier" && <CarrierQuickView carrierName={item.name} carrierRole={item.subtitle || "Carrier"} vendorName={vendorName} />}
           {type === "partner" && <PartnerQuickView partnerName={item.name} meta={item.meta} />}
           {type === "contact" && (

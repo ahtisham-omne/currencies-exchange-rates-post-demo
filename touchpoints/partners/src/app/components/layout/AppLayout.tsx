@@ -7,6 +7,7 @@ import { PartnerGroupsProvider } from "../../context/PartnerGroupsContext";
 import { PaymentTermStatusProvider } from "../../context/PaymentTermStatusContext";
 import { PricingRuleStatusProvider } from "../../context/PricingRuleStatusContext";
 import { OfflineProvider } from "../../context/OfflineContext";
+import { embedded } from "@/embedding";
 
 export function AppLayout() {
   return (
@@ -18,7 +19,8 @@ export function AppLayout() {
               <div className="flex flex-col h-screen w-full overflow-hidden bg-background">
                 <OfflineBar />
                 <div className="flex flex-1 min-h-0 w-full overflow-hidden">
-                  <AppSidebar />
+                  {/* Inside the Currency & Exchange shell, the shell's sidebar replaces this one. */}
+                  {!embedded && <AppSidebar />}
                   <main className="flex-1 min-w-0 overflow-hidden flex flex-col relative z-0">
                     <Outlet />
                   </main>

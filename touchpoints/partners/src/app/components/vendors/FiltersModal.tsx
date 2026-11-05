@@ -1,6 +1,10 @@
 import { useState, useMemo } from "react";
 import type { ReactNode } from "react";
 import type { Vendor } from "../../data/vendors";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { moneyPrefix } from "@/app/currency/money";
+import { toBaseNow } from "@/app/currency/partnerCurrency";
+import { usePartnerCurrencyOf } from "@/app/currency/usePartnerCurrency";
 import {
   Dialog,
   DialogPortal,
@@ -188,7 +192,7 @@ function RangeHistogram({
   max: filterMax,
   onMinChange,
   onMaxChange,
-  prefix = "$",
+  prefix = moneyPrefix(BASE_CURRENCY),
 }: {
   values: number[];
   min: string;
@@ -502,9 +506,13 @@ export function FiltersModal({
     };
   }, [vendors]);
 
-  const netProfitValues = useMemo(() => vendors.map((v) => v.netProfitMargin), [vendors]);
-  const creditLimitValues = useMemo(() => vendors.map((v) => v.creditLimit), [vendors]);
-  const creditUtilValues = useMemo(() => vendors.map((v) => v.creditUtilization), [vendors]);
+  // Amount ranges are in the base currency: each partner's amount is in its
+  // own currency, so they are converted before they can be compared.
+  const currencyOf = usePartnerCurrencyOf();
+  const netProfitValues = useMemo(() => vendors.map((v) => toBaseNow(v.netProfitMargin, currencyOf(v))), [vendors, currencyOf]);
+  const creditLimitValues = useMemo(() => vendors.map((v) => toBaseNow(v.creditLimit, currencyOf(v))), [vendors, currencyOf]);
+  const creditUtilValues = useMemo(() => vendors.map((v) => toBaseNow(v.creditUtilization, currencyOf(v))), [vendors, currencyOf]);
+  const baseNote = `In ${BASE_CURRENCY}, the base currency.`;
 
   const activeCount = countActiveFilters(filters);
 
@@ -664,8 +672,8 @@ export function FiltersModal({
               </>
             )}
 
-            {/* Net Margin — min/max range */}
-            <Section title="Net Margin Range" subtitle="Filter by net profit margin.">
+            {/* Net Profit — min/max range */}
+            <Section title="Net Profit Range" subtitle={`Filter by net profit. ${baseNote}`}>
               <RangeHistogram
                 values={netProfitValues}
                 min={filters.netProfitMin}
@@ -678,7 +686,7 @@ export function FiltersModal({
             <Divider />
 
             {/* Credit Limit — min/max range */}
-            <Section title="Credit Limit Range">
+            <Section title="Credit Limit Range" subtitle={baseNote}>
               <RangeHistogram
                 values={creditLimitValues}
                 min={filters.creditLimitMin}
@@ -691,7 +699,7 @@ export function FiltersModal({
             <Divider />
 
             {/* Credit Utilization — min/max range */}
-            <Section title="Credit Utilization">
+            <Section title="Credit Utilization" subtitle={baseNote}>
               <RangeHistogram
                 values={creditUtilValues}
                 min={filters.creditUtilMin}

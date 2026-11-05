@@ -1,4 +1,6 @@
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { appHref } from "@/embedding";
+import { FlagImage, flagEmojiCode } from "../components/currency/FlagImage";
 import { useVendors } from "../context/VendorContext";
 import fedexLogo from "@/assets/carriers/fedex.png";
 import dhlLogo from "@/assets/carriers/dhl.png";
@@ -22,6 +24,11 @@ import {
 } from "../components/ui/popover";
 import { PARTNER_GROUPS, CONTACT_DICTIONARY, VENDOR_SUB_TYPES, CUSTOMER_SUB_TYPES, VENDOR_CONFIG_SECTIONS } from "../components/vendors/partnerConstants";
 import { ConfigPageContent } from "../components/vendors/CreatePartnerModal";
+import { CurrencyFlag } from "../components/currency/CurrencyFlag";
+import { CurrencyViewToggle, ProfileCurrencyProvider, profileFormatters, useProfileMoney } from "../components/currency/ProfileCurrency";
+import { BASE_CURRENCY, getCurrency } from "../currency/currencies";
+import type { CurrencyView } from "../currency/partnerAmounts";
+import { usePartnerCurrencyInfo } from "../currency/usePartnerCurrency";
 import { ActivityFeed, type ActivityFeedItemType } from "../components/vendors/PartnerGroupDetailModal";
 import type { ContactPerson as PartnerContact } from "../components/vendors/partnerConstants";
 import { CreatePartnerLocationModal } from "../components/vendors/CreatePartnerLocationModal";
@@ -353,6 +360,16 @@ export function VendorDetailsPage() {
 
   const vendor = getVendor(id!);
 
+  // The partner's currency (its own, else its primary group's, spec 4.2) and
+  // whether this profile shows its amounts in it (the default) or in base.
+  const currencyInfoOf = usePartnerCurrencyInfo();
+  const partnerCurrency = vendor ? currencyInfoOf(vendor) : null;
+  const [profileCurrencyView, setProfileCurrencyView] = useState<CurrencyView>("partner");
+  const profileCurrency = useMemo(
+    () => ({ view: profileCurrencyView, partnerCurrency: partnerCurrency?.code ?? BASE_CURRENCY, streams: vendor?.currencyBreakdown }),
+    [profileCurrencyView, partnerCurrency?.code, vendor?.currencyBreakdown],
+  );
+
   // Generate location data for KPI computations (must be after vendor is available)
   const locationsData = useMemo(() => vendor ? generateLocationsFromVendor(vendor) : [], [vendor]);
 
@@ -432,12 +449,10 @@ export function VendorDetailsPage() {
     setStatusChangeTarget(null);
   };
 
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(val);
+  // The partner's amounts are in its currency; these show them in the
+  // profile's view (text for charts and labels, money() with its hover).
+  const profileMoney = profileFormatters(profileCurrency);
+  const formatCurrency = profileMoney.moneyText;
 
   const formatDate = (dateStr: string) => {
     try {
@@ -560,7 +575,7 @@ export function VendorDetailsPage() {
           </>
         )}
         {/* Utilities */}
-        <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link copied to clipboard"); }}>
+        <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(appHref()); toast.success("Link copied to clipboard"); }}>
           <Link2 className="w-4 h-4 mr-2 text-slate-500" />
           Copy Link
         </DropdownMenuItem>
@@ -680,6 +695,7 @@ export function VendorDetailsPage() {
   const allSubTypes = [...vendorSubTypeLabels, ...customerSubTypeLabels];
 
   return (
+    <ProfileCurrencyProvider value={profileCurrency}>
     <div ref={scrollContainerRef} className="flex-1 flex flex-col overflow-y-auto bg-slate-50">
       {/* ══════════════════════════════════════════════
           TOP NAV BAR
@@ -1025,6 +1041,8 @@ export function VendorDetailsPage() {
                   <InsightsRefresh toastLabel="Dashboard refreshed" />
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Base ↔ Partner currency — hidden for a partner in the base currency. */}
+                  <CurrencyViewToggle view={profileCurrencyView} onChange={setProfileCurrencyView} partnerCurrency={profileCurrency.partnerCurrency} />
                   <InsightsResetButton dirty={dashDirty} onReset={handleResetLayout} />
                   <button
                     onClick={() => setCustomizePanelOpen(true)}
@@ -1100,6 +1118,8 @@ export function VendorDetailsPage() {
                           </div>
                         );
                       })() : undefined;
+                      // Amounts get their currency hover (base or partner amount, and the rate).
+                      const moneyNode = dashKpiAmount(kpi.key, vendor);
                       return (
                         <DraggableKpiCard
                           key={kpi.key}
@@ -1107,7 +1127,7 @@ export function VendorDetailsPage() {
                           kpiKey={kpi.key}
                           label={kpi.label}
                           value={computed.value}
-                          valueNode={valueNode}
+                          valueNode={valueNode ?? (moneyNode != null ? <p className="text-[15px] text-slate-700 tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{profileMoney.money(moneyNode, { rolledUp: kpi.key === "total_spent" })}</p> : undefined)}
                           subtitle={kpi.subtitle}
                           iconName={kpi.iconName}
                           tooltip={kpi.tooltip}
@@ -1303,8 +1323,8 @@ export function VendorDetailsPage() {
                 <div className="grid grid-cols-2 gap-2.5">
                   <StatBox label="Purchase Orders" value={String(splitVendorOrders(vendor).po)} icon={ShoppingCart} />
                   <StatBox label="Sales Orders" value={String(splitVendorOrders(vendor).so)} icon={Receipt} />
-                  <StatBox label="Total Spent" value={formatCurrency(vendor.totalSpent)} icon={TrendingUp} />
-                  <StatBox label="Outstanding" value={formatCurrency(vendor.outstandingBalance || 0)} icon={Receipt} color="#F59E0B" />
+                  <StatBox label="Total Spent" value={profileMoney.money(vendor.totalSpent, { rolledUp: true })} icon={TrendingUp} />
+                  <StatBox label="Outstanding" value={profileMoney.money(vendor.outstandingBalance || 0)} icon={Receipt} color="#F59E0B" />
                   <StatBox label="Credit Used" value={`${creditUtilization}%`} icon={DollarSign} color={creditUtilization > 80 ? "rgb(var(--destructive))" : creditUtilization > 50 ? "rgb(var(--warning))" : "rgb(var(--success))"} />
                 </div>
               </SidebarCard>
@@ -1583,6 +1603,7 @@ export function VendorDetailsPage() {
         }}
       />
     </div>
+    </ProfileCurrencyProvider>
   );
 }
 
@@ -1627,7 +1648,7 @@ function PartnerGroupHoverPill({ group, extraGroups = [] }: {
         style={{ fontWeight: 600 }}
       >
         <Star className="w-2.5 h-2.5 fill-slate-400 text-slate-400" />
-        {group.countryFlag} {group.name}
+        <FlagImage code={flagEmojiCode(group.countryFlag)} className="text-[13px]" /> {group.name}
         <span className="text-[10px] text-slate-400" style={{ fontWeight: 400 }}>· {group.memberCount}</span>
         {extraGroups.length > 0 && (
           <>
@@ -1660,7 +1681,7 @@ function PartnerGroupHoverPill({ group, extraGroups = [] }: {
             <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/[0.04]" />
             <div className="flex items-center justify-between relative">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-base shrink-0">{group.countryFlag}</span>
+                <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(group.countryFlag)} className="text-[13px]" /></span>
                 <span className="text-white text-[13px] truncate group-hover/primary:underline" style={{ fontWeight: 600 }}>
                   {group.name}
                 </span>
@@ -1710,7 +1731,7 @@ function PartnerGroupHoverPill({ group, extraGroups = [] }: {
                           className={`group/row w-full flex items-center gap-2 px-1.5 py-1.5 rounded-md text-left transition-colors cursor-pointer ${isHovered ? "bg-slate-50" : "hover:bg-slate-50"}`}
                           title={`Open ${g.name} in a new tab`}
                         >
-                          <span className="text-sm shrink-0">{g.countryFlag}</span>
+                          <span className="text-sm shrink-0"><FlagImage code={flagEmojiCode(g.countryFlag)} className="text-[13px]" /></span>
                           <div className="min-w-0 flex-1">
                             <p className="text-[12px] text-slate-700 truncate group-hover/row:text-primary group-hover/row:underline transition-colors" style={{ fontWeight: 600 }}>{g.name}</p>
                             <p className="text-[10px] text-slate-400">{g.memberCount} members</p>
@@ -1740,7 +1761,7 @@ function PartnerGroupHoverPill({ group, extraGroups = [] }: {
               <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/[0.04]" />
               <div className="flex items-center justify-between relative">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-base shrink-0">{hoveredExtraGroup.countryFlag}</span>
+                  <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(hoveredExtraGroup.countryFlag)} className="text-[13px]" /></span>
                   <span className="text-white text-[13px] truncate group-hover/preview:underline" style={{ fontWeight: 600 }}>{hoveredExtraGroup.name}</span>
                 </div>
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-white/10 text-slate-400 shrink-0" style={{ fontWeight: 600 }}>Secondary</span>
@@ -1815,7 +1836,7 @@ function SidebarRow({ icon: Icon, label, value, isLink, isAddress }: { icon: Rea
   );
 }
 
-function StatBox({ label, value, icon: Icon, color }: { label: string; value: string; icon: React.ElementType; color?: string }) {
+function StatBox({ label, value, icon: Icon, color }: { label: string; value: React.ReactNode; icon: React.ElementType; color?: string }) {
   return (
     <div className="rounded-lg bg-slate-50 border border-muted p-2.5">
       <div className="flex items-center gap-1.5 mb-1">
@@ -2435,6 +2456,17 @@ const DEFAULT_DASH_KPIS = [
   "last_order_date", "payment_status", "credit_utilization", "top_item_purchased", "top_item_sold",
 ];
 
+/** The amount behind a money KPI (in the partner's currency), or null. */
+function dashKpiAmount(key: string, vendor: Vendor): number | null {
+  switch (key) {
+    case "total_spent": return vendor.totalSpent;
+    case "outstanding": return vendor.outstandingBalance;
+    case "avg_order_value": return vendor.totalOrders > 0 ? vendor.totalSpent / vendor.totalOrders : 0;
+    case "credit_limit": return vendor.creditLimit;
+    default: return null;
+  }
+}
+
 function computeDashKpiValue(
   key: string,
   vendor: Vendor,
@@ -2451,7 +2483,7 @@ function computeDashKpiValue(
     case "outstanding": return { value: formatCurrency(vendor.outstandingBalance) };
     case "avg_order_value": return {
       value: formatCurrency(vendor.totalOrders > 0 ? vendor.totalSpent / vendor.totalOrders : 0),
-      change: "↘ $240", changeColor: "#EF4444",
+      change: `↘ ${formatCurrency(240)}`, changeColor: "#EF4444",
     };
     case "days_payable": return { value: "23 Days" };
     case "net_margin": return { value: `${(vendor.netProfitMargin ?? 0).toFixed(2)}%` };
@@ -2951,6 +2983,9 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
 }) {
   const creditPct = getCreditUtilizationPct(vendor);
   const available = vendor.creditLimit - vendor.creditUtilization;
+  // The partner's amounts in the profile's currency view (Base / Partner).
+  const pm = useProfileMoney();
+  const currencyInfo = usePartnerCurrencyInfo()(vendor);
   const spendCategories = [
     { name: "Services", value: Math.round(vendor.totalSpent * 0.4), pct: 40 },
     { name: "Materials", value: Math.round(vendor.totalSpent * 0.3), pct: 30 },
@@ -3098,7 +3133,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
             const chartBox = (h: number, chart: React.ReactNode) => (
               <div style={{ height: h }} className="-ml-2"><ResponsiveContainer width="100%" height="100%">{chart as any}</ResponsiveContainer></div>
             );
-            const statRow = (stats: { label: string; value: string; color?: string }[], compact?: boolean, trailing?: React.ReactNode) => (
+            const statRow = (stats: { label: string; value: React.ReactNode; color?: string }[], compact?: boolean, trailing?: React.ReactNode) => (
               <div className={`flex items-end justify-between gap-4 ${compact ? "mt-1.5 pt-1.5" : "mt-2 pt-2"} border-t border-muted`}>
                 <div className={`flex items-center ${compact ? "gap-3" : "gap-4"} flex-wrap min-w-0`}>
                   {stats.map((s, i) => (<div key={i}><p className={`${compact ? "text-[9px]" : "text-[10px]"} text-slate-400`} style={{ fontWeight: 500 }}>{s.label}</p><p className={compact ? "text-[11px]" : "text-[13px]"} style={{ fontWeight: 700, color: s.color || "#334155" }}>{s.value}</p></div>))}
@@ -3141,26 +3176,26 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                       <defs><linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={stroke} stopOpacity={0.15} /><stop offset="100%" stopColor={stroke} stopOpacity={0.01} /></linearGradient></defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--muted))" vertical={false} />
                       <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                      <ReTooltip contentStyle={ttStyle} formatter={(val: number) => [`$${val.toLocaleString()}`, seriesLabel]} />
+                      <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={pm.axis} />
+                      <ReTooltip contentStyle={ttStyle} formatter={(val: number) => [pm.moneyText(val), seriesLabel]} />
                       <Area type="monotone" dataKey="amount" stroke={stroke} strokeWidth={2} fill={`url(#${gradId})`} />
                     </AreaChart>
                   ))}
                   {(() => {
                     const trailing = <span className="text-[11px] text-slate-400 text-right max-w-[200px]" style={{ fontWeight: 500 }}>{footnote}</span>;
                     if (sz === "sm") return statRow([
-                      { label: "YTD", value: formatCurrency(totalYTD) },
-                      { label: "Avg/Mo", value: formatCurrency(avgMonthly) },
+                      { label: "YTD", value: pm.money(totalYTD) },
+                      { label: "Avg/Mo", value: pm.money(avgMonthly) },
                     ], true, trailing);
                     if (sz === "md") return statRow([
-                      { label: "YTD Total", value: formatCurrency(totalYTD) },
-                      { label: "Monthly Avg", value: formatCurrency(avgMonthly) },
+                      { label: "YTD Total", value: pm.money(totalYTD) },
+                      { label: "Monthly Avg", value: pm.money(avgMonthly) },
                     ], false, trailing);
                     return statRow([
-                      { label: "YTD Total", value: formatCurrency(totalYTD) },
-                      { label: "Monthly Avg", value: formatCurrency(avgMonthly) },
-                      { label: "Peak Month", value: `${peakMonth.month} · ${formatCurrency(peakMonth.amount)}`, color: stroke },
-                      { label: "Lowest", value: `${lowMonth.month} · ${formatCurrency(lowMonth.amount)}`, color: "#94A3B8" },
+                      { label: "YTD Total", value: pm.money(totalYTD) },
+                      { label: "Monthly Avg", value: pm.money(avgMonthly) },
+                      { label: "Peak Month", value: <span>{peakMonth.month} · {pm.money(peakMonth.amount)}</span>, color: stroke },
+                      { label: "Lowest", value: <span>{lowMonth.month} · {pm.money(lowMonth.amount)}</span>, color: "#94A3B8" },
                     ], false, trailing);
                   })()}
                 </>
@@ -3233,7 +3268,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                       </Pie>
                     </RePieChart>
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-[11px] text-slate-700" style={{ fontWeight: 700 }}>{formatCurrency(vendor.totalSpent)}</span>
+                      <span className="text-[11px] text-slate-700" style={{ fontWeight: 700 }}>{pm.money(vendor.totalSpent, { rolledUp: true })}</span>
                     </div>
                   </div>
                   <div className="flex-1 min-w-0 space-y-1.5">
@@ -3245,9 +3280,9 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                     ))}
                   </div>
                 </div>
-                {sz === "sm" && statRow(spendCategories.slice(0, 2).map(c => ({ label: c.name, value: formatCurrency(c.value) })), true)}
-                {sz === "md" && statRow(spendCategories.slice(0, 3).map(c => ({ label: c.name, value: formatCurrency(c.value) })))}
-                {sz === "lg" && statRow(spendCategories.map(c => ({ label: c.name, value: formatCurrency(c.value) })))}
+                {sz === "sm" && statRow(spendCategories.slice(0, 2).map(c => ({ label: c.name, value: pm.money(c.value) })), true)}
+                {sz === "md" && statRow(spendCategories.slice(0, 3).map(c => ({ label: c.name, value: pm.money(c.value) })))}
+                {sz === "lg" && statRow(spendCategories.map(c => ({ label: c.name, value: pm.money(c.value) })))}
               </>
             );
           } else if (wKey === "credit_health") {
@@ -3256,20 +3291,20 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
               <>
                 <div className="flex items-center justify-between mb-2"><span className="text-[12px] text-muted-foreground" style={{ fontWeight: 500 }}>Credit Utilization</span><span className="text-[13px] text-slate-700" style={{ fontWeight: 700 }}>{creditPct}%</span></div>
                 <div className="w-full h-3 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${Math.min(creditPct, 100)}%`, backgroundColor: creditPct > 80 ? "rgb(var(--destructive))" : creditPct > 50 ? "rgb(var(--warning))" : "rgb(var(--success))" }} /></div>
-                <div className="flex items-center justify-between mt-1.5"><span className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>$0</span><span className="text-[10px]" style={{ fontWeight: 500, color: creditStatusColor }}>{creditStatusLabel}</span><span className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{formatCurrency(vendor.creditLimit)}</span></div>
+                <div className="flex items-center justify-between mt-1.5"><span className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{pm.axis(0)}</span><span className="text-[10px]" style={{ fontWeight: 500, color: creditStatusColor }}>{creditStatusLabel}</span><span className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{formatCurrency(vendor.creditLimit)}</span></div>
                 {sz === "sm" && statRow([
-                  { label: "Available", value: formatCurrency(Math.max(available, 0)), color: "rgb(var(--success))" },
-                  { label: "Limit", value: formatCurrency(vendor.creditLimit) },
+                  { label: "Available", value: pm.money(Math.max(available, 0)), color: "rgb(var(--success))" },
+                  { label: "Limit", value: pm.money(vendor.creditLimit) },
                 ], true)}
                 {sz === "md" && statRow([
-                  { label: "Available", value: formatCurrency(Math.max(available, 0)), color: "rgb(var(--success))" },
-                  { label: "Used", value: formatCurrency(vendor.creditUtilization) },
-                  { label: "Limit", value: formatCurrency(vendor.creditLimit) },
+                  { label: "Available", value: pm.money(Math.max(available, 0)), color: "rgb(var(--success))" },
+                  { label: "Used", value: pm.money(vendor.creditUtilization) },
+                  { label: "Limit", value: pm.money(vendor.creditLimit) },
                 ])}
                 {sz === "lg" && statRow([
-                  { label: "Available", value: formatCurrency(Math.max(available, 0)), color: "rgb(var(--success))" },
-                  { label: "Used", value: formatCurrency(vendor.creditUtilization) },
-                  { label: "Limit", value: formatCurrency(vendor.creditLimit) },
+                  { label: "Available", value: pm.money(Math.max(available, 0)), color: "rgb(var(--success))" },
+                  { label: "Used", value: pm.money(vendor.creditUtilization) },
+                  { label: "Limit", value: pm.money(vendor.creditLimit) },
                   { label: "Status", value: creditStatusLabel, color: creditStatusColor },
                 ])}
               </>
@@ -3318,24 +3353,24 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                   ]} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--muted))" vertical={false} />
                     <XAxis dataKey="range" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, "Amount"]} />
+                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={pm.axis} />
+                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [pm.moneyText(v), "Amount"]} />
                     <Bar dataKey="amount" radius={[4, 4, 0, 0]} barSize={sz === "sm" ? 20 : 36}>
                       {[0, 1, 2, 3].map((i) => (<Cell key={i} fill={["rgb(var(--primary))", "#0A77FF", "rgb(var(--warning))", "rgb(var(--destructive))"][i]} />))}
                     </Bar>
                   </BarChart>
                 ))}
                 {sz === "sm" && statRow([
-                  { label: "Overdue", value: formatCurrency(Math.round(vendor.outstandingBalance * 0.35)), color: "rgb(var(--destructive))" },
+                  { label: "Overdue", value: pm.money(Math.round(vendor.outstandingBalance * 0.35)), color: "rgb(var(--destructive))" },
                   { label: "Avg Days", value: "42", color: "rgb(var(--warning))" },
                 ], true)}
                 {sz === "md" && statRow([
-                  { label: "Total Overdue", value: formatCurrency(Math.round(vendor.outstandingBalance * 0.35)), color: "rgb(var(--destructive))" },
+                  { label: "Total Overdue", value: pm.money(Math.round(vendor.outstandingBalance * 0.35)), color: "rgb(var(--destructive))" },
                   { label: "Invoices", value: "11" },
                   { label: "Avg Days", value: "42", color: "rgb(var(--warning))" },
                 ])}
                 {sz === "lg" && statRow([
-                  { label: "Total Overdue", value: formatCurrency(Math.round(vendor.outstandingBalance * 0.35)), color: "rgb(var(--destructive))" },
+                  { label: "Total Overdue", value: pm.money(Math.round(vendor.outstandingBalance * 0.35)), color: "rgb(var(--destructive))" },
                   { label: "Open Invoices", value: "11" },
                   { label: "Avg Days", value: "42", color: "rgb(var(--warning))" },
                   { label: "Oldest", value: "98 days", color: "rgb(var(--destructive))" },
@@ -3441,17 +3476,17 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                 {chartBox(CH[sz], (
                   <BarChart layout="vertical" data={topItemsData} margin={{ top: 5, right: 30, left: 5, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--muted))" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                    <XAxis type="number" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={pm.axis} />
                     <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "#64748B" }} axisLine={false} tickLine={false} width={90} />
-                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, "Spend"]} />
+                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [pm.moneyText(v), "Spend"]} />
                     <Bar dataKey="spend" radius={[0, 4, 4, 0]} barSize={sz === "sm" ? 10 : 16}>
                       {topItemsData.map((_, i) => (<Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />))}
                     </Bar>
                   </BarChart>
                 ))}
-                {sz === "sm" && statRow([{ label: "#1", value: "Steel Alloy A" }, { label: "Top 5", value: formatCurrency(topItemsData.reduce((s, d) => s + d.spend, 0)) }], true)}
-                {sz === "md" && statRow([{ label: "Top Item", value: "Steel Alloy A" }, { label: "Total (Top 5)", value: formatCurrency(topItemsData.reduce((s, d) => s + d.spend, 0)) }])}
-                {sz === "lg" && statRow([{ label: "Top Item", value: "Steel Alloy A" }, { label: "Top 5 Total", value: formatCurrency(topItemsData.reduce((s, d) => s + d.spend, 0)) }, { label: "% of Spend", value: "59%" }, { label: "Unique SKUs", value: "5" }])}
+                {sz === "sm" && statRow([{ label: "#1", value: "Steel Alloy A" }, { label: "Top 5", value: pm.money(topItemsData.reduce((s, d) => s + d.spend, 0)) }], true)}
+                {sz === "md" && statRow([{ label: "Top Item", value: "Steel Alloy A" }, { label: "Total (Top 5)", value: pm.money(topItemsData.reduce((s, d) => s + d.spend, 0)) }])}
+                {sz === "lg" && statRow([{ label: "Top Item", value: "Steel Alloy A" }, { label: "Top 5 Total", value: pm.money(topItemsData.reduce((s, d) => s + d.spend, 0)) }, { label: "% of Spend", value: "59%" }, { label: "Unique SKUs", value: "5" }])}
               </>
             );
           } else if (wKey === "po_recent_orders" || wKey === "so_recent_orders") {
@@ -3484,8 +3519,8 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                   <BarChart data={orderRows} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--muted))" vertical={false} />
                     <XAxis dataKey="ord" tick={{ fontSize: 9, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `${prefix}-${v}`} />
-                    <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, "Amount"]} />
+                    <YAxis tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={pm.axis} />
+                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [pm.moneyText(v), "Amount"]} />
                     <Bar dataKey="amount" radius={[4, 4, 0, 0]} barSize={sz === "sm" ? 16 : 24}>
                       {[0, 1, 2, 3, 4].map((i) => (<Cell key={i} fill={[1, 2, 4].includes(i) ? "rgb(var(--success))" : i === 3 ? accent : "rgb(var(--warning))"} />))}
                     </Bar>
@@ -3493,7 +3528,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                 ))}
                 {sz === "sm" && statRow([{ label: "Delivered", value: "3", color: "rgb(var(--success))" }, { label: "Pending", value: "1", color: "rgb(var(--warning))" }], true)}
                 {sz === "md" && statRow([{ label: "Delivered", value: "3", color: "rgb(var(--success))" }, { label: "In Transit", value: "1", color: accent }, { label: "Pending", value: "1", color: "rgb(var(--warning))" }])}
-                {sz === "lg" && statRow([{ label: "Delivered", value: "3", color: "rgb(var(--success))" }, { label: "In Transit", value: "1", color: accent }, { label: "Pending", value: "1", color: "rgb(var(--warning))" }, { label: "Total Value", value: formatCurrency(totalValue) }])}
+                {sz === "lg" && statRow([{ label: "Delivered", value: "3", color: "rgb(var(--success))" }, { label: "In Transit", value: "1", color: accent }, { label: "Pending", value: "1", color: "rgb(var(--warning))" }, { label: "Total Value", value: pm.money(totalValue) }])}
               </>
             );
           } else if (wKey === "payment_history") {
@@ -3514,15 +3549,15 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                     <defs><linearGradient id="paidGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="rgb(var(--success))" stopOpacity={0.12} /><stop offset="100%" stopColor="rgb(var(--success))" stopOpacity={0.01} /></linearGradient></defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--muted))" vertical={false} />
                     <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, ""]} />
+                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={pm.axis} />
+                    <ReTooltip contentStyle={ttStyle} formatter={(v: number) => [pm.moneyText(v), ""]} />
                     <Area type="monotone" dataKey="paid" stroke="rgb(var(--success))" strokeWidth={2} fill="url(#paidGrad)" name="Paid" />
                     <Area type="monotone" dataKey="pending" stroke="rgb(var(--warning))" strokeWidth={1.5} fill="none" strokeDasharray="4 4" name="Pending" />
                   </AreaChart>
                 ))}
-                {sz === "sm" && statRow([{ label: "Paid", value: formatCurrency(paidTotal), color: "rgb(var(--success))" }, { label: "Pending", value: formatCurrency(pendTotal), color: "rgb(var(--warning))" }], true)}
-                {sz === "md" && statRow([{ label: "Total Paid", value: formatCurrency(paidTotal), color: "rgb(var(--success))" }, { label: "Pending", value: formatCurrency(pendTotal), color: "rgb(var(--warning))" }])}
-                {sz === "lg" && statRow([{ label: "Total Paid", value: formatCurrency(paidTotal), color: "rgb(var(--success))" }, { label: "Pending", value: formatCurrency(pendTotal), color: "rgb(var(--warning))" }, { label: "Transactions", value: "24" }, { label: "Avg Payment", value: formatCurrency(Math.round(paidTotal / 24)) }])}
+                {sz === "sm" && statRow([{ label: "Paid", value: pm.money(paidTotal), color: "rgb(var(--success))" }, { label: "Pending", value: pm.money(pendTotal), color: "rgb(var(--warning))" }], true)}
+                {sz === "md" && statRow([{ label: "Total Paid", value: pm.money(paidTotal), color: "rgb(var(--success))" }, { label: "Pending", value: pm.money(pendTotal), color: "rgb(var(--warning))" }])}
+                {sz === "lg" && statRow([{ label: "Total Paid", value: pm.money(paidTotal), color: "rgb(var(--success))" }, { label: "Pending", value: pm.money(pendTotal), color: "rgb(var(--warning))" }, { label: "Transactions", value: "24" }, { label: "Avg Payment", value: pm.money(Math.round(paidTotal / 24)) }])}
               </>
             );
           } else if (wKey === "compliance_docs") {
@@ -3695,7 +3730,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
             </div>
             <div className="min-w-0">
               <DashInfoLabel>Country</DashInfoLabel>
-              <p className="text-[12px] text-slate-700 truncate" style={{ fontWeight: 500 }}>{vendor.countryFlag} {vendor.country}</p>
+              <p className="text-[12px] text-slate-700 truncate" style={{ fontWeight: 500 }}><FlagImage code={flagEmojiCode(vendor.countryFlag)} className="text-[13px]" /> {vendor.country}</p>
             </div>
           </div>
           {vendor.billingAddress.street && (
@@ -3739,8 +3774,14 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
         <DashInfoCard title="Financial Summary" icon={Wallet} tooltip="Financial overview including currency, cash flow, and outstanding obligations for this partner.">
           <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 mb-3">
             <div className="min-w-0">
-              <DashInfoLabel>Currency</DashInfoLabel>
-              <p className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>USD ($)</p>
+              {/* The partner's currency — the default on every transaction with it. */}
+              <DashInfoLabel tooltip={currencyInfo.source === "partner"
+                ? "Set on this partner. Every transaction with it defaults to this currency."
+                : `Inherited from its partner group${currencyInfo.group?.name ? `, ${currencyInfo.group.name}` : ""}. Every transaction with it defaults to this currency.`}>Currency</DashInfoLabel>
+              <p className="text-[12px] text-slate-700 flex items-center gap-1.5 min-w-0" style={{ fontWeight: 600 }}>
+                <CurrencyFlag code={currencyInfo.code} />
+                <span className="truncate">{getCurrency(currencyInfo.code)?.name ?? currencyInfo.code} ({getCurrency(currencyInfo.code)?.symbol ?? currencyInfo.code})</span>
+              </p>
             </div>
             <div className="min-w-0">
               <DashInfoLabel>Pay To</DashInfoLabel>
@@ -3762,11 +3803,11 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
             <div className="grid grid-cols-2 gap-x-4">
               <div className="min-w-0">
                 <DashInfoLabel tooltip="Total payments received from or on behalf of this partner.">Cash Inflow</DashInfoLabel>
-                <p className="text-[15px] text-success" style={{ fontWeight: 700 }}>{formatCurrency(totalCashIn)}</p>
+                <p className="text-[15px] text-success" style={{ fontWeight: 700 }}>{pm.money(totalCashIn)}</p>
               </div>
               <div className="min-w-0">
                 <DashInfoLabel tooltip="Total disbursements made to this partner.">Cash Outflow</DashInfoLabel>
-                <p className="text-[15px] text-destructive" style={{ fontWeight: 700 }}>{formatCurrency(totalCashOut)}</p>
+                <p className="text-[15px] text-destructive" style={{ fontWeight: 700 }}>{pm.money(totalCashOut)}</p>
               </div>
             </div>
             <div className="flex items-center gap-1 mb-px">
@@ -3786,7 +3827,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
               </DetailRichTooltip>
             </div>
             <div className="flex items-baseline gap-2">
-              <p className="text-[15px] text-slate-700" style={{ fontWeight: 700 }}>{formatCurrency(vendor.outstandingBalance)}</p>
+              <p className="text-[15px] text-slate-700" style={{ fontWeight: 700 }}>{pm.money(vendor.outstandingBalance)}</p>
               <button className="text-[11px] text-primary hover:underline cursor-pointer" style={{ fontWeight: 500 }}>Invoice Details</button>
             </div>
           </div>
@@ -3811,11 +3852,11 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                   <span className="inline-flex shrink-0"><Info className="w-2.5 h-2.5 text-[#D1D5DB] hover:text-slate-400 transition-colors cursor-help" /></span>
                 </DetailRichTooltip>
               </div>
-              <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>{formatCurrency(vendor.creditLimit)}</p>
+              <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>{pm.money(vendor.creditLimit)}</p>
             </div>
             <div className="min-w-0">
               <DashInfoLabel tooltip="Amount of credit currently in use. Calculated as sum of open orders and pending invoices against the credit limit.">Utilization</DashInfoLabel>
-              <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>{formatCurrency(vendor.creditUtilization)}</p>
+              <p className="text-[16px] text-slate-700 truncate" style={{ fontWeight: 700 }}>{pm.money(vendor.creditUtilization)}</p>
             </div>
           </div>
           <div className="w-full h-3 rounded-full overflow-hidden flex" style={{ backgroundColor: "rgb(var(--muted))" }}>
@@ -4600,6 +4641,10 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
   onDashResetLayout: () => void;
   onDashOpenCustomize: () => void;
 }) {
+  // A location trades in its partner's currency (it is set on the partner),
+  // shown in the profile's currency view.
+  const pm = useProfileMoney();
+  const currencyInfo = usePartnerCurrencyInfo()(vendor);
   const generatedLocations = useMemo(() => generateLocationsFromVendor(vendor), [vendor]);
   const [createdLocations, setCreatedLocations] = useState<PartnerLocationData[]>([]);
   /* Displayed location names of every OTHER partner — the Locations tab
@@ -5569,7 +5614,7 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
                               <Upload className="w-4 h-4 mr-2 text-slate-500" /> Upload
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => {
-                              const url = `${window.location.origin}${window.location.pathname}#location/${loc.id}`;
+                              const url = appHref(`#location/${loc.id}`);
                               navigator.clipboard?.writeText(url).then(
                                 () => toast.success("Link copied"),
                                 () => toast.error("Could not copy link"),
@@ -6126,7 +6171,7 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
                               <Upload className="w-4 h-4 mr-2 text-slate-500" /> Upload
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => {
-                              const url = `${window.location.origin}${window.location.pathname}#location/${loc.id}`;
+                              const url = appHref(`#location/${loc.id}`);
                               navigator.clipboard?.writeText(url).then(
                                 () => toast.success("Link copied"),
                                 () => toast.error("Could not copy link"),
@@ -6596,7 +6641,7 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
                           Upload
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link copied to clipboard"); }}>
+                        <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(appHref()); toast.success("Link copied to clipboard"); }}>
                           <Link2 className="w-4 h-4 mr-2 text-slate-500" />
                           Copy Link
                         </DropdownMenuItem>
@@ -6797,8 +6842,8 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
                       <div className="p-3">
                         <div className="flex items-baseline justify-between mb-3">
                           <div>
-                            <p className="text-[17px] text-slate-700" style={{ fontWeight: 700 }}>${creditUsed.toLocaleString()}</p>
-                            <p className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 400 }}>of ${creditLimit.toLocaleString()} limit</p>
+                            <p className="text-[17px] text-slate-700" style={{ fontWeight: 700 }}>{pm.money(creditUsed)}</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 400 }}>of {pm.moneyText(creditLimit)} limit</p>
                           </div>
                           <p className="text-[20px]" style={{ fontWeight: 800, color: creditPctLoc > 80 ? "#EF4444" : creditPctLoc > 50 ? "#F59E0B" : "#10B981" }}>{creditPctLoc}%</p>
                         </div>
@@ -6807,7 +6852,7 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
                         </div>
                         <div className="flex items-center justify-between mt-2">
                           <span className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>Available</span>
-                          <span className="text-[11px] text-slate-800" style={{ fontWeight: 600 }}>${(creditLimit - creditUsed).toLocaleString()}</span>
+                          <span className="text-[11px] text-slate-800" style={{ fontWeight: 600 }}>{pm.moneyText(creditLimit - creditUsed)}</span>
                         </div>
                       </div>
                     </div>
@@ -7114,8 +7159,8 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
                                           </defs>
                                           <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--muted))" vertical={false} />
                                           <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-                                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                                          <ReTooltip contentStyle={{ borderRadius: 8, border: "1px solid #E2E8F0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 }} formatter={(val: number) => [`$${val.toLocaleString()}`, seriesLabel]} labelFormatter={(label, payload) => (payload?.[0]?.payload as { range?: string })?.range ?? label} />
+                                          <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={pm.axis} />
+                                          <ReTooltip contentStyle={{ borderRadius: 8, border: "1px solid #E2E8F0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 12 }} formatter={(val: number) => [pm.moneyText(val), seriesLabel]} labelFormatter={(label, payload) => (payload?.[0]?.payload as { range?: string })?.range ?? label} />
                                           <Area type="monotone" dataKey="amount" stroke={stroke} strokeWidth={2} fill={`url(#${gradId})`} />
                                         </AreaChart>
                                       </ResponsiveContainer>
@@ -7318,8 +7363,11 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
                                 <DashInfoCard title="Financial Summary" icon={Wallet} tooltip="Financial overview including currency, cash flow, and outstanding obligations for this location.">
                                   <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 mb-3">
                                     <div className="min-w-0">
-                                      <DashInfoLabel>Currency</DashInfoLabel>
-                                      <p className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>USD ($)</p>
+                                      <DashInfoLabel tooltip="Set on the partner; every location uses it.">Currency</DashInfoLabel>
+                                      <p className="text-[12px] text-slate-700 flex items-center gap-1.5 min-w-0" style={{ fontWeight: 600 }}>
+                                        <CurrencyFlag code={currencyInfo.code} />
+                                        <span className="truncate">{getCurrency(currencyInfo.code)?.name ?? currencyInfo.code} ({getCurrency(currencyInfo.code)?.symbol ?? currencyInfo.code})</span>
+                                      </p>
                                     </div>
                                     <div className="min-w-0">
                                       <DashInfoLabel>Pay To</DashInfoLabel>
@@ -7341,18 +7389,18 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
                                     <div className="grid grid-cols-2 gap-x-4">
                                       <div className="min-w-0">
                                         <DashInfoLabel tooltip="Money this location paid us, receipts on our sales orders fulfilled to them (them → us).">Cash Inflow</DashInfoLabel>
-                                        <p className="text-[15px] text-success" style={{ fontWeight: 700 }}>{formatCurrency(locTotalCashIn)}</p>
+                                        <p className="text-[15px] text-success" style={{ fontWeight: 700 }}>{pm.money(locTotalCashIn)}</p>
                                       </div>
                                       <div className="min-w-0">
                                         <DashInfoLabel tooltip="Money we paid this location, disbursements on our purchase orders issued to them (we → them).">Cash Outflow</DashInfoLabel>
-                                        <p className="text-[15px] text-destructive" style={{ fontWeight: 700 }}>{formatCurrency(locTotalCashOut)}</p>
+                                        <p className="text-[15px] text-destructive" style={{ fontWeight: 700 }}>{pm.money(locTotalCashOut)}</p>
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-1 mb-px">
                                       <p className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>Outstanding Payables</p>
                                     </div>
                                     <div className="flex items-baseline gap-2">
-                                      <p className="text-[15px] text-slate-700" style={{ fontWeight: 700 }}>{formatCurrency(vendor.outstandingBalance || 0)}</p>
+                                      <p className="text-[15px] text-slate-700" style={{ fontWeight: 700 }}>{pm.money(vendor.outstandingBalance || 0)}</p>
                                       <button className="text-[11px] text-primary hover:underline cursor-pointer" style={{ fontWeight: 500 }}>Invoice Details</button>
                                     </div>
                                   </div>
@@ -10738,6 +10786,8 @@ function FreightLogisticsTab({ vendor, flush, locationName }: {
 
 // ----- PAYMENT METHODS TAB -----
 function PaymentMethodsTab({ cfg, PAYMENT_TYPE_ICONS: _PAYMENT_TYPE_ICONS }: { cfg?: VendorConfigData; PAYMENT_TYPE_ICONS: Record<string, React.ElementType> }) {
+  // Fixed discounts and charges are in the partner's currency.
+  const pmCurrency = useProfileMoney().partnerCurrency;
   type PMSubTab = "vendor" | "customer";
   type PMEntry = import("../components/vendors/partnerConstants").PaymentMethodEntry;
 
@@ -10898,6 +10948,7 @@ function PaymentMethodsTab({ cfg, PAYMENT_TYPE_ICONS: _PAYMENT_TYPE_ICONS }: { c
             removePaymentEntry={vendorHandlers.removePaymentEntry}
             hideToolbar
             confirmMutations
+            currency={pmCurrency}
           />
         ) : (
           <PaymentMethodsSection
@@ -10911,6 +10962,7 @@ function PaymentMethodsTab({ cfg, PAYMENT_TYPE_ICONS: _PAYMENT_TYPE_ICONS }: { c
             removePaymentEntry={customerHandlers.removePaymentEntry}
             hideToolbar
             confirmMutations
+            currency={pmCurrency}
           />
         )}
       </div>
@@ -10920,6 +10972,7 @@ function PaymentMethodsTab({ cfg, PAYMENT_TYPE_ICONS: _PAYMENT_TYPE_ICONS }: { c
 
 // ----- PAYMENT TERMS TAB -----
 function PaymentTermsTab({ vendor, cfg }: { vendor: Vendor; cfg?: VendorConfigData }) {
+  const pm = useProfileMoney();
   const hasPaymentTerm = !!cfg?.paymentTermConfig;
 
   return (
@@ -10941,7 +10994,7 @@ function PaymentTermsTab({ vendor, cfg }: { vendor: Vendor; cfg?: VendorConfigDa
               <span className="text-slate-500">Credit Limit</span>
             </div>
             <span className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>
-              {vendor.creditLimit > 0 ? `$${vendor.creditLimit.toLocaleString()}` : "Not Set"}
+              {vendor.creditLimit > 0 ? pm.money(vendor.creditLimit) : "Not Set"}
             </span>
           </div>
           <Separator />

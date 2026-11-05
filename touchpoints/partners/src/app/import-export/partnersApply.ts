@@ -239,7 +239,9 @@ export function buildVendorFromImport(row: ImportRow, ctx: PartnersApplyContext,
     pricingRules: pricingRulesFor(pricingRuleIds),
     pointsOfContact: contacts.enriched,
     creditLimitConfig: {
-      currency: r.currency ?? tpl.currency ?? "usd",
+      // Blank stores no currency: the partner inherits its group's, else the
+      // base currency (spec 4.2, currency/partnerCurrency.ts).
+      currency: r.currency,
       maxCreditLimit: 0,
       warningThreshold: 0,
       enforcement: r.enforcement ?? tpl.creditEnforcement ?? "none",
@@ -362,7 +364,8 @@ export function patchVendorFromImport(existing: Vendor, row: ImportRow, ctx: Par
   }
   if (r.currency || r.enforcement) {
     cfg.creditLimitConfig = {
-      currency: r.currency ?? cfg.creditLimitConfig?.currency ?? "usd",
+      // A blank currency keeps the partner's own (or none, so it inherits).
+      currency: r.currency ?? cfg.creditLimitConfig?.currency,
       maxCreditLimit: cfg.creditLimitConfig?.maxCreditLimit ?? 0,
       warningThreshold: cfg.creditLimitConfig?.warningThreshold ?? 0,
       enforcement: r.enforcement ?? cfg.creditLimitConfig?.enforcement ?? "none",

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import { createPortal } from "react-dom";
 import { ExpandableTextarea } from "./ExpandableTextarea";
 import {
@@ -578,7 +579,7 @@ export function Step2PartnerForm({
                         type="button"
                         className="flex items-center gap-1.5 pl-2.5 pr-1.5 !h-10 rounded-l-lg border border-r-0 border-border bg-white text-sm shrink-0 cursor-pointer hover:border-slate-300 transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                       >
-                        <span className="text-base leading-none">{selectedCountry.flag}</span>
+                        <span className="text-base leading-none"><FlagImage code={flagEmojiCode(selectedCountry.flag)} className="text-[13px]" /></span>
                         <span className="text-xs text-slate-700" style={{ fontWeight: 600 }}>{phoneCountryCode}</span>
                         <ChevronDown className="w-3 h-3 text-slate-400" />
                       </button>
@@ -612,7 +613,7 @@ export function Step2PartnerForm({
                                 : "hover:bg-slate-50 text-slate-700"
                             }`}
                           >
-                            <span className="text-base">{c.flag}</span>
+                            <span className="text-base"><FlagImage code={flagEmojiCode(c.flag)} className="text-[13px]" /></span>
                             <span className="text-sm flex-1 truncate" style={{ fontWeight: 500 }}>{c.country}</span>
                             <span className="text-xs text-slate-500" style={{ fontWeight: 500 }}>{c.code}</span>
                             {phoneCountryCode === c.code && selectedCountry.country === c.country && (

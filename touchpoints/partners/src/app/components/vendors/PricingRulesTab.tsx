@@ -1,4 +1,5 @@
 import React, { Fragment, useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import { ExpandableTextarea } from "./ExpandableTextarea";
 import { PctAmountToggle } from "./PctAmountToggle";
 import { InfoTooltip } from "../ui/info-tooltip";
@@ -122,6 +123,15 @@ import { useVendors } from "../../context/VendorContext";
 import { TableEmptyRow, TableEmptyState, TableSkeletonRows, CardSkeletonGrid, resolveTableEmptyKind, useTableLoadState } from "../ui/table-empty-state";
 import { findSearchSuggestion } from "../../utils/searchSuggestion";
 import { usePricingRuleStatus } from "../../context/PricingRuleStatusContext";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { moneyPrefix } from "@/app/currency/money";
+import { convertNow } from "@/app/currency/partnerCurrency";
+import { partnerAmount, type CurrencyView } from "@/app/currency/partnerAmounts";
+import { usePartnerCurrencyOf } from "@/app/currency/usePartnerCurrency";
+import { CurrencyAmount } from "../currency/CurrencyAmount";
+import { CurrencySymbol } from "../currency/CurrencySymbol";
+import { CurrencyViewToggle } from "../currency/ProfileCurrency";
+import { RuleAmountPreview } from "../currency/RuleAmountPreview";
 import { Textarea } from "../ui/textarea";
 import {
   PRICING_RULE_PRESETS,
@@ -222,6 +232,33 @@ const ITEM_CATS = ["Electronics", "Hardware", "Cabinet", "Parts", "Fasteners", "
 const ITEM_TYPES = ["Parts", "Equipment + Capital", "Equipment + Non-Capital", "Miscellaneous"];
 const CAT_NAMES = ["Ram Pro Master 2500", "Ram Pro Master 3500", "Ram Pro Master Default", "Ford Transit", "Sprinter Van", "Freightliner M2", "International MV", "Kenworth T680", "Peterbilt 579", "Volvo VNL", "Mack Anthem", "Western Star 4900"];
 const CREATORS = ["Ahtisham Ahmad", "Sarah Chen", "Marcus Obi", "Elena Volkov"];
+
+/* ── Tier amounts ─────────────────────────────────────────────────────
+ * Value tiers and fixed discounts are written in US dollars ("$ 2,300"):
+ * one rule can apply to partners in different currencies, so its amounts
+ * keep one currency. On a partner they are shown converted to the
+ * partner's currency, or to the base currency (the Base / Partner switch). */
+export const RULE_CURRENCY = "USD";
+
+/** The currency tier amounts are shown in (set by PricingRulesTabNew). */
+const TierCurrencyContext = React.createContext<string>(RULE_CURRENCY);
+
+/** A tier value in a currency: "$ 2,300" → "₨640,596"; "100 EA" and "5%" as they are. */
+export function formatTierValue(v: string | undefined, code: string): string {
+  if (!v) return "—";
+  const m = v.match(/^\$\s*([\d,]+(?:\.\d+)?)(.*)$/);
+  if (!m || code === RULE_CURRENCY) return v;
+  const n = parseFloat(m[1].replace(/,/g, ""));
+  if (!Number.isFinite(n)) return v;
+  const converted = convertNow(n, RULE_CURRENCY, code);
+  const d = Math.abs(converted) < 100 ? 2 : 0;
+  return `${moneyPrefix(code)}${converted.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })}${m[2]}`;
+}
+
+function useTierFormat() {
+  const code = React.useContext(TierCurrencyContext);
+  return useCallback((v: string | undefined) => formatTierValue(v, code), [code]);
+}
 const PARTNER_NAMES = [
   "Toyota International", "Ford Motor Company", "General Motors (GM)", "Tesla, Inc.",
   "Chrysler (Stellantis N.V.)", "Rivian Automotive", "Lucid Motors",
@@ -728,6 +765,7 @@ function PricingRuleCard({
   onDuplicate?: () => void;
 }) {
   const isBrowse = variant === "browse";
+  const fmtTier = useTierFormat();
   const [activeTier, setActiveTier] = useState(0);
   const [deactivateConfirmOpen, setDeactivateConfirmOpen] = useState(false);
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
@@ -836,7 +874,7 @@ function PricingRuleCard({
         <div className="flex items-baseline justify-between gap-2 shrink-0">
           <div className="flex items-baseline gap-2 min-w-0">
             <span className="text-[22px] text-slate-700 leading-none tracking-tight" style={{ fontWeight: 600 }}>
-              {t0?.discount ?? "—"}
+              {fmtTier(t0?.discount)}
             </span>
             <span className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>
               {isDis ? "off" : "markup"}
@@ -897,7 +935,7 @@ function PricingRuleCard({
                   T{i + 1}
                   {isActive && (
                     <span className="ml-1 text-[9px] opacity-60" style={{ fontWeight: 400 }}>
-                      {shownTier.discount}
+                      {fmtTier(shownTier.discount)}
                     </span>
                   )}
                 </button>
@@ -907,11 +945,11 @@ function PricingRuleCard({
           {/* Tier detail row */}
           <div className="flex items-center justify-between px-3 py-[6px] rounded-lg border border-[#E8ECF1] bg-[#FAFBFC] text-[11px] min-w-0">
             <div className="flex items-center gap-1.5 text-slate-500 min-w-0">
-              <span style={{ fontWeight: 400 }}>{shownTier?.minQty}</span>
+              <span style={{ fontWeight: 400 }}>{fmtTier(shownTier?.minQty)}</span>
               <span className="text-slate-300">–</span>
-              <span style={{ fontWeight: 400 }}>{shownTier?.maxQty}</span>
+              <span style={{ fontWeight: 400 }}>{fmtTier(shownTier?.maxQty)}</span>
             </div>
-            <span className="shrink-0 ml-2 text-slate-700" style={{ fontWeight: 600 }}>{shownTier?.discount}</span>
+            <span className="shrink-0 ml-2 text-slate-700" style={{ fontWeight: 600 }}>{fmtTier(shownTier?.discount)}</span>
           </div>
         </div>
       </div>
@@ -1627,6 +1665,9 @@ export function ManageCategoriesModal({
 
 export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", onApply, onDuplicate, onDisable, onEdit, vendor }: { rule: PricingRule | null; open: boolean; onClose: () => void; mode?: "view" | "create"; onApply?: (rule: PricingRule) => void; onDuplicate?: (rule: PricingRule) => void; onDisable?: (rule: PricingRule) => void; onEdit?: (rule: PricingRule) => void; vendor?: Vendor }) {
   const [tab, setTab] = useState<string>("overview");
+  const fmtTier = useTierFormat();
+  // A linked partner's amounts are in its own currency.
+  const currencyOfPartner = usePartnerCurrencyOf();
   const [itemSearch, setItemSearch] = useState("");
   const [catSearch, setCatSearch] = useState("");
   const [partnerSearch, setPartnerSearch] = useState("");
@@ -2160,11 +2201,11 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                         <div key={idx} className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-[#E8ECF1] bg-[#FAFBFC]">
                           <div className="flex items-center gap-2.5 text-[12px]">
                             <span className="w-5 h-5 rounded flex items-center justify-center text-[10px] shrink-0" style={{ backgroundColor: theme.pillBg, color: theme.text, fontWeight: 700 }}>{idx + 1}</span>
-                            <span className="text-slate-500">{tier.minQty}</span>
+                            <span className="text-slate-500">{fmtTier(tier.minQty)}</span>
                             <span className="text-slate-300">–</span>
-                            <span className="text-slate-500">{tier.maxQty}</span>
+                            <span className="text-slate-500">{fmtTier(tier.maxQty)}</span>
                           </div>
-                          <span className="text-[12px] text-foreground" style={{ fontWeight: 600 }}>{tier.discount}</span>
+                          <span className="text-[12px] text-foreground" style={{ fontWeight: 600 }}>{fmtTier(tier.discount)}</span>
                         </div>
                       ))}
                     </div>
@@ -2603,7 +2644,6 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                           const partnerTypes = v.partnerTypes || [];
                           const itemCodes = v.itemCodes || [];
                           const st = ST_P[v.status] || ST_P["active"];
-                          const formatCurrency = (n: number) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
                           return (
                             <TableRow key={v.id} className="cursor-pointer group hover:bg-[#F0F7FF] [&>td]:py-1 [&>td]:pl-4 [&>td]:pr-2">
                               <TableCell className="sticky left-0 z-10 bg-card group-hover:bg-[#F0F7FF] !pl-2 !pr-0" style={{ width: 40, minWidth: 40, maxWidth: 40 }}>
@@ -2640,13 +2680,13 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                               {/* Country */}
                               <TableCell style={{ width: 150, minWidth: 150, maxWidth: 150, overflow: "hidden" }}>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-base">{v.countryFlag}</span>
+                                  <span className="text-base"><FlagImage code={flagEmojiCode(v.countryFlag)} className="text-[13px]" /></span>
                                   <span className="text-sm">{v.country}</span>
                                 </div>
                               </TableCell>
                               {/* Credit Limit */}
                               <TableCell className="text-right" style={{ width: 130, minWidth: 130, maxWidth: 130, overflow: "hidden" }}>
-                                <span className="text-sm">$ {formatCurrency(v.creditLimit)}</span>
+                                <span className="text-sm"><CurrencyAmount {...partnerAmount(v.creditLimit, currencyOfPartner(v), "partner")} /></span>
                               </TableCell>
                               {/* Status */}
                               <TableCell style={{ width: 100, minWidth: 100, maxWidth: 100, overflow: "hidden" }}>
@@ -2944,7 +2984,6 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                       const ini = (v.displayName || v.companyName).split(/[\s&]+/).filter(Boolean).map(w => w[0]).slice(0, 2).join("").toUpperCase();
                       const pt = v.partnerTypes || [];
                       const stp = ST_PM[v.status] || ST_PM["active"];
-                      const fmtC = (n: number) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
                       return (
                         <TableRow key={v.id} className={`cursor-pointer group bg-white hover:bg-[#F0F7FF] [&>td]:py-1 [&>td]:pl-3 [&>td]:pr-2 ${isSelected ? "!bg-accent/30" : ""}`} onClick={() => pmSetSel((p) => { const n = new Set(p); n.has(v.id) ? n.delete(v.id) : n.add(v.id); return n; })}>
                           <TableCell className="sticky left-0 z-10 bg-white group-hover:bg-[#F0F7FF] !pl-2 !pr-0" onClick={(e) => e.stopPropagation()}>
@@ -2962,10 +3001,10 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                             </div>
                           </TableCell>
                           <TableCell className="bg-white group-hover:bg-[#F0F7FF]">
-                            <div className="flex items-center gap-2"><span className="text-base">{v.countryFlag}</span><span className="text-sm">{v.country}</span></div>
+                            <div className="flex items-center gap-2"><span className="text-base"><FlagImage code={flagEmojiCode(v.countryFlag)} className="text-[13px]" /></span><span className="text-sm">{v.country}</span></div>
                           </TableCell>
                           <TableCell className="bg-white group-hover:bg-[#F0F7FF] text-right">
-                            <span className="text-sm">$ {fmtC(v.creditLimit)}</span>
+                            <span className="text-sm"><CurrencyAmount {...partnerAmount(v.creditLimit, currencyOfPartner(v), "partner")} /></span>
                           </TableCell>
                           <TableCell className="bg-white group-hover:bg-[#F0F7FF]">
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] border" style={{ fontWeight: 600, backgroundColor: stp.bg, color: stp.text, borderColor: stp.border }}>{PARTNER_STATUS_LABELS[v.status] ?? v.status}</span>
@@ -3236,6 +3275,10 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
   onEmbeddedCreateSaved?: (saved: { name: string; description: string; category: "discount" | "premium"; appliesToAllItems: boolean }) => void;
 }) {
   const allRules = useMemo(() => generatePricingRules(vendor, cfg), [vendor, cfg]);
+  // Tier amounts (written in USD) shown in this partner's currency or in base.
+  const partnerCcy = usePartnerCurrencyOf()(vendor);
+  const [tierView, setTierView] = useState<CurrencyView>("partner");
+  const tierCurrency = tierView === "base" ? BASE_CURRENCY : partnerCcy;
 
   const [subTab, setSubTab] = useState<SubTab>("vendor");
   const [categoryView, setCategoryView] = useState<CategoryView>("discount");
@@ -3510,8 +3553,9 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
   const paginated = filtered.slice((currentPage - 1) * effectiveRecordsPerPage, currentPage * effectiveRecordsPerPage);
 
   return (
-    /* Embedded create-only mode hides the tab chrome entirely — the
-       Dialogs below portal to <body>, so only the create modal shows. */
+    <TierCurrencyContext.Provider value={tierCurrency}>
+    {/* Embedded create-only mode hides the tab chrome entirely — the
+       Dialogs below portal to <body>, so only the create modal shows. */}
     <div className={`bg-card overflow-clip flex flex-col ${embeddedCreateOnly ? "hidden" : flush ? "flex-1 min-h-0" : "border border-border rounded-xl"}`} style={flush || embeddedCreateOnly ? undefined : { minHeight: 400 }}>
       <PricingRuleDetailModal rule={selectedRule} open={detailOpen} onClose={() => setDetailOpen(false)} mode={detailMode} vendor={vendor} onApply={(r) => { setAppliedRuleIds(prev => new Set(prev).add(r.id)); setExplorePresetsOpen(false); setExplorePresetsFullscreen(false); toast.success(`"${r.name}" applied to this partner.`); }} onDuplicate={(r) => toast.info(`Duplicated "${r.name}"`)} onDisable={(r) => toast.success(`"${r.name}" disabled`)} onEdit={handleEditRule} />
 
@@ -3703,6 +3747,8 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
             })}
           </div>
         </div>
+        {/* Tier amounts in the partner's currency or the base currency. */}
+        <CurrencyViewToggle size="sm" view={tierView} onChange={setTierView} partnerCurrency={partnerCcy} />
       </div>
 
       {/* Quick Filter Pills */}
@@ -4328,12 +4374,12 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                     isFixed={tier.fixRate}
                                     onChange={(fixed) => updateTier(idx, { fixRate: fixed })}
                                     percentTooltip={`${isDis ? "Discount" : "Premium"} applied as a percentage of the line value.`}
-                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed dollar amount.`}
+                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in USD.`}
                                   />
                                 </div>
                                 <div className="relative">
                                   {tier.fixRate && (
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                    <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                   )}
                                   <Input
                                     value={tier.discount}
@@ -4345,6 +4391,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                                   )}
                                 </div>
+                                {tier.fixRate && <RuleAmountPreview raw={tier.discount ?? ""} from={RULE_CURRENCY} to={partnerCcy} />}
                               </div>
 
                               {/* Quantity limits toggle */}
@@ -4374,11 +4421,11 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                     <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Min Qty" : "Min Order Value"}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The smallest order quantity at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."
-                                      : "The smallest order value (in $) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
+                                      : "The smallest order value (in USD, the currency pricing rules are written in) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                      <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                     )}
                                     <Input
                                       value={tier.minQty}
@@ -4387,17 +4434,18 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                       className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createBasis === "value" ? "pl-7" : ""}`}
                                     />
                                   </div>
+                                  {createBasis === "value" && <RuleAmountPreview raw={tier.minQty ?? ""} from={RULE_CURRENCY} to={partnerCcy} />}
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
                                     <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Max Qty" : "Max Order Value"}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The largest order quantity this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."
-                                      : "The largest order value (in $) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
+                                      : "The largest order value (in USD, the currency pricing rules are written in) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                      <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                     )}
                                     <Input
                                       value={tier.maxQty}
@@ -4406,6 +4454,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                       className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createBasis === "value" ? "pl-7" : ""}`}
                                     />
                                   </div>
+                                  {createBasis === "value" && <RuleAmountPreview raw={tier.maxQty ?? ""} from={RULE_CURRENCY} to={partnerCcy} />}
                                 </div>
                               </div>
                             )}
@@ -5019,5 +5068,6 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
         </DialogContent>
       </Dialog>
     </div>
+    </TierCurrencyContext.Provider>
   );
 }

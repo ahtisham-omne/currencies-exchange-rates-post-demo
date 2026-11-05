@@ -32,3 +32,12 @@ Vendor Invoicing is the redesigned app from [`vendor-invoicing-payments`](https:
 - where each is defined;
 - how the earlier touchpoint maps onto it;
 - how to pull later design changes.
+
+### Partners
+
+Partners is the redesigned app from [`partner-management-module`](https://github.com/ahtisham-omne/partner-management-module), added as a squashed subtree. [docs/partners-currency-touchpoints.md](docs/partners-currency-touchpoints.md) records:
+
+- its currency and exchange-rate touchpoints;
+- where each is defined;
+- how the earlier touchpoint maps onto it;
+- how to pull later design changes.

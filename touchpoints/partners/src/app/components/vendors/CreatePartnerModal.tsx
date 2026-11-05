@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, type ReactNode } from "react";
+import { FlagImage, flagEmojiCode } from "../currency/FlagImage";
 import { createPortal } from "react-dom";
 import { cn } from "../ui/utils";
 import { ShippingMethodChipsRow } from "./ShippingMethodChipsRow";
@@ -153,7 +154,7 @@ import { subscribeSpawnedCreations } from "../../utils/spawnedCreationChannel";
 import { GroupChipsRow } from "./GroupChipsRow";
 import { FilterPills } from "./FilterPills";
 import { PaymentTermDetailModal } from "./PaymentTermDetailModal";
-import { PricingRuleDetailModal, ManageCategoriesModal, presetToPricingRule, type PricingRule, type InventoryCategory } from "./PricingRulesTab";
+import { PricingRuleDetailModal, ManageCategoriesModal, presetToPricingRule, RULE_CURRENCY, type PricingRule, type InventoryCategory } from "./PricingRulesTab";
 import { AddItemModal, type PartnerItemData } from "./PartnerItemsTab";
 import { ItemScopeToggle, AllItemsCoverage, AllItemsConfirmDialog, DEFAULT_ITEM_SCOPE, type PricingRuleItemScope } from "./PricingRuleItemScope";
 import { PaymentTermCard } from "./PaymentTermCard";
@@ -163,7 +164,6 @@ import {
   RadioOption,
   IconCardOption,
   SearchablePartnerDropdown,
-  CurrencyDropdown,
   FundedByDropdown,
   createEmptyPaymentEntry,
 } from "./config-helpers";
@@ -199,9 +199,15 @@ import {
   CREATE_PT_DISCOUNT_PERIODS,
   PRICING_RULE_PRESETS,
   CONTACT_DICTIONARY,
-  COUNTRY_CURRENCY_MAP,
   type ContactPerson,
 } from "./partnerConstants";
+import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
+import { currencyCodeOf, currencyIdOf, groupCurrencyOf } from "@/app/currency/partnerCurrency";
+import { usePartnerGroups } from "../../context/PartnerGroupsContext";
+import { CurrencyFlag } from "../currency/CurrencyFlag";
+import { CurrencySymbol } from "../currency/CurrencySymbol";
+import { BaseCurrencyPreview } from "../currency/BaseCurrencyPreview";
+import { RuleAmountPreview } from "../currency/RuleAmountPreview";
 import { SelectPocDictionaryModal, CreatePocModal } from "./PocModals";
 import { PocPillsRow } from "./PocPillComponents";
 import { AddressAutocomplete } from "./AddressAutocomplete";
@@ -963,7 +969,7 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
                       <>
                         Group defaults from{" "}
                         <span className="text-amber-900" style={{ fontWeight: 700 }}>{primaryGroup.name}</span>
-                        {primaryGroup.countryFlag && <span className="ml-1">{primaryGroup.countryFlag}</span>}
+                        {primaryGroup.countryFlag && <span className="ml-1"><FlagImage code={flagEmojiCode(primaryGroup.countryFlag)} className="text-[13px]" /></span>}
                         {" "}have been manually overridden for this partner.
                         {" "}
                         <ModifiedPill
@@ -975,7 +981,7 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
                       <>
                         Pre-filled from{" "}
                         <span className="text-[#4338CA]" style={{ fontWeight: 700 }}>{primaryGroup.name}</span>
-                        {primaryGroup.countryFlag && <span className="ml-1">{primaryGroup.countryFlag}</span>}:
+                        {primaryGroup.countryFlag && <span className="ml-1"><FlagImage code={flagEmojiCode(primaryGroup.countryFlag)} className="text-[13px]" /></span>}:
                         <span className="ml-1 text-[#4338CA]" style={{ fontWeight: 600 }}>{inheritedFields.join(" · ")}</span>
                         . Override any field to make it partner-specific.
                       </>
@@ -983,7 +989,7 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
                       <>
                         Linked to{" "}
                         <span className="text-[#4338CA]" style={{ fontWeight: 700 }}>{primaryGroup.name}</span>
-                        {primaryGroup.countryFlag && <span className="ml-1">{primaryGroup.countryFlag}</span>}.
+                        {primaryGroup.countryFlag && <span className="ml-1"><FlagImage code={flagEmojiCode(primaryGroup.countryFlag)} className="text-[13px]" /></span>}.
                         {" "}This group has no templated defaults, so this partner is configured from scratch.
                       </>
                     )}
@@ -1776,7 +1782,7 @@ function Step1ChipWithPopover({
           {isPrimary && (
             <Star className="w-2.5 h-2.5 fill-primary text-primary" />
           )}
-          {group.countryFlag} {group.name}
+          <FlagImage code={flagEmojiCode(group.countryFlag)} className="text-[13px]" /> {group.name}
           <span
             className="text-[10px] text-slate-400"
             style={{ fontWeight: 400 }}
@@ -1805,7 +1811,7 @@ function Step1ChipWithPopover({
             <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/[0.04]" />
             <div className="flex items-center justify-between relative">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-base shrink-0">{group.countryFlag}</span>
+                <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(group.countryFlag)} className="text-[13px]" /></span>
                 <span className="text-white text-[13px] truncate" style={{ fontWeight: 600 }}>
                   {group.name}
                 </span>
@@ -1902,7 +1908,7 @@ function Step1OverflowChip({
                       isHovered ? "bg-accent" : "hover:bg-slate-50"
                     }`}
                   >
-                    <span className="shrink-0">{g.countryFlag}</span>
+                    <span className="shrink-0"><FlagImage code={flagEmojiCode(g.countryFlag)} className="text-[13px]" /></span>
                     <span
                       className={`text-[12px] truncate ${isHovered ? "text-primary" : "text-slate-700"}`}
                       style={{ fontWeight: 500 }}
@@ -1933,7 +1939,7 @@ function Step1OverflowChip({
                   <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/[0.04]" />
                   <div className="flex items-center justify-between relative">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-base shrink-0">{hoveredGroup.countryFlag}</span>
+                      <span className="text-base shrink-0"><FlagImage code={flagEmojiCode(hoveredGroup.countryFlag)} className="text-[13px]" /></span>
                       <span className="text-white text-[13px] truncate" style={{ fontWeight: 600 }}>
                         {hoveredGroup.name}
                       </span>
@@ -2797,7 +2803,7 @@ function GroupCard({
         title={group.country}
       >
         {group.countryFlag ? (
-          <span className="text-[16px] leading-none">{group.countryFlag}</span>
+          <span className="text-[16px] leading-none"><FlagImage code={flagEmojiCode(group.countryFlag)} className="text-[13px]" /></span>
         ) : (
           <Building2 className={`w-4 h-4 transition-colors ${isSelected ? "text-primary" : "text-slate-500"}`} />
         )}
@@ -3742,7 +3748,7 @@ function Step2PartnerForm({
                         type="button"
                         className="flex items-center gap-1.5 pl-2.5 pr-1.5 !h-10 rounded-l-lg border border-r-0 border-border bg-white text-sm shrink-0 cursor-pointer hover:border-slate-300 transition-colors focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                       >
-                        <span className="text-base leading-none">{selectedCountry.flag}</span>
+                        <span className="text-base leading-none"><FlagImage code={flagEmojiCode(selectedCountry.flag)} className="text-[13px]" /></span>
                         <span className="text-xs text-slate-700" style={{ fontWeight: 600 }}>{phoneCountryCode}</span>
                         <ChevronDown className="w-3 h-3 text-slate-400" />
                       </button>
@@ -3776,7 +3782,7 @@ function Step2PartnerForm({
                                 : "hover:bg-slate-50 text-slate-700"
                             }`}
                           >
-                            <span className="text-base">{c.flag}</span>
+                            <span className="text-base"><FlagImage code={flagEmojiCode(c.flag)} className="text-[13px]" /></span>
                             <span className="text-sm flex-1 truncate" style={{ fontWeight: 500 }}>{c.country}</span>
                             <span className="text-xs text-slate-500" style={{ fontWeight: 500 }}>{c.code}</span>
                             {phoneCountryCode === c.code && selectedCountry.country === c.country && (
@@ -5307,17 +5313,18 @@ export function ConfigPageContent({
     ).filter(Boolean) as PricingRulePreset[];
   }, [selectedPricingRuleIds, allPricingRulePresets]);
 
-  // Billing & Shipping state — currency is inherited from the primary group's
-  // template when present (Partner Group is currency-only in B&S). Fallback
-  // chain: configDataRef cache (user's prior override / selection this session)
-  // → group.template.currency → COUNTRY_CURRENCY_MAP[country] → "usd".
-  const groupTemplateCurrency = selectedGroup?.template?.currency;
+  // Billing & Shipping state — currency is inherited from the primary group
+  // (Partner Group is currency-only in B&S). Every group has one: its own, or
+  // the base currency when it sets none; it is never inferred from the
+  // group's country (spec 4.2). Fallback chain: configDataRef cache (user's
+  // prior override / selection this session) → the group's currency → base.
+  // The store's record of the group, so a currency changed this session is the one inherited.
+  const { getGroup: getStoreGroup } = usePartnerGroups();
+  const groupTemplateCurrency = selectedGroup ? currencyIdOf(groupCurrencyOf(getStoreGroup(selectedGroup.id) ?? selectedGroup)) : undefined;
   const [currency, setCurrency] = useState<string>(() => {
     const cached = cache.currency;
     if (typeof cached === "string" && cached) return cached;
-    if (groupTemplateCurrency) return groupTemplateCurrency;
-    if (selectedGroup?.country) return COUNTRY_CURRENCY_MAP[selectedGroup.country] || "usd";
-    return "usd";
+    return groupTemplateCurrency ?? currencyIdOf(BASE_CURRENCY);
   });
   // Track whether the current currency value came from the group template so
   // we can surface "Inherited from {group}" vs "Overridden · Revert" on the
@@ -5343,9 +5350,9 @@ export function ConfigPageContent({
   React.useEffect(() => {
     if (groupContext) return;
     if (!isHydratedForCurrentGroup) return;
-    if (!selectedGroup?.template?.currency) return;
+    if (!groupTemplateCurrency) return;
     onSectionOverrideChange?.("billing_shipping", !currencyInherited);
-  }, [currencyInherited, selectedGroup?.template?.currency, groupContext, isHydratedForCurrentGroup, onSectionOverrideChange]);
+  }, [currencyInherited, groupTemplateCurrency, groupContext, isHydratedForCurrentGroup, onSectionOverrideChange]);
 
   // Payment Terms — flag override when the user picks a different
   // preset than the group templates. Skip when the user hasn't picked
@@ -5410,12 +5417,6 @@ export function ConfigPageContent({
     if (groupTemplateCurrency) {
       setCurrency(groupTemplateCurrency);
       setCurrencyInherited(true);
-    } else if (selectedGroup?.country) {
-      const mapped = COUNTRY_CURRENCY_MAP[selectedGroup.country];
-      if (mapped) {
-        setCurrency(mapped);
-        setCurrencyInherited(false);
-      }
     }
   }, [selectedGroup?.id, groupTemplateCurrency]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -5424,8 +5425,8 @@ export function ConfigPageContent({
   // raw setCurrency.
   const handleCurrencyUserChange = useCallback((id: string) => {
     setCurrency(id);
-    setCurrencyInherited(id === (selectedGroup?.template?.currency || ""));
-  }, [selectedGroup?.template?.currency]);
+    setCurrencyInherited(id === (groupTemplateCurrency || ""));
+  }, [groupTemplateCurrency]);
 
   const revertCurrencyToGroup = useCallback(() => {
     if (groupTemplateCurrency) {
@@ -6067,14 +6068,14 @@ export function ConfigPageContent({
                 const code = currencyObj.label.split(", ")[0];
                 const name = currencyObj.label.split(", ")[1] || currencyObj.label;
                 return (
-                  <div className="w-[200px] bg-white rounded-xl border border-[#E8ECF1] shadow-lg p-3">
+                  <div className="w-[220px] bg-white rounded-xl border border-[#E8ECF1] shadow-lg p-3">
                     <div className="flex items-center gap-2.5 mb-2">
-                      <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center text-primary text-[18px]" style={{ fontWeight: 700 }}>
-                        {currencyObj.symbol}
+                      <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                        <FlagImage code={currencyObj.flag} style={{ fontSize: 21 }} />
                       </div>
-                      <div>
-                        <p className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>{code}</p>
-                        <p className="text-[11px] text-slate-500">{name}</p>
+                      <div className="min-w-0">
+                        <p className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>{code} <span className="text-slate-400" style={{ fontWeight: 500 }}>· {currencyObj.symbol}</span></p>
+                        <p className="text-[11px] text-slate-500 truncate">{name}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 rounded-md">
@@ -6194,8 +6195,10 @@ export function ConfigPageContent({
           const ptObj = resolvePayToItem(payTo);
           const fbObj = FUNDED_BY_ITEMS.find((i) => i.id === fundedBy);
 
+          // Every active currency (spec 2.3), searched by code, name or country.
+          const currencyQuery = currencyPopoverSearch.trim().toLowerCase();
           const currencyFiltered = CURRENCY_OPTIONS.filter((c) =>
-            !currencyPopoverSearch.trim() || c.label.toLowerCase().includes(currencyPopoverSearch.toLowerCase())
+            !currencyQuery || c.label.toLowerCase().includes(currencyQuery) || (getCurrency(c.id)?.country ?? "").toLowerCase().includes(currencyQuery)
           );
 
           const fieldCardBase = "group relative rounded-xl border border-[#E8ECF1] bg-white hover:border-slate-300 hover:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.06)] transition-all duration-200 cursor-pointer";
@@ -6217,7 +6220,7 @@ export function ConfigPageContent({
                         <InfoTooltip>{configType === "customer" ? "The currency used for all transactions with this customer, including sales orders, invoices, and received payments." : "The currency used for all transactions with this vendor, including purchase orders, invoices, and payments."}</InfoTooltip>
                         {/* Inheritance indicator — group template takes precedence.
                             Suppressed in groupContext: the group IS the source of truth. */}
-                        {!groupContext && selectedGroup?.template?.currency && currencyInherited && (
+                        {!groupContext && selectedGroup && groupTemplateCurrency && currencyInherited && (
                           <span
                             className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] border bg-[#EEF2FF] text-[#4338CA] border-[#E0E7FF]"
                             style={{ fontWeight: 600 }}
@@ -6226,17 +6229,17 @@ export function ConfigPageContent({
                             <Check className="w-2.5 h-2.5" /> Inherited
                           </span>
                         )}
-                        {!groupContext && selectedGroup?.template?.currency && !currencyInherited && (
+                        {!groupContext && selectedGroup && groupTemplateCurrency && !currencyInherited && (
                           <span
                             className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] border bg-amber-50 text-amber-800 border-amber-200"
                             style={{ fontWeight: 600 }}
-                            title={`Overridden (group default: ${CURRENCY_OPTIONS.find((c) => c.id === selectedGroup.template?.currency)?.label.split(", ")[0] ?? selectedGroup.template.currency})`}
+                            title={`Overridden (group default: ${groupTemplateCurrency.toUpperCase()})`}
                           >
                             Overridden
                           </span>
                         )}
                       </div>
-                      {!groupContext && selectedGroup?.template?.currency && !currencyInherited ? (
+                      {!groupContext && selectedGroup && groupTemplateCurrency && !currencyInherited ? (
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); revertCurrencyToGroup(); }}
@@ -6252,10 +6255,10 @@ export function ConfigPageContent({
                     {currObj ? (
                       <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-lg bg-blue-50 border border-primary/10 flex items-center justify-center shrink-0">
-                          <span className="text-[16px] text-primary" style={{ fontWeight: 700 }}>{currObj.symbol}</span>
+                          <FlagImage code={currObj.flag} style={{ fontSize: 21 }} />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[13px] text-foreground truncate" style={{ fontWeight: 600 }}>{currObj.label.split(", ")[0]}</p>
+                          <p className="text-[13px] text-foreground truncate" style={{ fontWeight: 600 }}>{currObj.label.split(", ")[0]} <span className="text-slate-400" style={{ fontWeight: 500 }}>· {currObj.symbol}</span></p>
                           <p className="text-[11px] text-slate-500 truncate">{(currObj.label.split(", ")[1] || currObj.label)}</p>
                         </div>
                       </div>
@@ -6269,20 +6272,32 @@ export function ConfigPageContent({
                     )}
                   </div>
                 </PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0 rounded-xl border border-border shadow-lg z-[250]" align="start" sideOffset={4}>
+                <PopoverContent className="w-[340px] p-0 rounded-xl border border-border shadow-lg z-[250]" align="start" sideOffset={4}>
                   <div className="p-3 shrink-0">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input
                         value={currencyPopoverSearch}
                         onChange={(e) => setCurrencyPopoverSearch(e.target.value)}
-                        placeholder="Search currency..."
+                        placeholder="Search by code, name, or country…"
                         className="w-full h-9 pl-9 pr-3 rounded-lg border border-border bg-white text-sm text-foreground placeholder:text-slate-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
                         autoFocus
                       />
                     </div>
                   </div>
-                  <div className="border-t border-muted" style={{ maxHeight: 280, overflowY: "auto" }}>
+                  <div
+                    className="border-t border-muted overscroll-contain"
+                    style={{ maxHeight: 280, overflowY: "auto" }}
+                    // A Radix Dialog's scroll lock swallows wheel events on portaled
+                    // popovers; scroll the list by hand so it scrolls inside Configure.
+                    onWheelCapture={(e) => {
+                      const el = e.currentTarget;
+                      if (el.scrollHeight <= el.clientHeight) return;
+                      el.scrollTop += e.deltaY;
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
                     {currencyFiltered.length === 0 ? (
                       <div className="py-6 text-center text-xs text-slate-400">No results found</div>
                     ) : (
@@ -6292,7 +6307,7 @@ export function ConfigPageContent({
                           onClick={() => handleCurrencyUserChange(c.id)}
                           className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-slate-50 ${currency === c.id ? "bg-accent/50" : ""}`}
                         >
-                          <span className="text-base shrink-0">{(c as any).flag || ""}</span>
+                          <FlagImage code={c.flag} className="shrink-0 text-[13px]" />
                           <span className="w-7 text-center text-[12px] text-slate-500 shrink-0" style={{ fontWeight: 600 }}>{c.symbol}</span>
                           <span className="text-sm text-foreground truncate" style={{ fontWeight: 500 }}>{c.label}</span>
                           {currency === c.id && <Check className="w-4 h-4 text-primary ml-auto shrink-0" />}
@@ -6483,6 +6498,7 @@ export function ConfigPageContent({
           savePaymentEntry={savePaymentEntry}
           removePaymentEntry={removePaymentEntry}
           country={selectedGroup?.country}
+          currency={currencyCodeOf(currency) ?? BASE_CURRENCY}
         />
       </div>
     );
@@ -6932,8 +6948,8 @@ export function ConfigPageContent({
   }
 
   if (sectionId === "credit_limit" || sectionId === "customer_credit") {
-    const currencySymbol = currency === "eur" ? "€" : currency === "gbp" ? "£" : currency === "jpy" ? "¥" : "$";
-    const currencyLabel = currency === "eur" ? "EUR" : currency === "gbp" ? "GBP" : currency === "jpy" ? "JPY" : "USD";
+    // The limit is in the partner's currency, set once in Billing & Shipping.
+    const creditCurrency = currencyCodeOf(currency) ?? BASE_CURRENCY;
 
     return (
       <div className="space-y-4">
@@ -6950,26 +6966,33 @@ export function ConfigPageContent({
         {/* ── Currency & Limit Row ── */}
         <div className="rounded-xl border border-border bg-card shadow-sm p-4">
           <div className="grid grid-cols-2 gap-3">
-            {/* Currency — reuse same dropdown as billing/shipping */}
+            {/* Currency — inherited from Billing & Shipping (read-only), so
+                the partner has one currency everywhere. */}
             <div>
-              <CurrencyDropdown selectedId={currency} onSelect={handleCurrencyUserChange} />
-              <p className="text-[10px] text-muted-foreground mt-1">Synced from billing</p>
+              <Label className="text-xs text-foreground" style={{ fontWeight: 600 }}>Currency</Label>
+              <div className="mt-1.5 h-10 px-3 rounded-lg border border-border bg-muted/40 flex items-center gap-2 text-sm text-foreground">
+                <CurrencyFlag code={creditCurrency} />
+                <span style={{ fontWeight: 600 }}>{creditCurrency}</span>
+                <span className="text-slate-600 truncate">{getCurrency(creditCurrency)?.name}</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Inherited from Billing &amp; Shipping. Change it there to keep all financials aligned.</p>
             </div>
             {/* Maximum Credit Limit */}
             <div>
               <Label className="text-xs text-foreground" style={{ fontWeight: 600 }}>Maximum Credit Limit</Label>
               <div className="relative mt-1.5">
-                <div className="absolute left-0 top-0 bottom-0 w-10 rounded-l-lg bg-muted/60 border-r border-border flex items-center justify-center">
-                  <span className="text-xs text-muted-foreground font-medium">{currencySymbol}</span>
+                <div className="absolute left-0 top-0 bottom-0 min-w-10 px-2 rounded-l-lg bg-muted/60 border-r border-border flex items-center justify-center">
+                  <CurrencySymbol code={creditCurrency} className="text-xs text-muted-foreground font-medium" />
                 </div>
                 <Input
                   value={maxCreditLimit}
                   onChange={(e) => setMaxCreditLimit(formatCreditAmount(e.target.value))}
                   inputMode="decimal"
                   placeholder="50,000.00"
-                  className="pl-12 rounded-lg border-border !h-10 bg-white text-sm placeholder:text-slate-400"
+                  className="pl-14 rounded-lg border-border !h-10 bg-white text-sm placeholder:text-slate-400"
                 />
               </div>
+              <BaseCurrencyPreview raw={maxCreditLimit} fromCode={creditCurrency} />
               <p className="text-[10px] text-muted-foreground mt-1">Leave empty for unlimited credit</p>
             </div>
           </div>
@@ -8998,18 +9021,19 @@ export function ConfigPageContent({
                                     isFixed={tier.fixRate}
                                     onChange={(fixed) => updateCpmTier(idx, { fixRate: fixed })}
                                     percentTooltip={`${isDis ? "Discount" : "Premium"} applied as a percentage of the line value.`}
-                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed dollar amount.`}
+                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in USD.`}
                                   />
                                 </div>
                                 <div className="relative">
                                   {tier.fixRate && (
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                    <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                   )}
                                   <Input value={tier.discount} onChange={(e) => updateCpmTier(idx, { discount: e.target.value })} placeholder={tier.fixRate ? "e.g. 25.00" : "e.g. 50"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-7 pr-3" : "pr-8"}`} />
                                   {!tier.fixRate && (
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                                   )}
                                 </div>
+                                {tier.fixRate && <RuleAmountPreview raw={tier.discount ?? ""} from={RULE_CURRENCY} to={currencyCodeOf(currency) ?? BASE_CURRENCY} />}
                               </div>
 
                               {/* Quantity limits toggle */}
@@ -9039,28 +9063,30 @@ export function ConfigPageContent({
                                     <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createPrBasis === "volume" ? "Min Qty" : "Min Order Value"}</label>
                                     <InfoTooltip>{createPrBasis === "volume"
                                       ? "The smallest order quantity at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."
-                                      : "The smallest order value (in $) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
+                                      : "The smallest order value (in USD, the currency pricing rules are written in) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createPrBasis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                      <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                     )}
                                     <Input value={tier.minQty} onChange={(e) => updateCpmTier(idx, { minQty: e.target.value })} placeholder={createPrBasis === "volume" ? "e.g. 100" : "e.g. 1,000"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createPrBasis === "value" ? "pl-7" : ""}`} />
                                   </div>
+                                  {createPrBasis === "value" && <RuleAmountPreview raw={tier.minQty ?? ""} from={RULE_CURRENCY} to={currencyCodeOf(currency) ?? BASE_CURRENCY} />}
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
                                     <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createPrBasis === "volume" ? "Max Qty" : "Max Order Value"}</label>
                                     <InfoTooltip>{createPrBasis === "volume"
                                       ? "The largest order quantity this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."
-                                      : "The largest order value (in $) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
+                                      : "The largest order value (in USD, the currency pricing rules are written in) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createPrBasis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                      <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                     )}
                                     <Input value={tier.maxQty} onChange={(e) => updateCpmTier(idx, { maxQty: e.target.value })} placeholder={createPrBasis === "volume" ? "e.g. 500" : "e.g. 5,000"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createPrBasis === "value" ? "pl-7" : ""}`} />
                                   </div>
+                                  {createPrBasis === "value" && <RuleAmountPreview raw={tier.maxQty ?? ""} from={RULE_CURRENCY} to={currencyCodeOf(currency) ?? BASE_CURRENCY} />}
                                 </div>
                               </div>
                             )}

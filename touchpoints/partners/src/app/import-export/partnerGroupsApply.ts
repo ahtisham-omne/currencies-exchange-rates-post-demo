@@ -19,6 +19,10 @@ import {
 } from "./spec";
 import { paymentMethodsFor, paymentTermConfigFor, pricingRulesFor, resolveLabels, shippingConfigFor } from "./partnersApply";
 import type { SavedShippingConfig } from "../data/vendors";
+import { BASE_CURRENCY } from "../currency/currencies";
+
+/** The id a blank currency defaults to: the base currency's ("pkr"). */
+const BASE_CURRENCY_ID = BASE_CURRENCY.toLowerCase();
 
 export interface PartnerLookup {
   id: string;
@@ -126,7 +130,8 @@ export function buildGroupPayloadFromImport(row: ImportRow, ctx: GroupsApplyCont
   if (isCreate || currency || enforcement || has("maxCreditLimit") || has("warningThreshold")) {
     payload.configCreditLimit = {
       ...baseCredit,
-      currency: currency ?? (baseCredit.currency as string | undefined) ?? "usd",
+      // A group's default currency is the base currency until set (spec 4.2).
+      currency: currency ?? (baseCredit.currency as string | undefined) ?? BASE_CURRENCY_ID,
       enforcement: enforcement ?? (baseCredit.enforcement as string | undefined) ?? "none",
       maxCreditLimit: has("maxCreditLimit") ? row.maxCreditLimit.replace(/,/g, "").trim() : (baseCredit.maxCreditLimit as string | undefined) ?? "",
       warningThreshold: has("warningThreshold") ? row.warningThreshold.replace(/,/g, "").trim() : (baseCredit.warningThreshold as string | undefined) ?? "",
