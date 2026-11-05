@@ -1,0 +1,360 @@
+==================================================================
+Omne Partners Import Guide
+Omne Pioneer  ·  Partners Management
+==================================================================
+
+This guide explains how to fill in the Partners import CSV. It
+covers the steps, every column, and what the import does for a new
+partner and an existing partner.
+
+The CSV has 2 required columns and 18 optional ones.
+
+
+------------------------------------------------------------------
+Quick Start
+------------------------------------------------------------------
+
+Step 1   Open the CSV. The first row is the column headers. Each
+         row below it is one partner.
+
+Step 2   Two example rows are included to show the expected
+         format. Delete both before you import.
+
+Step 3   Fill in your partners. The two required columns are
+         marked with an asterisk and cannot be left blank: Partner
+         Name, Primary Partner Group.
+
+Step 4   Partner Groups must already exist in Omne, and the
+         Primary Partner Group must be one of the groups listed on
+         the row. Other set-value columns fall back to a safe
+         default when blank. See How Partners Are Matched below.
+
+Step 5   For columns that can hold a list, such as Partner Groups,
+         Partner Type, Pricing Rules, and Carriers, separate each
+         value with a pipe character ( | ). The pipe is on most
+         keyboards above the backslash key, typed with Shift.
+         Example: [ Vendor | Customer ]
+
+Step 6   Save the file, then upload it in Omne under Partners
+         Management, Partners, Actions, Import Partners.
+
+
+------------------------------------------------------------------
+How Partners Are Matched
+------------------------------------------------------------------
+
+Omne matches each row by Partner Name, then decides whether to
+create a new partner or update an existing one. Matching is not
+case sensitive and ignores surrounding spaces.
+
+For a New Partner (Name Not in Omne)
+------------------------------------
+A new partner is created.
+
+  Status         Blank means Active.
+  Partner Type   Blank inherits the primary group's scope.
+  Template       Currency, Payment Term, and Pricing Rules inherit
+                 the primary group's template when blank.
+
+For an Existing Partner (Name Already in Omne)
+----------------------------------------------
+The matching partner is updated with the values you provide. A
+blank cell leaves the existing value unchanged.
+
+  Status   Blank keeps the current status.
+  Groups   Partner Groups and Primary Partner Group replace the
+           current groups when given.
+
+
+------------------------------------------------------------------
+Copying from Another System
+------------------------------------------------------------------
+
+This template is plain text, so you can copy and paste from an
+export of your old system. Line your old columns up with these
+columns, fill in any that your old system did not have, and paste.
+Enter phone numbers as you already have them, including any plus
+sign or country code. You do not need to reformat or split them.
+
+
+------------------------------------------------------------------
+File Limits
+------------------------------------------------------------------
+
+Upload an Excel or CSV file up to 10 MB. Omne reads a single
+sheet. Keep only the data sheet before you upload.
+
+
+------------------------------------------------------------------
+Important Notes
+------------------------------------------------------------------
+
+Partner Groups  Each group name must match a partner group that
+                already exists in Omne. An unknown group blocks
+                the row. The Primary Partner Group must be one of
+                the groups listed in Partner Groups.
+
+Partner Type  Vendor, Customer, or both, separated with a pipe.
+              Vendor Sub-Types apply only to vendors and Customer
+              Sub-Types only to customers; a sub-type without its
+              type imports with a warning and is ignored.
+
+Phone Number  Enter the number as you have it. Phone Country Code
+              takes the dial code, such as +1 or +44. Both are
+              kept as text so leading zeros and the plus sign are
+              preserved.
+
+Email  Must look like name@domain.com. An invalid email blocks the
+       row.
+
+Currency, Payment Term, Pricing Rules  Use the exact names from
+                                       the Valid Values sheet. An
+                                       unknown value imports with
+                                       a warning and the partner
+                                       keeps the group default.
+
+Empty Cells  Safe to leave blank in optional columns. Omne skips
+             an empty cell and never overwrites an existing value
+             with a blank.
+
+
+------------------------------------------------------------------
+Field Reference
+------------------------------------------------------------------
+
+Required Columns
+----------------
+
+Partner Name  The partner's name and the matching key. A new name
+              creates a partner, a matching name updates that
+              partner. Required.
+
+Primary Partner Group  The one group whose configuration this
+                       partner inherits. Must be one of the
+                       Partner Groups on the row. Required.
+
+Identity and Grouping
+---------------------
+
+Status  Active or Inactive. Blank imports a new partner as Active
+        and leaves an existing partner unchanged.
+
+Partner Groups  Every partner group this partner belongs to. Each
+                name must match an existing partner group.
+                Separate several with a pipe character ( | ).
+
+Partner Type  Vendor, Customer, or both. Blank inherits the
+              primary group's scope.
+
+Vendor Sub-Types  Vendor profiles to enable. Only applied when the
+                  partner is a Vendor.
+
+Customer Sub-Types  Customer profiles to enable. Only applied when
+                    the partner is a Customer.
+
+Contact
+-------
+
+Phone Country Code  Dial code for the phone number, such as +1 or
+                    +44. Blank means +1.
+
+Phone Number  The partner's main phone number, entered as you have
+              it. Kept as text.
+
+Email  The partner's main email address.
+
+Website  The partner's website.
+
+Address  The partner's address on a single line.
+
+Description  A short summary of the partner's purpose or context.
+
+Points of Contact  Contacts from the Contact Directory to attach
+                   at partner level. Unknown names import with a
+                   warning and are dropped.
+
+Billing and Freight
+-------------------
+
+Currency  Three-letter currency code, such as USD or EUR. Blank
+          inherits the primary group's currency, else USD.
+
+Credit Enforcement  What happens when the partner reaches its
+                    credit limit. Blank means None.
+
+Payment Term  The name of a payment term preset. Blank inherits
+              the primary group's term.
+
+Pricing Rules  Pricing rule preset names to apply. Blank inherits
+               the primary group's rules.
+
+Payment Methods  Accepted payment method types.
+
+Carriers  Preferred shipping carriers. The first one becomes the
+          default.
+
+
+------------------------------------------------------------------
+Valid Values
+------------------------------------------------------------------
+
+Status
+------
+Active     A current, active partner.
+Inactive   A partner that is kept on file but not used in new
+           transactions.
+(blank)    New partner: Active. Existing partner: unchanged.
+Archived is set by Omne from the listing, not from this file.
+
+Partner Type
+------------
+Vendor     Supplies goods or services to you.
+Customer   Purchases goods or services from you.
+(blank)    Inherits the primary group's scope.
+
+Vendor Sub-Types
+----------------
+Vendor Rules       The base vendor profile. Always on for a
+                   vendor.
+Carrier            The partner also acts as a shipping carrier.
+Online Vendor      Coming soon in Omne. Accepted and stored, not
+                   yet configurable.
+In-Store Vendor    Coming soon in Omne. Accepted and stored, not
+                   yet configurable.
+Sub Contractor     Coming soon in Omne. Accepted and stored, not
+                   yet configurable.
+Service Provider   Coming soon in Omne. Accepted and stored, not
+                   yet configurable.
+
+Customer Sub-Types
+------------------
+Customer Rules    The base customer profile. Always on for a
+                  customer.
+Wholesale Buyer   Coming soon in Omne. Accepted and stored, not
+                  yet configurable.
+Distributor       Coming soon in Omne. Accepted and stored, not
+                  yet configurable.
+End Consumer      Coming soon in Omne. Accepted and stored, not
+                  yet configurable.
+B2B Client        Coming soon in Omne. Accepted and stored, not
+                  yet configurable.
+Reseller          Coming soon in Omne. Accepted and stored, not
+                  yet configurable.
+
+Phone Country Code
+------------------
++1     United States
++1     Canada
++44    United Kingdom
++49    Germany
++33    France
++81    Japan
++86    China
++91    India
++61    Australia
++55    Brazil
++971   UAE
++65    Singapore
++82    South Korea
++52    Mexico
++31    Netherlands
++46    Sweden
++41    Switzerland
++34    Spain
++39    Italy
++48    Poland
+
+Currency
+--------
+ISO Code   USD, EUR, GBP, JPY, CHF, CAD, AUD, CNY, INR, KRW, SGD,
+           HKD, TWD, THB, MYR, IDR, PHP, VND, NZD, PKR, BDT, LKR,
+           MMK, KHR, LAK, FJD, PGK, MXN, BRL, ARS, CLP, COP, PEN,
+           UYU, JMD, SEK, NOK, DKK, PLN, CZK, HUF, RON, BGN, HRK,
+           RSD, TRY, RUB, UAH, ISK, AED, SAR, QAR, KWD, BHD, OMR,
+           JOD, ILS, EGP, ZAR, NGN, KES, GHS, MAD, TND, KZT, GEL
+(blank)    Inherits the primary group's currency, else USD.
+
+Credit Enforcement
+------------------
+None           No credit limit is enforced.
+Soft Warning   Transactions past the limit go through with a
+               warning.
+Hard Block     Transactions past the limit are blocked.
+(blank)        None.
+
+Payment Term
+------------
+Net 10                     Payment term preset pt-1.
+Net 15                     Payment term preset pt-2.
+Net 30                     Payment term preset pt-3.
+Net 30 Post Shipping       Payment term preset pt-4.
+Net 45 Post Delivery       Payment term preset pt-5.
+Net 60 Post Production End   Payment term preset pt-6.
+Full Advance Payment: Order Confirmation   Payment term preset
+                                           pt-7.
+Full Advance Payment: Production Start   Payment term preset pt-8.
+30/70 Split: Production Start & Delivery   Payment term preset
+                                           pt-9.
+50/50 Split: Order Confirmation & Delivery
+  Payment term preset pt-10.
+40/60 Split: Production Start & Shipping   Payment term preset
+                                           pt-11.
+2/10 Net 30 Post Shipping   Payment term preset pt-12.
+Net 25 Post Production End   Payment term preset pt-custom-1.
+Order Confirmation Advance   Payment term preset pt-custom-2.
+40/60 Split: Production End & Delivery   Payment term preset
+                                         pt-custom-3.
+Net 90 Post Shipping       Payment term preset pt-custom-4.
+20/30/50 Split: Order Confirmation, Production End & Delivery
+  Payment term preset pt-custom-5.
+Blank inherits the primary group's payment term.
+
+Pricing Rules
+-------------
+Standard Discount, Value (Single-Tier)   Pricing rule preset pr-1.
+Standard Discount, Volume (Single-Tier)   Pricing rule preset
+                                          pr-2.
+Tiered Discount, Value (Multi-Tier)   Pricing rule preset pr-3.
+Tiered Discount, Volume (Multi-Tier)   Pricing rule preset pr-4.
+Standard Premium, Value (Single-Tier)   Pricing rule preset pr-5.
+Standard Premium, Volume (Single-Tier)   Pricing rule preset pr-6.
+Tiered Premium, Value (Multi-Tier)   Pricing rule preset pr-7.
+Tiered Premium, Volume (Multi-Tier)   Pricing rule preset pr-8.
+Q2 Loyalty Value Discount   Pricing rule preset pr-custom-1.
+Bulk Fastener Discount     Pricing rule preset pr-custom-2.
+Annual Value-Based Savings Plan   Pricing rule preset pr-custom-3.
+Seasonal Volume Boost      Pricing rule preset pr-custom-4.
+Rush Order Premium         Pricing rule preset pr-custom-5.
+Small Batch Handling Fee   Pricing rule preset pr-custom-6.
+Blank inherits the primary group's pricing rules.
+
+Payment Methods
+---------------
+ACH              ACH / Direct Deposit
+Wire             Wire Transfer
+Card             Credit / Debit Card
+Digital Wallet   Digital Wallet
+Check            Check (Paper)
+Cash             Cash
+Other            Other (Record Only)
+
+Carriers
+--------
+Customer Pickup   Customer Pickup
+Vendor Pickup     Vendor Pickup
+FedEx             FedEx Express
+TCS               TCS (Tranzum Courier Service)
+DHL               DHL Express
+UPS               UPS (United Parcel Service)
+SF                SF Express
+USPS              USPS
+Aramex            Aramex
+Maersk            Maersk
+
+Lists
+-----
+These columns can hold more than one value. Separate each value
+with a pipe character ( | ), found above the backslash key using
+Shift. Example: [ Vendor | Customer ]. For Partner Groups and
+Points of Contact, each name must match a record that already
+exists in your Omne instance, and matching is not case sensitive.

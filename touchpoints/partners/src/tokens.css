@@ -1,0 +1,403 @@
+/* ================================================================
+   Omne Design System v2.0 — Token System
+   Generated 1:1 from the exported Figma variables:
+     Primitives.tokens.json  → Layer 1 (base / primitive tokens)
+     Theme.tokens.json + Mode/{Light,Dark}.tokens.json → Layer 2
+   Colors are sRGB channels ("R G B") so they consume as
+   rgb(var(--token) / <alpha>) — exact DS hex + opacity support.
+   ================================================================ */
+
+/* ───────────── LAYER 1 · PRIMITIVES (base tokens) ───────────── */
+:root {
+  /* base */
+  --base-white: 255 255 255;
+  --base-black: 0 0 0;
+  /* slate */
+  --slate-50: 246 247 249;
+  --slate-100: 241 245 249;
+  --slate-200: 226 232 240;
+  --slate-300: 203 213 225;
+  --slate-400: 148 163 184;
+  --slate-500: 100 116 139;
+  --slate-600: 71 85 105;
+  --slate-700: 51 65 85;
+  --slate-800: 30 41 59;
+  --slate-900: 15 23 42;
+  --slate-950: 2 6 23;
+  /* blue */
+  --blue-50: 235 243 255;
+  --blue-100: 207 230 255;
+  --blue-200: 168 210 255;
+  --blue-300: 122 184 255;
+  --blue-400: 61 152 255;
+  --blue-500: 10 119 255;
+  --blue-600: 8 106 230;
+  --blue-700: 9 77 159;
+  --blue-800: 5 72 163;
+  --blue-900: 5 46 92;
+  --blue-950: 23 37 84;
+  /* sky */
+  --sky-50: 234 244 255;
+  --sky-100: 207 230 255;
+  --sky-200: 168 210 255;
+  --sky-300: 127 191 255;
+  --sky-400: 77 163 255;
+  --sky-500: 10 119 255;
+  --sky-600: 8 106 230;
+  --sky-700: 7 92 204;
+  --sky-800: 5 72 163;
+  --sky-900: 3 50 102;
+  /* red */
+  --red-50: 253 236 238;
+  --red-100: 251 213 218;
+  --red-200: 247 170 181;
+  --red-300: 240 122 136;
+  --red-400: 239 67 67;
+  --red-500: 227 59 82;
+  --red-600: 220 40 40;
+  --red-700: 168 42 60;
+  --red-800: 127 32 46;
+  --red-900: 77 20 28;
+  --red-950: 69 10 10;
+  /* orange */
+  --orange-50: 255 243 232;
+  --orange-100: 255 225 204;
+  --orange-200: 255 193 153;
+  --orange-300: 255 161 102;
+  --orange-400: 255 133 61;
+  --orange-500: 249 115 22;
+  --orange-600: 219 101 20;
+  --orange-700: 181 83 16;
+  --orange-800: 133 61 12;
+  --orange-900: 79 36 7;
+  --orange-950: 67 20 7;
+  /* amber */
+  --amber-50: 255 246 233;
+  --amber-100: 255 232 199;
+  --amber-200: 255 216 155;
+  --amber-300: 255 196 107;
+  --amber-400: 219 119 6;
+  --amber-500: 239 162 47;
+  --amber-600: 219 119 6;
+  --amber-700: 179 119 34;
+  --amber-800: 135 88 26;
+  --amber-900: 82 53 15;
+  --amber-950: 69 26 3;
+  /* yellow */
+  --yellow-50: 254 252 232;
+  --yellow-100: 254 249 195;
+  --yellow-200: 254 240 138;
+  --yellow-300: 253 224 71;
+  --yellow-400: 250 204 21;
+  --yellow-500: 234 179 8;
+  --yellow-600: 202 138 4;
+  --yellow-700: 161 98 7;
+  --yellow-800: 133 77 14;
+  --yellow-900: 113 63 18;
+  --yellow-950: 66 32 6;
+  /* lime */
+  --lime-50: 247 254 231;
+  --lime-100: 236 252 203;
+  --lime-200: 217 249 157;
+  --lime-300: 190 242 100;
+  --lime-400: 163 230 53;
+  --lime-500: 132 204 22;
+  --lime-600: 101 163 13;
+  --lime-700: 77 124 15;
+  --lime-800: 63 98 18;
+  --lime-900: 54 83 20;
+  --lime-950: 26 46 5;
+  /* green */
+  --green-50: 234 248 243;
+  --green-100: 207 241 230;
+  --green-200: 159 227 207;
+  --green-300: 111 212 183;
+  --green-400: 31 152 96;
+  --green-500: 39 153 115;
+  --green-600: 31 152 96;
+  --green-700: 28 112 82;
+  --green-800: 21 82 60;
+  --green-900: 12 47 34;
+  --green-950: 5 46 22;
+  /* emerald */
+  --emerald-50: 236 253 245;
+  --emerald-100: 209 250 229;
+  --emerald-200: 167 243 208;
+  --emerald-300: 110 231 183;
+  --emerald-400: 52 211 153;
+  --emerald-500: 16 185 129;
+  --emerald-600: 5 150 105;
+  --emerald-700: 4 120 87;
+  --emerald-800: 6 95 70;
+  --emerald-900: 6 78 59;
+  --emerald-950: 2 44 34;
+  /* teal */
+  --teal-50: 240 253 250;
+  --teal-100: 204 251 241;
+  --teal-200: 153 246 228;
+  --teal-300: 94 234 212;
+  --teal-400: 45 212 191;
+  --teal-500: 20 184 166;
+  --teal-600: 13 148 136;
+  --teal-700: 15 118 110;
+  --teal-800: 17 94 89;
+  --teal-900: 19 78 74;
+  --teal-950: 4 47 46;
+  /* cyan */
+  --cyan-50: 236 254 255;
+  --cyan-100: 207 250 254;
+  --cyan-200: 165 243 252;
+  --cyan-300: 103 232 249;
+  --cyan-400: 34 211 238;
+  --cyan-500: 6 182 212;
+  --cyan-600: 8 145 178;
+  --cyan-700: 14 116 144;
+  --cyan-800: 21 94 117;
+  --cyan-900: 22 78 99;
+  --cyan-950: 8 51 68;
+  /* indigo */
+  --indigo-50: 239 239 255;
+  --indigo-100: 219 218 255;
+  --indigo-200: 184 182 255;
+  --indigo-300: 146 143 255;
+  --indigo-400: 111 106 242;
+  --indigo-500: 79 70 229;
+  --indigo-600: 70 63 206;
+  --indigo-700: 57 51 174;
+  --indigo-800: 42 38 127;
+  --indigo-900: 25 24 76;
+  --indigo-950: 30 27 75;
+  /* violet */
+  --violet-50: 245 243 255;
+  --violet-100: 237 233 254;
+  --violet-200: 221 214 254;
+  --violet-300: 196 181 253;
+  --violet-400: 167 139 250;
+  --violet-500: 139 92 246;
+  --violet-600: 124 58 237;
+  --violet-700: 109 40 217;
+  --violet-800: 91 33 182;
+  --violet-900: 76 29 149;
+  --violet-950: 30 27 75;
+  /* purple */
+  --purple-50: 242 241 255;
+  --purple-100: 225 222 255;
+  --purple-200: 196 192 255;
+  --purple-300: 162 155 255;
+  --purple-400: 124 115 250;
+  --purple-500: 93 85 246;
+  --purple-600: 82 75 224;
+  --purple-700: 67 62 194;
+  --purple-800: 50 46 153;
+  --purple-900: 31 28 92;
+  --purple-950: 28 26 83;
+  /* fuchsia */
+  --fuchsia-50: 253 244 255;
+  --fuchsia-100: 250 232 255;
+  --fuchsia-200: 245 208 254;
+  --fuchsia-300: 240 171 252;
+  --fuchsia-400: 232 121 249;
+  --fuchsia-500: 217 70 239;
+  --fuchsia-600: 192 38 211;
+  --fuchsia-700: 162 28 175;
+  --fuchsia-800: 134 25 143;
+  --fuchsia-900: 112 26 117;
+  --fuchsia-950: 74 4 78;
+  /* pink */
+  --pink-50: 253 234 244;
+  --pink-100: 250 209 231;
+  --pink-200: 246 164 207;
+  --pink-300: 240 116 182;
+  --pink-400: 235 90 167;
+  --pink-500: 236 72 153;
+  --pink-600: 207 63 134;
+  --pink-700: 168 51 107;
+  --pink-800: 124 38 79;
+  --pink-900: 74 22 47;
+  --pink-950: 80 7 36;
+  /* rose */
+  --rose-50: 255 241 242;
+  --rose-100: 255 228 230;
+  --rose-200: 254 205 211;
+  --rose-300: 253 164 175;
+  --rose-400: 251 113 133;
+  --rose-500: 244 63 94;
+  --rose-600: 225 29 72;
+  --rose-700: 190 18 60;
+  --rose-800: 159 18 57;
+  --rose-900: 136 19 55;
+  --rose-950: 76 5 25;
+  /* gray */
+  --gray-50: 249 250 251;
+  --gray-100: 243 244 246;
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 107 114 128;
+  --gray-600: 75 85 99;
+  --gray-700: 55 65 81;
+  --gray-800: 31 41 55;
+  --gray-900: 17 24 39;
+  --gray-950: 3 7 18;
+  /* zinc */
+  --zinc-50: 250 250 250;
+  --zinc-100: 244 244 245;
+  --zinc-200: 228 228 231;
+  --zinc-300: 212 212 216;
+  --zinc-400: 161 161 170;
+  --zinc-500: 113 113 122;
+  --zinc-600: 82 82 91;
+  --zinc-700: 63 63 70;
+  --zinc-800: 39 39 42;
+  --zinc-900: 24 24 27;
+  --zinc-950: 9 9 11;
+  /* neutral */
+  --neutral-50: 250 250 250;
+  --neutral-100: 245 245 245;
+  --neutral-200: 229 229 229;
+  --neutral-300: 212 212 212;
+  --neutral-400: 163 163 163;
+  --neutral-500: 115 115 115;
+  --neutral-600: 82 82 82;
+  --neutral-700: 64 64 64;
+  --neutral-800: 38 38 38;
+  --neutral-900: 23 23 23;
+  --neutral-950: 10 10 10;
+  /* stone */
+  --stone-50: 250 250 249;
+  --stone-100: 245 245 244;
+  --stone-200: 231 229 228;
+  --stone-300: 214 211 209;
+  --stone-400: 168 162 158;
+  --stone-500: 120 113 108;
+  --stone-600: 87 83 78;
+  --stone-700: 68 64 60;
+  --stone-800: 41 37 36;
+  --stone-900: 28 25 23;
+  --stone-950: 12 10 9;
+  /* border-radius scale (px) */
+  --radius-xs: 2px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --radius-xl: 14px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+  --radius-4xl: 32px;
+}
+
+/* ───────── LAYER 2 · SEMANTIC (theme / mode) ─────────
+   Every semantic token references a primitive above.
+   Light = :root · Dark = .dark (mode overrides). ───────── */
+:root {
+  --font-size: 16px;
+  --background: var(--slate-50);
+  --foreground: var(--slate-900);
+  --card: var(--base-white);
+  --card-foreground: var(--slate-900);
+  --popover: var(--base-white);
+  --popover-foreground: var(--slate-900);
+  --primary: var(--blue-500);
+  --primary-foreground: var(--base-white);
+  --secondary: var(--slate-100);
+  --secondary-foreground: var(--slate-900);
+  --muted: var(--slate-100);
+  --muted-foreground: var(--slate-600);
+  --accent: var(--blue-50);
+  --accent-foreground: var(--blue-700);
+  --destructive: var(--red-600);
+  --destructive-foreground: var(--base-white);
+  --success: var(--green-400);
+  --warning: var(--amber-400);
+  --violet: var(--violet-600);
+  --orange: var(--orange-600);
+  --purple: var(--purple-600);
+  --fuchsia: var(--fuchsia-600);
+  --surface-variant: var(--slate-100);
+  --surface-container-high: var(--base-white);
+  --outline-variant: var(--slate-200);
+  --secondary-container: var(--blue-50);
+  --on-secondary-container: var(--blue-700);
+  --focus-indicator: var(--blue-300);
+  --focus-indicator-offset: var(--slate-50);
+  --border: var(--slate-200);
+  --input: var(--slate-200);
+  --ring: var(--blue-300);
+  --sidebar-background: var(--base-white);
+  --sidebar-foreground: var(--slate-900);
+  --sidebar-primary: var(--blue-500);
+  --sidebar-primary-foreground: var(--base-white);
+  --sidebar-accent: var(--blue-50);
+  --sidebar-accent-foreground: var(--blue-700);
+  --sidebar-border: var(--slate-200);
+  --sidebar-ring: var(--blue-300);
+  --success-foreground: var(--base-white);
+  --warning-foreground: var(--base-white);
+  --violet-foreground: var(--base-white);
+  --orange-foreground: var(--base-white);
+  --purple-foreground: var(--base-white);
+  --fuchsia-foreground: var(--base-white);
+  --chart-1: var(--blue-500);
+  --chart-2: var(--emerald-500);
+  --chart-3: var(--amber-500);
+  --chart-4: var(--violet-500);
+  --chart-5: var(--red-500);
+  --radius: 0.5rem;
+}
+
+.dark {
+  --font-size: 16px;
+  --background: var(--slate-900);
+  --foreground: var(--slate-100);
+  --card: var(--slate-800);
+  --card-foreground: var(--slate-100);
+  --popover: var(--slate-800);
+  --popover-foreground: var(--slate-100);
+  --primary: var(--blue-500);
+  --primary-foreground: var(--base-white);
+  --secondary: var(--slate-800);
+  --secondary-foreground: var(--slate-100);
+  --muted: var(--slate-800);
+  --muted-foreground: var(--slate-400);
+  --accent: var(--blue-900);
+  --accent-foreground: var(--blue-300);
+  --destructive: var(--red-400);
+  --destructive-foreground: var(--base-white);
+  --success: var(--green-400);
+  --warning: var(--amber-400);
+  --violet: var(--violet-600);
+  --orange: var(--orange-400);
+  --purple: var(--purple-400);
+  --fuchsia: var(--fuchsia-400);
+  --surface-variant: var(--slate-800);
+  --surface-container-high: var(--slate-800);
+  --outline-variant: var(--slate-700);
+  --secondary-container: var(--blue-900);
+  --on-secondary-container: var(--blue-300);
+  --focus-indicator: var(--blue-400);
+  --focus-indicator-offset: var(--slate-900);
+  --border: var(--slate-700);
+  --input: var(--slate-700);
+  --ring: var(--blue-400);
+  --sidebar-background: var(--slate-800);
+  --sidebar-foreground: var(--slate-100);
+  --sidebar-primary: var(--blue-500);
+  --sidebar-primary-foreground: var(--base-white);
+  --sidebar-accent: var(--blue-900);
+  --sidebar-accent-foreground: var(--blue-300);
+  --sidebar-border: var(--slate-700);
+  --sidebar-ring: var(--blue-400);
+  --success-foreground: var(--base-white);
+  --warning-foreground: var(--base-white);
+  --violet-foreground: var(--base-white);
+  --orange-foreground: var(--base-white);
+  --purple-foreground: var(--base-white);
+  --fuchsia-foreground: var(--base-white);
+  --chart-1: var(--blue-500);
+  --chart-2: var(--emerald-500);
+  --chart-3: var(--amber-500);
+  --chart-4: var(--violet-500);
+  --chart-5: var(--red-500);
+  --radius: 0.5rem;
+}
+

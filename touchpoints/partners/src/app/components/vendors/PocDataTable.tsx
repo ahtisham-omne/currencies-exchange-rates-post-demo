@@ -1,0 +1,461 @@
+import React, { useState, useMemo, useCallback } from "react";
+import { Search, X, Plus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, AlignJustify, List as ListIcon, LayoutGrid, ChevronDown, Check, Phone, Mail, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Input } from "../ui/input";
+import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import type { ContactPerson } from "./partnerConstants";
+import { TableEmptyRow, TableEmptyState, TableSkeletonRows, CardSkeletonGrid, resolveTableEmptyKind, useTableLoadState } from "../ui/table-empty-state";
+import { findSearchSuggestion } from "../../utils/searchSuggestion";
+import {
+  ColumnHeaderMenu,
+  ActiveFiltersBar,
+  createBlankFilter,
+  isFilterActive,
+  applyFilters,
+  sortRows,
+  getUniqueColumnValues,
+  type CellAccessor,
+  type ColumnFilterState,
+  type FilterType,
+  type SortConfig,
+} from "./ColumnHeaderMenu";
+
+// ── Highlight ──
+function Hl({ text, q }: { text: string; q: string }) {
+  if (!q.trim()) return <>{text}</>;
+  const parts = text.split(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"));
+  return <>{parts.map((p, i) => p.toLowerCase() === q.toLowerCase() ? <mark key={i} className="bg-transparent px-0.5 rounded-sm" style={{ backgroundColor: "#FEFCE8", color: "#854D0E", fontWeight: 500 }}>{p}</mark> : <React.Fragment key={i}>{p}</React.Fragment>)}</>;
+}
+
+// ── Avatar ──
+const TINTS: Record<string, { bg: string; text: string }> = {
+  "rgb(var(--primary))": { bg: "#EBF3FF", text: "rgb(var(--primary))" }, "rgb(var(--violet))": { bg: "#F0EBFF", text: "rgb(var(--violet))" },
+  "rgb(var(--success))": { bg: "#E8FAF3", text: "rgb(var(--success))" }, "rgb(var(--warning))": { bg: "#FEF5E7", text: "#B45D04" },
+};
+function tint(c: string) { return TINTS[c] || { bg: "#F0F4FF", text: c || "#64748B" }; }
+function ini(n: string) { return n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2); }
+const DEPT_COLORS: Record<string, { bg: string; text: string }> = {
+  Sales: { bg: "#EBF3FF", text: "#094D9F" },
+  "Supply Chain Management": { bg: "#F0FDF4", text: "#15803D" },
+  Finance: { bg: "#FFFBEB", text: "#92400E" },
+};
+
+/* ─── Column defs — same labels/order as the old static header; width classes
+ * kept for layout, px widths used for cumulative sticky offsets on freeze.
+ * `filterType` per the Column Filters spec: names/emails/phones → free text,
+ * department/status → constrained checkbox set. ─── */
+type PocColKey = "name" | "department" | "email" | "phone" | "secondaryPhone" | "status";
+interface PocColDef { key: PocColKey; label: string; width: number; widthClass: string; locked?: boolean; filterType: FilterType }
+const COLUMN_DEFS: PocColDef[] = [
+  { key: "name", label: "Name", width: 200, widthClass: "min-w-[200px]", locked: true, filterType: "text" },
+  { key: "department", label: "Department", width: 120, widthClass: "w-[120px]", filterType: "multiselect" },
+  { key: "email", label: "Email", width: 200, widthClass: "w-[200px]", filterType: "text" },
+  { key: "phone", label: "Phone", width: 130, widthClass: "w-[130px]", filterType: "text" },
+  { key: "secondaryPhone", label: "Secondary", width: 130, widthClass: "w-[130px]", filterType: "text" },
+  { key: "status", label: "Status", width: 80, widthClass: "w-[80px]", filterType: "multiselect" },
+];
+const filterTypeFor = (key: string): FilterType => COLUMN_DEFS.find((c) => c.key === key)?.filterType ?? "text";
+const CHECKBOX_W = 40;
+
+/* Accessor into the shared generic filter/sort engine — filter semantics live
+ * in ColumnHeaderMenu, never per-table. Status mirrors the cell, which renders
+ * a deterministic "Active" pill (not derived from the row) in this prototype. */
+const pocCellValue: CellAccessor<ContactPerson> = (c, columnKey) => {
+  switch (columnKey) {
+    case "name": return c.name;
+    case "department": return c.department;
+    case "email": return c.email;
+    case "phone": return c.phoneExt ? `${c.phone} ext. ${c.phoneExt}` : c.phone;
+    case "secondaryPhone": return c.secondaryPhone || "—";
+    case "status": return "Active";
+    default: return undefined;
+  }
+};
+
+type Density = "condensed" | "comfort" | "card";
+
+export interface PocDataTableProps {
+  contacts: ContactPerson[];
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onSelectAll?: (ids: string[]) => void;
+  searchQuery: string;
+  onSearchChange: (val: string) => void;
+  categoryFilter: string;
+  onCategoryFilterChange: (val: string) => void;
+  page: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+  totalCount: number;
+  perPage?: number;
+  onPerPageChange?: (n: number) => void;
+  onCreateNew?: () => void;
+  selectable?: boolean;
+}
+
+export function PocDataTable({
+  contacts, selectedIds, onToggleSelect, onSelectAll,
+  searchQuery, onSearchChange, categoryFilter, onCategoryFilterChange,
+  page, totalPages, onPageChange, totalCount, perPage = 20, onPerPageChange,
+  onCreateNew, selectable = true,
+}: PocDataTableProps) {
+  const [density, setDensity] = useState<Density>("condensed");
+  const isComfort = density === "comfort";
+  const isCard = density === "card";
+
+  /* ─── Column header state — sort / per-column filters / hide / freeze (spec) ─── */
+  const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [autoOpenFilterKey, setAutoOpenFilterKey] = useState<string | null>(null);
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  const [frozenColumns, setFrozenColumns] = useState<Set<string>>(new Set(["name"]));
+  const columnFiltersList = useMemo(() => Object.values(columnFilters), [columnFilters]);
+  const columnLabels = useMemo(() => Object.fromEntries(COLUMN_DEFS.map((c) => [c.key, c.label])), []);
+  const uniqueValuesMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    COLUMN_DEFS.forEach((c) => { if (c.filterType === "multiselect") map[c.key] = getUniqueColumnValues(c.key, contacts, pocCellValue); });
+    return map;
+  }, [contacts]);
+  const handleSort = useCallback((key: string, direction: "asc" | "desc" | null) => {
+    setSortConfig(direction === null ? null : { key, direction });
+  }, []);
+  const handleAddColumnFilter = useCallback((columnKey: string) => {
+    setColumnFilters((prev) => prev[columnKey] ? prev : { ...prev, [columnKey]: createBlankFilter(columnKey, filterTypeFor(columnKey)) });
+  }, []);
+  const handleAddColumnFilterWithAutoOpen = useCallback((columnKey: string) => {
+    setColumnFilters((prev) => prev[columnKey] ? prev : { ...prev, [columnKey]: createBlankFilter(columnKey, filterTypeFor(columnKey)) });
+    setAutoOpenFilterKey(null);
+    setTimeout(() => setAutoOpenFilterKey(columnKey), 0);
+  }, []);
+  const handleColumnFilterChange = useCallback((columnKey: string, filter: ColumnFilterState) => {
+    setColumnFilters((prev) => ({ ...prev, [columnKey]: filter }));
+  }, []);
+  const handleRemoveColumnFilter = useCallback((columnKey: string) => {
+    setColumnFilters((prev) => { const next = { ...prev }; delete next[columnKey]; return next; });
+  }, []);
+  const handleClearAllColumnFilters = useCallback(() => setColumnFilters({}), []);
+  const handleHideColumn = useCallback((columnKey: string) => {
+    setHiddenColumns((prev) => { const next = new Set(prev); next.add(columnKey); return next; });
+    setSortConfig((prev) => (prev?.key === columnKey ? null : prev));
+  }, []);
+  const handleFreezeColumn = useCallback((columnKey: string) => {
+    setFrozenColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(columnKey)) next.delete(columnKey); else next.add(columnKey);
+      return next;
+    });
+  }, []);
+
+  const visibleColumns = useMemo(() => COLUMN_DEFS.filter((c) => !hiddenColumns.has(c.key)), [hiddenColumns]);
+  /* Frozen columns become sticky-left with cumulative px offsets from COLUMN_DEFS
+   * widths (after the checkbox column when selectable). */
+  const { stickyOffsets, lastStickyKey } = useMemo(() => {
+    const stickyCols = visibleColumns.filter((c) => frozenColumns.has(c.key));
+    const offsets: Record<string, number> = {};
+    let left = selectable ? CHECKBOX_W : 0;
+    for (const c of stickyCols) { offsets[c.key] = left; left += c.width; }
+    return { stickyOffsets: offsets, lastStickyKey: stickyCols[stickyCols.length - 1]?.key ?? null };
+  }, [visibleColumns, frozenColumns, selectable]);
+
+  /* Header filters/sort act on the `contacts` slice passed by the parent — which
+   * may already be paginated upstream (prototype-acceptable). */
+  const displayedContacts = useMemo(
+    () => sortRows(applyFilters(contacts, columnFiltersList, pocCellValue), sortConfig, pocCellValue, filterTypeFor),
+    [contacts, columnFiltersList, sortConfig],
+  );
+
+  /* Global empty / error states. Search + status pill are applied upstream, so
+   * `totalCount` is the parent's (filtered) count and the suggestion corpus is
+   * the slice we were given. */
+  const tableLoad = useTableLoadState();
+  const filterLayerCount = (categoryFilter !== "all" ? 1 : 0) + Object.keys(columnFilters).length;
+  const emptyKind = resolveTableEmptyKind({
+    loadState: tableLoad.loadState,
+    totalCount: tableLoad.forceEmpty ? 0 : Math.max(totalCount, contacts.length),
+    filteredCount: tableLoad.forceEmpty ? 0 : displayedContacts.length,
+    searchQuery,
+    filterCount: filterLayerCount,
+  });
+  const searchSuggestion = useMemo(() => {
+    if (emptyKind !== "no-results" && emptyKind !== "no-results-filtered") return null;
+    return findSearchSuggestion(searchQuery, contacts.flatMap((c) => [c.name, c.email, c.phone]));
+  }, [emptyKind, searchQuery, contacts]);
+  const emptyStateProps = emptyKind && {
+    kind: emptyKind,
+    entity: { singular: "contact", plural: "contacts" },
+    searchQuery,
+    suggestion: searchSuggestion,
+    onApplySuggestion: onSearchChange,
+    filterCount: filterLayerCount,
+    onClearSearch: () => onSearchChange(""),
+    onClearFilters: () => { onCategoryFilterChange("all"); setColumnFilters({}); },
+    onClearAll: () => { onSearchChange(""); onCategoryFilterChange("all"); setColumnFilters({}); },
+    onRetry: tableLoad.retry,
+    retrying: tableLoad.retrying,
+    onCreate: onCreateNew,
+    createLabel: "Create New Contact",
+    compact: true,
+  };
+
+  const allIds = displayedContacts.map((c) => c.id);
+  const allSel = selectable && selectedIds ? allIds.length > 0 && allIds.every((id) => selectedIds.has(id)) : false;
+  const someSel = selectable && selectedIds ? !allSel && allIds.some((id) => selectedIds.has(id)) : false;
+
+  // Page numbers with ellipsis
+  const getPageNumbers = (): (number | "...")[] => {
+    const pages: (number | "...")[] = [];
+    if (totalPages <= 7) { for (let i = 1; i <= totalPages; i++) pages.push(i); }
+    else {
+      pages.push(1);
+      if (page > 3) pages.push("...");
+      for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i);
+      if (page < totalPages - 2) pages.push("...");
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0 bg-white">
+      {/* ── Row 1: Search + Count + Density + Create ── */}
+      <div className="flex items-center justify-between gap-3 px-4 pt-3.5 pb-2 shrink-0">
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
+            <Input placeholder="Search by name, email, or phone..." value={searchQuery} onChange={(e) => onSearchChange(e.target.value)}
+              className="pl-9 pr-8 h-9 text-sm bg-white border-border/80 shadow-sm placeholder:text-muted-foreground/50 focus-visible:border-primary focus-visible:ring-primary/20" />
+            {searchQuery && <button onClick={() => onSearchChange("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"><X className="w-3.5 h-3.5" /></button>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-sm mr-1 hidden sm:inline" style={{ fontWeight: 500 }}>
+            <span className="text-foreground">{totalCount}</span><span className="text-muted-foreground/70"> contacts</span>
+          </span>
+          <div className="w-px h-5 bg-border/60 mx-0.5 hidden sm:block" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" onClick={(e) => e.stopPropagation()} className="inline-flex items-center justify-center h-9 gap-2 px-3 rounded-lg border border-border bg-white shadow-sm hover:bg-muted/40 transition-colors cursor-pointer">
+                {isCard ? <LayoutGrid className="w-[18px] h-[18px] text-muted-foreground/80" /> : isComfort ? <ListIcon className="w-[18px] h-[18px] text-muted-foreground/80" /> : <AlignJustify className="w-[18px] h-[18px] text-muted-foreground/80" />}
+                <span className="text-sm hidden md:inline" style={{ fontWeight: 500 }}>{isCard ? "Card" : isComfort ? "Comfort" : "Condensed"}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/60" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[200px] p-1.5 z-[350]">
+              {([{ key: "condensed" as Density, label: "Condensed", desc: "Compact view", Icon: AlignJustify }, { key: "comfort" as Density, label: "Comfort", desc: "Spacious view", Icon: ListIcon }, { key: "card" as Density, label: "Card View", desc: "Grid layout", Icon: LayoutGrid }]).map((opt) => (
+                <DropdownMenuItem key={opt.key} onClick={() => setDensity(opt.key)} className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg ${density === opt.key ? "bg-muted/50" : ""}`}>
+                  <opt.Icon className="w-4 h-4 text-muted-foreground shrink-0" /><div className="min-w-0"><p className="text-sm" style={{ fontWeight: 500 }}>{opt.label}</p><p className="text-[10px] text-muted-foreground/60">{opt.desc}</p></div>
+                  {density === opt.key && <Check className="w-3.5 h-3.5 ml-auto text-primary shrink-0" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {onCreateNew && (<><div className="w-px h-5 bg-border/60 mx-0.5 hidden sm:block" /><button onClick={onCreateNew} className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-primary hover:bg-[#086AE6] text-white text-sm shadow-sm transition-colors cursor-pointer" style={{ fontWeight: 600 }}><Plus className="w-3.5 h-3.5" /><span className="hidden sm:inline">Create New</span></button></>)}
+        </div>
+      </div>
+
+      {/* ── Row 2: Status pills + Department dropdown ── */}
+      <div className="flex items-center gap-1.5 overflow-x-auto px-4 pb-2.5 shrink-0 scrollbar-hide">
+        {([{ key: "all", label: "All", count: totalCount }, { key: "active", label: "Active" }, { key: "inactive", label: "Inactive" }]).map((f) => {
+          const isActive = categoryFilter === f.key;
+          return (<button key={f.key} onClick={() => onCategoryFilterChange(f.key)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer ${isActive ? "border-primary bg-accent hover:bg-[#D6E8FF]" : "border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground hover:border-muted-foreground/30"}`}
+            style={{ fontWeight: isActive ? 500 : 400, color: isActive ? "rgb(var(--primary))" : undefined }}>
+            {f.label}{"count" in f && f.count != null && <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center ${isActive ? "bg-primary/10" : "bg-muted"}`} style={{ fontWeight: 600, color: isActive ? "rgb(var(--primary))" : "rgb(var(--muted-foreground))" }}>{f.count}</span>}
+          </button>);
+        })}
+      </div>
+
+      {/* Active Column Filters Bar (Notion-style, shared) */}
+      <ActiveFiltersBar
+        columnFilters={columnFiltersList}
+        columnLabels={columnLabels}
+        uniqueValuesByKey={uniqueValuesMap}
+        lockedColumnKey="name"
+        onFilterChange={handleColumnFilterChange}
+        onRemoveFilter={handleRemoveColumnFilter}
+        onAddFilter={handleAddColumnFilterWithAutoOpen}
+        onClearAll={handleClearAllColumnFilters}
+        autoOpenKey={autoOpenFilterKey}
+        onAutoOpened={() => setAutoOpenFilterKey(null)}
+        availableColumns={COLUMN_DEFS.map((c) => ({ key: c.key, label: c.label }))}
+      />
+
+      {/* ── Table / Card ── */}
+      {isCard ? (
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 py-3 border-t border-border">
+          {tableLoad.loadState === "loading" ? <CardSkeletonGrid count={6} className="lg:grid-cols-3 xl:grid-cols-3" /> : emptyStateProps ? <TableEmptyState {...emptyStateProps} /> : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {displayedContacts.map((c) => {
+                const isSel = selectable && selectedIds?.has(c.id);
+                const t = tint(c.avatarColor);
+                const dc = DEPT_COLORS[c.department] || DEPT_COLORS.Sales;
+                return (
+                  <button key={c.id} type="button" onClick={() => selectable && onToggleSelect?.(c.id)}
+                    className={`group/poc relative text-left rounded-xl border transition-all duration-200 ${selectable ? "cursor-pointer" : ""} ${
+                      isSel ? "border-primary bg-[#FAFCFF] shadow-[0_0_0_1px_#0A77FF]" : "border-[#E8ECF1] bg-white hover:border-blue-200 hover:shadow-[0_4px_16px_-4px_rgba(10,119,255,0.12)]"
+                    }`}>
+                    <div className="p-3.5">
+                      {/* Header: Initials + Name + Status + Checkbox */}
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-[10px] shrink-0" style={{ backgroundColor: t.bg, color: t.text, fontWeight: 700 }}>{ini(c.name)}</div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] text-foreground truncate" style={{ fontWeight: 600 }}><Hl text={c.name} q={searchQuery} /></p>
+                          <p className="text-[11px] text-slate-700 truncate" style={{ fontWeight: 500 }}>{c.department === "Supply Chain Management" ? "Supply Chain" : c.department} <span className="text-slate-300">·</span> <span className="text-slate-400" style={{ fontWeight: 400 }}>{c.company}</span></p>
+                        </div>
+                        <span className="inline-flex items-center text-[10px] px-2 py-[2px] rounded-full border shrink-0" style={{ fontWeight: 500, backgroundColor: "#ECFDF5", color: "#065F46", borderColor: "#A7F3D0" }}>Active</span>
+                        {selectable && (
+                          <div className={`w-[18px] h-[18px] rounded-[5px] border-[1.5px] flex items-center justify-center shrink-0 transition-all duration-150 ${isSel ? "bg-primary border-primary" : "border-slate-300 bg-white group-hover/poc:border-slate-400"}`}>
+                            {isSel && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                          </div>
+                        )}
+                      </div>
+                      {/* Contact info */}
+                      <div className="mt-2.5 pt-2.5 border-t border-muted space-y-1">
+                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Mail className="w-3 h-3 text-slate-400 shrink-0" /><span className="truncate">{c.email}</span></div>
+                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Phone className="w-3 h-3 text-slate-400 shrink-0" /><span>{c.phone}</span></div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 overflow-auto scrollbar-hide border-t border-border">
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-white">
+              <TableRow className={`bg-muted/30 hover:bg-muted/30 ${isComfort ? "[&>th]:h-10" : "[&>th]:h-8"}`}>
+                {selectable && <TableHead className="sticky left-0 z-20 bg-slate-50 w-[40px] min-w-[40px] !pl-4 !pr-0"><Checkbox checked={allSel ? true : someSel ? "indeterminate" : false} onCheckedChange={() => onSelectAll?.(allIds)} /></TableHead>}
+                {visibleColumns.map((def) => {
+                  const key = def.key;
+                  const isFrozen = frozenColumns.has(key);
+                  const currentColSort: "asc" | "desc" | null = sortConfig?.key === key ? sortConfig.direction : null;
+                  const hasFilter = columnFilters[key] ? isFilterActive(columnFilters[key]) : false;
+                  return (
+                    <TableHead
+                      key={key}
+                      className={`relative group/colheader whitespace-nowrap ${def.widthClass} ${isFrozen ? "sticky z-20 bg-slate-50" : ""} ${hasFilter && !isFrozen ? "bg-primary/[0.03]" : ""}`}
+                      style={isFrozen ? { left: stickyOffsets[key], ...(key === lastStickyKey ? { boxShadow: "inset -1px 0 0 0 rgba(0,0,0,0.08), 3px 0 6px -2px rgba(0,0,0,0.06)" } : {}) } : undefined}
+                    >
+                      <ColumnHeaderMenu
+                        columnKey={key}
+                        label={def.label}
+                        sortable
+                        sortConfig={sortConfig}
+                        onSort={handleSort}
+                        onAddFilter={handleAddColumnFilter}
+                        onHideColumn={handleHideColumn}
+                        onFreezeColumn={handleFreezeColumn}
+                        isFrozen={frozenColumns.has(key)}
+                        isLocked={def.locked}
+                        hasActiveFilter={hasFilter}
+                        filter={columnFilters[key] ?? null}
+                        uniqueValues={uniqueValuesMap[key]}
+                        filterTypeOverride={def.filterType}
+                        onFilterChange={handleColumnFilterChange}
+                      >
+                        <div className="inline-flex items-center gap-1">
+                          <span className="text-[13px]" style={currentColSort || hasFilter ? { color: "rgb(var(--primary))" } : undefined}>{def.label}</span>
+                          {hasFilter && !currentColSort && (
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: "rgb(var(--primary))" }} />
+                          )}
+                          {currentColSort === "asc" && <ArrowUp className="w-3 h-3 shrink-0" style={{ color: "rgb(var(--primary))" }} />}
+                          {currentColSort === "desc" && <ArrowDown className="w-3 h-3 shrink-0" style={{ color: "rgb(var(--primary))" }} />}
+                          {!currentColSort && !hasFilter && (
+                            <ArrowUpDown className="w-3 h-3 shrink-0 text-muted-foreground opacity-0 group-hover/colheader:opacity-100 transition-opacity" />
+                          )}
+                        </div>
+                      </ColumnHeaderMenu>
+                    </TableHead>
+                  );
+                })}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tableLoad.loadState === "loading" ? (
+                <TableSkeletonRows columns={visibleColumns.length + (selectable ? 1 : 0)} />
+              ) : emptyStateProps ? (
+                <TableEmptyRow colSpan={visibleColumns.length + (selectable ? 1 : 0)} {...emptyStateProps} />
+              ) : displayedContacts.map((c) => {
+                const isSel = selectable && selectedIds?.has(c.id);
+                const t = tint(c.avatarColor);
+                const stickyBg = isSel ? "bg-[#F7FAFF]" : "bg-white";
+                const renderCell = (key: PocColKey) => {
+                  switch (key) {
+                    case "name": return (
+                      <div className={`flex items-center ${isComfort ? "gap-3" : "gap-2.5"}`}>
+                        <div className={`${isComfort ? "w-9 h-9" : "w-8 h-8"} rounded-lg flex items-center justify-center shrink-0 border border-[#E8ECF1]`} style={{ backgroundColor: t.bg, color: t.text, fontSize: isComfort ? 12 : 11, fontWeight: 700 }}>{ini(c.name)}</div>
+                        <div className="min-w-0"><span className={`${isComfort ? "text-[13px]" : "text-sm"} truncate block`} style={{ fontWeight: 500, color: '#1E293B' }}><Hl text={c.name} q={searchQuery} /></span>{isComfort && <span className="text-xs text-muted-foreground/60 truncate block">{c.company}</span>}</div>
+                      </div>
+                    );
+                    case "department": return <span className={`${isComfort ? "text-[13px]" : "text-sm"} text-muted-foreground`}>{c.department === "Supply Chain Management" ? "SCM" : c.department}</span>;
+                    case "email": return <span className={`${isComfort ? "text-[13px]" : "text-sm"} text-muted-foreground truncate block max-w-[180px]`}><Hl text={c.email} q={searchQuery} /></span>;
+                    case "phone": return <><span className={`${isComfort ? "text-[13px]" : "text-sm"} text-muted-foreground`}>{c.phone}</span>{isComfort && c.phoneExt && <span className="text-xs text-muted-foreground/50 ml-1">ext. {c.phoneExt}</span>}</>;
+                    case "secondaryPhone": return <span className={`${isComfort ? "text-[13px]" : "text-sm"} text-muted-foreground`}>{c.secondaryPhone || "—"}</span>;
+                    case "status": return <span className="inline-flex items-center text-[11px] px-2 py-0.5 rounded-full border" style={{ fontWeight: 500, backgroundColor: "#ECFDF5", color: "#065F46", borderColor: "#A7F3D0" }}>Active</span>;
+                    default: return null;
+                  }
+                };
+                return (
+                  <TableRow key={c.id} onClick={() => selectable && onToggleSelect?.(c.id)} className={`${selectable ? "cursor-pointer" : ""} ${isSel ? "bg-primary/[0.03]" : ""} ${isComfort ? "[&>td]:py-3 [&>td]:pl-4 [&>td]:pr-2" : "[&>td]:py-1 [&>td]:pl-4 [&>td]:pr-2"}`}>
+                    {selectable && <TableCell className={`sticky left-0 z-10 ${stickyBg} w-[40px] !pl-4 !pr-0`}><Checkbox checked={!!isSel} onCheckedChange={() => onToggleSelect?.(c.id)} onClick={(e) => e.stopPropagation()} /></TableCell>}
+                    {visibleColumns.map((def) => {
+                      const isFrozen = frozenColumns.has(def.key);
+                      return (
+                        <TableCell
+                          key={def.key}
+                          className={isFrozen ? `sticky z-10 ${stickyBg}` : undefined}
+                          style={isFrozen ? { left: stickyOffsets[def.key], ...(def.key === lastStickyKey ? { boxShadow: "inset -1px 0 0 0 rgba(0,0,0,0.08), 3px 0 6px -2px rgba(0,0,0,0.06)" } : {}) } : undefined}
+                        >
+                          {renderCell(def.key)}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* ── Pagination — matches listing page exactly ── */}
+      {totalCount > 0 && (
+        <div data-table-meta className="flex flex-col sm:flex-row items-center justify-center px-4 py-3 border-t border-border gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Records per Page</span>
+            {onPerPageChange ? (
+              <Select value={perPage === -1 ? "all" : String(perPage)} onValueChange={(v) => onPerPageChange(v === "all" ? -1 : Number(v))}>
+                <SelectTrigger className="w-[70px] h-8"><SelectValue /></SelectTrigger>
+                <SelectContent className="z-[350]">
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="all">All</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className="px-2 py-1 rounded border border-border text-xs text-foreground" style={{ fontWeight: 500 }}>{perPage}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" disabled={page <= 1} onClick={() => onPageChange(1)}><ChevronsLeft className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" className="h-8 gap-1 text-sm text-muted-foreground" disabled={page <= 1} onClick={() => onPageChange(page - 1)}><ChevronLeft className="w-3.5 h-3.5" />Prev</Button>
+            {getPageNumbers().map((p, idx) => p === "..." ? (
+              <span key={`dots-${idx}`} className="px-1 text-sm text-muted-foreground">...</span>
+            ) : (
+              <Button key={p} variant={page === p ? "default" : "ghost"} size="sm" className={`h-8 w-8 p-0 text-sm ${page === p ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`} onClick={() => onPageChange(p as number)}>{p}</Button>
+            ))}
+            <Button variant="ghost" size="sm" className="h-8 gap-1 text-sm text-muted-foreground" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>Next<ChevronRight className="w-3.5 h-3.5" /></Button>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" disabled={page >= totalPages} onClick={() => onPageChange(totalPages)}><ChevronsRight className="w-4 h-4" /></Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
