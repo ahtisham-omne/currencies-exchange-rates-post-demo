@@ -26,6 +26,7 @@ import {
 } from "./ItemDashKpis";
 import { DraggableKpiCard } from "./DraggableKpiCard";
 import { ItemDashCustomizePanel } from "./ItemDashCustomizePanel";
+import { BaseCurrencyNote } from "@/app/components/currency/BaseCurrencyNote";
 
 /* ── Physical-Inventory widget system (exact components + frame) ── */
 import { Chart, registerables } from "chart.js";
@@ -356,6 +357,7 @@ export function ItemOverviewTab({ item, widgetRenderers, widgetLabels, widgetMet
             <RefreshCw className="w-3 h-3" />
             Refresh
           </button>
+          <BaseCurrencyNote />
         </div>
         <div className="flex items-center gap-2">
           <button

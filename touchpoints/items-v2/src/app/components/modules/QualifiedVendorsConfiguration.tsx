@@ -68,6 +68,10 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { AddQualifiedVendorDialog } from './AddQualifiedVendorDialog';
+import { Money } from '../currency/Money';
+import { BASE_CURRENCY } from '../../currency/currencies';
+import { formatMoney } from '../../currency/money';
+import { priceInBase, vendorCurrencyFor, vendorRate } from '../../currency/vendorFx';
 
 // Pricing Rules Data
 const PRICING_RULES = [
@@ -602,11 +606,12 @@ export function QualifiedVendorsConfiguration({ onBack }: QualifiedVendorsConfig
 
                           {/* Price per UOM */}
                           <TableCell className="text-right">
+                            {/* The vendor's currency, the base equivalent underneath (spec 4.1). */}
                             <div className="flex flex-col items-end gap-0.5">
                               <span className="text-sm font-semibold text-foreground">
-                                ${vendor.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                <Money value={vendor.price} currency={vendorCurrencyFor(vendor.location)} fx={vendorRate(vendorCurrencyFor(vendor.location))} />
                               </span>
-                              <span className="text-[10px] text-muted-foreground">per {vendor.uom}</span>
+                              <span className="text-[10px] text-muted-foreground">per {vendor.uom} · ≈ {formatMoney(priceInBase(vendor.price, vendorRate(vendorCurrencyFor(vendor.location)).rate), BASE_CURRENCY)}</span>
                             </div>
                           </TableCell>
 
@@ -863,7 +868,7 @@ export function QualifiedVendorsConfiguration({ onBack }: QualifiedVendorsConfig
                             <span className="text-xs text-muted-foreground">Price per {vendor.uom}</span>
                           </div>
                           <span className="text-xs font-semibold text-foreground">
-                            ${vendor.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {formatMoney(vendor.price, vendorCurrencyFor(vendor.location))}
                           </span>
                         </div>
 

@@ -58,6 +58,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { BASE_CURRENCY, isBaseCurrency } from "../../../currency/currencies";
+import { formatCompactMoney, formatMoney } from "../../../currency/money";
+import { formatWhole, fromUsd, priceInBase, qvRate } from "../../../currency/vendorFx";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -316,8 +319,9 @@ export function VendorDetailModal({
 
   if (!vendor) return null;
 
-  const creditLimit = vendor.creditLimit ?? 20000;
-  const creditUsed = vendor.creditUsed ?? 19879.24;
+  // The design's fallbacks are USD; restated like the seeded credit.
+  const creditLimit = vendor.creditLimit ?? fromUsd(20000, vendor.currency);
+  const creditUsed = vendor.creditUsed ?? fromUsd(19879.24, vendor.currency);
   const creditPct = Math.min(100, Math.round((creditUsed / creditLimit) * 100));
   const creditTone = getCreditTone(creditPct);
 
@@ -416,13 +420,11 @@ export function VendorDetailModal({
                   </span>
                   <div className="flex items-end gap-1">
                     <span className={cn("text-xs font-semibold tabular-nums", creditTone.text)}>
-                      ${creditUsed.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {/* In the partner's currency (spec 4.2). */}
+                      {formatMoney(creditUsed, vendor.currency)}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      / ${creditLimit.toLocaleString()}
+                      / {formatWhole(creditLimit, vendor.currency)}
                     </span>
                   </div>
                 </div>
@@ -578,7 +580,7 @@ function DetailsTab({
           {editing ? (
             <>
               <EditableRow
-                label="Price per unit"
+                label={`Price per unit (${vendor.currency})`}
                 value={draft.pricePerUnit}
                 onChange={(value) => setDraft((prev) => ({ ...prev, pricePerUnit: value }))}
               />
@@ -596,9 +598,14 @@ function DetailsTab({
             </>
           ) : (
             <>
+              {/* The vendor's currency, with the base equivalent (spec 4.1). */}
               <DetailRow
                 label="Price per unit"
-                value={`$${vendor.pricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                value={
+                  isBaseCurrency(vendor.currency)
+                    ? formatMoney(vendor.pricePerUnit, vendor.currency)
+                    : `${formatMoney(vendor.pricePerUnit, vendor.currency)} · ≈ ${formatMoney(priceInBase(vendor.pricePerUnit, qvRate(vendor).rate), BASE_CURRENCY)}`
+                }
               />
               <DetailRow label="Unit of Measure" value={vendor.vendorUOM ?? "ea (Each)"} />
               <DetailRow label="Accepted Deviation" value={`${vendor.acceptedDeviation ?? 0}%`} last />
@@ -796,20 +803,20 @@ function AnalyticsTab({ vendor, pos }: { vendor: QualifiedVendor; pos: PurchaseO
     ? [
         {
           label: "Avg Price / Unit",
-          value: `$${avgPriceValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          value: formatMoney(avgPriceValue, vendor.currency),
           sub: avgPriceCfg.deltaLabel,
           trend: "down" as const,
           period: true as const,
         },
         {
           label: "Last PO Total",
-          value: `$${(vendor.lastPOTotalAmount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+          value: formatMoney(vendor.lastPOTotalAmount ?? 0, vendor.currency),
           sub: "12 Oct 2024",
           trend: null,
         },
         {
           label: "Last PO Price / Unit",
-          value: `$${(vendor.lastPOPricePerUnit ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+          value: formatMoney(vendor.lastPOPricePerUnit ?? 0, vendor.currency),
           sub: "12 Oct 2024",
           trend: null,
         },
@@ -883,7 +890,8 @@ function AnalyticsTab({ vendor, pos }: { vendor: QualifiedVendor; pos: PurchaseO
 
         <div className="mb-2">
           <span className="text-base font-semibold text-chart-2">
-            {isPrice ? `$${value}k` : `${value} units`}
+            {/* The design's price series is in $k; shown in the vendor's currency. */}
+            {isPrice ? formatCompactMoney(fromUsd(value * 1000, vendor.currency), vendor.currency) : `${value} units`}
           </span>
           <span className="ml-1 text-[11px] text-foreground/40">
             {isPrice ? "Last PO Price" : "Last PO Qty"}

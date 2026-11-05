@@ -45,6 +45,8 @@ import {
 import type { QualifiedVendor } from "../../../context/purchasing/types";
 import { InitialAvatar } from "../../items-v3/InitialAvatar";
 import { PriorityChip } from "../../items-v3/PriorityChip";
+import { Money } from "../../currency/Money";
+import { qvRate } from "../../../currency/vendorFx";
 
 interface QVCardProps {
   qv: QualifiedVendor;
@@ -118,8 +120,9 @@ function SortableQVCard({
 
         {/* Price + UOM */}
         <div className="flex items-baseline gap-1 shrink-0 px-3 border-l border-border/60">
+          {/* In the vendor's currency (spec 4.1); the hover gives the base equivalent. */}
           <span className="text-[15px] text-slate-700 tabular-nums" style={{ fontWeight: 700 }}>
-            ${qv.pricePerUnit.toFixed(2)}
+            <Money value={qv.pricePerUnit} currency={qv.currency} fx={qvRate(qv)} />
           </span>
           <span className="text-[12px] text-slate-500 tabular-nums" style={{ fontWeight: 600 }}>
             / {qv.vendorUOM}

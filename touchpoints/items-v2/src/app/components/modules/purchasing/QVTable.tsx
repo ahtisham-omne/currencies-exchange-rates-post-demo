@@ -66,7 +66,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PriorityChip } from "../../items-v3/PriorityChip";
-import { PriceWithUom } from "../../items-v3/PriceWithUom";
+import { VendorPrice } from "../../currency/VendorPrice";
+import { Money } from "../../currency/Money";
+import { formatMoney } from "../../../currency/money";
+import { BASE_CURRENCY } from "../../../currency/currencies";
+import { priceInBase, qvRate } from "../../../currency/vendorFx";
 import { OnTimeCell } from "../../items-v3/OnTimeCell";
 import { InitialAvatar } from "../../items-v3/InitialAvatar";
 import {
@@ -99,7 +103,8 @@ export const COLUMNS: ColDef[] = [
   { key: "location",           label: "Partner Locations",             sortable: true, width: 260 },
   { key: "pointOfContact",     label: "Points of Contact",                             width: 280 },
   { key: "country",            label: "Country",                       sortable: true, width: 200 },
-  { key: "creditLimit",        label: "Credit Limit ($)",              sortable: true, align: "right", width: 170 },
+  /* Money is in each vendor's currency (spec 4.1, 4.2), so headers carry no $. */
+  { key: "creditLimit",        label: "Credit Limit",                  sortable: true, align: "right", width: 170 },
   /* Captured-at-qualification columns (the important info). */
   { key: "unitsPricing",       label: "Units & Pricing",               width: 260 },
   { key: "leadTime",           label: "Lead Time",                     sortable: true, align: "right", width: 120 },
@@ -107,8 +112,8 @@ export const COLUMNS: ColDef[] = [
   { key: "pricingRules",       label: "Pricing Rules",                                 width: 240 },
   { key: "acceptedDeviation",  label: "Accepted Deviation (%)",                        align: "right", width: 170 },
   /* Analytics (history) — available via the column selector, hidden by default. */
-  { key: "lastPoPricePerUnit", label: "Last PO Price Per Unit ($)",    sortable: true, align: "right", width: 200 },
-  { key: "lastPoTotalAmount",  label: "Last PO Total Amount ($)",      sortable: true, align: "right", width: 200 },
+  { key: "lastPoPricePerUnit", label: "Last PO Price Per Unit",        sortable: true, align: "right", width: 200 },
+  { key: "lastPoTotalAmount",  label: "Last PO Total Amount",          sortable: true, align: "right", width: 200 },
   { key: "shipOnTime",         label: "Ship on Time (%)",              sortable: true, width: 180 },
 ];
 
@@ -170,8 +175,6 @@ const toNum = (v: unknown): number | undefined => {
   const n = parseFloat(String(v ?? ""));
   return Number.isFinite(n) ? n : undefined;
 };
-const fmtMoney = (n: number) =>
-  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtRange = (min?: string | number, max?: string | number) => {
   const a = toNum(min);
   const b = toNum(max);
@@ -234,10 +237,12 @@ function UnitsPricingCell({ qv }: { qv: QualifiedVendor }) {
   const tiers = getUnitTiers(qv);
   const primary = tiers[0];
   const multi = tiers.length > 1;
+  // In the vendor's currency, with the base equivalent underneath (spec 4.1).
+  const fx = qvRate(qv);
   return (
     <div className="flex items-center gap-2 min-w-0" onClick={(e) => e.stopPropagation()}>
-      <span className="min-w-0 truncate">
-        <PriceWithUom price={primary.price} uom={primary.uom} />
+      <span className="min-w-0 truncate text-sm">
+        <VendorPrice price={primary.price} uom={primary.uom} fx={fx} />
       </span>
       {multi && (
         <HoverCard openDelay={120} closeDelay={100}>
@@ -285,8 +290,11 @@ function UnitsPricingCell({ qv }: { qv: QualifiedVendor }) {
                       {toNum(t.lead) ? <span>· {toNum(t.lead)}d lead</span> : null}
                     </div>
                   </div>
-                  <span className="text-[12.5px] tabular-nums text-emerald-700 shrink-0" style={{ fontWeight: 600 }}>
-                    {fmtMoney(t.price)}
+                  <span className="flex flex-col items-end shrink-0 tabular-nums">
+                    <span className="text-[12.5px] text-emerald-700" style={{ fontWeight: 600 }}>{formatMoney(t.price, fx.currency)}</span>
+                    {fx.currency !== BASE_CURRENCY && t.price > 0 && (
+                      <span className="text-[10.5px] text-slate-500">≈ {formatMoney(priceInBase(t.price, fx.rate), BASE_CURRENCY)}</span>
+                    )}
                   </span>
                 </div>
               ))}
@@ -437,15 +445,15 @@ function renderCell(
     case "country":
       return <CountryCell country={qv.country} countryFlag={qv.countryFlag} />;
     case "creditLimit":
-      return <CreditLimitCell creditLimit={qv.creditLimit} />;
+      return <CreditLimitCell creditLimit={qv.creditLimit} currency={qv.currency} />;
     case "unitsPricing":
       return <UnitsPricingCell qv={qv} />;
     case "lastPoPricePerUnit":
-      return <span className="text-sm tabular-nums text-foreground">${qv.lastPOPricePerUnit.toFixed(2)}</span>;
+      return <span className="text-sm"><Money value={qv.lastPOPricePerUnit} currency={qv.currency} fx={qvRate(qv)} className="text-foreground" /></span>;
     case "lastPoTotalAmount":
       return (
-        <span className="text-sm tabular-nums text-foreground">
-          ${qv.lastPOTotalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        <span className="text-sm">
+          <Money value={qv.lastPOTotalAmount} currency={qv.currency} fx={qvRate(qv)} className="text-foreground" />
         </span>
       );
     case "carrierVendor":
@@ -844,7 +852,7 @@ export function QVTable({
                 <p className="text-sm font-semibold text-foreground truncate">{activeQV.vendorName}</p>
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-muted-foreground">
-                    ${activeQV.pricePerUnit.toFixed(2)}/{activeQV.vendorUOM.split(" ")[0]}
+                    {formatMoney(activeQV.pricePerUnit, activeQV.currency)}/{activeQV.vendorUOM.split(" ")[0]}
                   </span>
                   <span className="font-semibold text-emerald-700">{activeQV.shipOnTime}% OTD</span>
                 </div>

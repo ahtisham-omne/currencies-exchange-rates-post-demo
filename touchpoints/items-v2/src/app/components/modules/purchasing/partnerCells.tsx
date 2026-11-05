@@ -22,6 +22,7 @@ import {
 } from "../../items-v3";
 import { CarrierIcon } from "./CarrierIcon";
 import type { VendorContact } from "../../../context/purchasing/types";
+import { formatWhole } from "../../../currency/vendorFx";
 
 /* Deterministic location thumbnails + site-type mock for the Partner Locations
    cell and its "+N more" overflow (ported from VendorsListPage's LOC_PHOTOS_PL
@@ -165,11 +166,12 @@ export function CountryCell({ country, countryFlag }: { country?: string; countr
   );
 }
 
-/* Credit Limit — right-aligned currency. */
-export function CreditLimitCell({ creditLimit }: { creditLimit?: number }) {
+/* Credit Limit — right-aligned, in the partner's currency with its code
+   (spec 4.2): "¥2,896,000 JPY". */
+export function CreditLimitCell({ creditLimit, currency }: { creditLimit?: number; currency?: string }) {
   return (
     <span className="text-sm tabular-nums text-foreground">
-      {creditLimit != null ? `$ ${creditLimit.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}
+      {creditLimit != null ? formatWhole(creditLimit, currency || "USD") : "—"}
     </span>
   );
 }

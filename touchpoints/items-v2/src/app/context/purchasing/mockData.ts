@@ -17,6 +17,7 @@ import type {
   QualifiedVendorConfig,
   VendorContact,
 } from "./types";
+import { fromUsd, vendorCurrencyFor } from "../../currency/vendorFx";
 
 /* ================================================================
    Reference seed — 9 qualified vendors (verbatim copy)
@@ -547,7 +548,33 @@ function seedQVsForItem(itemId: string): QualifiedVendor[] {
       priority: i === 0 ? 1 : i,
       isPrimary: false,
     };
-  });
+  }).map(inVendorCurrency);
+}
+
+/* The design prices every vendor in $ (USD), whatever its country. A vendor
+   quotes in its partner's currency (spec 4.2): restate a seeded row's
+   amounts in it, at the last synced mid-market rate. Applied last, so no
+   seed sequence changes. */
+function inVendorCurrency(qv: QualifiedVendor): QualifiedVendor {
+  const currency = vendorCurrencyFor(qv.country || qv.location);
+  const to = (n: number) => fromUsd(n, currency);
+  const toStr = (s: string) => (s.trim() && Number.isFinite(Number(s)) ? String(to(Number(s))) : s);
+  return {
+    ...qv,
+    currency,
+    pricePerUnit: to(qv.pricePerUnit),
+    lastPOTotalAmount: to(qv.lastPOTotalAmount),
+    lastPOPricePerUnit: to(qv.lastPOPricePerUnit),
+    averagePricePerUnit: to(qv.averagePricePerUnit),
+    priceFluctuation30d: to(qv.priceFluctuation30d),
+    creditLimit: qv.creditLimit != null ? to(qv.creditLimit) : undefined,
+    creditUsed: qv.creditUsed != null ? to(qv.creditUsed) : undefined,
+    config: qv.config && {
+      ...qv.config,
+      pricePerUnit: toStr(qv.config.pricePerUnit),
+      additionalPrices: qv.config.additionalPrices?.map((t) => ({ ...t, price: toStr(t.price) })),
+    },
+  };
 }
 
 /* ================================================================
@@ -701,7 +728,9 @@ export const AVAILABLE_VENDORS: AvailableVendor[] = PARTNER_NAMES.map((name, i) 
     country: origin.country,
     countryFlag: origin.flag,
     carrierVendor: AV_CARRIER_POOL[seed % AV_CARRIER_POOL.length],
-    creditLimit: 20000 + ((seed % 5) * 5000),
+    // The partner's currency (spec 4.2); its credit limit is in it.
+    currency: vendorCurrencyFor(origin.country),
+    creditLimit: fromUsd(20000 + ((seed % 5) * 5000), vendorCurrencyFor(origin.country)),
     contacts: buildContacts(seed, `av-${i}`, 10),
   };
 });

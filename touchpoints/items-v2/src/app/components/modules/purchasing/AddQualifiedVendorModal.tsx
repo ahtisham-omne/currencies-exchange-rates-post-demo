@@ -105,6 +105,10 @@ import { RemoveVendorDialog } from "./RemoveVendorDialog";
 import { PrimaryPill } from "./PrimaryPill";
 import { VendorPriorityList, computeRoster, type RosterCard, type RosterInputVendor } from "./VendorPriorityList";
 import { MAX_PRIORITY } from "../../../context/PurchasingContext";
+import { pricePrefix, vendorCurrencyFor, vendorRate } from "../../../currency/vendorFx";
+import { formatMoney } from "../../../currency/money";
+import { DEFAULT_RATE_TYPE } from "../../../currency/rates";
+import { VendorCurrencyChip, VendorPriceFields } from "../../currency/VendorPriceFields";
 
 /* ──────────────────────────────────────────────────────────────
    buildQualifiedVendor — kept for existing callers (ProcurementSection,
@@ -138,7 +142,8 @@ export function buildQualifiedVendor({
     vendorId: vendor.id,
     location: vendor.location,
     pricePerUnit: config ? num(config.pricePerUnit) : 0,
-    currency: "$",
+    // The partner's currency (spec 4.2): its prices are entered in it.
+    currency: vendor.currency ?? vendorCurrencyFor(vendor.country),
     acceptedDeviation: config ? num(config.acceptedDeviationPct) : 0,
     vendorUOM: config?.uom || "Each",
     isPrimary: false,
@@ -708,6 +713,10 @@ export function AddQualifiedVendorModal({
   const vendorNameById = (id: string) =>
     AVAILABLE_VENDORS.find((x) => x.id === id)?.name ||
     (editMode && editVendor && editVendor.id === id ? editVendor.vendorName : "this vendor");
+  const vendorCurrencyById = (id: string) =>
+    existingVendors.find((q) => q.id === id)?.currency ||
+    AVAILABLE_VENDORS.find((x) => x.id === id)?.currency ||
+    (editMode && editVendor && editVendor.id === id ? editVendor.currency : undefined);
 
   function handleRemoveRuleFromVendor() {
     if (!pendingRuleRemove) return;
@@ -1009,7 +1018,8 @@ export function AddQualifiedVendorModal({
      computeRoster densifies them into tie-allowing, gap-free tiers and picks the
      single default. Shared by the list render and the Save commit. */
   const rosterInput = useMemo<RosterInputVendor[]>(() => {
-    const fmtPrice = (n: number) => (n > 0 ? `$${n.toFixed(2)}` : "Not set");
+    // Each vendor's price in its own currency (spec 4.1).
+    const fmtPrice = (n: number, code: string) => (n > 0 ? formatMoney(n, code) : "Not set");
     const fmtLead = (d: number) => (d > 0 ? (d < 7 ? `${d}d` : `${Math.round((d / 7) * 10) / 10}wk`) : "Not set");
     const existing: RosterInputVendor[] = existingVendors.map((q) => {
       const o = existingPriorityById[q.id];
@@ -1020,7 +1030,7 @@ export function AddQualifiedVendorModal({
         isNew: false,
         priority: o ? o.priority : q.priority,
         isDefault: o ? o.isDefault : !!q.isPrimary,
-        priceLabel: fmtPrice(q.pricePerUnit),
+        priceLabel: fmtPrice(q.pricePerUnit, q.currency),
         uomLabel: q.vendorUOM || "Each",
         leadLabel: fmtLead(q.lastPOLeadTime),
         priced: q.pricePerUnit > 0,
@@ -1042,7 +1052,7 @@ export function AddQualifiedVendorModal({
             isNew: true,
             priority: Number.isFinite(parsed) ? parsed : maxExistingRaw + 1 + i,
             isDefault: !!cfg.isDefault,
-            priceLabel: cfg.pricePerUnit.trim() ? `$${cfg.pricePerUnit}` : "Not set",
+            priceLabel: cfg.pricePerUnit.trim() ? fmtPrice(Number(cfg.pricePerUnit), v.currency ?? vendorCurrencyFor(v.country)) : "Not set",
             uomLabel: cfg.uom || "Each",
             leadLabel: cfg.leadTimeDays ? fmtLead(Number(cfg.leadTimeDays)) : "Not set",
             priced: !!cfg.pricePerUnit.trim(),
@@ -1066,7 +1076,7 @@ export function AddQualifiedVendorModal({
      Only already-qualified vendors have a baseline; new ones are "New" here. */
   const VENDOR_CONFIG_DIFF_KEYS = [
     "pricePerUnit", "uom", "minOrderQty", "maxOrderQty", "multiples",
-    "acceptedDeviationPct", "leadTimeDays", "additionalPrices",
+    "acceptedDeviationPct", "leadTimeDays", "additionalPrices", "rateType", "exchangeRate",
     "shippingMethodIds", "defaultShippingMethodId", "appliedPricingRuleIds",
   ] as const;
   const sameVendorVal = (a: unknown, b: unknown) => {
@@ -1084,7 +1094,10 @@ export function AddQualifiedVendorModal({
       const cur = configById[id] as Record<string, unknown> | undefined;
       if (cur) {
         for (const k of VENDOR_CONFIG_DIFF_KEYS) {
-          if (!sameVendorVal(cur[k], base[k])) keys.add(k);
+          // A vendor with no rate type saved is on the default (mid-market).
+          if (k === "rateType") {
+            if ((cur[k] ?? DEFAULT_RATE_TYPE) !== (base[k] ?? DEFAULT_RATE_TYPE)) keys.add(k);
+          } else if (!sameVendorVal(cur[k], base[k])) keys.add(k);
         }
       }
       const o = existingPriorityById[id];
@@ -1111,7 +1124,10 @@ export function AddQualifiedVendorModal({
       const qv = existingVendors.find((q) => q.id === id);
       if (!qv) return;
       const base = configFromQv(qv) as Record<string, unknown>;
-      updateVendorConfig(id, { [key]: base[key] } as Partial<QualifiedVendorConfig>);
+      // The typed rate belongs to the rate type: reverting the type restores both.
+      updateVendorConfig(id, (key === "rateType"
+        ? { rateType: base.rateType, exchangeRate: base.exchangeRate }
+        : { [key]: base[key] }) as Partial<QualifiedVendorConfig>);
     },
     [existingVendors], // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -1418,7 +1434,7 @@ export function AddQualifiedVendorModal({
           <CountryCell country={vendor.country} countryFlag={vendor.countryFlag} />
         </TableCell>
         <TableCell className="text-right tabular-nums" style={{ width: 170, minWidth: 170, maxWidth: 170 }}>
-          <CreditLimitCell creditLimit={vendor.creditLimit} />
+          <CreditLimitCell creditLimit={vendor.creditLimit} currency={vendor.currency} />
         </TableCell>
         <TableCell style={{ width: 240, minWidth: 240, maxWidth: 240, overflow: "hidden" }}>
           <CarrierVendorCell carrier={vendor.carrierVendor} />
@@ -1509,7 +1525,7 @@ export function AddQualifiedVendorModal({
         </TableCell>
         <TableCell className="text-right" style={{ width: 150, minWidth: 150 }}>
           <span className="text-sm tabular-nums text-foreground">
-            {qv.pricePerUnit > 0 ? `${qv.currency}${qv.pricePerUnit.toFixed(2)}` : "—"}
+            {qv.pricePerUnit > 0 ? formatMoney(qv.pricePerUnit, qv.currency) : "—"}
           </span>
         </TableCell>
         {onRemove && (
@@ -1581,6 +1597,17 @@ export function AddQualifiedVendorModal({
                           {editVendor.partnerGroup}
                         </span>
                       )}
+                      {(() => {
+                        const ecfg = configById[editVendor.id];
+                        const efx = vendorRate(editVendor.currency, { rateType: ecfg?.rateType, exchangeRate: ecfg?.exchangeRate });
+                        return (
+                          <VendorCurrencyChip
+                            fx={efx}
+                            rateType={efx.rateType}
+                            onRateTypeChange={(t) => updateVendorConfig(editVendor.id, { rateType: t, exchangeRate: undefined })}
+                          />
+                        );
+                      })()}
                     </div>
                     <div className="flex items-center gap-2 flex-wrap mt-1">
                       <p className="text-[11.5px] sm:text-[12px] text-slate-500 truncate">
@@ -1796,7 +1823,7 @@ export function AddQualifiedVendorModal({
                       <TableHead className="!pl-4" style={{ width: 260, minWidth: 260, maxWidth: 260 }}>Partner Locations</TableHead>
                       <TableHead className="!pl-4" style={{ width: 280, minWidth: 280, maxWidth: 280 }}>Points of Contact</TableHead>
                       <TableHead className="!pl-4" style={{ width: 200, minWidth: 200, maxWidth: 200 }}>Country</TableHead>
-                      <TableHead className="text-right !pr-4" style={{ width: 170, minWidth: 170, maxWidth: 170 }}>Credit Limit ($)</TableHead>
+                      <TableHead className="text-right !pr-4" style={{ width: 170, minWidth: 170, maxWidth: 170 }}>Credit Limit</TableHead>
                       <TableHead className="!pl-4" style={{ width: 240, minWidth: 240, maxWidth: 240 }}>Carrier (Vendor)</TableHead>
                       <TableHead
                         className="sticky right-0 z-20 bg-[#f8fafc] text-right !pr-4"
@@ -1893,14 +1920,14 @@ export function AddQualifiedVendorModal({
                 ) : null;
               const draftVendor =
                 editMode && editVendor
-                  ? ({ id: editVendor.id, name: editVendor.vendorName, location: editVendor.location, partnerGroup: editVendor.partnerGroup, partnerLocations: editVendor.partnerLocations } as AvailableVendor)
+                  ? ({ id: editVendor.id, name: editVendor.vendorName, location: editVendor.location, partnerGroup: editVendor.partnerGroup, partnerLocations: editVendor.partnerLocations, currency: editVendor.currency } as AvailableVendor)
                   : AVAILABLE_VENDORS.find((v) => v.id === focusedKey) || null;
               const focusedQv = existingVendors.find((q) => q.id === focusedKey) || null;
               const focused: AvailableVendor | null =
                 draftVendor && draftVendor.id === focusedKey
                   ? draftVendor
                   : focusedQv
-                    ? ({ id: focusedQv.id, name: focusedQv.vendorName, location: focusedQv.location, partnerGroup: focusedQv.partnerGroup, partnerLocations: focusedQv.partnerLocations } as AvailableVendor)
+                    ? ({ id: focusedQv.id, name: focusedQv.vendorName, location: focusedQv.location, partnerGroup: focusedQv.partnerGroup, partnerLocations: focusedQv.partnerLocations, currency: focusedQv.currency } as AvailableVendor)
                     : null;
               return (
                 <div className="flex-1 min-h-0 overflow-hidden bg-[#F7F9FC] flex flex-col">
@@ -2001,6 +2028,11 @@ export function AddQualifiedVendorModal({
                             (focusedQv ? configFromQv(focusedQv) : makeDefaultConfig());
                           const shippingMethodIds = cfg.shippingMethodIds || [];
                           const appliedRuleIds = cfg.appliedPricingRuleIds || [];
+                          /* The vendor quotes in its partner's currency; its rate to base
+                             (mid-market, or corporate) is shared by every selling unit. */
+                          const vfx = vendorRate(v.currency ?? vendorCurrencyFor(v.country ?? v.location), { rateType: cfg.rateType, exchangeRate: cfg.exchangeRate });
+                          const setVendorRateType = (t: "mid" | "corporate") => updateVendorConfig(v.id, { rateType: t, exchangeRate: undefined });
+                          const setVendorRate = (r: string | null) => updateVendorConfig(v.id, { exchangeRate: r ?? undefined });
                           // Priority for the header pill: densified display tier of the
                           // focused card + how many tiers exist (mirrors the left rail).
                           const focusedCard = roster.cards.find((c) => c.key === focusedKey);
@@ -2032,6 +2064,8 @@ export function AddQualifiedVendorModal({
                                             {v.partnerGroup}
                                           </span>
                                         )}
+                                        <VendorCurrencyChip fx={vfx} rateType={vfx.rateType} onRateTypeChange={setVendorRateType} />
+                                        {renderFieldTag("rateType")}
                                         {/* Priority: view + change inline (mirrors the left rail). */}
                                         <Popover open={headerPriorityOpen} onOpenChange={setHeaderPriorityOpen}>
                                           <PopoverTrigger asChild>
@@ -2283,7 +2317,7 @@ export function AddQualifiedVendorModal({
                                                                   {renderFieldTag("pricePerUnit")}
                                                                 </label>
                                                                 <div className="flex items-stretch rounded-lg border border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20 overflow-hidden bg-white">
-                                                                  <span className="inline-flex items-center justify-center w-9 text-[12px] text-slate-400 bg-[#FAFBFC] border-r border-border" style={{ fontWeight: 500 }}>$</span>
+                                                                  <span className="inline-flex items-center justify-center min-w-9 px-1.5 text-[12px] text-slate-400 bg-[#FAFBFC] border-r border-border" style={{ fontWeight: 500 }}>{pricePrefix(vfx.currency)}</span>
                                                                   <Input
                                                                     inputMode="decimal"
                                                                     value={cfg.pricePerUnit}
@@ -2296,6 +2330,16 @@ export function AddQualifiedVendorModal({
                                                                     value={cfg.uom}
                                                                     onChange={(val) => updateVendorConfig(v.id, { uom: val })}
                                                                     disabledIds={new Set(additionalPrices.map((t) => t.uom))}
+                                                                  />
+                                                                </div>
+                                                                <div className="mt-2">
+                                                                  <VendorPriceFields
+                                                                    key={`${v.id}:p`}
+                                                                    price={cfg.pricePerUnit}
+                                                                    onPriceChange={(p) => updateVendorConfig(v.id, { pricePerUnit: p })}
+                                                                    fx={vfx}
+                                                                    onRateChange={setVendorRate}
+                                                                    rateTag={renderFieldTag("exchangeRate")}
                                                                   />
                                                                 </div>
                                                               </div>
@@ -2406,7 +2450,7 @@ export function AddQualifiedVendorModal({
                                                                   <FieldInfo content="The unit price this vendor charges for this item, expressed in the chosen unit of measure. The price does NOT convert between pack sizes — each pack carries its own rate. Quantities still convert at PO time." />
                                                                 </label>
                                                                 <div className="flex items-stretch rounded-lg border border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20 overflow-hidden bg-white">
-                                                                  <span className="inline-flex items-center justify-center w-9 text-[12px] text-slate-400 bg-[#FAFBFC] border-r border-border" style={{ fontWeight: 500 }}>$</span>
+                                                                  <span className="inline-flex items-center justify-center min-w-9 px-1.5 text-[12px] text-slate-400 bg-[#FAFBFC] border-r border-border" style={{ fontWeight: 500 }}>{pricePrefix(vfx.currency)}</span>
                                                                   <Input
                                                                     inputMode="decimal"
                                                                     value={tier.price}
@@ -2419,6 +2463,15 @@ export function AddQualifiedVendorModal({
                                                                     value={tier.uom}
                                                                     onChange={(val) => patchTier({ uom: val })}
                                                                     disabledIds={new Set([cfg.uom, ...additionalPrices.filter((_, j) => j !== ti).map((t) => t.uom)])}
+                                                                  />
+                                                                </div>
+                                                                <div className="mt-2">
+                                                                  <VendorPriceFields
+                                                                    key={`${v.id}:${ti}`}
+                                                                    price={tier.price}
+                                                                    onPriceChange={(p) => patchTier({ price: p })}
+                                                                    fx={vfx}
+                                                                    onRateChange={setVendorRate}
                                                                   />
                                                                 </div>
                                                               </div>
@@ -3328,6 +3381,7 @@ export function AddQualifiedVendorModal({
             ? { name: "", category: "discount", mode: "create" }
             : null}
         scopeName={ruleSession ? vendorNameById(ruleSession.vendorId) : "this vendor"}
+        currency={ruleSession ? vendorCurrencyById(ruleSession.vendorId) : undefined}
         onClose={() => setRuleSession(null)}
         onSaved={handleRuleSaved}
       />

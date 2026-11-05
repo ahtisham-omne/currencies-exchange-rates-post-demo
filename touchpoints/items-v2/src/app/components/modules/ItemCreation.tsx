@@ -62,6 +62,8 @@ import {
   TabsTrigger,
 } from "../ui/tabs";
 import { cn } from '../../../lib/utils';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { basePrefix } from '@/app/currency/itemMoney';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -780,8 +782,9 @@ export function ItemCreation({ onCancel, onSave }: ItemCreationProps) {
                                      <Label className="text-base font-semibold">Base Price</Label>
                                      <div className="flex gap-4 p-8 bg-card rounded-xl border border-border shadow-sm">
                                          <div className="relative flex-1">
-                                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold text-xl">$</span>
-                                             <Input className="h-16 pl-10 text-2xl font-bold bg-background shadow-sm" placeholder="0.00" value={advancedConfig.customPrice} onChange={(e) => updateConfig('customPrice', e.target.value)} />
+                                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold text-xl">{basePrefix()}</span>
+                                             <Input className="h-16 pl-10 pr-16 text-2xl font-bold bg-background shadow-sm" placeholder="0.00" aria-label={`Base price in ${BASE_CURRENCY}`} value={advancedConfig.customPrice} onChange={(e) => updateConfig('customPrice', e.target.value)} />
+                                             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">{BASE_CURRENCY}</span>
                                          </div>
                                          <Select value={advancedConfig.priceUom} onValueChange={(v) => updateConfig('priceUom', v)}>
                                              <SelectTrigger className="h-16 w-[140px] bg-background shadow-sm text-lg"><SelectValue /></SelectTrigger>
@@ -791,7 +794,7 @@ export function ItemCreation({ onCancel, onSave }: ItemCreationProps) {
                                              </SelectContent>
                                          </Select>
                                      </div>
-                                     <p className="text-sm text-muted-foreground">This is the default list price. Advanced pricing rules may override this value.</p>
+                                     <p className="text-sm text-muted-foreground">This is the default list price, in {BASE_CURRENCY}, the base currency. Advanced pricing rules may override this value.</p>
                                  </div>
                              </div>
                          </TabsContent>

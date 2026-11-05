@@ -76,6 +76,8 @@ import {
 } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
+import { moneyPrefix } from "@/app/currency/money";
+import { RULE_CURRENCY, RuleAmountPreview } from "@/app/components/currency/RuleAmountPreview";
 import {
   PRICING_RULE_PRESETS,
   type PricingRulePreset,
@@ -225,7 +227,7 @@ function PctAmountToggle({
   isFixed,
   onChange,
   percentTooltip = "Enter as a percentage of the base value.",
-  amountTooltip = "Enter as a fixed dollar amount.",
+  amountTooltip = `Enter as a fixed amount in ${RULE_CURRENCY}.`,
   className = "",
 }: {
   isFixed: boolean;
@@ -546,6 +548,9 @@ export interface PricingRuleCreateModalProps {
   } | null;
   /** Vendor name — substituted wherever the reference said "this partner". */
   scopeName: string;
+  /** The vendor's currency. Fixed amounts are written in USD (RULE_CURRENCY)
+   *  and show what they are in it today. */
+  currency?: string;
   /** Fire on ANY close: X, Cancel, Discard, backdrop, and after a save. */
   onClose: () => void;
   /** Fire on Save. */
@@ -565,6 +570,7 @@ export function PricingRuleCreateModal({
   open,
   prefill,
   scopeName,
+  currency,
   onClose,
   onSaved,
 }: PricingRuleCreateModalProps) {
@@ -1016,7 +1022,7 @@ export function PricingRuleCreateModal({
                                 <p className="text-slate-500">Measure thresholds by units ordered or order value.</p>
                                 <div className="mt-2 px-2.5 py-2 rounded-lg bg-slate-50 border border-muted">
                                   <p className="text-[10px] text-slate-400 tracking-wide" style={{ fontWeight: 600 }}>EXAMPLE</p>
-                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over $10K.</p>
+                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over {moneyPrefix(RULE_CURRENCY)}10K ({RULE_CURRENCY}).</p>
                                 </div>
                               </TooltipContent>
                             </Tooltip>
@@ -1150,18 +1156,18 @@ export function PricingRuleCreateModal({
                               <div>
                                 <div className="flex items-center justify-between mb-1.5">
                                   <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>
-                                    {isDis ? "Discount" : "Premium"} {tier.fixRate ? "Amount" : "Rate"}
+                                    {isDis ? "Discount" : "Premium"} {tier.fixRate ? `Amount (${RULE_CURRENCY})` : "Rate"}
                                   </label>
                                   <PctAmountToggle
                                     isFixed={tier.fixRate}
                                     onChange={(fixed) => updateTier(idx, { fixRate: fixed })}
                                     percentTooltip={`${isDis ? "Discount" : "Premium"} applied as a percentage of the line value.`}
-                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed dollar amount.`}
+                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in ${RULE_CURRENCY}.`}
                                   />
                                 </div>
                                 <div className="relative">
                                   {tier.fixRate && (
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" title={RULE_CURRENCY}>{moneyPrefix(RULE_CURRENCY)}</span>
                                   )}
                                   <Input
                                     value={tier.discount}
@@ -1173,6 +1179,7 @@ export function PricingRuleCreateModal({
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                                   )}
                                 </div>
+                                {tier.fixRate && <RuleAmountPreview raw={tier.discount} to={currency} />}
                               </div>
 
                               {/* Quantity limits toggle */}
@@ -1188,7 +1195,7 @@ export function PricingRuleCreateModal({
                                   <span onClick={(e) => e.stopPropagation()}>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "Restricts this tier to orders within a specific quantity range. When enabled, the tier only applies when the order quantity falls between Min and Max."
-                                      : "Restricts this tier to orders within a specific dollar-value range. When enabled, the tier only applies when the order total falls between Min and Max."}</InfoTooltip>
+                                      : `Restricts this tier to orders within a specific order-value range, in ${RULE_CURRENCY}.` + " When enabled, the tier only applies when the order total falls between Min and Max."}</InfoTooltip>
                                   </span>
                                 </label>
                               </div>
@@ -1199,14 +1206,14 @@ export function PricingRuleCreateModal({
                               <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-muted">
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
-                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Min Qty" : "Min Order Value"}</label>
+                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Min Qty" : `Min Order Value (${RULE_CURRENCY})`}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The smallest order quantity at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."
-                                      : "The smallest order value (in $) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
+                                      : `The smallest order value (in ${RULE_CURRENCY}) at which` + " this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" title={RULE_CURRENCY}>{moneyPrefix(RULE_CURRENCY)}</span>
                                     )}
                                     <Input
                                       value={tier.minQty}
@@ -1218,14 +1225,14 @@ export function PricingRuleCreateModal({
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
-                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Max Qty" : "Max Order Value"}</label>
+                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Max Qty" : `Max Order Value (${RULE_CURRENCY})`}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The largest order quantity this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."
-                                      : "The largest order value (in $) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
+                                      : `The largest order value (in ${RULE_CURRENCY}) this tier covers.` + " Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" title={RULE_CURRENCY}>{moneyPrefix(RULE_CURRENCY)}</span>
                                     )}
                                     <Input
                                       value={tier.maxQty}
@@ -1265,7 +1272,7 @@ export function PricingRuleCreateModal({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] text-slate-700 truncate" style={{ fontWeight: 600 }}>{createName || "Untitled Rule"}</p>
-                      <p className="text-[11px] text-slate-500 truncate">{createCategory === "discount" ? "Discount" : "Premium"} · {createBasis === "volume" ? "Volume-Based" : "Value-Based"} · {createTiers.length} tier{createTiers.length !== 1 ? "s" : ""}{createTiers[0]?.discount ? ` · ${createTiers[0].discount}${createTiers[0].fixRate ? "$" : "%"}` : ""}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{createCategory === "discount" ? "Discount" : "Premium"} · {createBasis === "volume" ? "Volume-Based" : "Value-Based"} · {createTiers.length} tier{createTiers.length !== 1 ? "s" : ""}{createTiers[0]?.discount ? (createTiers[0].fixRate ? ` · ${moneyPrefix(RULE_CURRENCY)}${createTiers[0].discount} ${RULE_CURRENCY}` : ` · ${createTiers[0].discount}%`) : ""}</p>
                     </div>
                     <button
                       onClick={() => setCreateStep(1)}

@@ -42,6 +42,7 @@ import { RemoveVendorDialog } from "./RemoveVendorDialog";
 import { ColumnSelector, ColumnSelectorTrigger } from "../../items-v3/ColumnSelector";
 import { usePurchasing } from "../../../context/PurchasingContext";
 import type { QualifiedVendor } from "../../../context/purchasing/types";
+import { priceInBase, qvRate } from "../../../currency/vendorFx";
 
 export interface QualifiedVendorsPanelProps {
   itemId: string;
@@ -75,10 +76,11 @@ function sortValue(v: QualifiedVendor, key: string): number | string {
     case "partner": return v.vendorName.toLowerCase();
     case "location": return v.location.toLowerCase();
     case "country": return (v.country ?? "").toLowerCase();
-    case "creditLimit": return v.creditLimit ?? -1;
-    case "pricePerUnit": return v.pricePerUnit;
-    case "lastPoPricePerUnit": return v.lastPOPricePerUnit;
-    case "lastPoTotalAmount": return v.lastPOTotalAmount;
+    // Vendors quote in different currencies: money sorts on its base value.
+    case "creditLimit": return v.creditLimit != null ? priceInBase(v.creditLimit, qvRate(v).rate) : -1;
+    case "pricePerUnit": return priceInBase(v.pricePerUnit, qvRate(v).rate);
+    case "lastPoPricePerUnit": return priceInBase(v.lastPOPricePerUnit, qvRate(v).rate);
+    case "lastPoTotalAmount": return priceInBase(v.lastPOTotalAmount, qvRate(v).rate);
     case "minOrderQty": return v.minOrderQty ?? -1;
     case "maxOrderQty": return v.maxOrderQty ?? -1;
     case "multiples": return v.multiples ?? -1;

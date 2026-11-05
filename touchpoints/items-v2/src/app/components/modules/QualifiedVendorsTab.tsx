@@ -47,6 +47,13 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { AddQualifiedVendorDialog } from './AddQualifiedVendorDialog';
+import { Money } from '../currency/Money';
+import { BASE_CURRENCY } from '../../currency/currencies';
+import { formatMoney } from '../../currency/money';
+import { priceInBase, vendorRate } from '../../currency/vendorFx';
+
+/* These sample vendors carry no location; the design prices them in $ (USD). */
+const TAB_VENDOR_CURRENCY = 'USD';
 
 // Pricing Rules Data
 const PRICING_RULES = [
@@ -285,11 +292,12 @@ export function QualifiedVendorsTab({ partNumber }: QualifiedVendorsTabProps) {
                     
                     {/* Price per UOM */}
                     <TableCell className="text-right">
+                      {/* The vendor's currency, the base equivalent underneath (spec 4.1). */}
                       <div className="flex flex-col items-end gap-0.5">
                         <span className="text-sm font-semibold text-foreground">
-                          ${vendor.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <Money value={vendor.price} currency={TAB_VENDOR_CURRENCY} fx={vendorRate(TAB_VENDOR_CURRENCY)} />
                         </span>
-                        <span className="text-[10px] text-muted-foreground">per {vendor.uom}</span>
+                        <span className="text-[10px] text-muted-foreground">per {vendor.uom} · ≈ {formatMoney(priceInBase(vendor.price, vendorRate(TAB_VENDOR_CURRENCY).rate), BASE_CURRENCY)}</span>
                       </div>
                     </TableCell>
                     

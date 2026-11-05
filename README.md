@@ -50,3 +50,12 @@ Purchase Orders is the redesigned app from [`Purchase-Order`](https://github.com
 - where each is defined;
 - how the earlier touchpoint maps onto it;
 - how to pull later design changes.
+
+### Items
+
+Items is the redesigned app from [`nimble-palette`](https://github.com/ahtisham-omne/nimble-palette), added as a squashed subtree. [docs/items-currency-touchpoints.md](docs/items-currency-touchpoints.md) records:
+
+- its currency and exchange-rate touchpoints;
+- where each is defined;
+- how the earlier touchpoint maps onto it;
+- how to pull later design changes.

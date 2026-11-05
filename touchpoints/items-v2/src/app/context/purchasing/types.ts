@@ -5,6 +5,7 @@
  * (`VendorAssociation`) and `purchase-orders-panel.tsx` (`PurchaseOrderRow`,
  * `POStatus`).
  */
+import type { RateType } from "../../currency/rates";
 
 /* ================================================================
    Qualified Vendor (mirrors reference VendorAssociation)
@@ -18,6 +19,9 @@ export interface QualifiedVendor {
   vendorId: string;
   location: string;
   pricePerUnit: number;
+  /** The vendor's currency (ISO 4217), the partner's default (spec 4.2).
+   *  Every vendor amount on this row is in it: prices, credit limit, PO
+   *  history. Item prices stay in the base currency. */
   currency: string;
   acceptedDeviation: number;
   vendorUOM: string;
@@ -126,6 +130,11 @@ export interface QualifiedVendorConfig {
   defaultShippingMethodId?: string;
   /** Pricing-rule ids attached to this qualified-vendor row. */
   appliedPricingRuleIds?: string[];
+  /** The rate the vendor's prices convert to base at (spec 4.1, 3.5):
+   *  today's mid-market rate (read-only) or the corporate rate. */
+  rateType?: RateType;
+  /** A corporate rate entered for this vendor (base per 1 unit). */
+  exchangeRate?: string;
 }
 
 /** Vendor point-of-contact, used in Partner Detail modal contacts tab. */
@@ -222,6 +231,9 @@ export interface AvailableVendor {
   country?: string;
   countryFlag?: string;
   carrierVendor?: string;
+  /** The partner's default currency (spec 4.2). */
+  currency?: string;
+  /** In the partner's currency. */
   creditLimit?: number;
   contacts?: VendorContact[];
 }

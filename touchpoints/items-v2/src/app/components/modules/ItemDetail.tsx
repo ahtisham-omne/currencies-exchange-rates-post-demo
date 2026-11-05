@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ItemOverviewTab } from './itemDetail/ItemOverviewTab';
+import { baseCompact, baseMoney } from '@/app/currency/itemMoney';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { 
   ArrowLeft, 
   ArrowRight,
@@ -1057,14 +1059,15 @@ const ActivityWidget = () => {
 }
 
 const TopCustomersWidget = () => {
-    // Top Customers — Partners list-widget idiom: name + $ + inline progress bar.
+    // Top Customers — Partners list-widget idiom: name + amount + inline progress bar.
+    // Sales to a customer add up in the base currency (currency/itemMoney.ts).
     const PIE = ["hsl(var(--primary))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
     const rows = [
-      { name: "Acme Corp",     amount: "$45,230", share: 32 },
-      { name: "Globex Inc",    amount: "$28,400", share: 21 },
-      { name: "Soylent Corp",  amount: "$15,100", share: 12 },
-      { name: "Initech",       amount: "$12,050", share: 9 },
-      { name: "Umbrella Corp", amount: "$8,200",  share: 6 },
+      { name: "Acme Corp",     amount: baseCompact(45230), share: 32 },
+      { name: "Globex Inc",    amount: baseCompact(28400), share: 21 },
+      { name: "Soylent Corp",  amount: baseCompact(15100), share: 12 },
+      { name: "Initech",       amount: baseCompact(12050), share: 9 },
+      { name: "Umbrella Corp", amount: baseCompact(8200),  share: 6 },
     ];
     return (
       <div className="space-y-2.5">
@@ -1119,7 +1122,7 @@ const PrimaryVendorWidget = () => {
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-lg border border-border bg-slate-50/60 p-2.5">
             <div className="text-[10px] text-muted-foreground uppercase tracking-wide" style={{ fontWeight: 500 }}>Spend YTD</div>
-            <div className="text-[15px] text-foreground mt-0.5" style={{ fontWeight: 700 }}>$124K</div>
+            <div className="text-[15px] text-foreground mt-0.5" style={{ fontWeight: 700 }}>{baseCompact(124000)}</div>
             <div className="flex items-center gap-1 mt-0.5 text-[10px] text-success" style={{ fontWeight: 500 }}>
               <TrendingUp size={10} /> +12%
             </div>
@@ -1436,10 +1439,11 @@ const TRANSACTION_COLUMNS: ColumnConfig[] = [
     { key: 'processedQty',      label: 'Processed Qty (EA)' },
     { key: 'onHandBefore',      label: 'On-Hand Before (EA)' },
     { key: 'onHandAfter',       label: 'On-Hand After (EA)' },
-    { key: 'price',             label: 'Price' },
-    { key: 'valuationBefore',   label: 'Valuation Before' },
-    { key: 'valuationAfter',    label: 'Valuation After' },
-    { key: 'changeInValuation', label: 'Change in Valuation' },
+    /* Item amounts are in the base currency, labelled like the (EA) quantities. */
+    { key: 'price',             label: `Price (${BASE_CURRENCY})` },
+    { key: 'valuationBefore',   label: `Valuation Before (${BASE_CURRENCY})` },
+    { key: 'valuationAfter',    label: `Valuation After (${BASE_CURRENCY})` },
+    { key: 'changeInValuation', label: `Change in Valuation (${BASE_CURRENCY})` },
     { key: 'location',          label: 'Associated Location(s)' },
     { key: 'user',              label: 'Created By' },
 ];
@@ -1455,9 +1459,9 @@ const TRANSACTION_COLUMN_WIDTHS: Record<string, number> = {
     onHandBefore:      170,
     onHandAfter:       170,
     price:             120,
-    valuationBefore:   170,
-    valuationAfter:    170,
-    changeInValuation: 160,
+    valuationBefore:   200,
+    valuationAfter:    200,
+    changeInValuation: 210,
     location:          200,
     user:              180,
 };
@@ -1505,11 +1509,10 @@ function txMatchesSearch(row: TxRow, q: string): boolean {
     );
 }
 
-/* Currency in our table idiom ($1,234.56 / -$180.00 / "-" for null). */
+/* Valuations are in the base currency (₨2,867,617.50 / −₨50,157.00 / "-" for null). */
 function txFmtCurrency(v: number | null | undefined): string {
     if (v === null || v === undefined) return '-';
-    const neg = v < 0;
-    return `${neg ? '-' : ''}$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return baseMoney(v);
 }
 
 /* Transaction-type accent within our badge palette (subtle). */
@@ -1660,7 +1663,7 @@ function TransactionsPanel({ controlType }: { controlType?: string }) {
                 );
             }
             case 'price':
-                return <span className={`${cellTextSize} font-medium text-foreground tabular-nums`}>{row.price ? `$${row.price.toFixed(2)}` : '-'}</span>;
+                return <span className={`${cellTextSize} font-medium text-foreground tabular-nums`}>{row.price ? baseMoney(row.price) : '-'}</span>;
             case 'valuationBefore':
                 return <span className={`${cellTextSize} text-muted-foreground tabular-nums`}>{txFmtCurrency(row.valuationBefore)}</span>;
             case 'valuationAfter':
@@ -2135,7 +2138,7 @@ export function ItemDetail({ item: initialItem, onBack, onEdit, scrollContainerR
                         <span className="text-3xl font-semibold text-[var(--foreground)] tracking-tight">3</span>
                         <span className="text-xs font-medium text-[var(--primary)] flex items-center gap-1 bg-[var(--primary)]/10 px-2 py-1 rounded-md">Active</span>
                     </div>
-                    <p className="text-xs text-[var(--muted-foreground)] mt-2">Value: $12,500</p>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-2">Value: {baseCompact(12500)}</p>
                 </CardContent>
             </Card>
           )
@@ -2174,12 +2177,12 @@ export function ItemDetail({ item: initialItem, onBack, onEdit, scrollContainerR
                 </CardHeader>
                 <CardContent className="px-4 pb-4 pt-0">
                     <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-3xl font-semibold text-[var(--foreground)] tracking-tight">$24.50</span>
+                        <span className="text-3xl font-semibold text-[var(--foreground)] tracking-tight">{baseMoney(24.5)}</span>
                         <span className="text-xs font-medium text-[var(--destructive)] flex items-center gap-1 bg-[var(--destructive)]/10 px-2 py-1 rounded-md">
                             <ArrowUpRight size={12} /> +2%
                         </span>
                     </div>
-                    <p className="text-xs text-[var(--muted-foreground)] mt-2">vs Avg $24.00</p>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-2">vs Avg {baseMoney(24)}</p>
                 </CardContent>
             </Card>
           )

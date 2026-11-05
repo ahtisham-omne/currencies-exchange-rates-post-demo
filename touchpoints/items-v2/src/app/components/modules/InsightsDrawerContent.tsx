@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Check, TrendingUp, BarChart3 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import { baseMoney } from '@/app/currency/itemMoney';
 
 interface Widget {
     id: string;
@@ -141,7 +142,7 @@ export const InsightsDrawerContent: React.FC<InsightsDrawerContentProps> = ({
         switch (widgetId) {
             case 'kpi-open-po': return '3';
             case 'kpi-open-so': return '5';
-            case 'kpi-last-price': return '$24.50';
+            case 'kpi-last-price': return baseMoney(24.5);
             case 'kpi-lead-time': return '14';
             default: return '';
         }

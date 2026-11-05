@@ -27,6 +27,7 @@ import {
   Target,
   type LucideIcon,
 } from "lucide-react";
+import { baseCompact, baseMoney, baseWhole } from "@/app/currency/itemMoney";
 
 export type ItemDashKpiCategory = "Inventory" | "Financial" | "Operational";
 
@@ -54,7 +55,7 @@ export const ITEM_DASH_KPI_DEFS: ItemDashKpiDef[] = [
   { key: "last_purchase",    label: "Last Purchase Price", category: "Financial", iconName: "DollarSign",  subtitle: "Most recent receipt",    tooltip: "Unit price on the most recently received PO line. Tracked vs avg cost to surface price drift." },
   { key: "last_sale_price",  label: "Last Sale Price",   category: "Financial",   iconName: "DollarSign",  subtitle: "Most recent SO",         tooltip: "Net unit price on the most recent shipped sales order line for this item." },
   // ── Operational ──
-  { key: "open_po",          label: "Open Purchase Orders", category: "Operational", iconName: "ShoppingCart", subtitle: "Active POs",          tooltip: "Open purchase orders containing this item. 3 Active · Value $12,500." },
+  { key: "open_po",          label: "Open Purchase Orders", category: "Operational", iconName: "ShoppingCart", subtitle: "Active POs",          tooltip: `Open purchase orders containing this item. 3 Active · Value ${baseCompact(12500)}.` },
   { key: "open_so",          label: "Open Sales Orders", category: "Operational", iconName: "Users",       subtitle: "Active SOs",             tooltip: "Open sales orders containing this item. 5 active · Total demand 450 EA." },
   { key: "avg_lead_time",    label: "Avg Lead Time",     category: "Operational", iconName: "Clock",       subtitle: "Vendor → receipt",       tooltip: "Average days from PO release to receipt across the trailing 90 days. Standard target 15 days." },
   { key: "locations",        label: "Locations",         category: "Operational", iconName: "MapPin",      subtitle: "Stocking sites",         tooltip: "Number of warehouse locations currently stocking this item." },
@@ -73,8 +74,9 @@ export const DEFAULT_ITEM_DASH_KPIS: string[] = [
   "avg_lead_time",
 ];
 
-const formatMoney = (v: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
+/* Item amounts are in the base currency (see currency/itemMoney.ts):
+   whole amounts, as the design shows them. */
+const formatMoney = baseWhole;
 
 /** Compute a value string for an item KPI. Mocked where source-of-truth
  *  data isn't yet wired in — same posture as the legacy widgets. */
@@ -94,8 +96,8 @@ export function computeItemDashKpiValue(
     case "stock_health":    return { value: "Healthy", change: "98%", changeColor: "hsl(var(--success))" };
     case "avg_cost":        return { value: formatMoney(avgCost) };
     case "total_value":     return { value: formatMoney(totalValue) };
-    case "last_purchase":   return { value: "$24.50", change: "↗ 2%", changeColor: "hsl(var(--destructive))" };
-    case "last_sale_price": return { value: "$32.00" };
+    case "last_purchase":   return { value: baseMoney(24.5), change: "↗ 2%", changeColor: "hsl(var(--destructive))" };
+    case "last_sale_price": return { value: baseMoney(32) };
     case "open_po":         return { value: "3" };
     case "open_so":         return { value: "5", change: "High", changeColor: "hsl(var(--primary))" };
     case "avg_lead_time":   return { value: "14 Days", change: "Target", changeColor: "hsl(var(--success))" };

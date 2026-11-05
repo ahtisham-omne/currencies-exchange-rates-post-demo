@@ -14,6 +14,8 @@ import {
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { RadioOption } from './configAtoms';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { basePrefix } from '@/app/currency/itemMoney';
 import { ConfigCard, ConfigSelect, UOMS } from './CreateItemModal';
 import { SelectCustomersModal } from './SelectCustomersModal';
 import { AVAILABLE_VENDORS } from '../../context/purchasing/mockData';
@@ -132,7 +134,7 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
                 {pricing.map((row: any) => (
                   <div key={row.id} className="flex items-center gap-2">
                     <div className="flex items-center flex-1 min-w-0 bg-white border border-border rounded-lg px-3" style={{ height: 40 }}>
-                      <span style={{ fontSize: 13, color: '#94A3B8', fontFamily: FONT, marginRight: 6 }}>$</span>
+                      <span style={{ fontSize: 13, color: '#94A3B8', fontFamily: FONT, marginRight: 6 }}>{basePrefix()}</span>
                       <input
                         type="number"
                         step="0.01"
@@ -141,7 +143,10 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
                         className="flex-1 bg-transparent outline-none"
                         style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", color: '#0F172A' }}
                         placeholder="0.00"
+                        aria-label={`Price in ${BASE_CURRENCY}`}
                       />
+                      {/* Item prices stay in the base currency (spec 4.1). */}
+                      <span style={{ fontSize: 11, color: '#94A3B8', fontFamily: FONT, marginLeft: 6 }}>{BASE_CURRENCY}</span>
                     </div>
                     <div style={{ width: 140 }}>
                       <ConfigSelect

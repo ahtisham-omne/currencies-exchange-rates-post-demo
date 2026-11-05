@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { toCategoryCode } from '@/app/lib/categoryCode';
+import { baseCompact } from '@/app/currency/itemMoney';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -608,7 +609,7 @@ export function ItemsLibrary({ onBack, onCreate, onViewDetail, items, onItemCrea
               <StatsCard title="Total Items" value={totalItems.toLocaleString()} subtext="+12% from last month" icon={Package} />
               <StatsCard title="Low Stock Alerts" value={items.filter(i => i.status === 'Low Stock').length.toString()} subtext="Requires attention" icon={AlertTriangle} />
               <StatsCard title="Out of Stock" value={items.filter(i => i.status === 'Out of Stock').length.toString()} subtext="Restock ordered" icon={Archive} />
-              <StatsCard title="Total Value" value="$1.2M" subtext="Inventory valuation" icon={ArrowUpRight} />
+              <StatsCard title="Total Value" value={baseCompact(1_200_000)} subtext="Inventory valuation" icon={ArrowUpRight} />
           </div>
       </div>
 

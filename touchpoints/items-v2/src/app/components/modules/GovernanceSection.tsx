@@ -30,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import { Popover, PopoverTrigger, PopoverContent } from '../ui/popover';
 import { MOCK_USERS } from './CreateItemModal';
 import { InitialAvatar } from '../items-v3/InitialAvatar';
+import { basePrefix } from '@/app/currency/itemMoney';
 import type { AdvancedConfig } from './ItemConfigurationMaster';
 import { ConfigEditContext, LockNotice } from './configAtoms';
 
@@ -110,11 +111,11 @@ const valuationCards = [
     desc: 'Average cost of all units',
     visual: (
       <div className="flex items-center gap-1.5 mt-1">
-        {['$10', '$12', '$11'].map(p => (
+        {[10, 12, 11].map(n => `${basePrefix()}${n}`).map(p => (
           <span key={p} className="inline-flex items-center justify-center rounded-md" style={{ width: 34, height: 26, fontSize: 10, fontWeight: 600, color: '#15803D', border: '1px solid #BBF7D0', backgroundColor: '#F0FDF4' }}>{p}</span>
         ))}
         <span style={{ fontSize: 13, color: 'var(--foreground)', opacity: 0.25 }}>→</span>
-        <span className="inline-flex items-center justify-center rounded-full" style={{ height: 26, paddingLeft: 10, paddingRight: 10, fontSize: 11, fontWeight: 700, color: 'white', backgroundColor: '#22C55E' }}>$11.00</span>
+        <span className="inline-flex items-center justify-center rounded-full" style={{ height: 26, paddingLeft: 10, paddingRight: 10, fontSize: 11, fontWeight: 700, color: 'white', backgroundColor: '#22C55E' }}>{basePrefix()}11.00</span>
       </div>
     ),
   },
