@@ -59,9 +59,12 @@ import { Input } from "./ui/input";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./ui/tooltip";
 import {
   evaluateRuleForLine,
+  type PricingRuleTier,
   type VendorPricingRule,
 } from "./poPricingRulesData";
 import type { POLineItem } from "./poStore";
+import { useRuleMoney } from "./currency/useRuleMoney";
+import { RULE_AMOUNT_CURRENCY } from "@/app/currency/poFx";
 
 /* ─── Seeded content for Notes / Attachments / Activity tabs ─────────
    Matches SO's PricingRulesLibrary PR_DUMMY_* pattern — small hand-
@@ -148,6 +151,7 @@ export function POPricingRuleDetailModal({
 }: POPricingRuleDetailModalProps) {
   const [tab, setTab] = useState<string>("overview");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const { currency, factor, money, tierRate, tierShort, tierConverted, tierText, tierBand, baseText } = useRuleMoney();
 
   if (!rule) return null;
   const isDis = rule.type === "discount";
@@ -156,10 +160,9 @@ export function POPricingRuleDetailModal({
     ? { text: "#047857", pillBg: "#ECFDF5", pillBorder: "#D1FAE5" }
     : { text: "#6D28D9", pillBg: "#F5F3FF", pillBorder: "#EDE9FE" };
 
-  /* Big % chip on the avatar — first tier's rate. */
-  const heroRate = rule.tiers[0]
-    ? `${rule.tiers[0].rate}${rule.tiers[0].unit === "%" ? "%" : ""}`
-    : "—";
+  /* Big % chip on the avatar — first tier's rate ("$15" for a flat one). */
+  const heroRate = rule.tiers[0] ? tierShort(rule.tiers[0]) : "—";
+  const hasFlatTier = rule.tiers.some((t) => t.unit !== "%");
 
   const tabs: Array<{ id: string; label: string; icon: React.ElementType; count?: number }> = [
     { id: "overview", label: "Overview", icon: FileText },
@@ -618,11 +621,21 @@ export function POPricingRuleDetailModal({
                               className="text-[12px] text-slate-900 tabular-nums"
                               style={{ fontWeight: 600 }}
                             >
-                              {tier.rate}
-                              {tier.unit === "%" ? "%" : ""}
+                              {tierRate(tier)}
+                              {tier.unit !== "%" && (
+                                <span className="text-slate-400" style={{ fontWeight: 500 }}>
+                                  {tierConverted(tier) ? ` (${tierConverted(tier)})` : ""} per unit
+                                </span>
+                              )}
                             </span>
                           </div>
                         ))}
+                        {/* Flat tiers are written in USD; say so when the PO isn't. */}
+                        {hasFlatTier && currency !== RULE_AMOUNT_CURRENCY && (
+                          <p className="text-[11px] text-slate-400 pt-0.5">
+                            Flat amounts are written in {RULE_AMOUNT_CURRENCY} and converted to this PO's currency ({currency}).
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -704,8 +717,6 @@ export function POPricingRuleDetailModal({
                       const otherCodes = rule.appliesToItemCodes.filter(
                         (c) => !poMatchedCodes.has(c),
                       );
-                      const fmt = (n: number) =>
-                        `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                       return (
                         <div className="space-y-4">
                           {poMatched.length > 0 && (
@@ -721,11 +732,15 @@ export function POPricingRuleDetailModal({
                               <div className="rounded-lg border border-[#E8ECF1] bg-white overflow-hidden">
                                 {poMatched.map((li, i) => {
                                   const effUnitPrice = li.unitPrice * (1 - li.discount / 100);
-                                  const evalRes = evaluateRuleForLine(rule, {
-                                    itemCode: li.itemNumber,
-                                    orderedQty: li.quantity,
-                                    unitPrice: effUnitPrice,
-                                  });
+                                  const evalRes = evaluateRuleForLine(
+                                    rule,
+                                    {
+                                      itemCode: li.itemNumber,
+                                      orderedQty: li.quantity,
+                                      unitPrice: effUnitPrice,
+                                    },
+                                    factor,
+                                  );
                                   const activeOnLine = activatedLineIds
                                     ? activatedLineIds.has(li.id)
                                     : true;
@@ -761,20 +776,28 @@ export function POPricingRuleDetailModal({
                                         <div className="text-[11px] text-slate-500 truncate">
                                           {li.description || li.descriptiveName}
                                         </div>
+                                        {/* qty × PPU, then the tier the line met and its
+                                            impact, with the impact in base terms too:
+                                            "Tier 25–49 units · 7% off · −€412.30 (≈ ₨123,540.00)". */}
                                         <div className="text-[10.5px] text-slate-400 mt-0.5 tabular-nums">
-                                          {li.quantity} × {fmt(effUnitPrice)}
-                                          {evalRes.applies && activeOnLine && (
-                                            <span
-                                              className="ml-2"
-                                              style={{ color: impactColor, fontWeight: 500 }}
-                                            >
-                                              {impactSign}{fmt(evalRes.amount)}
+                                          {li.quantity} × {money(effUnitPrice)}
+                                          {evalRes.applies && evalRes.tier && (
+                                            <span className={`ml-2 ${activeOnLine ? "" : "line-through"}`}>
+                                              <span className={activeOnLine ? "text-slate-500" : undefined}>
+                                                Tier {tierBand(evalRes.tier)} · {tierText(evalRes.tier)}{" "}
+                                                {isDis ? "off" : "premium"}
+                                                {evalRes.tier.unit !== "%" ? " per unit" : ""} ·{" "}
+                                              </span>
+                                              <span
+                                                style={activeOnLine ? { color: impactColor, fontWeight: 500 } : undefined}
+                                              >
+                                                {impactSign}{money(evalRes.amount)}
+                                              </span>
+                                              {baseText(evalRes.amount) && <span> ({baseText(evalRes.amount)})</span>}
                                             </span>
                                           )}
-                                          {evalRes.applies && !activeOnLine && (
-                                            <span className="ml-2 text-slate-400 line-through">
-                                              {impactSign}{fmt(evalRes.amount)}
-                                            </span>
+                                          {!evalRes.applies && (
+                                            <span className="ml-2">No tier met at this quantity</span>
                                           )}
                                         </div>
                                       </div>

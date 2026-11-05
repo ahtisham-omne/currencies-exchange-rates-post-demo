@@ -24,6 +24,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import type { POLineItem, PurchaseOrderData } from "./poStore";
+import { poFx, ruleAmountFactor, ruleAmountFactorToday, vendorCurrency } from "@/app/currency/poFx";
 import {
   getVendorRules,
   computeLineBreakdowns,
@@ -171,7 +172,7 @@ export function computeAdjustmentBreakdowns(
 
 type PricingInput = Pick<PurchaseOrderData, "lineItems" | "deactivatedRuleIds" | "adjustments"> & {
   vendor: { name: string };
-};
+} & Partial<Pick<PurchaseOrderData, "currency" | "exchangeRate" | "rateType" | "rateDate" | "rateEdited" | "orderDate">>;
 
 export function computePORuleBreakdowns(po: PricingInput): Map<string, LinePricingBreakdown> {
   const vendorRules = getVendorRules(po.vendor.name);
@@ -194,7 +195,8 @@ export function computePORuleBreakdowns(po: PricingInput): Map<string, LinePrici
     }
     if (activeLineIds.size > 0) activatedItemsByRule.set(rule.id, activeLineIds);
   }
-  const rows = computeLineBreakdowns(linesForCompute, vendorRules, activatedItemsByRule);
+  // Flat rule amounts (USD) in the PO's currency, at its rate (spec 4.3).
+  const rows = computeLineBreakdowns(linesForCompute, vendorRules, activatedItemsByRule, ruleAmountFactor(poFx(po)));
   return new Map(rows.map((r) => [r.lineId, r]));
 }
 
@@ -317,7 +319,8 @@ export function computeCartVendorPricing(
       const ids = new Set(forCompute.filter((l) => r.appliesToItemCodes.includes(l.itemCode)).map((l) => l.id));
       if (ids.size > 0) activation.set(r.id, ids);
     }
-    for (const bd of computeLineBreakdowns(forCompute, rules, activation)) {
+    // The cart prices a vendor's lines in its currency, at today's rate.
+    for (const bd of computeLineBreakdowns(forCompute, rules, activation, ruleAmountFactorToday(vendorCurrency(vendorName)))) {
       rulesDiscount += bd.discountAmount;
       rulesPremium += bd.premiumAmount;
     }

@@ -10,8 +10,15 @@ import {
 } from "lucide-react";
 import { FONT } from "./designTokens";
 import type { POVersionEntry, POChangeRecord } from "./poStore";
-import { versionStatusConfig, formatCurrency } from "./poVersionDisplay";
-import { snapshotOneTimeNet } from "./poOrderPricing";
+import {
+  versionStatusConfig,
+  useDocFx,
+  versionCompareFields,
+  versionFx,
+} from "./poVersionDisplay";
+import { getCurrency } from "@/app/currency/currencies";
+import { Money } from "./currency/Money";
+import { CurrencyFlag } from "./currency/CurrencyChip";
 
 /**
  * PO version comparison — inline SO-parity view.
@@ -65,35 +72,14 @@ export default function POCompareFullScreen({
   v2,
   onClose,
 }: POCompareFullScreenProps) {
+  /* Each side in its own version's currency, plus Currency and Exchange
+     rate rows so a currency/rate change is highlighted like any field. */
+  const docFx = useDocFx();
+  const fx1 = useMemo(() => versionFx(v1.snapshot, docFx), [v1, docFx]);
+  const fx2 = useMemo(() => versionFx(v2.snapshot, docFx), [v2, docFx]);
   const fields = useMemo(
-    () => [
-      {
-        label: "Line Items",
-        val1: String(v1.snapshot.lineItemCount),
-        val2: String(v2.snapshot.lineItemCount),
-      },
-      {
-        label: "Subtotal",
-        val1: formatCurrency(v1.snapshot.subtotal),
-        val2: formatCurrency(v2.snapshot.subtotal),
-      },
-      {
-        label: "Discount",
-        val1: formatCurrency(v1.snapshot.discountTotal),
-        val2: formatCurrency(v2.snapshot.discountTotal),
-      },
-      {
-        label: "One-Time Discounts/Premiums",
-        val1: (() => { const n = snapshotOneTimeNet(v1.snapshot); return `${n > 0 ? "+" : n < 0 ? "−" : ""}${formatCurrency(Math.abs(n))}`; })(),
-        val2: (() => { const n = snapshotOneTimeNet(v2.snapshot); return `${n > 0 ? "+" : n < 0 ? "−" : ""}${formatCurrency(Math.abs(n))}`; })(),
-      },
-      {
-        label: "Total",
-        val1: formatCurrency(v1.snapshot.total),
-        val2: formatCurrency(v2.snapshot.total),
-      },
-    ],
-    [v1, v2],
+    () => versionCompareFields(v1, v2, fx1, fx2),
+    [v1, v2, fx1, fx2],
   );
 
   const v1Cfg =
@@ -198,14 +184,17 @@ export default function POCompareFullScreen({
         {/* Field rows */}
         {fields.map((f) => {
           const val = side === "left" ? f.val1 : f.val2;
+          const sideFx = side === "left" ? fx1 : fx2;
           const changed = f.val1 !== f.val2;
-          const n1 = Number(String(f.val1).replace(/[^0-9.-]/g, ""));
-          const n2 = Number(String(f.val2).replace(/[^0-9.-]/g, ""));
+          // Arrows only between numbers in the same unit (see versionCompareFields).
+          const n1 = f.n1 ?? NaN;
+          const n2 = f.n2 ?? NaN;
           const numeric =
             changed && Number.isFinite(n1) && Number.isFinite(n2) && n1 !== n2;
           const direction =
             numeric && side === "right" ? (n2 > n1 ? "up" : "down") : null;
           const isStruck = changed && side === "left" && !numeric;
+          const total = side === "left" ? v1.snapshot.total : v2.snapshot.total;
           return (
             <div
               key={f.label}
@@ -244,7 +233,23 @@ export default function POCompareFullScreen({
                     textDecorationColor: "rgba(107, 114, 128, 0.4)",
                   }}
                 >
-                  {val}
+                  {f.kind === "currency" ? (
+                    <span
+                      className="inline-flex items-center"
+                      style={{ gap: 6 }}
+                      title={getCurrency(val)?.name}
+                    >
+                      <CurrencyFlag code={val} size={12} />
+                      {val}
+                    </span>
+                  ) : f.label === "Total" ? (
+                    // Hover: the total in the base currency, at this side's rate.
+                    <Money value={total} currency={sideFx.currency} fx={sideFx} dateLabel="PO date">
+                      {val}
+                    </Money>
+                  ) : (
+                    val
+                  )}
                 </span>
                 {direction === "up" && (
                   <ArrowUp

@@ -58,6 +58,7 @@ import {
   attachRuleToVendor,
   type VendorPricingRule,
 } from "./poPricingRulesData";
+import { useRuleMoney } from "./currency/useRuleMoney";
 
 export interface POBrowsePricingTemplatesModalProps {
   open: boolean;
@@ -471,8 +472,13 @@ function BrowseTemplateCard({
   const t0 = rule.tiers[0];
   const [activeTier, setActiveTier] = useState(0);
   const shownTier = rule.tiers[isMulti ? activeTier : 0];
-  const heroRate = t0 ? `${t0.rate}${t0.unit === "%" ? "%" : ""}` : "—";
-  const shownRate = shownTier ? `${shownTier.rate}${shownTier.unit === "%" ? "%" : ""}` : "—";
+  /* Flat ("$") tiers are USD per unit: "$15 off per unit", and the tier
+     row adds what that is in the PO's currency. */
+  const { tierRate, tierShort, tierConverted } = useRuleMoney();
+  const heroRate = t0 ? tierShort(t0) : "—";
+  const heroPerUnit = !!t0 && t0.unit !== "%";
+  const shownRate = shownTier ? tierShort(shownTier) : "—";
+  const shownConverted = shownTier ? tierConverted(shownTier) : null;
 
   const pill = isDis
     ? { text: "#047857", bg: "#ECFDF5", border: "#D1FAE5" }
@@ -578,6 +584,7 @@ function BrowseTemplateCard({
               {/* 2026-07-29: premium hero suffix reads "premium" (Eli
                   sign-off), never "markup" or "off". */}
               {isDis ? "off" : "premium"}
+              {heroPerUnit ? " per unit" : ""}
             </span>
           </div>
           <div className="flex flex-col items-end shrink-0 leading-tight">
@@ -646,7 +653,10 @@ function BrowseTemplateCard({
               className="shrink-0 ml-2 text-slate-700"
               style={{ fontWeight: 600 }}
             >
-              {shownRate}
+              {shownTier ? tierRate(shownTier) : "—"}
+              {shownConverted && (
+                <span className="text-slate-400" style={{ fontWeight: 500 }}> ({shownConverted})</span>
+              )}
             </span>
           </div>
         </div>

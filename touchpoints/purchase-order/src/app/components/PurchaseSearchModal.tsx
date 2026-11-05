@@ -31,6 +31,8 @@ import {
 } from "./catalogData";
 import type { CatalogItem, ItemVendorOffer } from "./catalogData";
 import { FONT, typography as s } from "./designTokens";
+import { formatMoney } from "@/app/currency/money";
+import { vendorCurrency } from "@/app/currency/poFx";
 import TruncatedItemName from "./TruncatedItemName";
 import VendorSelector from "./VendorSelector";
 
@@ -671,7 +673,8 @@ function ItemResultRow({
                   fontFamily: FONT,
                 }}
               >
-                ${(item.unitPrice * (1 - item.discount / 100)).toFixed(2)}
+                {/* In the vendor's currency (spec 4.2). */}
+                {formatMoney(item.unitPrice * (1 - item.discount / 100), vendorCurrency(item.partnerLocation))}
               </span>
               <span
                 className="text-muted-foreground"

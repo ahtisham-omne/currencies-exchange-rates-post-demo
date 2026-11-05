@@ -51,6 +51,7 @@ import PageHeaderWithIcon from "./layout/PageHeaderWithIcon";
 import UserHoverCard from "./UserHoverCard";
 import ItemHoverCard from "./ItemHoverCard";
 import PODashboard from "./PODashboard";
+import { formatMoney } from "@/app/currency/money";
 import PODemands from "./PODemands";
 import { FlaskConical } from "lucide-react";
 import { useOpenPlannerItems, useLastActiveItem } from "./plannerSession";
@@ -907,7 +908,7 @@ export default function PurchaseOrdersListing({ initialTopTab }: PurchaseOrdersL
   const cartItemCount = globalCart.length;
   const [orderFlowPrefill, setOrderFlowPrefill] = useState<OrderFlowPrefill | null>(null);
 
-  const [createdPOs, setCreatedPOs] = useState<Array<{ id: string; poNumber: string; vendor: string; itemCount: number; total: number }> | null>(null);
+  const [createdPOs, setCreatedPOs] = useState<Array<{ id: string; poNumber: string; vendor: string; itemCount: number; total: number; currency: string }> | null>(null);
   const [createdPOsChecked, setCreatedPOsChecked] = useState<Set<string>>(new Set());
 
   /* ── Sync filter/search/tab state TO URL params (replace, no history pollution) ──
@@ -991,6 +992,7 @@ export default function PurchaseOrdersListing({ initialTopTab }: PurchaseOrdersL
           expectedDeliveryDate: result.expectedDeliveryDate,
           inboundLocation: result.inboundLocation,
           oneTimeAdjustments: result.oneTimeAdjustments,
+          priceCurrency: result.currency,
         });
       }
       closeOrderFlow();
@@ -1012,7 +1014,8 @@ export default function PurchaseOrdersListing({ initialTopTab }: PurchaseOrdersL
           contactEmail: result.vendorContactEmail, contactPhone: result.vendorContactPhone,
           notes: result.notes, totalPrice: result.totalPrice,
           oneTimeAdjustments: result.oneTimeAdjustments,
-        }
+        },
+        result.currency,
       );
       closeOrderFlow();
       navigate(`/purchase-orders/${po.id}`);
@@ -1763,6 +1766,7 @@ export default function PurchaseOrdersListing({ initialTopTab }: PurchaseOrdersL
                         totalPrice: result.totalPrice,
                         oneTimeAdjustments: result.oneTimeAdjustments,
                       },
+                      result.currency,
                     );
                     navigate(`/purchase-orders/${po.id}`);
                   }}
@@ -2078,7 +2082,7 @@ export default function PurchaseOrdersListing({ initialTopTab }: PurchaseOrdersL
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-foreground" style={{ fontSize: "12px", fontWeight: "var(--font-weight-semibold)", lineHeight: "16px", fontFamily: FONT }}>
-                          ${po.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {formatMoney(po.total, po.currency)}
                         </span>
                         <span className="text-muted-foreground" style={{ fontSize: "11px", fontFamily: FONT }}>
                           {po.itemCount} item{po.itemCount !== 1 ? "s" : ""}

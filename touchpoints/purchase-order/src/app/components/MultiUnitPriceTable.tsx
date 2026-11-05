@@ -18,6 +18,8 @@ import { Check, Pencil, Plus, Star, Trash2, X } from "lucide-react";
 import type { VendorUnitPrice } from "./catalogData";
 import { UnitCombobox } from "./UnitCombobox";
 import { baseUnitOf, conversionFactorOf, getCompatibleUOMs } from "./uomRegistry";
+import { currencyDecimals, formatMoney, moneyPrefix } from "@/app/currency/money";
+import { vendorCurrency } from "@/app/currency/poFx";
 
 const FONT = "'PP Object Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
 
@@ -38,6 +40,8 @@ export interface MultiUnitPriceTableProps {
    *  header row ("Units qualified with {vendor}. …"). When omitted a
    *  generic copy is shown. */
   vendorName?: string;
+  /** The price book's currency: the vendor's default (spec 4.2). */
+  currency?: string;
 
   // Inline edit state (driven by parent)
   editTierUnit: string | null;
@@ -66,6 +70,7 @@ export function MultiUnitPriceTable(props: MultiUnitPriceTableProps) {
     currentVendorUnit,
     configuredUnits,
     vendorName,
+    currency = vendorCurrency(vendorName),
     itemBaseUnit,
     editTierUnit,
     tierDraftPrice,
@@ -223,11 +228,11 @@ export function MultiUnitPriceTable(props: MultiUnitPriceTableProps) {
 
             {isEditing ? (
               <div className="flex items-center rounded-md border border-[#0A77FF]/40 bg-white overflow-hidden">
-                <span className="pl-2 text-[#94A3B8]" style={{ fontSize: 12 }}>$</span>
+                <span className="pl-2 text-[#94A3B8]" style={{ fontSize: 12 }}>{moneyPrefix(currency).trim()}</span>
                 <input
                   type="number"
                   min={0}
-                  step="0.01"
+                  step={10 ** -currencyDecimals(currency)}
                   value={tierDraftPrice}
                   autoFocus
                   onChange={(e) => setTierDraftPrice(e.target.value)}
@@ -242,7 +247,7 @@ export function MultiUnitPriceTable(props: MultiUnitPriceTableProps) {
               </div>
             ) : (
               <span style={{ fontSize: 13, fontWeight: 600, color: tier.price > 0 ? "#0F172A" : "#94A3B8" }}>
-                ${tier.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatMoney(tier.price, currency)}
               </span>
             )}
 
@@ -324,11 +329,11 @@ export function MultiUnitPriceTable(props: MultiUnitPriceTableProps) {
           />
 
           <div className="flex items-center rounded-md border border-[#E2E8F0] bg-white overflow-hidden">
-            <span className="pl-2 text-[#94A3B8]" style={{ fontSize: 12 }}>$</span>
+            <span className="pl-2 text-[#94A3B8]" style={{ fontSize: 12 }}>{moneyPrefix(currency).trim()}</span>
             <input
               type="number"
               min={0}
-              step="0.01"
+              step={10 ** -currencyDecimals(currency)}
               value={addTierPrice}
               onChange={(e) => setAddTierPrice(e.target.value)}
               onKeyDown={(e) => {

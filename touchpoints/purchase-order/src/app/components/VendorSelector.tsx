@@ -30,6 +30,19 @@ import {
 import { Badge } from "./ui/badge";
 import type { ItemVendorOffer } from "./catalogData";
 import { FONT } from "./designTokens";
+import { Money } from "./currency/Money";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatCompactMoney, formatMoney } from "@/app/currency/money";
+import { toBaseToday, todayFx, vendorCurrency } from "@/app/currency/poFx";
+
+/* Each vendor quotes in its own currency (spec 4.2); the hover gives the
+   base-currency equivalent at today's rate so offers compare fairly. */
+const offerCurrency = (offer: ItemVendorOffer) => offer.currency ?? vendorCurrency(offer.vendorName);
+
+function OfferPrice({ offer, price = offer.unitPrice }: { offer: ItemVendorOffer; price?: number }) {
+  const currency = offerCurrency(offer);
+  return <Money value={price} currency={currency} fx={todayFx(currency)} dateLabel="today" role="vendor currency" />;
+}
 import { getAvatarTint } from "./avatarTints";
 import PartnerHoverCard, { type PartnerHoverCardVendor } from "./PartnerHoverCard";
 
@@ -457,7 +470,7 @@ export default function VendorSelector({
                   fontFamily: FONT,
                 }}
               >
-                ${currentOffer.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {currentOffer.defaultUOM}
+                <OfferPrice offer={currentOffer} /> / {currentOffer.defaultUOM}
               </span>
               {hasMultipleVendors && (
                 <span
@@ -903,7 +916,13 @@ export function VendorSelectorContent({
                             fontFamily: FONT,
                           }}
                         >
-                          ${offer.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {offer.defaultUOM}
+                          <OfferPrice offer={offer} /> / {offer.defaultUOM}
+                          {/* In base too, so vendors quoting in different currencies rank fairly. */}
+                          {offerCurrency(offer) !== BASE_CURRENCY && (
+                            <span className="text-muted-foreground ml-1 tabular-nums" style={{ fontSize: "10px", fontWeight: "var(--font-weight-medium)", fontFamily: FONT }}>
+                              ≈ {formatCompactMoney(toBaseToday(offer.unitPrice, offerCurrency(offer)), BASE_CURRENCY)}
+                            </span>
+                          )}
                           {/* Multi-unit indicator: shown when the vendor has more
                               than one configured unit-price tier on this item. */}
                           {(() => {
@@ -914,7 +933,7 @@ export function VendorSelectorContent({
                                 style={{ fontSize: "10px", fontWeight: "var(--font-weight-medium)", fontFamily: FONT }}
                                 title={`Also available: ${(offer.unitPrices ?? [])
                                   .filter((t) => !t.isDefault)
-                                  .map((t) => `$${t.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${t.unit}`)
+                                  .map((t) => `${formatMoney(t.price, offerCurrency(offer))} / ${t.unit}`)
                                   .join(", ")}`}
                               >
                                 (+{extra} unit{extra > 1 ? "s" : ""})
@@ -1133,7 +1152,7 @@ export function VendorSelectorContent({
                   fontFamily: FONT,
                 }}
               >
-                ${openOffer.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {openOffer.defaultUOM}
+                <OfferPrice offer={openOffer} /> / {openOffer.defaultUOM}
               </span>
             )}
           </div>
@@ -1168,7 +1187,7 @@ export function VendorSelectorContent({
                     lineHeight: "1.4",
                   }}
                 >
-                  Price per unit : ${openOffer.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {openOffer.defaultUOM} ({openOffer.defaultUOM})
+                  Price per unit : <OfferPrice offer={openOffer} /> / {openOffer.defaultUOM} ({openOffer.defaultUOM})
                 </span>
               </div>
               <div className="h-px mx-3" style={{ backgroundColor: "hsl(var(--border))" }} />

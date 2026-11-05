@@ -60,7 +60,8 @@ function matchesQuickFilter(
     return (
       change.type === "pricing-changed" ||
       change.type === "rule-applied" ||
-      change.type === "adjustment-applied"
+      change.type === "adjustment-applied" ||
+      change.type === "exchange-rate-changed"
     );
   }
   if (filter === "line-items") return change.type.startsWith("line-item");

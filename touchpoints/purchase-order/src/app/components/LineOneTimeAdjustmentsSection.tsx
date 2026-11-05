@@ -10,6 +10,7 @@ import {
   newAdjustmentId,
   type LineOneTimeAdjustment,
 } from "./poOrderPricing";
+import { useDocMoney } from "./currency/docCurrencyContext";
 
 /**
  * Item-level "One-Time Discounts/Premiums" section — ported from
@@ -42,8 +43,8 @@ export function LineOneTimeAdjustmentsSection({
   const [removeAdjConfirm, setRemoveAdjConfirm] = useState<{ id: string; label: string } | null>(null);
   const [showDeleteAllAdjustmentsConfirm, setShowDeleteAllAdjustmentsConfirm] = useState(false);
 
-  const formatCurrency = (n: number) =>
-    `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Fixed amounts and impacts are in the order's currency.
+  const formatCurrency = useDocMoney();
 
   const oneTimeTotal = value
     .filter((adj) => adj.isApplied)
@@ -99,7 +100,7 @@ export function LineOneTimeAdjustmentsSection({
               </div>
               <div className="flex items-center gap-2">
                 <span className={`text-[13px] ${oneTimeTotal < 0 ? "text-[#10B981]" : oneTimeTotal > 0 ? "text-[#7C3AED]" : "text-[#6B7280]"}`} style={{ fontWeight: 600 }}>
-                  {oneTimeTotal < 0 ? "-" : "+"}{formatCurrency(Math.abs(oneTimeTotal))}
+                  {oneTimeTotal < 0 ? "−" : "+"}{formatCurrency(Math.abs(oneTimeTotal))}
                 </span>
                 {!readOnly && value.length > 0 && (
                   <button
@@ -165,10 +166,10 @@ export function LineOneTimeAdjustmentsSection({
                   <div className="flex items-center gap-3 flex-shrink-0 mt-[2px]">
                     <div className="text-right flex items-baseline justify-end gap-2" style={{ minWidth: 130 }}>
                       <span className={`text-[12px] ${valueColor}`} style={{ fontWeight: 600, textDecoration: isUnapplied ? "line-through" : undefined }}>
-                        {isDiscount ? "-" : "+"}{adj.amountType === "$" ? formatCurrency(adj.amount) : `${adj.amount}%`}
+                        {isDiscount ? "−" : "+"}{adj.amountType === "$" ? formatCurrency(adj.amount) : `${adj.amount}%`}
                       </span>
                       {adj.amountType === "%" && (
-                        <span className={`text-[11px] ${valueColor}`} style={{ fontWeight: 500, opacity: 0.8, textDecoration: isUnapplied ? "line-through" : undefined }}>{isDiscount ? "-" : "+"}{formatCurrency(amount)}</span>
+                        <span className={`text-[11px] ${valueColor}`} style={{ fontWeight: 500, opacity: 0.8, textDecoration: isUnapplied ? "line-through" : undefined }}>{isDiscount ? "−" : "+"}{formatCurrency(amount)}</span>
                       )}
                     </div>
                     {!readOnly && (

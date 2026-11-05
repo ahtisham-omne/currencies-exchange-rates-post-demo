@@ -29,6 +29,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "./ui/alert-dialog";
+import { formatMoney } from "@/app/currency/money";
+import { vendorCurrency } from "@/app/currency/poFx";
 
 const FONT = "'PP Object Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
 
@@ -250,10 +252,14 @@ export interface PriceConfirmationDialogProps {
    *  blue Save-Version chrome + adding-copy — used when the buyer
    *  is genuinely adding a new tier, not warning about a mismatch. */
   variant?: "warning" | "add";
+  /** The prices' currency; defaults to the vendor's. */
+  currency?: string;
 }
 
-function fmt(price: number): string {
-  return `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** A vendor price-book amount, in that vendor's currency (spec 4.2) unless
+ *  the caller says which. */
+function fmt(price: number, vendorName: string, currency?: string): string {
+  return formatMoney(price, currency ?? vendorCurrency(vendorName));
 }
 
 export function PriceConfirmationDialog({
@@ -267,6 +273,7 @@ export function PriceConfirmationDialog({
   onConfirmDefault,
   onUseOnce,
   variant = "warning",
+  currency,
 }: PriceConfirmationDialogProps) {
   const isSaveAsDefault = scenario === "save-as-default";
   const isAdd = variant === "add";
@@ -285,7 +292,7 @@ export function PriceConfirmationDialog({
     <>
       You're adding{" "}
       <strong>
-        {fmt(enteredPrice)} / {unit}
+        {fmt(enteredPrice, vendorName, currency)} / {unit}
       </strong>{" "}
       for <strong>{vendorName}</strong>. Add it to the qualified vendor so it
       appears on future POs too, or add it only for this PO?
@@ -295,7 +302,7 @@ export function PriceConfirmationDialog({
       No saved price exists for <strong>{vendorName}</strong> per{" "}
       <strong>{unit}</strong>. Save{" "}
       <strong>
-        {fmt(enteredPrice)} / {unit}
+        {fmt(enteredPrice, vendorName, currency)} / {unit}
       </strong>{" "}
       to the qualified vendor so it applies here and on future POs, or use it
       only on this PO?
@@ -304,9 +311,9 @@ export function PriceConfirmationDialog({
     <>
       The saved price for <strong>{vendorName}</strong> per{" "}
       <strong>{unit}</strong> is{" "}
-      <strong>{fmt(existingDefaultPrice ?? 0)}</strong>. You entered{" "}
-      <strong>{fmt(enteredPrice)}</strong>. Update the qualified vendor to{" "}
-      <strong>{fmt(enteredPrice)}</strong> (applies here and on future POs), or
+      <strong>{fmt(existingDefaultPrice ?? 0, vendorName, currency)}</strong>. You entered{" "}
+      <strong>{fmt(enteredPrice, vendorName, currency)}</strong>. Update the qualified vendor to{" "}
+      <strong>{fmt(enteredPrice, vendorName, currency)}</strong> (applies here and on future POs), or
       use the new price only on this PO?
     </>
   );
@@ -354,15 +361,16 @@ export function removePriceCopy(opts: {
   price: number;
   isDefault: boolean;
   fallbackUnit?: string;
+  currency?: string;
 }): RemovePriceCopy {
-  const { vendorName, unit, price, isDefault, fallbackUnit } = opts;
+  const { vendorName, unit, price, isDefault, fallbackUnit, currency } = opts;
   return {
     tone: "red",
     chipLabel: "Caution",
     title: `Remove the ${unit} price?`,
     description: (
       <>
-        This removes <strong>{fmt(price)} / {unit}</strong> for{" "}
+        This removes <strong>{fmt(price, vendorName, currency)} / {unit}</strong> for{" "}
         <strong>{vendorName}</strong> from the qualified vendor and from this
         PO. Future POs won't see this tier either.
         {isDefault && fallbackUnit ? (
@@ -398,8 +406,9 @@ export function changeDefaultCopy(opts: {
   oldPrice: number;
   newUnit: string;
   newPrice: number;
+  currency?: string;
 }): ChangeDefaultCopy {
-  const { vendorName, oldUnit, oldPrice, newUnit, newPrice } = opts;
+  const { vendorName, oldUnit, oldPrice, newUnit, newPrice, currency } = opts;
   return {
     tone: "amber",
     chipLabel: "Change Default Unit",
@@ -407,8 +416,8 @@ export function changeDefaultCopy(opts: {
     description: (
       <>
         The default for <strong>{vendorName}</strong> on this item is{" "}
-        <strong>{oldUnit}</strong> at <strong>{fmt(oldPrice)}</strong>. Set{" "}
-        <strong>{fmt(newPrice)} / {newUnit}</strong> as the default on the
+        <strong>{oldUnit}</strong> at <strong>{fmt(oldPrice, vendorName, currency)}</strong>. Set{" "}
+        <strong>{fmt(newPrice, vendorName, currency)} / {newUnit}</strong> as the default on the
         qualified vendor (applies here and on future POs), or use it as the
         default only on this PO?
       </>

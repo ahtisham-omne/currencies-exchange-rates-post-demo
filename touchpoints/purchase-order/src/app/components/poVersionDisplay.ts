@@ -5,6 +5,7 @@
  *   · POVersionsToolbar.tsx / POVersionRow.tsx / POVersionSnapshotPanel.tsx
  *     / POVersionChangeList.tsx / POVersionRevertModal.tsx
  *   · POCompareFullScreen.tsx (side-by-side comparison view)
+ *   · POVersionHistoryModal.tsx / POVersionDropdown.tsx (version currency)
  *
  * Extracted from the original 774-LOC POVersionHistoryTab.tsx (audit 2026-07-10)
  * so the version UI can be composed from focused pieces instead of one
@@ -12,9 +13,15 @@
  * `pages/quote-detail/tabs/versions/versionDisplay.ts` shape.
  */
 
+import { useMemo } from "react";
 import type React from "react";
-import type { POChangeType } from "./poStore";
+import type { POChangeType, POVersionEntry, POVersionSnapshot } from "./poStore";
 import type { POVersionStatus } from "./poStore";
+import { isBaseCurrency } from "@/app/currency/currencies";
+import { formatMoney, formatRate, formatRateDate, rateSentence } from "@/app/currency/money";
+import { poFx, rateSourceLabel, type PoFx } from "@/app/currency/poFx";
+import { snapshotOneTimeNet } from "./poOrderPricing";
+import { useDocCurrency } from "./currency/docCurrencyContext";
 import {
   Plus,
   Trash2,
@@ -28,6 +35,7 @@ import {
   Paperclip,
   Scale,
   Percent,
+  ArrowLeftRight,
 } from "lucide-react";
 
 /* ── Config — palette aligned to Partners' canonical status tints
@@ -56,6 +64,8 @@ export const changeTypeConfig: Record<
   "attachment-added":    { icon: Paperclip,  color: "#0F766E", bg: "#F0FDFA", border: "#99F6E4" },
   "rule-applied":        { icon: Scale,      color: "#6D28D9", bg: "#F5F3FF", border: "#DDD6FE" },
   "adjustment-applied":  { icon: Percent,    color: "#B45309", bg: "#FFFBEB", border: "#FDE68A" },
+  // The PO's currency or exchange rate changed (spec 4.3).
+  "exchange-rate-changed": { icon: ArrowLeftRight, color: "#0369A1", bg: "#F0F9FF", border: "#BAE6FD" },
 };
 
 export const versionStatusConfig: Record<
@@ -81,14 +91,130 @@ export const versionPalette = {
   muted:   "#F8FAFC",  // slate-50 — hover bg
 };
 
-/* 2-decimal precision so unit prices like $479.99 don't truncate to $480. */
-export const formatCurrency = (n: number): string =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+/* An amount in a version's currency, with that currency's symbol and
+   decimals: $479.99 · €980.50 · ¥15,000 · MXN 1,200.00 (spec 4.3). */
+export const formatCurrency = (n: number, code: string): string => formatMoney(n, code);
+
+/* The one-time discounts/premiums net, signed: +$40.00 · −€12.50. */
+export function formatSignedCurrency(n: number, code: string): string {
+  return `${n > 0 ? "+" : n < 0 ? "−" : ""}${formatMoney(Math.abs(n), code)}`;
+}
+
+/* ── A version's currency and rate ──────────────────────────────────
+   Each snapshot records the currency and rate the PO had at that
+   version. Snapshots saved before versions carried one fall back to the
+   PO's current currency (`fallback`), else to their vendor's default. */
+export function versionFx(snapshot: POVersionSnapshot, fallback?: PoFx | null): PoFx {
+  if (!snapshot.currency && fallback) return fallback;
+  return poFx({ ...snapshot, vendor: { name: snapshot.vendor?.name || snapshot.vendorName } });
+}
+
+/* The PO page's currency (its DocCurrencyProvider) as a PoFx: the fallback
+   above. Null outside the PO page, where callers pass `poFx(po)` instead. */
+export function useDocFx(): PoFx | null {
+  const { currency, fx } = useDocCurrency();
+  return useMemo(
+    () =>
+      fx
+        ? {
+            currency,
+            rate: fx.rate,
+            rateType: fx.rateType,
+            rateDate: fx.rateDate,
+            source: fx.source,
+            provisional: false,
+            isBase: isBaseCurrency(currency),
+          }
+        : null,
+    [currency, fx],
+  );
+}
+
+/* "Mid-market" · "Corporate" · "Corporate, changed on the PO". */
+export function rateTypeText(fx: PoFx): string {
+  if (fx.rateType === "mid") return "Mid-market";
+  return fx.source === rateSourceLabel("corporate", true) ? "Corporate, changed on the PO" : "Corporate";
+}
+
+/* "1 USD = 274.3045 PKR · Mid-market · Feb 20, 2026", or "No conversion"
+   for a version in the base currency. */
+export function rateText(fx: PoFx): string {
+  if (fx.isBase) return "No conversion";
+  return `${rateSentence(fx.currency, fx.rate)} · ${rateTypeText(fx)} · ${formatRateDate(fx.rateDate)}`;
+}
+
+/* Versions whose currency differs from the version before or after them:
+   their rows mark the currency next to the total. */
+export function currencyShiftVersions(
+  versions: POVersionEntry[],
+  fallback?: PoFx | null,
+): Set<number> {
+  const ordered = [...versions].sort((a, b) => a.version - b.version);
+  const codes = ordered.map((v) => versionFx(v.snapshot, fallback).currency);
+  const out = new Set<number>();
+  for (let i = 1; i < ordered.length; i++) {
+    if (codes[i] !== codes[i - 1]) {
+      out.add(ordered[i - 1].version);
+      out.add(ordered[i].version);
+    }
+  }
+  return out;
+}
+
+/* ── Compare rows (POCompareFullScreen + the history modal's CompareView) ──
+   Amounts are written in each side's own currency. `n1`/`n2` carry the
+   numbers behind the text only when both sides share a unit, so the
+   up/down arrows never weigh dollars against euros. */
+export interface VersionCompareField {
+  label: string;
+  kind: "count" | "currency" | "rate" | "money";
+  val1: string;
+  val2: string;
+  n1?: number;
+  n2?: number;
+}
+
+export function versionCompareFields(
+  v1: POVersionEntry,
+  v2: POVersionEntry,
+  fx1: PoFx,
+  fx2: PoFx,
+): VersionCompareField[] {
+  const s1 = v1.snapshot;
+  const s2 = v2.snapshot;
+  const sameCurrency = fx1.currency === fx2.currency;
+  const money = (label: string, a: number, b: number, signed = false): VersionCompareField => ({
+    label,
+    kind: "money",
+    val1: signed ? formatSignedCurrency(a, fx1.currency) : formatCurrency(a, fx1.currency),
+    val2: signed ? formatSignedCurrency(b, fx2.currency) : formatCurrency(b, fx2.currency),
+    ...(sameCurrency ? { n1: a, n2: b } : {}),
+  });
+  // A rate as shown (4 decimals), so float noise never reads as a change.
+  const shownRate = (fx: PoFx) => Number(formatRate(fx.rate).replace(/,/g, ""));
+  return [
+    {
+      label: "Line Items",
+      kind: "count",
+      val1: String(s1.lineItemCount),
+      val2: String(s2.lineItemCount),
+      n1: s1.lineItemCount,
+      n2: s2.lineItemCount,
+    },
+    { label: "Currency", kind: "currency", val1: fx1.currency, val2: fx2.currency },
+    {
+      label: "Exchange rate",
+      kind: "rate",
+      val1: rateText(fx1),
+      val2: rateText(fx2),
+      ...(sameCurrency && !fx1.isBase ? { n1: shownRate(fx1), n2: shownRate(fx2) } : {}),
+    },
+    money("Subtotal", s1.subtotal, s2.subtotal),
+    money("Discount", s1.discountTotal, s2.discountTotal),
+    money("One-Time Discounts/Premiums", snapshotOneTimeNet(s1), snapshotOneTimeNet(s2), true),
+    money("Total", s1.total, s2.total),
+  ];
+}
 
 /* Deterministic per-user avatar colour. Keeps the same buyer's changes
    visually grouped across the version history. */

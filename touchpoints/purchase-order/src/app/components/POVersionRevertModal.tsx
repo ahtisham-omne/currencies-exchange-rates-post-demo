@@ -8,6 +8,13 @@ import {
   AlertDialogDescription,
 } from "./ui/alert-dialog";
 import { FONT } from "./designTokens";
+import type { POVersionSnapshot } from "./poStore";
+import { formatCurrency, rateTypeText, useDocFx, versionFx } from "./poVersionDisplay";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatRate, rateSentence } from "@/app/currency/money";
+import type { PoFx } from "@/app/currency/poFx";
+import { toBase } from "@/app/currency/rates";
+import { CurrencyFlag } from "./currency/CurrencyChip";
 
 /**
  * Revert-to-version confirmation modal — ported from the Sales Orders V5
@@ -30,6 +37,25 @@ interface POVersionRevertModalProps {
   version: number;
   onClose: () => void;
   onConfirm: (reason: string) => void;
+  /** The version being restored. When given, its total is shown in its
+      own currency, with a note when reverting changes the PO's currency
+      or rate (the snapshot's are restored with it). */
+  snapshot?: POVersionSnapshot;
+  /** The PO's currency and rate now. Defaults to the PO page's (DocCurrency). */
+  currentFx?: PoFx | null;
+}
+
+/* What reverting does to the PO's currency or rate, if anything. */
+function rateChangeNote(fx: PoFx, now: PoFx): string | null {
+  if (fx.currency !== now.currency) {
+    return fx.isBase
+      ? `Puts the PO back in ${fx.currency} (now ${now.currency}); no conversion.`
+      : `Puts the PO back in ${fx.currency} (now ${now.currency}) at ${rateSentence(fx.currency, fx.rate)} · ${rateTypeText(fx)}.`;
+  }
+  if (fx.isBase) return null;
+  const typeChanged = fx.rateType !== now.rateType;
+  if (formatRate(fx.rate) === formatRate(now.rate) && !typeChanged) return null;
+  return `Restores the rate ${rateSentence(fx.currency, fx.rate)} · ${rateTypeText(fx)} (now ${formatRate(now.rate)}${typeChanged ? `, ${rateTypeText(now)}` : ""}).`;
 }
 
 /* Positioning — kills shadcn's translate-50% centering and re-centers
@@ -61,15 +87,23 @@ export default function POVersionRevertModal({
   version,
   onClose,
   onConfirm,
+  snapshot,
+  currentFx,
 }: POVersionRevertModalProps) {
   const [reason, setReason] = useState("");
+  const docFx = useDocFx();
+  const nowFx = currentFx ?? docFx;
+  const fx = snapshot ? versionFx(snapshot, nowFx) : null;
+  // Only a snapshot that recorded its currency restores one.
+  const note = fx && nowFx && snapshot?.currency ? rateChangeNote(fx, nowFx) : null;
 
   return (
     <AlertDialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      {/* No outside-click close: Radix's AlertDialog blocks it (its own
+          onInteractOutside wins), so the old handler never ran. */}
       <AlertDialogContent
         className="p-0 gap-0 overflow-hidden border-0"
         style={positioningStyle}
-        onInteractOutside={() => onClose()}
       >
         {/* Red gradient banner — glow blur behind the icon tile. */}
         <div
@@ -140,6 +174,45 @@ export default function POVersionRevertModal({
             Its existing status is preserved. The next material change starts a
             new version.
           </AlertDialogDescription>
+
+          {/* The version's total in its own currency (base equivalent
+              inline: a hover card would sit under this z-14000 layer). */}
+          {fx && snapshot && (
+            <div
+              className="w-full mt-5 rounded-lg border text-left"
+              style={{
+                borderColor: "#E2E8F0",
+                backgroundColor: "#F8FAFC",
+                padding: "10px 12px",
+                fontFamily: FONT,
+              }}
+            >
+              <div className="flex items-center justify-between" style={{ gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#64748B", lineHeight: 1 }}>
+                  V{version} total
+                </span>
+                <span className="inline-flex items-baseline tabular-nums" style={{ gap: 6, lineHeight: 1 }}>
+                  {!fx.isBase && (
+                    <span style={{ fontSize: 11, fontWeight: 400, color: "#94A3B8" }}>
+                      ≈ {formatCurrency(toBase(snapshot.total, fx.rate), BASE_CURRENCY)}
+                    </span>
+                  )}
+                  <span
+                    className="inline-flex items-center"
+                    style={{ gap: 5, fontSize: 13, fontWeight: 600, color: "#0F172A" }}
+                  >
+                    <CurrencyFlag code={fx.currency} size={11} />
+                    {formatCurrency(snapshot.total, fx.currency)}
+                  </span>
+                </span>
+              </div>
+              {note && (
+                <div style={{ fontSize: 11, color: "#64748B", lineHeight: 1.5, marginTop: 6 }}>
+                  {note}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Reason input — same "optional" affordance SO uses. */}
           <div className="w-full mt-5 text-left">

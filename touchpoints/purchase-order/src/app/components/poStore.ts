@@ -5,6 +5,10 @@
 
 import { getVendorContacts, CATALOG, isItemFulfillableByVendor } from "./catalogData";
 import { computePOPricing, lineAdjustmentsToPO, type POAdjustment, type LineOneTimeAdjustment } from "./poOrderPricing";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { formatMoney, formatRate, rateSentence } from "@/app/currency/money";
+import { crossRate, poFx, roundTo, stampPoRate, vendorCurrency } from "@/app/currency/poFx";
+import { midRateOn, type RateType } from "@/app/currency/rates";
 
 export type POStatus = "Draft" | "Sent" | "Confirmed" | "Partially Received" | "Fully Received" | "Cancelled" | "Active with Cancellations" | "Fully Received with Cancellations";
 
@@ -172,7 +176,10 @@ export type POChangeType =
   | "config-changed"
   | "attachment-added"
   | "rule-applied"
-  | "adjustment-applied";
+  | "adjustment-applied"
+  /* The PO's currency or exchange rate changed (spec 4.3), carried over
+     from the earlier Purchase Orders touchpoint. */
+  | "exchange-rate-changed";
 
 export interface POChangeRecord {
   id: string;
@@ -231,6 +238,12 @@ export interface POVersionSnapshot {
   orderDate?: string;
   confirmationDate?: string | null;
   sentDate?: string | null;
+  /** The PO's currency and rate at this version (see PurchaseOrderData). */
+  currency?: string;
+  exchangeRate?: number;
+  rateType?: RateType;
+  rateDate?: string;
+  rateEdited?: boolean;
 }
 
 export interface POVersionEntry {
@@ -275,6 +288,19 @@ export interface PurchaseOrderData {
   shippingFee: number;
   discountTotal: number;
   total: number;
+  /** The PO's currency (spec 4.3): the vendor's default (spec 4.2) unless
+   *  the buyer changes it from Order Summary. Every price, total, discount
+   *  and adjustment on the PO is in it. Read through `poFx` (currency/poFx),
+   *  which falls back to the vendor's currency when unset. */
+  currency?: string;
+  /** Base currency per one unit of `currency`, taken on the PO date. */
+  exchangeRate?: number;
+  /** Mid-market (read-only on the PO) or corporate (editable). */
+  rateType?: RateType;
+  /** The day the rate is for: the PO date. */
+  rateDate?: string;
+  /** A corporate rate typed on the PO instead of finance's. */
+  rateEdited?: boolean;
   notes: string;
   /** Structured notes (vendor-facing + internal, PO-level + line-item-level) */
   poNotes: PONote[];
@@ -589,7 +615,118 @@ export function buildVersionSnapshot(po: PurchaseOrderData): POVersionSnapshot {
     orderDate: po.orderDate,
     confirmationDate: po.confirmationDate,
     sentDate: po.sentDate,
+    ...poRateFields(po),
   };
+}
+
+/* ── The PO's currency and rate (spec 4.3) ── */
+
+type PORateFields = Pick<PurchaseOrderData, "currency" | "exchangeRate" | "rateType" | "rateDate" | "rateEdited">;
+
+/** The currency fields a PO carries, as `poFx` resolves them. */
+export function poRateFields(po: Parameters<typeof poFx>[0]): PORateFields {
+  const fx = poFx(po);
+  return {
+    currency: fx.currency,
+    exchangeRate: fx.rate,
+    rateType: fx.rateType,
+    rateDate: fx.rateDate,
+    rateEdited: !!po.rateEdited,
+  };
+}
+
+/** Copy a snapshot's currency fields back onto a PO (revert / discard). */
+function restoreRateFields(po: PurchaseOrderData, snapshot: POVersionSnapshot): void {
+  if (!snapshot.currency) return;
+  po.currency = snapshot.currency;
+  po.exchangeRate = snapshot.exchangeRate;
+  po.rateType = snapshot.rateType;
+  po.rateDate = snapshot.rateDate;
+  po.rateEdited = snapshot.rateEdited;
+}
+
+/** "USD → EUR · 1 EUR = 304.8150 PKR", "1 USD = 278.5200 → 279.0000 PKR". */
+export function describeRateChange(before: PORateFields, after: PORateFields): string {
+  const from = (before.currency || BASE_CURRENCY).toUpperCase();
+  const to = (after.currency || BASE_CURRENCY).toUpperCase();
+  if (from !== to) {
+    return isBaseCurrency(to) ? `${from} → ${to}` : `${from} → ${to} · ${rateSentence(to, after.exchangeRate ?? 1)}`;
+  }
+  const label = after.rateType === "corporate" ? "Corporate" : "Mid-market";
+  return `1 ${to} = ${formatRate(before.exchangeRate ?? 1)} → ${formatRate(after.exchangeRate ?? 1)} ${BASE_CURRENCY} · ${label}`;
+}
+
+/**
+ * Put a PO in another currency or at another rate (spec 4.3). Changing the
+ * currency converts every price on it, through the base currency at the old
+ * and new rates: line prices, the shipping fee and fixed-amount one-time
+ * discounts/premiums. Percentages and quantities are untouched, so the
+ * pricing rules stay applied. A rate change alone converts nothing; it only
+ * changes what the PO is worth in the base currency.
+ */
+export interface POCurrencyChoice {
+  currency: string;
+  rateType: RateType;
+  exchangeRate: number;
+  rateEdited?: boolean;
+}
+
+/** The PO as it would be in `next` (a copy, totals recomputed): the
+ *  confirmation shows its totals before anything changes. */
+export function withPOCurrency(po: PurchaseOrderData, next: POCurrencyChoice): PurchaseOrderData {
+  const before = poFx(po);
+  const code = next.currency.toUpperCase();
+  const rate = isBaseCurrency(code) ? 1 : next.exchangeRate;
+  const out: PurchaseOrderData = { ...po, lineItems: po.lineItems.map((li) => ({ ...li })) };
+  if (code !== before.currency) {
+    const factor = crossRate(before.rate, rate);
+    const convert = (n: number) => roundTo(code, n * factor);
+    out.lineItems = out.lineItems.map((li) => ({
+      ...li,
+      unitPrice: convert(li.unitPrice),
+      ...(li.priceChangedFromCatalog != null && { priceChangedFromCatalog: convert(li.priceChangedFromCatalog) }),
+    }));
+    out.shippingFee = convert(po.shippingFee);
+    out.adjustments = (po.adjustments ?? []).map((a) => (a.amountType === "$" ? { ...a, amount: convert(a.amount) } : a));
+  }
+  out.currency = code;
+  out.exchangeRate = rate;
+  out.rateType = next.rateType;
+  out.rateDate = before.rateDate;
+  out.rateEdited = next.rateType === "corporate" && !!next.rateEdited;
+  return applyComputedTotals(out);
+}
+
+export function setPOCurrency(poId: string, next: POCurrencyChoice): void {
+  const po = purchaseOrders.get(poId);
+  if (!po) return;
+  purchaseOrders.set(poId, withPOCurrency(po, next));
+  notify();
+}
+
+/** Restate a price written in USD (the design's seed data) in another
+ *  currency, at the mid-market rate on a day. */
+function fromUsd(amount: number, code: string, isoDate: string): number {
+  if (code.toUpperCase() === "USD") return amount;
+  return roundTo(code, amount * crossRate(midRateOn("USD", isoDate) ?? 1, midRateOn(code, isoDate) ?? 1));
+}
+
+/** The mock shipping fee ($12.50 a line, excluded from the total), in the PO's currency. */
+function mockShippingFee(lineCount: number, po: Parameters<typeof poFx>[0]): number {
+  const fx = poFx(po);
+  return fromUsd(Math.round(lineCount * 12.5 * 100) / 100, fx.currency, fx.rateDate);
+}
+
+/** The design's seeded POs are written in USD. Restate one in its vendor's
+ *  currency (prices, shipping and fixed one-time amounts) and stamp the
+ *  rate on its PO date. Applied last, so no seed sequence changes. */
+function inVendorCurrency(po: PurchaseOrderData): PurchaseOrderData {
+  const stamp = stampPoRate(vendorCurrency(po.vendor.name), po.orderDate);
+  const restate = (n: number) => fromUsd(n, stamp.currency, po.orderDate);
+  po.lineItems = po.lineItems.map((li) => ({ ...li, unitPrice: restate(li.unitPrice) }));
+  po.shippingFee = restate(po.shippingFee);
+  po.adjustments = po.adjustments?.map((a) => (a.amountType === "$" ? { ...a, amount: restate(a.amount) } : a));
+  return Object.assign(po, stamp);
 }
 
 function initVersioning(po: PurchaseOrderData, reason = "Initial PO created"): PurchaseOrderData {
@@ -606,7 +743,7 @@ function initVersioning(po: PurchaseOrderData, reason = "Initial PO created"): P
         type: "config-changed",
         action: "Added",
         subject: "Purchase Order Created",
-        detail: `${po.lineItems.length} items · $${po.total.toFixed(2)}`,
+        detail: `${po.lineItems.length} items · ${formatMoney(po.total, poFx(po).currency)}`,
         timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
         user: po.createdBy,
       },
@@ -792,6 +929,7 @@ export function restorePOFromSnapshot(poId: string, snapshot: POVersionSnapshot)
 
   // Restore totals — recomputed so they include rules + adjustments
   po.shippingFee = snapshot.shippingFee;
+  restoreRateFields(po, snapshot);
   applyComputedTotals(po);
 
   purchaseOrders.set(poId, { ...po });
@@ -861,6 +999,7 @@ export function revertPOToVersion(poId: string, version: number, reason: string)
     appliedTo: a.appliedTo?.map((id) => revertIdMap.get(id) ?? id),
   }));
   po.shippingFee = source.snapshot.shippingFee;
+  restoreRateFields(po, source.snapshot);
   applyComputedTotals(po);
 
   po.currentVersion = version;
@@ -907,6 +1046,10 @@ export function createPOFromVendorCheckout(
       cover. Lands on `PurchaseOrderData.linkedDemandIds`. Buy-now / catalogue
       / cart paths omit this. */
   linkedDemandIds?: string[],
+  /** The currency the items' prices are written in, when it isn't the
+      vendor's (the cart and catalogue price in the vendor's; Procurement
+      Planning's prices are USD). They are converted to the vendor's. */
+  priceCurrency?: string,
 ): PurchaseOrderData {
   poCounter++;
   const id = `po-new-${poCounter}`;
@@ -938,16 +1081,30 @@ export function createPOFromVendorCheckout(
     };
   });
 
-  const shippingFee = Math.round(lineItems.length * 12.5 * 100) / 100; // mock shipping (excluded from total)
-
   const now = new Date();
   const deliveryDate = items[0]?.needByDate || new Date(now.getTime() + 14 * 86400000).toISOString().split("T")[0];
+  const orderDate = now.toISOString().split("T")[0];
+  /* The cart prices a vendor's items in its default currency (spec 4.2);
+     the PO opens in it, with the rate on its PO date (spec 4.3). */
+  const rate = stampPoRate(vendorCurrency(vendorName), orderDate);
+  const from = priceCurrency?.toUpperCase();
+  if (from && from !== rate.currency) {
+    const factor = crossRate(midRateOn(from, orderDate) ?? 1, rate.exchangeRate);
+    const convert = (n: number) => roundTo(rate.currency, n * factor);
+    for (const li of lineItems) {
+      li.unitPrice = convert(li.unitPrice);
+    }
+    for (const a of checkoutAdjustments) {
+      if (a.amountType === "$") a.amount = convert(a.amount);
+    }
+  }
+  const shippingFee = mockShippingFee(lineItems.length, { ...rate, orderDate }); // mock shipping (excluded from total)
 
   const po: PurchaseOrderData = {
     id,
     poNumber,
     status: "Draft",
-    orderDate: now.toISOString().split("T")[0],
+    orderDate,
     deliveryDate,
     confirmationDate: null,
     sentDate: null,
@@ -961,6 +1118,7 @@ export function createPOFromVendorCheckout(
     shippingFee,
     discountTotal: 0,
     total: 0,
+    ...rate,
     adjustments: checkoutAdjustments,
     notes: notes || "",
     poNotes: [],
@@ -1010,7 +1168,10 @@ export function createPOFromBuyNow(
     totalPrice: number;
     /** Item-level one-time discounts/premiums from the Items Detail Modal. */
     oneTimeAdjustments?: LineOneTimeAdjustment[];
-  }
+  },
+  /** The currency the item's prices are in (the item modal's `currency`),
+      when it may not be the vendor's. They are converted to the vendor's. */
+  priceCurrency?: string,
 ): PurchaseOrderData {
   poCounter++;
   const id = `po-new-${poCounter}`;
@@ -1049,9 +1210,16 @@ export function createPOFromBuyNow(
     receivedQuantity: 0,
   };
 
-  const shippingFee = 12.5; // mock shipping (excluded from total)
-
   const now = new Date();
+  const orderDate = now.toISOString().split("T")[0];
+  // In the vendor's default currency (spec 4.2), at the rate on the PO date.
+  const rate = stampPoRate(vendorCurrency(vendorName), orderDate);
+  const from = priceCurrency?.toUpperCase();
+  const factor = from && from !== rate.currency ? crossRate(midRateOn(from, orderDate) ?? 1, rate.exchangeRate) : 1;
+  const convert = (n: number) => (factor === 1 ? n : roundTo(rate.currency, n * factor));
+  lineItem.unitPrice = convert(lineItem.unitPrice);
+  const oneTimeAdjustments = orderDetails.oneTimeAdjustments?.map((a) => (a.amountType === "$" ? { ...a, amount: convert(a.amount) } : a));
+  const shippingFee = mockShippingFee(1, { ...rate, orderDate }); // mock shipping (excluded from total)
 
   const recipient: PORecipient = {
     name: orderDetails.contactName,
@@ -1064,7 +1232,7 @@ export function createPOFromBuyNow(
     id,
     poNumber,
     status: "Draft",
-    orderDate: now.toISOString().split("T")[0],
+    orderDate,
     deliveryDate: orderDetails.needByDate,
     confirmationDate: null,
     sentDate: null,
@@ -1078,7 +1246,8 @@ export function createPOFromBuyNow(
     shippingFee,
     discountTotal: 0,
     total: 0,
-    adjustments: lineAdjustmentsToPO(lineItem.id, orderDetails.oneTimeAdjustments),
+    ...rate,
+    adjustments: lineAdjustmentsToPO(lineItem.id, oneTimeAdjustments),
     notes: orderDetails.notes,
     poNotes: [],
     createdBy: "Areeb Tanvir",
@@ -1331,7 +1500,7 @@ export function cancelLineItem(
     po.lineItems = po.lineItems.filter((li) => li.id !== lineItemId);
 
     // Recalculate totals against the surviving lines.
-    po.shippingFee = Math.round(po.lineItems.length * 12.5 * 100) / 100;
+    po.shippingFee = mockShippingFee(po.lineItems.length, po);
     applyComputedTotals(po);
 
     purchaseOrders.set(poId, { ...po });
@@ -1361,7 +1530,7 @@ export function cancelLineItem(
      lines. */
   po.lineItems[idx] = { ...cancelledLine, cancelled: true, cancelledDate: today };
   const activeItems = po.lineItems.filter((li) => !li.cancelled);
-  po.shippingFee = Math.round(activeItems.length * 12.5 * 100) / 100;
+  po.shippingFee = mockShippingFee(activeItems.length, po);
   applyComputedTotals(po);
 
   const allFullyReceived =
@@ -1417,7 +1586,7 @@ export function cancelRemaining(id: string, reason?: string, notes?: string): vo
     };
   });
   const activeItems = po.lineItems.filter((li) => !li.cancelled);
-  po.shippingFee = Math.round(activeItems.length * 12.5 * 100) / 100;
+  po.shippingFee = mockShippingFee(activeItems.length, po);
   applyComputedTotals(po);
   if (!po.preCancellationStatus) po.preCancellationStatus = "Partially Received";
   po.status = "Fully Received with Cancellations";
@@ -1656,7 +1825,7 @@ export function updateLineItem(
   po.lineItems[idx] = li;
 
   // Recalculate totals
-  po.shippingFee = Math.round(po.lineItems.length * 12.5 * 100) / 100;
+  po.shippingFee = mockShippingFee(po.lineItems.length, po);
   applyComputedTotals(po);
 
   purchaseOrders.set(poId, { ...po });
@@ -1710,6 +1879,9 @@ export function addLineItemToPO(
   item: Omit<POLineItem, "lineTotal" | "receivedQuantity">,
   /** Item-level one-time discounts/premiums from the Items Detail Modal. */
   oneTimeAdjustments?: LineOneTimeAdjustment[],
+  /** The currency the item's price is in (its vendor's), when it may not be
+   *  the PO's: it is converted at the PO's rate (spec 4.3). */
+  priceCurrency?: string,
 ): void {
   const po = purchaseOrders.get(poId);
   if (!po) return;
@@ -1717,15 +1889,21 @@ export function addLineItemToPO(
   // Prevent duplicates by itemNumber
   if (po.lineItems.some((li) => li.itemNumber === item.itemNumber)) return;
 
-  const lineTotal = item.unitPrice * item.quantity * (1 - item.discount / 100);
-  const newItem: POLineItem = { ...item, lineTotal, receivedQuantity: 0 };
+  const fx = poFx(po);
+  const from = (priceCurrency || fx.currency).toUpperCase();
+  const factor = from === fx.currency ? 1 : crossRate(midRateOn(from, fx.rateDate) ?? 1, fx.rate);
+  const convert = (n: number) => (factor === 1 ? n : roundTo(fx.currency, n * factor));
+  const unitPrice = convert(item.unitPrice);
+  const lineTotal = unitPrice * item.quantity * (1 - item.discount / 100);
+  const newItem: POLineItem = { ...item, unitPrice, lineTotal, receivedQuantity: 0 };
   po.lineItems.push(newItem);
   if (oneTimeAdjustments && oneTimeAdjustments.length > 0) {
-    po.adjustments = [...(po.adjustments ?? []), ...lineAdjustmentsToPO(newItem.id, oneTimeAdjustments)];
+    const converted = oneTimeAdjustments.map((a) => (a.amountType === "$" ? { ...a, amount: convert(a.amount) } : a));
+    po.adjustments = [...(po.adjustments ?? []), ...lineAdjustmentsToPO(newItem.id, converted)];
   }
 
   // Recalculate totals
-  po.shippingFee = Math.round(po.lineItems.length * 12.5 * 100) / 100;
+  po.shippingFee = mockShippingFee(po.lineItems.length, po);
   applyComputedTotals(po);
 
   purchaseOrders.set(poId, { ...po });
@@ -1740,7 +1918,7 @@ export function removeLineItemFromPO(poId: string, lineItemId: string): void {
   po.lineItems = po.lineItems.filter((li) => li.id !== lineItemId);
 
   // Recalculate totals
-  po.shippingFee = Math.round(po.lineItems.length * 12.5 * 100) / 100;
+  po.shippingFee = mockShippingFee(po.lineItems.length, po);
   applyComputedTotals(po);
 
   purchaseOrders.set(poId, { ...po });
@@ -1855,6 +2033,22 @@ export function duplicatePO(
     });
   }
 
+  /* Currency (spec 4.2, 4.3). A same-vendor duplicate keeps the currency
+     its lines are in (the picked version's, else the source's); a PO for
+     another vendor opens in that vendor's default currency, its prices
+     converted through the base currency. The rate is taken on the new PO
+     date, of the type the source used. */
+  const orderDate = now.toISOString().split("T")[0];
+  const fromFx = poFx({ ...source, ...(chosenVersion?.snapshot.currency ? chosenVersion.snapshot : {}) });
+  const rate = stampPoRate(
+    opts.vendorOverride ? vendorCurrency(opts.vendorOverride.name) : fromFx.currency,
+    orderDate,
+    fromFx.rateType,
+  );
+  const convertPrice = (n: number) =>
+    rate.currency === fromFx.currency ? n : roundTo(rate.currency, n * crossRate(fromFx.rate, rate.exchangeRate));
+  newLineItems = newLineItems.map((li) => ({ ...li, unitPrice: convertPrice(li.unitPrice), priceChangedFromCatalog: undefined }));
+
   /* Price-drift detection (buyer 2026-07-23, phase 3): compare each
      surviving line's unit price against the CURRENT catalog price.
      When they differ (item has moved since the source PO was placed)
@@ -1862,13 +2056,19 @@ export function duplicatePO(
      stamped on lines pending qualification — for those the catalog
      doesn't have the item↔vendor pairing yet, so a "changed" claim
      would mislead. Small epsilon on the compare so floating-point
-     wobble ($/unit multiplied through discount, etc.) doesn't cry wolf. */
+     wobble ($/unit multiplied through discount, etc.) doesn't cry wolf.
+     The catalog price is in its vendor's currency; it is compared in the
+     PO's, at the PO date's mid-market rates. */
   newLineItems = newLineItems.map((li) => {
     if (li.needsQualificationForVendor) return li;
     const catalogItem = CATALOG.find((c) => c.itemNumber === li.itemNumber);
     if (!catalogItem || catalogItem.unitPrice <= 0) return li;
-    if (Math.abs(catalogItem.unitPrice - li.unitPrice) < 0.005) return li;
-    return { ...li, priceChangedFromCatalog: catalogItem.unitPrice };
+    const catalogCurrency = vendorCurrency(catalogItem.partnerLocation);
+    const catalogPrice = catalogCurrency === rate.currency
+      ? catalogItem.unitPrice
+      : roundTo(rate.currency, catalogItem.unitPrice * crossRate(midRateOn(catalogCurrency, orderDate) ?? 1, rate.exchangeRate));
+    if (Math.abs(catalogPrice - li.unitPrice) < 0.005) return li;
+    return { ...li, priceChangedFromCatalog: catalogPrice };
   });
 
   /* Totals are recomputed via applyComputedTotals below. One-time
@@ -1878,8 +2078,8 @@ export function duplicatePO(
      the new PO the vendor never agreed to, and the mismatch wouldn't
      surface until the vendor invoice. Everything else is copied. */
   const shippingFee = chosenVersion
-    ? Math.round(newLineItems.length * 12.5 * 100) / 100
-    : source.shippingFee;
+    ? mockShippingFee(newLineItems.length, { ...rate, orderDate })
+    : convertPrice(source.shippingFee);
 
   const vendor = opts.vendorOverride ?? { ...source.vendor };
   const payment = {
@@ -1890,12 +2090,13 @@ export function duplicatePO(
   const reasonParts = [`Duplicated from ${source.poNumber}`];
   if (chosenVersion) reasonParts.push(`V${chosenVersion.version}`);
   if (opts.vendorLabel) reasonParts.push(`Vendor: ${opts.vendorLabel}`);
+  if (rate.currency !== fromFx.currency) reasonParts.push(`Prices converted ${fromFx.currency} → ${rate.currency}`);
 
   const po: PurchaseOrderData = {
     id,
     poNumber,
     status: "Draft",
-    orderDate: now.toISOString().split("T")[0],
+    orderDate,
     deliveryDate: source.deliveryDate,
     confirmationDate: null,
     sentDate: null,
@@ -1909,6 +2110,7 @@ export function duplicatePO(
     shippingFee,
     discountTotal: 0,
     total: 0,
+    ...rate,
     adjustments: [],
     notes: source.notes,
     poNotes: source.poNotes.map(n => ({ ...n, id: `note-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` })),
@@ -2108,7 +2310,7 @@ function seedDemoPO(): void {
     versions: [],
   };
 
-  const seeded = initVersioning(po, "Initial PO created — 6 items, $15,580.36 total");
+  const seeded = initVersioning(inVendorCurrency(po), "Initial PO created — 6 items, $15,580.36 total");
 
   // Build distinct snapshots per version so comparisons show actual diffs
   const v1LineItems: POLineItemSnapshot[] = [
@@ -2252,6 +2454,8 @@ function seedDemoPO(): void {
     { id: "note-seed-8", type: "internal", text: "Bolt grade A4-80 confirmed by structural team. Previous orders used A2-70 which failed stress test.", author: "Irtaza Abid", authorInitials: "IA", timestamp: "Mar 03, 2026, 02:00 PM", lineItemId: "demo-li-6" },
   ];
   applyComputedTotals(seeded);
+  // The hand-written version snapshots are in the PO's currency, at its rate.
+  for (const v of seeded.versions) v.snapshot = { ...poRateFields(seeded), ...v.snapshot };
   purchaseOrders.set(id, seeded);
 }
 
@@ -2496,7 +2700,7 @@ function seedListingPOs(): void {
         { id: "A-seed-2", label: "Expedited handling", type: "premium", amountType: "$", amount: 85, scope: "item", appliedTo: [lineItems[1].id], isApplied: true },
       ];
     }
-    applyComputedTotals(po);
+    applyComputedTotals(inVendorCurrency(po));
     purchaseOrders.set(id, initVersioning(po));
   }
 }
@@ -2623,7 +2827,7 @@ function seedOutdatedDemoPO(): void {
     versions: [],
   };
 
-  applyComputedTotals(po);
+  applyComputedTotals(inVendorCurrency(po));
   purchaseOrders.set(id, initVersioning(po));
 }
 

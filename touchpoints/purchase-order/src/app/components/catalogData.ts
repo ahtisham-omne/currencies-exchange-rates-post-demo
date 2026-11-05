@@ -4,6 +4,8 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { UOM_REGISTRY, type UOMDefinition } from "./uomRegistry";
+import { crossRate, roundTo, vendorCurrency } from "@/app/currency/poFx";
+import { LAST_SYNC, midRateOn } from "@/app/currency/rates";
 
 /* Mock data seed pool — drawn from the canonical registry so generated
    items always use UOMs the picker knows about. Picked sub-set keeps
@@ -40,6 +42,10 @@ export interface CatalogItem {
   vendorUOMQty: number;
   defaultUOM: string;
   discount: number;
+  /** The list price as the design writes it, in USD, before it was
+   *  restated in the vendor's currency (`unitPrice`). Purchase Requests
+   *  estimate in USD and read this. */
+  listPriceUsd?: number;
 }
 
 /** Extra images pool for items that only have one image */
@@ -139,8 +145,25 @@ export function buildScaledCatalog(): CatalogItem[] {
   return items;
 }
 
-/** Full catalog, generated once */
-export const CATALOG = buildScaledCatalog();
+/* ── Vendor prices in the vendor's currency (spec 4.2) ──
+   The design writes every price in USD. A vendor quotes in its default
+   currency (currency/poFx's VENDOR_CURRENCIES), so each price is restated
+   in it once, at the mid-market rate of the last sync; the cart and POs
+   then carry it as quoted. Unassigned items stay at $0. */
+const PRICE_LIST_DAY = LAST_SYNC.slice(0, 10);
+
+/** An amount in one currency in another, at the price list's rates. */
+export function convertListPrice(amount: number, from: string, to: string): number {
+  if (!amount || from.toUpperCase() === to.toUpperCase()) return amount;
+  return roundTo(to, amount * crossRate(midRateOn(from, PRICE_LIST_DAY) ?? 1, midRateOn(to, PRICE_LIST_DAY) ?? 1));
+}
+
+/** Full catalog, generated once; each item priced in its default vendor's currency. */
+export const CATALOG = buildScaledCatalog().map((item) =>
+  item.partnerLocation
+    ? { ...item, listPriceUsd: item.unitPrice, unitPrice: convertListPrice(item.unitPrice, "USD", vendorCurrency(item.partnerLocation)) }
+    : item,
+);
 
 /** Unique categories sorted */
 export const CATEGORIES = [...new Set(CATALOG.map((c) => c.category))].sort();
@@ -931,6 +954,10 @@ export interface VendorUnitOrderingRules {
 export interface ItemVendorOffer {
   vendorName: string;
   abbr: string;
+  /** The currency `unitPrice` is in when it isn't the vendor's default:
+   *  an offer built from an item's own price (a PO line's, in the PO's
+   *  currency; Procurement Planning's, in USD). */
+  currency?: string;
   /** Legacy single-price field — kept for backwards compatibility with snapshots
    *  and components not yet migrated. Mirrors the default tier's price. */
   unitPrice: number;
@@ -1249,6 +1276,11 @@ export function buildUnitPriceLadder(
   return tiers;
 }
 
+/** A price ladder's tiers rounded to the currency's minor units (¥ has none). */
+function inCurrencyUnits(tiers: VendorUnitPrice[], code: string): VendorUnitPrice[] {
+  return tiers.map((t) => ({ ...t, price: roundTo(code, t.price) }));
+}
+
 /**
  * Build multi-vendor offers for each catalog item.
  * The item's current `partnerLocation` becomes the default vendor.
@@ -1266,7 +1298,11 @@ function buildItemVendorOffers(): Map<string, ItemVendorOffer[]> {
     if (!defaultProfile) continue;
 
     const itemSeed = item.id.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-    const defaultTiers = buildUnitPriceLadder(item.defaultUOM, item.unitPrice, item.vendorUOM, item.vendorUOMQty, itemSeed);
+    const defaultCurrency = vendorCurrency(item.partnerLocation);
+    const defaultTiers = inCurrencyUnits(
+      buildUnitPriceLadder(item.defaultUOM, item.unitPrice, item.vendorUOM, item.vendorUOMQty, itemSeed),
+      defaultCurrency,
+    );
     offers.push({
       vendorName: item.partnerLocation,
       abbr: defaultProfile.abbr,
@@ -1301,10 +1337,15 @@ function buildItemVendorOffers(): Map<string, ItemVendorOffer[]> {
       if (!altProfile) continue;
 
       const priceMult = 0.85 + ((hash + i * 13) % 35) / 100;
-      const altPrice = Math.round(item.unitPrice * priceMult * 100) / 100;
+      // Quoted in the alternative vendor's own currency.
+      const altCurrency = vendorCurrency(altName);
+      const altPrice = convertListPrice(Math.round(item.unitPrice * priceMult * 100) / 100, defaultCurrency, altCurrency);
       const altDiscount = (hash + i) % 8 === 0 ? [3, 5, 7][i % 3] : 0;
 
-      const altTiers = buildUnitPriceLadder(item.defaultUOM, altPrice, item.vendorUOM, item.vendorUOMQty, itemSeed + i * 11);
+      const altTiers = inCurrencyUnits(
+        buildUnitPriceLadder(item.defaultUOM, altPrice, item.vendorUOM, item.vendorUOMQty, itemSeed + i * 11),
+        altCurrency,
+      );
       offers.push({
         vendorName: altName,
         abbr: altProfile.abbr,

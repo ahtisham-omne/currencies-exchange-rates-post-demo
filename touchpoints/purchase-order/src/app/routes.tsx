@@ -1,4 +1,5 @@
 import { createBrowserRouter } from "react-router-dom";
+import { setInAppNavigator } from "@/embedding";
 import Homepage from "./components/Homepage";
 import PurchaseOrdersListing from "./components/PurchaseOrdersListing";
 import PurchaseOrderDraft from "./components/PurchaseOrderDraft";
@@ -121,4 +122,8 @@ export const router = createBrowserRouter([
     path: "/docs/business-logic",
     Component: BusinessLogicDoc,
   },
-]);
+  // basename: the shell serves this app under /touchpoint-apps/purchase-order/ (see src/embedding.ts).
+], { basename: import.meta.env.BASE_URL });
+
+// Plain in-app link clicks inside the shell go through the router (src/embedding.ts).
+setInAppNavigator((path) => { void router.navigate(path); });

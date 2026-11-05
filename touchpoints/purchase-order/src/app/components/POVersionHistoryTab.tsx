@@ -3,7 +3,11 @@ import { Package } from "lucide-react";
 import { toast } from "sonner";
 import { FONT } from "./designTokens";
 import type { POVersionEntry } from "./poStore";
-import { versionPalette as C } from "./poVersionDisplay";
+import {
+  versionPalette as C,
+  currencyShiftVersions,
+  useDocFx,
+} from "./poVersionDisplay";
 import {
   filterPOVersions,
   type POVersionFilterState,
@@ -82,6 +86,14 @@ export default function POVersionHistoryTab({
   const sorted = useMemo(
     () => [...versions].sort((a, b) => b.version - a.version),
     [versions],
+  );
+
+  /* The PO's current currency (PO page) and the versions whose currency
+     differs from a neighbour's — their rows mark the currency. */
+  const docFx = useDocFx();
+  const currencyShifts = useMemo(
+    () => currencyShiftVersions(sorted, docFx),
+    [sorted, docFx],
   );
 
   /* Distinct creators for the advanced popover's Created-by list. Stable
@@ -229,6 +241,7 @@ export default function POVersionHistoryTab({
                         : toggleExpanded(ver.version)
                     }
                     onRevertClick={canRevert ? () => setShowRevertConfirm(ver.version) : undefined}
+                    showCurrency={currencyShifts.has(ver.version)}
                   />
                   {isExpanded && !compareMode && (
                     <div
@@ -271,6 +284,7 @@ export default function POVersionHistoryTab({
       {showRevertConfirm !== null && (
         <POVersionRevertModal
           version={showRevertConfirm}
+          snapshot={sorted.find((v) => v.version === showRevertConfirm)?.snapshot}
           onClose={() => setShowRevertConfirm(null)}
           onConfirm={(reason: string) => {
             onRevert(showRevertConfirm, reason);

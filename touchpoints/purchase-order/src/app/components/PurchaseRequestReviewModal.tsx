@@ -223,6 +223,12 @@ function groupItems(
   }));
 }
 
+/** A catalog item's list price in USD, as the design writes it: requests
+ *  estimate in USD (catalog prices are now in each vendor's currency). */
+function listUsd(item: CatalogItem): number {
+  return item.listPriceUsd ?? item.unitPrice ?? 0;
+}
+
 function fmtDate(iso: string): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -274,7 +280,7 @@ export default function PurchaseRequestReviewModal({
         uom: item.defaultUOM || "EA",
         /* Pre-fill unit price from the catalogue so buyers see the
            list price without needing to look it up. Still editable. */
-        estimatedPrice: item.unitPrice > 0 ? String(item.unitPrice) : "",
+        estimatedPrice: listUsd(item) > 0 ? String(listUsd(item)) : "",
         /* Preferred vendor is captured invisibly here — it flows into
            the submitted PR — but the UI is hidden because vendor is
            already made explicit by the group heading. */
@@ -402,7 +408,7 @@ export default function PurchaseRequestReviewModal({
         const qty = parseFloat(fields.quantity) || 0;
         const price = fields.estimatedPrice
           ? parseFloat(fields.estimatedPrice) || 0
-          : item.unitPrice ?? 0;
+          : listUsd(item);
         return sum + qty * price;
       }, 0),
     [checkedList, perRow],
@@ -512,7 +518,7 @@ export default function PurchaseRequestReviewModal({
           const qty = parseFloat(f?.quantity ?? "0") || 0;
           const price = f?.estimatedPrice
             ? parseFloat(f.estimatedPrice) || 0
-            : item.unitPrice ?? 0;
+            : listUsd(item);
           return sum + qty * price;
         }, 0);
         createdSummaries.push({
@@ -696,7 +702,7 @@ export default function PurchaseRequestReviewModal({
                         const qty = parseFloat(f.quantity) || 0;
                         const price = f.estimatedPrice
                           ? parseFloat(f.estimatedPrice) || 0
-                          : item.unitPrice ?? 0;
+                          : listUsd(item);
                         return sum + qty * price;
                       }, 0);
                       return (
@@ -1237,7 +1243,7 @@ function ItemRow({
                 className="text-foreground tabular-nums"
                 style={{ fontWeight: 600 }}
               >
-                ${item.unitPrice.toFixed(2)}
+                ${listUsd(item).toFixed(2)}
               </span>
             </span>
           </div>

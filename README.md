@@ -41,3 +41,12 @@ Partners is the redesigned app from [`partner-management-module`](https://github
 - where each is defined;
 - how the earlier touchpoint maps onto it;
 - how to pull later design changes.
+
+### Purchase Orders
+
+Purchase Orders is the redesigned app from [`Purchase-Order`](https://github.com/ahtisham-omne/Purchase-Order), added as a squashed subtree. [docs/purchase-orders-currency-touchpoints.md](docs/purchase-orders-currency-touchpoints.md) records:
+
+- its currency and exchange-rate touchpoints;
+- where each is defined;
+- how the earlier touchpoint maps onto it;
+- how to pull later design changes.

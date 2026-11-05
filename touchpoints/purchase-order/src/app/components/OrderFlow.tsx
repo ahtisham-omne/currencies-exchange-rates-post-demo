@@ -135,6 +135,11 @@ import { LineOneTimeAdjustmentsSection } from "./LineOneTimeAdjustmentsSection";
 import { lineOneTimeNet, type LineOneTimeAdjustment } from "./poOrderPricing";
 import { AttachmentsTab, MOCK_ATTACHMENTS } from "./attachments/AttachmentsTab";
 import { cn } from "./ui/utils";
+import { getPO } from "./poStore";
+import { DocCurrencyProvider } from "./currency/DocCurrency";
+import { useDocCurrency } from "./currency/docCurrencyContext";
+import { currencyDecimals, formatMoney, formatRate, moneyPrefix } from "@/app/currency/money";
+import { poFx, ruleAmountFactor, ruleAmountFactorToday, toPOCurrency, todayFx, vendorCurrency } from "@/app/currency/poFx";
 
 /* ═══════════════════════════════════════════════════════════════
    TYPES  (unchanged — preserving public interface)
@@ -160,6 +165,9 @@ export interface OrderFlowItem {
    *  on an existing Draft PO line); absent = Active. Drives the
    *  Active / Inactive status badge in the item header. */
   inactive?: POLineItemInactive;
+  /** The currency `unitPrice` is in when it isn't the vendor's
+   *  (Procurement Planning's prices are USD). */
+  priceCurrency?: string;
 }
 
 export interface OrderFlowResult {
@@ -190,6 +198,9 @@ export interface OrderFlowResult {
   /** Item-level one-time discounts/premiums edited in the Pricing Rules
    *  tab. Callers carry them into the cart / new PO / existing PO line. */
   oneTimeAdjustments: LineOneTimeAdjustment[];
+  /** The currency the prices above are in: the PO's on a PO line, else
+   *  the vendor's (its quote, spec 4.2). */
+  currency?: string;
 }
 
 export interface OrderFlowPrefill {
@@ -652,6 +663,7 @@ function LinePricingRulesCard({
   currentQty,
   readOnly,
 }: LinePricingRulesCardProps) {
+  const { currency } = useDocCurrency();
   if (rules.length === 0) return null;
 
   /* Enrich each rule with the runtime signals SO's UI reads: active
@@ -744,7 +756,7 @@ function LinePricingRulesCard({
                 color: totalImpact > 0 ? "#10B981" : "#7C3AED",
               }}
             >
-              {totalImpact > 0 ? "−" : "+"}${Math.abs(totalImpact).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {totalImpact > 0 ? "−" : "+"}{formatMoney(Math.abs(totalImpact), currency)}
             </span>
           )}
           {!readOnly && (
@@ -771,7 +783,7 @@ function LinePricingRulesCard({
            headline rate. */
         const impactTier = impact?.tier ?? rule.tiers[0];
         const rateStr = `${impactTier.rate}${impactTier.unit === "%" ? "%" : ""}`;
-        const amountStr = impact ? Math.abs(impact.amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null;
+        const amountStr = impact ? formatMoney(Math.abs(impact.amount), currency) : null;
         const isMultiTier = rule.tiers.length > 1;
 
         return (
@@ -934,7 +946,7 @@ function LinePricingRulesCard({
                       textDecoration: isDisabled ? "line-through" : undefined,
                     }}
                   >
-                    {isPremium ? "+" : "−"}${amountStr}
+                    {isPremium ? "+" : "−"}{amountStr}
                   </span>
                 )}
               </div>
@@ -1051,6 +1063,22 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
   >(null);
   const [activeUnitPrice, setActiveUnitPrice] = useState<number>(0);
   const [activeDiscount, setActiveDiscount] = useState<number>(0);
+  /* Currencies (spec 4.2, 4.3). The vendor's price book is in its default
+     currency (`bookCurrency`). The line's price is in the document's: the
+     PO's on a PO line (it may have been changed from Order Summary), else
+     the vendor's. A book price becoming the line's is converted at the
+     PO's rate (`bookToFlow`). */
+  /** The currency an offer's prices are in: its own (an offer built from the
+   *  item's price), else the vendor's default. */
+  const offerCurrencyOf = (vendorName: string | undefined) =>
+    vendorOffers.find((o) => o.vendorName === vendorName)?.currency ?? vendorCurrency(vendorName);
+  const bookCurrency = offerCurrencyOf(activeVendor || item?.partnerLocation).toUpperCase();
+  const linkedPO = poId ? getPO(poId) : undefined;
+  const linkedFx = linkedPO ? poFx(linkedPO) : null;
+  const flowCurrency = linkedFx ? linkedFx.currency : bookCurrency;
+  const flowFx = linkedFx ?? todayFx(flowCurrency);
+  const bookToFlow = (price: number, vendorName?: string, currency?: string) =>
+    linkedPO ? toPOCurrency(price, currency ?? (vendorName ? offerCurrencyOf(vendorName) : bookCurrency), linkedPO) : price;
   const [sections, setSections] = useState<Record<string, boolean>>({ warnings: false, inventory: false, vendors: false, attachments: false });
   const [activeTab, setActiveTab] = useState<string>("shipping");
   const [inventorySubTab, setInventorySubTab] = useState<"rules" | "status">("rules");
@@ -1346,6 +1374,9 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
       // that don't map to catalog IDs), build offers from all system vendors with the
       // assigned vendor marked as default.
       if (item.partnerLocation && offers.length === 0) {
+        // The item's own price: the PO's currency on a PO line, Planning's USD, else the vendor's.
+        const linePo = poId ? getPO(poId) : undefined;
+        const itemCurrency = linePo ? poFx(linePo).currency : item.priceCurrency?.toUpperCase();
         const allSystem = getAllSystemVendorOffersForItem(item);
         const defaultVendor = allSystem.find(o => o.vendorName === item.partnerLocation);
         if (defaultVendor) {
@@ -1356,7 +1387,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
         }
         // Re-sort so the assigned vendor is first with "default" priority
         offers = allSystem.map((o, idx) => {
-          if (o.vendorName === item.partnerLocation) return { ...o, unitPrice: item.unitPrice, priority: "default", isDefault: true, discount: item.discount };
+          if (o.vendorName === item.partnerLocation) return { ...o, unitPrice: item.unitPrice, priority: "default", isDefault: true, discount: item.discount, currency: itemCurrency };
           return { ...o, priority: `${idx + 1}`, isDefault: false };
         }).sort((a, b) => (a.isDefault ? -1 : b.isDefault ? 1 : 0));
       }
@@ -1396,7 +1427,8 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
         // VENDOR-ASSIGNED: revert to original behavior — auto-populate price
         const offer = offers.find(o => o.vendorName === item.partnerLocation);
         setActiveVendor(item.partnerLocation);
-        setActiveUnitPrice(offer?.unitPrice ?? item.unitPrice);
+        // A PO line's own price is already in the PO's currency.
+        setActiveUnitPrice(offer ? bookToFlow(offer.unitPrice, offer.vendorName, offer.currency) : item.unitPrice);
         setActiveDiscount(offer?.discount ?? item.discount);
         setAssignedVendors([]); // Not used for vendor-assigned items
       } else {
@@ -1860,7 +1892,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
     }
     upsertVendorPrice(vendorName, { price: lineTier.price, priceConfirmed: true, discount: 0, unit: lineTier.unit });
     setActiveVendor(vendorName);
-    setActiveUnitPrice(lineTier.price);
+    setActiveUnitPrice(bookToFlow(lineTier.price, vendorName));
     setActiveDiscount(0);
     setVendorUnitOverride(lineTier.unit);
     if (opts.isNewVendor) setVendorContacts(getVendorContacts(vendorName));
@@ -2013,7 +2045,8 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
   const beginTierEdit = (unit: string) => {
     setEditTierUnit(unit);
     const found = activeTiers.find((t) => t.unit === unit);
-    setTierDraftPrice(found ? found.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "");
+    // Plain digits for the number input ("49,534.00" would parse as 49).
+    setTierDraftPrice(found ? found.price.toFixed(currencyDecimals(bookCurrency)) : "");
     setTierDraftUnit(unit);
   };
   const commitTierEdit = (unit: string) => {
@@ -2055,7 +2088,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
          until the user navigates away. */
       const activeUnitNow = vendorUnitOverride || item.vendorUOM;
       if (unit === activeUnitNow) {
-        setActiveUnitPrice(nextPrice);
+        setActiveUnitPrice(bookToFlow(nextPrice));
       }
     };
 
@@ -2105,7 +2138,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
       onConfirmDefault: () => {
         writeTier();
         toast.success("Qualified vendor updated", {
-          description: `${activeVendor} · $${nextPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${unit}`,
+          description: `${activeVendor} · ${formatMoney(nextPrice, bookCurrency)} / ${unit}`,
           style: { fontFamily: FONT }, duration: 2400,
         });
       },
@@ -2122,8 +2155,8 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
           }),
         );
         const activeUnitNow = vendorUnitOverride || item.vendorUOM;
-        if (unit === activeUnitNow) setActiveUnitPrice(nextPrice);
-        toast.message(`$${nextPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${unit} applied to this PO`, {
+        if (unit === activeUnitNow) setActiveUnitPrice(bookToFlow(nextPrice));
+        toast.message(`${formatMoney(nextPrice, bookCurrency)} / ${unit} applied to this PO`, {
           description: "Qualified vendor left unchanged",
           style: { fontFamily: FONT }, duration: 2400,
         });
@@ -2193,9 +2226,9 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
             }),
           );
           const activeUnitNow = vendorUnitOverride || item.vendorUOM;
-          if (unit === activeUnitNow) setActiveUnitPrice(price);
+          if (unit === activeUnitNow) setActiveUnitPrice(bookToFlow(price));
           toast.success("Qualified vendor updated", {
-            description: `${activeVendor} · $${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${unit}`,
+            description: `${activeVendor} · ${formatMoney(price, bookCurrency)} / ${unit}`,
             style: { fontFamily: FONT }, duration: 2400,
           });
         },
@@ -2214,8 +2247,8 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
             }),
           );
           const activeUnitNow = vendorUnitOverride || item.vendorUOM;
-          if (unit === activeUnitNow) setActiveUnitPrice(price);
-          toast.message(`$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${unit} applied to this PO`, {
+          if (unit === activeUnitNow) setActiveUnitPrice(bookToFlow(price));
+          toast.message(`${formatMoney(price, bookCurrency)} / ${unit} applied to this PO`, {
             description: "Qualified vendor left unchanged",
             style: { fontFamily: FONT }, duration: 2400,
           });
@@ -2265,7 +2298,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
       );
       // Keep the headline in sync if the new tier is the active unit.
       const activeUnitNow = vendorUnitOverride || item.vendorUOM;
-      if (unit === activeUnitNow) setActiveUnitPrice(price);
+      if (unit === activeUnitNow) setActiveUnitPrice(bookToFlow(price));
     };
     // Persist the tier to the vendor's master price book.
     const saveToMaster = () => {
@@ -2294,7 +2327,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
         saveToMaster();
         addLocal({ poOnly: false });
         toast.success(`${unit} added to ${activeVendor}`, {
-          description: `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${unit}`,
+          description: `${formatMoney(price, bookCurrency)} / ${unit}`,
           style: { fontFamily: FONT }, duration: 2000,
         });
       },
@@ -2320,7 +2353,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
       confirm handler. */
   const applyVendorOfferOriginal = (offer: ItemVendorOffer) => {
     setActiveVendor(offer.vendorName);
-    setActiveUnitPrice(offer.unitPrice);
+    setActiveUnitPrice(bookToFlow(offer.unitPrice, offer.vendorName, offer.currency));
     setActiveDiscount(offer.discount);
     setVendorContacts(getVendorContacts(offer.vendorName));
     setShipmentMethod(getDefaultShipping({ ...item, partnerLocation: offer.vendorName }).shipmentMethod);
@@ -2484,7 +2517,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
         });
         applyVendorPriceLocal(vendorName, price, savedUnit);
         toast.success("Default price updated", {
-          description: `${vendorName} · $${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${savedUnit}`,
+          description: `${vendorName} · ${formatMoney(price, vendorCurrency(vendorName))} / ${savedUnit}`,
           style: { fontFamily: FONT }, duration: 2400,
         });
       },
@@ -2516,6 +2549,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
       price: tier.price,
       isDefault,
       fallbackUnit: fallback?.unit,
+      currency: bookCurrency,
     });
     const applyLocalRemove = () => {
       setVendorOffers((prev) =>
@@ -2566,6 +2600,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
       oldPrice: currentDefault?.price ?? 0,
       newUnit: unit,
       newPrice: tier.price,
+      currency: bookCurrency,
     });
     /* When the buyer promotes the tier to the master price book
        ("Update Qualified Vendor & Use Here"), the tier is no longer
@@ -2601,7 +2636,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
          table row shows the new default but the headline keeps the
          old unit/price until the buyer manually switches UOMs. */
       setVendorUnitOverride(unit);
-      setActiveUnitPrice(tier.price);
+      setActiveUnitPrice(bookToFlow(tier.price));
     };
     setTierWarning({
       open: true,
@@ -2693,7 +2728,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
     if (!activeOffer) return;
     const match = findUnitPrice(activeOffer, nextUnit);
     if (match) {
-      setActiveUnitPrice(match.price);
+      setActiveUnitPrice(bookToFlow(match.price));
     } else {
       setActiveUnitPrice(0);
       /* No price configured for the picked unit yet → auto-open the
@@ -2744,6 +2779,8 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
       ],
       vendorRules,
       seededActivation,
+      // Flat rule amounts (USD) in the line's currency, at the PO's or today's rate.
+      linkedFx ? ruleAmountFactor(linkedFx) : ruleAmountFactorToday(flowCurrency),
     );
     return entry ?? null;
   })();
@@ -2812,6 +2849,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
       discount: effectiveDiscount,
       completedMode: actionMode,
       oneTimeAdjustments,
+      currency: flowCurrency,
     });
     onOpenChange(false);
   };
@@ -2849,7 +2887,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
   ];
 
   return (
-    <>
+    <DocCurrencyProvider currency={flowCurrency} fx={flowFx} dateLabel={linkedFx ? "PO date" : "today"} role={linkedFx ? "PO currency" : "vendor currency"}>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         /* Sizing recipe — verbatim port of Partners' canonical
@@ -3170,7 +3208,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                               </div>
                               <div className="flex items-center gap-2 mt-0.5">
                                 {cardPriceConfirmed ? (
-                                  <span className="text-primary" style={{ ...S.small, fontWeight: "var(--font-weight-semibold)" }}>${cardPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {item.vendorUOM}</span>
+                                  <span className="text-primary" style={{ ...S.small, fontWeight: "var(--font-weight-semibold)" }}>{formatMoney(cardPrice, vendorCurrency(av.vendorName))} / {item.vendorUOM}</span>
                                 ) : (
                                   <span className="text-muted-foreground" style={S.small}>Price not set</span>
                                 )}
@@ -3317,11 +3355,11 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                     {editTierUnit === item.vendorUOM ? (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <div className="flex items-center rounded-md border border-[#0A77FF]/40 bg-white overflow-hidden">
-                          <span className="pl-2 text-[#94A3B8]" style={{ fontSize: 14, fontFamily: FONT }}>$</span>
+                          <span className="pl-2 text-[#94A3B8]" style={{ fontSize: 14, fontFamily: FONT }}>{moneyPrefix(bookCurrency).trim()}</span>
                           <input
                             type="number"
                             min={0}
-                            step="0.01"
+                            step={10 ** -currencyDecimals(bookCurrency)}
                             value={tierDraftPrice}
                             autoFocus
                             onChange={(e) => setTierDraftPrice(e.target.value)}
@@ -3371,7 +3409,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                       </div>
                     ) : (
                       <div className="flex items-baseline gap-1 flex-wrap">
-                        <span className="text-foreground" style={S.price}>${effectivePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="text-foreground" style={S.price}>{formatMoney(effectivePrice, flowCurrency)}</span>
                         <span className="text-muted-foreground" style={S.small}>/ {item.vendorUOM}</span>
                         <button
                           type="button"
@@ -3396,6 +3434,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                         configuredUnits={configuredUnits}
                         itemBaseUnit={item.defaultUOM}
                         vendorName={activeVendor}
+                        currency={bookCurrency}
                         editTierUnit={editTierUnit}
                         tierDraftPrice={tierDraftPrice}
                         setTierDraftPrice={setTierDraftPrice}
@@ -3445,6 +3484,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                       configuredUnits={configuredUnits}
                       itemBaseUnit={item.defaultUOM}
                       vendorName={activeVendor}
+                      currency={bookCurrency}
                       editTierUnit={editTierUnit}
                       tierDraftPrice={tierDraftPrice}
                       setTierDraftPrice={setTierDraftPrice}
@@ -3488,7 +3528,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                   </div>
                 ) : (
                   <div className="flex items-baseline gap-1 flex-wrap">
-                    <span className="text-foreground" style={S.price}>${effectivePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="text-foreground" style={S.price}>{formatMoney(effectivePrice, flowCurrency)}</span>
                     <span className="text-muted-foreground" style={S.small}>/ {item.vendorUOM}</span>
                   </div>
                 )}
@@ -3758,7 +3798,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                   <>
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-muted-foreground" style={S.small}>Subtotal</span>
-                      <span className="text-foreground" style={S.bodyMed}>${subtotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="text-foreground" style={S.bodyMed}>{formatMoney(subtotal, flowCurrency)}</span>
                     </div>
                     {/* Discount + Premium pricing rules (buyer 2026-07-22
                         "everything is pricing rules — either discount or
@@ -3771,7 +3811,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                           Discount pricing rules
                         </span>
                         <span style={{ color: "hsl(var(--success))", ...S.bodyMed }}>
-                          −${(discountAmount + rulesDiscountAmount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {formatMoney(-(discountAmount + rulesDiscountAmount), flowCurrency)}
                         </span>
                       </div>
                     )}
@@ -3781,7 +3821,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                           Premium pricing rules
                         </span>
                         <span style={{ color: "#7C3AED", ...S.bodyMed }}>
-                          +${rulesPremiumAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          +{formatMoney(rulesPremiumAmount, flowCurrency)}
                         </span>
                       </div>
                     )}
@@ -3791,15 +3831,23 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                           One-time discounts/premiums
                         </span>
                         <span style={{ color: oneTimeNet < 0 ? "hsl(var(--success))" : "#7C3AED", ...S.bodyMed }}>
-                          {oneTimeNet < 0 ? "−" : "+"}${Math.abs(oneTimeNet).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {oneTimeNet < 0 ? "−" : "+"}{formatMoney(Math.abs(oneTimeNet), flowCurrency)}
                         </span>
                       </div>
                     )}
                     <div className="h-px my-2" style={{ backgroundColor: "hsl(var(--border))" }} />
                     <div className="flex items-center justify-between">
                       <span className="text-foreground" style={S.bodyMed}>Total</span>
-                      <span className="text-primary" style={S.total}>${totalPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="text-primary" style={S.total}>{formatMoney(totalPrice, flowCurrency)}</span>
                     </div>
+                    {/* The vendor quotes in another currency than this PO's:
+                        its book prices are converted at the PO's rate. */}
+                    {linkedPO && bookCurrency !== flowCurrency && (
+                      <p className="mt-1 text-right text-muted-foreground" style={{ ...S.small, fontSize: 11 }}>
+                        {activeVendor || item.partnerLocation} quotes in {bookCurrency}; this PO is in {flowCurrency}
+                        {" "}· 1 {bookCurrency} = {formatRate(toPOCurrency(1e6, bookCurrency, linkedPO) / 1e6)} {flowCurrency}
+                      </p>
+                    )}
                   </>
                 )}
               </div>
@@ -4917,6 +4965,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
           onConfirmDefault={priceConfirmState.onConfirmDefault}
           onUseOnce={priceConfirmState.onUseOnce}
           variant={priceConfirmState.variant ?? "warning"}
+          currency={bookCurrency}
         />
       )}
 
@@ -5106,7 +5155,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
         animation: poWarningFlashGreen 2.6s cubic-bezier(0.16, 1, 0.3, 1) 1;
       }
     `}</style>
-    </>
+    </DocCurrencyProvider>
   );
 }
 

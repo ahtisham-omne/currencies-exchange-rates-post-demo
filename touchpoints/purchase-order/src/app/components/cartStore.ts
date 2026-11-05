@@ -4,7 +4,8 @@
    Single cart shared across all pages.
    ═══════════════════════════════════════════════════════════════ */
 
-import { CATALOG } from "./catalogData";
+import { CATALOG, convertListPrice } from "./catalogData";
+import { vendorCurrency } from "@/app/currency/poFx";
 import type { CatalogItem } from "./catalogData";
 import type { LineOneTimeAdjustment } from "./poOrderPricing";
 
@@ -36,6 +37,10 @@ export interface GlobalCartItem {
   /** Item-level one-time discounts/premiums added in the Items Detail
    *  Modal. Carried into the PO on checkout. */
   oneTimeAdjustments?: LineOneTimeAdjustment[];
+  /** The currency `unitPrice` was given in, when it may not be the
+   *  vendor's (another vendor's quote; Procurement Planning's USD).
+   *  addToCart converts it: cart prices are in the vendor's currency. */
+  priceCurrency?: string;
   /** Set when the item master was deactivated after the line landed in
    *  the cart. A deactivated line is a hard block: it can't be selected,
    *  re-quantified, edited or checked out into a new PO — the only
@@ -127,7 +132,8 @@ export function subscribeToCart(fn: Listener): () => void {
   return () => _listeners.delete(fn);
 }
 
-export function addToCart(item: GlobalCartItem) {
+export function addToCart(input: GlobalCartItem) {
+  const item = inVendorCurrency(input);
   const normalizedItem = syncCartItemQuantities(item, item.vendorQty);
   // Replace if same item already in cart, otherwise append
   const idx = _cart.findIndex((c) => c.catalogItem.id === normalizedItem.catalogItem.id);
@@ -144,6 +150,26 @@ export function addToCart(item: GlobalCartItem) {
     _cart = [..._cart, normalizedItem];
   }
   _notify();
+}
+
+/** A cart line's prices in its vendor's currency (spec 4.2): one vendor
+ *  group becomes one PO in it. */
+function inVendorCurrency({ priceCurrency, ...item }: GlobalCartItem): GlobalCartItem {
+  const to = vendorCurrency(item.catalogItem.partnerLocation);
+  if (!priceCurrency || priceCurrency.toUpperCase() === to) return item;
+  const convert = (n: number) => convertListPrice(n, priceCurrency, to);
+  /* A catalogue entry is already in its vendor's currency; an item built
+     outside the catalogue (Procurement Planning's sandbox) carries the
+     same price as the line, so it converts too. */
+  const fromCatalog = CATALOG.some((c) => c.id === item.catalogItem.id);
+  return {
+    ...item,
+    catalogItem: fromCatalog
+      ? item.catalogItem
+      : { ...item.catalogItem, unitPrice: convert(item.catalogItem.unitPrice) },
+    unitPrice: convert(item.unitPrice),
+    oneTimeAdjustments: item.oneTimeAdjustments?.map((a) => (a.amountType === "$" ? { ...a, amount: convert(a.amount) } : a)),
+  };
 }
 
 export function removeFromCart(itemId: string) {

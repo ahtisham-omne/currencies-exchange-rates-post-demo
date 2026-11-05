@@ -4,14 +4,15 @@ import { ChevronDown, Check, Package, Paperclip, X, FileText, Image as ImageIcon
 import { ConfirmDiscardModal } from './ConfirmDiscardModal';
 import { ItemTypeBadge } from './ItemTypeBadge';
 import { NestedModalLayer, NestedModalTitle } from './NestedModalLayer';
+import { useDocCurrency } from './currency/docCurrencyContext';
+import { currencyDecimals, formatMoney, moneyPrefix } from '@/app/currency/money';
 
 /* Ported verbatim from Sales-Order-V5 `shared/AdjustmentFormModal.tsx`.
    PO adaptations only: CSS vars wrapped for this app's HSL token
    format, the SO-only `getLineItemImage` helper swapped for the line's
-   own `imageUrl`, and `ItemTypeBadge` ported locally. */
-
-const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+   own `imageUrl`, and `ItemTypeBadge` ported locally. A fixed-amount
+   ("$") adjustment is an amount in the PO's currency, so the toggle and
+   the line totals read in that currency. */
 
 /* Centralised color tokens. Bridges the Partner-faithful design-system
    tokens (`hsl(var(--border))`, `hsl(var(--primary))`, etc.) with the literal
@@ -93,6 +94,12 @@ export function AdjustmentFormModal({
   // Determine if we should show the items selection panel
   const showItemsPanel = scope === 'item' && lineItems && lineItems.length > 0;
 
+  const { currency } = useDocCurrency();
+  const decimals = currencyDecimals(currency);
+  const money = (n: number) => formatMoney(n, currency);
+  // A fixed amount keeps the currency's minor units (¥ has none).
+  const roundAmount = (n: number) => Number(n.toFixed(decimals));
+
   const [type, setType] = useState<'discount' | 'premium'>(initial?.type || 'discount');
   const [amount, setAmount] = useState(initial ? String(initial.amount) : '0');
   const [amountType, setAmountType] = useState<'$' | '%'>(initial?.amountType || '%');
@@ -148,7 +155,9 @@ export function AdjustmentFormModal({
     return { bg: '#F1F5F9', color: '#475569' };            // slate — other
   };
 
-  const canSave = parseFloat(amount) > 0 && (!showItemsPanel || selectedItems.length > 0);
+  const canSave =
+    (amountType === '%' ? parseFloat(amount) : roundAmount(parseFloat(amount))) > 0 &&
+    (!showItemsPanel || selectedItems.length > 0);
 
   /* Multi-line-impact gate. When the user is about to save an
      adjustment that targets more than one line item we surface a
@@ -170,7 +179,7 @@ export function AdjustmentFormModal({
       label: label.trim(),
       type,
       amountType,
-      amount: parseFloat(amount) || 0,
+      amount: amountType === '%' ? parseFloat(amount) || 0 : roundAmount(parseFloat(amount) || 0),
       scope,
       appliedTo: scope === 'item' ? selectedItems : initial?.appliedTo,
       internalNotes,
@@ -420,7 +429,9 @@ export function AdjustmentFormModal({
   // ── Amount unit segmented control — Partner-style two-button
   //    selector (% / $) replacing the cramped single toggle with an
   //    `ArrowUpDown` glyph. Reads as a real segmented control: the
-  //    active option highlights, the inactive option dims. ──
+  //    active option highlights, the inactive option dims. The fixed
+  //    side shows the PO currency's symbol (€, ¥) or code (MXN). ──
+  const fixedLabel = moneyPrefix(currency).trim();
   const amountToggleButton = (
     <div
       role="radiogroup"
@@ -445,7 +456,7 @@ export function AdjustmentFormModal({
             aria-checked={active}
             onClick={() => setAmountType(unit)}
             style={{
-              width: 30,
+              minWidth: 30, padding: '0 8px',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 13, fontWeight: 600,
               color: active ? TEXT_BODY : TEXT_MUTED,
@@ -456,9 +467,9 @@ export function AdjustmentFormModal({
               transition: 'background-color 100ms, color 100ms',
               boxShadow: active ? `inset 0 0 0 1px ${FIELD_BORDER}` : 'none',
             }}
-            title={unit === '%' ? 'Percentage' : 'Fixed amount'}
+            title={unit === '%' ? 'Percentage' : `Fixed amount in ${currency}`}
           >
-            {unit}
+            {unit === '%' ? unit : fixedLabel}
           </button>
         );
       })}
@@ -516,6 +527,7 @@ export function AdjustmentFormModal({
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0"
               min="0"
+              step={amountType === '%' ? 'any' : 10 ** -decimals}
               style={{
                 flex: 1, minWidth: 0, height: 38, padding: '0 12px',
                 fontSize: 13, fontWeight: 500, color: TEXT_BODY,
@@ -528,7 +540,13 @@ export function AdjustmentFormModal({
                 MozAppearance: 'textfield' as any,
               }}
               onFocus={(e) => { e.currentTarget.style.borderColor = INPUT_FOCUS_BORDER; e.currentTarget.style.boxShadow = INPUT_FOCUS_RING; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = FIELD_BORDER; e.currentTarget.style.boxShadow = 'none'; }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = FIELD_BORDER;
+                e.currentTarget.style.boxShadow = 'none';
+                // Settle a fixed amount to the currency's decimals (12.5 → 12.50, ¥1200.4 → 1200).
+                const n = parseFloat(amount);
+                if (amountType !== '%' && Number.isFinite(n) && n > 0) setAmount(n.toFixed(decimals));
+              }}
             />
             {amountToggleButton}
           </div>
@@ -641,7 +659,8 @@ export function AdjustmentFormModal({
                   for the trailing 20px gutter. */}
               <col style={{ width: 180 }} />
               <col style={{ width: 64 }} />
-              <col style={{ width: 96 }} />
+              {/* Wide enough for the PO currency's decimals and a code prefix (MXN 12,400.00). */}
+              <col style={{ width: 120 }} />
             </colgroup>
             <thead className="sticky top-0 z-10">
               <tr style={{ backgroundColor: '#FAFBFC' }}>
@@ -750,7 +769,7 @@ export function AdjustmentFormModal({
                       {item.qty ?? '—'}
                     </td>
                     <td className="pr-4 pl-3 py-3 align-middle text-right text-[12px] text-slate-700 tabular-nums whitespace-nowrap" style={{ fontWeight: 500, borderBottom: cellBorder }}>
-                      {fmtCurrency(item.subtotal)}
+                      {money(item.subtotal)}
                     </td>
                   </tr>
                 );

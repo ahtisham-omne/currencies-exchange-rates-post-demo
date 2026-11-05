@@ -48,6 +48,10 @@ import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 import { FONT } from "./designTokens";
+import { BaseCurrencyNote } from "./currency/BaseCurrencyNote";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatCompactMoney, formatMoney } from "@/app/currency/money";
+import { LAST_SYNC, midRateOn } from "@/app/currency/rates";
 
 /* ─────────── Time-range filter ─────────── */
 
@@ -251,6 +255,12 @@ function ChartWidget({
    datapoint inside a 30-day slice). Deterministic generator anchored at
    module load — values follow a sine/cosine curve plus weekly bumps so
    the line has shape without needing seeded randomness. */
+/* Spend is in the base currency (spec 4.4): POs are in different
+   currencies, each converted at its own rate before they are added up.
+   The design's mock series is written in USD, so it is restated in base
+   at the last synced USD rate. */
+const SPEND_IN_BASE = midRateOn("USD", LAST_SYNC) ?? 1;
+
 const SPEND_TREND_DATA: { date: string; amount: number }[] = (() => {
   const out: { date: string; amount: number }[] = [];
   const ref = new Date();
@@ -273,7 +283,7 @@ const SPEND_TREND_DATA: { date: string; amount: number }[] = (() => {
     );
     out.push({
       date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      amount: Math.max(120, amount),
+      amount: Math.round(Math.max(120, amount) * SPEND_IN_BASE),
     });
   }
   return out;
@@ -377,12 +387,12 @@ export default function PODashboard() {
     () => filteredSpendTrend.reduce((sum, d) => sum + d.amount, 0),
     [filteredSpendTrend]
   );
-  const totalSpendStr = `$${(totalSpend / 1000).toFixed(1)}K`;
+  const totalSpendStr = formatCompactMoney(totalSpend, BASE_CURRENCY);
   const totalPosCount = useMemo(
     () => filteredWeeklyActivity.reduce((sum, d) => sum + d.created, 0),
     [filteredWeeklyActivity]
   );
-  const avgOrderValue = totalPosCount > 0 ? `$${Math.round(totalSpend / totalPosCount).toLocaleString()}` : "—";
+  const avgOrderValue = totalPosCount > 0 ? formatCompactMoney(totalSpend / totalPosCount, BASE_CURRENCY) : "—";
 
 
   return (
@@ -437,6 +447,9 @@ export default function PODashboard() {
             </DropdownMenuContent>
           </DropdownMenu>
           <span className="text-[#CBD5E1]">|</span>
+          {/* Money on this dashboard is in the base currency (spec 4.4). */}
+          <BaseCurrencyNote what="PO" />
+          <span className="text-[#CBD5E1]">|</span>
           <span className="text-[11px] text-[#94A3B8]" style={{ fontWeight: 400 }}>
             Updated{" "}
             {lastRefreshed.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
@@ -490,7 +503,7 @@ export default function PODashboard() {
           value={totalSpendStr}
           badge={{ text: "+12%", color: "#16A34A" }}
           caption="vs prior period"
-          tooltip="Sum of all PO values in the selected period"
+          tooltip={`Sum of all PO values in the selected period, in ${BASE_CURRENCY} (base currency): each PO converted at its own rate`}
         />
         <KpiCard
           icon={TrendingUp}
@@ -655,7 +668,7 @@ export default function PODashboard() {
           footerStats={[
             { label: rangeLabel(timeRange, customRange), value: totalSpendStr },
             { label: "vs prior period", value: "+12%", color: "#16A34A" },
-            { label: "Daily avg", value: filteredSpendTrend.length > 0 ? `$${Math.round(filteredSpendTrend.reduce((s, d) => s + d.amount, 0) / filteredSpendTrend.length).toLocaleString()}` : "—" },
+            { label: "Daily avg", value: filteredSpendTrend.length > 0 ? formatCompactMoney(filteredSpendTrend.reduce((s, d) => s + d.amount, 0) / filteredSpendTrend.length, BASE_CURRENCY) : "—" },
           ]}
         >
           <AreaChart data={filteredSpendTrend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
@@ -673,8 +686,8 @@ export default function PODashboard() {
               tickLine={false}
               interval={Math.max(0, Math.floor(filteredSpendTrend.length / 6) - 1)}
             />
-            <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-            <ReTooltip contentStyle={TOOLTIP_STYLE} formatter={(val: number) => [`$${val.toLocaleString()}`, "Spend"]} />
+            <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} width={56} tickFormatter={(v) => formatCompactMoney(v, BASE_CURRENCY)} />
+            <ReTooltip contentStyle={TOOLTIP_STYLE} formatter={(val: number) => [formatMoney(val, BASE_CURRENCY), `Spend (${BASE_CURRENCY})`]} />
             <Area type="monotone" dataKey="amount" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#poDashSpend)" />
           </AreaChart>
         </ChartWidget>

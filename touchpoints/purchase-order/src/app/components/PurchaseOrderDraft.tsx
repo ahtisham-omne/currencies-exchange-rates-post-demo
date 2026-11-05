@@ -135,6 +135,9 @@ import {
   computeExpectedPOCompletion,
   setPOAdjustments,
   recalcPOTotals,
+  setPOCurrency,
+  describeRateChange,
+  poRateFields,
 } from "./poStore";
 import type { PurchaseOrderData, POStatus, POLineItem, POChangeRecord, POVersionEntry, POVersionSnapshot, POVersionStatus, PONoteType, POVendor } from "./poStore";
 import { permissionReason, useCan } from "./poPermissions";
@@ -196,6 +199,14 @@ import { PAYMENT_TERM_PRESETS } from "./paymentTermPresets";
 import { SelectPOCsModal } from "./SelectPOCsModal";
 import SelectPaymentMethodModal from "./SelectPaymentMethodModal";
 import { FONT } from "./designTokens";
+import { DocCurrencyProvider, DocMoney } from "./currency/DocCurrency";
+import { useDocCurrency } from "./currency/docCurrencyContext";
+import { CurrencyFlag } from "./currency/CurrencyChip";
+import { POCurrencyFields, type POCurrencyChange } from "./currency/POCurrencyFields";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { currencyDecimals, formatMoney, moneyPrefix } from "@/app/currency/money";
+import { crossRate, fromPOCurrency, poFx, roundTo, ruleAmountFactor, vendorCurrency } from "@/app/currency/poFx";
+import { midRateOn, toBase } from "@/app/currency/rates";
 import { ArchivePODialog } from "./ArchivePODialog";
 import TransitionOverlay from "./TransitionOverlay";
 import { StateTransitionOverlay } from "./StateTransitionOverlay";
@@ -971,6 +982,7 @@ function LineItemCard({
   }, [item.id]);
 
   const effectivePrice = item.unitPrice * (1 - item.discount / 100);
+  const { currency } = useDocCurrency();
 
   const detailCount = [
     mockStockData.belowMin,
@@ -1057,7 +1069,7 @@ function LineItemCard({
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
             <div className="flex items-baseline gap-1">
               <span className="text-foreground" style={{ fontSize: "12px", fontWeight: "var(--font-weight-semibold)", lineHeight: "18px", fontFamily: FONT }}>
-                ${effectivePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatMoney(effectivePrice, currency)}
               </span>
               <span className="text-muted-foreground" style={{ fontSize: "10px", fontWeight: "var(--font-weight-normal)", lineHeight: "15px", fontFamily: FONT }}>
                 per {item.defaultUOM}
@@ -1094,7 +1106,7 @@ function LineItemCard({
             className="text-foreground"
             style={{ fontSize: "15px", fontWeight: "var(--font-weight-semibold)", lineHeight: "20px", fontFamily: FONT }}
           >
-            ${item.lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {formatMoney(item.lineTotal, currency)}
           </span>
           {item.discount > 0 ? (
             <span
@@ -1551,10 +1563,15 @@ function LineItemsPanel({
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [editingPriceValue, setEditingPriceValue] = useState<string>("");
 
+  /* Prices are in the PO's currency (spec 4.3), typed to its minor unit.
+     Plain digits: a number input can't take "1,245.00". */
+  const { currency } = useDocCurrency();
+  const priceDecimals = currencyDecimals(currency);
+  const pricePrefix = moneyPrefix(currency).trim();
   const startPriceEdit = (li: POLineItem) => {
     setEditingPriceId(li.id);
     const effectivePrice = li.unitPrice * (1 - li.discount / 100);
-    setEditingPriceValue(effectivePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setEditingPriceValue(effectivePrice.toFixed(priceDecimals));
   };
 
   const commitPriceEdit = (li: POLineItem) => {
@@ -2021,9 +2038,9 @@ function LineItemsPanel({
                           className="max-w-[240px] text-[11px]"
                         >
                           Catalog price moved since the original PO.<br />
-                          <span className="font-semibold">${li.unitPrice.toFixed(2)}</span>
+                          <span className="font-semibold">{formatMoney(li.unitPrice, currency)}</span>
                           {" → "}
-                          <span className="font-semibold">${li.priceChangedFromCatalog.toFixed(2)}</span>
+                          <span className="font-semibold">{formatMoney(li.priceChangedFromCatalog, currency)}</span>
                           {" per unit. Edit the price to sync."}
                         </TooltipContent>
                       </Tooltip>
@@ -2236,15 +2253,17 @@ function LineItemsPanel({
               <div className="text-right pt-0.5">
                 {canEdit ? (
                   <div className="relative inline-flex items-center">
-                    {/* $ sign — slate-500 / 13 / 400 (matches input weight),
-                         sits inside the input via `pl-6` so the numeric column
-                         right-aligns cleanly. */}
-                    <span className="absolute left-2.5 pointer-events-none tabular-nums" style={{ fontSize: 13, fontWeight: 400, lineHeight: "18px", fontFamily: FONT, color: "#64748B" }}>$</span>
+                    {/* Currency sign — the PO currency's symbol or code
+                         (spec 4.3), slate-500 / 13 / 400 (matches input
+                         weight), sits inside the input via left padding
+                         sized to it so the numeric column right-aligns. */}
+                    <span className="absolute left-2.5 pointer-events-none tabular-nums" style={{ fontSize: 13, fontWeight: 400, lineHeight: "18px", fontFamily: FONT, color: "#64748B" }}>{pricePrefix}</span>
                     <input
                       type="number"
-                      min={0.01}
-                      step={0.01}
-                      value={editingPriceId === li.id ? editingPriceValue : effectivePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      min={0}
+                      step={10 ** -priceDecimals}
+                      aria-label={`Price per unit, ${currency}`}
+                      value={editingPriceId === li.id ? editingPriceValue : effectivePrice.toFixed(priceDecimals)}
                       onChange={(e) => {
                         if (!freeEdit) return;
                         if (editingPriceId !== li.id) startPriceEdit(li);
@@ -2270,8 +2289,10 @@ function LineItemsPanel({
                          h-9 · rounded-md · border-border/80 · shadow-sm · focus:ring-2
                          primary/20 · 13/400 tabular-nums. `pl-6` gives the $ sign
                          room and `pr-2` keeps the right edge flush. */
-                      className={`w-[96px] h-9 pl-6 pr-2 text-right rounded-md border bg-white text-foreground outline-none shadow-sm transition-all duration-150 tabular-nums focus:border-primary focus:ring-2 focus:ring-primary/20 ${!freeEdit ? "cursor-pointer" : ""}`}
-                      style={{ fontSize: 13, fontWeight: 400, lineHeight: "18px", fontFamily: FONT, borderColor: "color-mix(in srgb, hsl(var(--border)) 80%, transparent)" }}
+                      /* No spinner (as on the price-book inputs), so a yen or won
+                         price's extra digits fit the column. */
+                      className={`h-9 pr-2 text-right rounded-md border bg-white text-foreground outline-none shadow-sm transition-all duration-150 tabular-nums focus:border-primary focus:ring-2 focus:ring-primary/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${!freeEdit ? "cursor-pointer" : ""}`}
+                      style={{ width: Math.min(110, 96 + 8 * Math.max(0, pricePrefix.length - 1)), paddingLeft: 16 + 8 * pricePrefix.length, fontSize: 13, fontWeight: 400, lineHeight: "18px", fontFamily: FONT, borderColor: "color-mix(in srgb, hsl(var(--border)) 80%, transparent)" }}
                     />
                   </div>
                 ) : (
@@ -2279,7 +2300,7 @@ function LineItemsPanel({
                     className="text-foreground tabular-nums"
                     style={{ fontSize: 13, fontWeight: 500, lineHeight: "18px", fontFamily: FONT }}
                   >
-                    ${effectivePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatMoney(effectivePrice, currency)}
                   </span>
                 )}
               </div>
@@ -2302,9 +2323,7 @@ function LineItemsPanel({
                   }}
                   breakdown={pricingBreakdowns.get(li.id) ?? null}
                   adjustment={adjustmentBreakdowns?.get(li.id) ?? null}
-                  formatCurrency={(n) =>
-                    `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  }
+                  formatCurrency={(n) => formatMoney(n, currency)}
                 >
                   <span
                     className="text-foreground tabular-nums"
@@ -2313,13 +2332,13 @@ function LineItemsPanel({
                     {/* Net line total — static %, pricing rules and item-level
                         one-times included, so it matches the hover card's
                         Total and the Order Summary. */}
-                    ${(isEditingQty
+                    {formatMoney(isEditingQty
                       ? previewLineTotal
                       : li.lineTotal
                         - (pricingBreakdowns.get(li.id)?.discountAmount ?? 0)
                         + (pricingBreakdowns.get(li.id)?.premiumAmount ?? 0)
-                        + (adjustmentBreakdowns?.get(li.id)?.net ?? 0)
-                    ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        + (adjustmentBreakdowns?.get(li.id)?.net ?? 0),
+                    currency)}
                   </span>
                 </POPriceBreakdownHoverCard>
                 {li.discount > 0 && (
@@ -3927,6 +3946,23 @@ export function DuplicatePODialog({
                               : ""}
                           </span>
                         </div>
+                        {/* The new PO opens in this vendor's default currency (spec 4.2);
+                            duplicatePO converts the prices at the new PO date's rate. */}
+                        {(() => {
+                          // The lines come from the picked version, in its currency (duplicatePO).
+                          const from = po.versions.find((v) => v.version === sourceVersion)?.snapshot.currency ?? poFx(po).currency;
+                          const to = vendorCurrency(selectedVendor.name);
+                          return (
+                            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-600">
+                              <CurrencyFlag code={to} size={10} />
+                              <span className="truncate">
+                                {to === from
+                                  ? `Prices stay in ${to}, the vendor's currency`
+                                  : `Prices convert ${from} → ${to}, the vendor's currency`}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                       <button
                         ref={triggerRef}
@@ -4410,13 +4446,14 @@ export default function PurchaseOrderDraft() {
         needByDate: "",
         inboundLocation: "",
         category: item.category || "",
-      });
+      // The catalog price is in its vendor's currency; the PO converts it to its own.
+      }, undefined, vendorCurrency(item.partnerLocation));
 
       if (editingSession?.confirmed) {
         recordChangeDetail("Item Added", {
           type: "line-item-added", action: "Added",
           subject: item.itemNumber,
-          detail: `${item.descriptiveName} — ${item.vendorUOMQty || 1} ${item.vendorUOM || "EA"}, $${item.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/ea`,
+          detail: `${item.descriptiveName} — ${item.vendorUOMQty || 1} ${item.vendorUOM || "EA"}, ${formatMoney(item.unitPrice, vendorCurrency(item.partnerLocation))}/ea`,
         });
       }
 
@@ -4792,7 +4829,12 @@ export default function PurchaseOrderDraft() {
     return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
   };
 
-  const creditLimit = 125000;
+  /* The PO's currency and rate (spec 4.3). The vendor's credit limit is
+     written in USD ($125,000); it is compared in the PO's currency. */
+  const fx = poFx(po);
+  const creditLimit = fx.currency === "USD"
+    ? 125000
+    : roundTo(fx.currency, 125000 * crossRate(midRateOn("USD", fx.rateDate) ?? 1, fx.rate));
   const creditUsedPercent = Math.min(100, (po.total / creditLimit) * 100);
   const creditRemaining = creditLimit - po.total;
 
@@ -4815,8 +4857,25 @@ export default function PurchaseOrderDraft() {
     setPendingVersionChange(input);
   };
 
+  /* Order Summary's currency and rate (spec 4.3): goes through guardEdit
+     like every other edit, and is recorded for the version history. */
+  const handleCurrencyChange = ({ next, subject }: POCurrencyChange) => {
+    const detail = describeRateChange(poRateFields(po), next);
+    guardEdit(
+      () => {
+        setPOCurrency(po.id, next);
+        if (subject === "Currency") {
+          toast.success(`PO converted to ${next.currency}`, { description: detail, style: { fontFamily: FONT } });
+        }
+      },
+      subject === "Currency" ? "Currency Change" : "Exchange Rate Change",
+      { type: "exchange-rate-changed", action: "Changed", subject, detail },
+    );
+  };
+
   return (
     <AppShell>
+    <DocCurrencyProvider currency={fx.currency} fx={fx} dateLabel="PO date" role="PO currency">
     {/* Page surface: `bg-slate-50` (#F8FAFC) verbatim from Partners
         (`Partners/.../VendorDetailsPage.tsx:671,721`). Previously `bg-secondary`
         which resolved one step darker (slate-100) and made the white header
@@ -5070,7 +5129,7 @@ export default function PurchaseOrderDraft() {
                         // Inline format — `fmtMoney` lives inside the Credit-
                         // card IIFE further down the JSX tree, so it's not
                         // reachable from here.
-                        const formattedLimit = `$${creditLimit.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+                        const formattedLimit = `${moneyPrefix(fx.currency)}${Math.round(creditLimit).toLocaleString("en-US")}`;
                         return `PO total exceeds the available credit limit of ${formattedLimit}.`;
                       }
                       return undefined;
@@ -5977,7 +6036,7 @@ export default function PurchaseOrderDraft() {
                       const applyLocal = () => guardEdit(
                         () => updateLineItem(po.id, li.id, { unitPrice, discount: 0 }),
                         "Price Change",
-                        { type: "pricing-changed", action: "Changed", subject: `Price: ${li.itemNumber}`, detail: `${li.vendorUOM}: $${li.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → $${unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }
+                        { type: "pricing-changed", action: "Changed", subject: `Price: ${li.itemNumber}`, detail: `${li.vendorUOM}: ${formatMoney(li.unitPrice, fx.currency)} → ${formatMoney(unitPrice, fx.currency)}` }
                       );
 
                       // $0 / NaN — silent (zero-priced lines are first-class)
@@ -5992,11 +6051,14 @@ export default function PurchaseOrderDraft() {
                       const vendorName = po.vendor?.name;
                       const unit = li.vendorUOM;
                       const masterTier = itemId && vendorName ? getVendorUnitPrice(itemId, vendorName, unit) : undefined;
+                      /* The vendor's price book is in its currency (spec 4.2); the
+                         line is in the PO's, which the buyer may have changed. */
+                      const bookPrice = fromPOCurrency(unitPrice, vendorCurrency(vendorName), po);
 
                       const outcome = classifyPriceChange({
                         vendorName: vendorName || "",
                         unit,
-                        enteredPrice: unitPrice,
+                        enteredPrice: bookPrice,
                         existingMasterPrice: masterTier?.price,
                       });
 
@@ -6009,7 +6071,7 @@ export default function PurchaseOrderDraft() {
                         open: true,
                         outcome,
                         onConfirmDefault: () => {
-                          upsertVendorUnitPrice(itemId, vendorName, unit, unitPrice, {
+                          upsertVendorUnitPrice(itemId, vendorName, unit, bookPrice, {
                             markAsDefault: !masterTier || masterTier.isDefault,
                           });
                           applyLocal();
@@ -6191,8 +6253,15 @@ export default function PurchaseOrderDraft() {
                         className="text-slate-700 tracking-tight tabular-nums"
                         style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2 }}
                       >
-                        ${(poPricing?.total ?? po.total).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <DocMoney value={poPricing?.total ?? po.total} />
                       </p>
+                      {/* What the PO is worth in the base currency, at its rate. */}
+                      {!fx.isBase && (
+                        <p className="text-slate-500 tabular-nums mt-0.5 truncate" style={{ fontSize: 11, fontWeight: 400 }}>
+                          ≈ {formatMoney(toBase(poPricing?.total ?? po.total, fx.rate), BASE_CURRENCY)}
+                          <span className="text-slate-400"> {BASE_CURRENCY} · base currency</span>
+                        </p>
+                      )}
                       <p
                         className="text-slate-500 mt-1 truncate"
                         style={{ fontSize: 11, fontWeight: 400 }}
@@ -6203,6 +6272,8 @@ export default function PurchaseOrderDraft() {
                       </p>
                     </div>
 
+                    <POCurrencyFields po={po} canEdit={canEdit} onChange={handleCurrencyChange} />
+
                     {/* Breakdown — Partners' canonical breakdown row spec
                         (`:3431-3450`): 10/500 slate-400 label + 12/500
                         slate-700 value. Separator above is `border-t
@@ -6212,7 +6283,7 @@ export default function PurchaseOrderDraft() {
                     <div className="border-t border-muted pt-3 space-y-2.5">
                       <div className="flex items-center justify-between">
                         <p className="text-slate-400" style={{ fontSize: 10, fontWeight: 500 }}>Subtotal</p>
-                        <p className="text-slate-700 tabular-nums" style={{ fontSize: 12, fontWeight: 500 }}>${po.subtotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        <p className="text-slate-700 tabular-nums" style={{ fontSize: 12, fontWeight: 500 }}><DocMoney value={po.subtotal} /></p>
                       </div>
                       {/* Discount + Premium pricing rules (buyer
                           2026-07-22 "everything is based on pricing rules
@@ -6297,7 +6368,7 @@ export default function PurchaseOrderDraft() {
                                     color: "hsl(var(--success))",
                                   }}
                                 >
-                                  −${discountTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  <DocMoney value={-discountTotal} />
                                 </p>
                               </div>
                             )}
@@ -6339,7 +6410,7 @@ export default function PurchaseOrderDraft() {
                                     color: "#7C3AED",
                                   }}
                                 >
-                                  +${totalRulesPremium.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  +<DocMoney value={totalRulesPremium} />
                                 </p>
                               </div>
                             )}
@@ -6367,7 +6438,7 @@ export default function PurchaseOrderDraft() {
                                 One-Time Discounts/Premiums
                               </p>
                               <p className="tabular-nums shrink-0" style={{ fontSize: 12, fontWeight: 500, color }}>
-                                {sign}${Math.abs(net).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {sign}<DocMoney value={Math.abs(net)} />
                               </p>
                             </div>
                             {count > 0 ? (
@@ -6413,6 +6484,7 @@ export default function PurchaseOrderDraft() {
                 {/* ━━━━ 2. VENDOR INFORMATION (unified card) ━━━━ */}
                 <VendorInfoCard
                   vendor={po.vendor}
+                  poCurrency={fx.currency}
                   recipient={po.recipient}
                   payment={po.payment}
                   canEdit={canEdit}
@@ -6467,7 +6539,7 @@ export default function PurchaseOrderDraft() {
                   const statusPillBorder =
                     creditPct > 80 ? "#FECACA" : creditPct > 50 ? "#FDE68A" : "#A7F3D0";
                   const fmtMoney = (n: number) =>
-                    `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+                    `${moneyPrefix(fx.currency)}${Math.round(n).toLocaleString("en-US")}`;
 
                   return (
                     <CollapsibleSection
@@ -7575,6 +7647,7 @@ export default function PurchaseOrderDraft() {
       {dropdownRevertVersion !== null && (
         <POVersionRevertModal
           version={dropdownRevertVersion}
+          snapshot={po.versions.find((v) => v.version === dropdownRevertVersion)?.snapshot}
           onClose={() => setDropdownRevertVersion(null)}
           onConfirm={(reason) => {
             const target = dropdownRevertVersion;
@@ -7974,10 +8047,13 @@ export default function PurchaseOrderDraft() {
             orderedQty: li.quantity,
             unitPrice: li.unitPrice * (1 - li.discount / 100),
           }));
+          // Flat rule amounts (USD) in the PO's currency, as the totals take them.
+          const flatAmountFactor = ruleAmountFactor(poFx(fresh));
           const enforced = enforceHundredPercentCap(
             linesForCompute,
             vendorRules,
             activationMap,
+            flatAmountFactor,
           );
           /* Also drop enforced rules that are no longer needed (buyer
              toggled OFF a rule that had previously been auto-capped,
@@ -8002,7 +8078,7 @@ export default function PurchaseOrderDraft() {
                 }
                 if (activeLines.size > 0) tentative.set(rid, activeLines);
               }
-              const bd = computeLineBreakdowns(linesForCompute, vendorRules, tentative);
+              const bd = computeLineBreakdowns(linesForCompute, vendorRules, tentative, flatAmountFactor);
               const totalWithRule = computePOSubtotal(bd);
               if (totalWithRule < 0) remaining[rid] = reason;
             }
@@ -8075,6 +8151,7 @@ export default function PurchaseOrderDraft() {
         );
       })()}
     </div>
+    </DocCurrencyProvider>
     </AppShell>
   );
 }

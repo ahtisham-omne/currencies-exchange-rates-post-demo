@@ -644,7 +644,7 @@ export default function PurchaseRequestDetail() {
           itemNumber: cat.itemNumber,
           descriptiveName: cat.descriptiveName,
           image: cat.image,
-          unitPrice: firstCat.estimatedUnitPrice ?? cat.unitPrice,
+          unitPrice: firstCat.estimatedUnitPrice ?? cat.listPriceUsd ?? cat.unitPrice,
           vendorUOM: cat.vendorUOM,
           vendorUOMQty: cat.vendorUOMQty,
           defaultUOM: cat.defaultUOM,
@@ -668,8 +668,10 @@ export default function PurchaseRequestDetail() {
           notes: `Created from ${pr.id} — ${pr.reason}`,
           totalPrice:
             firstCat.quantity *
-            (firstCat.estimatedUnitPrice ?? cat.unitPrice),
+            (firstCat.estimatedUnitPrice ?? cat.listPriceUsd ?? cat.unitPrice),
         },
+        // Request prices are USD estimates; the PO converts them to the vendor's currency.
+        "USD",
       );
       updatePRStatus(pr.id, "po-created", { poRef: po.id });
       toast.success(`Draft PO ${po.poNumber} created`, {

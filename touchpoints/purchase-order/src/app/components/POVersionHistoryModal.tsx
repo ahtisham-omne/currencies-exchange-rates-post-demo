@@ -22,11 +22,20 @@ import {
 import {
   versionStatusConfig,
   versionPalette as C,
+  currencyShiftVersions,
+  formatCurrency,
+  formatSignedCurrency,
+  versionCompareFields,
+  versionFx,
 } from "./poVersionDisplay";
 import POVersionSnapshotPanel from "./POVersionSnapshotPanel";
 import POVersionChangeList from "./POVersionChangeList";
 import POVersionRevertModal from "./POVersionRevertModal";
 import { snapshotOneTimeNet } from "./poOrderPricing";
+import { getCurrency } from "@/app/currency/currencies";
+import { poFx, type PoFx } from "@/app/currency/poFx";
+import { CurrencyFlag } from "./currency/CurrencyChip";
+import { Money } from "./currency/Money";
 
 /* ── Lifecycle pill — matches Sales Orders V5 vocabulary + chrome.
    Latest / Last Approved / Superseded / Revert. Rounded-full, tinted
@@ -197,6 +206,20 @@ export default function POVersionHistoryModal({
     [versions],
   );
   const latestVersionNum = sorted[0]?.version ?? 1;
+
+  /* The PO's currency now — the fallback for snapshots that recorded
+     none (there is no DocCurrency when this opens from the listing).
+     Re-read with `versions` so a revert's restored currency shows. */
+  const poCurrentFx = useMemo(() => {
+    const po = poId && versions.length > 0 ? getPO(poId) : undefined;
+    return po ? poFx(po) : null;
+  }, [poId, versions]);
+  /* Versions whose currency differs from a neighbour's: their timeline
+     cards mark the currency. */
+  const currencyShifts = useMemo(
+    () => currencyShiftVersions(sorted, poCurrentFx),
+    [sorted, poCurrentFx],
+  );
 
   /* Default selection = the latest (top of the timeline). Restored whenever
      the versions list changes so an outside data refresh doesn't blank the
@@ -703,6 +726,29 @@ export default function POVersionHistoryModal({
                                 >
                                   Version {v.version}
                                 </span>
+                                {/* Currency chip — only where the currency
+                                    changed between versions. */}
+                                {currencyShifts.has(v.version) && (() => {
+                                  const code = versionFx(v.snapshot, poCurrentFx).currency;
+                                  return (
+                                    <span
+                                      className="inline-flex items-center rounded-md"
+                                      title={`In ${getCurrency(code)?.name ?? code}`}
+                                      style={{
+                                        gap: 4,
+                                        padding: "1px 6px",
+                                        backgroundColor: C.divider,
+                                        color: C.text600,
+                                        fontSize: 10,
+                                        fontWeight: 600,
+                                        lineHeight: 1.4,
+                                      }}
+                                    >
+                                      <CurrencyFlag code={code} size={10} />
+                                      {code}
+                                    </span>
+                                  );
+                                })()}
                               </div>
 
                               {/* Lifecycle pill row — only "Current Version"
@@ -771,7 +817,7 @@ export default function POVersionHistoryModal({
                   pill + lifecycle pill + right-side actions. */}
               <div className="flex-1 min-w-0 overflow-y-auto">
                 {compareMode && compareV1 && compareV2 ? (
-                  <CompareView v1={compareV1} v2={compareV2} />
+                  <CompareView v1={compareV1} v2={compareV2} fallbackFx={poCurrentFx} />
                 ) : selected ? (() => {
                   const selCfg =
                     versionStatusConfig[selected.versionStatus] ||
@@ -944,7 +990,7 @@ export default function POVersionHistoryModal({
 
                       {/* Reuse the extracted panels so styling stays 1:1
                           with the detail-page Versions tab. */}
-                      <POVersionSnapshotPanel version={selected} />
+                      <POVersionSnapshotPanel version={selected} fallbackFx={poCurrentFx} />
                       <POVersionChangeList
                         changes={selected.changes}
                         versionNumber={selected.version}
@@ -971,6 +1017,8 @@ export default function POVersionHistoryModal({
       {revertTarget !== null && (
         <POVersionRevertModal
           version={revertTarget}
+          snapshot={sorted.find((v) => v.version === revertTarget)?.snapshot}
+          currentFx={poCurrentFx}
           onClose={() => setRevertTarget(null)}
           onConfirm={handleRevertConfirm}
         />
@@ -1001,17 +1049,22 @@ const DIFF_BORDER: Record<CompareDiffStatus, string> = {
   modified: "#FDE68A",
 };
 
-function fmtMoney(n: number): string {
-  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+/* Price / Total columns: wide enough for ₨3,453,648.00 or MXN 12,400.00. */
+const COMPARE_AMOUNT_W = 76;
 
 function CompareView({
   v1,
   v2,
+  fallbackFx,
 }: {
   v1: POVersionEntry;
   v2: POVersionEntry;
+  /** The PO's current currency, for snapshots that recorded none. */
+  fallbackFx: PoFx | null;
 }) {
+  // Each side's amounts are in its own version's currency.
+  const fx1 = versionFx(v1.snapshot, fallbackFx);
+  const fx2 = versionFx(v2.snapshot, fallbackFx);
   const v1Map = new Map(v1.snapshot.lineItems.map((li) => [li.id, li]));
   const v2Map = new Map(v2.snapshot.lineItems.map((li) => [li.id, li]));
   const allIds = Array.from(
@@ -1044,25 +1097,9 @@ function CompareView({
   const removedCount = allIds.filter((id) => getDiffStatus(id) === "removed").length;
   const modifiedCount = allIds.filter((id) => getDiffStatus(id) === "modified").length;
 
-  const summaryFields = [
-    {
-      label: "Line Items",
-      val1: String(v1.snapshot.lineItemCount),
-      val2: String(v2.snapshot.lineItemCount),
-    },
-    { label: "Subtotal", val1: fmtMoney(v1.snapshot.subtotal), val2: fmtMoney(v2.snapshot.subtotal) },
-    {
-      label: "Discount",
-      val1: fmtMoney(v1.snapshot.discountTotal),
-      val2: fmtMoney(v2.snapshot.discountTotal),
-    },
-    {
-      label: "One-Time Discounts/Premiums",
-      val1: (() => { const n = snapshotOneTimeNet(v1.snapshot); return `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtMoney(Math.abs(n))}`; })(),
-      val2: (() => { const n = snapshotOneTimeNet(v2.snapshot); return `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtMoney(Math.abs(n))}`; })(),
-    },
-    { label: "Total", val1: fmtMoney(v1.snapshot.total), val2: fmtMoney(v2.snapshot.total) },
-  ];
+  /* Same rows as the Versions tab's compare, Currency and Exchange rate
+     included, so a currency/rate change is highlighted like any field. */
+  const summaryFields = versionCompareFields(v1, v2, fx1, fx2);
 
   const colHeaderStyle: React.CSSProperties = {
     fontSize: 9,
@@ -1074,6 +1111,7 @@ function CompareView({
   const renderCompareRow = (
     li: (typeof v1.snapshot.lineItems)[number] | null,
     status: CompareDiffStatus,
+    code: string,
   ) => {
     if (!li) {
       return (
@@ -1167,22 +1205,22 @@ function CompareView({
             fontSize: 10,
             color: isChanged ? "#92400E" : "#9CA3AF",
             fontWeight: isChanged ? 500 : 400,
-            width: 64,
+            width: COMPARE_AMOUNT_W,
             textAlign: "right",
           }}
         >
-          {fmtMoney(li.unitPrice)}
+          {formatCurrency(li.unitPrice, code)}
         </span>
         <span
           style={{
             fontSize: 10,
             fontWeight: 600,
             color: isChanged ? "#92400E" : "#1F2937",
-            width: 64,
+            width: COMPARE_AMOUNT_W,
             textAlign: "right",
           }}
         >
-          {fmtMoney(li.lineTotal)}
+          {formatCurrency(li.lineTotal, code)}
         </span>
       </div>
     );
@@ -1190,6 +1228,7 @@ function CompareView({
 
   const renderVersionTable = (ver: POVersionEntry, side: "left" | "right") => {
     const itemMap = side === "left" ? v1Map : v2Map;
+    const code = (side === "left" ? fx1 : fx2).currency;
     const subtotal = ver.snapshot.subtotal;
     const oppositeSubtotal = side === "left" ? v2.snapshot.subtotal : v1.snapshot.subtotal;
     const subtotalChanged = subtotal !== oppositeSubtotal;
@@ -1252,13 +1291,13 @@ function CompareView({
           </div>
           <span style={{ ...colHeaderStyle, width: 24, textAlign: "right" }}>Qty</span>
           <span style={{ ...colHeaderStyle, width: 32, textAlign: "center" }}>UOM</span>
-          <span style={{ ...colHeaderStyle, width: 64, textAlign: "right" }}>Price</span>
-          <span style={{ ...colHeaderStyle, width: 64, textAlign: "right" }}>Total</span>
+          <span style={{ ...colHeaderStyle, width: COMPARE_AMOUNT_W, textAlign: "right" }}>Price</span>
+          <span style={{ ...colHeaderStyle, width: COMPARE_AMOUNT_W, textAlign: "right" }}>Total</span>
         </div>
         {allIds.map((id) => {
           const status = getDiffStatus(id);
           const li = itemMap.get(id) || null;
-          return <div key={id}>{renderCompareRow(li, status)}</div>;
+          return <div key={id}>{renderCompareRow(li, status, code)}</div>;
         })}
         <div
           style={{
@@ -1291,7 +1330,7 @@ function CompareView({
               textAlign: "right",
             }}
           >
-            {fmtMoney(subtotal)}
+            {formatCurrency(subtotal, code)}
           </span>
         </div>
         <div
@@ -1305,8 +1344,8 @@ function CompareView({
           }}
         >
           <span style={{ fontSize: 9, color: "#6B7280" }}>
-            Discount {fmtMoney(ver.snapshot.discountTotal)} · One-Time{" "}
-            {(() => { const n = snapshotOneTimeNet(ver.snapshot); return `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtMoney(Math.abs(n))}`; })()}
+            Discount {formatCurrency(ver.snapshot.discountTotal, code)} · One-Time{" "}
+            {formatSignedCurrency(snapshotOneTimeNet(ver.snapshot), code)}
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span
@@ -1327,7 +1366,7 @@ function CompareView({
                 color: totalChanged && side === "right" ? "#92400E" : "#1F2937",
               }}
             >
-              {fmtMoney(ver.snapshot.total)}
+              {formatCurrency(ver.snapshot.total, code)}
             </span>
           </div>
         </div>
@@ -1474,9 +1513,11 @@ function CompareView({
               </div>
               {summaryFields.map((f) => {
                 const val = side === "left" ? f.val1 : f.val2;
+                const sideFx = side === "left" ? fx1 : fx2;
                 const changed = f.val1 !== f.val2;
-                const n1 = Number(String(f.val1).replace(/[^0-9.-]/g, ""));
-                const n2 = Number(String(f.val2).replace(/[^0-9.-]/g, ""));
+                // Arrows only between numbers in the same unit (see versionCompareFields).
+                const n1 = f.n1 ?? NaN;
+                const n2 = f.n2 ?? NaN;
                 const numeric =
                   changed && Number.isFinite(n1) && Number.isFinite(n2) && n1 !== n2;
                 const direction =
@@ -1515,7 +1556,23 @@ function CompareView({
                           fontFamily: FONT,
                         }}
                       >
-                        {val}
+                        {f.kind === "currency" ? (
+                          <span
+                            className="inline-flex items-center"
+                            style={{ gap: 6 }}
+                            title={getCurrency(val)?.name}
+                          >
+                            <CurrencyFlag code={val} size={12} />
+                            {val}
+                          </span>
+                        ) : f.label === "Total" ? (
+                          // Hover: the total in the base currency, at this side's rate.
+                          <Money value={v.snapshot.total} currency={sideFx.currency} fx={sideFx} dateLabel="PO date">
+                            {val}
+                          </Money>
+                        ) : (
+                          val
+                        )}
                       </span>
                       {direction === "up" && (
                         <ArrowUp

@@ -1,5 +1,5 @@
 [
-  { "slug": "purchase-order", "label": "Purchase Orders", "port": 8101, "mount": "/supply-chain", "repo": "https://github.com/ahtisham-omne/currency-exchange-rate-purchase-order-touchpoint.git" },
+  { "slug": "purchase-order", "label": "Purchase Orders", "port": 8101, "mount": "/supply-chain", "repo": "https://github.com/ahtisham-omne/Purchase-Order.git" },
   { "slug": "partners", "label": "Partners", "port": 8102, "mount": "", "prefixes": ["/partners", "/vendors"], "repo": "https://github.com/ahtisham-omne/partner-management-module.git" },
   { "slug": "sales-order", "label": "Sales Orders", "port": 8103, "mount": "/sales", "repo": "https://github.com/ahtisham-omne/currency-exchange-rate-sales-order-touchpoint.git" },
   { "slug": "items-v2", "label": "Items", "port": 8104, "mount": "/inventory", "repo": "https://github.com/ahtisham-omne/currency-exchange-rate-items-v2-touchpoint.git" },

@@ -1,5 +1,6 @@
 import React from "react";
 import AppSidebar from "./AppSidebar";
+import { embedded } from "@/embedding";
 
 /**
  * AppShell — Pattern C2 layout wrapper.
@@ -12,8 +13,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       className="flex h-screen overflow-hidden"
       style={{ backgroundColor: "hsl(var(--background))" }}
     >
-      {/* Sidebar — manages its own width */}
-      <AppSidebar />
+      {/* Sidebar — manages its own width. Inside the Currency & Exchange
+          shell, the shell's sidebar replaces it. */}
+      {!embedded && <AppSidebar />}
 
       {/* Main content area — fills remaining space */}
       <div className="flex flex-col flex-1 min-w-0">

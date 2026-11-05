@@ -9,6 +9,10 @@ import type { PurchaseOrderData, POVersionEntry } from "./poStore";
 import { getShipmentMethodLabel } from "./poStore";
 import { computePOPricing } from "./poOrderPricing";
 import { getPrintStatusBadgeStyle } from "./statusColors";
+import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
+import { formatMoney, formatRateDate, rateSentence } from "@/app/currency/money";
+import { poFx, type PoFx } from "@/app/currency/poFx";
+import { RATE_TYPE_LABEL, toBase } from "@/app/currency/rates";
 
 /* ── Color tokens (mirrored from theme.css for inline use) ── */
 const C = {
@@ -32,8 +36,24 @@ function fmtDate(dateStr: string | null | undefined): string {
   return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
 }
 
-function fmtCurrency(n: number): string {
-  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/* ── Currency (spec 4.3) ──
+   The document is in the PO's currency, or the printed version's. A
+   version saved before POs carried a currency takes the PO's. */
+export function printFx(po: PurchaseOrderData, version?: POVersionEntry): PoFx {
+  const snap = version?.snapshot;
+  return snap?.currency ? poFx({ ...snap, vendor: { name: snap.vendorName } }) : poFx(po);
+}
+
+/** "Exchange rate: 1 EUR = 304.8150 PKR · Mid-market (Open Exchange Rates)
+    · Feb 20, 2026 · ≈ ₨4,164,682.82" — the total in the base currency. */
+function rateFootnote(fx: PoFx, total: number): string {
+  const type = fx.rateType === "mid" ? `${RATE_TYPE_LABEL.mid} (${fx.source})` : fx.source;
+  return [
+    `Exchange rate: ${rateSentence(fx.currency, fx.rate)}`,
+    type,
+    formatRateDate(fx.rateDate),
+    `≈ ${formatMoney(toBase(total, fx.rate), BASE_CURRENCY)}`,
+  ].join(" · ");
 }
 
 function fmtNow(): string {
@@ -145,14 +165,24 @@ export function generatePrintHTML(
       }
     : po;
 
+  /* Every amount below is in the document's currency (JPY prints no
+     decimals, KWD three). */
+  const fx = printFx(po, selectedVersion);
+  const cur = fx.currency;
+  const money = (n: number) => formatMoney(n, cur);
+
   /* Same pricing engine as the detail page + store, so the printed
      total matches: subtotal − line % − rules ± one-times (shipping is
-     excluded from the total). */
+     excluded from the total). The rate converts flat rule amounts. */
   const pricing = computePOPricing({
     vendor: po.vendor,
     lineItems: display.lineItems,
     deactivatedRuleIds: po.deactivatedRuleIds,
     adjustments: selectedVersion ? selectedVersion.snapshot.adjustments ?? [] : po.adjustments ?? [],
+    currency: cur,
+    exchangeRate: fx.rate,
+    rateType: fx.rateType,
+    rateDate: fx.rateDate,
   });
   const lineNet = (li: { id: string; lineTotal: number }) =>
     li.lineTotal
@@ -177,7 +207,7 @@ export function generatePrintHTML(
   const rulesDiscountTotal = pricing.lineDiscountTotal + pricing.rulesDiscount;
   const lineAdjNet = pricing.adjustments.itemTotals.net;
   const orderAdjNet = pricing.adjustments.quoteTotals.net;
-  const signed = (n: number) => (n < 0 ? "-" : "+") + fmtCurrency(Math.abs(n));
+  const signed = (n: number) => (n < 0 ? money(n) : "+" + money(n));
   const adjRow = (label: string, amountText: string, color: string) => `
     <tr>
       <td></td>
@@ -210,7 +240,7 @@ export function generatePrintHTML(
           .filter((ri) => ri.type === "premium" && ri.amount > 0)
           .map((ri) => adjRow(
             `Premium (${pct(ri.amount, lineList(li))}): ${esc(ri.ruleName)}`,
-            "+" + fmtCurrency(ri.amount),
+            "+" + money(ri.amount),
             "#7C3AED",
           ))
           .join("");
@@ -221,7 +251,7 @@ export function generatePrintHTML(
             const label = imp.label.trim() || (imp.type === "premium" ? "One-time premium" : "One-time discount");
             return adjRow(
               `${kind}${rate}: ${esc(label)}`,
-              (imp.type === "premium" ? "+" : "-") + fmtCurrency(imp.dollars),
+              imp.type === "premium" ? "+" + money(imp.dollars) : money(-imp.dollars),
               imp.type === "premium" ? "#7C3AED" : C.accent,
             );
           })
@@ -239,9 +269,9 @@ export function generatePrintHTML(
         <div>${li.vendorQty} ${esc(li.vendorUOM)}${li.vendorQty > 1 ? "s" : ""}</div>
         ${li.vendorUOMQty > 1 ? `<div style="color:${C.muted};font-size:10px;margin-top:1px;">(${li.quantity} ${esc(li.defaultUOM)}${li.quantity > 1 ? "s" : ""})</div>` : ""}
       </td>
-      <td style="padding:10px 8px;font-size:12px;text-align:right;vertical-align:top;">${fmtCurrency(li.unitPrice)}<span style="color:${C.muted};font-size:10px;">/${esc(li.defaultUOM)}</span></td>
-      <td style="padding:10px 8px;font-size:12px;text-align:center;vertical-align:top;white-space:nowrap;color:${ruleDisc > 0 ? C.accent : C.muted};">${ruleDisc > 0 ? `-${fmtCurrency(ruleDisc)} / ${pct(ruleDisc, lineList(li))}` : "\u2014"}</td>
-      <td style="padding:10px 8px;font-size:13px;font-weight:600;text-align:right;vertical-align:top;">${fmtCurrency(lineNet(li))}</td>
+      <td style="padding:10px 8px;font-size:12px;text-align:right;vertical-align:top;">${money(li.unitPrice)}<span style="color:${C.muted};font-size:10px;">/${esc(li.defaultUOM)}</span></td>
+      <td style="padding:10px 8px;font-size:12px;text-align:center;vertical-align:top;white-space:nowrap;color:${ruleDisc > 0 ? C.accent : C.muted};">${ruleDisc > 0 ? `${money(-ruleDisc)} / ${pct(ruleDisc, lineList(li))}` : "\u2014"}</td>
+      <td style="padding:10px 8px;font-size:13px;font-weight:600;text-align:right;vertical-align:top;">${money(lineNet(li))}</td>
     </tr>${premiumRows}${oneTimeRows}${notesHtml}${hasSubRows ? `<tr style="border-bottom:1px solid ${C.border};"><td colspan="6" style="height:4px;"></td></tr>` : ""}`;
       }
     )
@@ -443,6 +473,7 @@ export function generatePrintHTML(
       <div style="flex:1;border:1px solid ${C.border};border-radius:10px;padding:16px;">
         <div style="font-size:10px;font-weight:600;color:${C.muted};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Payment &amp; Delivery</div>
         ${paymentRow("Payment Terms", display.payment.paymentTerms)}
+        ${paymentRow("Currency", `${cur} — ${getCurrency(cur)?.name ?? cur}`)}
         ${paymentRow("Pay To", display.payment.payTo)}
         ${paymentRow("Payment Method", display.payment.paymentMethod)}
         <div style="height:1px;background:${C.border};margin:8px 0;"></div>
@@ -453,16 +484,18 @@ export function generatePrintHTML(
       <!-- Order Summary -->
       <div style="flex:1;border:1px solid ${C.border};border-radius:10px;padding:16px;background:${C.secondary};">
         <div style="font-size:10px;font-weight:600;color:${C.muted};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Order Summary</div>
-        ${summaryRow("Subtotal", fmtCurrency(pricing.subtotal))}
-        ${rulesDiscountTotal > 0 ? summaryRow("Pricing rule discounts", "-" + fmtCurrency(rulesDiscountTotal), C.accent) : ""}
-        ${pricing.rulesPremium > 0 ? summaryRow("Pricing rule premiums", "+" + fmtCurrency(pricing.rulesPremium), "#7C3AED") : ""}
+        ${summaryRow("Subtotal", money(pricing.subtotal))}
+        ${rulesDiscountTotal > 0 ? summaryRow("Pricing rule discounts", money(-rulesDiscountTotal), C.accent) : ""}
+        ${pricing.rulesPremium > 0 ? summaryRow("Pricing rule premiums", "+" + money(pricing.rulesPremium), "#7C3AED") : ""}
         ${lineAdjNet !== 0 ? summaryRow("Line adjustments", signed(lineAdjNet), lineAdjNet < 0 ? C.accent : "#7C3AED") : ""}
         ${orderAdjNet !== 0 ? summaryRow("Order adjustments", signed(orderAdjNet), orderAdjNet < 0 ? C.accent : "#7C3AED") : ""}
         <div style="height:2px;background:${C.border};margin:10px 0;"></div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;">
-          <span style="font-size:14px;font-weight:600;color:${C.fg};">Grand Total</span>
-          <span style="font-size:20px;font-weight:700;color:${C.fg};">${fmtCurrency(pricing.total)}</span>
+          <span style="font-size:14px;font-weight:600;color:${C.fg};">Grand Total (${esc(cur)})</span>
+          <span style="font-size:20px;font-weight:700;color:${C.fg};">${money(pricing.total)}</span>
         </div>
+        <!-- Rate note: what the total is in the base currency (foreign POs only) -->
+        ${fx.isBase ? "" : `<div style="font-size:10px;color:#a1a1aa;line-height:1.5;margin-top:8px;">${esc(rateFootnote(fx, pricing.total))}</div>`}
       </div>
     </div>
 

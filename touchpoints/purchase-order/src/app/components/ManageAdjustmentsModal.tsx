@@ -10,6 +10,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
 import type { POLineItem } from './poStore';
 import type { AdjustmentsAPI } from './usePOAdjustments';
 import { lineBaseValue, adjustmentDisplayLabel } from './poOrderPricing';
+import { useDocCurrency, useDocMoney } from './currency/docCurrencyContext';
+import { roundTo } from '@/app/currency/poFx';
 
 /* Ported verbatim from Sales-Order-V5 `so/ManageAdjustmentsModal.tsx`.
    PO adaptations: reads PO lines (`POLineItem`) instead of `SOLine`,
@@ -49,8 +51,8 @@ export function buildLineItemsForSelection(lines: POLineItem[]): LineItemForSele
 
 type Adjustment = AdjustmentsAPI['adjustments'][number];
 
-const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+/* Every amount here — fixed adjustments, their impact, the totals — is in
+   the PO's currency (useDocMoney). */
 
 // The AdjustmentFormModal is now shared from /src/app/components/shared/AdjustmentFormModal.tsx
 
@@ -105,6 +107,8 @@ export function ManageAdjustmentsModal({
   const [editingAdj, setEditingAdj] = useState<Adjustment | null>(null);
   // Per-row unapply confirmation. Reuses the shared ConfirmationModal.
   const [unapplyConfirm, setUnapplyConfirm] = useState<{ id: string; label: string } | null>(null);
+  const { currency } = useDocCurrency();
+  const money = useDocMoney();
 
   if (!isOpen) return null;
 
@@ -114,9 +118,10 @@ export function ManageAdjustmentsModal({
   // PO subtotal — sum across all line items. Used as the 100% cap base.
   const soSubtotal = lineItems.reduce((s, i) => s + i.subtotal, 0);
 
-  // Helper: $ amount of an adjustment relative to SO subtotal.
+  // Helper: amount of an adjustment relative to the PO subtotal, to the
+  // currency's minor units.
   const adjustmentDollarAmount = (a: Adjustment): number =>
-    a.amountType === '%' ? Math.round(soSubtotal * a.amount / 100) : a.amount;
+    a.amountType === '%' ? roundTo(currency, soSubtotal * a.amount / 100) : a.amount;
 
   /* Totals come straight from the shared API, which evaluates each
      adjustment's $ impact (handles `%` against the right base) and only
@@ -181,7 +186,7 @@ export function ManageAdjustmentsModal({
     /* Cap check on add: a new discount that would push the SO past 100%
        of subtotal gets the EXCEEDS_100_PERCENT reason and lands unapplied. */
     const incremental = data.type === 'discount'
-      ? (data.amountType === '%' ? Math.round(soSubtotal * data.amount / 100) : data.amount)
+      ? (data.amountType === '%' ? roundTo(currency, soSubtotal * data.amount / 100) : data.amount)
       : 0;
     const exceeds = wouldExceedSoCap(incremental);
     if (exceeds) toast.warning('Adjustment kept but unapplied — would exceed 100% of PO subtotal.');
@@ -568,20 +573,20 @@ export function ManageAdjustmentsModal({
           <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
             <span className="text-[11px] text-slate-500">Order-level</span>
             <span className="text-[12px] tabular-nums" style={{ fontWeight: 500, color: totalQuoteAdj > 0 ? '#6D28D9' : totalQuoteAdj < 0 ? '#047857' : '#64748B' }}>
-              {totalQuoteAdj >= 0 ? '+' : ''}{fmtCurrency(totalQuoteAdj)}
+              {totalQuoteAdj >= 0 ? '+' : ''}{money(totalQuoteAdj)}
             </span>
           </div>
           <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
             <span className="text-[11px] text-slate-500">Item-level</span>
             <span className="text-[12px] tabular-nums" style={{ fontWeight: 500, color: totalItemAdj > 0 ? '#6D28D9' : totalItemAdj < 0 ? '#047857' : '#64748B' }}>
-              {totalItemAdj >= 0 ? '+' : ''}{fmtCurrency(totalItemAdj)}
+              {totalItemAdj >= 0 ? '+' : ''}{money(totalItemAdj)}
             </span>
           </div>
           <div style={{ height: 1, backgroundColor: '#E5E7EB', marginBottom: 8 }} />
           <div className="flex items-center justify-between">
             <span className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>Net Adjustment</span>
             <span className="text-[15px] tabular-nums" style={{ fontWeight: 700, color: totalAll > 0 ? '#6D28D9' : totalAll < 0 ? '#047857' : '#0F172A' }}>
-              {totalAll >= 0 ? '+' : ''}{fmtCurrency(totalAll)}
+              {totalAll >= 0 ? '+' : ''}{money(totalAll)}
             </span>
           </div>
         </div>
@@ -658,10 +663,11 @@ function AdjustmentRow({
    *  instead of misleading the user with the raw percent number. */
   dollarImpact?: number;
 }) {
+  const money = useDocMoney();
   const isPremium = adjustment.type === 'premium';
   const isUnapplied = !adjustment.isApplied;
   const isPct = adjustment.amountType === '%';
-  const sign = isPremium ? '+' : '-';
+  const sign = isPremium ? '+' : '−';
   const fmtPct = (n: number) => `${Math.round(n * 100) / 100}%`;
   const computedDollars = typeof dollarImpact === 'number' ? dollarImpact : adjustment.amount;
   /* Partner pricing-rule semantic colors: emerald for Discount,
@@ -724,11 +730,11 @@ function AdjustmentRow({
         )}
         <span className="flex flex-col items-end tabular-nums" style={{ lineHeight: 1.15, textDecoration: isUnapplied ? 'line-through' : undefined }}>
           <span className="text-[13px]" style={{ fontWeight: 600, color: valueColor }}>
-            {isPct ? `${sign}${fmtPct(adjustment.amount)}` : `${sign}${fmtCurrency(adjustment.amount)}`}
+            {isPct ? `${sign}${fmtPct(adjustment.amount)}` : `${sign}${money(adjustment.amount)}`}
           </span>
           {isPct && (
             <span className="text-[11px]" style={{ fontWeight: 500, color: isUnapplied ? '#9CA3AF' : '#6B7280' }}>
-              {sign}{fmtCurrency(computedDollars)}
+              {sign}{money(computedDollars)}
             </span>
           )}
         </span>

@@ -75,6 +75,7 @@ import {
   getItemImages,
   getAllSystemVendorOffersForItem,
   VENDOR_CONTACTS,
+  convertListPrice,
 } from "./catalogData";
 import type { CatalogItem, ItemVendorOffer } from "./catalogData";
 import { SHOW_PO_PRICING_RULES, getVendorRules } from "./poPricingRulesData";
@@ -86,6 +87,10 @@ import { toast } from "sonner";
 import QuantityStepperInput from "./QuantityStepperInput";
 import ItemStatusChip from "./ItemStatusChip";
 import { computeCartVendorPricing } from "./poOrderPricing";
+import { CurrencyFlag } from "./currency/CurrencyChip";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatMoney } from "@/app/currency/money";
+import { toBaseToday, vendorCurrency } from "@/app/currency/poFx";
 import {
   formatQuantityValue,
   getDraftQuantityValue,
@@ -185,7 +190,7 @@ interface ItemsCatalogueModalProps {
   addButtonLabel?: string;
   onAddItem?: (item: CatalogItem) => void;
   existingPOItemQtyByNumber?: Record<string, number>;
-  onPOsCreated?: (created: Array<{ id: string; poNumber: string; vendor: string; total: number; itemCount: number }>) => void;
+  onPOsCreated?: (created: Array<{ id: string; poNumber: string; vendor: string; total: number; currency: string; itemCount: number }>) => void;
   /** Override the "In PO" per-row already-added badge copy. Used by
       the PR path to display "In request" without touching the mode
       logic. Defaults to "In PO". */
@@ -427,10 +432,12 @@ export default function ItemsCatalogueModal({
 
     if (activePartnerFilter) items = items.filter((it) => it.partnerLocation === activePartnerFilter);
 
+    // Prices are in each vendor's currency: sort on their base-currency value.
+    const baseValue = (it: CatalogItem) => toBaseToday(it.unitPrice, vendorCurrency(it.partnerLocation));
     switch (sortBy) {
       case "name": items.sort((a, b) => a.descriptiveName.localeCompare(b.descriptiveName)); break;
-      case "price-asc": items.sort((a, b) => a.unitPrice - b.unitPrice); break;
-      case "price-desc": items.sort((a, b) => b.unitPrice - a.unitPrice); break;
+      case "price-asc": items.sort((a, b) => baseValue(a) - baseValue(b)); break;
+      case "price-desc": items.sort((a, b) => baseValue(b) - baseValue(a)); break;
     }
     return items;
   }, [filterItem, filterVendor, filterContact, activePartnerFilter, sortBy, vendorChangeCounter]);
@@ -563,7 +570,7 @@ export default function ItemsCatalogueModal({
         checked.map((i) => ({ id: i.catalogItem.id, itemNumber: i.catalogItem.itemNumber, quantity: i.quantity, unitPrice: i.unitPrice, discount: i.discount, oneTimeAdjustments: i.oneTimeAdjustments })),
       );
       return {
-        vendor, items, subtotal, discount, total: subtotal - discount,
+        vendor, currency: vendorCurrency(vendor), items, subtotal, discount, total: subtotal - discount,
         checkedCount: checked.length, selectableCount: items.length - deactivatedCount, deactivatedCount,
         checkedSubtotal, checkedDiscount,
         checkedRulesDiscount: pricing.rulesDiscount,
@@ -593,7 +600,7 @@ export default function ItemsCatalogueModal({
       if (!vendorMap.has(vendor)) vendorMap.set(vendor, []);
       vendorMap.get(vendor)!.push(c);
     });
-    const created: Array<{ id: string; poNumber: string; vendor: string; total: number; itemCount: number }> = [];
+    const created: Array<{ id: string; poNumber: string; vendor: string; total: number; currency: string; itemCount: number }> = [];
     vendorMap.forEach((items, vendor) => {
       const poLineItems = items.map((c) => ({
         id: c.catalogItem.id, itemNumber: c.catalogItem.itemNumber, descriptiveName: c.catalogItem.descriptiveName,
@@ -611,7 +618,7 @@ export default function ItemsCatalogueModal({
         const line = i.unitPrice * i.quantity;
         return acc + line - line * (i.discount / 100);
       }, 0);
-      created.push({ id: po.id, poNumber: po.poNumber, vendor, total, itemCount: items.length });
+      created.push({ id: po.id, poNumber: po.poNumber, vendor, total, currency: po.currency ?? vendorCurrency(vendor), itemCount: items.length });
     });
     checked.forEach((c) => removeFromGlobalCart(c.catalogItem.id));
 
@@ -724,6 +731,7 @@ export default function ItemsCatalogueModal({
         ...CATALOG[catIdx],
         partnerLocation: result.item.partnerLocation,
         unitPrice: result.unitPrice,
+        listPriceUsd: convertListPrice(result.unitPrice, result.currency ?? vendorCurrency(result.item.partnerLocation), "USD"),
         discount: result.discount,
         vendorUOM: result.item.vendorUOM,
         vendorUOMQty: result.item.vendorUOMQty,
@@ -747,6 +755,7 @@ export default function ItemsCatalogueModal({
         expectedDeliveryDate: result.expectedDeliveryDate,
         inboundLocation: result.inboundLocation,
         oneTimeAdjustments: result.oneTimeAdjustments,
+        priceCurrency: result.currency,
       });
     } else if (actionMode === "buy-now") {
       const po = createPOFromBuyNow(
@@ -778,7 +787,8 @@ export default function ItemsCatalogueModal({
           notes: result.notes,
           totalPrice: result.totalPrice,
           oneTimeAdjustments: result.oneTimeAdjustments,
-        }
+        },
+        result.currency,
       );
       onClose();
       navigate(`/purchase-orders/${po.id}`);
@@ -1292,11 +1302,12 @@ export default function ItemsCatalogueModal({
                                   </div>
                                   <div className="flex items-center gap-3 mt-0.5">
                                     <span className="text-muted-foreground text-xs leading-[16px]" style={{ fontFamily: FONT }}>
-                                      Subtotal: <span className="text-foreground font-semibold" style={{ fontFamily: FONT }}>${group.checkedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                      Subtotal: <span className="text-foreground font-semibold" style={{ fontFamily: FONT }}>{formatMoney(group.checkedTotal, group.currency)}</span>
+                                      <span className="inline-flex items-center gap-1 ml-1.5 align-middle text-[10px] font-medium"><CurrencyFlag code={group.currency} size={10} />{group.currency}</span>
                                     </span>
                                     {group.checkedDiscount > 0 && (
                                       <span className="text-xs leading-[16px] text-emerald-600 font-medium" style={{ fontFamily: FONT }}>
-                                        Discount ${group.checkedDiscount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        Discount {formatMoney(group.checkedDiscount, group.currency)}
                                       </span>
                                     )}
                                   </div>
@@ -1384,7 +1395,7 @@ export default function ItemsCatalogueModal({
                                               </div>
                                               <span className="text-muted-foreground/50 text-[10px]">·</span>
                                               <div className="flex items-baseline gap-1">
-                                                <span className={`${muted("text-foreground")} text-xs font-semibold leading-[18px]`} style={{ fontFamily: FONT }}>${effectivePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                                <span className={`${muted("text-foreground")} text-xs font-semibold leading-[18px]`} style={{ fontFamily: FONT }}>{formatMoney(effectivePrice, vendorCurrency(cat.partnerLocation))}</span>
                                                 <span className={`${muted("text-muted-foreground")} text-[10px] leading-[14px]`} style={{ fontFamily: FONT }}>/ {cat.vendorUOM}</span>
                                               </div>
                                               {deactivated && (
@@ -1461,13 +1472,20 @@ export default function ItemsCatalogueModal({
                         const totalCheckedCount = checkedCart.length;
                         const checkedVendorCount = new Set(checkedCart.map((c) => c.catalogItem.partnerLocation || "Unknown Vendor")).size;
                         const checkedItemCount = checkedCart.reduce((sum, i) => sum + i.quantity, 0);
-                        const checkedSubtotal = checkedCart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
-                        const checkedTotalDiscount = checkedCart.reduce((s, i) => s + i.unitPrice * i.quantity * (i.discount / 100), 0);
-                        const checkedRulesDiscount = vendorGroups.reduce((s, g) => s + g.checkedRulesDiscount, 0);
-                        const checkedRulesPremium = vendorGroups.reduce((s, g) => s + g.checkedRulesPremium, 0);
-                        const checkedOneTimeNet = vendorGroups.reduce((s, g) => s + g.checkedOneTimeNet, 0);
+                        /* Vendors in different currencies: totals in base, each
+                           converted at today's rate (spec 4.3); one currency
+                           keeps its totals in it. Same as CartPage. */
+                        const cartCurrencies = new Set(checkedCart.map((c) => vendorCurrency(c.catalogItem.partnerLocation)));
+                        const singleCurrency = cartCurrencies.size === 1 ? [...cartCurrencies][0] : null;
+                        const totalsCurrency = singleCurrency ?? BASE_CURRENCY;
+                        const inTotals = (n: number, vendor: string) => (singleCurrency ? n : toBaseToday(n, vendorCurrency(vendor)));
+                        const checkedSubtotal = checkedCart.reduce((s, i) => s + inTotals(i.unitPrice * i.quantity, i.catalogItem.partnerLocation), 0);
+                        const checkedTotalDiscount = checkedCart.reduce((s, i) => s + inTotals(i.unitPrice * i.quantity * (i.discount / 100), i.catalogItem.partnerLocation), 0);
+                        const checkedRulesDiscount = vendorGroups.reduce((s, g) => s + inTotals(g.checkedRulesDiscount, g.vendor), 0);
+                        const checkedRulesPremium = vendorGroups.reduce((s, g) => s + inTotals(g.checkedRulesPremium, g.vendor), 0);
+                        const checkedOneTimeNet = vendorGroups.reduce((s, g) => s + inTotals(g.checkedOneTimeNet, g.vendor), 0);
                         const checkedGrandTotal = checkedSubtotal - checkedTotalDiscount - checkedRulesDiscount + checkedRulesPremium + checkedOneTimeNet;
-                        const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        const money = (n: number) => formatMoney(n, totalsCurrency);
                         return (
                       <div className="lg:w-[320px] shrink-0">
                         <div className="lg:sticky lg:top-0">
@@ -1483,7 +1501,10 @@ export default function ItemsCatalogueModal({
                                     <span className="text-foreground truncate block text-xs font-medium leading-[16px]" style={{ fontFamily: FONT }}>{g.vendor}</span>
                                     <span className="text-muted-foreground text-[11px] leading-[15px]" style={{ fontFamily: FONT }}>{g.checkedCount} of {g.selectableCount} selected</span>
                                   </div>
-                                  <span className="text-foreground shrink-0 text-xs font-semibold leading-[16px]" style={{ fontFamily: FONT }}>${g.checkedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                  <span className="shrink-0 flex flex-col items-end">
+                                    <span className="text-foreground text-xs font-semibold leading-[16px]" style={{ fontFamily: FONT }}>{formatMoney(g.checkedTotal, g.currency)}</span>
+                                    <span className="inline-flex items-center gap-1 text-muted-foreground text-[10px] leading-[14px]" style={{ fontFamily: FONT }}><CurrencyFlag code={g.currency} size={10} />{g.currency}</span>
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -1491,37 +1512,45 @@ export default function ItemsCatalogueModal({
                             <div className="px-5 py-3 flex flex-col gap-2">
                               <div className="flex items-center justify-between">
                                 <span className="text-muted-foreground text-sm leading-[20px]" style={{ fontFamily: FONT }}>Subtotal ({checkedItemCount} units)</span>
-                                <span className="text-foreground text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT }}>${checkedSubtotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                <span className="text-foreground text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT }}>{money(checkedSubtotal)}</span>
                               </div>
                               {checkedTotalDiscount > 0 && (
                                 <div className="flex items-center justify-between">
                                   <span className="text-emerald-600 text-sm leading-[20px]" style={{ fontFamily: FONT }}>Discounts</span>
-                                  <span className="text-emerald-600 text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT }}>-${checkedTotalDiscount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                  <span className="text-emerald-600 text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT }}>{money(-checkedTotalDiscount)}</span>
                                 </div>
                               )}
                               {checkedRulesDiscount > 0 && (
                                 <div className="flex items-center justify-between">
                                   <span className="text-emerald-600 text-sm leading-[20px]" style={{ fontFamily: FONT }}>Pricing rules (discount)</span>
-                                  <span className="text-emerald-600 text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT }}>−${money(checkedRulesDiscount)}</span>
+                                  <span className="text-emerald-600 text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT }}>{money(-checkedRulesDiscount)}</span>
                                 </div>
                               )}
                               {checkedRulesPremium > 0 && (
                                 <div className="flex items-center justify-between">
                                   <span className="text-sm leading-[20px]" style={{ fontFamily: FONT, color: "#7C3AED" }}>Pricing rules (premium)</span>
-                                  <span className="text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT, color: "#7C3AED" }}>+${money(checkedRulesPremium)}</span>
+                                  <span className="text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT, color: "#7C3AED" }}>+{money(checkedRulesPremium)}</span>
                                 </div>
                               )}
                               {checkedOneTimeNet !== 0 && (
                                 <div className="flex items-center justify-between">
                                   <span className="text-sm leading-[20px]" style={{ fontFamily: FONT, color: checkedOneTimeNet < 0 ? "#059669" : "#7C3AED" }}>One-time discounts/premiums</span>
-                                  <span className="text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT, color: checkedOneTimeNet < 0 ? "#059669" : "#7C3AED" }}>{checkedOneTimeNet < 0 ? "−" : "+"}${money(Math.abs(checkedOneTimeNet))}</span>
+                                  <span className="text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT, color: checkedOneTimeNet < 0 ? "#059669" : "#7C3AED" }}>{checkedOneTimeNet < 0 ? "−" : "+"}{money(Math.abs(checkedOneTimeNet))}</span>
                                 </div>
                               )}
                               <div className="h-px mt-1 bg-border" />
                               <div className="flex items-center justify-between pt-1">
                                 <span className="text-foreground text-base font-semibold leading-[22px]" style={{ fontFamily: FONT }}>Total</span>
-                                <span className="text-foreground text-xl font-bold leading-[28px]" style={{ fontFamily: FONT }}>${checkedGrandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                <span className="text-foreground text-xl font-bold leading-[28px]" style={{ fontFamily: FONT }}>{money(checkedGrandTotal)}</span>
                               </div>
+                              {checkedCart.length > 0 && singleCurrency !== BASE_CURRENCY && (
+                                <div className="flex items-center justify-end gap-1.5 text-right text-muted-foreground text-[11px] leading-[15px]" style={{ fontFamily: FONT }}>
+                                  <CurrencyFlag code={BASE_CURRENCY} size={11} />
+                                  {singleCurrency
+                                    ? <span className="tabular-nums">≈ {formatMoney(toBaseToday(checkedGrandTotal, singleCurrency), BASE_CURRENCY)} {BASE_CURRENCY} at today's rate</span>
+                                    : <span>In {BASE_CURRENCY}, base currency · {cartCurrencies.size} currencies converted at today's rate</span>}
+                                </div>
+                              )}
                             </div>
 
                             {checkedVendorCount > 1 && (
@@ -1894,7 +1923,7 @@ export default function ItemsCatalogueModal({
                                     </>
                                   )}
                                   <span className="text-foreground whitespace-nowrap" style={{ fontSize: "var(--text-sm)", fontWeight: "var(--font-weight-semibold)", lineHeight: "18px" }}>
-                                    ${(item.unitPrice * (1 - item.discount / 100)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    {formatMoney(item.unitPrice * (1 - item.discount / 100), vendorCurrency(item.partnerLocation))}
                                   </span>
                                   <span className="text-muted-foreground whitespace-nowrap" style={{ fontSize: "9px", fontWeight: "var(--font-weight-normal)", lineHeight: "13px" }}>
                                     per {formatUOM(item.defaultUOM)}
@@ -1987,7 +2016,7 @@ export default function ItemsCatalogueModal({
                                   {/* Live total */}
                                   {item.unitPrice > 0 && addingQty > 0 && (
                                     <span className="text-foreground shrink-0 whitespace-nowrap" style={{ fontSize: "9px", fontWeight: "var(--font-weight-medium)", fontFamily: FONT }}>
-                                      = ${(item.unitPrice * addingQty * item.vendorUOMQty * (1 - item.discount / 100)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      = {formatMoney(item.unitPrice * addingQty * item.vendorUOMQty * (1 - item.discount / 100), vendorCurrency(item.partnerLocation))}
                                     </span>
                                   )}
                                   <button
@@ -2172,7 +2201,7 @@ export default function ItemsCatalogueModal({
                                     {/* Price */}
                                     <div className="flex flex-col items-end shrink-0 gap-0">
                                       <span className="text-foreground" style={{ fontSize: "12px", fontWeight: "var(--font-weight-semibold)", lineHeight: "16px" }}>
-                                        ${offer.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        {formatMoney(offer.unitPrice, vendorCurrency(offer.vendorName))}
                                       </span>
                                       <span className="text-muted-foreground" style={{ fontSize: "9px", fontWeight: "var(--font-weight-normal)", lineHeight: "13px" }}>
                                         per {offer.uom}

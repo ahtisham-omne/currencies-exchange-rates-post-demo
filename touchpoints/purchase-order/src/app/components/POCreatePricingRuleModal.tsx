@@ -59,6 +59,9 @@ import {
   type VendorPricingRule,
 } from "./poPricingRulesData";
 import { CATALOG, type CatalogItem } from "./catalogData";
+import { useRuleMoney } from "./currency/useRuleMoney";
+import { currencyDecimals, moneyPrefix } from "@/app/currency/money";
+import { RULE_AMOUNT_CURRENCY } from "@/app/currency/poFx";
 
 export interface POCreatePricingRulePrefill {
   name?: string;
@@ -109,7 +112,12 @@ const makeTier = (): TierDraft => ({
   maxQty: "",
 });
 
-/* Compact %/$ pill toggle — inlined from SO's PctAmountToggle. */
+/* A fixed-amount tier is stored with unit "$": a flat amount per unit,
+   written in USD (RULE_AMOUNT_CURRENCY) and converted on each PO. */
+const tierUnit = (fixRate: boolean): PricingRuleTier["unit"] => (fixRate ? "$" : "%");
+
+/* Compact %/$ pill toggle — inlined from SO's PctAmountToggle. The
+   amount side reads as USD, the currency rule amounts are written in. */
 function PctAmountToggle({
   isFixed,
   onChange,
@@ -126,12 +134,13 @@ function PctAmountToggle({
             key={key}
             type="button"
             onClick={() => onChange(key === "amt")}
+            title={key === "pct" ? "Percentage" : `Fixed amount per unit (${RULE_AMOUNT_CURRENCY})`}
             className={`inline-flex items-center justify-center w-[26px] h-[22px] rounded text-[11px] transition-all cursor-pointer ${
               active ? "bg-white shadow-sm text-slate-800" : "text-slate-500 hover:text-slate-700"
             }`}
             style={{ fontWeight: active ? 600 : 500 }}
           >
-            {key === "pct" ? "%" : "$"}
+            {key === "pct" ? "%" : moneyPrefix(RULE_AMOUNT_CURRENCY).trim()}
           </button>
         );
       })}
@@ -168,6 +177,9 @@ export function POCreatePricingRuleModal({
   onCreated,
 }: POCreatePricingRuleModalProps) {
   const isEditMode = !!editingRuleId;
+  /* Flat tier amounts are typed in USD; on a PO in another currency the
+     input previews what one comes to there. */
+  const { tierConverted, tierText } = useRuleMoney();
   const [step, setStep] = useState<1 | 2>(1);
   const [fullscreen, setFullscreen] = useState(false);
   const [name, setName] = useState("");
@@ -389,15 +401,17 @@ export function POCreatePricingRuleModal({
     if (!name.trim()) return;
     const parsedTiers: PricingRuleTier[] = tiers
       .map((t) => {
-        const rate = parseFloat(t.rate);
-        if (Number.isNaN(rate) || rate <= 0) return null;
+        const parsed = parseFloat(t.rate);
+        if (Number.isNaN(parsed) || parsed <= 0) return null;
+        // A USD amount keeps USD's minor units.
+        const rate = t.fixRate ? Number(parsed.toFixed(currencyDecimals(RULE_AMOUNT_CURRENCY))) : parsed;
         const minQty = t.qtyLimits ? parseFloat(t.minQty) || 1 : 1;
         const maxQty = t.qtyLimits && t.maxQty.trim() ? parseFloat(t.maxQty) : null;
         return {
           minQty,
           maxQty,
           rate,
-          unit: t.fixRate ? "$" : ("%" as const),
+          unit: tierUnit(t.fixRate),
         } satisfies PricingRuleTier;
       })
       .filter((t): t is PricingRuleTier => t !== null);
@@ -784,7 +798,12 @@ export function POCreatePricingRuleModal({
                     </div>
 
                     <div className="space-y-2.5">
-                      {tiers.map((tier, idx) => (
+                      {tiers.map((tier, idx) => {
+                        /* "≈ €13.71" beside a USD amount when this PO is in another currency. */
+                        const typedRate = parseFloat(tier.rate);
+                        const ratePreview =
+                          tier.fixRate && typedRate > 0 ? tierConverted({ rate: typedRate, unit: tierUnit(true) }) : null;
+                        return (
                         <div
                           key={idx}
                           className="rounded-xl border bg-white overflow-hidden transition-all"
@@ -822,7 +841,7 @@ export function POCreatePricingRuleModal({
                                     className="text-[12px] text-slate-900"
                                     style={{ fontWeight: 500 }}
                                   >
-                                    {isDis ? "Discount" : "Premium"} {tier.fixRate ? "Amount" : "Rate"}
+                                    {isDis ? "Discount" : "Premium"} {tier.fixRate ? `Amount per Unit (${RULE_AMOUNT_CURRENCY})` : "Rate"}
                                   </label>
                                   <PctAmountToggle
                                     isFixed={tier.fixRate}
@@ -831,8 +850,8 @@ export function POCreatePricingRuleModal({
                                 </div>
                                 <div className="relative">
                                   {tier.fixRate && (
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">
-                                      $
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400" style={{ fontWeight: 500 }}>
+                                      {RULE_AMOUNT_CURRENCY}
                                     </span>
                                   )}
                                   <Input
@@ -840,12 +859,17 @@ export function POCreatePricingRuleModal({
                                     onChange={(e) => updateTier(idx, { rate: e.target.value })}
                                     placeholder={tier.fixRate ? "e.g. 25.00" : "e.g. 5"}
                                     className={`rounded-lg border-slate-200 bg-white text-[13px] h-9 ${
-                                      tier.fixRate ? "pl-7 pr-3" : "pr-8"
+                                      tier.fixRate ? (ratePreview ? "pl-11 pr-24" : "pl-11 pr-3") : "pr-8"
                                     }`}
                                   />
                                   {!tier.fixRate && (
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">
                                       %
+                                    </span>
+                                  )}
+                                  {ratePreview && (
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 tabular-nums pointer-events-none">
+                                      {ratePreview}
                                     </span>
                                   )}
                                 </div>
@@ -876,6 +900,11 @@ export function POCreatePricingRuleModal({
                                 </label>
                               </div>
                             </div>
+                            {tier.fixRate && (
+                              <p className="mt-1.5 text-[11px] text-slate-400 leading-snug">
+                                Amounts are written in {RULE_AMOUNT_CURRENCY} and converted to each PO's currency at its rate.
+                              </p>
+                            )}
 
                             {tier.qtyLimits && (
                               <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
@@ -887,9 +916,10 @@ export function POCreatePricingRuleModal({
                                     {basis === "volume" ? "Min Qty" : "Min Order Value"}
                                   </label>
                                   <div className="relative">
+                                    {/* Order values are in USD, like every rule amount. */}
                                     {basis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">
-                                        $
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400" style={{ fontWeight: 500 }}>
+                                        {RULE_AMOUNT_CURRENCY}
                                       </span>
                                     )}
                                     <Input
@@ -897,7 +927,7 @@ export function POCreatePricingRuleModal({
                                       onChange={(e) => updateTier(idx, { minQty: e.target.value })}
                                       placeholder={basis === "volume" ? "e.g. 10" : "e.g. 1,000"}
                                       className={`rounded-lg border-slate-200 bg-white text-[13px] h-9 ${
-                                        basis === "value" ? "pl-7" : ""
+                                        basis === "value" ? "pl-11" : ""
                                       }`}
                                     />
                                   </div>
@@ -911,8 +941,8 @@ export function POCreatePricingRuleModal({
                                   </label>
                                   <div className="relative">
                                     {basis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">
-                                        $
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400" style={{ fontWeight: 500 }}>
+                                        {RULE_AMOUNT_CURRENCY}
                                       </span>
                                     )}
                                     <Input
@@ -920,7 +950,7 @@ export function POCreatePricingRuleModal({
                                       onChange={(e) => updateTier(idx, { maxQty: e.target.value })}
                                       placeholder={basis === "volume" ? "e.g. 50" : "e.g. 5,000"}
                                       className={`rounded-lg border-slate-200 bg-white text-[13px] h-9 ${
-                                        basis === "value" ? "pl-7" : ""
+                                        basis === "value" ? "pl-11" : ""
                                       }`}
                                     />
                                   </div>
@@ -929,7 +959,8 @@ export function POCreatePricingRuleModal({
                             )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     <button
@@ -966,8 +997,10 @@ export function POCreatePricingRuleModal({
                       <p className="text-[11px] text-slate-500 truncate">
                         {isDis ? "Discount" : "Premium"} · {basis === "volume" ? "Volume-Based" : "Value-Based"} ·{" "}
                         {tiers.length} tier{tiers.length !== 1 ? "s" : ""}
-                        {tiers[0]?.rate
-                          ? ` · ${tiers[0].fixRate ? "$" : ""}${tiers[0].rate}${tiers[0].fixRate ? "" : "%"}`
+                        {tiers[0] && parseFloat(tiers[0].rate) > 0
+                          ? ` · ${tierText({ rate: parseFloat(tiers[0].rate), unit: tierUnit(tiers[0].fixRate) })}${
+                              tiers[0].fixRate ? " per unit" : ""
+                            }`
                           : ""}
                       </p>
                     </div>

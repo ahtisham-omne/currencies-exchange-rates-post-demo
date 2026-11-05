@@ -57,6 +57,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "./ui/command";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { FONT } from "./designTokens";
+import { moneyPrefix } from "@/app/currency/money";
+import { vendorCurrency } from "@/app/currency/poFx";
 import {
   UOM_REGISTRY,
   DIMENSION_LABELS,
@@ -296,6 +298,7 @@ function SellingUnitCard({
   onChange,
   onSetPrimary,
   onRemove,
+  currency,
 }: {
   unit: QualifySellingUnit;
   isPrimary: boolean;
@@ -305,6 +308,8 @@ function SellingUnitCard({
   onChange: (patch: Partial<QualifySellingUnit>) => void;
   onSetPrimary: () => void;
   onRemove: () => void;
+  /** The vendor's currency: its prices are quoted in it (spec 4.2). */
+  currency: string;
 }) {
   const err = minMaxError(unit);
   return (
@@ -353,7 +358,7 @@ function SellingUnitCard({
             <FieldInfo content={PRICE_INFO} />
           </label>
           <div className="flex items-stretch rounded-lg border border-border overflow-hidden bg-white focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">
-            <span className="inline-flex items-center justify-center w-9 text-[12px] text-slate-400 bg-[#FAFBFC] border-r border-border" style={{ fontWeight: 500 }}>$</span>
+            <span className="inline-flex items-center justify-center w-9 text-[12px] text-slate-400 bg-[#FAFBFC] border-r border-border" style={{ fontWeight: 500 }}>{moneyPrefix(currency).trim()}</span>
             <input
               inputMode="decimal"
               value={unit.price}
@@ -694,6 +699,7 @@ export function QualifyVendorPricingModal({
                   canRemove={units.length > 1 && !single}
                   referenceUnit={defaultUnit}
                   takenUnits={new Set([...otherUnits, ...units.filter((_, j) => j !== i).map((x) => x.uom)])}
+                  currency={vendorCurrency(vendorName)}
                   onChange={(patch) => patchUnit(i, patch)}
                   onSetPrimary={() => { setPrimaryIndex(i); setDirty(true); }}
                   onRemove={() => removeUnit(i)}

@@ -320,6 +320,8 @@ export default function RecommendedPOsModal({
         orderFlowLines,
         `Procurement Planning · Recommend POs (${included.length} line${included.length === 1 ? "" : "s"})`,
         [],
+        // Planning prices are USD; the PO converts them to the vendor's currency.
+        "USD",
       );
       createdCount++;
     }

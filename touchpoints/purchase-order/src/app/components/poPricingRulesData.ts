@@ -40,7 +40,9 @@ export interface PricingRuleTier {
   /** Inclusive upper bound. `null` = unbounded (top tier). */
   maxQty: number | null;
   /** Numeric rate. Interpreted as a percentage off the line subtotal when
-   *  `unit === '%'`, or as a flat dollar amount per qty when `unit === '$'`. */
+   *  `unit === '%'`, or as a flat dollar amount per qty when `unit === '$'`.
+   *  Flat amounts are written in USD (RULE_AMOUNT_CURRENCY, currency/poFx)
+   *  and converted to the PO's currency where they apply. */
   rate: number;
   unit: "%" | "$";
 }
@@ -337,10 +339,12 @@ export function pickTier(rule: VendorPricingRule, qty: number): PricingRuleTier 
 /** Evaluate the rule against a single line. Returns the dollar impact
  *  (positive = discount or premium magnitude — direction is encoded in
  *  rule.type, not the sign of this number) and whether the rule actually
- *  applies to this line at all. */
+ *  applies to this line at all. The impact is in the line's currency:
+ *  `flatAmountFactor` turns a flat USD tier amount into it (ruleAmountFactor). */
 export function evaluateRuleForLine(
   rule: VendorPricingRule,
   line: { itemCode: string; orderedQty: number; unitPrice: number },
+  flatAmountFactor = 1,
 ): { applies: boolean; amount: number; tier: PricingRuleTier | null } {
   if (!rule.appliesToItemCodes.includes(line.itemCode)) {
     return { applies: false, amount: 0, tier: null };
@@ -351,7 +355,7 @@ export function evaluateRuleForLine(
   }
   const subtotal = line.orderedQty * line.unitPrice;
   const amount =
-    tier.unit === "%" ? subtotal * (tier.rate / 100) : tier.rate * line.orderedQty;
+    tier.unit === "%" ? subtotal * (tier.rate / 100) : tier.rate * flatAmountFactor * line.orderedQty;
   return { applies: true, amount, tier };
 }
 
@@ -383,6 +387,8 @@ export function computeLineBreakdowns(
   lines: Array<{ id: string; itemCode: string; orderedQty: number; unitPrice: number }>,
   rules: VendorPricingRule[],
   activatedItemsByRule: Map<string, Set<string>>,
+  /** Flat USD tier amounts → the lines' currency (see evaluateRuleForLine). */
+  flatAmountFactor = 1,
 ): LinePricingBreakdown[] {
   return lines.map((line) => {
     const baseSubtotal = line.orderedQty * line.unitPrice;
@@ -392,7 +398,7 @@ export function computeLineBreakdowns(
     for (const rule of rules) {
       const activeOnThisLine = activatedItemsByRule.get(rule.id)?.has(line.id) ?? false;
       if (!activeOnThisLine) continue;
-      const { applies, amount, tier } = evaluateRuleForLine(rule, line);
+      const { applies, amount, tier } = evaluateRuleForLine(rule, line, flatAmountFactor);
       if (!applies) continue;
       if (rule.type === "discount") discountAmount += amount;
       else premiumAmount += amount;
@@ -459,10 +465,11 @@ export function enforceHundredPercentCap(
   lines: Array<{ id: string; itemCode: string; orderedQty: number; unitPrice: number }>,
   rules: VendorPricingRule[],
   activatedItemsByRule: Map<string, Set<string>>,
+  flatAmountFactor = 1,
 ): Map<string, RuleDeactivationReason> {
   const enforced = new Map<string, RuleDeactivationReason>();
   const baseSubtotal = lines.reduce((s, l) => s + l.orderedQty * l.unitPrice, 0);
-  const breakdowns = computeLineBreakdowns(lines, rules, activatedItemsByRule);
+  const breakdowns = computeLineBreakdowns(lines, rules, activatedItemsByRule, flatAmountFactor);
   const totalPost = computePOSubtotal(breakdowns);
   if (totalPost >= 0) return enforced;
   /* Order rules cheapest-impact first so we drop the smallest offender

@@ -3210,6 +3210,8 @@ export default function PODemands({ stalePOs, onNavigatePO, onCreatePO, onConfir
     vendorUOMQty: 1,
     defaultUOM: item.uom,
     discount: 0,
+    // Planning prices are USD; the item modal and the PO convert them.
+    priceCurrency: "USD",
   });
 
   /** Build a DemandConsolidationContext from a DemandItem — feeds the banner
@@ -4071,7 +4073,8 @@ export default function PODemands({ stalePOs, onNavigatePO, onCreatePO, onConfir
     if (toCreate.length === 0) return;
 
     const created = toCreate.map((p) => {
-      const po = createPOFromVendorCheckout(p.vendor, p.lineItems);
+      // Planning prices are USD; the PO converts them to the vendor's currency.
+      const po = createPOFromVendorCheckout(p.vendor, p.lineItems, undefined, undefined, "USD");
       return { id: po.id, poNumber: po.poNumber, vendor: p.vendor };
     });
 

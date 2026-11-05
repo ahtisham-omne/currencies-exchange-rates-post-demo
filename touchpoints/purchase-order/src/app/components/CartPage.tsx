@@ -62,6 +62,11 @@ import QuickViewPanel, { type QuickViewData } from "./QuickViewPanel";
 import QuantityStepperInput from "./QuantityStepperInput";
 import ItemStatusChip from "./ItemStatusChip";
 import { lineOneTimeNet } from "./poOrderPricing";
+import { Money } from "./currency/Money";
+import { CurrencyFlag } from "./currency/CurrencyChip";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatMoney } from "@/app/currency/money";
+import { ruleAmountFactorToday, toBaseToday, todayFx, vendorCurrency } from "@/app/currency/poFx";
 
 /* ═══════════════════════════════════════════════════════════════
    DESIGN CONSTANTS — Partners-aligned (mirrors PO detail page)
@@ -133,6 +138,8 @@ function catalogToFlowItem(item: CatalogItem): OrderFlowItem {
 
 interface VendorGroup {
   vendor: string;
+  /** The vendor's default currency: the group's amounts are in it (spec 4.2). */
+  currency: string;
   items: GlobalCartItem[];
   subtotal: number;
   discount: number;
@@ -190,7 +197,7 @@ export default function CartPage() {
     });
   }, []);
   /* ── Multi-PO confirmation modal state ── */
-  const [multiPOModal, setMultiPOModal] = useState<{ created: Array<{ id: string; poNumber: string; vendor: string; total: number; itemCount: number }> } | null>(null);
+  const [multiPOModal, setMultiPOModal] = useState<{ created: Array<{ id: string; poNumber: string; vendor: string; total: number; currency: string; itemCount: number }> } | null>(null);
   const [multiPOChecked, setMultiPOChecked] = useState<Set<string>>(new Set());
 
   /* ── Checkbox selection state — all checked by default ──
@@ -289,7 +296,8 @@ export default function CartPage() {
             }
             if (activeLines.size > 0) activation.set(r.id, activeLines);
           }
-          const bds = computeLineBreakdowns(linesForCompute, vendorRules, activation);
+          // Flat rule amounts (USD) in the vendor's currency, at today's rate.
+          const bds = computeLineBreakdowns(linesForCompute, vendorRules, activation, ruleAmountFactorToday(vendorCurrency(vendor)));
           checkedRulesDiscount = sumRuleDiscount(bds);
           checkedRulesPremium = sumRulePremium(bds);
         }
@@ -300,6 +308,7 @@ export default function CartPage() {
       );
       return {
         vendor,
+        currency: vendorCurrency(vendor),
         items,
         subtotal,
         discount,
@@ -318,19 +327,27 @@ export default function CartPage() {
     });
   }, [cart, checkedItems, cartSearch]);
 
-  /* ── Totals (checked items only) ── */
+  /* ── Totals (checked items only) ──
+     Vendor groups can carry different currencies (spec 4.3): then the
+     totals are in the base currency, each vendor's amounts converted at
+     today's rate. A cart in one currency keeps its totals in it. */
   const checkedCart = cart.filter((c) => checkedItems.has(c.catalogItem.id) && !isCartItemDeactivated(c));
   const totalCheckedCount = checkedCart.length;
   const totalCheckedVendors = new Set(checkedCart.map((c) => c.catalogItem.partnerLocation || "Unknown Vendor")).size;
   const itemCount = checkedCart.reduce((sum, i) => sum + i.quantity, 0);
-  const subtotal = checkedCart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
-  const totalDiscount = checkedCart.reduce((s, i) => s + i.unitPrice * i.quantity * (i.discount / 100), 0);
+  const cartCurrencies = new Set(checkedCart.map((c) => vendorCurrency(c.catalogItem.partnerLocation)));
+  const singleCurrency = cartCurrencies.size === 1 ? [...cartCurrencies][0] : null;
+  const totalsCurrency = singleCurrency ?? BASE_CURRENCY;
+  const inTotals = (amount: number, vendor: string) =>
+    singleCurrency ? amount : toBaseToday(amount, vendorCurrency(vendor));
+  const subtotal = checkedCart.reduce((s, i) => s + inTotals(i.unitPrice * i.quantity, i.catalogItem.partnerLocation), 0);
+  const totalDiscount = checkedCart.reduce((s, i) => s + inTotals(i.unitPrice * i.quantity * (i.discount / 100), i.catalogItem.partnerLocation), 0);
   /* Rule impact rolls up across every vendor group (buyer feedback
      2026-07-20). Each vendorGroups entry already carries the
      vendor-scoped rule impact for its checked items; sum them here. */
-  const totalRulesDiscount = vendorGroups.reduce((s, g) => s + g.checkedRulesDiscount, 0);
-  const totalRulesPremium = vendorGroups.reduce((s, g) => s + g.checkedRulesPremium, 0);
-  const totalOneTimeNet = vendorGroups.reduce((s, g) => s + g.checkedOneTimeNet, 0);
+  const totalRulesDiscount = vendorGroups.reduce((s, g) => s + inTotals(g.checkedRulesDiscount, g.vendor), 0);
+  const totalRulesPremium = vendorGroups.reduce((s, g) => s + inTotals(g.checkedRulesPremium, g.vendor), 0);
+  const totalOneTimeNet = vendorGroups.reduce((s, g) => s + inTotals(g.checkedOneTimeNet, g.vendor), 0);
   const grandTotal = subtotal - totalDiscount - totalRulesDiscount + totalRulesPremium + totalOneTimeNet;
 
   /* ── Suggestions: items from vendors already in cart + same categories ── */
@@ -427,11 +444,12 @@ export default function CartPage() {
       expectedDeliveryDate: result.expectedDeliveryDate,
       inboundLocation: result.inboundLocation,
       oneTimeAdjustments: result.oneTimeAdjustments,
+      priceCurrency: result.currency,
     });
 
     const isEdit = orderFlowMode === "edit-cart";
     toast.success(isEdit ? `${catalogRef.itemNumber} updated` : `${catalogRef.itemNumber} added to cart`, {
-      description: `${result.quantity} ${catalogRef.defaultUOM} × $${result.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — $${result.totalPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      description: `${result.quantity} ${catalogRef.defaultUOM} × ${formatMoney(result.unitPrice, result.currency ?? vendorCurrency(catalogRef.partnerLocation))} — ${formatMoney(result.totalPrice, result.currency ?? vendorCurrency(catalogRef.partnerLocation))}`,
       style: { fontFamily: FONT },
       duration: 3000,
     });
@@ -478,7 +496,7 @@ export default function CartPage() {
       vendorMap.get(vendor)!.push(c);
     });
 
-    const created: Array<{ id: string; poNumber: string; vendor: string; total: number; itemCount: number }> = [];
+    const created: Array<{ id: string; poNumber: string; vendor: string; total: number; currency: string; itemCount: number }> = [];
     vendorMap.forEach((items, vendor) => {
       const poLineItems = items.map((c) => ({
         id: c.catalogItem.id, itemNumber: c.catalogItem.itemNumber, descriptiveName: c.catalogItem.descriptiveName,
@@ -493,7 +511,7 @@ export default function CartPage() {
       const po = createPOFromVendorCheckout(vendor, poLineItems);
       /* Use the created PO's computed total (rules + one-times). */
       const total = po.total;
-      created.push({ id: po.id, poNumber: po.poNumber, vendor, total, itemCount: items.length });
+      created.push({ id: po.id, poNumber: po.poNumber, vendor, total, currency: po.currency ?? vendorCurrency(vendor), itemCount: items.length });
     });
 
     // Remove only checked items from cart
@@ -947,8 +965,13 @@ export default function CartPage() {
                           <div className="flex items-center gap-3 mt-1">
                             <span style={{ fontSize: 12, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
                               Subtotal:{" "}
+                              {/* In the vendor's currency: this group becomes one PO in it (spec 4.2). */}
                               <span className="tabular-nums" style={{ fontWeight: 600, color: C.text900 }}>
-                                ${group.checkedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                <Money value={group.checkedTotal} currency={group.currency} fx={todayFx(group.currency)} dateLabel="today" role="vendor currency" />
+                              </span>
+                              <span className="inline-flex items-center gap-1 ml-1.5 align-middle" style={{ fontSize: 10, fontWeight: 500, color: C.text500 }}>
+                                <CurrencyFlag code={group.currency} size={10} />
+                                {group.currency}
                               </span>
                             </span>
                             {group.checkedDiscount > 0 && (
@@ -962,7 +985,7 @@ export default function CartPage() {
                                   lineHeight: 1.4,
                                 }}
                               >
-                                Discount ${group.checkedDiscount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                Discount {formatMoney(group.checkedDiscount, group.currency)}
                               </span>
                             )}
                           </div>
@@ -1119,8 +1142,15 @@ export default function CartPage() {
                               {g.checkedCount} of {g.selectableCount} selected
                             </span>
                           </div>
-                          <span className="shrink-0 tabular-nums" style={{ fontSize: 12, fontWeight: 600, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}>
-                            ${g.checkedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {/* Each vendor in its own currency (spec 4.3). */}
+                          <span className="shrink-0 flex flex-col items-end">
+                            <span className="tabular-nums" style={{ fontSize: 12, fontWeight: 600, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}>
+                              <Money value={g.checkedTotal} currency={g.currency} fx={todayFx(g.currency)} dateLabel="today" role="vendor currency" />
+                            </span>
+                            <span className="inline-flex items-center gap-1" style={{ fontSize: 10, fontWeight: 500, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
+                              <CurrencyFlag code={g.currency} size={10} />
+                              {g.currency}
+                            </span>
                           </span>
                         </div>
                       ))}
@@ -1133,7 +1163,7 @@ export default function CartPage() {
                           Subtotal (<span className="tabular-nums">{itemCount}</span> units)
                         </span>
                         <span className="tabular-nums" style={{ fontSize: 13, fontWeight: 600, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}>
-                          ${subtotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {formatMoney(subtotal, totalsCurrency)}
                         </span>
                       </div>
                       {totalDiscount > 0 && (
@@ -1142,7 +1172,7 @@ export default function CartPage() {
                             Discounts
                           </span>
                           <span className="tabular-nums" style={{ fontSize: 13, fontWeight: 600, color: "#065F46", fontFamily: FONT, lineHeight: 1.4 }}>
-                            -${totalDiscount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {formatMoney(-totalDiscount, totalsCurrency)}
                           </span>
                         </div>
                       )}
@@ -1178,7 +1208,7 @@ export default function CartPage() {
                             className="tabular-nums"
                             style={{ fontSize: 13, fontWeight: 600, color: "#065F46", fontFamily: FONT, lineHeight: 1.4 }}
                           >
-                            −${totalRulesDiscount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {formatMoney(-totalRulesDiscount, totalsCurrency)}
                           </span>
                         </div>
                       )}
@@ -1210,7 +1240,7 @@ export default function CartPage() {
                             className="tabular-nums"
                             style={{ fontSize: 13, fontWeight: 600, color: "#B45309", fontFamily: FONT, lineHeight: 1.4 }}
                           >
-                            +${totalRulesPremium.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            +{formatMoney(totalRulesPremium, totalsCurrency)}
                           </span>
                         </div>
                       )}
@@ -1224,7 +1254,7 @@ export default function CartPage() {
                             One-time discounts/premiums
                           </span>
                           <span className="tabular-nums" style={{ fontSize: 13, fontWeight: 600, color: totalOneTimeNet < 0 ? "#065F46" : "#7C3AED", fontFamily: FONT, lineHeight: 1.4 }}>
-                            {totalOneTimeNet < 0 ? "−" : "+"}${Math.abs(totalOneTimeNet).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {totalOneTimeNet < 0 ? "−" : "+"}{formatMoney(Math.abs(totalOneTimeNet), totalsCurrency)}
                           </span>
                         </div>
                       )}
@@ -1232,9 +1262,26 @@ export default function CartPage() {
                       <div className="flex items-center justify-between pt-1">
                         <span style={{ fontSize: 14, fontWeight: 600, color: C.text900, fontFamily: FONT, lineHeight: "22px" }}>Total</span>
                         <span className="tabular-nums" style={{ fontSize: 20, fontWeight: 700, color: C.text900, fontFamily: FONT, lineHeight: "28px" }}>
-                          ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {formatMoney(grandTotal, totalsCurrency)}
                         </span>
                       </div>
+                      {/* Vendors in different currencies: the total is in base,
+                          converted at today's rate (spec 4.3). One currency:
+                          the total stays in it, with its base equivalent. */}
+                      {checkedCart.length > 0 && singleCurrency !== BASE_CURRENCY && (
+                        <div className="flex items-center justify-end gap-1.5 text-right" style={{ fontSize: 11, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
+                          <CurrencyFlag code={BASE_CURRENCY} size={11} />
+                          {singleCurrency ? (
+                            <span className="tabular-nums">
+                              ≈ {formatMoney(toBaseToday(grandTotal, singleCurrency), BASE_CURRENCY)} {BASE_CURRENCY} at today's rate
+                            </span>
+                          ) : (
+                            <span>
+                              In {BASE_CURRENCY}, base currency · {cartCurrencies.size} currencies converted at today's rate
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Multi-vendor info — white card + Vendor-blue icon chip, matching
@@ -1425,7 +1472,7 @@ export default function CartPage() {
                               className="tabular-nums"
                               style={{ fontSize: 12, fontWeight: 600, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}
                             >
-                              ${po.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {formatMoney(po.total, po.currency)}
                             </span>
                             <span style={{ fontSize: 11, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
                               <span className="tabular-nums">{po.itemCount}</span> item{po.itemCount !== 1 ? "s" : ""}
@@ -1570,6 +1617,8 @@ function CartLineItemCard({
 }) {
   const cat = item.catalogItem;
   const effectivePrice = item.unitPrice * (1 - item.discount / 100);
+  // In the vendor's currency (spec 4.2).
+  const currency = vendorCurrency(cat.partnerLocation);
 
   /* Serialization derived from item id hash — matches modal cart */
   const hash = cat.id.split("").reduce((a: number, c: string) => a + c.charCodeAt(0), 0);
@@ -1688,7 +1737,7 @@ function CartLineItemCard({
             <span style={{ color: C.text400, fontSize: 10 }}>·</span>
             <div className="flex items-baseline gap-1 tabular-nums">
               <span style={{ fontSize: 13, fontWeight: 600, color: tx(C.text900), fontFamily: FONT, lineHeight: 1.4 }}>
-                ${effectivePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <Money value={effectivePrice} currency={currency} fx={todayFx(currency)} dateLabel="today" role="vendor currency" />
               </span>
               <span style={{ fontSize: 10, fontWeight: 400, color: tx(C.text500), fontFamily: FONT, lineHeight: 1.4 }}>
                 / {cat.vendorUOM}
@@ -1814,6 +1863,7 @@ function RecentlyOrderedCard({
   onImageClick?: (item: CatalogItem) => void;
 }) {
   const effectivePrice = item.unitPrice * (1 - item.discount / 100);
+  const currency = vendorCurrency(item.partnerLocation);
   const vendorOffers = getVendorOffersForItem(item.id);
   const vendorCount = vendorOffers.length;
 
@@ -1893,7 +1943,7 @@ function RecentlyOrderedCard({
         {/* Price + unit + discount chip */}
         <div className="flex items-baseline gap-1 mt-1.5 tabular-nums">
           <span style={{ fontSize: 13, fontWeight: 700, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}>
-            ${effectivePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <Money value={effectivePrice} currency={currency} fx={todayFx(currency)} dateLabel="today" role="vendor currency" />
           </span>
           <span style={{ fontSize: 10, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
             / {item.defaultUOM}

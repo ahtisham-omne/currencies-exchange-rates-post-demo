@@ -78,6 +78,7 @@ import {
   type VendorPricingRule,
 } from "./poPricingRulesData";
 import { POPricingRuleDetailModal } from "./POPricingRuleDetailModal";
+import { useRuleMoney } from "./currency/useRuleMoney";
 import { POBrowsePricingTemplatesModal } from "./POBrowsePricingTemplatesModal";
 import { POCreatePricingRuleModal } from "./POCreatePricingRuleModal";
 
@@ -164,6 +165,8 @@ export function POPricingRulesManageModal({
     return map;
   }, [vendorRules, lineItems, deactivatedRuleIds]);
   // Keep the compute wired so future card-surface additions can read impact.
+  // Flat USD tier amounts convert to the PO's currency (ruleAmountFactor).
+  const { factor: flatAmountFactor } = useRuleMoney();
   void useMemo(
     () =>
       computeLineBreakdowns(
@@ -175,8 +178,9 @@ export function POPricingRulesManageModal({
         })),
         vendorRules,
         activation,
+        flatAmountFactor,
       ),
-    [lineItems, vendorRules, activation],
+    [lineItems, vendorRules, activation, flatAmountFactor],
   );
 
   /* ── Toolbar state ── */
@@ -700,6 +704,7 @@ function PricingRuleCard({
   const [activeTier, setActiveTier] = useState(0);
   const shownTier = rule.tiers[isMulti ? activeTier : 0];
   const t0 = rule.tiers[0];
+  const { tierRate, tierShort, tierConverted } = useRuleMoney();
 
   const pill = isDis
     ? { text: "#047857", bg: "#ECFDF5", border: "#D1FAE5" }
@@ -711,12 +716,11 @@ function PricingRuleCard({
     border: isActive ? "#A7F3D0" : "#FDE68A",
   };
 
-  const heroValue = t0
-    ? `${t0.rate}${t0.unit === "%" ? "%" : ""}`
-    : "—";
-  const shownRateStr = shownTier
-    ? `${shownTier.rate}${shownTier.unit === "%" ? "%" : ""}`
-    : "—";
+  /* Flat ("$") tiers are USD per unit: "$15 off per unit", and the tier
+     row adds what that is in the PO's currency. */
+  const heroValue = t0 ? tierShort(t0) : "—";
+  const heroPerUnit = !!t0 && t0.unit !== "%";
+  const shownConverted = shownTier ? tierConverted(shownTier) : null;
   const shownMinQty = shownTier ? shownTier.minQty : "—";
   const shownMaxQty = shownTier
     ? shownTier.maxQty === null
@@ -832,6 +836,7 @@ function PricingRuleCard({
                   sign-off) so the amount reads e.g. "12% premium" — not
                   "12% off" and not "markup". Discount stays "off". */}
               {isDis ? "off" : "premium"}
+              {heroPerUnit ? " per unit" : ""}
             </span>
           </div>
           {rule.validTo ? (
@@ -880,10 +885,8 @@ function PricingRuleCard({
         <div className="mt-auto pt-2 shrink-0" onClick={(e) => e.stopPropagation()}>
           {/* Multi-tier selector strip */}
           <div className={`h-[24px] mb-1.5 ${isMulti ? "flex items-center gap-[3px]" : ""}`}>
-            {isMulti && rule.tiers.map((_, i) => {
+            {isMulti && rule.tiers.map((tier, i) => {
               const activeTierBtn = activeTier === i;
-              const tierRate = rule.tiers[i].rate;
-              const tierUnit = rule.tiers[i].unit;
               return (
                 <button
                   key={i}
@@ -905,7 +908,7 @@ function PricingRuleCard({
                   T{i + 1}
                   {activeTierBtn && (
                     <span className="ml-1 text-[9px] opacity-60" style={{ fontWeight: 400 }}>
-                      {tierRate}{tierUnit === "%" ? "%" : ""}
+                      {tierShort(tier)}
                     </span>
                   )}
                 </button>
@@ -923,7 +926,10 @@ function PricingRuleCard({
               <span style={{ fontWeight: 400 }}>{shownMaxQty}</span>
             </div>
             <span className="shrink-0 ml-2 text-slate-700" style={{ fontWeight: 600 }}>
-              {shownRateStr}
+              {shownTier ? tierRate(shownTier) : "—"}
+              {shownConverted && (
+                <span className="text-slate-400" style={{ fontWeight: 500 }}> ({shownConverted})</span>
+              )}
             </span>
           </div>
         </div>

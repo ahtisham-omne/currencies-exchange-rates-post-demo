@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, FileText, RotateCcw, Eye, Send, CheckCircle2, Clock } from 'lucide-react';
 import type { POVersionEntry, POStatus, POVersionStatus } from './poStore';
+import { currencyShiftVersions, useDocFx, versionFx } from './poVersionDisplay';
+import { getCurrency } from '@/app/currency/currencies';
+import type { PoFx } from '@/app/currency/poFx';
+import { CurrencyFlag } from './currency/CurrencyChip';
 
 /* ── Status config — borders added 2026-05 so the mini-pill inside the
    compact trigger reads as a defined chip (not a fuzzy color wash). Palette
@@ -41,6 +45,8 @@ interface LocalVersion {
   summary: string;
   isRevert?: boolean;
   revertedFrom?: number;
+  /** The version's currency (its snapshot's, else the PO's). */
+  currency: string;
 }
 
 interface POVersionDropdownProps {
@@ -56,7 +62,7 @@ interface POVersionDropdownProps {
   compact?: boolean;
 }
 
-function toLocalVersion(v: POVersionEntry): LocalVersion {
+function toLocalVersion(v: POVersionEntry, fallbackFx: PoFx | null): LocalVersion {
   const d = new Date(v.createdAt);
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -68,6 +74,7 @@ function toLocalVersion(v: POVersionEntry): LocalVersion {
     summary: v.reason || `Version ${v.version}`,
     isRevert: v.isRevert,
     revertedFrom: v.revertedFrom,
+    currency: versionFx(v.snapshot, fallbackFx).currency,
   };
 }
 
@@ -85,9 +92,12 @@ export default function POVersionDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Derive local versions from PO store versions
+  const docFx = useDocFx();
   const versions: LocalVersion[] = [...poVersions]
     .sort((a, b) => b.version - a.version)
-    .map(toLocalVersion);
+    .map((v) => toLocalVersion(v, docFx));
+  // Versions whose currency differs from a neighbour's get a currency chip.
+  const currencyShifts = currencyShiftVersions(poVersions, docFx);
 
   // Sync latest version status with current PO status
   if (versions.length > 0) {
@@ -391,6 +401,20 @@ export default function POVersionDropdown({
                           fontSize: 10, fontWeight: 500, color: '#D97706', backgroundColor: '#FFFBEB',
                           padding: '2px 5px', borderRadius: 3, lineHeight: '1', border: '1px solid #FDE68A',
                         }}>Revert</span>
+                      )}
+                      {/* Currency chip — only where the currency changed between versions. */}
+                      {currencyShifts.has(version.version) && (
+                        <span
+                          title={`In ${getCurrency(version.currency)?.name ?? version.currency}`}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 3,
+                            fontSize: 10, fontWeight: 600, color: '#475569', backgroundColor: '#F8FAFC',
+                            padding: '2px 5px', borderRadius: 3, lineHeight: '1', border: '1px solid #E2E8F0',
+                          }}
+                        >
+                          <CurrencyFlag code={version.currency} size={9} />
+                          {version.currency}
+                        </span>
                       )}
                     </div>
                   </div>

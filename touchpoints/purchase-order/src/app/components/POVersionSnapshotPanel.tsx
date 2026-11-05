@@ -1,8 +1,80 @@
 import { Package, CheckCircle2, Clock, Undo2 } from "lucide-react";
 import { FONT } from "./designTokens";
 import type { POVersionEntry } from "./poStore";
-import { versionPalette as C, formatCurrency } from "./poVersionDisplay";
+import {
+  versionPalette as C,
+  formatCurrency,
+  formatSignedCurrency,
+  rateTypeText,
+  useDocFx,
+  versionFx,
+} from "./poVersionDisplay";
 import { snapshotOneTimeNet } from "./poOrderPricing";
+import { getCurrency } from "@/app/currency/currencies";
+import { formatRateDate, rateSentence } from "@/app/currency/money";
+import type { PoFx } from "@/app/currency/poFx";
+import { Money } from "./currency/Money";
+import { CurrencyFlag } from "./currency/CurrencyChip";
+
+/* Price / Total columns: wide enough for ₨3,453,648.00 or MXN 12,400.00. */
+const AMOUNT_W = 96;
+
+/* Uppercase caption — same recipe as the Subtotal / Total labels. */
+const CAPTION: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
+  color: C.text500,
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+  lineHeight: 1,
+  fontFamily: FONT,
+};
+
+/* The version's currency and rate (spec 4.3): flag + code, then
+   "1 USD = 274.3045 PKR · Mid-market · Feb 20, 2026". A version in the
+   base currency has no rate. */
+function VersionCurrencyStrip({ fx }: { fx: PoFx }) {
+  return (
+    <div
+      className="flex items-center flex-wrap px-3.5 py-2 border-t"
+      style={{ gap: "6px 16px", borderColor: C.border, backgroundColor: "#FFFFFF" }}
+    >
+      <div className="flex items-center" style={{ gap: 6 }}>
+        <span style={CAPTION}>Currency</span>
+        <span
+          className="inline-flex items-center"
+          title={getCurrency(fx.currency)?.name}
+          style={{ gap: 5, fontSize: 12, fontWeight: 500, color: C.text700, lineHeight: 1, fontFamily: FONT }}
+        >
+          <CurrencyFlag code={fx.currency} size={11} />
+          {fx.currency}
+        </span>
+      </div>
+      <div className="flex items-center min-w-0" style={{ gap: 6 }}>
+        <span style={CAPTION}>Exchange rate</span>
+        {fx.isBase ? (
+          <span style={{ fontSize: 11, fontWeight: 400, color: C.text500, lineHeight: 1, fontFamily: FONT }}>
+            No conversion
+          </span>
+        ) : (
+          <span
+            className="tabular-nums"
+            style={{ fontSize: 11, fontWeight: 500, color: C.text700, lineHeight: 1.3, fontFamily: FONT }}
+          >
+            {rateSentence(fx.currency, fx.rate)}
+            <span style={{ fontWeight: 400, color: C.text500 }}>
+              {" · "}
+              <span style={{ fontWeight: 500, color: fx.rateType === "mid" ? "#6D28D9" : "#B45309" }}>
+                {rateTypeText(fx)}
+              </span>
+              {` · ${formatRateDate(fx.rateDate)}`}
+            </span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Line-items snapshot panel + timestamp/delivery strip.
@@ -12,18 +84,27 @@ import { snapshotOneTimeNet } from "./poOrderPricing";
  *
  * Renders the expanded body of a version row: the timestamps strip
  * (Created / Confirmed / Delivery), the Line Items table with header +
- * rows + subtotal, and the Shipping/Discount summary + Total footer.
+ * rows + subtotal, the version's currency + exchange rate, and the
+ * Discount summary + Total footer. Amounts are in the version's currency.
  *
  * Pure presentational component — no state, no callbacks.
  */
 interface POVersionSnapshotPanelProps {
   version: POVersionEntry;
+  /** The PO's current currency, for snapshots that recorded none.
+      Defaults to the PO page's (DocCurrency). */
+  fallbackFx?: PoFx | null;
 }
 
 export default function POVersionSnapshotPanel({
   version: ver,
+  fallbackFx,
 }: POVersionSnapshotPanelProps) {
   const lineItems = ver.snapshot.lineItems ?? [];
+  // Every amount below is in this version's own currency.
+  const docFx = useDocFx();
+  const fx = versionFx(ver.snapshot, fallbackFx ?? docFx);
+  const code = fx.currency;
 
   return (
     <>
@@ -241,7 +322,7 @@ export default function POVersionSnapshotPanel({
                 letterSpacing: "0.04em",
                 lineHeight: 1,
                 fontFamily: FONT,
-                width: h === "Qty" ? 40 : h === "UOM" ? 44 : 80,
+                width: h === "Qty" ? 40 : h === "UOM" ? 44 : AMOUNT_W,
                 textAlign: h === "UOM" ? "center" : ("right" as const),
               }}
             >
@@ -337,11 +418,11 @@ export default function POVersionSnapshotPanel({
                     color: C.text600,
                     lineHeight: 1,
                     fontFamily: FONT,
-                    width: 80,
+                    width: AMOUNT_W,
                     textAlign: "right" as const,
                   }}
                 >
-                  {formatCurrency(li.unitPrice)}
+                  {formatCurrency(li.unitPrice, code)}
                 </span>
                 <span
                   className="tabular-nums shrink-0"
@@ -351,11 +432,11 @@ export default function POVersionSnapshotPanel({
                     color: C.text900,
                     lineHeight: 1,
                     fontFamily: FONT,
-                    width: 80,
+                    width: AMOUNT_W,
                     textAlign: "right" as const,
                   }}
                 >
-                  {formatCurrency(li.lineTotal)}
+                  {formatCurrency(li.lineTotal, code)}
                 </span>
               </div>
             ))}
@@ -401,15 +482,17 @@ export default function POVersionSnapshotPanel({
                 fontWeight: 600,
                 color: C.text900,
                 lineHeight: 1,
-                width: 80,
+                width: AMOUNT_W,
                 textAlign: "right" as const,
                 fontFamily: FONT,
               }}
             >
-              {formatCurrency(lineItems.reduce((s, li) => s + li.lineTotal, 0))}
+              {formatCurrency(lineItems.reduce((s, li) => s + li.lineTotal, 0), code)}
             </span>
           </div>
         )}
+
+        <VersionCurrencyStrip fx={fx} />
 
         {/* Footer — Discount / One-time summary + Total (shipping is
             excluded from the total, so it's no longer shown here). */}
@@ -432,11 +515,11 @@ export default function POVersionSnapshotPanel({
           >
             Discount:{" "}
             <span style={{ fontWeight: 500, color: C.text700 }}>
-              {formatCurrency(ver.snapshot.discountTotal)}
+              {formatCurrency(ver.snapshot.discountTotal, code)}
             </span>{" "}
             &nbsp;·&nbsp; One-Time Discounts/Premiums:{" "}
             <span style={{ fontWeight: 500, color: C.text700 }}>
-              {(() => { const n = snapshotOneTimeNet(ver.snapshot); return `${n > 0 ? "+" : n < 0 ? "−" : ""}${formatCurrency(Math.abs(n))}`; })()}
+              {formatSignedCurrency(snapshotOneTimeNet(ver.snapshot), code)}
             </span>
           </span>
           <div className="flex items-center" style={{ gap: 8 }}>
@@ -463,7 +546,8 @@ export default function POVersionSnapshotPanel({
                 fontFamily: FONT,
               }}
             >
-              {formatCurrency(ver.snapshot.total)}
+              {/* Hover: the total in the base currency, at this version's rate. */}
+              <Money value={ver.snapshot.total} currency={code} fx={fx} dateLabel="PO date" />
             </span>
           </div>
         </div>

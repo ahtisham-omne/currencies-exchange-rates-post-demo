@@ -19,6 +19,10 @@
  *    · Renders nothing (just passes children through with a subtle
  *      dotted underline) when the line has no active rules or
  *      one-times — the hover would be empty otherwise.
+ *
+ *  Currency: amounts are in the PO's currency (`formatCurrency`). Each
+ *  rule row names the tier the line met and, on a PO not in the base
+ *  currency, its impact in base terms; so does the Total.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 import {
@@ -32,6 +36,7 @@ import { createPortal } from "react-dom";
 import { Info } from "lucide-react";
 import type { LinePricingBreakdown } from "./poPricingRulesData";
 import { adjustmentDisplayLabel, type LineAdjustmentBreakdown } from "./poOrderPricing";
+import { useRuleMoney } from "./currency/useRuleMoney";
 
 type Placement = "top" | "bottom";
 
@@ -65,12 +70,17 @@ export function POPriceBreakdownHoverCard({
   const adjRows = (adjustment?.impacts ?? []).filter((r) => r.dollars !== 0);
   const hasOverlay = ruleImpacts.length > 0 || adjRows.length > 0;
   const lineTotal = (breakdown?.total ?? baseSubtotal) + (adjustment?.net ?? 0);
+  /* Tier met + base-currency equivalents (null on a base-currency PO). */
+  const { tierText, tierBand, baseText } = useRuleMoney();
+  const totalBase = baseText(lineTotal);
+  const showBase = totalBase !== null;
 
   const calcPos = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const rowCount = 1 + ruleImpacts.length + adjRows.length + 1;
-    const estimatedH = 56 + rowCount * 22 + 36;
+    // Rule rows carry a tier line; base equivalents add one more line.
+    const estimatedH = 56 + rowCount * 22 + ruleImpacts.length * 14 + (showBase ? 14 : 0) + 36;
     const spaceBelow = window.innerHeight - rect.bottom;
     const placement: Placement = spaceBelow > estimatedH + 12 ? "bottom" : "top";
     setPos({
@@ -78,7 +88,7 @@ export function POPriceBreakdownHoverCard({
       y: placement === "bottom" ? rect.bottom + 6 : rect.top - 6,
       placement,
     });
-  }, [ruleImpacts.length, adjRows.length]);
+  }, [ruleImpacts.length, adjRows.length, showBase]);
 
   const handleEnter = useCallback(() => {
     if (!hasOverlay) return;
@@ -168,7 +178,8 @@ export function POPriceBreakdownHoverCard({
 
             <div
               style={{
-                width: 272,
+                /* A little wider when base equivalents ride along. */
+                width: showBase ? 300 : 272,
                 backgroundColor: "#FFFFFF",
                 border: "1px solid #E5E7EB",
                 borderRadius: 8,
@@ -221,7 +232,16 @@ export function POPriceBreakdownHoverCard({
                         kindColor="#1B6EF3"
                         kindBg="#EFF6FF"
                         kindBorder="#BFDBFE"
+                        /* The quantity band this line met: "Tier 25–49 units · 7% off". */
+                        sub={
+                          r.tier
+                            ? `Tier ${tierBand(r.tier)} · ${tierText(r.tier)} ${r.type === "discount" ? "off" : "premium"}${
+                                r.tier.unit !== "%" ? " per unit" : ""
+                              }`
+                            : undefined
+                        }
                         value={`${r.type === "discount" ? "−" : "+"}${formatCurrency(r.amount)}`}
+                        valueSub={baseText(r.amount) ?? undefined}
                         valueColor={r.type === "discount" ? "#059669" : "#B45309"}
                         indent
                       />
@@ -268,16 +288,19 @@ export function POPriceBreakdownHoverCard({
                   >
                     Total
                   </span>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#059669",
-                      fontVariantNumeric: "tabular-nums",
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {formatCurrency(lineTotal)}
+                  <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "#059669",
+                        fontVariantNumeric: "tabular-nums",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {formatCurrency(lineTotal)}
+                    </span>
+                    {totalBase && <BaseLine text={totalBase} />}
                   </span>
                 </div>
               </div>
@@ -289,10 +312,29 @@ export function POPriceBreakdownHoverCard({
   );
 }
 
+/* "≈ ₨123,540.00" under an amount — its base-currency equivalent. */
+function BaseLine({ text }: { text: string }) {
+  return (
+    <span
+      style={{
+        fontSize: 10,
+        fontWeight: 500,
+        color: "#9CA3AF",
+        fontVariantNumeric: "tabular-nums",
+        lineHeight: 1.3,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
 function BreakdownRow({
   label,
   sub,
   value,
+  valueSub,
   valueColor,
   bold,
   indent,
@@ -304,6 +346,8 @@ function BreakdownRow({
   label: string;
   sub?: string;
   value: string;
+  /** Under the value: its base-currency equivalent. */
+  valueSub?: string;
   valueColor?: string;
   bold?: boolean;
   indent?: boolean;
@@ -372,17 +416,19 @@ function BreakdownRow({
           </span>
         )}
       </div>
-      <span
-        style={{
-          fontSize: 12,
-          fontWeight: bold ? 600 : 500,
-          color: valueColor ?? "#1F2937",
-          fontVariantNumeric: "tabular-nums",
-          lineHeight: 1.4,
-          flexShrink: 0,
-        }}
-      >
-        {value}
+      <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }}>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: bold ? 600 : 500,
+            color: valueColor ?? "#1F2937",
+            fontVariantNumeric: "tabular-nums",
+            lineHeight: 1.4,
+          }}
+        >
+          {value}
+        </span>
+        {valueSub && <BaseLine text={valueSub} />}
       </span>
     </div>
   );

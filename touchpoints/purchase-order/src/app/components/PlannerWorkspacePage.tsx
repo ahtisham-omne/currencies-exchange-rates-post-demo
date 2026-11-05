@@ -3151,6 +3151,8 @@ export default function PlannerWorkspacePage() {
         shipmentMethod: "Standard",
         needByDate: isoFromDay(p.arrivalDay),
         inboundLocation: "Default",
+        // Planning prices are USD; the cart converts them to the vendor's currency.
+        priceCurrency: "USD",
       });
     }
     const n = proposedPOs.length;
@@ -5789,6 +5791,8 @@ export default function PlannerWorkspacePage() {
                                 shipmentMethod: "Standard",
                                 needByDate: isoFromDay(p.arrivalDay),
                                 inboundLocation: "Default",
+                                // Planning prices are USD; the cart converts them to the vendor's currency.
+                                priceCurrency: "USD",
                               });
                             }
                             const n = autoProposedPOs.length;

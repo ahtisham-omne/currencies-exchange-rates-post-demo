@@ -3,7 +3,7 @@ import { Download, FileText, Printer, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { FONT } from "./designTokens";
 import type { PurchaseOrderData, POVersionEntry } from "./poStore";
-import { generatePrintHTML } from "./PrintPurchaseOrder";
+import { generatePrintHTML, printFx } from "./PrintPurchaseOrder";
 
 /* ── Print / Download PO preview ──
    Shows the PO document (generatePrintHTML) inside the app so the buyer
@@ -31,6 +31,8 @@ export function PODocumentPreviewDialog({
     [open, po, version],
   );
   const versionLabel = po ? `Version ${version?.version ?? po.currentVersion}` : "";
+  // The document's currency (the printed version's, else the PO's).
+  const currency = po ? printFx(po, version).currency : "";
 
   const isPrint = mode === "print";
   const ActionIcon = isPrint ? Printer : Download;
@@ -58,7 +60,7 @@ export function PODocumentPreviewDialog({
                 {isPrint ? "Print" : "Download"} PO {po?.poNumber}
               </DialogTitle>
               <DialogDescription className="text-muted-foreground truncate" style={{ fontSize: 11, lineHeight: 1.4 }}>
-                {po?.vendor.name} · {versionLabel}{isPrint ? "" : " · PDF"}
+                {po?.vendor.name} · {versionLabel}{currency ? ` · ${currency}` : ""}{isPrint ? "" : " · PDF"}
               </DialogDescription>
             </div>
           </div>

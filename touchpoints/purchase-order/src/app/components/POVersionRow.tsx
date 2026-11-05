@@ -6,7 +6,12 @@ import {
   versionPalette as C,
   formatCurrency,
   getUserColor,
+  useDocFx,
+  versionFx,
 } from "./poVersionDisplay";
+import { getCurrency } from "@/app/currency/currencies";
+import type { PoFx } from "@/app/currency/poFx";
+import { CurrencyFlag } from "./currency/CurrencyChip";
 
 /**
  * PO version row header — the clickable strip that opens/collapses the
@@ -32,6 +37,12 @@ interface POVersionRowProps {
   onClick: () => void;
   /** Omitted when the PO is version-locked (receiving started). */
   onRevertClick?: () => void;
+  /** The version's currency differs from an adjacent version's: mark
+      the total with its flag + code. */
+  showCurrency?: boolean;
+  /** The PO's current currency, for snapshots that recorded none.
+      Defaults to the PO page's (DocCurrency). */
+  fallbackFx?: PoFx | null;
 }
 
 export default function POVersionRow({
@@ -42,7 +53,11 @@ export default function POVersionRow({
   isCompareSelected,
   onClick,
   onRevertClick,
+  showCurrency = false,
+  fallbackFx,
 }: POVersionRowProps) {
+  const docFx = useDocFx();
+  const code = versionFx(ver.snapshot, fallbackFx ?? docFx).currency;
   return (
     <div
       onClick={onClick}
@@ -241,6 +256,27 @@ export default function POVersionRow({
           {ver.snapshot.lineItemCount}{" "}
           {ver.snapshot.lineItemCount === 1 ? "item" : "items"}
         </span>
+        {/* Currency chip — only where the currency changed between
+            versions; same recipe as the items chip. */}
+        {showCurrency && (
+          <span
+            className="inline-flex items-center rounded-md"
+            title={`In ${getCurrency(code)?.name ?? code}`}
+            style={{
+              gap: 4,
+              padding: "1px 6px",
+              backgroundColor: C.divider,
+              color: C.text600,
+              fontSize: 10,
+              fontWeight: 600,
+              fontFamily: FONT,
+              lineHeight: 1.4,
+            }}
+          >
+            <CurrencyFlag code={code} size={10} />
+            {code}
+          </span>
+        )}
         <span
           className="tabular-nums"
           style={{
@@ -251,7 +287,7 @@ export default function POVersionRow({
             fontFamily: FONT,
           }}
         >
-          {formatCurrency(ver.snapshot.total)}
+          {formatCurrency(ver.snapshot.total, code)}
         </span>
       </div>
 
