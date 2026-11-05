@@ -1,0 +1,656 @@
+==================================================================
+OMNE ITEMS IMPORT GUIDE
+Omne Pioneer  ·  Items & Inventory
+==================================================================
+
+This guide explains how to fill in the Items import CSV. It covers
+the steps, every column, and what the import does for a new item
+and an existing item.
+
+The CSV has 2 required columns and 37 optional ones.
+
+
+------------------------------------------------------------------
+QUICK START
+------------------------------------------------------------------
+
+Step 1   Open the CSV. The first row is the column headers. Each
+         row below it is one item.
+
+Step 2   Two example rows are included to show the expected
+         format. Delete both before you import.
+
+Step 3   Fill in your items. The two required columns are marked
+         with an asterisk and cannot be left blank: Part Number,
+         Primary Category.
+
+Step 4   Every other column is optional. What a blank value means
+         depends on whether the item is new or already exists. See
+         How Items Are Matched below.
+
+Step 5   For columns that can hold a list, such as Tags,
+         Additional Categories, and Inbound Locations, separate
+         each value with a comma and wrap the cell in double
+         quotes. Example: "Warehouse A - Main Hall, Receiving Dock
+         A"
+
+Step 6   Save the file, then upload it in Omne under Items &
+         Inventory, Items Library, Actions, Import.
+
+
+------------------------------------------------------------------
+HOW ITEMS ARE MATCHED
+------------------------------------------------------------------
+
+Omne matches each row by part number, then decides whether to
+create a new item or update an existing one. The part number
+itself is the matching key and is never changed by an import. A
+few columns behave differently depending on the case, so each case
+is spelled out below.
+
+For a new item (part number not in Omne)
+----------------------------------------
+A new item is created, Active, with an on-hand quantity of 0.
+
+  Primary Category   Required. Must be a category code that exists
+                     in Omne.
+  Status             Blank means Active. Enter Inactive to import
+                     the item as inactive.
+  Other columns      Blank takes the default shown in the Field
+                     Reference, the same default the Create New
+                     Item screen applies.
+
+For an existing item (part number already in Omne)
+--------------------------------------------------
+The matching item is updated with the values you provide. A blank
+cell leaves the existing value unchanged.
+
+  Primary Category   Blank keeps the current category. Enter a
+                     code only to change it.
+  Status             Blank keeps the current status. Enter Active
+                     or Inactive to change it.
+  On-hand quantity   Never changed by the import.
+
+
+------------------------------------------------------------------
+COPYING FROM ANOTHER SYSTEM
+------------------------------------------------------------------
+
+This template is plain text, so you can copy and paste from an
+export of your old system. Line your old columns up with these
+columns, fill in any that your old system did not have, and paste.
+Category codes, unit names, locations, partners, and users must
+match the values already in Omne; the Valid Values section lists
+them.
+
+
+------------------------------------------------------------------
+WHAT THE FILE DOES NOT COVER
+------------------------------------------------------------------
+
+On-hand quantity, images, attachments, and qualified vendors are
+not imported. New items start with an on-hand quantity of 0 and a
+placeholder image. Add images and qualified vendors on the item
+page after the import.
+
+
+------------------------------------------------------------------
+FILE LIMITS
+------------------------------------------------------------------
+
+Upload an Excel or CSV file up to 10 MB. Omne reads a single
+sheet. If you are using the Excel template, keep only the data
+sheet before you upload.
+
+
+------------------------------------------------------------------
+FIELD REFERENCE
+------------------------------------------------------------------
+
+Required columns
+----------------
+
+Part Number  The item's unique part number and the matching key. A
+             new part number creates an item; a matching part
+             number updates that item. Never changed by an import.
+
+Primary Category  The category that drives the item's defaults.
+                  Must match a category that exists in Omne. New
+                  item: required. Existing item: blank keeps the
+                  current category. Values: Existing category
+                  codes, see Valid Values.
+
+Identity
+--------
+
+Description  What the item is. Shown in the listing and on the
+             item page. Up to 5000 characters.
+
+Status  Whether the item is in use. New item: blank means Active.
+        Existing item: blank keeps the current status. Archived is
+        set from the listing, not from the file. Values: Active,
+        Inactive, or blank.
+
+Tags  Short labels shown as chips on the item. One value, or
+      several separated with a comma. Duplicates are removed.
+
+Categories
+----------
+
+Additional Categories  Other categories the item belongs to. Each
+                       code must exist in Omne and must not be the
+                       primary category. Separate several with a
+                       comma. Values: Existing category codes.
+
+Item Definition
+---------------
+
+Inventory Type  Determines how this item is tracked in your
+                inventory system. Blank means Stock. Values:
+                Stock, Non-stock, Asset, or blank.
+
+Inventory Control  Defines how individual units are identified and
+                   traced. Serialized gives every unit its own ID;
+                   Non-Serialized tracks by quantity. Blank means
+                   Non-Serialized. Values: Serialized,
+                   Non-Serialized, or blank.
+
+Lot Tracking  Enable batch-level traceability. Yes or No. Blank
+              means No. Values: Yes, No, or blank.
+
+Lot ID Assignment  Only applies when Lot Tracking is Yes. System
+                   Generated auto-generates lot IDs; Vendor Lot
+                   uses the vendor lot number as the lot ID. Blank
+                   means System Generated. Values: System
+                   Generated, Vendor Lot, or blank.
+
+Shelf Life  How long the item stays usable, as a number. Pair it
+            with Shelf Life Unit. Leave blank when the item has no
+            shelf life.
+
+Shelf Life Unit  The unit for Shelf Life. Only applies when Shelf
+                 Life has a value. Blank means Days. Values: Days,
+                 Months, Years, or blank.
+
+Base Unit of Measure  The primary unit used for counting and
+                      valuing this item. Must match a unit name in
+                      Omne, see Valid Values. Blank means Each.
+                      Values: Unit names, see Valid Values.
+
+Alternative Units  Other units the item is bought or sold in, each
+                   written as Unit=factor where factor is how many
+                   base units make one of that unit. Alternatives
+                   must come from a different unit category than
+                   the base unit. Separate several with a comma.
+                   Values: Unit names, factor greater than 0.
+
+Acquisition Method  How the item is brought into stock. Purchased
+                    triggers Purchase Order recommendations;
+                    Manufactured triggers Work Order
+                    recommendations. One value, or both separated
+                    with a comma. Blank means Purchased. Values:
+                    Purchased, Manufactured, or blank.
+
+Primary Acquisition  Only matters when both acquisition methods
+                     are listed. Must be one of the values in
+                     Acquisition Method. Blank means the sole
+                     method, or Purchased when both are listed.
+                     Values: Purchased, Manufactured, or blank.
+
+Stock & Logistics
+-----------------
+
+Min Level  The stock level that triggers replenishment, in the
+           base unit. Must be less than Max Level. Blank means 10.
+
+Max Level  The stock level replenishment fills up to, in the base
+           unit. Blank means 1000.
+
+Inbound Locations  Where the item is received. Each name must
+                   match a location in Omne. The first one listed
+                   becomes the default. Separate several with a
+                   comma. Blank means Warehouse A - Main Hall.
+                   Values: Location names, see Valid Values.
+
+Outbound Locations  Where the item ships from. Each name must
+                    match a location in Omne. The first one listed
+                    becomes the default. Separate several with a
+                    comma. Blank means Warehouse A - Main Hall.
+                    Values: Location names, see Valid Values.
+
+Receiving Staging Locations  Staging areas used while receiving
+                             the item. Each name must match a
+                             location in Omne. Separate several
+                             with a comma. Values: Location names,
+                             see Valid Values.
+
+Shipping Staging Locations  Staging areas used while shipping the
+                            item. Each name must match a location
+                            in Omne. Separate several with a
+                            comma. Values: Location names, see
+                            Valid Values.
+
+Procurement
+-----------
+
+Min Order Qty  The smallest quantity a purchase order may carry,
+               in the base unit. Blank means 50.
+
+Max Order Qty  The largest quantity a purchase order may carry, in
+               the base unit. Must be at least the Min Order Qty.
+               Blank means 5000.
+
+Order Multiples  Purchase quantities are rounded up to a multiple
+                 of this number, such as a case pack or pallet
+                 quantity. Must be greater than 0. Blank means 10.
+
+PO Recommendation Rule  When Omne recommends a purchase order.
+                        Demand: based on demand. Min: when stock
+                        hits the min level. Zero: when stock falls
+                        below zero. Off: never. Blank means
+                        Demand. Values: Demand, Min, Zero, Off, or
+                        blank.
+
+Selling
+-------
+
+Selling Scope  Who the item may be sold to. All: every customer
+               partner. Specific: only the partners in Specific
+               Partners. Blank means All. Values: All, Specific,
+               or blank.
+
+Specific Partners  Only applies when Selling Scope is Specific.
+                   Partner names the item may be sold to, each
+                   matching a partner in Omne. Separate several
+                   with a comma. Values: Partner names, see Valid
+                   Values.
+
+Custom Price Per Unit  Selling price per unit, written as the
+                       price, a space, then the unit, for example
+                       12.50 Each. Separate several tiers with a
+                       comma. Blank means 0.00 Each. Values: Price
+                       units: Each, Box, Case, Pallet, kg, m,
+                       Liter, Roll, Pair, Roll100m, Meter.
+
+Governance
+----------
+
+Inventory Valuation  How inventory is valued. FIFO: first in,
+                     first out. LIFO: last in, first out. WAC:
+                     weighted average cost. Specific: specific
+                     identification. Blank means FIFO. Values:
+                     FIFO, LIFO, WAC, Specific, or blank.
+
+Material Handling Owners  Users responsible for receiving,
+                          shipping, and movement of the item. Each
+                          name must match a user in Omne. Separate
+                          several with a comma. Values: User
+                          names, see Valid Values.
+
+Purchasing Owner  The single user responsible for purchasing this
+                  item. Must match a user in Omne. Values: User
+                  names, see Valid Values.
+
+Finance Owner  The single user responsible for the item's finance
+               and valuation. Must match a user in Omne. Values:
+               User names, see Valid Values.
+
+Material Handling
+-----------------
+
+Acceptable Variance (%)  The percentage difference a cycle count
+                         may show before it needs approval.
+                         Between 0 and 100. Blank means 0.
+
+Approvers  Who approves cycle count variances above the acceptable
+           percentage. Each name must match an approver in Omne.
+           Separate several with a comma. Values: Approver names,
+           see Valid Values.
+
+Location Scan  Require the location to be scanned when the item is
+               handled. Yes or No. Blank means No. Values: Yes,
+               No, or blank.
+
+Item Scan  Require the item's part number to be scanned when it is
+           handled. Yes or No. Blank means No. Values: Yes, No, or
+           blank.
+
+Lot Scan  Require the lot to be scanned when the item is handled.
+          Only meaningful when Lot Tracking is Yes. Yes or No.
+          Blank means No. Values: Yes, No, or blank.
+
+Serial Scan  Require the serial number to be scanned when the item
+             is handled. Only applies when Inventory Control is
+             Serialized. Yes or No. Blank means No. Values: Yes,
+             No, or blank.
+
+
+------------------------------------------------------------------
+VALID VALUES
+------------------------------------------------------------------
+
+New and existing items
+----------------------
+New part number  Creates a new item. Primary Category is required;
+                 blank Status means Active; every other blank
+                 takes its default.
+
+Existing part number  Updates the item. Blank cells keep existing
+                      values. On-hand quantity, images, and
+                      qualified vendors are never touched.
+
+Status
+------
+Active  The item is in use, available for sale, or included in
+        ongoing projects.
+
+Inactive  The item is no longer in use, discontinued, or
+          temporarily out of circulation.
+
+(blank)  New item: Active. Existing item: keeps the current
+         status.
+
+Archived is set from the listing through the item's lifecycle, not
+from this file.
+
+Inventory Type
+--------------
+Stock  Tracked in inventory with quantities and locations.
+
+Non-stock  Not tracked in inventory; bought and consumed as
+           needed.
+
+Asset  A fixed asset tracked for ownership rather than stock.
+
+(blank)  Stock.
+
+Inventory Control
+-----------------
+Serialized  Every unit carries its own serial number.
+
+Non-Serialized  Units are tracked in bulk by quantity.
+
+(blank)  Non-Serialized.
+
+Yes / No columns
+----------------
+Yes  Turns the setting on.
+
+No  Leaves the setting off.
+
+(blank)  Same as No for a new item; keeps the current setting for
+         an existing item.
+
+Applies to Lot Tracking, Location Scan, Item Scan, Lot Scan, and
+Serial Scan. Lot ID Assignment and Lot Scan only apply when Lot
+Tracking is Yes. Serial Scan only applies when Inventory Control
+is Serialized.
+
+Lot ID Assignment
+-----------------
+System Generated  Omne auto-generates lot IDs from a prefix.
+
+Vendor Lot  The vendor's lot number becomes the lot ID.
+
+(blank)  System Generated.
+
+Shelf Life Unit
+---------------
+Days  Shelf Life is counted in days.
+
+Months  Shelf Life is counted in months.
+
+Years  Shelf Life is counted in years.
+
+(blank)  Days.
+
+Acquisition Method and Primary Acquisition
+------------------------------------------
+Purchased  Sourced from a vendor. Triggers a Purchase Order
+           recommendation.
+
+Manufactured  Produced in-house. Triggers a Work Order
+              recommendation.
+
+(blank)  Purchased. When both methods are listed and Primary
+         Acquisition is blank, Purchased is the primary.
+
+PO Recommendation Rule
+----------------------
+Demand  Recommend based on demand.
+
+Min  Recommend when stock hits the min level.
+
+Zero  Recommend if stock falls below zero.
+
+Off  Disable purchase order recommendations.
+
+(blank)  Demand.
+
+Selling Scope
+-------------
+All  Sell to all customer partners.
+
+Specific  Sell only to the partners listed in Specific Partners.
+
+(blank)  All.
+
+Inventory Valuation
+-------------------
+FIFO  First in, first out. Oldest inventory is sold first.
+
+LIFO  Last in, first out.
+
+WAC  Weighted average cost.
+
+Specific  Specific identification.
+
+(blank)  FIFO.
+
+Base Unit of Measure
+--------------------
+Length  Meter, Kilometer, Centimeter, Millimeter, Inch, Foot,
+        Yard, Mile
+
+Volume  Liter, Milliliter, Gallon, Quart, Pint, Cubic Meter, Cubic
+        Foot, Fluid Ounce
+
+Mass  Kilogram, Gram, Milligram, Metric Ton, Pound, Ounce
+
+Quantity  Each, Dozen, Hundred, Thousand, Pair
+
+Area  Square Meter, Square Foot, Square Yard, Acre, Hectare
+
+Time  Second, Minute, Hour, Day, Week, Month
+
+Temperature  Celsius, Fahrenheit, Kelvin
+
+Packaging  Box, Case, Carton, Pallet, Pack, Bundle, Roll, Bag,
+           Drum, Container, Tray, Sleeve, Tube, Spool, Ream, Skid
+
+Custom  Set, Kit, Assembly, Lot, Batch, Sheet, Strip, Coil, Bar,
+        Piece, Unit
+
+Alternative Units must come from a different category than the
+base unit, written as Unit=factor. Example: base unit Each with
+Box=12, Pallet=480.
+
+Custom Price Per Unit
+---------------------
+12.50 Each  One price tier: the price, a space, then the unit.
+
+12.50 Each, 140.00 Box  Two tiers separated with a comma.
+
+(blank)  0.00 Each.
+
+Price units: Each, Box, Case, Pallet, kg, m, Liter, Roll, Pair,
+Roll100m, Meter.
+
+Categories (Primary Category, Additional Categories)
+----------------------------------------------------
+C-1001  Circuit boards, sensors, and electronic components.
+
+C-1002  Nuts, bolts, screws, and other fasteners.
+
+C-1003  Gears, bearings, shafts, and mechanical parts.
+
+C-1004  AC/DC motors, servos, and steppers.
+
+C-1005  Cylinders, valves, air hoses, and fittings.
+
+C-1006  PPE, guards, sensors, and safety equipment.
+
+C-1007  Steel, aluminum, plastic stock, and raw sheets.
+
+C-1008  Pumps, hoses, fluids, and hydraulic cylinders.
+
+C-1009  Hand tools, power tools, and machining bits.
+
+C-1010  Lubricants, glues, tape, and cleaning supplies.
+
+C-1011  Circuit boards, sensors, and electronic components.
+
+C-1012  Nuts, bolts, screws, and other fasteners.
+
+C-1013  Gears, bearings, shafts, and mechanical parts.
+
+C-1014  AC/DC motors, servos, and steppers.
+
+C-1015  Cylinders, valves, air hoses, and fittings.
+
+C-1016  PPE, guards, sensors, and safety equipment.
+
+C-1017  Steel, aluminum, plastic stock, and raw sheets.
+
+C-1018  Pumps, hoses, fluids, and hydraulic cylinders.
+
+C-1019  Hand tools, power tools, and machining bits.
+
+C-1020  Lubricants, glues, tape, and cleaning supplies.
+
+C-1021  Circuit boards, sensors, and electronic components.
+
+C-1022  Nuts, bolts, screws, and other fasteners.
+
+C-1023  Gears, bearings, shafts, and mechanical parts.
+
+C-1024  AC/DC motors, servos, and steppers.
+
+C-1025  Cylinders, valves, air hoses, and fittings.
+
+C-1026  PPE, guards, sensors, and safety equipment.
+
+C-1027  Steel, aluminum, plastic stock, and raw sheets.
+
+C-1028  Pumps, hoses, fluids, and hydraulic cylinders.
+
+C-1029  Hand tools, power tools, and machining bits.
+
+C-1030  Lubricants, glues, tape, and cleaning supplies.
+
+C-1031  Circuit boards, sensors, and electronic components.
+
+C-1032  Nuts, bolts, screws, and other fasteners.
+
+C-1033  Gears, bearings, shafts, and mechanical parts.
+
+C-1034  AC/DC motors, servos, and steppers.
+
+C-1035  Cylinders, valves, air hoses, and fittings.
+
+C-1036  PPE, guards, sensors, and safety equipment.
+
+C-1037  Steel, aluminum, plastic stock, and raw sheets.
+
+C-1038  Pumps, hoses, fluids, and hydraulic cylinders.
+
+C-1039  Hand tools, power tools, and machining bits.
+
+C-1040  Lubricants, glues, tape, and cleaning supplies.
+
+C-1041  Circuit boards, sensors, and electronic components.
+
+C-1042  Nuts, bolts, screws, and other fasteners.
+
+C-1043  Gears, bearings, shafts, and mechanical parts.
+
+C-1044  AC/DC motors, servos, and steppers.
+
+C-1045  Cylinders, valves, air hoses, and fittings.
+
+C-1046  PPE, guards, sensors, and safety equipment.
+
+C-1047  Steel, aluminum, plastic stock, and raw sheets.
+
+C-1048  Pumps, hoses, fluids, and hydraulic cylinders.
+
+C-1049  Hand tools, power tools, and machining bits.
+
+C-1050  Lubricants, glues, tape, and cleaning supplies.
+
+Locations (Inbound, Outbound, Receiving Staging, Shipping Staging)
+------------------------------------------------------------------
+Warehouse A - Main Hall, Warehouse B - Cold Storage, Production
+Line 1 - Assembly, Returns Dock, Quarantine Zone - Hazardous,
+Distribution Center - East Wing, Overflow Storage - Offsite, Cold
+Storage Unit 4, Warehouse C - Electronics, Warehouse D - Raw
+Materials, Production Line 2 - Packaging, Shipping Dock 1,
+Shipping Dock 2, Receiving Dock A, Receiving Dock B, Quality
+Control Lab, R&D Workshop, Showroom Storage, Archive Room B1,
+Maintenance Shed, Chemical Storage Locker, High Security Vault,
+Automated Storage System, Rack 45 - Aisle 3, Bin 102-A, Pallet
+Zone C, Staging Area 1, Staging Area 2, Receiving Staging,
+Shipping Staging.
+
+Partners (Specific Partners)
+----------------------------
+General Motors (GM), Toyota Technical Center (TTC), Ford Motor
+Company, Tesla, Inc., Chrysler (Stellantis N.V.), Rivian
+Automotive, Lucid Motors, Honda Motor Co., Ltd. (USA), Nissan
+North America, BMW of North America, Hyundai Motor America,
+Volkswagen Group of America.
+
+Users (Material Handling Owners, Purchasing Owner, Finance Owner)
+-----------------------------------------------------------------
+Alice Smith  Engineer
+
+Bob Jones  Purchasing
+
+Charlie Day  Scheduler
+
+Diana Prince  Sales
+
+Evan Peters  Finance
+
+Frank Reynolds  Manager
+
+Grace Hopper  QA
+
+Approvers
+---------
+Ahtsham Ahmad  Senior Inventory Manager
+
+Faizan Khan  Category Lead
+
+Areeb Tanveer  Warehouse Supervisor
+
+Nophil Anwer  Inventory Analyst
+
+Irtaza Abid  Supply Chain Coordinator
+
+Eli Rosenbloom  Distribution Manager
+
+Sarah Chen  Operations Director
+
+James Wilson  Procurement Manager
+
+Lists and comma-separated columns
+---------------------------------
+Tags, Additional Categories, the four location columns, Specific
+Partners, Material Handling Owners, Approvers, Alternative Units,
+and Custom Price Per Unit can hold more than one value. Separate
+each value with a comma. Example: Warehouse A - Main Hall,
+Receiving Dock A. Names must match values that already exist in
+Omne, and matching is not case sensitive.
+
+

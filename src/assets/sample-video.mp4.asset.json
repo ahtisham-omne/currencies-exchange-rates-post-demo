@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "asset_id": "local-sample-video",
+  "url": "https://www.w3schools.com/html/mov_bbb.mp4",
+  "original_filename": "sample-video.mp4",
+  "size": 800000,
+  "content_type": "video/mp4",
+  "created_at": "2026-07-15T00:00:00Z"
+}
