@@ -1,0 +1,512 @@
+/*
+  Design tokens — aligned with Partner Management - Vendors (PM-V).
+  Format: Tailwind v4 CSS-first (raw color values, mapped via @theme inline in tailwind.css).
+
+  Phase 1 alignment notes:
+  - --accent is now the PM-V blue tint (was green). The previous green semantics
+    are preserved as --success for the quote stepper and other status indicators.
+  - Added PM-V semantic colors: --success, --warning, --violet, --orange, --purple, --fuchsia.
+  - --background trimmed to PM-V value; --sidebar tokens kept (we already alias
+    --sidebar-background -> --sidebar in tailwind.css).
+  - Compact typography overrides for h1/h2/h3 are intentionally kept (memory: compact-module).
+*/
+:root {
+ --font-size: 16px;
+
+ /* Surfaces */
+ --background: #F4F6FA;            /* PM-V: 218 20% 97% */
+ --foreground: #0F172A;            /* PM-V: 222 47% 11% */
+ --card: #FFFFFF;
+ --card-foreground: #0F172A;
+ --popover: #FFFFFF;
+ --popover-foreground: #0F172A;
+
+ /* Primary — #0A77FF (PM-V) */
+ --primary: #0A77FF;
+ --primary-foreground: #FFFFFF;
+
+ /* Secondary */
+ --secondary: #F1F5F9;             /* PM-V: 210 40% 96% */
+ --secondary-foreground: #0F172A;
+
+ /* Muted */
+ --muted: #F1F5F9;
+ --muted-foreground: #475569;      /* PM-V: 215 19% 35% */
+
+ /* Soft foreground for labels/body text — PM-V slate-700, lower visual weight than --foreground (#0F172A).
+    Use for sidebar labels, inline metadata, and any place we'd otherwise reach for fontWeight: 600 on --foreground.
+    This is the main lever to dial the module away from a "high contrast" feel toward PM-V parity. */
+ --foreground-soft: #334155;       /* slate-700 */
+
+ /* Accent — PM-V blue tint of primary (was green; green moved to --success) */
+ --accent: #E5F0FF;                /* PM-V: 214 100% 96% */
+ --accent-foreground: #0F62D6;     /* PM-V: 213 89% 33% */
+
+ /* Destructive */
+ --destructive: #DC2626;           /* PM-V: 0 72% 51% */
+ --destructive-foreground: #FFFFFF;
+
+ /* Semantic status — PM-V Figma DS v2.0 */
+ --success: #059669;               /* prev quote-module green (#27B973) replaced with PM-V #059669 */
+ --success-foreground: #FFFFFF;
+ --warning: #D97706;
+ --warning-foreground: #FFFFFF;
+ --violet: #7C3AED;
+ --violet-foreground: #FFFFFF;
+ --orange: #DB6514;
+ --orange-foreground: #FFFFFF;
+ --purple: #524BE0;
+ --purple-foreground: #FFFFFF;
+ --fuchsia: #C026D3;
+ --fuchsia-foreground: #FFFFFF;
+
+ /* Borders & inputs */
+ --border: #E2E8F0;                /* PM-V: 214 32% 91% */
+ --input: #E2E8F0;                 /* PM-V uses --border value here too */
+ --input-background: #FFFFFF;
+ --switch-background: #cbced4;
+ --ring: #7BB7FF;                  /* PM-V: 212 100% 74% */
+
+ /* === Elevation tokens === */
+ --elevation-0: none;
+ --elevation-1: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+ --elevation-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+ --elevation-2: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+ --elevation-3: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+ --elevation-4: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+ --elevation-5: 0 25px 50px -12px rgba(0, 0, 0, 0.18);
+
+ /* === Z-index tokens === */
+ --z-base: 0;
+ --z-raised: 10;
+ --z-dropdown: 50;
+ --z-sticky: 100;
+ --z-overlay: 200;
+ --z-modal: 300;
+ --z-popover: 400;
+ --z-toast: 500;
+ --z-tooltip: 600;
+
+ /* === Spacing tokens === */
+ --space-page-x: 24px;
+ --space-page-y: 32px;
+ --space-section-gap: 36px;
+ --space-card-padding: 16px;
+ --space-inline-gap: 12px;
+ --space-stack-gap: 16px;
+
+ /* === Container width tokens === */
+ --container-detail: 1440px;
+
+ /* Charts (PM-V palette) */
+ --chart-1: #0A77FF;
+ --chart-2: #10B981;
+ --chart-3: #F59E0B;
+ --chart-4: #7C3AED;
+ --chart-5: #EF4444;
+
+ /* Radius */
+ --radius: 0.5rem;
+ --radius-xl: 12px;
+
+ /* Sidebar */
+ --sidebar: #FFFFFF;
+ --sidebar-foreground: #0F172A;
+ --sidebar-primary: #0A77FF;
+ --sidebar-primary-foreground: #FFFFFF;
+ --sidebar-accent: #E5F0FF;
+ --sidebar-accent-foreground: #0F62D6;
+ --sidebar-border: #E2E8F0;
+ --sidebar-ring: #7BB7FF;
+
+ /* Typography variables (compact module retained) */
+ --text-h1: 40px;
+ --text-h2: 28px;
+ --text-h3: 24px;
+ --text-h4: 20px;
+ --text-base: 16px;
+ --text-label: 14px;
+ --text-caption: 12px;
+ --text-small: 11px;
+ --text-micro: 10px;
+ /* Tailwind/Shadcn-named aliases (ported from Shipment/Partner modules so shared modals render at the right size) */
+ --text-sm: 13px;
+ --text-xs: 12px;
+ --text-2xs: 10px;
+ --letter-spacing-wide: 0.05em;
+ --font-weight-semibold: 600;
+ --font-weight-medium: 500;
+ --font-weight-normal: 400;
+
+ /* === Attachment-card design tokens (ported from Physical Inventory) === */
+ --font-inter: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+ /* ── Entity tag chip (Partners contacts strip) ──
+    Shipped spec, one place per repo. A component never carries these as
+    literals; it points at the role. */
+ --tag-surface: #F8FAFC;
+ --tag-border: #E2E8F0;
+ --tag-text: #1E293B;
+ --tag-add-border: #CBD5E1;
+ --text-secondary: #68727d;
+ --text-tertiary: #a1a3a7;
+ --surface-secondary: #F1F5F9;
+ --primary-50: #ecf4fc;
+ --primary-100: #d0e3fa;
+ --primary-200: #90c2ff;
+ --primary-500: var(--primary);
+ --primary-600: #0e69e2;
+ --primary-700: #0a55b8;
+ --text-h5: 18px;
+ --text-body-sm: 13px;
+ --text-caption-helper: 11px;
+ --text-badge: 10px;
+ --spacing-0-5: 2px;
+ --spacing-1: 4px;
+ --spacing-1-5: 6px;
+ --spacing-2: 8px;
+ --spacing-2-5: 10px;
+ --spacing-3: 12px;
+ --spacing-4: 16px;
+ --spacing-5: 20px;
+ --spacing-6: 24px;
+ --radius-xs: 3px;
+ --radius-sm: 6px;
+ --radius-md: 8px;
+ --radius-lg: 12px;
+ --elevation-xs: 0px 1px 2px 0px rgba(16, 24, 40, 0.05);
+ --elevation-card: 0px 1px 3px 0px rgba(16, 24, 40, 0.1), 0px 1px 2px 0px rgba(16, 24, 40, 0.06);
+ --status-active-bg: #e9f8f1;
+ --status-active-border: #a9e3c7;
+ --status-active-text: #176f45;
+ --tx-type-negative-bg: #ffefee;
+ --tx-type-negative-border: #fea19b;
+ --tx-type-negative-text: #db3a33;
+ --reason-tag-bg: #fff3e0;
+ --reason-tag-border: #ffcc80;
+ --reason-tag-text: #e65100;
+ --checked-out-tag-bg: #f3f0ff;
+ --checked-out-tag-border: #c4b5fd;
+ --checked-out-tag-text: #7c3aed;
+ --link-tag-bg: #ECFEFF;
+ --link-tag-border: #A5F3FC;
+ --link-tag-text: #0891B2;
+
+ /* === Interaction / animation tokens === */
+ --primary-hover-bg: rgba(10, 119, 255, 0.05);
+ --primary-active-bg: rgba(10, 119, 255, 0.08);
+ --primary-glow-subtle: rgba(10, 119, 255, 0.10);
+ --primary-glow-medium: rgba(10, 119, 255, 0.18);
+ --primary-ring-soft: rgba(10, 119, 255, 0.50);
+ --primary-border-soft: rgba(10, 119, 255, 0.35);
+ --primary-tint-card: rgba(10, 119, 255, 0.04);
+
+ /* Legacy "accent" interaction tokens — now point at --success (green) so any
+    existing call sites that wanted the green tint keep working. New code should
+    use --success directly. */
+ --accent-hover-bg: rgba(5, 150, 105, 0.05);
+ --accent-tint-card: rgba(5, 150, 105, 0.04);
+ --accent-tint-hover: rgba(5, 150, 105, 0.07);
+
+ --destructive-hover-bg: rgba(220, 38, 38, 0.05);
+
+ --focus-ring-shadow: 0 0 0 3px rgba(10, 119, 255, 0.10);
+
+ /* White overlays */
+ --overlay-white-12: rgba(255, 255, 255, 0.12);
+ --overlay-white-15: rgba(255, 255, 255, 0.15);
+ --overlay-white-25: rgba(255, 255, 255, 0.25);
+ --overlay-white-35: rgba(255, 255, 255, 0.35);
+ --overlay-white-50: rgba(255, 255, 255, 0.50);
+}
+
+/* Dark mode palette — mirrors Partner Management's HSL values, expressed as hex
+   to keep parity with the hex format used everywhere else in this file.
+   Activated when the <html> or <body> element has the `.dark` class
+   (next-themes wires this up automatically). */
+.dark {
+  --background: #0B1220;            /* HSL 222 47% 9%  */
+  --foreground: #ECF0F8;            /* HSL 210 40% 96% */
+  --card: #1B2336;                  /* HSL 220 38% 15% */
+  --card-foreground: #ECF0F8;
+  --popover: #1B2336;
+  --popover-foreground: #ECF0F8;
+
+  --primary: #3D9CFF;               /* HSL 212 100% 62% */
+  --primary-foreground: #FFFFFF;
+
+  --secondary: #1F2A3F;             /* HSL 217 33% 17% */
+  --secondary-foreground: #ECF0F8;
+
+  --muted: #1F2A3F;
+  --muted-foreground: #98A4BD;      /* HSL 215 25% 63% */
+  --foreground-soft: #C2CCE0;       /* slightly brighter for dark surfaces */
+
+  --accent: #073464;                /* HSL 212 89% 19% */
+  --accent-foreground: #7BC1FF;     /* HSL 212 100% 74% */
+
+  --destructive: #EF4444;           /* HSL 0 84% 60% */
+  --destructive-foreground: #FFFFFF;
+
+  --success: #059669;
+  --success-foreground: #FFFFFF;
+  --warning: #D97706;
+  --warning-foreground: #FFFFFF;
+  --violet: #7C3AED;
+  --violet-foreground: #FFFFFF;
+  --orange: #FF7B3D;                /* HSL 21 100% 62% */
+  --orange-foreground: #FFFFFF;
+  --purple: #8E88F0;                /* HSL 244 93% 72% */
+  --purple-foreground: #FFFFFF;
+  --fuchsia: #EE7BF1;               /* HSL 292 91% 73% */
+  --fuchsia-foreground: #FFFFFF;
+
+  --border: #2F3A4F;                /* HSL 215 26% 24% */
+  --input: #2F3A4F;
+  --input-background: #1B2336;
+  --switch-background: #2F3A4F;
+  --ring: #3D9CFF;
+
+  --chart-1: #3D9CFF;
+  --chart-2: #34D399;
+  --chart-3: #FBBF24;
+  --chart-4: #C4B5FD;
+  --chart-5: #FCA5A5;
+
+  --sidebar: #1B2336;
+  --sidebar-foreground: #ECF0F8;
+  --sidebar-primary: #3D9CFF;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #073464;
+  --sidebar-accent-foreground: #7BC1FF;
+  --sidebar-border: #2F3A4F;
+  --sidebar-ring: #3D9CFF;
+}
+
+@layer base {
+ * {
+  border-color: var(--border);
+ }
+
+ body {
+   background-color: var(--background);
+   color: var(--foreground);
+   font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+   font-feature-settings: 'cv01', 'cv02', 'cv03', 'cv04', 'cv11', 'ss01', 'ss03';
+   -webkit-font-smoothing: antialiased;
+   -moz-osx-font-smoothing: grayscale;
+   text-rendering: optimizeLegibility;
+ }
+
+ /* Modern sleek scrollbar styling */
+ * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+ }
+ *::-webkit-scrollbar { width: 6px; height: 6px; }
+ *::-webkit-scrollbar-track { background: transparent; }
+ *::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.3); border-radius: 3px; }
+ *::-webkit-scrollbar-thumb:hover { background-color: rgba(156, 163, 175, 0.5); }
+
+ /* Force the vertical scrollbar to always paint on html, and
+    reserve its gutter unconditionally. When Radix (via
+    `react-remove-scroll`) locks body scroll for a Select / Popover
+    / Dialog, the library measures the scrollbar delta via
+    `window.innerWidth - documentElement.clientWidth`. Because the
+    html scrollbar never disappears, that delta stays 0 and no
+    compensation padding gets injected — killing the horizontal
+    jerk at the source instead of chasing it downstream. */
+ html { font-size: var(--font-size); overflow-y: scroll; scrollbar-gutter: stable; }
+
+ /* Neutralize every padding/margin `react-remove-scroll` injects on
+    body when a Radix overlay opens. The library uses both physical
+    (`padding-right`) and logical (`padding-inline-end`) properties
+    depending on build — override both so the fix is version-
+    agnostic. Html-level `scrollbar-gutter: stable` already keeps
+    width constant, so any injected padding would double-compensate
+    and produce the horizontal jerk. */
+ html body[data-scroll-locked],
+ html body.react-remove-scroll-bar,
+ body[data-scroll-locked],
+ body.react-remove-scroll-bar {
+   padding-right: 0 !important;
+   padding-left: 0 !important;
+   padding-inline-end: 0 !important;
+   padding-inline-start: 0 !important;
+   margin-right: 0 !important;
+   margin-left: 0 !important;
+   margin-inline-end: 0 !important;
+   margin-inline-start: 0 !important;
+ }
+
+ /* Headings — aligned with PM-V (was a compact override that read as "high contrast").
+    PM-V uses font-weight: 500 with letter-spacing tightening; we match that. Components that
+    explicitly need a tighter, denser look can opt in via the .compact-module class below. */
+ h1 { font-size: 1.5rem;   font-weight: 500; line-height: 1.5; letter-spacing: -0.025em; }
+ h2 { font-size: 1.25rem;  font-weight: 500; line-height: 1.5; letter-spacing: -0.02em; }
+ h3 { font-size: 1.125rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.015em; }
+ h4 { font-size: 1rem;     font-weight: 500; line-height: 1.5; letter-spacing: -0.01em; }
+
+ table td, table th, .tabular-nums { font-variant-numeric: tabular-nums; }
+}
+
+/* Compact module density helper — opt-in. Wrap a subtree to get the previous denser headings. */
+.compact-module { font-size: var(--text-caption); }
+.compact-module h1 { font-size: var(--text-h4); font-weight: var(--font-weight-semibold); line-height: 1.3; letter-spacing: 0; }
+.compact-module h2 { font-size: var(--text-label); font-weight: var(--font-weight-medium); line-height: 1.5; letter-spacing: 0; }
+.compact-module h3 { font-size: var(--text-caption); font-weight: var(--font-weight-medium); line-height: 1.5; letter-spacing: 0; }
+
+/* ─── Utility: hide scrollbar (PM-V parity) ─── */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* Hide number input spinners (also defined in index.css; safe duplicate) */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }
+
+/* ─── Hide app-region scrollbars while a modal is open ───
+   Native scrollbars paint above normal element stacking, so a scrollable
+   container in the underlying page (e.g. a listing table with horizontal
+   scroll) can bleed through the modal's translucent overlay. The Radix
+   DialogPortal lives as a sibling of #root, so targeting scrollbars inside
+   #root only hides app scrollbars — the modal's own scrollbars are
+   unaffected. */
+body:has([data-slot="dialog-content"][data-state="open"]) #root *::-webkit-scrollbar,
+body:has([data-slot="alert-dialog-content"][data-state="open"]) #root *::-webkit-scrollbar,
+body:has([data-slot="dialog-content"][data-state="open"]) #root::-webkit-scrollbar,
+body:has([data-slot="alert-dialog-content"][data-state="open"]) #root::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+body:has([data-slot="dialog-content"][data-state="open"]) #root,
+body:has([data-slot="alert-dialog-content"][data-state="open"]) #root,
+body:has([data-slot="dialog-content"][data-state="open"]) #root *,
+body:has([data-slot="alert-dialog-content"][data-state="open"]) #root * {
+  scrollbar-width: none !important;
+}
+
+/* ─── Modal pop-up animation (PM-V parity) ───
+   IMPORTANT: these keyframes deliberately do NOT touch `transform` — they
+   animate `opacity` and `scale` (the CSS `scale` property, separate from
+   `transform`). With `animation-fill-mode: forwards` from the rules below,
+   touching `transform` here would clobber inline `transform: translate(...)`
+   centering set by any modal that positions itself, silently breaking
+   alignment. Centering is the modal's job; this animation is just polish. */
+@keyframes modal-pop-in {
+  0% { opacity: 0; scale: 0.92; }
+  40% { opacity: 1; }
+  100% { opacity: 1; scale: 1; }
+}
+@keyframes modal-pop-out {
+  0% { opacity: 1; scale: 1; }
+  100% { opacity: 0; scale: 0.92; }
+}
+@keyframes modal-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-overlay-out { from { opacity: 1; } to { opacity: 0; } }
+
+[data-slot="dialog-overlay"][data-state="open"],
+[data-slot="alert-dialog-overlay"][data-state="open"] {
+  animation: modal-overlay-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+[data-slot="dialog-overlay"][data-state="closed"],
+[data-slot="alert-dialog-overlay"][data-state="closed"] {
+  animation: modal-overlay-out 0.15s ease-in forwards;
+}
+[data-slot="dialog-content"][data-state="open"],
+[data-slot="alert-dialog-content"][data-state="open"] {
+  animation: modal-pop-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+[data-slot="dialog-content"][data-state="closed"],
+[data-slot="alert-dialog-content"][data-state="closed"] {
+  animation: modal-pop-out 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* Flex-centered modal pop (no translate offset) */
+@keyframes modal-pop-center {
+  0% { opacity: 0; transform: scale(0.92); }
+  40% { opacity: 1; }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-modal-pop { animation: modal-pop-center 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+.animate-modal-overlay { animation: modal-overlay-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+/* Misc PM-V animations used by quote details / listings */
+@keyframes row-flash {
+  0% { background-color: rgba(10, 119, 255, 0.12); }
+  100% { background-color: transparent; }
+}
+.animate-row-flash { animation: row-flash 1.5s ease-out forwards; }
+
+/* PM-V parity: animations consumed by OverflowTooltip / QuickViewPanel / ComingSoon / box illustration */
+@keyframes overflowTooltipIn {
+  from { opacity: 0; transform: scale(0.96) translateY(2px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes quickViewIn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes highlight-pulse {
+  0%   { box-shadow: 0 0 0 2px rgba(10, 119, 255, 0.25), 0 8px 24px -8px rgba(10, 119, 255, 0.25); }
+  50%  { box-shadow: 0 0 0 4px rgba(10, 119, 255, 0.15), 0 12px 32px -8px rgba(10, 119, 255, 0.30); }
+  100% { box-shadow: 0 0 0 2px rgba(10, 119, 255, 0.25), 0 8px 24px -8px rgba(10, 119, 255, 0.25); }
+}
+
+/* A short shake for a card that needs answering before it will close: the
+   inline unsaved-changes confirmation in InlineDescriptionEditor. The whole
+   card moves, not its footer — a pulsing band reads as a blinking light
+   somewhere on the page, where a nudge reads as "this, here, now". Small
+   amplitude and over in under half a second, then it sits still. */
+@keyframes attention-shake {
+  0%, 100% { transform: translateX(0); }
+  15%      { transform: translateX(-4px); }
+  30%      { transform: translateX(4px); }
+  45%      { transform: translateX(-3px); }
+  60%      { transform: translateX(3px); }
+  75%      { transform: translateX(-2px); }
+  90%      { transform: translateX(2px); }
+}
+.animate-attention-shake { animation: attention-shake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-attention-shake { animation: none; }
+}
+
+@keyframes comingSoonFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes comingSoonPulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}
+@keyframes comingSoonShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes comingSoonOrbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.animate-coming-soon-in       { animation: comingSoonFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-coming-soon-pulse    { animation: comingSoonPulse 2s ease-in-out infinite; }
+.animate-coming-soon-shimmer  { background-size: 200% auto; animation: comingSoonShimmer 3s linear infinite; }
+.animate-coming-soon-orbit    { animation: comingSoonOrbit 8s linear infinite; }
+
+/* Shipping-method modal: cardboard box illustration in Custom packaging */
+@keyframes box-float       { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes box-tilt        { 0%, 100% { transform: rotate(-1.5deg); } 50% { transform: rotate(1.5deg); } }
+@keyframes box-shadow-pulse{ 0%, 100% { transform: scaleX(1); opacity: 0.28; } 50% { transform: scaleX(0.85); opacity: 0.18; } }
+.box-3d-float  { animation: box-float 3.6s ease-in-out infinite; transform-origin: center; }
+.box-3d-tilt   { animation: box-tilt 5s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+.box-3d-shadow { animation: box-shadow-pulse 3.6s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+
+/* Elevated z-index context for nested modals (PM-V parity) */
+.elevated-z [data-radix-popper-content-wrapper] { z-index: 230 !important; }
+.elevated-z [data-slot="dialog-overlay"] { z-index: 225 !important; }
+.elevated-z [data-slot="dialog-content"] { z-index: 230 !important; }
+.elevated-z [data-slot="alert-dialog-overlay"] { z-index: 235 !important; }
+.elevated-z [data-slot="alert-dialog-content"] { z-index: 240 !important; }

@@ -1,0 +1,35 @@
+@import './styles/fonts.css';
+@import './styles/tailwind.css';
+@import './styles/theme.css';
+
+/* All design tokens, base typography, keyframes, and animations live in
+   ./styles/theme.css to keep parity with the Quotes module.
+   ./styles/tailwind.css owns the Tailwind v4 @theme inline mappings. */
+
+/* D2: persistent scrollbars. Mirror of the Quote module rule so
+   overflowing tables/pages show a visible scrollbar without hover. */
+html {
+ scrollbar-gutter: stable;
+}
+*, html, body {
+ scrollbar-width: thin;
+ scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+}
+*::-webkit-scrollbar {
+ width: 10px;
+ height: 10px;
+ background-color: transparent;
+}
+*::-webkit-scrollbar-thumb {
+ background-color: rgba(148, 163, 184, 0.55);
+ border-radius: 8px;
+ border: 2px solid transparent;
+ background-clip: padding-box;
+ min-height: 28px;
+}
+*::-webkit-scrollbar-thumb:hover {
+ background-color: rgba(100, 116, 139, 0.75);
+}
+*::-webkit-scrollbar-corner {
+ background-color: transparent;
+}
