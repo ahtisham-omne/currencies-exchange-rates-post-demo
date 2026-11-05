@@ -1,0 +1,486 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-size: 16px;
+
+    /* ── Typography scale (Purchase-Order extras kept) ── */
+    --text-h1: 2rem;       /* 32px */
+    --text-h2: 1.5rem;     /* 24px */
+    --text-h3: 1.25rem;    /* 20px */
+    --text-h4: 1.125rem;   /* 18px */
+    --text-base: 0.875rem; /* 14px */
+    --text-label: 0.8125rem; /* 13px */
+    --text-sm: 0.75rem;    /* 12px */
+    --text-xs: 0.6875rem;  /* 11px */
+    --text-2xs: 0.625rem;  /* 10px */
+    --text-3xs: 0.5625rem; /* 9px */
+
+    /* ── Font weights ── */
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+
+    /* ── Base shadcn tokens (HSL channels — Partners format) ── */
+    /* Surfaces */
+    --background: 218 20% 97%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary — #0A77FF */
+    --primary: 212 100% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary */
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    /* Muted */
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 19% 35%;
+
+    /* Accent — light tint of primary (used as hover/highlight in shadcn primitives) */
+    --accent: 214 100% 96%;
+    --accent-foreground: 213 89% 33%;
+
+    /* Destructive */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Semantic status */
+    --success: 152 66% 36%;          /* #059669 */
+    --success-foreground: 0 0% 100%;
+    --warning: 32 95% 44%;           /* #D97706 */
+    --warning-foreground: 0 0% 100%;
+    --violet: 262 83% 58%;
+    --violet-foreground: 0 0% 100%;
+    --orange: 23 83% 47%;
+    --orange-foreground: 0 0% 100%;
+    --purple: 243 71% 59%;
+    --purple-foreground: 0 0% 100%;
+    --fuchsia: 293 69% 49%;
+    --fuchsia-foreground: 0 0% 100%;
+
+    /* Borders & inputs */
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --input-background: 0 0% 100%;
+    --ring: 212 100% 74%;
+
+    /* Charts */
+    --chart-1: 212 100% 52%;
+    --chart-2: 160 84% 39%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 263 70% 50%;
+    --chart-5: 0 84% 60%;
+
+    /* Radius — Partners scale (0.5rem = 8px) */
+    --radius: 0.5rem;
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+
+    /* Sidebar */
+    --sidebar: 0 0% 100%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 212 100% 52%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 214 100% 96%;
+    --sidebar-accent-foreground: 213 94% 41%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 212 100% 74%;
+
+    /* ── Purchase-Order additive extras (HSL channels) ── */
+
+    /* Module tints (icon backgrounds on home cards) */
+    --primary-tint: 214 100% 96%;    /* same as --accent */
+    --success-tint: 152 79% 96%;     /* light green */
+    --warning-tint: 33 100% 96%;     /* light orange */
+    --danger: 347 77% 50%;           /* #E11D48 */
+
+    /* Elevation / shadows (raw values — not HSL) */
+    --elevation-sm: 0px 2px 8px 0px rgba(0, 0, 0, 0.16);
+    --elevation-md: 0px 16px 48px -8px rgba(0, 0, 0, 0.18), 0 0 0 1px hsl(var(--border));
+    --elevation-lg: 0px 24px 48px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px hsl(var(--border));
+    --elevation-drag: 0 12px 28px rgba(0, 0, 0, 0.15), 0 4px 10px rgba(0, 0, 0, 0.08);
+    --elevation-card: 0 1px 3px 0 rgba(16, 24, 40, 0.08), 0 1px 2px -1px rgba(16, 24, 40, 0.04);
+
+    /* Status badges (raw hex — single source of truth) */
+    --status-draft-bg: #f3f4f6;
+    --status-draft-text: #4b5563;
+    --status-draft-border: #e5e7eb;
+    --status-sent-bg: #eff6ff;
+    --status-sent-text: #1d4ed8;
+    --status-sent-border: #bfdbfe;
+    --status-confirmed-bg: #dbeafe;
+    --status-confirmed-text: #1e40af;
+    --status-confirmed-border: #93c5fd;
+    --status-partial-bg: #fffbeb;
+    --status-partial-text: #b45309;
+    --status-partial-border: #fde68a;
+    --status-received-bg: #f0fdf4;
+    --status-received-text: #15803d;
+    --status-received-border: #bbf7d0;
+    --status-cancelled-bg: #fef2f2;
+    --status-cancelled-text: #b91c1c;
+    --status-cancelled-border: #fecaca;
+    --status-active-cancel-bg: #fff7ed;
+    --status-active-cancel-text: #c2410c;
+    --status-active-cancel-border: #fed7aa;
+    --status-closed-cancel-bg: #f1f5f9;
+    --status-closed-cancel-text: #475569;
+    --status-closed-cancel-border: #cbd5e1;
+
+    /* Avatar palette */
+    --avatar-1-bg: rgba(10, 119, 255, 0.22);
+    --avatar-1-text: hsl(var(--primary));
+    --avatar-2-bg: rgba(39, 185, 115, 0.22);
+    --avatar-2-text: rgba(39, 185, 115, 1);
+    --avatar-3-bg: rgba(239, 162, 47, 0.22);
+    --avatar-3-text: rgba(180, 110, 10, 1);
+    --avatar-4-bg: rgba(87, 78, 250, 0.22);
+    --avatar-4-text: rgba(87, 78, 250, 1);
+    --avatar-5-bg: rgba(255, 69, 58, 0.20);
+    --avatar-5-text: hsl(var(--destructive));
+    --avatar-6-bg: rgba(0, 180, 180, 0.22);
+    --avatar-6-text: rgba(0, 140, 140, 1);
+    --avatar-7-bg: rgba(180, 60, 200, 0.22);
+    --avatar-7-text: rgba(140, 30, 160, 1);
+
+    /* Version badge colors */
+    --version-1-bg: rgba(39, 185, 115, 0.12);
+    --version-1-text: rgba(20, 140, 80, 1);
+    --version-2-bg: rgba(239, 162, 47, 0.12);
+    --version-2-text: rgba(180, 110, 10, 1);
+    --version-3-bg: rgba(87, 78, 250, 0.12);
+    --version-3-text: rgba(87, 78, 250, 1);
+    --version-4-bg: rgba(10, 119, 255, 0.12);
+    --version-4-text: hsl(var(--primary));
+    --version-5-bg: rgba(255, 69, 58, 0.10);
+    --version-5-text: hsl(var(--destructive));
+
+    /* Subtle primary tints */
+    --primary-tint-subtle: rgba(10, 119, 255, 0.04);
+    --primary-tint-faint: rgba(10, 119, 255, 0.03);
+
+    /* ────────────────────────────────────────────────────────────
+     * Attachments-tab compat tokens (ported from Items-V2)
+     * These mirror the `--piw-*` / `--surface-*` / `--text-*` /
+     * `--primary-50` / `--spacing-*` / typography tokens used by the
+     * ported attachments folder so the Items visual language works
+     * verbatim inside PO with no swaps at call sites.
+     * ──────────────────────────────────────────────────────────── */
+
+    /* PIW colour tokens (Items design-system aliases mapped to PO base) */
+    --piw-primary: hsl(var(--primary));
+    --piw-primary-foreground: hsl(var(--primary-foreground));
+    --piw-card: hsl(var(--card));
+    --piw-border: hsl(var(--border));
+    --piw-foreground: hsl(var(--foreground));
+
+    /* Neutral text tiers used by Items */
+    --text-secondary: #475569;
+    --text-tertiary: #94a3b8;
+
+    /* Surface tiers */
+    --surface-secondary: #f1f5f9;
+
+    /* Primary shades — full scale mirrors the SO theme so the ported
+       Attachments tab renders with its native active states + hover
+       shades. */
+    --primary-50: #eff6ff;
+    --primary-100: #dbeafe;
+    --primary-200: #bfdbfe;
+    --primary-600: #2563eb;
+    --primary-700: #1d4ed8;
+
+    /* Extra elevation token used by the SO card chrome. */
+    --elevation-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
+    /* Link tag palette (external-links category chip). */
+    --link-tag-bg: #eef2ff;
+    --link-tag-text: #4f46e5;
+
+    /* Highlight color used by the attachments-tab loading skeleton's
+       shimmer gradient. Solid literal (not an HSL fragment) so
+       color-mix() has a valid endpoint. */
+    --skeleton-highlight: #f8fafc;
+
+    /* Typography */
+    --font-inter: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --text-body-sm: 0.8125rem; /* 13px */
+    --text-caption: 0.75rem;   /* 12px */
+    --text-badge: 0.625rem;    /* 10px */
+
+    /* Spacing scale (rem-based, matches Tailwind) */
+    --spacing-0-5: 0.125rem; /* 2px */
+    --spacing-1:   0.25rem;  /* 4px */
+    --spacing-1-5: 0.375rem; /* 6px */
+    --spacing-2:   0.5rem;   /* 8px */
+    --spacing-2-5: 0.625rem; /* 10px */
+    --spacing-3:   0.75rem;  /* 12px */
+    --spacing-4:   1rem;     /* 16px */
+    --spacing-8:   2rem;     /* 32px */
+    --spacing-10:  2.5rem;   /* 40px */
+
+    /* Radius alias */
+    --radius-xs: 0.125rem;   /* 2px */
+
+    /* Status / tag tints used by attachment-config */
+    --status-active-bg: #ecfdf5;
+    --status-active-text: #047857;
+    --status-active-border: #a7f3d0;
+    --tx-type-negative-bg: #fef2f2;
+    --tx-type-negative-text: #b91c1c;
+    --tx-type-negative-border: #fecaca;
+    --checked-out-tag-bg: #eff6ff;
+    --checked-out-tag-text: #1d4ed8;
+    --checked-out-tag-border: #bfdbfe;
+    --reason-tag-bg: #fdf4ff;
+    --reason-tag-text: #a21caf;
+    --reason-tag-border: #f5d0fe;
+  }
+
+  .dark {
+    --background: 222 47% 9%;
+    --foreground: 210 40% 96%;
+    --card: 220 38% 15%;
+    --card-foreground: 210 40% 96%;
+    --popover: 220 38% 15%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 212 100% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 25% 63%;
+    --accent: 212 89% 19%;
+    --accent-foreground: 212 100% 74%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 66% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 95% 44%;
+    --warning-foreground: 0 0% 100%;
+    --violet: 262 83% 58%;
+    --violet-foreground: 0 0% 100%;
+    --orange: 21 100% 62%;
+    --orange-foreground: 0 0% 100%;
+    --purple: 244 93% 72%;
+    --purple-foreground: 0 0% 100%;
+    --fuchsia: 292 91% 73%;
+    --fuchsia-foreground: 0 0% 100%;
+    --border: 215 26% 24%;
+    --input: 215 26% 24%;
+    --input-background: 220 38% 15%;
+    --ring: 212 100% 62%;
+    --chart-1: 212 100% 62%;
+    --chart-2: 160 72% 51%;
+    --chart-3: 43 96% 56%;
+    --chart-4: 263 83% 76%;
+    --chart-5: 0 91% 71%;
+    --sidebar: 220 38% 15%;
+    --sidebar-background: 220 38% 15%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 212 100% 62%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 212 89% 19%;
+    --sidebar-accent-foreground: 212 100% 74%;
+    --sidebar-border: 215 26% 24%;
+    --sidebar-ring: 212 100% 62%;
+
+    /* Additive extras — dark mode */
+    --primary-tint: 212 89% 19%;
+    --success-tint: 152 30% 18%;
+    --warning-tint: 32 50% 18%;
+    --danger: 347 77% 60%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Base typography — matches Partners */
+  h1 { font-size: 1.5rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.025em; }
+  h2 { font-size: 1.25rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.02em; }
+  h3 { font-size: 1.125rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.015em; }
+  h4 { font-size: 1rem; font-weight: 500; line-height: 1.5; letter-spacing: -0.01em; }
+  label { font-size: 1rem; font-weight: 500; line-height: 1.5; }
+}
+
+html {
+  font-size: var(--font-size);
+}
+
+/* Utility: no-scrollbar (alias: scrollbar-hide — matches Partners repo) */
+.no-scrollbar,
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Planner transaction-table cell type scale — 12px on 2xl+, 11px below.
+   Bound to CSS vars so the compact fontSize can respond to the viewport
+   from inside a JS style object (inline styles can't take Tailwind
+   responsive classes). See PlannerTransactionTable's `s.cellId` /
+   `s.cellText` for the consumers. */
+:root {
+  --planner-cell-fs: 12px;
+  --planner-cell-lh: 18px;
+}
+/* max-width sits at 2048px to mirror Tailwind's overridden `2xl: 2049px`
+   breakpoint (see tailwind.config.ts). Every laptop-class display falls
+   below this ceiling and gets the compact 11px cell font; only true
+   desktop monitors keep the 12px baseline. */
+@media (max-width: 2048px) {
+  :root {
+    --planner-cell-fs: 11px;
+    --planner-cell-lh: 16px;
+  }
+}
+
+/* Utility: scrollbar-planner — the always-visible thin scrollbar used
+   across every sandbox surface (transaction table, vendor list,
+   graph drawers, panel bodies). Colour + width live here so all
+   sandbox scroll regions read as the same control. */
+.scrollbar-planner {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+.scrollbar-planner::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-planner::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+  border-radius: 3px;
+}
+.scrollbar-planner::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Utility: scrollbar-on-hover — hidden by default, appears as a
+   thin bar on hover of the scroll container. Matches the reveal
+   behavior used elsewhere in the app so short lists stay clean and
+   long lists advertise scrollability once the user aims at them. */
+.scrollbar-on-hover {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-on-hover::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.scrollbar-on-hover:hover {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+.scrollbar-on-hover:hover::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-on-hover:hover::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+  border-radius: 3px;
+}
+.scrollbar-on-hover:hover::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Sandbox attention pulse — used by `ContentCardLite` with
+   `tone="sandbox" pulse={true}` to softly draw the eye toward the
+   "Create POs from qualified vendors" section until the buyer makes
+   their first interaction. Intentionally low-contrast (rings stay
+   between 3px and 6px, opacity stays under 0.22) so it doesn't get
+   annoying on long sessions. 2.6s cycle keeps it ambient — fast
+   enough to feel alive, slow enough to ignore. */
+@keyframes sandbox-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 3px rgba(82, 75, 224, 0.08),
+      0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px rgba(82, 75, 224, 0.18),
+      0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+}
+.sandbox-pulse {
+  animation: sandbox-pulse 2.6s ease-in-out infinite;
+}
+
+/* ── Sandbox group-tab "feet" ──
+   The active grouped tab (PlannerWorkspacePage TabChip) flares its two bottom
+   corners OUTWARD to merge into the group's baseline line — the Chrome
+   tab-group selected shape. This "outside radius" can't be done with
+   border-radius (which only rounds inward), so each corner is a radial-gradient
+   pseudo-element: a transparent cut-out on the strip side, then a 3px arc in the
+   group colour that continues the side stroke down into the baseline, then the
+   tab fill. Colours arrive as CSS vars set inline on the tab:
+     --tab-line = group tone.dot (the stroke)   --tab-fill = group tone.bg
+   z-index lifts the feet above the flush neighbour tabs; they're click-through. */
+.planner-tab-foot {
+  position: relative;
+  z-index: 1;
+}
+.planner-tab-foot::before,
+.planner-tab-foot::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+}
+.planner-tab-foot::before {
+  right: 100%;
+  background: radial-gradient(
+    circle at top left,
+    transparent 5px,
+    var(--tab-line) 5px,
+    var(--tab-line) 8px,
+    var(--tab-fill) 8px
+  );
+}
+.planner-tab-foot::after {
+  left: 100%;
+  background: radial-gradient(
+    circle at top right,
+    transparent 5px,
+    var(--tab-line) 5px,
+    var(--tab-line) 8px,
+    var(--tab-fill) 8px
+  );
+}
+/* Respect users who've opted out of motion. */
+@media (prefers-reduced-motion: reduce) {
+  .sandbox-pulse {
+    animation: none;
+    box-shadow:
+      0 0 0 3px rgba(82, 75, 224, 0.10),
+      0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+}
