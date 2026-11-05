@@ -1,0 +1,3 @@
+Group Name *,Status,Country,Description,Group Scope,Vendor Profiles,Customer Profiles,Linked Partners,Primary Partners,Billing Type,Currency,Credit Enforcement,Max Credit Limit,Warning Threshold (%),Payment Term,Pricing Rules,Payment Methods,Carriers
+Maryland Ambulance Dealers,Active,United States,Regional ambulance dealers and upfitters across Maryland.,Vendor|Customer,Vendor Rules|Carrier,Customer Rules,Toyota International|NTN Corporation,Toyota International,Domestic,USD,Soft Warning,100000,80,Net 30,"Standard Discount, Value (Single-Tier)|Tiered Discount, Value (Multi-Tier)",ACH|Wire|Card,FedEx|UPS
+Nordic Fasteners,,Sweden,,Vendor,Vendor Rules,,,,International,SEK,None,,,Net 45 Post Delivery,,Wire,DHL
