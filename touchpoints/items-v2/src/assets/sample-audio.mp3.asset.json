@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "asset_id": "local-sample-audio",
+  "url": "https://www.w3schools.com/html/horse.mp3",
+  "original_filename": "sample-audio.mp3",
+  "size": 25000,
+  "content_type": "audio/mpeg",
+  "created_at": "2026-07-15T00:00:00Z"
+}
