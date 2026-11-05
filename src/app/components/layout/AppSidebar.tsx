@@ -27,6 +27,8 @@ interface NavChild {
   path: string;
   /** Other path prefixes that also mark this link active (one page spanning several paths). */
   also?: string[];
+  /** No design yet: shown greyed out and not clickable, as the module's own sidebar does. */
+  disabled?: boolean;
 }
 
 interface NavItem {
@@ -60,11 +62,12 @@ const navItems: NavItem[] = [
       { label: "Partners", path: "/vendors" },
       { label: "Partner Groups", path: "/partners/groups" },
       { label: "Contacts Directory", path: "/partners/contacts" },
-      { label: "Credit Management", path: "/partners/credit" },
-      { label: "Carrier Management", path: "/partners/carriers" },
-      { label: "Partner Locations", path: "/partners/locations" },
-      { label: "Qualified Vendors", path: "/partners/qualified-vendors" },
-      { label: "Reports & Analytics", path: "/partners/reports" },
+      // Not designed yet; the Partners app's own sidebar disables the same five.
+      { label: "Credit Management", path: "/partners/credit", disabled: true },
+      { label: "Carrier Management", path: "/partners/carriers", disabled: true },
+      { label: "Partner Locations", path: "/partners/locations", disabled: true },
+      { label: "Qualified Vendors", path: "/partners/qualified-vendors", disabled: true },
+      { label: "Reports & Analytics", path: "/partners/reports", disabled: true },
     ],
   },
   {
@@ -366,7 +369,17 @@ export function AppSidebar() {
                         className="ml-[19px] mt-0.5 space-y-px border-l-[1.5px] pl-2.5 py-0.5"
                         style={{ borderColor: "#D6E8FF" }}
                       >
-                        {item.children!.map((child) => (
+                        {item.children!.map((child) => child.disabled ? (
+                          <div
+                            key={child.path}
+                            className="block px-2.5 py-1 rounded-md text-[13px] cursor-not-allowed select-none"
+                            style={{ fontWeight: 400, color: "#94A3B8" }}
+                            title="Coming soon"
+                            aria-disabled="true"
+                          >
+                            {child.label}
+                          </div>
+                        ) : (
                           <NavLink
                             key={child.path}
                             to={child.path}
