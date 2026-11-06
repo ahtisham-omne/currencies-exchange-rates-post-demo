@@ -1,0 +1,104 @@
+/*
+ * Line-item table: responsive reflow, no horizontal scroll.
+ *
+ * Purchase Order never scrolls its line table: each row is a grid with a
+ * flexible item column and fixed figure columns. That holds on wide
+ * screens, but PO keeps all columns at every width, so below ~640px the
+ * item column is crushed to nothing. Here the table steps down in three
+ * stages instead, keyed to the card's own width (a container query, so
+ * the app nav and the sidebar are already accounted for):
+ *
+ *   1. Wide: a normal table. Figure columns sit at their content width
+ *      and the item column absorbs the difference, truncating the
+ *      description at the end of its own line.
+ *   2. Below the usable limit (the item column would drop under ~300px):
+ *      each row keeps the item on top and brings its figures down into a
+ *      strip beneath it, each with its own caption (the column headers
+ *      are hidden, so the caption travels with the value). Total sits
+ *      last and right-aligned, as it does in the table.
+ *   3. Narrower still, the strip wraps on its own (flex-basis), and
+ *      Total drops to a footer line. (li-fig-sm is a narrower figure;
+ *      Sales Order uses it for Allocated and Shipped.)
+ *   4. Phone (under 480px): the # gutter goes, the row actions stack,
+ *      and each figure becomes a caption-left, value-right line.
+ *
+ * Cells opt in by class: li-sel (checkbox), li-num (#), li-main (item),
+ * li-fig (+ data-label) for figures, li-end for Total, li-act (actions).
+ * The table sets --li-sel-w, --li-num-w and --li-act-w inline, since
+ * those depend on edit mode.
+ */
+.li-wrap { container: li-table / inline-size; }
+
+@container li-table (max-width: 839px) {
+  .li-table, .li-table > thead, .li-table > tbody { display: block; width: 100%; }
+  .li-table > colgroup { display: none; }
+
+  /* Header keeps select-all and the "Line items" caption only. */
+  .li-table > thead > tr { display: flex; align-items: center; }
+  .li-table > thead > tr > th { display: block; }
+  .li-table > thead > tr > th.li-sel { flex: 0 0 var(--li-sel-w); width: var(--li-sel-w) !important; }
+  .li-table > thead > tr > th.li-num { flex: 0 0 var(--li-num-w); width: var(--li-num-w) !important; }
+  .li-table > thead > tr > th.li-main { flex: 1 1 auto; }
+  .li-table > thead > tr > th.li-fig,
+  .li-table > thead > tr > th.li-act { display: none; }
+
+  /* Rows: checkbox and # stay in a left gutter; the item and actions
+     fill the first line; the figures wrap onto the lines below. */
+  .li-table > tbody > tr.li-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    position: relative;
+    padding-left: calc(var(--li-sel-w) + var(--li-num-w));
+  }
+  .li-row > td { display: block; }
+  .li-row > td.li-sel { position: absolute; left: 0; top: 0; width: var(--li-sel-w) !important; }
+  .li-row > td.li-num { position: absolute; left: var(--li-sel-w); top: 0; width: var(--li-num-w) !important; }
+  .li-row > td.li-main {
+    order: -2;
+    flex: 0 0 calc(100% - var(--li-act-w));
+    min-width: 0 !important;
+    max-width: none !important;
+    padding-bottom: 8px !important;
+  }
+  .li-row > td.li-act { order: -1; flex: 0 0 var(--li-act-w); padding-top: 8px !important; }
+  .li-row > td.li-fig {
+    flex: 1 1 132px;
+    min-width: 0;
+    max-width: none !important;
+    padding: 0 12px 12px !important;
+    text-align: left !important;
+  }
+  .li-row > td.li-fig-sm { flex-basis: 96px; }
+  /* PO's column-header caption (10/600, uppercase, 0.04em). */
+  .li-row > td.li-fig::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+  .li-row > td.li-end { order: 1; text-align: right !important; }
+}
+
+@container li-table (max-width: 479px) {
+  .li-table { --li-num-w: 0px !important; --li-act-w: 40px !important; }
+  .li-table > thead > tr > th.li-num,
+  .li-row > td.li-num { display: none; }
+  .li-row > td.li-act > div { flex-direction: column; }
+  .li-row > td.li-fig {
+    flex: 0 0 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 12px !important;
+  }
+  .li-row > td.li-fig::before { margin-bottom: 0; }
+  .li-row > td.li-end { padding-bottom: 12px !important; }
+}

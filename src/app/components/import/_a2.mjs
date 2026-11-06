@@ -1,0 +1,32 @@
+import { chromium } from 'playwright-core';
+const SP = process.argv[2];
+const b = await chromium.launch({ channel: 'chrome' });
+const p = await b.newPage({ viewport: { width: 1700, height: 1050 } });
+p.on('console', m => { if (m.type() === 'error') console.log('CONSOLE:', m.text().slice(0, 300)); });
+p.on('pageerror', e => console.log('PAGEERROR:', e.message.slice(0, 300)));
+await p.goto('http://localhost:5241/', { waitUntil: 'networkidle' });
+await p.waitForTimeout(1700);
+await p.locator('button', { hasText: /^Actions$/ }).first().click({ force: true });
+await p.waitForTimeout(350);
+await p.locator('[role="menuitem"]', { hasText: 'Import' }).first().click({ force: true });
+await p.waitForTimeout(650);
+await p.locator('button', { hasText: 'Load a sample file' }).first().click({ force: true });
+await p.waitForTimeout(550);
+await p.locator('button', { hasText: /Review Data/ }).first().click({ force: true });
+await p.waitForTimeout(1300);
+const pencils = await p.locator('button[aria-label="Edit adjustments"]').count();
+const adds = await p.locator('button:has-text("Add")').count();
+console.log('pencils:', pencils, 'add buttons:', adds);
+await p.locator('button[aria-label="Edit adjustments"]').first().click({ force: true });
+await p.waitForTimeout(1400);
+const probe = await p.evaluate(() => {
+  const leaves = [...document.querySelectorAll('*')].filter(e => e.children.length === 0 && /adjust/i.test(e.textContent || ''));
+  const fixed = [...document.querySelectorAll('body > div, body > div > div')].map(e => {
+    const cs = getComputedStyle(e);
+    return cs.position === 'fixed' ? `${cs.zIndex}|${(e.textContent||'').slice(0,40)}` : null;
+  }).filter(Boolean);
+  return { leaves: leaves.slice(0,6).map(l => l.textContent.slice(0,50)), fixedLayers: fixed.slice(0,8) };
+});
+console.log('probe:', JSON.stringify(probe, null, 1));
+await p.screenshot({ path: SP + '/a03-after-click.png' });
+await b.close();
