@@ -1,0 +1,80 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/* Hide number input spin buttons */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+ -webkit-appearance: none;
+ margin: 0;
+}
+input[type="number"] {
+ -moz-appearance: textfield;
+}
+
+/* Kanban card micro-animations */
+@keyframes kanban-pulse {
+ 0%, 100% { opacity: 1; transform: scale(1); }
+ 50% { opacity: 0.6; transform: scale(1.4); }
+}
+
+/* D2: persistent scrollbars.
+   Reserve scrollbar gutter at the document level so the page scrollbar
+   is always visible without inducing layout shift. WebKit gets a slim
+   always-painted thumb (instead of fade-on-hover) and Firefox gets the
+   equivalent via `scrollbar-width: thin` + `scrollbar-color`. Components
+   that opt into hover-fade scrollbars (e.g. internal Notion-style
+   panels) can still override locally; the default is "visible". */
+html {
+ /* Force the vertical scrollbar to always paint on html, and reserve
+    its gutter unconditionally. Together they guarantee that when
+    Radix (via react-remove-scroll) locks body scroll for a Select /
+    Popover / Dialog, the page width does not change — the library
+    measures `window.innerWidth - documentElement.clientWidth`, sees
+    0, and injects no compensation padding. */
+ overflow-y: scroll;
+ scrollbar-gutter: stable;
+}
+
+/* Neutralize every padding/margin `react-remove-scroll` injects on
+   body when a Radix overlay (Select / Popover / Dialog) opens. The
+   library uses logical properties (padding-inline-end) on newer
+   builds and physical ones on older ones — override both variants
+   so the fix is version-agnostic. Our html-level gutter already
+   holds the width stable, so all these compensations are
+   double-work and produce the visible horizontal jerk. */
+html body[data-scroll-locked],
+html body.react-remove-scroll-bar,
+body[data-scroll-locked],
+body.react-remove-scroll-bar {
+ padding-right: 0 !important;
+ padding-left: 0 !important;
+ padding-inline-end: 0 !important;
+ padding-inline-start: 0 !important;
+ margin-right: 0 !important;
+ margin-left: 0 !important;
+ margin-inline-end: 0 !important;
+ margin-inline-start: 0 !important;
+}
+*, html, body {
+ scrollbar-width: thin;
+ scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+}
+*::-webkit-scrollbar {
+ width: 10px;
+ height: 10px;
+ background-color: transparent;
+}
+*::-webkit-scrollbar-thumb {
+ background-color: rgba(148, 163, 184, 0.55);
+ border-radius: 8px;
+ border: 2px solid transparent;
+ background-clip: padding-box;
+ min-height: 28px;
+}
+*::-webkit-scrollbar-thumb:hover {
+ background-color: rgba(100, 116, 139, 0.75);
+}
+*::-webkit-scrollbar-corner {
+ background-color: transparent;
+}
