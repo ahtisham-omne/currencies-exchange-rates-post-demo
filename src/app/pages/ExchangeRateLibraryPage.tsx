@@ -16,7 +16,7 @@ import { CoaDataTable, TableNoteRow, useCoaTable } from '../coa/components/CoaDa
 import { QuickFilterPill } from '../coa/components/Filters'
 import { BulkActionBar } from '../coa/components/BulkActionBar'
 import { useRememberedState } from '../coa/lib/rememberedState'
-import { fmtDate, fmtNumber } from '../coa/lib/utils'
+import { cn, fmtDate, fmtNumber } from '../coa/lib/utils'
 import {
   BASE, BASE_NAME, LAST_SYNC_DATE, LAST_SYNC_TIME, SYNC_LINE, SYNC_LINE_SHORT, baseCorpRow, daysSince, fmtInverse, fmtRate, fmtSignedPct, pairPath,
   toCorpRows, toMidRows, type CorpRow, type MidRow,
@@ -33,7 +33,7 @@ type CorpPill = 'all' | 'active' | 'archived'
 
 const EXPANDED_FILL = 'bg-[color-mix(in_srgb,hsl(var(--muted))_30%,#fff)]'
 
-export function ExchangeRatesPanel() {
+export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const ic14 = useResponsiveIconSize(14)
@@ -215,130 +215,133 @@ export function ExchangeRatesPanel() {
           primaryAction={<Button icon={<Plus size={ic14} />} onClick={() => form.openAdd()}>Add corporate rate</Button>}
         />
 
-        <div className="px-6 lg:px-8 mt-4">
-          <PerformanceInsights
-            defs={LIBRARY_KPIS}
-            valueOf={kpiValue}
-            activeKpis={shelf.activeKpis}
-            setActiveKpis={shelf.setActiveKpis}
-            defaultKpis={LIBRARY_DEFAULT_KPIS}
-            onOpenPanel={() => shelf.setPanelOpen(true)}
-            onReset={shelf.reset}
-            lastRefreshed={shelf.lastRefreshed}
-            onRefresh={shelf.refresh}
-          />
-        </div>
+        {/* Steps in under the header when the page's tab changes. */}
+        <div className={cn('flex-1 min-h-0 flex flex-col', swapIn)}>
+          <div className="px-6 lg:px-8 mt-4">
+            <PerformanceInsights
+              defs={LIBRARY_KPIS}
+              valueOf={kpiValue}
+              activeKpis={shelf.activeKpis}
+              setActiveKpis={shelf.setActiveKpis}
+              defaultKpis={LIBRARY_DEFAULT_KPIS}
+              onOpenPanel={() => shelf.setPanelOpen(true)}
+              onReset={shelf.reset}
+              lastRefreshed={shelf.lastRefreshed}
+              onRefresh={shelf.refresh}
+            />
+          </div>
 
-        <div className="flex-1 min-h-0 flex flex-col px-6 lg:px-8 mt-4">
-          {isMid ? (
-            <CoaTableCard
-              key="mid"
-              table={midTable}
-              topBar={rateTypeTabs}
-              toolbar={
-                <TableToolbar
-                  {...toolbarCommon}
-                  count={{ shown: midTable.rows.length, total: midAll.length, noun: 'rates' }}
-                  meta={<Tooltip content={SYNC_LINE} side="bottom" align="right"><span className="cursor-default">{SYNC_LINE_SHORT}</span></Tooltip>}
-                  density={midTable.densityMenuProps}
-                  columns={{ open: midTable.columnsOpen, onToggle: () => midTable.setColumnsOpen(o => !o), count: midTable.visibleCount }}
-                />
-              }
-              notes={
-                <div className="px-4 py-3 border-b border-border">
-                  <Banner tone="info" title="Mid-market rates">{EXPLANATORY_BLOCKS.midMarket}</Banner>
-                </div>
-              }
-            >
-              <CoaDataTable
+          <div className="flex-1 min-h-0 flex flex-col px-6 lg:px-8 mt-4">
+            {isMid ? (
+              <CoaTableCard
                 table={midTable}
-                isBand={r => r.isBase}
-                onRowClick={r => navigate(pairPath(r.code, 'mid'))}
-                renderExpanded={r => (
-                  <div className={`px-4 py-3 ${EXPANDED_FILL}`}>
-                    <PairInverter code={r.code} name={r.name} rate={r.rate} inverted={inverted.has(`mid:${r.id}`)} onToggle={() => toggleInvert(`mid:${r.id}`)} note={`Mid-market rate as of ${LAST_SYNC_DATE}`} />
+                topBar={rateTypeTabs}
+                swapKey={tab}
+                toolbar={
+                  <TableToolbar
+                    {...toolbarCommon}
+                    count={{ shown: midTable.rows.length, total: midAll.length, noun: 'rates' }}
+                    meta={<Tooltip content={SYNC_LINE} side="bottom" align="right"><span className="cursor-default">{SYNC_LINE_SHORT}</span></Tooltip>}
+                    density={midTable.densityMenuProps}
+                    columns={{ open: midTable.columnsOpen, onToggle: () => midTable.setColumnsOpen(o => !o), count: midTable.visibleCount }}
+                  />
+                }
+                notes={
+                  <div className="px-4 py-3 border-b border-border">
+                    <Banner tone="info" title="Mid-market rates">{EXPLANATORY_BLOCKS.midMarket}</Banner>
                   </div>
-                )}
-                afterRow={r => (r.isBase ? <TableNoteRow band>All exchange rates below are quoted against this currency.</TableNoteRow> : null)}
-                rowMenu={(r, close) => (
-                  <>
-                    <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(r.code, 'mid')) }}>View details</MenuItem>
-                    {r.isBase
-                      ? <MenuItem icon={<Plus size={14} />} disabled disabledReason={`${BASE} is the base currency. Its rate is always 1.0000.`}>Set corporate rate</MenuItem>
-                      : r.corporate
-                        ? <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.corporate!.id) }}>Update corporate rate</MenuItem>
-                        : <MenuItem icon={<Plus size={14} />} onClick={() => { close(); form.openAdd(r.code) }}>Set corporate rate</MenuItem>}
-                  </>
-                )}
-                emptyState={emptyState}
-              />
-            </CoaTableCard>
-          ) : (
-            <CoaTableCard
-              key="corp"
-              table={corpTable}
-              topBar={rateTypeTabs}
-              toolbar={
-                <TableToolbar
-                  {...toolbarCommon}
-                  count={{ shown: corpShown.length, total: corpAll.length, noun: 'rates' }}
-                  density={corpTable.densityMenuProps}
-                  columns={{ open: corpTable.columnsOpen, onToggle: () => corpTable.setColumnsOpen(o => !o), count: corpTable.visibleCount }}
+                }
+              >
+                <CoaDataTable
+                  table={midTable}
+                  isBand={r => r.isBase}
+                  onRowClick={r => navigate(pairPath(r.code, 'mid'))}
+                  renderExpanded={r => (
+                    <div className={`px-4 py-3 ${EXPANDED_FILL}`}>
+                      <PairInverter code={r.code} name={r.name} rate={r.rate} inverted={inverted.has(`mid:${r.id}`)} onToggle={() => toggleInvert(`mid:${r.id}`)} note={`Mid-market rate as of ${LAST_SYNC_DATE}`} />
+                    </div>
+                  )}
+                  afterRow={r => (r.isBase ? <TableNoteRow band>All exchange rates below are quoted against this currency.</TableNoteRow> : null)}
+                  rowMenu={(r, close) => (
+                    <>
+                      <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(r.code, 'mid')) }}>View details</MenuItem>
+                      {r.isBase
+                        ? <MenuItem icon={<Plus size={14} />} disabled disabledReason={`${BASE} is the base currency. Its rate is always 1.0000.`}>Set corporate rate</MenuItem>
+                        : r.corporate
+                          ? <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.corporate!.id) }}>Update corporate rate</MenuItem>
+                          : <MenuItem icon={<Plus size={14} />} onClick={() => { close(); form.openAdd(r.code) }}>Set corporate rate</MenuItem>}
+                    </>
+                  )}
+                  emptyState={emptyState}
                 />
-              }
-              bulkBar={corpTable.selected.size > 0 ? (
-                <BulkActionBar
-                  count={corpTable.selected.size}
-                  noun="rate"
-                  nounPlural="rates"
-                  onClear={corpTable.clearSelection}
-                  actions={[
-                    { key: 'archive', label: 'Archive', icon: Archive, tone: 'destructive', count: selectedActive.length, onClick: () => lifecycle.archiveBulk(selectedRecords, corpTable.clearSelection) },
-                    { key: 'export', label: 'Export selected', icon: Download, tone: 'neutral', onClick: () => exportCurrent('csv', corpAll.filter(r => corpTable.selected.has(r.id))) },
-                  ]}
-                />
-              ) : null}
-              pills={
-                <PillRow>
-                  <QuickFilterPill label="Show All" active={pill === 'all'} onClick={() => setPill('all')} />
-                  <QuickFilterPill label="Active" count={pillCounts.active} active={pill === 'active'} onClick={() => setPill('active')} />
-                  <QuickFilterPill label="Archived" tone="danger" count={pillCounts.archived} active={pill === 'archived'} onClick={() => setPill(p => (p === 'archived' ? 'all' : 'archived'))} />
-                </PillRow>
-              }
-              notes={
-                <div className="px-4 py-3 border-b border-border">
-                  <Banner tone="info" title="Corporate rates">{EXPLANATORY_BLOCKS.corporate}</Banner>
-                </div>
-              }
-            >
-              <CoaDataTable
+              </CoaTableCard>
+            ) : (
+              <CoaTableCard
                 table={corpTable}
-                selectable
-                isSelectable={r => !r.isBase}
-                isBand={r => r.isBase}
-                onRowClick={r => navigate(r.isBase ? pairPath(BASE, 'mid') : pairPath(r.code, 'std'))}
-                canExpand={r => !r.isBase}
-                renderExpanded={r => (
-                  <div className={`px-4 py-3 ${EXPANDED_FILL}`}>
-                    <PairInverter code={r.code} name={r.name} rate={r.rate} inverted={inverted.has(`corp:${r.id}`)} onToggle={() => toggleInvert(`corp:${r.id}`)} note={`Corporate rate, effective ${fmtDate(r.effectiveDate)}`} />
+                topBar={rateTypeTabs}
+                swapKey={tab}
+                toolbar={
+                  <TableToolbar
+                    {...toolbarCommon}
+                    count={{ shown: corpShown.length, total: corpAll.length, noun: 'rates' }}
+                    density={corpTable.densityMenuProps}
+                    columns={{ open: corpTable.columnsOpen, onToggle: () => corpTable.setColumnsOpen(o => !o), count: corpTable.visibleCount }}
+                  />
+                }
+                bulkBar={corpTable.selected.size > 0 ? (
+                  <BulkActionBar
+                    count={corpTable.selected.size}
+                    noun="rate"
+                    nounPlural="rates"
+                    onClear={corpTable.clearSelection}
+                    actions={[
+                      { key: 'archive', label: 'Archive', icon: Archive, tone: 'destructive', count: selectedActive.length, onClick: () => lifecycle.archiveBulk(selectedRecords, corpTable.clearSelection) },
+                      { key: 'export', label: 'Export selected', icon: Download, tone: 'neutral', onClick: () => exportCurrent('csv', corpAll.filter(r => corpTable.selected.has(r.id))) },
+                    ]}
+                  />
+                ) : null}
+                pills={
+                  <PillRow>
+                    <QuickFilterPill label="Show All" active={pill === 'all'} onClick={() => setPill('all')} />
+                    <QuickFilterPill label="Active" count={pillCounts.active} active={pill === 'active'} onClick={() => setPill('active')} />
+                    <QuickFilterPill label="Archived" tone="danger" count={pillCounts.archived} active={pill === 'archived'} onClick={() => setPill(p => (p === 'archived' ? 'all' : 'archived'))} />
+                  </PillRow>
+                }
+                notes={
+                  <div className="px-4 py-3 border-b border-border">
+                    <Banner tone="info" title="Corporate rates">{EXPLANATORY_BLOCKS.corporate}</Banner>
                   </div>
-                )}
-                afterRow={r => (r.isBase ? <TableNoteRow band>All exchange rates below are quoted against this currency.</TableNoteRow> : null)}
-                rowMenu={(r, close) => r.isBase ? (
-                  <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(BASE, 'mid')) }}>View details</MenuItem>
-                ) : (
-                  <>
-                    <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(r.code, 'std')) }}>View details</MenuItem>
-                    {r.status === 'Active' && <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.id) }}>Update rate</MenuItem>}
-                    {r.status === 'Active'
-                      ? <MenuItem icon={<Archive size={14} />} danger onClick={() => { close(); lifecycle.archive(r.record!) }}>Archive rate</MenuItem>
-                      : <MenuItem icon={<ArchiveRestore size={14} />} onClick={() => { close(); lifecycle.restore(r.record!) }}>Restore rate</MenuItem>}
-                  </>
-                )}
-                emptyState={emptyState}
-              />
-            </CoaTableCard>
-          )}
+                }
+              >
+                <CoaDataTable
+                  table={corpTable}
+                  selectable
+                  isSelectable={r => !r.isBase}
+                  isBand={r => r.isBase}
+                  onRowClick={r => navigate(r.isBase ? pairPath(BASE, 'mid') : pairPath(r.code, 'std'))}
+                  canExpand={r => !r.isBase}
+                  renderExpanded={r => (
+                    <div className={`px-4 py-3 ${EXPANDED_FILL}`}>
+                      <PairInverter code={r.code} name={r.name} rate={r.rate} inverted={inverted.has(`corp:${r.id}`)} onToggle={() => toggleInvert(`corp:${r.id}`)} note={`Corporate rate, effective ${fmtDate(r.effectiveDate)}`} />
+                    </div>
+                  )}
+                  afterRow={r => (r.isBase ? <TableNoteRow band>All exchange rates below are quoted against this currency.</TableNoteRow> : null)}
+                  rowMenu={(r, close) => r.isBase ? (
+                    <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(BASE, 'mid')) }}>View details</MenuItem>
+                  ) : (
+                    <>
+                      <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(r.code, 'std')) }}>View details</MenuItem>
+                      {r.status === 'Active' && <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.id) }}>Update rate</MenuItem>}
+                      {r.status === 'Active'
+                        ? <MenuItem icon={<Archive size={14} />} danger onClick={() => { close(); lifecycle.archive(r.record!) }}>Archive rate</MenuItem>
+                        : <MenuItem icon={<ArchiveRestore size={14} />} onClick={() => { close(); lifecycle.restore(r.record!) }}>Restore rate</MenuItem>}
+                    </>
+                  )}
+                  emptyState={emptyState}
+                />
+              </CoaTableCard>
+            )}
+          </div>
         </div>
       </div>
 

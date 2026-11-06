@@ -2,6 +2,7 @@
 import type { ReactNode } from 'react'
 import { Search } from 'lucide-react'
 import { cn } from '../lib/utils'
+import { useSwapIn } from '../lib/swapIn'
 import { Button, Card, EmptyState } from './ui'
 import { ColumnSelector } from './ColumnSelector'
 import { ColumnFiltersBar, blankFilter } from './columnFilters'
@@ -16,10 +17,13 @@ import type { CoaTable } from './CoaDataTable'
  * any notes, and the table; the docked Columns panel sits beside the body and
  * pushes the table aside rather than covering it.
  */
-export function CoaTableCard<T>({ table, topBar, periodBar, toolbar, pills, bulkBar, notes, children, className }: {
+export function CoaTableCard<T>({ table, topBar, swapKey, periodBar, toolbar, pills, bulkBar, notes, children, className }: {
   table: CoaTable<T>
   /** A row atop the card, e.g. SegmentedTabs (Cash Management DataTable's `topBar` slot). */
   topBar?: ReactNode
+  /** What the topBar switches between: when it changes, everything under the
+   *  topBar remounts and steps in (useSwapIn) while the topBar stays put. */
+  swapKey?: string
   /** A tinted strip flush atop the card (PeriodBar variant="card"). */
   periodBar?: ReactNode
   /** The <TableToolbar />. */
@@ -35,9 +39,9 @@ export function CoaTableCard<T>({ table, topBar, periodBar, toolbar, pills, bulk
   className?: string
 }) {
   const filterable = table.columns.filter(c => !!c.filter)
-  return (
-    <Card className={cn('overflow-visible flex-1 min-h-0 flex flex-col', className)}>
-      {topBar && <div className="px-4 pt-3 pb-3 border-b border-border shrink-0">{topBar}</div>}
+  const swapIn = useSwapIn(swapKey)
+  const body = (
+    <>
       {periodBar}
       {toolbar}
       {/* Body row: table area (shrinks) + docked Columns side panel. */}
@@ -69,6 +73,14 @@ export function CoaTableCard<T>({ table, topBar, periodBar, toolbar, pills, bulk
         </div>
         <ColumnSelector {...table.columnSelectorProps} />
       </div>
+    </>
+  )
+  return (
+    <Card className={cn('overflow-visible flex-1 min-h-0 flex flex-col', className)}>
+      {topBar && <div className="px-4 pt-3 pb-3 border-b border-border shrink-0">{topBar}</div>}
+      {swapKey === undefined ? body : (
+        <div key={swapKey} className={cn('flex-1 min-h-0 flex flex-col', swapIn)}>{body}</div>
+      )}
     </Card>
   )
 }

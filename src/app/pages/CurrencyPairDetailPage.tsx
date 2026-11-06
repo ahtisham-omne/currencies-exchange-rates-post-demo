@@ -353,6 +353,7 @@ export function CurrencyPairDetailPage() {
       <DetailPageLayout
         fullscreen={fullscreen}
         fillsWindow={tab === 'history'}
+        swapKey={tab}
         header={
           <DetailHeaderCard
             fullscreen={fullscreen}

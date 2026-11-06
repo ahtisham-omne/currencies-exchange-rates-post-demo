@@ -97,6 +97,7 @@ export function CurrencyDetailPage() {
       <DetailPageLayout
         fullscreen={fullscreen}
         fillsWindow={tab === 'linked'}
+        swapKey={tab}
         header={
           <DetailHeaderCard
             fullscreen={fullscreen}

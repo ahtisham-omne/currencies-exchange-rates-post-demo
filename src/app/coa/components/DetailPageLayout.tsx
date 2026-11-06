@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { cn } from '../lib/utils'
 import { useRememberedState } from '../lib/rememberedState'
+import { useSwapIn } from '../lib/swapIn'
 import { detailContainerCls } from './DetailHeaderCard'
 import { Button, EmptyState } from './ui'
 import { avatarColor, cleanName, initialsOf } from './Avatar'
@@ -13,19 +14,34 @@ import { avatarColor, cleanName, initialsOf } from './Avatar'
  * pass as `header`, then the body in the same centred container so card and
  * body edges align. A table tab (`fillsWindow`) lets its card reach the bottom
  * of the window (`pb-1`), others keep CoA's `pb-12`. Modals go in `overlays`.
+ * Pass the active tab as `swapKey` and the body steps in on each tab change
+ * while the header card stays still (useSwapIn). A tab that opens at the other
+ * width (a table tab in full view) moves as the full-view toggle does: the
+ * container stays mounted and its width eases with the header card's, with no
+ * step-in on top.
  */
-export function DetailPageLayout({ header, fullscreen, fillsWindow, children, overlays }: {
+export function DetailPageLayout({ header, fullscreen, fillsWindow, swapKey, children, overlays }: {
   header: ReactNode
   fullscreen: boolean
   fillsWindow?: boolean
+  swapKey?: string
   children: ReactNode
   overlays?: ReactNode
 }) {
+  const swapIn = useSwapIn(swapKey)
+  const [last, setLast] = useState({ swapKey, fullscreen })
+  const [resized, setResized] = useState(false)
+  if (last.swapKey !== swapKey || last.fullscreen !== fullscreen) {
+    setLast({ swapKey, fullscreen })
+    setResized(last.fullscreen !== fullscreen)
+  }
   return (
     <div className={cn('flex-1 flex flex-col', fillsWindow ? 'pb-1' : 'pb-12')}>
       {header}
-      <div className={cn(detailContainerCls(fullscreen), 'w-full flex-1 flex flex-col pt-3 pb-5 space-y-4')}>
-        {children}
+      <div className={cn(detailContainerCls(fullscreen), 'w-full flex-1 flex flex-col pt-3 pb-5')}>
+        <div key={swapKey} className={cn('flex-1 flex flex-col space-y-4', !resized && swapIn)}>
+          {children}
+        </div>
       </div>
       {overlays}
     </div>

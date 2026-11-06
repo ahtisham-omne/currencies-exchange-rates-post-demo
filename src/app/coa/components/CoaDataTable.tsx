@@ -572,6 +572,15 @@ export function CoaDataTable<T>({
     return out
   }, [body])
   const expanded = table.expanded
+  /* Detail rows just opened by their toggle, which ease in (CoA's
+     coa-row-reveal, played for the rows a click reveals). Only those: a
+     row remounted by the block window or a re-sort keeps still. */
+  const [revealing, setRevealing] = useState<Set<string>>(() => new Set())
+  const toggleRow = (id: string) => {
+    if (!expanded.has(id)) setRevealing(prev => new Set(prev).add(id))
+    table.toggleExpand(id)
+  }
+  const revealed = (id: string) => setRevealing(prev => { const n = new Set(prev); n.delete(id); return n })
   const trCount = (r: T) => 1 + (renderExpanded && expanded.has(getRowId(r)) && (!canExpand || canExpand(r)) ? 1 : 0) + (afterRow && afterRow(r) ? 1 : 0)
   const bodyRef = useRef<HTMLTableSectionElement>(null)
   const headRef = useRef<HTMLTableSectionElement>(null)
@@ -615,7 +624,7 @@ export function CoaDataTable<T>({
     const expandable = !!renderExpanded && (!canExpand || canExpand(r))
     const isExp = expandable && expanded.has(id)
     const openRow = onRowClick ? () => onRowClick(r) : undefined
-    const ctx: CellCtx = { q, comfort, selected, band, expanded: isExp, toggleExpand: () => table.toggleExpand(id), openRow }
+    const ctx: CellCtx = { q, comfort, selected, band, expanded: isExp, toggleExpand: () => toggleRow(id), openRow }
     const fbg = band ? BAND_FILL : 'inherit'
     const cellStyle = (k: string): CSSProperties | undefined => {
       const pin = pinOf(k)
@@ -661,7 +670,7 @@ export function CoaDataTable<T>({
                   // table has no Actions column.
                   <div className={cn('flex items-center gap-1.5 min-w-0', !hasActions && 'min-h-8')}>
                     {renderExpanded && (expandable
-                      ? <ExpandToggle arrows={expandStyle === 'chevron'} expanded={isExp} onClick={e => { e.stopPropagation(); table.toggleExpand(id) }} />
+                      ? <ExpandToggle arrows={expandStyle === 'chevron'} expanded={isExp} onClick={e => { e.stopPropagation(); toggleRow(id) }} />
                       : <span className="shrink-0" style={{ width: expandStyle === 'chevron' ? 20 : LEAF_LEAD }} />)}
                     <div className="min-w-0 flex-1">{content}</div>
                   </div>
@@ -679,7 +688,12 @@ export function CoaDataTable<T>({
           )}
         </tr>
         {isExp && (
-          <tr data-detail-row data-block-row={blockRow ? '' : undefined} className={selected ? 'bg-[#F8FAFF]' : 'bg-white'}>
+          <tr
+            data-detail-row
+            data-block-row={blockRow ? '' : undefined}
+            className={cn(selected ? 'bg-[#F8FAFF]' : 'bg-white', revealing.has(id) && 'coa-row-reveal')}
+            onAnimationEnd={e => { if (e.target === e.currentTarget) revealed(id) }}
+          >
             <td colSpan={colSpan} className="p-0">
               <div className="sticky left-0" style={{ width: scrollW || '100%' }}>{renderExpanded!(r)}</div>
             </td>

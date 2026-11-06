@@ -16,7 +16,7 @@ import { CurrencyCell, OverflowPills } from '../coa/components/cells'
 import { StatusMenu } from '../coa/components/StatusChip'
 import { FlagImage } from '../coa/components/FlagImage'
 import { useRememberedState } from '../coa/lib/rememberedState'
-import { fmtNumber } from '../coa/lib/utils'
+import { cn, fmtNumber } from '../coa/lib/utils'
 import { useCurrencies } from '../context/CurrencyContext'
 import { useExchangeRates } from '../context/ExchangeRateContext'
 import type { Currency } from '../data/currencies'
@@ -45,7 +45,7 @@ const LIST_KPIS: KpiDefinition[] = [
 ]
 const LIST_DEFAULT = ['active', 'inactive', 'in_use', 'blocking', 'base']
 
-export function CurrencyLibraryPanel() {
+export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const ic14 = useResponsiveIconSize(14)
@@ -202,71 +202,74 @@ export function CurrencyLibraryPanel() {
           }
         />
 
-        <div className="px-6 lg:px-8 mt-4">
-          <PerformanceInsights
-            defs={LIST_KPIS}
-            valueOf={kpiFace}
-            activeKpis={shelf.activeKpis}
-            setActiveKpis={shelf.setActiveKpis}
-            defaultKpis={LIST_DEFAULT}
-            onOpenPanel={() => shelf.setPanelOpen(true)}
-            onReset={shelf.reset}
-            lastRefreshed={shelf.lastRefreshed}
-            onRefresh={shelf.refresh}
-          />
-        </div>
-
-        <div className="flex-1 min-h-0 flex flex-col px-6 lg:px-8 mt-4">
-          <CoaTableCard
-            table={table}
-            toolbar={
-              <TableToolbar
-                search={{ value: query, onChange: setQuery, placeholder: 'Search currencies' }}
-                filters={{ count: panelCount, onOpen: () => setFiltersOpen(true), onClear: () => setFilters(EMPTY_CURRENCY_FILTERS) }}
-                count={{ shown: table.rows.length, total: currencies.length, noun: 'currencies' }}
-                insights={{ open: shelf.panelOpen, onClick: () => shelf.setPanelOpen(true), count: activeKpiDefs(shelf.activeKpis, LIST_KPIS).length }}
-                density={table.densityMenuProps}
-                columns={{ open: table.columnsOpen, onToggle: () => table.setColumnsOpen(o => !o), count: table.visibleCount }}
-              />
-            }
-            bulkBar={selected.size > 0 ? (
-              <BulkActionBar
-                count={selected.size}
-                noun="currency"
-                nounPlural="currencies"
-                onClear={table.clearSelection}
-                actions={[
-                  { key: 'activate', label: 'Activate', icon: CircleCheck, tone: 'success', count: toActivate.length, onClick: () => lifecycle.requestBulk('Active', selectedRows, table.clearSelection) },
-                  { key: 'deactivate', label: 'Deactivate', icon: CircleSlash, tone: 'warning', count: toDeactivate.length, onClick: () => lifecycle.requestBulk('Inactive', selectedRows, table.clearSelection) },
-                  { key: 'export', label: 'Export selected', icon: Download, tone: 'neutral', onClick: () => setExportOpen(true) },
-                ]}
-              />
-            ) : null}
-            pills={
-              <PillRow>
-                <QuickFilterPill label="Show All" active={pill === 'all'} onClick={() => setPill('all')} />
-                <QuickFilterPill label="Active" count={pillCounts.active} active={pill === 'active'} onClick={() => setPill('active')} />
-                <QuickFilterPill label="Base currency" count={pillCounts.base} active={pill === 'base'} onClick={() => setPill('base')} />
-                <QuickFilterPill label="Inactive" tone="danger" count={pillCounts.inactive} active={pill === 'inactive'} onClick={() => setPill(p => (p === 'inactive' ? 'all' : 'inactive'))} />
-              </PillRow>
-            }
-          >
-            <CoaDataTable
-              table={table}
-              selectable
-              isBand={c => c.isBaseCurrency}
-              onRowClick={c => navigate(`/accounting/currencies/${c.code}`)}
-              rowMenu={(c, close) => (
-                <>
-                  <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(`/accounting/currencies/${c.code}`) }}>View details</MenuItem>
-                  {c.status === 'active'
-                    ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }}>Deactivate currency</MenuItem>
-                    : <MenuItem icon={<Power size={14} />} onClick={() => { close(); lifecycle.request('Active', c) }}>Activate currency</MenuItem>}
-                </>
-              )}
-              emptyState={<TableEmptyState noun="currencies" query={debouncedQ} filtersActive={otherNarrowing} onClearSearch={() => setQuery('')} onClearFilters={clearNarrowing} where="the library" />}
+        {/* Steps in under the header when the page's tab changes. */}
+        <div className={cn('flex-1 min-h-0 flex flex-col', swapIn)}>
+          <div className="px-6 lg:px-8 mt-4">
+            <PerformanceInsights
+              defs={LIST_KPIS}
+              valueOf={kpiFace}
+              activeKpis={shelf.activeKpis}
+              setActiveKpis={shelf.setActiveKpis}
+              defaultKpis={LIST_DEFAULT}
+              onOpenPanel={() => shelf.setPanelOpen(true)}
+              onReset={shelf.reset}
+              lastRefreshed={shelf.lastRefreshed}
+              onRefresh={shelf.refresh}
             />
-          </CoaTableCard>
+          </div>
+
+          <div className="flex-1 min-h-0 flex flex-col px-6 lg:px-8 mt-4">
+            <CoaTableCard
+              table={table}
+              toolbar={
+                <TableToolbar
+                  search={{ value: query, onChange: setQuery, placeholder: 'Search currencies' }}
+                  filters={{ count: panelCount, onOpen: () => setFiltersOpen(true), onClear: () => setFilters(EMPTY_CURRENCY_FILTERS) }}
+                  count={{ shown: table.rows.length, total: currencies.length, noun: 'currencies' }}
+                  insights={{ open: shelf.panelOpen, onClick: () => shelf.setPanelOpen(true), count: activeKpiDefs(shelf.activeKpis, LIST_KPIS).length }}
+                  density={table.densityMenuProps}
+                  columns={{ open: table.columnsOpen, onToggle: () => table.setColumnsOpen(o => !o), count: table.visibleCount }}
+                />
+              }
+              bulkBar={selected.size > 0 ? (
+                <BulkActionBar
+                  count={selected.size}
+                  noun="currency"
+                  nounPlural="currencies"
+                  onClear={table.clearSelection}
+                  actions={[
+                    { key: 'activate', label: 'Activate', icon: CircleCheck, tone: 'success', count: toActivate.length, onClick: () => lifecycle.requestBulk('Active', selectedRows, table.clearSelection) },
+                    { key: 'deactivate', label: 'Deactivate', icon: CircleSlash, tone: 'warning', count: toDeactivate.length, onClick: () => lifecycle.requestBulk('Inactive', selectedRows, table.clearSelection) },
+                    { key: 'export', label: 'Export selected', icon: Download, tone: 'neutral', onClick: () => setExportOpen(true) },
+                  ]}
+                />
+              ) : null}
+              pills={
+                <PillRow>
+                  <QuickFilterPill label="Show All" active={pill === 'all'} onClick={() => setPill('all')} />
+                  <QuickFilterPill label="Active" count={pillCounts.active} active={pill === 'active'} onClick={() => setPill('active')} />
+                  <QuickFilterPill label="Base currency" count={pillCounts.base} active={pill === 'base'} onClick={() => setPill('base')} />
+                  <QuickFilterPill label="Inactive" tone="danger" count={pillCounts.inactive} active={pill === 'inactive'} onClick={() => setPill(p => (p === 'inactive' ? 'all' : 'inactive'))} />
+                </PillRow>
+              }
+            >
+              <CoaDataTable
+                table={table}
+                selectable
+                isBand={c => c.isBaseCurrency}
+                onRowClick={c => navigate(`/accounting/currencies/${c.code}`)}
+                rowMenu={(c, close) => (
+                  <>
+                    <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(`/accounting/currencies/${c.code}`) }}>View details</MenuItem>
+                    {c.status === 'active'
+                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }}>Deactivate currency</MenuItem>
+                      : <MenuItem icon={<Power size={14} />} onClick={() => { close(); lifecycle.request('Active', c) }}>Activate currency</MenuItem>}
+                  </>
+                )}
+                emptyState={<TableEmptyState noun="currencies" query={debouncedQ} filtersActive={otherNarrowing} onClearSearch={() => setQuery('')} onClearFilters={clearNarrowing} where="the library" />}
+              />
+            </CoaTableCard>
+          </div>
         </div>
       </div>
 
