@@ -70,6 +70,13 @@ import { getCustomerDefaults, isSparseCustomer } from '../shared/customerDefault
 import { FIELD_RULES } from '../shared/fieldRequirements';
 import { SALES_REP_ROSTER, findRosterRep } from '../shared/salesRepRoster';
 import { toast } from 'sonner';
+import { QuoteCurrencyFields, type QuoteCurrencyChange, type QuoteCurrencyTotals } from '@/app/components/currency/QuoteCurrencyFields';
+import { useDocWhole } from '@/app/components/currency/docCurrencyContext';
+import type { QuoteCurrencyChoice } from './quoteCurrency';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatMoney, formatRate } from '@/app/currency/money';
+import { toBase } from '@/app/currency/rates';
+import type { QuoteFx } from '@/app/currency/qFx';
 
 /* Sidebar reps come from the shared roster so a rep picked during
    creation (Step 2) maps to the same id the picker checks against
@@ -592,6 +599,16 @@ interface RightSidebarProps {
   /** Called when the user collapses per-line freight back to a single
    *  quote-level charge — clears the entire per-line map. */
   onClearAllLineFreightCosts?: () => void;
+  /* ── Currency and exchange rate (spec 4.3), see QuoteCurrencyFields ── */
+  quoteFxInfo?: QuoteFx;
+  currencyRateEdited?: boolean;
+  /** The currency and rate change only while the quote is a Draft. */
+  currencyLocked?: boolean;
+  onCurrencyChange?: (change: QuoteCurrencyChange) => void;
+  /** The quote's totals as they would be in another currency. */
+  currencyTotalsFor?: (next: QuoteCurrencyChoice) => QuoteCurrencyTotals;
+  currencyQuoteNumber?: string;
+  currencyLineCount?: number;
 }
 
 export function RightSidebar({
@@ -629,7 +646,16 @@ export function RightSidebar({
   lineFreightCosts,
   onSetLineFreightCost,
   onClearAllLineFreightCosts,
+  quoteFxInfo,
+  currencyRateEdited,
+  currencyLocked,
+  onCurrencyChange,
+  currencyTotalsFor,
+  currencyQuoteNumber,
+  currencyLineCount,
 }: RightSidebarProps) {
+  /* In the quote's currency (spec 4.3), whole amounts as the design shows them. */
+  const fmtCurrency = useDocWhole();
   // ── Collapse state (sub-sections) ──
   const [showAddressDetail, setShowAddressDetail] = useState(false);
   const [showPaymentShipping, setShowPaymentShipping] = useState(false);
@@ -955,8 +981,6 @@ export function RightSidebar({
   // ── Formatters ──
   const fmtShort = (d: Date) => `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
   const fmtFull = (d: Date) => `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
-  const fmtCurrency = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
   const pl = (n: number, w: string) => `${Math.abs(n)} ${w}${Math.abs(n) === 1 ? '' : 's'}`;
 
   // ── Status pill — context-aware, actionable copy ──
@@ -1510,8 +1534,30 @@ export function RightSidebar({
             </p>
             <p className="text-slate-500 mt-1 truncate" style={{ fontSize: 11, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' }}>
               5 items
+              {/* The total's base equivalent, at the quote's rate. */}
+              {quoteFxInfo && !quoteFxInfo.isBase && (
+                <span className="tabular-nums" title={`At 1 ${quoteFxInfo.currency} = ${formatRate(quoteFxInfo.rate)} ${BASE_CURRENCY}`}>
+                  {' · ≈ '}{formatMoney(toBase(liveGrandTotal, quoteFxInfo.rate), BASE_CURRENCY)} {BASE_CURRENCY}
+                </span>
+              )}
             </p>
           </div>
+
+          {/* Currency and exchange rate (spec 4.3) — same pattern as Purchase Orders. */}
+          {quoteFxInfo && onCurrencyChange && (
+            <QuoteCurrencyFields
+              fx={quoteFxInfo}
+              customerName={customerName}
+              quoteNumber={currencyQuoteNumber ?? ''}
+              lineCount={currencyLineCount ?? 0}
+              rateEdited={currencyRateEdited}
+              canEdit={!currencyLocked}
+              lockReason={currencyLocked ? 'The currency and rate are fixed once the quote leaves Draft.' : undefined}
+              totals={{ subtotal, adjustments: liveAdjustmentNet - livePricingRulesAmount, freight: 0, total: liveGrandTotal }}
+              totalsFor={currencyTotalsFor}
+              onChange={onCurrencyChange}
+            />
+          )}
 
           {/* Breakdown rows — PO's canonical recipe */}
           <div className="border-t border-muted pt-3" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -41,6 +41,8 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 import { ChevronDown } from "lucide-react";
 import { ConfirmationModal } from "@/app/components/ConfirmationModal";
+import { useDocCurrency } from "@/app/components/currency/docCurrencyContext";
+import { formatAmount, moneyPrefix } from "@/app/currency/money";
 
 /* ── Catalog data ───────────────────────────────────────────── */
 
@@ -1517,11 +1519,13 @@ function FreightChargesField({
   isLineOverride: boolean;
 }) {
   const isOverride = typeof value === "number";
+  /* Freight is charged in the quote's currency (spec 4.3). */
+  const { currency } = useDocCurrency();
 
   return (
     <div>
       <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-        <div className="text-xs text-foreground" style={{ fontWeight: 600 }}>Cost (USD)</div>
+        <div className="text-xs text-foreground" style={{ fontWeight: 600 }}>Cost ({currency})</div>
         {isOverride ? (
           <button
             type="button"
@@ -1556,14 +1560,14 @@ function FreightChargesField({
             borderBottomLeftRadius: 8,
           }}
         >
-          <span style={{ fontSize: 12, color: isOverride ? "#64748B" : "#94A3B8", fontWeight: 500 }}>$</span>
+          <span style={{ fontSize: 12, color: isOverride ? "#64748B" : "#94A3B8", fontWeight: 500 }}>{moneyPrefix(currency).trim()}</span>
         </div>
         <input
           type="text"
           inputMode="decimal"
           disabled={!isOverride}
           value={isOverride
-            ? new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value as number)
+            ? formatAmount(value as number, currency)
             : ""}
           onChange={(e) => {
             const cleaned = e.target.value.replace(/[^0-9.]/g, "");

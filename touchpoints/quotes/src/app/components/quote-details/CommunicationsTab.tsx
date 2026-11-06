@@ -10,6 +10,7 @@ import { FiltersButton } from '../shared/FiltersButton';
 import { Avatar } from '../shared/Avatar';
 import { ComingSoonBanner } from '../shared/ComingSoonBanner';
 import { FilterPill } from '../shared/FilterPill';
+import { useDesignMoney } from '@/app/components/currency/docCurrencyContext';
 
 // ── Types ──────────────────────────────────────────────────────────
 interface InternalMessage {
@@ -1406,6 +1407,8 @@ function ExternalCommsContent({ emails, collapsedEmails, toggleEmailCollapse }: 
 
 // ── Compose Email Modal ───────────────────────────────────────────
 function ComposeEmailModal({ onClose }: { onClose: () => void }) {
+  /* The quote's lines here are the design's mock, written in USD. */
+  const design = useDesignMoney();
   const [toEmails, setToEmails] = useState<string[]>(['k.rodriguez@tricountyems.gov']);
   const [ccEmails, setCcEmails] = useState<string[]>(['t.mitchell@tricountyems.gov']);
   const [bccEmails, setBccEmails] = useState<string[]>([]);
@@ -1661,7 +1664,7 @@ function ComposeEmailModal({ onClose }: { onClose: () => void }) {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', lineHeight: '1', marginBottom: '3px' }}>{item.id}</div>
                       <div style={{ fontSize: '11px', color: 'var(--foreground)', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</div>
-                      <div style={{ fontSize: '10px', color: 'var(--muted-foreground)', lineHeight: '1', marginTop: '3px' }}>Qty: {item.qty} · {item.price}/unit</div>
+                      <div style={{ fontSize: '10px', color: 'var(--muted-foreground)', lineHeight: '1', marginTop: '3px' }}>Qty: {item.qty} · {design.text(item.price)}/unit</div>
                     </div>
                   </button>
                 );

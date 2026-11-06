@@ -24,6 +24,7 @@
  *     the columns align without a monospace font.
  */
 import React from "react";
+import { formatMoney } from "@/app/currency/money";
 
 /* ─── Design tokens (kept local so the template survives theme drift) ─── */
 export const PDF_TOKENS = {
@@ -273,16 +274,8 @@ const ALL_ON: Required<PdfVisibility> = {
  * ═══════════════════════════════════════════════ */
 
 export function fmtCurrency(n: number, currency = "USD"): string {
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(n);
-  } catch {
-    return `$ ${n.toFixed(2)}`;
-  }
+  /* The same symbols and minor units as the rest of the module ("¥" has none). */
+  return formatMoney(n, currency);
 }
 
 function statusToneStyles(tone: PdfDocumentData["statusTone"] = "info") {

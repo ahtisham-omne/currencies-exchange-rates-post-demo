@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { DollarSign } from 'lucide-react';
+import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
 
 export type PriceScope = 'quote' | 'master';
 
@@ -15,6 +16,7 @@ interface PriceScopeModalProps {
 }
 
 export function PriceScopeModal({ newPrice, onApply, onCancel }: PriceScopeModalProps) {
+  const formatCurrencyValue = useDocMoney();
   const [choice, setChoice] = useState<PriceScope>('quote');
 
   useEffect(() => {
@@ -93,7 +95,7 @@ export function PriceScopeModal({ newPrice, onApply, onCancel }: PriceScopeModal
           <p style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--muted-foreground)', margin: '8px 0 0 0', maxWidth: 360 }}>
             You're changing the unit price to{' '}
             <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>
-              {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(newPrice)}
+              {formatCurrencyValue(newPrice)}
             </span>
             . Choose where this price should apply.
           </p>

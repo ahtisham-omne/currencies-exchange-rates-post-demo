@@ -34,6 +34,27 @@ export function getCreatedQuoteLineItems(id: string): CreatedLineItem[] | undefi
   return createdQuoteLineItems.get(id);
 }
 
+/** A created quote's lines after its currency changed in Quote Summary, so
+ *  reopening it shows them in the new currency. */
+export function setCreatedQuoteLineItems(id: string, lineItems: CreatedLineItem[]): void {
+  if (createdQuoteLineItems.has(id)) createdQuoteLineItems.set(id, lineItems);
+}
+
+/* ── The factor a quote's design figures are restated by ──
+   The quote page shows the design's USD line set and seeds restated in the
+   quote's currency. A currency change multiplies that factor by the cross
+   rate between the quote's two rates (which may be corporate), so it is
+   kept here: reopening the quote restates them the same way. */
+const quoteLineFactors: Map<string, number> = new Map();
+
+export function getQuoteLineFactor(quoteId: string): number | undefined {
+  return quoteLineFactors.get(quoteId);
+}
+
+export function setQuoteLineFactor(quoteId: string, factor: number): void {
+  quoteLineFactors.set(quoteId, factor);
+}
+
 export function getAllCreatedQuotes(): Quote[] {
   return Array.from(createdQuotes.values());
 }

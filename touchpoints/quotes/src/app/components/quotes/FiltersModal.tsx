@@ -8,6 +8,9 @@ import {
 } from "@/app/components/ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X, ChevronDown, ChevronUp, Search } from "lucide-react";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { moneyPrefix } from "@/app/currency/money";
+import { toQuoteBase } from "@/app/currency/qFx";
 
 /* ─── Filter Types ─── */
 export interface QuoteAdvancedFilters {
@@ -73,8 +76,10 @@ export function quoteMatchesAdvancedFilters(q: Quote, f: QuoteAdvancedFilters): 
     const additionalMatch = Array.isArray(additional) && additional.some((p: any) => f.pocs.includes(typeof p === 'string' ? p : p?.name));
     if (!(primary && f.pocs.includes(primary)) && !additionalMatch) return false;
   }
-  if (f.valueMin && (q.totalValue || 0) < Number(f.valueMin)) return false;
-  if (f.valueMax && (q.totalValue || 0) > Number(f.valueMax)) return false;
+  /* Quotes are in different currencies, so the range is in base: each
+     quote's value at its own rate. */
+  if (f.valueMin && toQuoteBase(q, q.totalValue || 0) < Number(f.valueMin)) return false;
+  if (f.valueMax && toQuoteBase(q, q.totalValue || 0) > Number(f.valueMax)) return false;
   if (f.createdFrom && (!q.createdDate || new Date(q.createdDate) < new Date(f.createdFrom))) return false;
   if (f.createdTo) {
     const to = new Date(f.createdTo); to.setHours(23, 59, 59, 999);
@@ -437,9 +442,9 @@ export function QuoteFiltersModal({ open, onOpenChange, filters, onFiltersChange
             )}
 
             {/* Quote Value Range */}
-            <Section title="Quote value range" subtitle="Filter by total quote value.">
+            <Section title="Quote value range" subtitle={`Filter by total quote value, in ${BASE_CURRENCY}.`}>
               <RangeInputs min={draftFilters.valueMin} max={draftFilters.valueMax}
-                onMinChange={v => update("valueMin", v)} onMaxChange={v => update("valueMax", v)} />
+                onMinChange={v => update("valueMin", v)} onMaxChange={v => update("valueMax", v)} prefix={moneyPrefix(BASE_CURRENCY).trim()} />
             </Section>
 
             <Divider />

@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Search, Package, Check, Plus, Minus, Trash2, Pencil, ChevronDown, ChevronsDown, ChevronsUp, ChevronRight, SlidersHorizontal, LayoutList, Grid2x2, Lightbulb, Layers, Copy, Lock } from 'lucide-react';
-import { PRODUCTS, type Product } from '../../data/products';
+import { PRODUCTS as CATALOG, type Product } from '../../data/products';
 import {
   type UomOption,
   getUomSetForProduct,
@@ -18,6 +18,10 @@ import { isItemInactive } from '../shared/inactiveItems';
 import { useItemQuickView, type ItemQuickViewItem } from '../shared/ItemQuickView';
 import { LineItemConfigModal } from '../quote-creation/LineItemConfigModal';
 import { HighlightText } from '../HighlightText';
+import { useDocCurrency, useDocMoney } from '@/app/components/currency/docCurrencyContext';
+import { moneyPrefix } from '@/app/currency/money';
+import { localTodayIso } from '@/app/currency/qFx';
+import { restateDesign } from '@/app/currency/quoteMoney';
 
 /* Local QtyStepper — mirrors the one in Step3LineItems so the
    selected-items card in the details "Add Line Items" picker reads
@@ -363,7 +367,7 @@ const EMPTY_FILTERS: AdvancedFilters = {
 };
 
 /* ─── Constants ─── */
-const ALL_CATEGORIES = Array.from(new Set(PRODUCTS.map(p => p.category))).sort();
+const ALL_CATEGORIES = Array.from(new Set(CATALOG.map(p => p.category))).sort();
 const SOURCE_TYPES: ('Manufactured' | 'Purchased')[] = ['Manufactured', 'Purchased'];
 const STOCK_PRESETS = [
   { label: 'In Stock', desc: '> 20', min: '21', max: '' },
@@ -384,8 +388,6 @@ function getTrackingType(product: Product): { label: string; bg: string; color: 
   return                   { label: 'Non-Serialized',     bg: 'var(--muted)',  color: 'var(--foreground)' };
 }
 
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
 
 function getActiveFilterCount(f: AdvancedFilters): number {
   let c = 0;
@@ -399,13 +401,13 @@ function getActiveFilterCount(f: AdvancedFilters): number {
   return c;
 }
 
-function getActiveFilterTags(f: AdvancedFilters): { key: string; label: string }[] {
+function getActiveFilterTags(f: AdvancedFilters, prefix = '$'): { key: string; label: string }[] {
   const tags: { key: string; label: string }[] = [];
   if (f.categories.length === 1) tags.push({ key: 'categories', label: `Category: ${f.categories[0]}` });
   else if (f.categories.length > 1) tags.push({ key: 'categories', label: `${f.categories.length} Categories` });
-  if (f.priceMin && f.priceMax) tags.push({ key: 'price', label: `$${f.priceMin} – $${f.priceMax}` });
-  else if (f.priceMin) tags.push({ key: 'price', label: `Min $${f.priceMin}` });
-  else if (f.priceMax) tags.push({ key: 'price', label: `Max $${f.priceMax}` });
+  if (f.priceMin && f.priceMax) tags.push({ key: 'price', label: `${prefix}${f.priceMin} – ${prefix}${f.priceMax}` });
+  else if (f.priceMin) tags.push({ key: 'price', label: `Min ${prefix}${f.priceMin}` });
+  else if (f.priceMax) tags.push({ key: 'price', label: `Max ${prefix}${f.priceMax}` });
   if (f.sourceTypes.length === 1) tags.push({ key: 'sourceTypes', label: `Source: ${f.sourceTypes[0]}` });
   else if (f.sourceTypes.length > 1) tags.push({ key: 'sourceTypes', label: `${f.sourceTypes.length} Sources` });
   if (f.stockMin || f.stockMax) {
@@ -456,12 +458,14 @@ export function FilterPanelContent({
   onDone: () => void;
 }) {
   const [categorySearch, setCategorySearch] = useState('');
+  /* The price range is in the quote's currency, as the listed prices are. */
+  const pricePrefix = moneyPrefix(useDocCurrency().currency).trim();
   const activeCount = getActiveFilterCount(filters);
 
   const visibleCategories = categorySearch
     ? ALL_CATEGORIES.filter(c => c.toLowerCase().includes(categorySearch.toLowerCase()))
     : ALL_CATEGORIES;
-  const getCategoryCount = (cat: string) => PRODUCTS.filter(p => p.category === cat).length;
+  const getCategoryCount = (cat: string) => CATALOG.filter(p => p.category === cat).length;
 
   const toggleCategory = (cat: string) => setFilters(prev => ({ ...prev, categories: prev.categories.includes(cat) ? prev.categories.filter(c => c !== cat) : [...prev.categories, cat] }));
   const toggleSourceType = (st: string) => setFilters(prev => ({ ...prev, sourceTypes: prev.sourceTypes.includes(st) ? prev.sourceTypes.filter(s => s !== st) : [...prev.sourceTypes, st] }));
@@ -522,7 +526,7 @@ export function FilterPanelContent({
         <FilterSection title="Price Range" defaultOpen={false}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ flex: 1, position: 'relative' }}>
-              <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: 'var(--muted-foreground)', fontWeight: 500 }}>$</span>
+              <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: 'var(--muted-foreground)', fontWeight: 500 }}>{pricePrefix}</span>
               <input type="number" placeholder="Min" value={filters.priceMin}
                 onChange={e => setFilters(prev => ({ ...prev, priceMin: e.target.value }))}
                 style={{ width: '100%', height: '28px', paddingLeft: '20px', paddingRight: '6px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '12px', color: 'var(--foreground)', outline: 'none', fontFamily: 'Inter, system-ui, sans-serif', boxSizing: 'border-box' }}
@@ -531,7 +535,7 @@ export function FilterPanelContent({
             </div>
             <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', fontWeight: 500 }}>to</span>
             <div style={{ flex: 1, position: 'relative' }}>
-              <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: 'var(--muted-foreground)', fontWeight: 500 }}>$</span>
+              <span style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: 'var(--muted-foreground)', fontWeight: 500 }}>{pricePrefix}</span>
               <input type="number" placeholder="Max" value={filters.priceMax}
                 onChange={e => setFilters(prev => ({ ...prev, priceMax: e.target.value }))}
                 style={{ width: '100%', height: '28px', paddingLeft: '20px', paddingRight: '6px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '12px', color: 'var(--foreground)', outline: 'none', fontFamily: 'Inter, system-ui, sans-serif', boxSizing: 'border-box' }}
@@ -544,7 +548,7 @@ export function FilterPanelContent({
         {/* ── Source Type ── */}
         <FilterSection title="Source Type" defaultOpen={false}>
           {SOURCE_TYPES.map(st => (
-            <FilterCheckbox key={st} checked={filters.sourceTypes.includes(st)} onChange={() => toggleSourceType(st)} label={st} count={PRODUCTS.filter(p => p.sourceType === st).length} />
+            <FilterCheckbox key={st} checked={filters.sourceTypes.includes(st)} onChange={() => toggleSourceType(st)} label={st} count={CATALOG.filter(p => p.sourceType === st).length} />
           ))}
         </FilterSection>
 
@@ -714,7 +718,7 @@ export function FilterButton({
 
 /* ─── Active filter tag bar ─── */
 export function ActiveFilterTags({ filters, setFilters }: { filters: AdvancedFilters; setFilters: React.Dispatch<React.SetStateAction<AdvancedFilters>> }) {
-  const tags = getActiveFilterTags(filters);
+  const tags = getActiveFilterTags(filters, moneyPrefix(useDocCurrency().currency).trim());
   if (tags.length === 0) return null;
 
   const removeTag = (key: string) => {
@@ -762,6 +766,15 @@ export { EMPTY_FILTERS };
 /* ═══ Main Modal Component ════════════════════════════════ */
 /* ═══════════════════════════════════════════════════════════ */
 export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingProductIds = [], existingItems = [], quoteIsConverted = false, onMaterialChange, onUpdateExisting }: ProductPickerModalProps) {
+  /* The catalog's list prices are the design's USD; on this quote they are
+     in its currency, at the mid-market rate on its quote date (spec 4.3). */
+  const formatCurrency = useDocMoney();
+  const { currency: docCurrency, fx: docFx, rateDate: docRateDate } = useDocCurrency();
+  const priceDay = docFx?.rateDate ?? docRateDate ?? localTodayIso();
+  const PRODUCTS = useMemo(
+    () => CATALOG.map((p) => ({ ...p, unitPrice: restateDesign(p.unitPrice, docCurrency, priceDay) })),
+    [docCurrency, priceDay],
+  );
   /* Item peek modal — opens when the user taps any catalog or
      selected-card thumbnail. Same chrome as ItemsTabTableClean so
      the peek reads identically across the module. */
@@ -858,6 +871,8 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
   existingItemsRef.current = existingItems;
   const quoteIsConvertedRef = useRef(quoteIsConverted);
   quoteIsConvertedRef.current = quoteIsConverted;
+  const productsRef = useRef(PRODUCTS);
+  productsRef.current = PRODUCTS;
   /* Snapshot of the recently-ordered product IDs taken when the modal
      opens. The displayed "Recently Ordered" list is derived from this
      fixed pool — minus whatever's currently on the quote — so adding
@@ -872,7 +887,7 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
       const seeded: SelectedLineItem[] = [];
       const ids = new Set<string>();
       existingItemsRef.current.forEach((ei, idx) => {
-        const product = PRODUCTS.find(p => p.id === ei.productId);
+        const product = productsRef.current.find(p => p.id === ei.productId);
         if (product) {
           const id = `existing-${ei.productId}-${idx}`;
           ids.add(id);
@@ -915,7 +930,7 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
          the quote on open. */
       const seededProductIds = new Set(seeded.map((s) => s.productId));
       const snapshot = new Set(
-        PRODUCTS
+        productsRef.current
           .filter((p) => p.isRecentlyOrdered && !seededProductIds.has(p.id))
           .slice(0, 6)
           .map((p) => p.id)
@@ -960,7 +975,7 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
       filters,
     );
     return { alreadyAdded, recentlyOrdered };
-  }, [selectedItems, filters, initialRecentlyOrderedIds]);
+  }, [PRODUCTS, selectedItems, filters, initialRecentlyOrderedIds]);
 
   /* Search-mode list — flat ranked matches with the same advanced
      filters applied. Falls back to the legacy `filteredProducts` name
@@ -968,7 +983,7 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
   const searchResults = useMemo(() => {
     if (!search.trim()) return [];
     return applyAdvancedFilters(PRODUCTS.filter(matchesProduct), filters);
-  }, [search, matchesProduct, filters]);
+  }, [PRODUCTS, search, matchesProduct, filters]);
 
   /* Backward-compat: a flat list for callers that still want one
      array (the FilterButton count, the action-bar "N products"

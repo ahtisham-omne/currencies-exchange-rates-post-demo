@@ -1,5 +1,6 @@
 import type { Quote, QuoteVersion } from '../types/quote';
 import { CreatedLineItem, addCreatedQuote } from './quoteStore';
+import { convertOn, customerCurrency, quoteFx, stampQuoteRate } from '@/app/currency/qFx';
 
 /* ════════════════════════════════════════════════════════════════════
    Shared duplicate-quote builder. Used by the listing page and the
@@ -94,8 +95,17 @@ export function duplicateQuote(source: Quote, options: DuplicateOptions): Duplic
     ? { id: options.newCustomerId, name: options.newCustomerName }
     : source.customer;
 
+  /* Same customer: the copy keeps the quote's currency. Another customer:
+     it opens in that customer's default (spec 4.3), prices converted at
+     today's mid-market rates. Either way it takes today's rate. */
+  const fromCurrency = quoteFx(source).currency;
+  const toCurrency = options.newCustomerId ? customerCurrency(options.newCustomerName) : fromCurrency;
+  const convert = (n: number) => (toCurrency === fromCurrency ? n : convertOn(n, fromCurrency, toCurrency, now));
+
   const duplicated: Quote = {
     ...source,
+    ...stampQuoteRate(toCurrency, now),
+    totalValue: convert(source.totalValue),
     id: newId,
     quoteNumber: newQuoteNumber,
     status: 'Draft',
@@ -121,9 +131,9 @@ export function duplicateQuote(source: Quote, options: DuplicateOptions): Duplic
     name: item.name,
     description: item.description,
     quantity: item.quantity,
-    unitPrice: item.unitPrice,
+    unitPrice: convert(item.unitPrice),
     discount: item.discount,
-    total: item.total,
+    total: convert(item.total),
     image: item.image,
   }));
 

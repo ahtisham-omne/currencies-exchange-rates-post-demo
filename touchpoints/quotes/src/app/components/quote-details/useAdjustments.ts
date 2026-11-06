@@ -32,6 +32,22 @@ function dollarImpact(adj: Adjustment, base: number): number {
   return adj.amountType === '%' ? (base * adj.amount) / 100 : adj.amount;
 }
 
+/** The net of `adjustments` on `lines`, worked out as `grandTotal.net` is:
+ *  the currency confirmation's "after" column uses it on converted lines. */
+export function adjustmentsNet(adjustments: Adjustment[], lines: QuoteLineRef[]): number {
+  const quoteBase = lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  let net = 0;
+  for (const adj of adjustments) {
+    if (!adj.isApplied) continue;
+    const sign = adj.type === 'premium' ? 1 : -1;
+    if (adj.scope === 'quote') net += sign * dollarImpact(adj, quoteBase);
+    else if (adj.scope === 'item') {
+      for (const line of lines) if (adj.appliedTo?.includes(line.id)) net += sign * dollarImpact(adj, line.quantity * line.unitPrice);
+    }
+  }
+  return net;
+}
+
 export interface AdjustmentsLineBreakdown {
   lineId: string;
   premiumAmount: number;
@@ -54,24 +70,24 @@ export interface AdjustmentsAPI {
   setAdjustmentAppliedTo: (id: string, lineIds: string[]) => void;
 }
 
-function seedInitial(lines: QuoteLineRef[]): Adjustment[] {
+function seedInitial(lines: QuoteLineRef[], restate: (usd: number) => number = (n) => n): Adjustment[] {
   const first = lines[0]?.id;
   const third = lines[2]?.id;
   const seed: Adjustment[] = [
-    { id: 'A003', label: 'Expedited Build Schedule', type: 'premium', amountType: '$', amount: 4500, scope: 'quote', isApplied: true },
-    { id: 'A004', label: 'Returning Customer Credit', type: 'discount', amountType: '$', amount: 2500, scope: 'quote', isApplied: true },
+    { id: 'A003', label: 'Expedited Build Schedule', type: 'premium', amountType: '$', amount: restate(4500), scope: 'quote', isApplied: true },
+    { id: 'A004', label: 'Returning Customer Credit', type: 'discount', amountType: '$', amount: restate(2500), scope: 'quote', isApplied: true },
   ];
-  if (first) seed.unshift({ id: 'A001', label: 'Chassis Delivery & Prep', type: 'premium', amountType: '$', amount: 2400, scope: 'item', appliedTo: [first], isApplied: true });
-  if (third) seed.splice(1, 0, { id: 'A002', label: 'Radio Programming & Encryption', type: 'premium', amountType: '$', amount: 1350, scope: 'item', appliedTo: [third], isApplied: true });
+  if (first) seed.unshift({ id: 'A001', label: 'Chassis Delivery & Prep', type: 'premium', amountType: '$', amount: restate(2400), scope: 'item', appliedTo: [first], isApplied: true });
+  if (third) seed.splice(1, 0, { id: 'A002', label: 'Radio Programming & Encryption', type: 'premium', amountType: '$', amount: restate(1350), scope: 'item', appliedTo: [third], isApplied: true });
   return seed;
 }
 
-export function useAdjustments(lines: QuoteLineRef[], options?: { skipSeed?: boolean; /** Records that arrive with adjustments already on them (today: the legacy importer) open with these instead of the demo seed. */ seed?: Adjustment[] }): AdjustmentsAPI {
+export function useAdjustments(lines: QuoteLineRef[], options?: { skipSeed?: boolean; /** The demo seed is written in USD; this restates it in the quote's currency. */ restateSeed?: (usd: number) => number; /** Records that arrive with adjustments already on them (today: the legacy importer) open with these instead of the demo seed. */ seed?: Adjustment[] }): AdjustmentsAPI {
   /* Mock seed shows what a populated quote looks like in the demo.
      Newly-created quotes pass `skipSeed: true` so they open with zero
      adjustments and the user has to add them via the empty state. */
   const [adjustments, setAdjustments] = useState<Adjustment[]>(() =>
-    options?.seed ?? (options?.skipSeed ? [] : seedInitial(lines)),
+    options?.seed ?? (options?.skipSeed ? [] : seedInitial(lines, options?.restateSeed)),
   );
 
   const lineBreakdowns = useMemo(() => {

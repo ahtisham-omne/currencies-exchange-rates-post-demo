@@ -91,6 +91,11 @@ import {
   pickSeededUomForLine,
   getUomSetIdForProduct,
 } from '../../data/uomSets';
+import { useDocCurrency } from '@/app/components/currency/docCurrencyContext';
+import { formatAmount, formatMoney, moneyPrefix } from '@/app/currency/money';
+import { roundTo } from '@/app/currency/qFx';
+import { formatWhole } from '@/app/currency/quoteMoney';
+import { scaleQuoteLine } from './quoteCurrency';
 const UOM_OPTIONS: UomOption[] = UOM_SETS.discrete;
 
 /* Demo quote-level freight charge. Drives the split-confirmation
@@ -642,6 +647,10 @@ function ItemRow({
   pricingAPI,
   adjustmentsAPI,
 }: ItemRowProps) {
+  /* Price per unit in the quote's currency (spec 4.3): its symbol or code
+     and its minor unit. */
+  const { currency: docCurrency } = useDocCurrency();
+  const pricePrefix = moneyPrefix(docCurrency).trim();
   const ref = useRef<HTMLTableRowElement>(null);
   const uomDropdownRef = useRef<HTMLDivElement>(null);
   const uomPanelRef = useRef<HTMLDivElement>(null);
@@ -1191,9 +1200,9 @@ function ItemRow({
       <td className="li-fig" data-label="Price per unit" onClick={(e) => e.stopPropagation()} style={{ padding: '0 12px', textAlign: 'left', verticalAlign: 'middle' }}>
         {!showEditAffordance && !isEditingPrice ? (
           <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4, fontFamily: 'Inter, system-ui, sans-serif' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)', lineHeight: 1 }}>$</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)', lineHeight: 1 }}>{pricePrefix}</span>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)', lineHeight: 1, whiteSpace: 'nowrap' }}>
-              {item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              {formatAmount(item.unitPrice, docCurrency)}
             </span>
             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted-foreground)', lineHeight: 1, whiteSpace: 'nowrap' }}>
               {findUomById(item.uom)?.fullName || item.uom}
@@ -1218,7 +1227,7 @@ function ItemRow({
                 boxSizing: 'border-box',
               }}
             >
-              <span style={{ fontSize: '12px', color: 'var(--muted-foreground)', fontWeight: 600, lineHeight: '1', flexShrink: 0 }}>$</span>
+              <span style={{ fontSize: '12px', color: 'var(--muted-foreground)', fontWeight: 600, lineHeight: '1', flexShrink: 0 }}>{pricePrefix}</span>
               <input
                 type="number"
                 defaultValue={item.unitPrice}
@@ -1264,14 +1273,14 @@ function ItemRow({
                 fontFamily: 'Inter, system-ui, sans-serif',
                 boxSizing: 'border-box',
               }}
-              title={showEditAffordance ? `Click to edit · $${item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : undefined}
+              title={showEditAffordance ? `Click to edit · ${formatMoney(item.unitPrice, docCurrency)}` : undefined}
             >
-              <span style={{ fontSize: 12, color: 'var(--muted-foreground)', fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>$</span>
+              <span style={{ fontSize: 12, color: 'var(--muted-foreground)', fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>{pricePrefix}</span>
               {/* Long values truncate with an ellipsis inside the capsule
                   rather than spilling into the next column. The button's
                   `title` surfaces the full value on hover. */}
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)', lineHeight: 1, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
-                {item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {formatAmount(item.unitPrice, docCurrency)}
               </span>
             </button>
           )}
@@ -1435,19 +1444,24 @@ interface ItemsTabTableCleanProps {
    *  Without this, the sidebar would read the stale module-level
    *  MOCK_LINE_ITEMS constant. */
   onLinesChange?: (lines: LineItem[]) => void;
+  /** What one of the design's USD dollars is in the quote's currency: the
+   *  mock lines open restated by it (QuoteDetails' designFactor). */
+  lineFactor?: number;
+  /** A currency change from Quote Summary: convert every line once. */
+  conversion?: { id: number; factor: number; code: string } | null;
 }
 
 function ItemsTable({
   quoteStatus, quoteId, attachmentQuoteKey, readOnly, onMaterialChange, onAskUserChange,
   customerName, pricingAPI, adjustmentsAPI,
   quoteDefaultFreight, lineFreightCosts, onSetLineFreightCost, onSeedLineFreightCosts,
-  onRequestPriceVersionConfirm, onLinesChange,
+  onRequestPriceVersionConfirm, onLinesChange, lineFactor = 1, conversion,
 }: ItemsTabTableCleanProps) {
+  const { currency: docCurrency } = useDocCurrency();
   // Item quick-view peek modal (opens from any line-item thumbnail).
   const { open: openItemQuickView, modal: itemQuickViewModal } = useItemQuickView();
   const previewLineItem = (item: LineItem) => {
     const product = PRODUCTS.find((p) => p.id === item.productId);
-    const fmtUSD = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const peek: ItemQuickViewItem = {
       code: item.productId,
       description: item.description,
@@ -1464,7 +1478,7 @@ function ItemsTable({
       uom: item.uom,
       onHand: product?.stockQuantity,
       metrics: [
-        { label: 'Unit Price', value: fmtUSD(item.unitPrice), caption: 'Unit Price' },
+        { label: 'Unit Price', value: formatMoney(item.unitPrice, docCurrency), caption: 'Unit Price' },
         ...(product?.stockQuantity !== undefined
           ? [{ label: 'In Stock', value: `${product.stockQuantity.toLocaleString()} ${item.uom}`, caption: 'In Stock' }]
           : []),
@@ -1493,9 +1507,18 @@ function ItemsTable({
         subtotal: ci.quantity * ci.unitPrice,
         total: ci.total || ci.quantity * ci.unitPrice,
       }))
-    : MOCK_LINE_ITEMS;
+    : MOCK_LINE_ITEMS.map((l) => scaleQuoteLine(l, lineFactor, docCurrency));
     
   const [items, setItems] = useState<LineItem[]>(initialItems);
+  /* Apply each currency change once (by its id). The page converts a
+     created quote's stored lines (QuoteDetails handleCurrencyChange), so a
+     table mounted after the change starts from converted lines. */
+  const appliedConversion = useRef(conversion?.id ?? 0);
+  useEffect(() => {
+    if (!conversion || conversion.id === appliedConversion.current) return;
+    appliedConversion.current = conversion.id;
+    setItems((prev) => prev.map((l) => scaleQuoteLine(l, conversion.factor, conversion.code)));
+  }, [conversion]);
   /* Bubble live line-item state up to the parent (QuoteDetails). The
      sidebar needs the latest shipmentConfig.expectedShipDate per line to
      compute the order-header Ship By + divergence warning; without this
@@ -1559,14 +1582,9 @@ function ItemsTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineFreightCosts]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: amount % 1 !== 0 ? 2 : 0,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  };
+  /* In the quote's currency (spec 4.3); whole amounts drop the minor unit, as before. */
+  const formatCurrency = (amount: number) =>
+    amount % 1 !== 0 ? formatMoney(amount, docCurrency) : formatWhole(amount, docCurrency);
 
   const toggleRowSelection = (itemId: string) => {
     const newSelected = new Set(selectedRows);
@@ -1806,8 +1824,8 @@ function ItemsTable({
       if (requiresNewDraftFirst(quoteStatus || '') && onRequestPriceVersionConfirm) {
         onRequestPriceVersionConfirm(
           `Unit Price · ${oldItem.productName}`,
-          `$${oldItem.unitPrice}`,
-          `$${value}`,
+          formatMoney(oldItem.unitPrice, docCurrency),
+          formatMoney(value, docCurrency),
           /* `silent` flag carried through pendingPriceEdit so the
              applyEdit downstream of the scope modal doesn't fire a
              second onMaterialChange — the version bump already counts
@@ -2004,7 +2022,7 @@ function ItemsTable({
     const oldMult = multiplierWithinSet(oldItem.uom, itemSet);
     const newMult = multiplierWithinSet(newUom, itemSet);
     const scaleFactor = newMult / oldMult;
-    const scaledUnitPrice = Math.round(oldItem.unitPrice * scaleFactor * 100) / 100;
+    const scaledUnitPrice = roundTo(docCurrency, oldItem.unitPrice * scaleFactor);
     const oldUnitPrice = oldItem.unitPrice;
 
     const applyUom = () => {
@@ -2017,7 +2035,7 @@ function ItemsTable({
       );
     };
 
-    const fmtPpu = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const fmtPpu = (v: number) => formatMoney(v, docCurrency);
 
     /* Version-first gate: on sent/confirmed quotes, defer the UoM
        mutation until the user has agreed to fork a new draft. The
@@ -2571,7 +2589,7 @@ export function ItemsTabTableClean({
   quoteStatus, quoteId, attachmentQuoteKey, readOnly, onMaterialChange, onAskUserChange,
   customerName, pricingAPI, adjustmentsAPI,
   quoteDefaultFreight, lineFreightCosts, onSetLineFreightCost, onSeedLineFreightCosts,
-  onRequestPriceVersionConfirm, onLinesChange,
+  onRequestPriceVersionConfirm, onLinesChange, lineFactor, conversion,
 }: ItemsTabTableCleanProps) {
   return (
     <ItemsTable
@@ -2590,6 +2608,8 @@ export function ItemsTabTableClean({
       onSeedLineFreightCosts={onSeedLineFreightCosts}
       onRequestPriceVersionConfirm={onRequestPriceVersionConfirm}
       onLinesChange={onLinesChange}
+      lineFactor={lineFactor}
+      conversion={conversion}
     />
   );
 }

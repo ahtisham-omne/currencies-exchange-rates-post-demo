@@ -24,6 +24,7 @@ import {
 import type { Quote } from "../../types/quote";
 import { FIELD_RULES } from "../shared/fieldRequirements";
 import { getExternalLinksList } from "../../data/linksRepository";
+import { customerCurrency, quoteFx } from "@/app/currency/qFx";
 
 export interface LegacyQuoteInput {
   quoteNumber: string;
@@ -34,6 +35,8 @@ export interface LegacyQuoteInput {
   tax?: number;
   total?: number;
   status?: string;
+  /** The quote's currency; without one the document is in the customer's default. */
+  currency?: string;
 }
 
 export interface QuotePdfDetail {
@@ -319,7 +322,8 @@ export function adaptQuoteToPdfData(
       email: contactEmail,
     },
     items,
-    currency: "USD",
+    /* The quote's currency (spec 4.3): the document prints in it. */
+    currency: (q as { currency?: string }).currency || (isFull ? quoteFx(q as Quote).currency : customerCurrency(customerName)),
     unitLabel: "Unit",
     totalItemCount: items.length,
     paymentMethod: methodLine,

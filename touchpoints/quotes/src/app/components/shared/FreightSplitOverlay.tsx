@@ -1,5 +1,6 @@
 import { Layers } from 'lucide-react';
 import { StateTransitionOverlay } from '@/app/components/shared/StateTransitionOverlay';
+import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
 
 /* ════════════════════════════════════════════════════════════════════
    Freight split / recalculation animation.
@@ -22,13 +23,8 @@ interface FreightSplitOverlayProps {
   onComplete: () => void;
 }
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency', currency: 'USD',
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  }).format(n);
-
 export function FreightSplitOverlay({ show, direction, total, lineCount, onComplete }: FreightSplitOverlayProps) {
+  const fmt = useDocMoney();
   const isSplit = direction === 'split';
   const fromLabel = isSplit ? `Quote-level ${fmt(total)}` : `${lineCount} per-line charge${lineCount === 1 ? '' : 's'}`;
   const toLabel = isSplit ? `${lineCount} per-line charge${lineCount === 1 ? '' : 's'}` : `Quote-level ${fmt(total)}`;

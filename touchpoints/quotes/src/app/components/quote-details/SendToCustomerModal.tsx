@@ -59,6 +59,8 @@ interface SendToCustomerModalProps {
   isOpen: boolean;
   quoteNumber?: string;
   customerName?: string;
+  /** The quote's currency, for the legacy fields (spec 4.3). */
+  currency?: string;
   /** Preferred: full Quote object so the preview shows real data
    *  (addresses, sales rep, dates, items, etc). When absent, the
    *  legacy `quoteNumber` + `customerName` fields are used and the
@@ -94,7 +96,7 @@ const caption: React.CSSProperties = { fontSize: 12, fontWeight: 500 };
 const captionSemi: React.CSSProperties = { fontSize: 12, fontWeight: 600 };
 const micro: React.CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const };
 
-export function SendToCustomerModal({ isOpen, quoteNumber = 'Q-000-000-000', customerName, quote, detail, isResend, mode = 'send', onClose, onSend }: SendToCustomerModalProps) {
+export function SendToCustomerModal({ isOpen, quoteNumber = 'Q-000-000-000', customerName, currency, quote, detail, isResend, mode = 'send', onClose, onSend }: SendToCustomerModalProps) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   /* Which action triggered the active overlay — drives the heading
@@ -140,9 +142,9 @@ export function SendToCustomerModal({ isOpen, quoteNumber = 'Q-000-000-000', cus
      for the preview payload so this modal + PDFPreviewModal always
      render identical content. */
   const pdfData = useMemo(() => {
-    const fallbackQuote = quote ?? { quoteNumber, customerName: customerName || '' };
+    const fallbackQuote = quote ?? { quoteNumber, customerName: customerName || '', currency };
     return adaptQuoteToPdfData(fallbackQuote, detail);
-  }, [quote, quoteNumber, customerName, detail]);
+  }, [quote, quoteNumber, customerName, currency, detail]);
 
   const toggleOption = (key: string) => setOptions(prev => prev.map(o => o.key === key ? { ...o, enabled: !o.enabled } : o));
   const toggleContact = (email: string) => setSelectedContacts(prev => { const n = new Set(prev); if (n.has(email)) n.delete(email); else n.add(email); return n; });

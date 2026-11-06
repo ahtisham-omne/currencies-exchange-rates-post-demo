@@ -8,9 +8,10 @@ import { AttachedLinkChip } from './AttachedLinkChip';
 import { LinkPickerPopover } from './LinkPickerPopover';
 import { getLineItemImage } from '../../data/lineItemImage';
 import { getLinksForId, subscribeToLinksRepository, type ExternalLink } from '../../data/linksRepository';
+import { useDocCurrency, useDocWhole } from "@/app/components/currency/docCurrencyContext";
+import { moneyPrefix } from "@/app/currency/money";
 
-const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+/* Amounts are in the document's currency (useDocWhole, below). */
 
 /* Centralised color tokens. Bridges the Partner-faithful design-system
    tokens (`var(--border)`, `var(--primary)`, etc.) with the literal
@@ -108,6 +109,9 @@ export function AdjustmentFormModal({
   onSave,
   onCancel,
 }: AdjustmentFormModalProps) {
+  const fmtCurrency = useDocWhole();
+  /* A fixed amount is in the document's currency: its symbol on the toggle. */
+  const fixedSymbol = moneyPrefix(useDocCurrency().currency).trim();
   // Determine if we should show the items selection panel
   const showItemsPanel = scope === 'item' && lineItems && lineItems.length > 0;
 
@@ -520,7 +524,7 @@ export function AdjustmentFormModal({
             aria-checked={active}
             onClick={() => setAmountType(unit)}
             style={{
-              width: 30,
+              minWidth: 30, padding: '0 6px',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 13, fontWeight: 600,
               color: active ? TEXT_BODY : TEXT_MUTED,
@@ -533,7 +537,7 @@ export function AdjustmentFormModal({
             }}
             title={unit === '%' ? 'Percentage' : 'Fixed amount'}
           >
-            {unit}
+            {unit === '$' ? fixedSymbol : unit}
           </button>
         );
       })}

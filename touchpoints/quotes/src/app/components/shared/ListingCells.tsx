@@ -13,6 +13,9 @@ import { LogoAvatar } from "./LogoAvatar";
 import { OverflowTooltip, type OverflowItem } from "./OverflowTooltip";
 import { getAvatarTint } from "../../utils/avatarTints";
 import { isSparseCustomer } from "./customerDefaults";
+import { formatCompactMoney } from "@/app/currency/money";
+import { LAST_SYNC_DAY, customerCurrency } from "@/app/currency/qFx";
+import { restateDesign } from "@/app/currency/quoteMoney";
 
 /* ─── helpers ─── */
 
@@ -56,10 +59,11 @@ function deriveCustomerQuoteInsights(name: string) {
   return { openQuotes, winRate, avgValue };
 }
 
-function formatCurrencyShort(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `$${(n / 1000).toFixed(0)}K`;
-  return `$${n}`;
+/* A customer's quotes are in its default currency (spec 4.3); the demo
+   figure is the design's USD, restated at the last sync's rate. */
+function formatCurrencyShort(usd: number, customerName: string): string {
+  const code = customerCurrency(customerName);
+  return formatCompactMoney(restateDesign(usd, code, LAST_SYNC_DAY), code);
 }
 
 function KpiCard({ label, value, color }: { label: string; value: string; color: string }) {
@@ -328,7 +332,7 @@ export function CustomerCellRich({ customer, onClick, density = "comfortable" }:
                 <div className="bg-white px-4 pt-3 pb-2 flex gap-2">
                   <KpiCard label="Open Quotes" value={`${insights.openQuotes}`} color="#0A77FF" />
                   <KpiCard label="Win Rate" value={`${insights.winRate}%`} color="#16A34A" />
-                  <KpiCard label="Avg. Value" value={formatCurrencyShort(insights.avgValue)} color="#7C3AED" />
+                  <KpiCard label="Avg. Value" value={formatCurrencyShort(insights.avgValue, customer.name)} color="#7C3AED" />
                 </div>
                 {(email || phone || customer.industry) && (
                 <div className="bg-white px-4 pb-3 pt-1 space-y-2">

@@ -142,6 +142,9 @@ export function pickTier(rule: CustomerPricingRule, qty: number): PricingRuleTie
 export function evaluateRuleForLine(
   rule: CustomerPricingRule,
   line: { productId: string; quantity: number; unitPrice: number },
+  /** A "$" tier's amount is written in USD; this turns it into the quote's
+   *  currency (ruleAmountFactor in src/app/currency/qFx.ts). */
+  flatFactor = 1,
 ): { applies: boolean; amount: number; tier: PricingRuleTier | null } {
   if (!rule.appliesToItemCodes.includes(line.productId)) {
     return { applies: false, amount: 0, tier: null };
@@ -149,7 +152,7 @@ export function evaluateRuleForLine(
   const tier = pickTier(rule, line.quantity);
   if (!tier) return { applies: false, amount: 0, tier: null };
   const subtotal = line.quantity * line.unitPrice;
-  const amount = tier.unit === '%' ? subtotal * (tier.rate / 100) : tier.rate * line.quantity;
+  const amount = tier.unit === '%' ? subtotal * (tier.rate / 100) : tier.rate * flatFactor * line.quantity;
   return { applies: true, amount, tier };
 }
 
@@ -166,6 +169,7 @@ export function computeLineBreakdowns(
   lines: Array<{ id: string; productId: string; quantity: number; unitPrice: number }>,
   rules: CustomerPricingRule[],
   activatedItemsByRule: Map<string, Set<string>>,
+  flatFactor = 1,
 ): LinePricingBreakdown[] {
   return lines.map((line) => {
     const baseSubtotal = line.quantity * line.unitPrice;
@@ -174,7 +178,7 @@ export function computeLineBreakdowns(
     for (const rule of rules) {
       const activeOnThisLine = activatedItemsByRule.get(rule.id)?.has(line.id) ?? false;
       if (!activeOnThisLine) continue;
-      const { applies, amount } = evaluateRuleForLine(rule, line);
+      const { applies, amount } = evaluateRuleForLine(rule, line, flatFactor);
       if (!applies) continue;
       if (rule.type === 'discount') discountAmount += amount;
       else premiumAmount += amount;

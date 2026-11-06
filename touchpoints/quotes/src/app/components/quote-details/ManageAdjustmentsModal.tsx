@@ -6,6 +6,7 @@ import { AdjustmentFormModal } from '../shared/AdjustmentFormModal';
 import type { AdjustmentFormData, LineItemForSelection } from '../shared/AdjustmentFormModal';
 import { EmptyPlaceholder } from '../shared/EmptyPlaceholder';
 import { Tooltip, TooltipTrigger, TooltipContent } from '../ui/tooltip';
+import { useDocWhole } from "@/app/components/currency/docCurrencyContext";
 
 interface QuoteLineInput {
   id: string;
@@ -51,8 +52,7 @@ interface Adjustment {
   appliedTo?: string[];
 }
 
-const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+/* Amounts are in the quote's currency (useDocWhole in each component). */
 
 // The AdjustmentFormModal is now shared from /src/app/components/shared/AdjustmentFormModal.tsx
 
@@ -96,6 +96,7 @@ export function ManageAdjustmentsModal({
   docId,
   currentUser,
 }: ManageAdjustmentsModalProps) {
+  const fmtCurrency = useDocWhole();
   const lineItems = useMemo(() => buildLineItemsForSelection(lines), [lines]);
 
   /* Controlled mode: read adjustments straight from the shared API on
@@ -616,6 +617,7 @@ function AdjustmentRow({
    *  their real impact instead of confusing the user with the raw 5. */
   dollarImpact?: number;
 }) {
+  const fmtCurrency = useDocWhole();
   const isAdd = adjustment.type === 'premium';
   const isPct = adjustment.amountType === '%';
   const sign = isAdd ? '+' : '-';

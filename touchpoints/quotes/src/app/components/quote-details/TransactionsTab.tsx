@@ -19,6 +19,7 @@ import { FilterPill } from '../shared/FilterPill';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/app/components/ui/tooltip';
 import { InfoTooltip } from '@/app/components/ui/info-tooltip';
 import { EmptyPlaceholder } from '../shared/EmptyPlaceholder';
+import { useDocWhole } from '@/app/components/currency/docCurrencyContext';
 
 /* ── Column-header tooltip — Partner v7 parity.
    Portal-rendered so the popover escapes the section's `overflow:hidden`
@@ -132,7 +133,7 @@ function buildLinkedSO(opts: {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
-const formatCurrency = (n: number) => '$' + n.toLocaleString('en-US');
+/* Amounts are in the quote's currency (useDocWhole in each component). */
 const formatDateShort = (d: string) => {
   const date = new Date(d + 'T00:00:00');
   return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}/${date.getFullYear()}`;
@@ -180,6 +181,7 @@ export function TransactionsTab({
   quoteLineItemCount = 5,
   isNewlyCreated = false,
 }: TransactionsTabProps) {
+  const formatCurrency = useDocWhole();
   /* A Quote can only legitimately show a linked Sales Order, and only
      after it's been converted. Everything else (invoices, shipments,
      payments, credit memos) belongs to the SO, so it's excluded here.
@@ -586,6 +588,7 @@ export function TransactionsTab({
 
 // ── Transaction Row ────────────────────────────────────────────────
 function TransactionRow({ txn }: { txn: LinkedTransaction }) {
+  const formatCurrency = useDocWhole();
   const [hovered, setHovered] = useState(false);
   const status = STATUS_CONFIG[txn.status];
 

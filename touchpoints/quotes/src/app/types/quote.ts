@@ -1,3 +1,5 @@
+import type { RateType } from '@/app/currency/rates';
+
 export type QuoteStatus =
   | 'Draft'
   | 'Sent to Customer'
@@ -151,6 +153,17 @@ export interface Quote {
   additionalPoCs?: PointOfContact[];
   status: QuoteStatus;
   totalValue: number;
+  /** The quote's currency (spec 4.3): the customer's default unless the rep
+   *  changes it in Quote Summary. Every amount on the quote is in it. See
+   *  src/app/currency/qFx.ts. */
+  currency?: string;
+  /** Base currency per one unit of `currency`, taken on the quote date. */
+  exchangeRate?: number;
+  rateType?: RateType;
+  /** The day the rate is for (ISO): the quote's created date. */
+  rateDate?: string;
+  /** A corporate rate typed on this quote instead of finance's. */
+  rateEdited?: boolean;
   createdDate: Date;
   expiryDate: Date;
   /** Optional for the same reason: an unassigned quote has none. */

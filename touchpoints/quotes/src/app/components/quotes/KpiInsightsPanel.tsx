@@ -6,6 +6,9 @@ import {
   Percent, Flag, Timer, RefreshCw, Wallet, BarChart3, Sliders,
 } from "lucide-react";
 import type { Quote } from "@/app/types/quote";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatCompactMoney } from "@/app/currency/money";
+import { toQuoteBase } from "@/app/currency/qFx";
 
 export interface KpiDefinition {
   key: string;
@@ -43,15 +46,14 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
 export const DEFAULT_ACTIVE_KPIS = ["total_value", "sent_count", "expiring_soon", "converted_count"];
 
 export function computeKpiValue(key: string, quotes: Quote[]): string {
-  const formatCompact = (val: number): string => {
-    if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`;
-    if (val >= 1_000) return `$${(val / 1_000).toFixed(0)}K`;
-    return `$${val.toFixed(0)}`;
-  };
+  /* Quotes are in different currencies: money KPIs add them up in base,
+     each quote at its own rate (spec 4.3), and say so (BaseCurrencyNote). */
+  const formatCompact = (val: number): string => formatCompactMoney(val, BASE_CURRENCY);
+  const value = (q: Quote) => toQuoteBase(q, q.totalValue || 0);
   switch (key) {
     case "total_quotes": return String(quotes.length);
-    case "total_value": return formatCompact(quotes.reduce((s, q) => s + (q.totalValue || 0), 0));
-    case "avg_value": return quotes.length > 0 ? formatCompact(quotes.reduce((s, q) => s + (q.totalValue || 0), 0) / quotes.length) : "$0";
+    case "total_value": return formatCompact(quotes.reduce((s, q) => s + value(q), 0));
+    case "avg_value": return formatCompact(quotes.length > 0 ? quotes.reduce((s, q) => s + value(q), 0) / quotes.length : 0);
     case "draft_count": return String(quotes.filter(q => q.status === "Draft").length);
     case "sent_count": return String(quotes.filter(q => q.status === "Sent to Customer").length);
     case "confirmed_count": return String(quotes.filter(q => q.status === "Unconfirmed SO").length);
@@ -83,7 +85,7 @@ export function computeKpiValue(key: string, quotes: Quote[]): string {
     case "revised_quotes": return String(quotes.filter(q => (q.version || 1) > 1).length);
     case "open_quote_value": {
       const activeStatuses = ["Draft", "Sent to Customer", "Unconfirmed SO"];
-      return formatCompact(quotes.filter(q => activeStatuses.includes(q.status)).reduce((s, q) => s + (q.totalValue || 0), 0));
+      return formatCompact(quotes.filter(q => activeStatuses.includes(q.status)).reduce((s, q) => s + value(q), 0));
     }
     default: return "–";
   }

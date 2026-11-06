@@ -4,6 +4,8 @@ import { X, Truck, Check, DollarSign, Layers, User } from 'lucide-react';
 import { SwitchFreightModeConfirm, splitEvenly } from '@/app/components/shared/SwitchFreightModeConfirm';
 import { FreightSplitOverlay } from '@/app/components/shared/FreightSplitOverlay';
 import { getLineItemImage } from '../../data/lineItemImage';
+import { useDocCurrency, useDocWhole } from "@/app/components/currency/docCurrencyContext";
+import { formatAmount } from "@/app/currency/money";
 
 /**
  * Freight Charges breakdown modal.
@@ -24,11 +26,9 @@ import { getLineItemImage } from '../../data/lineItemImage';
  *    "Customer pickup" indicator instead of a number.
  */
 
-const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
-
-const fmtMoneyInput = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+/* Freight is in the document's currency (spec 4.3): the inputs show the
+   number alone (their labels carry the code), since a symbol such as
+   "د.إ" would trip the digits-only parsing below. */
 
 type ShipmentMethodLite = 'courier-pickup' | 'courier-dropby' | 'customer-pickup';
 
@@ -66,6 +66,9 @@ type Mode = 'default' | 'per-line';
 export function FreightBreakdownModal({
   isOpen, onClose, defaultCost, lines, onToggleLine, onChangeLineCost, onChangeDefault, scopeLabel, defaultMethod,
 }: FreightBreakdownModalProps) {
+  const fmtCurrency = useDocWhole();
+  const { currency } = useDocCurrency();
+  const fmtMoneyInput = (n: number) => formatAmount(n, currency);
   const [mode, setMode] = useState<Mode>('default');
   const [draftDefault, setDraftDefault] = useState(defaultCost);
   const [draftLines, setDraftLines] = useState<Record<string, number | undefined>>({});
@@ -303,7 +306,7 @@ export function FreightBreakdownModal({
                 ) : (
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', marginBottom: 6 }}>
-                      Single freight charge (USD)
+                      Single freight charge ({currency})
                     </div>
                     <input
                       type="text"

@@ -7,6 +7,7 @@ import { ConfirmDiscardModal } from './shared/ConfirmDiscardModal';
 import { StatusBadge } from './StatusBadge';
 import { StateTransitionOverlay } from './shared/StateTransitionOverlay';
 import type { QuoteStatus } from '@/app/types/quote';
+import { useDesignMoney } from '@/app/components/currency/docCurrencyContext';
 
 /* Right-pane "Order Status" badge mapping.
    The version's internal status (draft / sent / confirmed) is mapped
@@ -102,8 +103,8 @@ const changeKindConfig: Record<'Added' | 'Removed' | 'Changed', { icon: React.El
   Changed: { icon: Pencil, color: '#D97706', bg: '#FEF3C7' },
 };
 
-const formatCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+/* The version history here is the design's mock, written in USD; it is
+   restated in the quote's currency (useDesignMoney) inside the component. */
 
 const versionStatusConfig: Record<VersionStatus, { label: string; bg: string; color: string; icon: React.ElementType }> = {
   draft: { label: 'Draft', bg: '#F3F4F6', color: '#374151', icon: FileText },
@@ -139,6 +140,8 @@ function StatusPill({ value }: { value: string }) {
 }
 
 export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert }: VersionHistoryModalProps) {
+  const design = useDesignMoney();
+  const formatCurrency = design.whole;
   // The "current version" is always the latest confirmed version.
   // Minimal data shape mirrors Sales Order V5's VersionHistoryTab — terse
   // subject/detail strings, 3-4 changes per version, short item descriptions.
@@ -893,7 +896,7 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
                                   {change.itemRef && <span style={{ fontWeight: 500, color: '#6B7280' }}>on {change.itemRef}</span>}
                                 </div>
                                 {change.subjectDetail && <div style={{ fontSize: '10px', color: '#6B7280', lineHeight: '1.3', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{change.subjectDetail}</div>}
-                                {change.detail && <div style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1.3', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{change.detail}</div>}
+                                {change.detail && <div style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1.3', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{design.text(change.detail)}</div>}
                               </div>
                               <span style={{ fontSize: '10px', color: '#9CA3AF', flexShrink: 0, lineHeight: '1', marginTop: '3px', whiteSpace: 'nowrap' as const }}>{change.timestamp}</span>
                             </div>

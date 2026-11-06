@@ -2,6 +2,8 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
 import React from "react";
 import type { Quote } from "@/app/types/quote";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { toQuoteBase } from "@/app/currency/qFx";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/app/components/ui/popover";
@@ -272,12 +274,12 @@ export function ColumnHeaderMenu({
             {currentFilter.type === "range" && (
               <div className="px-3 pb-3">
                 <div className="flex items-center gap-2">
-                  <div className="flex-1"><label className="text-[11px] text-muted-foreground mb-1 block" style={{ fontWeight: 500 }}>Min</label>
+                  <div className="flex-1"><label className="text-[11px] text-muted-foreground mb-1 block" style={{ fontWeight: 500 }}>Min ({BASE_CURRENCY})</label>
                     <input type="number" value={currentFilter.min} onChange={(e) => handleInlineFilterChange({ ...currentFilter, min: e.target.value })} placeholder="0"
                       className="w-full h-8 px-2.5 text-[13px] border border-border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] focus:border-[#ADD1FF] tabular-nums" autoFocus />
                   </div>
                   <span className="text-muted-foreground/30 mt-4">–</span>
-                  <div className="flex-1"><label className="text-[11px] text-muted-foreground mb-1 block" style={{ fontWeight: 500 }}>Max</label>
+                  <div className="flex-1"><label className="text-[11px] text-muted-foreground mb-1 block" style={{ fontWeight: 500 }}>Max ({BASE_CURRENCY})</label>
                     <input type="number" value={currentFilter.max} onChange={(e) => handleInlineFilterChange({ ...currentFilter, max: e.target.value })} placeholder="∞"
                       className="w-full h-8 px-2.5 text-[13px] border border-border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] focus:border-[#ADD1FF] tabular-nums" />
                   </div>
@@ -408,7 +410,7 @@ export function ColumnFilterChip({ filter, label, quotes, onFilterChange, onRemo
             </div>
           )}
           {filter.type === "text" && (<div className="px-3 pb-3"><input type="text" value={filter.text} onChange={(e) => onFilterChange({ ...filter, text: e.target.value })} placeholder={`Filter by ${label.toLowerCase()}…`} className="w-full h-8 px-3 text-[13px] border border-border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] focus:border-[#ADD1FF] placeholder:text-muted-foreground/40" autoFocus /></div>)}
-          {filter.type === "range" && (<div className="px-3 pb-3"><div className="flex items-center gap-2"><div className="flex-1"><label className="text-[11px] text-muted-foreground mb-1 block" style={{ fontWeight: 500 }}>Min</label><input type="number" value={filter.min} onChange={(e) => onFilterChange({ ...filter, min: e.target.value })} placeholder="0" className="w-full h-8 px-2.5 text-[13px] border border-border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] focus:border-[#ADD1FF] tabular-nums" /></div><span className="text-muted-foreground/30 mt-4">–</span><div className="flex-1"><label className="text-[11px] text-muted-foreground mb-1 block" style={{ fontWeight: 500 }}>Max</label><input type="number" value={filter.max} onChange={(e) => onFilterChange({ ...filter, max: e.target.value })} placeholder="∞" className="w-full h-8 px-2.5 text-[13px] border border-border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] focus:border-[#ADD1FF] tabular-nums" /></div></div></div>)}
+          {filter.type === "range" && (<div className="px-3 pb-3"><div className="flex items-center gap-2"><div className="flex-1"><label className="text-[11px] text-muted-foreground mb-1 block" style={{ fontWeight: 500 }}>Min ({BASE_CURRENCY})</label><input type="number" value={filter.min} onChange={(e) => onFilterChange({ ...filter, min: e.target.value })} placeholder="0" className="w-full h-8 px-2.5 text-[13px] border border-border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] focus:border-[#ADD1FF] tabular-nums" /></div><span className="text-muted-foreground/30 mt-4">–</span><div className="flex-1"><label className="text-[11px] text-muted-foreground mb-1 block" style={{ fontWeight: 500 }}>Max ({BASE_CURRENCY})</label><input type="number" value={filter.max} onChange={(e) => onFilterChange({ ...filter, max: e.target.value })} placeholder="∞" className="w-full h-8 px-2.5 text-[13px] border border-border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] focus:border-[#ADD1FF] tabular-nums" /></div></div></div>)}
           {filter.type === "date" && (<div className="px-3 pb-3"><div className="flex items-center gap-2"><div className="flex-1"><label className="text-[11px] text-muted-foreground mb-1 block" style={{ fontWeight: 500 }}>From</label><input type="date" value={filter.dateFrom} onChange={(e) => onFilterChange({ ...filter, dateFrom: e.target.value })} className="w-full h-8 px-2.5 text-[13px] border border-border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] focus:border-[#ADD1FF]" /></div><span className="text-muted-foreground/30 mt-4">–</span><div className="flex-1"><label className="text-[11px] text-muted-foreground mb-1 block" style={{ fontWeight: 500 }}>To</label><input type="date" value={filter.dateTo} onChange={(e) => onFilterChange({ ...filter, dateTo: e.target.value })} className="w-full h-8 px-2.5 text-[13px] border border-border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] focus:border-[#ADD1FF]" /></div></div></div>)}
         </PopoverContent>
       </Popover>
@@ -513,8 +515,11 @@ export function applyColumnFilters(quotes: Quote[], columnFilters: ColumnFilterS
           break;
         }
         case "totalValue": {
-          if (filter.min && (q.totalValue || 0) < Number(filter.min)) return false;
-          if (filter.max && (q.totalValue || 0) > Number(filter.max)) return false;
+          /* Quotes are in different currencies: the range is in base, each
+             quote at its own rate (as the Filters modal and sort do). */
+          const value = toQuoteBase(q, q.totalValue || 0);
+          if (filter.min && value < Number(filter.min)) return false;
+          if (filter.max && value > Number(filter.max)) return false;
           break;
         }
         case "createdDate": case "expiryDate": case "requestedDate": case "respondBy": case "confirmationDate": {

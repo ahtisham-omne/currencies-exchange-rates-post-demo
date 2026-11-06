@@ -43,7 +43,12 @@ export interface PricingRulesAPI {
   detachRule: (ruleId: string) => void;
 }
 
-export function usePricingRules(customerName: string, lines: QuoteLineRef[]): PricingRulesAPI {
+export function usePricingRules(
+  customerName: string,
+  lines: QuoteLineRef[],
+  /** USD "$" tier amounts → the quote's currency (ruleAmountFactor). */
+  flatFactor = 1,
+): PricingRulesAPI {
   const [state, setState] = useState<PricingRuleState>(() => {
     const attached = getCustomerRules(customerName);
     const activated = new Map<string, Set<string>>();
@@ -65,8 +70,8 @@ export function usePricingRules(customerName: string, lines: QuoteLineRef[]): Pr
   }, [state]);
 
   const breakdowns = useMemo(
-    () => computeLineBreakdowns(lines, state.attached, effectiveActivationByRule),
-    [lines, state.attached, effectiveActivationByRule],
+    () => computeLineBreakdowns(lines, state.attached, effectiveActivationByRule, flatFactor),
+    [lines, state.attached, effectiveActivationByRule, flatFactor],
   );
   const quoteSubtotal = useMemo(() => computeQuoteSubtotal(breakdowns), [breakdowns]);
   const totalDiscount = useMemo(() => breakdowns.reduce((s, b) => s + b.discountAmount, 0), [breakdowns]);

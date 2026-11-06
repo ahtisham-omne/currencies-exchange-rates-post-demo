@@ -15,6 +15,9 @@ import {
 } from './pricingRulesData';
 import type { PricingRulesAPI } from './usePricingRules';
 import { InactiveItemPill } from '../shared/InactiveItemPill';
+import { useDocWhole } from '@/app/components/currency/docCurrencyContext';
+import { useRuleMoney } from '@/app/components/currency/useRuleMoney';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
 
 /* Display-shaped line item, built from real Quote LineItem data passed in
    via the `lines` prop. Replaces the old mock LINE_ITEMS constant. */
@@ -81,8 +84,11 @@ interface PricingRule {
   };
 }
 
-const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+/* Amounts are in the quote's currency (useDocWhole, inside each component).
+   A "$" rule's own amount is written in USD (useRuleMoney): "$200.00 (≈ €182.73)". */
+type RuleAmount = { value: number; amountType: '%' | '$' };
+const ruleValueText = (money: ReturnType<typeof useRuleMoney>, r: RuleAmount) =>
+  money.tierText({ rate: r.value, unit: r.amountType });
 
 // ── Compact Item Row ── thumbnail + ID + description
 function CompactItemRow({ item, checked, onToggle, showCheckbox = false, trailing }: {
@@ -168,6 +174,8 @@ interface PricingRulesManageModalProps {
 }
 
 export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, onRulesChange, onMaterialEvent, stageLibraryChanges = false, customerName, startEmpty, lines, pricingAPI }: PricingRulesManageModalProps) {
+  const fmtCurrency = useDocWhole();
+  const ruleMoney = useRuleMoney();
   /* Real items derived from quote lines (same projection the SO summary
      modal uses), with the same single-source-of-truth principle. */
   const items = useMemo(() => buildItemsFromLines(lines), [lines]);
@@ -189,7 +197,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, onR
       const amount = appliedTo.reduce((s, lineId) => {
         const ln = apiLines.find((l) => l.id === lineId);
         if (!ln) return s;
-        const ev = evaluateRuleForLine(cr, ln);
+        const ev = evaluateRuleForLine(cr, ln, ruleMoney.factor);
         return s + (ev.applies ? ev.amount : 0);
       }, 0);
       const firstTier = cr.tiers[0];
@@ -214,7 +222,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, onR
         },
       };
     });
-  }, [pricingAPI.state, apiLines, startEmpty]);
+  }, [pricingAPI.state, apiLines, startEmpty, ruleMoney.factor]);
 
   /* Backward-compat shim — diff produced rules into API mutations so the
      existing setRules-based call sites keep working. Identical to SO. */
@@ -246,7 +254,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, onR
     for (const lineId of newAppliedTo) {
       const ln = apiLines.find((l) => l.id === lineId);
       if (!ln) continue;
-      const ev = evaluateRuleForLine(customerRule, ln);
+      const ev = evaluateRuleForLine(customerRule, ln, ruleMoney.factor);
       if (ev.applies) sum += ev.amount;
     }
     return Math.round(sum);
@@ -424,7 +432,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, onR
     const numericValue = t0 ? parseFloat(t0.discount.replace(/[^\d.]/g, '')) || 0 : 0;
     const appliedTo = items.map((i) => i.id);
     const applicableSubtotal = items.reduce((s, i) => s + i.subtotal, 0);
-    const amount = isFixed ? numericValue : Math.round(applicableSubtotal * (numericValue / 100));
+    const amount = isFixed ? Math.round(numericValue * ruleMoney.factor) : Math.round(applicableSubtotal * (numericValue / 100));
     return {
       id: lib.id,
       name: lib.name,
@@ -817,7 +825,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, onR
             basis: r.condition?.type === 'volume' ? 'volume' : 'value',
             tierType: 'single',
             totalTiers: 1,
-            description: r.condition?.label ?? `${r.value}${r.amountType} ${r.type === 'discount' ? 'off' : 'markup'}`,
+            description: r.condition?.label ?? `${ruleValueText(ruleMoney, r)} ${r.type === 'discount' ? 'off' : 'markup'}`,
             aboutText: '',
             status: r.isApplied ? 'Active' : 'Inactive',
             scope: 'customer',
@@ -828,7 +836,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, onR
             itemCount: r.appliedTo.length,
             categoryCount: 0,
             partnerCount: 1,
-            tiers: [{ minQty: '—', maxQty: '—', discount: `${r.value}${r.amountType}` }],
+            tiers: [{ minQty: '—', maxQty: '—', discount: ruleMoney.tierRate({ rate: r.value, unit: r.amountType }) }],
             createdBy: 'You',
             createdDate: '',
             isPreset: false,
@@ -1010,7 +1018,8 @@ function SummaryRuleCard({ rule, onOpenItemsModal, onDeactivate, onReactivate, r
     const r = el.getBoundingClientRect();
     setMenuAnchor({ top: r.top, right: window.innerWidth - r.right });
   }, [menuOpen]);
-  const heroValue = `${rule.value}${rule.amountType}`;
+  const ruleMoney = useRuleMoney();
+  const heroValue = ruleMoney.tierShort({ rate: rule.value, unit: rule.amountType });
   const dimStyle: React.CSSProperties = isDeactivated
     ? { opacity: 0.55, transition: 'opacity 150ms' }
     : { opacity: 1, transition: 'opacity 150ms' };
@@ -1124,8 +1133,20 @@ function SummaryRuleCard({ rule, onOpenItemsModal, onDeactivate, onReactivate, r
             </span>
             <span className="shrink-0 ml-2 text-slate-700" style={{ fontWeight: 600 }}>
               {heroValue}
+              {/* A "$" tier is USD; its amount in the quote's currency. */}
+              {ruleMoney.tierConverted({ rate: rule.value, unit: rule.amountType }) && (
+                <span className="text-slate-400" style={{ fontWeight: 500 }}> ({ruleMoney.tierConverted({ rate: rule.value, unit: rule.amountType })})</span>
+              )}
             </span>
           </div>
+          {/* Spec 4.2, 4.3: on a foreign-currency quote, what the rule met is
+              also stated in base, beside its amount in the quote's currency. */}
+          {rule.isApplied && rule.amount !== 0 && ruleMoney.baseText(Math.abs(rule.amount)) && (
+            <p className="mt-1 px-1 text-[10.5px] text-slate-500 tabular-nums truncate">
+              {rule.type === 'discount' ? '−' : '+'}{ruleMoney.money(Math.abs(rule.amount))} on this quote
+              <span className="text-slate-400"> · {ruleMoney.baseText(Math.abs(rule.amount))} {BASE_CURRENCY}</span>
+            </p>
+          )}
         </div>
       </div>
       </div>
@@ -1230,6 +1251,8 @@ function RuleItemsSubModal({ rule, allItems, onClose, onRequestToggle, readOnly 
   onRequestToggle: (itemIds: string[], willActivate: boolean) => void;
   readOnly: boolean;
 }) {
+  const fmtCurrency = useDocWhole();
+  const ruleMoney = useRuleMoney();
   const [scopedItemIds] = useState<Set<string>>(() => new Set(rule.appliedTo));
   const scopedItems = useMemo(
     () => allItems.filter((i) => scopedItemIds.has(i.id)),
@@ -1260,7 +1283,7 @@ function RuleItemsSubModal({ rule, allItems, onClose, onRequestToggle, readOnly 
   const someSelected = !allSelected && scopedItems.some((i) => selectedIds.has(i.id));
 
   const impactFor = (subtotal: number) =>
-    rule.amountType === '%' ? Math.round(subtotal * (rule.value / 100)) : rule.value;
+    rule.amountType === '%' ? Math.round(subtotal * (rule.value / 100)) : Math.round(rule.value * ruleMoney.factor);
 
   const selectedActiveIds = useMemo(
     () => Array.from(selectedIds).filter((id) => activeIdSet.has(id)),
@@ -1325,7 +1348,7 @@ function RuleItemsSubModal({ rule, allItems, onClose, onRequestToggle, readOnly 
                 ? <TrendingDown className="w-3.5 h-3.5" style={{ color: pill.text }} />
                 : <TrendingUp className="w-3.5 h-3.5" style={{ color: pill.text }} />}
               <span className="text-[10px] tabular-nums leading-none" style={{ color: pill.text, fontWeight: 700 }}>
-                {rule.value}{rule.amountType}
+                {ruleValueText(ruleMoney, rule)}
               </span>
             </div>
             <div className="min-w-0 flex-1">

@@ -124,6 +124,9 @@ import {
   findUomById,
   multiplierWithinSet,
 } from '../../data/uomSets';
+import { useDocCurrency, useDocMoney } from '@/app/components/currency/docCurrencyContext';
+import { localTodayIso } from '@/app/currency/qFx';
+import { restateDesign } from '@/app/currency/quoteMoney';
 const UNITS_OF_MEASURE = UOM_SETS.discrete;
 type UomOption = ImportedUomOption;
 
@@ -316,6 +319,13 @@ const generateItemId = (itemId: string): string => {
 };
 
 export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
+  /* The quote will be in the customer's currency (CreateQuoteModal provides
+     it): catalog list prices, written in USD, are shown and added in it at
+     today's mid-market rate, the rate the new quote takes. */
+  const formatCurrency = useDocMoney();
+  const formatCurrencyImmediate = formatCurrency;
+  const { currency: draftCurrency } = useDocCurrency();
+  const listPrice = (usd: number) => restateDesign(usd, draftCurrency, localTodayIso());
   const [searchQuery, setSearchQuery] = useState('');
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [selectedItemForConfig, setSelectedItemForConfig] = useState<any>(null);
@@ -369,8 +379,14 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
          is visible without searching. The full catalogue is still
          reachable via search. */
       : catalog.filter(product => product.isRecentlyOrdered).slice(0, 12);
-    return applyAdvancedFilters(base, advancedFilters);
-  }, [searchQuery, advancedFilters]);
+    /* The price range is in the customer's currency, as the cards show
+       prices; the catalog is in USD. */
+    const day = localTodayIso();
+    const kept = new Set(
+      applyAdvancedFilters(base.map((p) => ({ ...p, unitPrice: restateDesign(p.unitPrice, draftCurrency, day) })), advancedFilters).map((p) => p.id),
+    );
+    return base.filter((p) => kept.has(p.id));
+  }, [searchQuery, advancedFilters, draftCurrency]);
 
   const isProductAdded = (productId: string) => {
     return quoteDraft.lineItems.some((item) => item.productId === productId);
@@ -421,9 +437,9 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
       name: product.name,
       description: product.description,
       quantity: 1,
-      unitPrice: product.unitPrice,
+      unitPrice: listPrice(product.unitPrice),
       discount: 0,
-      total: product.unitPrice,
+      total: listPrice(product.unitPrice),
       images: product.images,
       isSerialized: product.isSerialized,
       sourceType: product.sourceType,
@@ -699,23 +715,13 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
       uom: findUomById(getPrimaryUomForProduct(product))?.name || 'EA',
       onHand: product.stockQuantity,
       metrics: [
-        { label: 'Unit Price', value: formatCurrencyImmediate(product.unitPrice), caption: 'Unit Price' },
+        { label: 'Unit Price', value: formatCurrencyImmediate(listPrice(product.unitPrice)), caption: 'Unit Price' },
         ...(typeof product.stockQuantity === 'number'
           ? [{ label: 'In Stock', value: `${product.stockQuantity.toLocaleString()} ${findUomById(getPrimaryUomForProduct(product))?.name || 'EA'}`, caption: 'In Stock' }]
           : []),
       ],
     };
     openItemQuickView(peek);
-  };
-  const formatCurrencyImmediate = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
   };
 
   const subtotal = quoteDraft.lineItems.reduce((sum, item) => sum + item.total, 0);
@@ -1002,7 +1008,7 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <span className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>
-                          {formatCurrency(product.unitPrice)}
+                          {formatCurrency(listPrice(product.unitPrice))}
                         </span>
                         <span className="text-[11px] text-muted-foreground ml-1" style={{ fontWeight: 400 }}>/ {findUomById(getPrimaryUomForProduct(product))?.name || 'EA'}</span>
                       </div>

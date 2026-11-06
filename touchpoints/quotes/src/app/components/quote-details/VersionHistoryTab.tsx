@@ -17,6 +17,7 @@ import {
   Section as FilterModalSection,
   Divider as FilterModalDivider,
 } from '../shared/filterModal';
+import { useDesignMoney } from '@/app/components/currency/docCurrencyContext';
 
 // ── Types ──────────────────────────────────────────────────────────
 type VersionStatus = 'draft' | 'sent' | 'confirmed';
@@ -291,8 +292,10 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
     return true;
   };
 
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  /* The version history is the design's mock, written in USD: restated in
+     the quote's currency at its rate date (useDesignMoney). */
+  const design = useDesignMoney();
+  const formatCurrency = design.whole;
 
   const toggleExpanded = (v: number) => {
     setExpandedVersions(prev => {
@@ -922,7 +925,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                                 )}
                                 {change.detail && (
                                   <div style={{ fontSize: '11px', color: 'var(--muted-foreground)', lineHeight: '1.3', marginTop: '1px' }}>
-                                    {change.detail}
+                                    {design.text(change.detail)}
                                   </div>
                                 )}
                               </div>
@@ -990,6 +993,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
 function CompareView({ v1, v2, formatCurrency, onClose }: {
   v1: Version; v2: Version; formatCurrency: (n: number) => string; onClose: () => void;
 }) {
+  const design = useDesignMoney();
   /* Local kind config so CompareView stays self-contained (mirrors the
      parent component's `changeKindConfig`). Three entries only — icon +
      colour come from `change.action`, never from `change.type`. */
@@ -1095,7 +1099,7 @@ function CompareView({ v1, v2, formatCurrency, onClose }: {
                     {change.itemRef && <span style={{ fontSize: '10px', color: 'var(--muted-foreground)', marginLeft: '3px' }}>on {change.itemRef}</span>}
                   </div>
                   {change.subjectDetail && <div style={{ fontSize: '10px', color: 'var(--muted-foreground)', lineHeight: '1.3', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{change.subjectDetail}</div>}
-                  {change.detail && <div style={{ fontSize: '10px', color: 'var(--muted-foreground)', lineHeight: '1.3', marginTop: '1px' }}>{change.detail}</div>}
+                  {change.detail && <div style={{ fontSize: '10px', color: 'var(--muted-foreground)', lineHeight: '1.3', marginTop: '1px' }}>{design.text(change.detail)}</div>}
                 </div>
                 <span style={{ fontSize: '10px', color: 'var(--muted-foreground)', flexShrink: 0, lineHeight: '1', marginTop: '3px', whiteSpace: 'nowrap' as const }}>{change.timestamp}</span>
               </div>

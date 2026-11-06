@@ -1,10 +1,13 @@
 // @ts-nocheck
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Check, Users, Package, ChevronRight, ArrowLeft, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import { Step1CustomerSelection } from '@/app/components/quote-creation/Step1CustomerSelection';
 import { Step3LineItems } from '@/app/components/quote-creation/Step3LineItems';
 import { ConfirmDiscardModal } from '@/app/components/shared/ConfirmDiscardModal';
 import { toast } from 'sonner';
+import { DocCurrencyProvider } from '@/app/components/currency/DocCurrency';
+import { isBaseCurrency } from '@/app/currency/currencies';
+import { convertOn, customerCurrency, localTodayIso, todayFx } from '@/app/currency/qFx';
 
 interface CreateQuoteModalProps {
   open: boolean;
@@ -135,6 +138,23 @@ export function CreateQuoteModal({ open: isOpen, onOpenChange, onQuoteCreated, o
     lineItems: [],
     lastSaved: new Date(),
   });
+  /* Lines picked before the customer changed move into the new customer's
+     currency at today's rate. */
+  const draftCurrency = customerCurrency(quoteDraft.customer?.name);
+  const pricedIn = useRef(draftCurrency);
+  useEffect(() => {
+    const from = pricedIn.current;
+    pricedIn.current = draftCurrency;
+    if (from === draftCurrency) return;
+    const day = localTodayIso();
+    setQuoteDraft((prev) => ({
+      ...prev,
+      lineItems: prev.lineItems.map((it) => {
+        const unitPrice = convertOn(it.unitPrice, from, draftCurrency, day);
+        return { ...it, unitPrice, total: unitPrice * it.quantity * (1 - (it.discount || 0) / 100) };
+      }),
+    }));
+  }, [draftCurrency]);
 
   // Reset state when modal opens fresh
   useEffect(() => {
@@ -340,13 +360,16 @@ export function CreateQuoteModal({ open: isOpen, onOpenChange, onQuoteCreated, o
         );
       case 2:
         return (
-          <Step3LineItems
-            quoteDraft={quoteDraft}
-            onUpdate={(updates) => {
-              setQuoteDraft(prev => ({ ...prev, ...updates }));
-              setHasUnsavedChanges(true);
-            }}
-          />
+          /* The new quote is in the customer's currency (spec 4.3), at today's rate. */
+          <DocCurrencyProvider currency={draftCurrency} fx={isBaseCurrency(draftCurrency) ? null : todayFx(draftCurrency)} rateDate={localTodayIso()} dateLabel="today" role="customer currency">
+            <Step3LineItems
+              quoteDraft={quoteDraft}
+              onUpdate={(updates) => {
+                setQuoteDraft(prev => ({ ...prev, ...updates }));
+                setHasUnsavedChanges(true);
+              }}
+            />
+          </DocCurrencyProvider>
         );
       default:
         return null;

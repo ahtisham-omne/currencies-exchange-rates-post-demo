@@ -6,6 +6,7 @@ import { QuoteDetails } from './pages/QuoteDetails';
 import { EditQuote } from './pages/EditQuote';
 import { PartnersShellPage } from './pages/PartnersShellPage';
 import { PersonAvatarLightboxProvider } from './components/shared/PersonAvatarLightbox';
+import { EmbeddingBridge } from '@/EmbeddingBridge';
 
 function QuoteDetailsWrapper() {
   const { quoteId } = useParams<{ quoteId: string }>();
@@ -25,7 +26,9 @@ function EditQuoteWrapper() {
 export default function App() {
   return (
     <PersonAvatarLightboxProvider>
-      <BrowserRouter>
+      {/* basename: the shell serves this app under /touchpoint-apps/quotes/ (see src/embedding.ts). */}
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <EmbeddingBridge />
         <Routes>
           <Route path="/" element={<RootLayout />}>
             <Route index element={<QuotesListPage />} />

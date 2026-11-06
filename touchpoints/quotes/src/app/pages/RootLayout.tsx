@@ -2,6 +2,7 @@ import { Outlet, useNavigate, useLocation, useNavigationType } from "react-route
 import { Search } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
+import { embedded } from "@/embedding";
 import { Avatar } from "../components/shared/Avatar";
 import { Toaster } from "sonner";
 import { mockQuotes } from "../data/mockQuotes";
@@ -96,8 +97,9 @@ export function RootLayout() {
 
   return (
     <div className="flex h-screen w-full bg-background compact-module overflow-hidden">
-      {/* Left Sidebar — collapsible Partner-style nav */}
-      <Sidebar />
+      {/* Left Sidebar — collapsible Partner-style nav. Inside the Currency &
+          Exchange shell, the shell's sidebar replaces it. */}
+      {!embedded && <Sidebar />}
 
       <div className="flex-1 flex flex-col min-w-0 h-screen">
         {/* Top app bar — Partner pattern: dynamic breadcrumb on the left,

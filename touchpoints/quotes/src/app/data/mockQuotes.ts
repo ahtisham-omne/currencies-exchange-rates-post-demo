@@ -1,5 +1,6 @@
 import { Quote, QuoteStatus, Priority, SalesRep, Customer, PointOfContact, QuoteVersion, QuoteVersionStatus, QuoteStatusHistoryEntry } from '@/app/types/quote';
 import { SAMPLE_EMPTY_CUSTOMER } from '@/app/components/shared/customerDefaults';
+import { DESIGN_CURRENCY, convertOn, customerCurrency, stampQuoteRate } from '@/app/currency/qFx';
 
 const SALES_REPS: SalesRep[] = [
   /* "rep-yn" is the canonical id for the signed-in user (Yahya
@@ -426,8 +427,21 @@ export const mockQuotes = (() => {
      changes. */
   base.splice(2, 0, hero);
   applySparseCustomerSample(base);
+  base.forEach(inCustomerCurrency);
   return base;
 })();
+
+/* The design's quotes are written in USD. Each is put in its customer's
+   default currency (spec 4.3) with the rate on its quote date, and its
+   value restated in it at that day's mid-market rate. Applied last, so
+   the seeded RNG sequence is unchanged; USD quotes keep their numbers. */
+function inCustomerCurrency(q: Quote): void {
+  const stamp = stampQuoteRate(customerCurrency(q.customer.name), q.createdDate);
+  if (stamp.currency !== DESIGN_CURRENCY) {
+    q.totalValue = convertOn(q.totalValue, DESIGN_CURRENCY, stamp.currency, q.createdDate);
+  }
+  Object.assign(q, stamp);
+}
 
 /* Q-000-000-020 (first row of page 2) is repointed at the sample
    name-only customer so every surface can be checked against missing

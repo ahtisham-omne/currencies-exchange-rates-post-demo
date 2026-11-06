@@ -49,6 +49,11 @@ import {
   StateTransitionOverlay,
   type StateTransitionTone,
 } from '@/app/components/shared/StateTransitionOverlay';
+import { QuoteValue } from '@/app/components/currency/QuoteValue';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatCompactMoney } from '@/app/currency/money';
+import { quoteFx, toQuoteBase } from '@/app/currency/qFx';
+import { QuoteDocCurrency } from '@/app/components/currency/QuoteDocCurrency';
 
 type ViewDensity = 'comfortable' | 'compact' | 'board';
 
@@ -572,6 +577,7 @@ export function KanbanView({
       {convertModal && (() => {
         const q = quotes.find(qq => qq.id === convertModal.quoteId);
         return (
+          <QuoteDocCurrency quote={q}>
           <ConvertToSOModal
             isOpen
             quoteNumber={convertModal.quoteNumber}
@@ -582,6 +588,7 @@ export function KanbanView({
               setConvertModal(null);
             }}
           />
+          </QuoteDocCurrency>
         );
       })()}
 
@@ -608,6 +615,7 @@ export function KanbanView({
             isOpen
             quoteNumber={sendModal.quoteNumber}
             customerName={q?.customer?.name ?? ''}
+            currency={q ? quoteFx(q).currency : undefined}
             mode="send"
             onClose={() => setSendModal(null)}
             onSend={() => {
@@ -908,7 +916,9 @@ function KanbanColumn({ status, label, dotColor, tint, tintBorder, quotes, allQu
     }),
   }));
 
-  const totalValue = quotes.reduce((sum, q) => sum + q.totalValue, 0);
+  /* Quotes are in different currencies: the column adds them up in base,
+     each at its own rate (spec 4.3). */
+  const totalValue = quotes.reduce((sum, q) => sum + toQuoteBase(q, q.totalValue), 0);
 
   const activeSearchTerm = localSearchTerm || searchTerm;
   let processedQuotes = quotes;
@@ -930,7 +940,7 @@ function KanbanColumn({ status, label, dotColor, tint, tintBorder, quotes, allQu
     let delta = 0;
     switch (sortBy) {
       case 'value':
-        delta = b.totalValue - a.totalValue;
+        delta = toQuoteBase(b, b.totalValue) - toQuoteBase(a, a.totalValue);
         break;
       case 'created':
         delta = new Date(b.createdDate).getTime() - new Date(a.createdDate).getTime();
@@ -1099,8 +1109,8 @@ function KanbanColumn({ status, label, dotColor, tint, tintBorder, quotes, allQu
         )}
 
         <div className="flex items-center justify-between" style={{ padding: '8px 12px', backgroundColor: '#F9FAFB', borderRadius: '6px' }}>
-          <span style={{ fontSize: '12px', color: '#6B7280', fontWeight: 500 }}>Total Value</span>
-          <span style={{ fontSize: '15px', fontWeight: 700, color: '#1F2937' }}>{formatCurrency(totalValue)}</span>
+          <span style={{ fontSize: '12px', color: '#6B7280', fontWeight: 500 }}>Total Value <span style={{ fontWeight: 400, color: '#9CA3AF' }}>({BASE_CURRENCY})</span></span>
+          <span style={{ fontSize: '15px', fontWeight: 700, color: '#1F2937' }}>{formatCompactMoney(totalValue, BASE_CURRENCY)}</span>
         </div>
       </div>
 
@@ -1516,7 +1526,7 @@ function QuoteCard({ quote, onQuoteClick, searchTerm, columnStatus, accentColor 
         <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: '12px' }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '15px', fontWeight: 700, color: '#1F2937', lineHeight: '1.2' }}>
-              {formatCurrency(quote.totalValue)}
+              <QuoteValue quote={quote} />
             </div>
             <div style={{ fontSize: '10px', color: '#9CA3AF', fontWeight: 400, marginTop: '2px', lineHeight: '1' }}>Quote Value</div>
           </div>
@@ -1701,11 +1711,13 @@ function QuoteCard({ quote, onQuoteClick, searchTerm, columnStatus, accentColor 
 
         {/* Version History Modal — portaled to body to escape overflow containers */}
         {showVersionHistory && ReactDOM.createPortal(
-          <VersionHistoryModal
-            quoteId={quote.id}
-            currentVersion={quote.version}
-            onClose={() => setShowVersionHistory(false)}
-          />,
+          <QuoteDocCurrency quote={quote}>
+            <VersionHistoryModal
+              quoteId={quote.id}
+              currentVersion={quote.version}
+              onClose={() => setShowVersionHistory(false)}
+            />
+          </QuoteDocCurrency>,
           document.body
         )}
       </div>

@@ -249,6 +249,8 @@ import {
   findUomById,
   findSetContainingUom,
 } from '../../data/uomSets';
+import { useDocCurrency, useDocMoney } from '@/app/components/currency/docCurrencyContext';
+import { formatAmount } from '@/app/currency/money';
 const UNITS_OF_MEASURE = UOM_SETS.discrete.map((u) => ({ ...u, abbreviation: u.name }));
 
 /* Fallback seed for the unbound case only.
@@ -284,6 +286,10 @@ export function LineItemConfigModal({
   quoteDefaultFreight, siblingLineCount, anyOtherLineHasOverride,
   onSeedSiblingFreightShares, docId, currentUser, attachmentScopeKey,
 }: LineItemConfigModalProps) {
+  /* In the quote's currency (spec 4.3). Inputs show the number alone, since
+     their digits-only parsing can't take a symbol such as "د.إ". */
+  const formatCurrency = useDocMoney();
+  const { currency: docCurrency } = useDocCurrency();
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   // Item peek modal — opens when user taps the product thumbnail in the
   // configurator's right-panel product card.
@@ -947,9 +953,6 @@ export function LineItemConfigModal({
     onClose();
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
-  };
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
@@ -2213,11 +2216,11 @@ export function LineItemConfigModal({
                 </div>
                 {/* Price Per Unit Row */}
                 <div className="flex items-center justify-between px-4 py-2.5">
-                  <span className="text-[12px] text-muted-foreground flex items-center gap-1.5"><DollarSign className="w-3 h-3 text-muted-foreground" />Price Per Unit</span>
+                  <span className="text-[12px] text-muted-foreground flex items-center gap-1.5"><DollarSign className="w-3 h-3 text-muted-foreground" />Price Per Unit <span className="text-muted-foreground/70">({docCurrency})</span></span>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
-                      value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(formData.unitPrice)}
+                      value={formatAmount(formData.unitPrice, docCurrency)}
                       onChange={(e) => {
                         const cleaned = e.target.value.replace(/[^0-9.]/g, '');
                         const value = parseFloat(cleaned) || 0;
@@ -2911,7 +2914,7 @@ export function LineItemConfigModal({
                         <input
                           type="text"
                           readOnly={readOnly}
-                          value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(sCfg.shipmentCost!)}
+                          value={formatAmount(sCfg.shipmentCost!, docCurrency)}
                           onChange={(e) => {
                             const cleaned = e.target.value.replace(/[^0-9.]/g, '');
                             const next = Math.max(0, parseFloat(cleaned) || 0);
@@ -3732,6 +3735,7 @@ function PartnerPriceChangeModal({ newPrice, onApply, onCancel }: {
   onApply: (scope: 'quote' | 'master') => void;
   onCancel: () => void;
 }) {
+  const money = useDocMoney();
   const [choice, setChoice] = useState<'quote' | 'master'>('quote');
 
   useEffect(() => {
@@ -3798,7 +3802,7 @@ function PartnerPriceChangeModal({ newPrice, onApply, onCancel }: {
             Apply price change
           </h3>
           <p style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--muted-foreground)', margin: '8px 0 0 0', maxWidth: 360 }}>
-            You're changing the unit price to <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(newPrice)}</span>. Choose where this price should apply.
+            You're changing the unit price to <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>{money(newPrice)}</span>. Choose where this price should apply.
           </p>
 
           {/* Options */}

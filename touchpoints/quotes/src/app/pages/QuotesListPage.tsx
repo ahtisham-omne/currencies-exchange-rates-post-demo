@@ -100,6 +100,13 @@ import {
 } from '@/app/components/ui/popover';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/app/components/ui/tooltip';
 import { format } from 'date-fns';
+import { Money } from '@/app/components/currency/Money';
+import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
+import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { customerCurrency, quoteFx, stampQuoteRate, toQuoteBase } from '@/app/currency/qFx';
+import { formatMoney } from '@/app/currency/money';
+import { restateDesign } from '@/app/currency/quoteMoney';
+import { QuoteDocCurrency } from '@/app/components/currency/QuoteDocCurrency';
 
 type DensityOption = 'condensed' | 'comfort' | 'board';
 type QuickFilter = 'all' | 'draft' | 'sent' | 'confirmed_customer' | 'converted' | 'expired' | 'rejected' | 'cancelled' | 'archived';
@@ -150,6 +157,9 @@ const COLUMN_DEFS: (ColSelectorConfig & { minWidth: string; sortable?: boolean; 
   // a specific warehouse happens in the Sales Order.
   { key: 'items', label: 'Line Items', minWidth: '220px', sortable: true },
   { key: 'totalValue', label: 'Quote Value', minWidth: '130px', sortable: true, align: 'right' },
+  /* The quote's currency (spec 4.3), as Vendor Invoicing has. Optional:
+     hidden by default; the Quote Value column already shows its symbol. */
+  { key: 'currency', label: 'Currency', minWidth: '100px', sortable: true },
   { key: 'deliveryLocation', label: 'Delivery Location', minWidth: '180px', sortable: true },
   { key: 'requestedDate', label: 'Requested On', minWidth: '120px', sortable: true },
   { key: 'respondBy', label: 'Respond By', minWidth: '120px', sortable: true },
@@ -181,7 +191,7 @@ const COLUMN_DEFS: (ColSelectorConfig & { minWidth: string; sortable?: boolean; 
 
 /* Columns opted-out of the default listing view. Users can toggle
    them on via the column configurator (both grid + kanban). */
-const HIDDEN_BY_DEFAULT_COLUMNS = new Set<string>(['rejectedAt', 'rejectedBy']);
+const HIDDEN_BY_DEFAULT_COLUMNS = new Set<string>(['rejectedAt', 'rejectedBy', 'currency']);
 
 const CURRENT_USER_NAME = CURRENT_USER_REP.name;
 
@@ -457,7 +467,9 @@ interface MockItem {
 /* A quote that actually carries line items (created in-app, or brought
    in by the legacy importer) shows its own items; the hash fallback below
    exists only because the mock catalogue has none. Without this an
-   imported quote listed invented codes next to its real total. */
+   imported quote listed invented codes next to its real total. Prices are
+   in the quote's currency: its own items already are, and the fallback's
+   design USD is restated at its rate date. */
 function deriveQuoteItems(quoteId: string, quote?: Quote): MockItem[] {
   if (quote?.items && quote.items.length > 0) {
     return quote.items.map((li, i) => ({
@@ -485,7 +497,7 @@ function deriveQuoteItems(quoteId: string, quote?: Quote): MockItem[] {
       thumbBg: ITEM_THUMB_BG[bgIdx],
       category: ITEM_CATEGORIES[catIdx],
       onHand: 100 + ((seed * 13 + i * 211) % 15000),
-      unitPrice: 10 + ((seed * 7 + i * 37) % 500),
+      unitPrice: quote ? restateDesign(10 + ((seed * 7 + i * 37) % 500), quoteFx(quote).currency, quoteFx(quote).rateDate) : 10 + ((seed * 7 + i * 37) % 500),
       status: ITEM_STATUSES[statusIdx],
     };
   });
@@ -569,7 +581,7 @@ export function QuotesListPage() {
         quoteNo: q.quoteNumber,
         customerName: q.customer,
         quoteStatus: q.status,
-        currencyCode: 'USD',
+        currencyCode: quoteFx(q).currency,
         requestedOn: q.createdDate,
         expirationDate: q.expiryDate,
         salesRep: q.salesRep,
@@ -825,7 +837,9 @@ export function QuotesListPage() {
           case 'customer': aVal = typeof a.customer === 'string' ? a.customer : a.customer?.name || ''; bVal = typeof b.customer === 'string' ? b.customer : b.customer?.name || ''; break;
           case 'primaryPoC': aVal = typeof a.primaryPoC === 'string' ? a.primaryPoC : a.primaryPoC?.name || ''; bVal = typeof b.primaryPoC === 'string' ? b.primaryPoC : b.primaryPoC?.name || ''; break;
           case 'status': aVal = a.status || ''; bVal = b.status || ''; break;
-          case 'totalValue': aVal = a.totalValue ?? 0; bVal = b.totalValue ?? 0; break;
+          /* In base: quotes in different currencies compare at their own rates. */
+          case 'totalValue': aVal = toQuoteBase(a, a.totalValue ?? 0); bVal = toQuoteBase(b, b.totalValue ?? 0); break;
+          case 'currency': aVal = quoteFx(a).currency; bVal = quoteFx(b).currency; break;
           case 'items': aVal = deriveQuoteItems(a.id, a).length; bVal = deriveQuoteItems(b.id, b).length; break;
           case 'salesRep': aVal = typeof a.salesRep === 'string' ? a.salesRep : a.salesRep?.name || ''; bVal = typeof b.salesRep === 'string' ? b.salesRep : b.salesRep?.name || ''; break;
           case 'createdBy': aVal = pickCreatedBy(a); bVal = pickCreatedBy(b); break;
@@ -1045,6 +1059,9 @@ export function QuotesListPage() {
         return extras.length > 0 ? extras.map((r) => ({ id: r.id, name: r.name, email: '' })) : undefined;
       })(),
       totalValue, createdDate: now, expiryDate: now,
+      /* In the customer's currency, at today's rate (spec 4.3): the lines
+         were priced in it on Step 3. */
+      ...stampQuoteRate(customerCurrency(draft.customer?.name), now),
       hasUnreadMessages: false, unreadMessageCount: 0, daysInCurrentStage: 0,
       lastUpdated: now,
       /* Description intentionally left empty for user-created
@@ -1105,7 +1122,6 @@ export function QuotesListPage() {
   const clearAllFilters = () => { setSearchQuery(''); setActiveStates(new Set()); setShowArchived(false); setAdvFilters({ ...DEFAULT_QUOTE_FILTERS }); setColumnFilters({}); setSortConfig(null); setCurrentPage(1); };
   const hasAnyFilter = !!searchQuery || !showAll || activeFilterCount > 0 || Object.keys(columnFilters).length > 0;
 
-  const fmtCurrency = (val: number) => new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
   const fmtDate = (dateInput: Date | string | undefined | null) => {
     if (!dateInput) return '–';
     try { return format(new Date(dateInput), 'MM/dd/yyyy'); } catch { return '–'; }
@@ -1194,6 +1210,7 @@ export function QuotesListPage() {
                   onCustomChange={(from, to) => setInsightsCustom({ from, to })}
                 />
                 <InsightsRefresh toastLabel="Quote insights refreshed" />
+                <BaseCurrencyNote />
               </div>
               <button onClick={() => setInsightsPanelOpen(true)} className="inline-flex items-center gap-1 text-[11px] hover:bg-muted/50 px-2 py-0.5 rounded-md transition-colors cursor-pointer" style={{ fontWeight: 500, color: 'var(--primary)' }}>
                 <Plus className="w-3 h-3" /> Add Insights
@@ -1745,7 +1762,9 @@ export function QuotesListPage() {
                               );
                             }
                             case 'status': return <TableCell key={colKey}><StatusBadge status={quote.status} /></TableCell>;
-                            case 'totalValue': return <TableCell key={colKey} className="text-right"><span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--foreground)' }}>$ {fmtCurrency(quote.totalValue || 0)}</span></TableCell>;
+                            /* In the quote's own currency (spec 4.3), with its rate on hover. */
+                            case 'totalValue': { const qfx = quoteFx(quote); return <TableCell key={colKey} className="text-right"><Money value={quote.totalValue || 0} currency={qfx.currency} fx={qfx.isBase ? null : qfx} className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--foreground)' }} /></TableCell>; }
+                            case 'currency': { const code = quoteFx(quote).currency; return <TableCell key={colKey}><span className="inline-flex items-center gap-1.5 whitespace-nowrap" style={{ fontSize: '13px', color: '#64748B' }}><CurrencyFlag code={code} />{code}</span></TableCell>; }
                             case 'deliveryLocation':
                               return (
                                 <TableCell key={colKey}>
@@ -2014,7 +2033,7 @@ export function QuotesListPage() {
                                               <span>On-Hand: <b>{first.onHand.toLocaleString()}</b></span>
                                             </div>
                                             <span className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>
-                                              ${first.unitPrice.toFixed(2)}
+                                              {formatMoney(first.unitPrice, quoteFx(quote).currency)}
                                               <span className="text-slate-400 ml-1" style={{ fontWeight: 400 }}>/ unit</span>
                                             </span>
                                           </div>
@@ -2159,6 +2178,7 @@ export function QuotesListPage() {
                                             tax: (quote as any).tax || 0,
                                             total: (quote as any).total || (quote as any).totalValue || 0,
                                             status: quote.status,
+                                            currency: quoteFx(quote).currency,
                                           },
                                           mode: 'print',
                                           isNewlyCreated: !!getCreatedQuote(quote.id),
@@ -2175,6 +2195,7 @@ export function QuotesListPage() {
                                             tax: (quote as any).tax || 0,
                                             total: (quote as any).total || (quote as any).totalValue || 0,
                                             status: quote.status,
+                                            currency: quoteFx(quote).currency,
                                           },
                                           mode: 'download',
                                           isNewlyCreated: !!getCreatedQuote(quote.id),
@@ -2347,6 +2368,7 @@ export function QuotesListPage() {
       <AssignSalesRepModal open={showAssignRepModal} onOpenChange={setShowAssignRepModal} selectedCount={selectedRows.size}
         onAssign={rep => { toast.success(`Assigned ${rep} to ${selectedRows.size} quote${selectedRows.size > 1 ? 's' : ''}`); setSelectedRows(new Set()); setShowAssignRepModal(false); }} />
       {versionHistoryQuote && (
+        <QuoteDocCurrency quote={versionHistoryQuote}>
         <VersionHistoryModal
           quoteId={versionHistoryQuote.id}
           currentVersion={versionHistoryQuote.version}
@@ -2356,6 +2378,7 @@ export function QuotesListPage() {
             setVersionHistoryQuote(prev => prev ? { ...prev, version: toVersion } : prev);
           }}
         />
+        </QuoteDocCurrency>
       )}
       {pdfPreviewQuote && (
         <PDFPreviewModal

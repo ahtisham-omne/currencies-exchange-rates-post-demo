@@ -67,13 +67,21 @@ import { LegacyImportPill } from '../components/import/LegacyImportPill';
    list (not the 13-row base subset). */
 import { MOCK_LINE_ITEMS as QUOTE_LINES } from '../components/quote-details/ItemsTabTableClean';
 import { usePricingRules } from '../components/quote-details/usePricingRules';
-import { useAdjustments } from '../components/quote-details/useAdjustments';
+import { adjustmentsNet, useAdjustments } from '../components/quote-details/useAdjustments';
 import { getCreatedQuote, getCreatedQuoteAdjustments, setQuoteStatusOverride, clearQuoteStatusOverride, applyQuoteOverride, addRejectionDoc } from '../data/quoteStore';
 import type { QuoteRejectionReason } from '../types/quote';
 import { getQuoteDescription, setQuoteDescription } from '../data/quoteStore';
 import { duplicateQuote } from '../data/duplicateQuote';
 import { QuoteStatus } from '../types/quote';
 import { summarizeQuote } from '../data/summarizeQuote';
+import { DocCurrencyProvider } from '@/app/components/currency/DocCurrency';
+import type { QuoteCurrencyChange, QuoteCurrencyTotals } from '@/app/components/currency/QuoteCurrencyFields';
+import { formatMoney, formatRate } from '@/app/currency/money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { quoteFx, roundTo, ruleAmountFactor } from '@/app/currency/qFx';
+import { scaleAdjustments, scaleQuoteLine, withQuoteCurrency, type QuoteCurrencyChoice, type QuoteCurrencyFields } from '../components/quote-details/quoteCurrency';
+import { computeLineBreakdowns } from '../components/quote-details/pricingRulesData';
+import { getCreatedQuoteLineItems, getQuoteLineFactor, setCreatedQuoteAdjustments, setCreatedQuoteLineItems, setQuoteLineFactor } from '../data/quoteStore';
 
 // Map from listing QuoteStatus → lifecycle status used in detail page
 function mapToLifecycleStatus(status: QuoteStatus): QuoteLifecycleStatus {
@@ -116,6 +124,11 @@ function pdfCommercialFromRecord(
   };
 }
 
+/* The design's line set (written in USD) restated by a factor into a
+   currency: the lines a quote's pricing rules are worked out on. */
+const designLinesAt = (factor: number, code: string) =>
+  (QUOTE_LINES as any[]).map((l) => scaleQuoteLine(l, factor, code));
+
 export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps) {
   const navigate = useNavigate();
   /* `?action=next` comes from the listing row menu's status items
@@ -156,7 +169,22 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
      and is forwarded to both the summary modal (via RightSidebar) and
      the line-item configurator (via ItemsTabTableClean). Mirrors the SO
      module's SODetail pattern. */
-  const pricingAPI = usePricingRules(customerName, QUOTE_LINES);
+  /* The quote's currency and rate (spec 4.3), defaulted from the customer.
+     Held here so Quote Summary can change them, and written back onto the
+     quote record so the listing follows (as totalValue is below). */
+  const [fxFields, setFxFields] = useState<Partial<QuoteCurrencyFields>>(() => ({
+    currency: quote?.currency, exchangeRate: quote?.exchangeRate, rateType: quote?.rateType,
+    rateDate: quote?.rateDate, rateEdited: quote?.rateEdited,
+  }));
+  const fx = quoteFx({ ...fxFields, createdDate: quote?.createdDate, customer: quote?.customer });
+  /* The design's line set (QUOTE_LINES) and its demo seeds are written in
+     USD: this is what one of those dollars is in the quote's currency. It
+     starts at the mid-market cross rate on the quote date, and a currency
+     change multiplies it, so the rule lines move with the table's lines;
+     the store keeps it for when the quote is reopened. */
+  const [designFactor, setDesignFactor] = useState(() => (propQuoteId && getQuoteLineFactor(propQuoteId)) || ruleAmountFactor(fx));
+  const designLines = useMemo(() => designLinesAt(designFactor, fx.currency), [designFactor, fx.currency]);
+  const pricingAPI = usePricingRules(customerName, designLines, ruleAmountFactor(fx));
 
   /* One-time adjustments — parallel to pricingAPI, lifted here so the
      summary modal and the line-item configurator share the same list. */
@@ -165,7 +193,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
      onLinesChange. The sidebar reads from this so the header Ship By +
      divergence warning reflect the dates the user actually picked instead
      of the stale seed constant. */
-  const [liveLines, setLiveLines] = useState<any[]>(QUOTE_LINES as any);
+  const [liveLines, setLiveLines] = useState<any[]>(() => designLines);
 
   /* An imported quote opens with the adjustments its file carried;
      anything else follows the existing rule (demo seed for mocks, empty
@@ -179,6 +207,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   const adjustmentsAPI = useAdjustments(liveLines as any, {
     skipSeed: isNewlyCreatedQuote,
     seed: importedAdjustments as any,
+    restateSeed: (usd) => roundTo(fx.currency, usd * designFactor),
   });
 
   /* Live subtotal — sum of each line's `subtotal` (qty × unitPrice
@@ -198,9 +227,11 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
      fix would be a store action, but this keeps the listing in sync
      without a reload. */
   useEffect(() => {
-    if (!quote) return;
-    (quote as { totalValue: number }).totalValue = liveSubtotal;
-  }, [quote, liveSubtotal]);
+    if (!rawQuote) return;
+    /* The stored record, not `quote`: with a status override that is a
+       fresh copy each render, and the listing would keep the old value. */
+    (rawQuote as { totalValue: number }).totalValue = liveSubtotal;
+  }, [rawQuote, liveSubtotal]);
 
   /* Projected quote total = post-rule subtotal + adjustment net impact.
      If pricing-rule and one-time discounts together push this negative,
@@ -211,8 +242,8 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
     if (!totalIsNegative) return false;
     toast.error(
       `Cannot ${intent}. Projected total is ${
-        new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(projectedTotal)
-      }. Deactivate one or more rules or one-time discounts to bring the total back to $0 or above.`,
+        formatMoney(projectedTotal, fx.currency)
+      }. Deactivate one or more rules or one-time discounts to bring the total back to ${formatMoney(0, fx.currency)} or above.`,
       { duration: 6000 },
     );
     return true;
@@ -623,7 +654,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
      ItemsTabTableClean) share the same source of truth. Per-line
      overrides are stored as a map keyed by line id; an absent entry
      means that line inherits the quote-level default. */
-  const [quoteDefaultFreight, setQuoteDefaultFreight] = useState<number>(2000);
+  const [quoteDefaultFreight, setQuoteDefaultFreight] = useState<number>(() => roundTo(fx.currency, 2000 * designFactor));
   const [lineFreightCosts, setLineFreightCosts] = useState<Record<string, number>>({});
   const setLineFreightCost = useCallback((lineId: string, cost: number | undefined) => {
     setLineFreightCosts((prev) => {
@@ -640,6 +671,10 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
     setLineFreightCosts((prev) => ({ ...prev, ...map }));
   }, []);
   const clearAllLineFreightCosts = useCallback(() => setLineFreightCosts({}), []);
+
+  /* A currency change converts the table's lines (it owns them), so it is
+     handed down as a numbered conversion the table applies once. */
+  const [conversion, setConversion] = useState<{ id: number; factor: number; code: string } | null>(null);
 
   // Auto-version overlay state
   const [autoVersionOverlay, setAutoVersionOverlay] = useState<{
@@ -712,6 +747,65 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       setMaterialChangesInDraft(prev => prev + 1);
     }
   }, [quoteStatus, quoteVersion]);
+
+  /* Currency or rate changed in Quote Summary (QuoteCurrencyFields, Draft
+     only). Another currency converts every amount at the cross rate:
+     the table's lines (via `conversion`), the rule lines and demo seeds
+     (`designFactor`), freight, and fixed one-time adjustments. */
+  const handleCurrencyChange = useCallback(({ next, subject }: QuoteCurrencyChange) => {
+    const { fields, factor } = withQuoteCurrency(fx, next);
+    setFxFields(fields);
+    const code = fields.currency;
+    /* The stored record (`quote` is a copy once a status override exists),
+       with its own line items, so the listing, Print and Duplicate follow. */
+    if (rawQuote) {
+      Object.assign(rawQuote, fields);
+      if (factor !== 1 && rawQuote.items) rawQuote.items = rawQuote.items.map((i) => scaleQuoteLine(i, factor, code));
+    }
+    if (factor !== 1) {
+      const nextDesignFactor = designFactor * factor;
+      setDesignFactor(nextDesignFactor);
+      if (propQuoteId) setQuoteLineFactor(propQuoteId, nextDesignFactor);
+      /* The table converts its own lines when it is showing (`conversion`);
+         the page's mirror and a created quote's stored lines convert here,
+         so a change made from another tab is not lost. */
+      setConversion((c) => ({ id: (c?.id ?? 0) + 1, factor, code }));
+      setLiveLines((prev) => prev.map((l) => scaleQuoteLine(l, factor, code)));
+      const storedLines = propQuoteId ? getCreatedQuoteLineItems(propQuoteId) : undefined;
+      if (propQuoteId && storedLines) setCreatedQuoteLineItems(propQuoteId, storedLines.map((l) => scaleQuoteLine(l, factor, code)));
+      setQuoteDefaultFreight((v) => roundTo(code, v * factor));
+      setLineFreightCosts((m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, roundTo(code, v * factor)])));
+      const converted = scaleAdjustments(adjustmentsAPI.adjustments, factor, code);
+      converted.forEach((a, i) => { if (a !== adjustmentsAPI.adjustments[i]) adjustmentsAPI.updateAdjustment(a.id, { amount: a.amount }); });
+      /* An imported quote reopens with the adjustments its file carried. */
+      if (propQuoteId && getCreatedQuoteAdjustments(propQuoteId)) setCreatedQuoteAdjustments(propQuoteId, converted);
+    }
+    const rateText = (c: string, r: number) => (c === BASE_CURRENCY ? c : `${c} · 1 ${c} = ${formatRate(r)} ${BASE_CURRENCY}`);
+    handleMaterialChange(subject === 'Currency' ? 'currency' : 'exchangeRate', subject, rateText(fx.currency, fx.rate), rateText(code, fields.exchangeRate));
+    toast.success(subject === 'Currency' ? `Quote converted to ${code}` : 'Exchange rate updated', { position: 'top-right' });
+  }, [fx, rawQuote, designFactor, adjustmentsAPI, propQuoteId, handleMaterialChange]);
+
+  /* The confirmation's "after" column: the quote as handleCurrencyChange
+     leaves it, worked out the same way (lines, rule lines and fixed
+     adjustments converted and rounded as it does them), so the preview and
+     the result agree to the cent. Flat USD rule amounts go at the new
+     currency's cross rate (ruleAmountFactor). */
+  const currencyTotalsFor = useCallback((next: QuoteCurrencyChoice): QuoteCurrencyTotals => {
+    const { fields, factor } = withQuoteCurrency(fx, next);
+    const code = fields.currency;
+    const afterFx = quoteFx({ ...fields, createdDate: quote?.createdDate, customer: quote?.customer });
+    const activation = new Map<string, Set<string>>();
+    for (const r of pricingAPI.state.attached) {
+      activation.set(r.id, pricingAPI.state.deactivatedRuleIds.has(r.id) ? new Set() : (pricingAPI.state.activatedLineIdsByRule.get(r.id) ?? new Set()));
+    }
+    const ruleLines = designLinesAt(designFactor * factor, code);
+    const rules = computeLineBreakdowns(ruleLines, pricingAPI.state.attached, activation, ruleAmountFactor(afterFx))
+      .reduce((t, b) => t + b.discountAmount - b.premiumAmount, 0);
+    const lines = liveLines.map((l) => scaleQuoteLine(l, factor, code));
+    const sub = lines.reduce((sum, l) => sum + Number(l?.subtotal ?? l?.total ?? 0), 0);
+    const adj = adjustmentsNet(scaleAdjustments(adjustmentsAPI.adjustments, factor, code), lines);
+    return { subtotal: sub, adjustments: adj - rules, freight: 0, total: sub - rules + adj };
+  }, [fx, quote, pricingAPI.state, designFactor, liveLines, adjustmentsAPI.adjustments]);
 
   /** Called when user confirms auto-version creation from the confirmation modal */
   const handleAutoVersionConfirmed = useCallback((reason?: string) => {
@@ -1087,13 +1181,14 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   const isFullyReadOnly = isViewingOldVersion || quoteStatus === 'converted' || quoteStatus === 'cancelled' || quoteStatus === 'archived' || quoteStatus === 'expired';
 
   return (
-    /* Page chrome — Partner Management `VendorDetailsPage` parity.
+    <DocCurrencyProvider currency={fx.currency} fx={fx.isBase ? null : fx} rateDate={fx.rateDate} dateLabel="quote date" role="quote currency">
+    {/* Page chrome — Partner Management `VendorDetailsPage` parity.
        The scroll container paints a slate-50 page background and lets
        each child section bound its own content with an inner
        `max-w-[1440px] 2xl:max-w-[1600px]` wrapper. That keeps the
        sticky bar's slate-50 backdrop full-bleed on wide screens while
        centering the card and tab rail at the 1440 / 1600 ceiling.
-       Fullscreen mode flips those inner caps to `max-w-full`. */
+       Fullscreen mode flips those inner caps to `max-w-full`. */}
     <div ref={contentScrollRef} className="font-sans bg-slate-50">
       <div className="w-full">{/* outer wrapper — full width; bounding happens inside each section */}
 
@@ -2030,6 +2125,8 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                       onSeedLineFreightCosts={seedLineFreightCosts}
                       onRequestPriceVersionConfirm={handleRequestPriceVersionConfirm}
                       onLinesChange={setLiveLines}
+                      lineFactor={designFactor}
+                      conversion={conversion}
                     />
                   )}
                   {activeTab === 'overview' && (
@@ -2121,6 +2218,13 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                    reload. */
                 quoteGrandTotal={liveSubtotal}
                 subtotal={liveSubtotal}
+                quoteFxInfo={fx}
+                currencyRateEdited={!!fxFields.rateEdited}
+                currencyLocked={quoteStatus !== 'draft' || isFullyReadOnly}
+                onCurrencyChange={handleCurrencyChange}
+                currencyTotalsFor={currencyTotalsFor}
+                currencyQuoteNumber={quoteNumber}
+                currencyLineCount={liveLines.length}
                 onMaterialChange={handleMaterialChange}
                 onNonMaterialChange={handleNonMaterialChange}
                 onAskUserChange={handleAskUserChange}
@@ -2682,6 +2786,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
         }}
       />
     </div>
+    </DocCurrencyProvider>
   );
 }
 

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { TitledSection } from '../shared/TitledSection';
 import { DatePickerField } from '../quote-creation/date-picker-field';
+import { useDesignMoney } from '@/app/components/currency/docCurrencyContext';
 
 /* Marshal helpers between ISO yyyy-MM-dd strings (what the modal's
    state holds) and Date instances (what DatePickerField speaks). */
@@ -69,9 +70,6 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatCurrency(n: number): string {
-  return '$' + n.toLocaleString('en-US');
-}
 
 function formatDate(d: string): string {
   const date = new Date(d + 'T00:00:00');
@@ -117,6 +115,9 @@ function SectionLabel({ icon: Icon, label }: { icon: any; label: string }) {
 
 // ═══════════════════════════════════════════════════════════════════════
 export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, customerName }: ConvertToSOModalProps) {
+  /* The order keeps the quote's currency and rate (spec 4.3). Its lines here
+     are the design's mock, written in USD, restated in that currency. */
+  const formatCurrency = useDesignMoney().whole;
   const [soNumber] = useState(generateSONumber);
   const [customerPO, setCustomerPO] = useState('');
   const [notes, setNotes] = useState('');

@@ -68,3 +68,12 @@ Sales Orders is the redesigned app from [`Sales-Order-V5`](https://github.com/ah
 - where each is defined;
 - how the earlier touchpoint maps onto it;
 - how to pull later design changes.
+
+### Quotes
+
+Quotes is the redesigned app from [`quote-craft-hub-82`](https://github.com/ahtisham-omne/quote-craft-hub-82), added as a squashed subtree. [docs/quotes-currency-touchpoints.md](docs/quotes-currency-touchpoints.md) records:
+
+- its currency and exchange-rate touchpoints;
+- where each is defined;
+- how the earlier touchpoint maps onto it;
+- how to pull later design changes.
