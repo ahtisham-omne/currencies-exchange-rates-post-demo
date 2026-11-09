@@ -60,13 +60,13 @@ const CURRENCY_LINES: Line[] = [
   v => `Bank confirmed ${v.code} settlements at the corporate rate from ${v.month}. The confirmation letter is in Attachments.`,
   v => `Check the ${v.code} variance before the month-end revaluation. The mid-market rate has been moving more than usual.`,
   v => `${v.name} is in scope for the year-end audit. Keep the rate approvals in Attachments.`,
-  v => `Keep ${v.code} active while there are open documents in it. Deactivate only once the last one has settled.`,
+  v => `Keep ${v.code} active while there are open transactions in it. Deactivate only once the last one has settled.`,
 ]
 
 const BASE_LINES: Line[] = [
   v => `${v.code} is the base currency. Every rate in the library is quoted against it, so it cannot be deactivated.`,
   v => `Closing rates for ${v.month} agreed to the bank before the revaluation ran.`,
-  v => `${v.code} rounds to ${v.places} on every document, including converted amounts.`,
+  v => `${v.code} rounds to ${v.places} on every transaction, including converted amounts.`,
   () => 'Changing the base currency means restating every corporate rate. Raise it with the controller first.',
 ]
 
@@ -79,7 +79,7 @@ const WRITTEN: Record<string, { id: string; text: string; author: string; days: 
     { id: 'note_usd_1', text: 'Signed settlement instructions for the USD account are in Attachments, with the bank confirmation letter.', author: CONTROLLER, days: 40, hour: 16, minute: 5 },
   ],
   AED: [
-    { id: 'note_aed_2', text: 'AED was deactivated for two months last year while the Dubai office had no open documents. Reactivated once the new supplier contract was signed.', author: CONTROLLER, days: 12, hour: 10, minute: 40 },
+    { id: 'note_aed_2', text: 'AED was deactivated for two months last year while the Dubai office had no open transactions. Reactivated once the new supplier contract was signed.', author: CONTROLLER, days: 12, hour: 10, minute: 40 },
     { id: 'note_aed_1', text: 'AED is pegged to the US dollar, so its mid-market rate tracks USD closely. A large AED move usually means USD moved.', author: ACCOUNTANTS[0], days: 31, hour: 14, minute: 30 },
   ],
 }
@@ -206,14 +206,14 @@ export function currencyActivity(c: Currency, now = new Date()): ActivityFeedIte
     },
   ]
   /* A deactivation and the activation that undid it, in the spring of 2025:
-     after the library was set up and before any document still open today was
+     after the library was set up and before any transaction still open today was
      raised, so it cannot have been blocked by one. Not offered on the base
      currency, which can never be deactivated. */
   if (!c.isBaseCurrency) {
     const day = (month: number, d: number, hour: number) => new Date(Date.UTC(2025, month, d, hour - 5, (h >>> 3) % 60)).toISOString()
     sample.push(
       { id: `${c.code}-sample-activated`, type: 'apply', user: 'Daniel Osei', at: day(6, 8 + (h % 14), 9), date: '', verb: 'activated the currency: “New supplier contract signed”' },
-      { id: `${c.code}-sample-deactivated`, type: 'delete', user: 'Ayesha Khan', at: day(4, 5 + (h % 14), 16), date: '', verb: 'marked the currency as inactive: “No open documents after the office closed”' },
+      { id: `${c.code}-sample-deactivated`, type: 'delete', user: 'Ayesha Khan', at: day(4, 5 + (h % 14), 16), date: '', verb: 'marked the currency as inactive: “No open transactions after the office closed”' },
     )
   }
   // Three to five of them, so no two currencies tell exactly the same story.

@@ -2,13 +2,14 @@
 // Exchange Rate Library and by the pair page. CoA FormModal + SectionCard field
 // layout (spec-detail §6.2) over the currency app's rules: duplicate detection
 // with "Update existing rate", the mid-market reference, live variance,
-// backdating block / warn, notes (no length limit) and validation.
+// backdating block / warn, notes (no length limit) and validation. A date after
+// today saves the rate as Upcoming: the current rate stays in effect until then.
 import { useMemo, useState } from 'react'
 import { ArrowLeftRight, Info, Pencil, Plus, StickyNote, TrendingUp } from 'lucide-react'
 import { useExchangeRates } from '../../context/ExchangeRateContext'
-import { activeStandardRateFor, type StandardRate } from '../../data/exchangeRates'
+import { activeStandardRateFor, isRateInEffect, upcomingRateOf, type StandardRate } from '../../data/exchangeRates'
 import { RATE_TOOLTIPS } from '../../utils/rateCopy'
-import { Banner, Button, ConfirmModal, FormModal, Input, RequiredMark, Select, Textarea, Tooltip } from '../../coa/components/ui'
+import { Badge, Banner, Button, ConfirmModal, FormModal, Input, RequiredMark, Select, Textarea, Tooltip } from '../../coa/components/ui'
 import { SectionCard, LockedField } from '../../coa/components/formKit'
 import { DateField } from '../../coa/components/DateField'
 import { FlagImage } from '../../coa/components/FlagImage'
@@ -41,7 +42,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
   onClose: () => void
   onSaved?: (rate: StandardRate, mode: 'add' | 'update') => void
 }) {
-  const { midMarketRates, standardRates, addStandardRate, updateStandardRate } = useExchangeRates()
+  const { midMarketRates, standardRates, addStandardRate, updateStandardRate, scheduleStandardRate } = useExchangeRates()
   const today = todayIso()
 
   // Mode can change once: "Update existing rate" turns an Add into an Update.
@@ -55,7 +56,8 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
     source: initialRecord?.sourceCurrency ?? validStart,
     rate: initialRecord ? fmtRate(initialRecord.standardRate) : '',
     date: today,
-    notes: initialRecord?.notes ?? '',
+    // Each change carries its own note: the last one stays in the rate's history.
+    notes: '',
   }), []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [source, setSource] = useState(initial.source)
@@ -79,17 +81,25 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
   const mid = midMarketRates.find(m => m.sourceCurrency === code)
   const duplicate = !isUpdate && source ? activeStandardRateFor(source, standardRates) : undefined
   const existing = isUpdate ? editing : undefined
+  // The rate in effect today, if the record has one (one added for a later date has not).
+  const inEffect = existing && isRateInEffect(existing, today) ? existing : undefined
+  const pending = existing ? upcomingRateOf(existing, today) : null
+  // A later date keeps today's rate in effect and saves this one as Upcoming.
+  const scheduling = !!inEffect && !!date && date > today
   const n = Number(rate)
   const rateValid = rate.trim() !== '' && Number.isFinite(n) && n > 0
   const variance = rateValid ? variancePct(n, mid?.rate) : null
-  const backdate = checkBackdate(existing, date, today)
+  const backdate = checkBackdate(inEffect, date, today)
 
   const errors: { field: string; message: string }[] = []
   if (!code) errors.push({ field: 'source', message: 'Choose a source currency.' })
   if (!rateValid) errors.push({ field: 'rate', message: rate.trim() ? 'Enter a corporate rate above zero.' : 'Enter the corporate exchange rate.' })
   if (!date) errors.push({ field: 'date', message: 'Choose an effective date.' })
   else if (backdate?.kind === 'block') errors.push({ field: 'date', message: backdate.message })
-  const errorOf = (f: string) => (attempted ? errors.find(e => e.field === f)?.message : undefined)
+  // A currency that already has a rate swaps the form for "Update existing rate":
+  // an error from an earlier Save no longer applies there.
+  const showErrors = attempted && !duplicate
+  const errorOf = (f: string) => (showErrors ? errors.find(e => e.field === f)?.message : undefined)
 
   const dirty = source !== initial.source || rate !== initial.rate || date !== initial.date || notes !== initial.notes || editing !== initialRecord
   const requestClose = () => { if (dirty) setDiscardOpen(true); else onClose() }
@@ -99,11 +109,15 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
     if (errors.length) { setAttempted(true); return }
     const midRate = mid?.rate ?? 0
     const v = variancePct(n, midRate) ?? 0
-    if (editing) {
+    if (editing && scheduling) {
+      scheduleStandardRate(editing.id, { standardRate: n, effectiveDate: date, notes }, { by: ACTOR, reason: notes })
+      pushToast(`Corporate rate for ${code} scheduled`, 'success', `${fmtRate(n)} ${BASE} from ${fmtDate(date)}. ${fmtRate(editing.standardRate)} stays in effect until then.`)
+      onSaved?.(editing, 'update')
+    } else if (editing) {
       updateStandardRate(editing.id, {
         standardRate: n, effectiveDate: date, notes, midMarketRate: midRate, variance: v,
-      }, { by: ACTOR, reason: notes !== editing.notes ? notes : '' })
-      pushToast(`Corporate rate for ${code} updated`, 'success', `${fmtRate(n)} ${BASE}, effective ${fmtDate(date)}.`)
+      }, { by: ACTOR, reason: notes })
+      pushToast(`Corporate rate for ${code} updated`, 'success', date > today ? `${fmtRate(n)} ${BASE}, upcoming from ${fmtDate(date)}.` : `${fmtRate(n)} ${BASE}, effective ${fmtDate(date)}.`)
       onSaved?.({ ...editing, standardRate: n, effectiveDate: date, notes }, 'update')
     } else {
       const created = addStandardRate({
@@ -118,7 +132,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
         notes,
         status: 'active',
       }, { by: ACTOR, reason: notes })
-      pushToast(`Corporate rate for ${code} created`, 'success', `${fmtRate(n)} ${BASE}, effective ${fmtDate(date)}.`)
+      pushToast(`Corporate rate for ${code} created`, 'success', date > today ? `${fmtRate(n)} ${BASE}, upcoming from ${fmtDate(date)}.` : `${fmtRate(n)} ${BASE}, effective ${fmtDate(date)}.`)
       onSaved?.(created, 'add')
     }
     onClose()
@@ -149,7 +163,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
         }
       >
         <div className="px-6 pt-5 pb-5 space-y-3.5">
-          {attempted && errors.length > 0 && (
+          {showErrors && errors.length > 0 && (
             <Banner tone="danger" title={`${errors.length} ${errors.length === 1 ? 'issue' : 'issues'}`}>
               <ul className="mt-1.5 space-y-1 list-disc pl-4 marker:text-danger-400">
                 {errors.map(e => <li key={e.field}>{e.message}</li>)}
@@ -192,10 +206,12 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
 
           {duplicate ? (
             <Banner tone="warning" title="A corporate rate already exists for this currency pair.">
-              <p className="tabular-nums">Current rate: {fmtRate(duplicate.standardRate)} · Effective from {fmtDate(duplicate.effectiveDate)}</p>
+              {isRateInEffect(duplicate, today)
+                ? <p className="tabular-nums">Current rate: {fmtRate(duplicate.standardRate)} · Effective from {fmtDate(duplicate.effectiveDate)}</p>
+                : <p className="tabular-nums">Upcoming rate: {fmtRate(duplicate.standardRate)} · From {fmtDate(duplicate.effectiveDate)}</p>}
               <p className="mt-0.5">Do you want to update it?</p>
               <div className="flex items-center gap-2 mt-2.5">
-                <Button size="sm" icon={<Pencil size={13} />} onClick={() => { setEditing(duplicate); setRate(fmtRate(duplicate.standardRate)); setNotes(duplicate.notes); setAttempted(false) }}>
+                <Button size="sm" icon={<Pencil size={13} />} onClick={() => { setEditing(duplicate); setRate(fmtRate(duplicate.standardRate)); setNotes(''); setAttempted(false) }}>
                   Update existing rate
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => setSource('')}>Choose another currency</Button>
@@ -243,14 +259,27 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                   {existing && (
                     <div className="space-y-1.5">
                       <span className="label block">Current rate</span>
-                      <p className="text-sm text-fg-muted tabular-nums h-9 flex items-center">
-                        {fmtRate(existing.standardRate)} {BASE} · effective {fmtDate(existing.effectiveDate)}
-                      </p>
+                      <div className="text-sm text-fg-muted tabular-nums min-h-9 flex flex-col justify-center">
+                        <p>{inEffect ? <>{fmtRate(inEffect.standardRate)} {BASE} · effective {fmtDate(inEffect.effectiveDate)}</> : 'None in effect yet'}</p>
+                        {pending && (
+                          <p className="flex items-center gap-1.5 mt-0.5">
+                            <Badge tone="info">Upcoming</Badge>
+                            {fmtRate(pending.standardRate)} {BASE} from {fmtDate(pending.effectiveDate)}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
                 {backdate?.kind === 'warn' && (
                   <Banner tone="warning" className="mt-3">{backdate.message}</Banner>
+                )}
+                {date > today && rateValid && (
+                  <Banner tone="info" className="mt-3" title="This rate is upcoming">
+                    {scheduling
+                      ? <>{fmtRate(inEffect!.standardRate)} {BASE} stays in effect until {fmtDate(date)}. This rate shows as Upcoming until then{pending ? `, and replaces the upcoming ${fmtRate(pending.standardRate)} ${BASE}` : ''}.</>
+                      : <>It takes effect on {fmtDate(date)} and shows as Upcoming until then.</>}
+                  </Banner>
                 )}
               </SectionCard>
 

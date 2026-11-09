@@ -4,10 +4,10 @@
 import { SEED_CURRENCIES, getRegionForCountry } from '../../data/currencies'
 import { getCountryCode, getCountryName } from '../../utils/currencyFlags'
 import {
-  API_PROVIDER, BASE_CURRENCY, BASE_CURRENCY_NAME, LAST_SYNC,
+  API_PROVIDER, BASE_CURRENCY, BASE_CURRENCY_NAME, LAST_SYNC, isRateInEffect, upcomingRateOf,
   type MidMarketRate, type StandardRate,
 } from '../../data/exchangeRates'
-import { fmtDate, todayIso } from '../../coa/lib/utils'
+import { fmtDate, fmtDateTime, todayIso } from '../../coa/lib/utils'
 
 export const BASE = BASE_CURRENCY
 export const BASE_NAME = BASE_CURRENCY_NAME
@@ -27,11 +27,19 @@ export const regionOf = (code: string): string | null => {
   return (country && getRegionForCountry(country)) || null
 }
 export const nameOf = (code: string) => SEED_BY_CODE.get(code)?.name ?? code
+/** Digits after the point that amounts in the currency carry (2 when unknown). */
+export const decimalsOf = (code: string) => SEED_BY_CODE.get(code)?.decimalPlaces ?? 2
 
 /* ── Numbers ───────────────────────────────────────────────────────────── */
 
+/** Every rate, and every inverse rate, prints with four decimals. */
 export const fmtRate = (n: number) => n.toFixed(4)
-export const fmtInverse = (n: number) => (n > 0 ? (1 / n).toFixed(6) : '-')
+export const fmtInverse = (n: number) => (n > 0 ? (1 / n).toFixed(4) : '–')
+/** An amount in a currency, with that currency's own decimals (75.84 PKR, 0.00 USD). */
+export const fmtAmountIn = (n: number, code: string) => {
+  const dp = decimalsOf(code)
+  return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
+}
 export const fmtSignedPct = (n: number, dp = 2) => `${n > 0 ? '+' : ''}${n.toFixed(dp)}%`
 
 /** (corporate - mid) / mid, in percent to 2dp. */
@@ -52,7 +60,7 @@ export function varianceColor(v: number | null): string | undefined {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
-/** LAST_SYNC in Pakistan time (UTC+5, no daylight saving), whatever the reader's zone. */
+/** LAST_SYNC's day in Pakistan time (UTC+5, no daylight saving), whatever the reader's zone. */
 export function syncStamp(at: string = LAST_SYNC) {
   const d = new Date(new Date(at).getTime() + 5 * 3600 * 1000)
   return {
@@ -65,9 +73,11 @@ const SYNC = syncStamp()
 export const LAST_SYNC_DATE = SYNC.date
 export const LAST_SYNC_TIME = SYNC.time
 export const LAST_SYNC_DAY = SYNC.day
-export const SYNC_LINE = `Synced every 24h from ${API_PROVIDER} · Updated as of ${SYNC.date} at ${SYNC.time} PKT`
+/** The last sync as every screen writes a moment: "Apr 10, 2026, 7:30 PM". */
+export const LAST_SYNC_AT = fmtDateTime(LAST_SYNC)
+export const SYNC_LINE = `Synced every 24h from ${API_PROVIDER} · Updated ${LAST_SYNC_AT}`
 /** The toolbar's short form; the full line rides in its tooltip. */
-export const SYNC_LINE_SHORT = `Updated ${SYNC.date} at ${SYNC.time} PKT`
+export const SYNC_LINE_SHORT = `Updated ${LAST_SYNC_AT}`
 
 /* ── Backdating (one rule for every door to the corporate rate form) ───── */
 
@@ -137,11 +147,15 @@ export interface CorpRow {
   id: string
   code: string
   name: string
-  rate: number
+  /** The rate in effect today; null for one added for a later date. */
+  rate: number | null
   /** The current mid-market rate (variance is measured against it). */
   mid: number | null
   variance: number | null
+  /** When the rate in effect took effect ('' when none is yet). */
   effectiveDate: string
+  /** A rate dated for later, shown as Upcoming until its day. */
+  upcoming: { rate: number; effectiveDate: string } | null
   createdBy: string
   updatedAt: string
   notes: string
@@ -153,18 +167,22 @@ export interface CorpRow {
   record?: StandardRate
 }
 
-export function toCorpRows(standard: StandardRate[], mid: MidMarketRate[]): CorpRow[] {
+export function toCorpRows(standard: StandardRate[], mid: MidMarketRate[], today = todayIso()): CorpRow[] {
   const midOf = new Map(mid.map(m => [m.sourceCurrency, m.rate]))
   return standard.map(s => {
     const m = midOf.get(s.sourceCurrency) ?? s.midMarketRate ?? null
+    // An archived rate keeps its figures; an active one dated for later has none in effect yet.
+    const current = s.status === 'archived' || isRateInEffect(s, today)
+    const next = upcomingRateOf(s, today)
     return {
       id: s.id,
       code: s.sourceCurrency,
       name: s.sourceCurrencyName,
-      rate: s.standardRate,
+      rate: current ? s.standardRate : null,
       mid: m,
-      variance: variancePct(s.standardRate, m),
-      effectiveDate: s.effectiveDate,
+      variance: current ? variancePct(s.standardRate, m) : null,
+      effectiveDate: current ? s.effectiveDate : '',
+      upcoming: next ? { rate: next.standardRate, effectiveDate: next.effectiveDate } : null,
       createdBy: s.createdBy,
       updatedAt: s.updatedAt,
       notes: s.notes,
@@ -188,6 +206,7 @@ export function baseCorpRow(): CorpRow {
     mid: 1,
     variance: null,
     effectiveDate: '',
+    upcoming: null,
     createdBy: '',
     updatedAt: '',
     notes: '',

@@ -1,14 +1,16 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, useCallback, type ReactNode } from "react";
 import {
   SEED_MID_MARKET_RATES,
   SEED_STANDARD_RATES,
   SEED_RATE_AUDIT,
   activeStandardRateFor,
+  settleStandardRate,
   type MidMarketRate,
   type StandardRate,
   type RateAuditEntry,
   type RateAuditAction,
 } from "../data/exchangeRates";
+import { todayIso } from "../coa/lib/utils";
 
 /** Who made a change, and why (the reason lands on its audit entry). */
 export interface RateChangeMeta {
@@ -27,13 +29,16 @@ interface ExchangeRateContextValue {
   addStandardRate: (rate: Omit<StandardRate, "id" | "createdAt" | "updatedAt" | "isStale">, meta?: RateChangeMeta) => StandardRate;
   /** Updates a corporate rate and logs "Updated" when its rate or effective date moved. */
   updateStandardRate: (id: string, updates: Partial<StandardRate>, meta?: RateChangeMeta) => void;
+  /** Saves a new rate for a later date and logs "Scheduled". The current rate
+   *  stays in effect until that date; a second schedule replaces the first. */
+  scheduleStandardRate: (id: string, next: { standardRate: number; effectiveDate: string; notes: string }, meta?: RateChangeMeta) => void;
   /** Soft delete: archives the rate and logs "Archived". */
   deleteStandardRate: (id: string, meta?: RateChangeMeta) => void;
   /** Archives several rates at once (active ones only). */
   archiveStandardRates: (ids: string[], meta?: RateChangeMeta) => void;
   /** Brings an archived rate back and logs "Restored". */
   restoreStandardRate: (id: string, meta?: RateChangeMeta) => void;
-  /** The active corporate rate for a currency; archived rates are never current. */
+  /** The active corporate rate record for a currency; archived rates are never current. */
   getActiveStandardRate: (code: string) => StandardRate | undefined;
 }
 
@@ -97,8 +102,10 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
   const updateStandardRate = useCallback((id: string, updates: Partial<StandardRate>, meta?: RateChangeMeta) => {
     const now = new Date().toISOString();
     setState(prev => {
-      const current = prev.standardRates.find(r => r.id === id);
-      if (!current) return prev;
+      const raw = prev.standardRates.find(r => r.id === id);
+      if (!raw) return prev;
+      // A scheduled rate whose day has come is the current one now.
+      const current = settleStandardRate(raw, todayIso());
       const next: StandardRate = { ...current, ...updates, updatedAt: now };
       const moved = next.standardRate !== current.standardRate || next.effectiveDate !== current.effectiveDate;
       const log = moved
@@ -114,6 +121,25 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [midFor]);
 
+  const scheduleStandardRate = useCallback((id: string, upcoming: { standardRate: number; effectiveDate: string; notes: string }, meta?: RateChangeMeta) => {
+    const now = new Date().toISOString();
+    setState(prev => {
+      const raw = prev.standardRates.find(r => r.id === id);
+      if (!raw) return prev;
+      const current = settleStandardRate(raw, todayIso());
+      const by = meta?.by ?? DEFAULT_ACTOR;
+      const next: StandardRate = { ...current, upcoming: { ...upcoming, setBy: by, setAt: now }, updatedAt: now };
+      const log = entry("Scheduled", next, now, { by, reason: meta?.reason ?? upcoming.notes }, {
+        oldValue: current.standardRate, newValue: upcoming.standardRate, effectiveDate: upcoming.effectiveDate,
+      });
+      return {
+        standardRates: prev.standardRates.map(r => (r.id === id ? next : r)),
+        rateAudit: [...prev.rateAudit, log],
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [midFor]);
+
   const archiveStandardRates = useCallback((ids: string[], meta?: RateChangeMeta) => {
     const now = new Date().toISOString();
     setState(prev => {
@@ -121,7 +147,8 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
       if (!targets.length) return prev;
       const targetIds = new Set(targets.map(t => t.id));
       return {
-        standardRates: prev.standardRates.map(r => (targetIds.has(r.id) ? { ...r, status: "archived" as const, updatedAt: now } : r)),
+        // A rate still waiting for its day goes with the record.
+        standardRates: prev.standardRates.map(r => (targetIds.has(r.id) ? { ...settleStandardRate(r, todayIso()), upcoming: undefined, status: "archived" as const, updatedAt: now } : r)),
         rateAudit: [
           ...prev.rateAudit,
           ...targets.map(t => entry("Archived", t, now, meta, { oldValue: t.standardRate, newValue: null, effectiveDate: null })),
@@ -151,19 +178,24 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [midFor]);
 
+  // Read as they stand today: a scheduled rate whose day has come is the current one.
+  const today = todayIso();
+  const standardRates = useMemo(() => state.standardRates.map(r => settleStandardRate(r, today)), [state.standardRates, today]);
+
   const getActiveStandardRate = useCallback(
-    (code: string) => activeStandardRateFor(code, state.standardRates),
-    [state.standardRates],
+    (code: string) => activeStandardRateFor(code, standardRates),
+    [standardRates],
   );
 
   return (
     <ExchangeRateContext.Provider
       value={{
         midMarketRates,
-        standardRates: state.standardRates,
+        standardRates,
         rateAudit: state.rateAudit,
         addStandardRate,
         updateStandardRate,
+        scheduleStandardRate,
         deleteStandardRate,
         archiveStandardRates,
         restoreStandardRate,

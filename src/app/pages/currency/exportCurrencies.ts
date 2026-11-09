@@ -4,15 +4,16 @@
 // through the kit's toast store. The writers load on demand.
 import type { Currency } from '../../data/currencies'
 import { pushToast } from '../../coa/lib/toast'
-import { DOC_TYPES, fmtAmount, type LinkedDoc } from './model'
+import { DOC_TYPES, countriesOf, fmtAmount, statusOf, type LinkedDoc } from './model'
 
 export type ExportFormat = 'csv' | 'xlsx' | 'pdf'
 export const FORMAT_LABEL: Record<ExportFormat, string> = { csv: 'CSV', xlsx: 'Excel', pdf: 'PDF' }
 
-const HEADERS = ['Code', 'Name', 'ISO Numeric Code', 'Symbol', 'Decimal Places', 'Country', 'Status']
-const COL_WIDTHS = [8, 32, 14, 8, 14, 28, 10]
+const HEADERS = ['Code', 'Name', 'ISO Numeric Code', 'Symbol', 'Decimal Places', 'Countries / Regions', 'Base', 'Status']
+const COL_WIDTHS = [8, 32, 14, 8, 14, 60, 8, 10]
 
-const rowOf = (c: Currency) => [c.code, c.name, c.numericCode, c.symbol, String(c.decimalPlaces), c.country, c.status]
+// Every country the currency is used in (USD has 18), primary first, as the list shows them.
+const rowOf = (c: Currency) => [c.code, c.name, c.numericCode, c.symbol, String(c.decimalPlaces), countriesOf(c).join('; '), c.isBaseCurrency ? 'Yes' : 'No', statusOf(c)]
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)

@@ -23,14 +23,16 @@ export const RATE_TOOLTIPS = {
     `When this rate was last updated from ${API_PROVIDER}.`,
   internalId:
     "The system ID for this rate.",
+  upcoming:
+    "A rate saved for a later date. The current rate stays in effect until then.",
   variance:
     "The percentage difference between the corporate rate and the current mid-market rate. Indicates how far the corporate rate has drifted from live market value.",
   effectiveDate:
     "The date the current corporate rate took effect. The rate remains active until manually updated by a team member.",
   totalValueAllDocs:
-    "Sum of every active document booked in this currency, expressed in the currency's own units.",
+    "Sum of every active transaction booked in this currency, expressed in the currency's own units.",
   documentTypeTotal:
-    "Sum of all active documents of this type, in this currency.",
+    "Sum of all active transactions of this type, in this currency.",
 } as const;
 
 // Longer, example-driven tooltip used specifically on the "Inverse rate" badge
@@ -60,5 +62,5 @@ export const CONVERTER_TOGGLE_TOOLTIPS = {
 export const EXPLANATORY_BLOCKS = {
   midMarket: `The rate halfway between the buy and sell price, with no bank markup. Updated automatically from ${API_PROVIDER} every 24 hours.`,
   corporate:
-    "Fixed rates your team sets. They stay the same until someone changes them, so documents and budgets use a steady rate.",
+    "Fixed rates your team sets. They stay the same until someone changes them, so transactions and budgets use a steady rate.",
 } as const;

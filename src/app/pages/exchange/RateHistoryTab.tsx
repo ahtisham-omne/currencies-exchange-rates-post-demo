@@ -15,16 +15,17 @@ import { fmtInverse, fmtRate, fmtSignedPct } from './rateModel'
 import type { HistoryEvent, RateHistoryRow } from './pairData'
 
 const EVENT_TONE: Record<HistoryEvent, 'neutral' | 'success' | 'info' | 'danger' | 'warning'> = {
-  Synced: 'neutral', Created: 'success', Updated: 'info', Archived: 'danger', Restored: 'warning',
+  Synced: 'neutral', Created: 'success', Updated: 'info', Scheduled: 'info', Archived: 'danger', Restored: 'warning',
 }
 
 type TypePill = 'all' | 'Mid-market' | 'Corporate'
 
-export function RateHistoryTab({ rows, code, defaultType }: { rows: RateHistoryRow[]; code: string; defaultType: 'Mid-market' | 'Corporate' }) {
+export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: string }) {
   const [query, setQuery] = useState('')
   const [debouncedQ, setDebouncedQ] = useState(query)
   useEffect(() => { const t = setTimeout(() => setDebouncedQ(query), 300); return () => clearTimeout(t) }, [query])
-  const [pill, setPill] = useState<TypePill>(defaultType)
+  // Opens on every entry, as the tab's count does.
+  const [pill, setPill] = useState<TypePill>('all')
   const shown = pill === 'all' ? rows : rows.filter(r => r.type === pill)
   const counts = { mid: rows.filter(r => r.type === 'Mid-market').length, corp: rows.filter(r => r.type === 'Corporate').length }
 
@@ -41,7 +42,7 @@ export function RateHistoryTab({ rows, code, defaultType }: { rows: RateHistoryR
     },
     {
       key: 'event', label: 'Event', headerClassName: 'min-w-[110px]',
-      info: 'Synced by the provider, or set, updated, archived or restored by your team.',
+      info: 'Synced by the provider, or set, updated, scheduled for a later date, archived or restored by your team.',
       render: (r, ctx) => <Badge tone={EVENT_TONE[r.event]} className={PARTNER_CHIP_CLS}><Marked text={r.event} q={ctx.q} /></Badge>,
       sortValue: r => r.event, searchText: r => r.event, filter: 'multiselect',
     },

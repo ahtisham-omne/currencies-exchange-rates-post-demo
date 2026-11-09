@@ -71,7 +71,7 @@ export function ExportSelectedModal({ open, onClose, rows }: { open: boolean; on
       widthClass="max-w-[760px]"
       icon={<Download size={16} />}
       title="Export currencies"
-      subtitle="Choose a format. The file holds the currencies you selected, with code, name, ISO numeric code, symbol, decimal places, country and status."
+      subtitle="Choose a format. The file holds the currencies you selected, with code, name, ISO numeric code, symbol, decimal places, every country, whether it is the base currency, and status."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>

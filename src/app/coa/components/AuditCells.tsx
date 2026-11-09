@@ -230,7 +230,7 @@ export function PersonCell({ name, comfort = false, q = '' }: { name?: string; c
     return () => window.removeEventListener('scroll', close, true)
   }, [anchor])
 
-  if (!name) return <span className={cn(comfort ? 'text-[13px]' : 'text-sm', 'text-fg-subtle')}>-</span>
+  if (!name) return <span className={cn(comfort ? 'text-[13px]' : 'text-sm', 'text-fg-subtle')}>–</span>
   const shown = cleanName(name)
   const role = personFacts(name).role
 
@@ -262,7 +262,7 @@ export function PersonCell({ name, comfort = false, q = '' }: { name?: string; c
 
 /** A moment as a grid shows one: the date and the time of day. */
 export function StampCell({ at, q = '' }: { at?: string; q?: string }) {
-  if (!at) return <span className="text-fg-subtle">-</span>
+  if (!at) return <span className="text-fg-subtle">–</span>
   return <span className="text-sm text-slate-700 tabular-nums whitespace-nowrap"><Marked text={stampText(at)} q={q} /></span>
 }
 

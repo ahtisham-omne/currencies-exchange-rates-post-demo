@@ -31,7 +31,7 @@ export function corporateEvents(code: string, audit: RateAuditEntry[]): CorpEven
   return audit
     .filter(e => e.sourceCurrency === code)
     .map(e => ({
-      day: (e.action === 'Created' || e.action === 'Updated') && e.effectiveDate ? e.effectiveDate : localDayOf(e.dateTime),
+      day: (e.action === 'Created' || e.action === 'Updated' || e.action === 'Scheduled') && e.effectiveDate ? e.effectiveDate : localDayOf(e.dateTime),
       at: e.dateTime,
       value: e.action === 'Archived' ? null : e.newValue,
     }))
@@ -49,20 +49,20 @@ export function buildPairSeries(mid: MidMarketRate, audit: RateAuditEntry[]): Pa
   })
 }
 
-/* ── Ranges (Partners' insights range menu: Last 7/30/90 days, Last 12
-   months, All time, Custom; see InsightsRangeMenu) ──────────────────────── */
+/* ── Ranges (1D, 5D, 1M, 1Y, 5Y, Max and Custom, 1M by default; see
+   InsightsRangeMenu) ───────────────────────────────────────────────────── */
 
 export const RANGES: RangeOption[] = INSIGHTS_RANGE_OPTIONS.filter(o => o.key !== 'custom')
-const RANGE_DAYS: Record<string, number> = { last_7: 7, last_30: 30, last_90: 90, last_365: 365 }
+const RANGE_DAYS: Record<string, number> = { '1d': 1, '5d': 5, '1m': 30, '1y': 365, '5y': 5 * 365 }
 export const RANGE_LONG: Record<string, string> = {
-  last_7: 'Over last 7 days', last_30: 'Over last 30 days', last_90: 'Over last 90 days',
-  last_365: 'Over last 12 months', all_time: 'Over all time',
+  '1d': 'Over the last day', '5d': 'Over the last 5 days', '1m': 'Over the last month',
+  '1y': 'Over the last year', '5y': 'Over the last 5 years', max: 'Over the full history',
 }
-export const DEFAULT_RANGE: RangeValue = { kind: 'preset', key: 'last_30' }
+export const DEFAULT_RANGE: RangeValue = { kind: 'preset', key: '1m' }
 
 export function windowRange<P extends { date: string }>(series: P[], range: RangeValue): P[] {
   if (range.kind === 'custom') return windowSeriesBetween(series, range.from, range.to)
-  if (range.key === 'all_time') return series
+  if (range.key === 'max') return series
   return windowSeries(series, RANGE_DAYS[range.key] ?? 30)
 }
 
@@ -155,7 +155,7 @@ export const transactionsOn = pairTransactionsOn
 
 /* ── Rate history (the table tab) ───────────────────────────────────────── */
 
-export type HistoryEvent = 'Synced' | 'Created' | 'Updated' | 'Archived' | 'Restored'
+export type HistoryEvent = 'Synced' | 'Created' | 'Updated' | 'Scheduled' | 'Archived' | 'Restored'
 export interface RateHistoryRow {
   id: string
   type: 'Mid-market' | 'Corporate'
@@ -200,7 +200,7 @@ export function rateHistory(code: string, series: PairPoint[], audit: RateAuditE
       effectiveDate: day,
       at: e.dateTime,
       rate,
-      changePct: e.action === 'Updated' && e.oldValue ? ((rate - e.oldValue) / e.oldValue) * 100 : null,
+      changePct: (e.action === 'Updated' || e.action === 'Scheduled') && e.oldValue ? ((rate - e.oldValue) / e.oldValue) * 100 : null,
       variance: e.action === 'Archived' ? null : variancePct(rate, midThen),
       by: e.user,
       source: 'Manual',
@@ -235,6 +235,8 @@ export function corporateActivity(code: string, audit: RateAuditEntry[]): (Activ
           return { id: e.id, type: 'create' as const, user, date, at, verb: `set the corporate rate${tail(`“${fmtRate(e.newValue ?? 0)}”`)} for`, target: pair }
         case 'Updated':
           return { id: e.id, type: 'edit' as const, user, date, at, verb: `updated the corporate rate${tail(`“${fmtRate(e.oldValue ?? 0)}” → “${fmtRate(e.newValue ?? 0)}”`)} for`, target: pair }
+        case 'Scheduled':
+          return { id: e.id, type: 'edit' as const, user, date, at, verb: `scheduled an upcoming corporate rate${tail(`“${fmtRate(e.oldValue ?? 0)}” → “${fmtRate(e.newValue ?? 0)}”`)} for`, target: pair }
         case 'Archived':
           return { id: e.id, type: 'delete' as const, user, date, at, verb: `archived the corporate rate${tail(`“${fmtRate(e.oldValue ?? 0)}”`)} for`, target: pair }
         default:

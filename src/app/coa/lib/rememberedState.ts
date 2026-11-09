@@ -42,3 +42,32 @@ export function rememberedValue<T>(key: string): T | undefined {
 export function forgetRememberedState() {
   memory.clear()
 }
+
+/* A choice the reader expects back after a reload too, like how many records a
+   page shows: kept in this browser's storage under the key. Storage can be
+   missing or full (a private window, say); the choice then lasts as long as
+   the page does. */
+const STORED_PREFIX = 'omne.coa:'
+
+function readStored<T>(key: string): { value: T } | null {
+  try {
+    const raw = window.localStorage.getItem(STORED_PREFIX + key)
+    return raw == null ? null : { value: JSON.parse(raw) as T }
+  } catch {
+    return null
+  }
+}
+
+export function useStoredState<T>(key: string | undefined, initial: T): [T, Dispatch<SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => (key ? readStored<T>(key)?.value ?? initial : initial))
+  const set = useCallback<Dispatch<SetStateAction<T>>>(next => {
+    setValue(prev => {
+      const v = typeof next === 'function' ? (next as (p: T) => T)(prev) : next
+      if (key) {
+        try { window.localStorage.setItem(STORED_PREFIX + key, JSON.stringify(v)) } catch { /* kept for this page only */ }
+      }
+      return v
+    })
+  }, [key])
+  return [value, set]
+}

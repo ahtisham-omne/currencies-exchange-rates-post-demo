@@ -27,7 +27,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
   const columns = useMemo<CoaColumn<LinkedDoc>[]>(() => [
     {
       key: 'number', label: 'Number', locked: true, width: 180,
-      info: 'The document\'s own reference.',
+      info: 'The transaction\'s own reference.',
       render: (d, ctx) => (
         <span className="inline-flex items-center gap-1.5 text-sm text-slate-800 tabular-nums whitespace-nowrap" style={{ fontWeight: 500 }}>
           <FileText size={12} className="text-fg-subtle shrink-0" /><Marked text={d.number} q={ctx.q} />
@@ -58,7 +58,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
     },
     {
       key: 'amount', label: 'Amount', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[160px]',
-      info: `In ${c.code}, the document's own currency.`,
+      info: `In ${c.code}, the transaction's own currency.`,
       render: (d, ctx) => <span className="text-sm font-medium text-slate-700 tabular-nums whitespace-nowrap"><Marked text={`${c.code} ${fmtAmount(d.amount, dp)}`} q={ctx.q} /></span>,
       sortValue: d => d.amount, searchText: d => fmtAmount(d.amount, dp), filter: 'range',
     },
@@ -75,7 +75,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
   if (docs.length === 0) {
     return (
       <div className="card flex-1 flex items-center justify-center min-h-[calc(100vh-260px)]">
-        <EmptyState icon={<Inbox size={20} />} title={`No transactions found for ${c.code}`} description="Documents using this currency will appear here." />
+        <EmptyState icon={<Inbox size={20} />} title={`No transactions found for ${c.code}`} description="Transactions in this currency will appear here." />
       </div>
     )
   }
@@ -104,7 +104,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
       notes={
         <div className="px-4 py-2 border-b border-border bg-bg-subtle/40 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs text-fg-muted">
           <span className="inline-flex items-center gap-1.5">
-            Total value across all documents:
+            Total value across all transactions:
             <Tooltip content={RATE_TOOLTIPS.totalValueAllDocs} side="bottom" align="left">
               <span className="inline-flex cursor-help text-fg-subtle/60 hover:text-fg-subtle"><Info size={12} /></span>
             </Tooltip>
@@ -112,10 +112,10 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
           </span>
           <span className="w-px h-3.5 bg-border" />
           <span>
-            {inUse} active {inUse === 1 ? 'document' : 'documents'}
+            {inUse} active {inUse === 1 ? 'transaction' : 'transactions'}
             {blocking && <span className="text-warning-700" style={{ fontWeight: 500 }}> · blocking deactivation</span>}
             {' · '}Last transaction: {lastDate ? fmtDate(lastDate) : 'N/A'}
-            {' · '}{c.usage.totalLifetimeDocuments.toLocaleString('en-US')} documents in the past 12 months
+            {' · '}{c.usage.totalLifetimeDocuments.toLocaleString('en-US')} {c.usage.totalLifetimeDocuments === 1 ? 'transaction' : 'transactions'} in total
           </span>
         </div>
       }
@@ -124,7 +124,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
       <CoaDataTable
         table={table}
         windowAbove={0}
-        emptyState={<TableEmptyState noun="transactions" query={debouncedQ} filtersActive={type !== 'all' || Object.keys(table.colFilters).length > 0} onClearSearch={() => setQuery('')} onClearFilters={() => { setType('all'); table.setColFilters({}) }} where={`${c.code}'s documents`} />}
+        emptyState={<TableEmptyState noun="transactions" query={debouncedQ} filtersActive={type !== 'all' || Object.keys(table.colFilters).length > 0} onClearSearch={() => setQuery('')} onClearFilters={() => { setType('all'); table.setColFilters({}) }} where={`${c.code}'s transactions`} />}
       />
     </CoaTableCard>
   )

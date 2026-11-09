@@ -9,12 +9,12 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeftRight, Check, ChevronDown, Info, Plus, Search, X } from 'lucide-react'
 import { useCurrencies } from '../../context/CurrencyContext'
 import { useExchangeRates } from '../../context/ExchangeRateContext'
-import { API_PROVIDER, LAST_SYNC } from '../../data/exchangeRates'
+import { API_PROVIDER, LAST_SYNC, corporateRateInEffect, upcomingRateOf } from '../../data/exchangeRates'
 import type { Currency } from '../../data/currencies'
 import { CONVERTER_SUBTITLE, CONVERTER_TOGGLE_TOOLTIPS, INVERSE_BADGE_TOOLTIP } from '../../utils/rateCopy'
 import { Badge, Banner, Button, Marked, Tooltip, useEscapeToClose } from '../../coa/components/ui'
 import { FlagImage } from '../../coa/components/FlagImage'
-import { cn, fmtDateTime } from '../../coa/lib/utils'
+import { cn, fmtDate, fmtDateTime, todayIso } from '../../coa/lib/utils'
 import { BASE, flagOf } from './model'
 
 type RateMode = 'mid' | 'std'
@@ -89,7 +89,10 @@ function CurrencyPicker({ value, onChange, options, all, ariaLabel }: {
           <>
             <span className="inline-flex shrink-0 text-[16px] leading-none" aria-hidden><FlagImage code={flagOf(selected.code)} /></span>
             <span className="min-w-0 flex-1 flex flex-col leading-tight">
-              <span className="text-[13px] text-fg tabular-nums truncate" style={{ fontWeight: 600 }}>{selected.code}</span>
+              <span className="inline-flex items-center gap-1.5 min-w-0">
+                <span className="text-[13px] text-fg tabular-nums truncate" style={{ fontWeight: 600 }}>{selected.code}</span>
+                {selected.isBaseCurrency && <Badge tone="base" className="shrink-0">Base</Badge>}
+              </span>
               <span className="text-[11px] text-fg-subtle truncate" title={selected.name}>{selected.name}</span>
             </span>
           </>
@@ -138,6 +141,7 @@ function CurrencyPicker({ value, onChange, options, all, ariaLabel }: {
                   <span className="w-[22px] shrink-0 text-[16px] leading-none inline-flex justify-center" aria-hidden><FlagImage code={flagOf(c.code)} /></span>
                   <span className="tabular-nums shrink-0" style={{ fontWeight: 600 }}><Marked text={c.code} q={query} /></span>
                   <span className={cn('truncate min-w-0', isSel ? 'text-primary/80' : 'text-fg-muted')}><Marked text={c.name} q={query} /></span>
+                  {c.isBaseCurrency && <Badge tone="base" className="shrink-0">Base</Badge>}
                   {isSel && <Check size={15} className="ml-auto text-primary shrink-0" />}
                 </button>
               )
@@ -236,7 +240,9 @@ export function CurrencyConverter({ detail, wide = true }: {
 
   // Every rate is quoted against the base: "1 X = rate[X] PKR".
   const midFor = (code: string): number | null => (code === BASE ? 1 : midMarketRates.find(r => r.sourceCurrency === code)?.rate ?? null)
-  const stdRecordFor = (code: string) => standardRates.find(r => r.sourceCurrency === code && r.status === 'active') ?? null
+  // Only the corporate rate in effect today converts; one dated for later waits for its day.
+  const today = todayIso()
+  const stdRecordFor = (code: string) => corporateRateInEffect(code, standardRates, today) ?? null
   const stdFor = (code: string): number | null => (code === BASE ? 1 : stdRecordFor(code)?.standardRate ?? null)
 
   // From = the page's currency; To = the base, or USD when the page is the base.
@@ -265,15 +271,10 @@ export function CurrencyConverter({ detail, wide = true }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromCode, toCode, effectiveMode, midMarketRates, standardRates])
 
-  // The currency's own precision, widened (up to 8 places) for sub-unit values.
-  const fmt = (n: number, c: Currency) => {
-    const abs = Math.abs(n)
-    if (abs > 0 && abs < Math.pow(10, -c.decimalPlaces)) {
-      const dp = Math.min(8, Math.floor(-Math.log10(abs)) + 4)
-      return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
-    }
-    return n.toLocaleString('en-US', { minimumFractionDigits: c.decimalPlaces, maximumFractionDigits: c.decimalPlaces })
-  }
+  // An amount carries its currency's own decimals (1 PKR = 0.00 USD); the rate
+  // line below carries the rate's four.
+  const fmt = (n: number, c: Currency) =>
+    n.toLocaleString('en-US', { minimumFractionDigits: c.decimalPlaces, maximumFractionDigits: c.decimalPlaces })
 
   // Recompute whichever side was not typed in when the pair or rate changes.
   useEffect(() => {
@@ -321,10 +322,14 @@ export function CurrencyConverter({ detail, wide = true }: {
   // The pair's non-base side names the rate; a cross pair falls back to From.
   const pairCode = fromCode === BASE ? toCode : toCode === BASE ? fromCode : fromCode
   const stdRecord = stdRecordFor(pairCode)
+  const pairRecord = standardRates.find(r => r.sourceCurrency === pairCode && r.status === 'active')
+  const upcoming = pairRecord ? upcomingRateOf(pairRecord, today) : null
   const midRecord = midMarketRates.find(r => r.sourceCurrency === pairCode) ?? null
+  // Every rate prints with four decimals.
+  const rate4 = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
   const rateDisplay = rate === null ? 'rate unavailable' : isSwapped
-    ? `1 ${toCode} = ${(1 / rate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })} ${fromCode}`
-    : `1 ${fromCode} = ${rate.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })} ${toCode}`
+    ? `1 ${toCode} = ${rate4(1 / rate)} ${fromCode}`
+    : `1 ${fromCode} = ${rate4(rate)} ${toCode}`
   const showCorporateEmpty = rateMode === 'std' && !hasCorporate
 
   const sides = { options: activeCurrencies, all: currencies, noRate: rate === null }
@@ -370,8 +375,15 @@ export function CurrencyConverter({ detail, wide = true }: {
           Using <span className="text-fg" style={{ fontWeight: 600 }}>{effectiveMode === 'std' ? 'corporate rate' : 'mid-market rate'}</span>
           {' · '}<span className={cn('tabular-nums', rate !== null && 'text-fg')} style={{ fontWeight: rate !== null ? 600 : 400 }}>{rateDisplay}</span>
           {effectiveMode === 'mid' && midRecord && <>{' · '}Auto-synced from {API_PROVIDER}{' · '}Last updated {fmtDateTime(LAST_SYNC)}</>}
-          {effectiveMode === 'std' && stdRecord && <>{' · '}Manually set by {stdRecord.createdBy} on {fmtDateTime(stdRecord.updatedAt || stdRecord.effectiveDate)}</>}
+          {/* Scheduling a later rate moves the record's last update, not this rate's, so name the day it took effect then. */}
+          {effectiveMode === 'std' && stdRecord && <>{' · '}Manually set by {stdRecord.createdBy} on {fmtDateTime(stdRecord.upcoming ? stdRecord.effectiveDate : stdRecord.updatedAt || stdRecord.effectiveDate)}</>}
         </span>
+        {upcoming && (
+          <span className="inline-flex items-center gap-1.5 tabular-nums">
+            <Badge tone="info">Upcoming</Badge>
+            Corporate rate {rate4(upcoming.standardRate)} {BASE} from {fmtDate(upcoming.effectiveDate)}
+          </span>
+        )}
         {isSwapped && (
           <Tooltip content={INVERSE_BADGE_TOOLTIP} side="top">
             <span className="inline-flex cursor-help" tabIndex={0}>

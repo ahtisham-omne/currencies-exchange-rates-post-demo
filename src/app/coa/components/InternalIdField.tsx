@@ -26,7 +26,7 @@ export function InternalIdField({ id, help, label = INTERNAL_ID_LABEL }: { id: s
     <div className="min-w-0">
       <DashInfoLabel tooltip={help}>{label}</DashInfoLabel>
       <div className="flex items-center gap-1 mt-0.5 min-w-0">
-        <span className="text-[12px] text-slate-700 tabular-nums truncate" style={{ fontWeight: 500 }}>{id || '-'}</span>
+        <span className="text-[12px] text-slate-700 tabular-nums truncate" style={{ fontWeight: 500 }}>{id || '–'}</span>
         {id && (
           <Tooltip content={copied ? 'Copied' : `Copy ${label.toLowerCase()}`}>
             <button

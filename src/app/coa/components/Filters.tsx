@@ -232,15 +232,21 @@ export function QuickFilterPill({ label, count, active, onClick, icon, tone = 'd
   active: boolean
   onClick: () => void
   icon?: React.ReactNode
-  tone?: 'default' | 'danger'
+  /** `warning` is amber, as Inactive rows are; `danger` is red, for Archived. */
+  tone?: 'default' | 'danger' | 'warning'
 }) {
   const danger = tone === 'danger'
+  const warning = tone === 'warning'
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer',
-        danger
+        warning
+          ? (active
+            ? 'border-amber-300 bg-amber-50 hover:bg-amber-100 active:bg-amber-200'
+            : 'border-amber-200 hover:bg-amber-50 hover:border-amber-300 active:bg-amber-100')
+          : danger
           ? (active
             ? 'border-rose-300 bg-rose-50 hover:bg-rose-100 active:bg-rose-200'
             : 'border-rose-200 hover:bg-rose-50 hover:border-rose-300 active:bg-rose-100')
@@ -249,7 +255,7 @@ export function QuickFilterPill({ label, count, active, onClick, icon, tone = 'd
             : 'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground hover:border-muted-foreground/30 active:bg-muted'))}
       style={{
         fontWeight: active ? 500 : 400,
-        color: danger ? 'hsl(var(--destructive))' : active ? 'hsl(var(--primary))' : undefined,
+        color: warning ? '#92400E' : danger ? 'hsl(var(--destructive))' : active ? 'hsl(var(--primary))' : undefined,
       }}
     >
       {icon}
@@ -257,10 +263,10 @@ export function QuickFilterPill({ label, count, active, onClick, icon, tone = 'd
       {typeof count === 'number' && (
         <span
           className={cn('text-10 rounded-full px-1.5 py-px min-w-[18px] text-center tabular-nums',
-            danger ? (active ? 'bg-rose-100' : 'bg-rose-50') : active ? 'bg-primary/10' : 'bg-muted')}
+            warning ? (active ? 'bg-amber-100' : 'bg-amber-50') : danger ? (active ? 'bg-rose-100' : 'bg-rose-50') : active ? 'bg-primary/10' : 'bg-muted')}
           style={{
             fontWeight: 600,
-            color: danger ? 'hsl(var(--destructive))' : active ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',
+            color: warning ? '#92400E' : danger ? 'hsl(var(--destructive))' : active ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',
           }}
         >
           {fmtNumber(count)}

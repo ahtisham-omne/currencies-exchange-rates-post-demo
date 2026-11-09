@@ -30,6 +30,17 @@ export interface StandardRate {
   // or have been retired (archived). "Inactive" was ambiguous and removed.
   status: "active" | "archived";
   isStale: boolean; // not updated in 30+ days
+  /** A rate saved for a later date. The rate above stays in effect until then. */
+  upcoming?: UpcomingRate;
+}
+
+/** A corporate rate dated for later: it takes over on its effective date. */
+export interface UpcomingRate {
+  standardRate: number;
+  effectiveDate: string;
+  notes: string;
+  setBy: string;
+  setAt: string;
 }
 
 export interface RateHistoryEntry {
@@ -53,7 +64,8 @@ export interface AuditEntry {
 }
 
 /** One change to a corporate rate, kept for the pair's history and activity. */
-export type RateAuditAction = "Created" | "Updated" | "Archived" | "Restored";
+/** "Scheduled" is a new rate saved for a later date, while the current one stays in effect. */
+export type RateAuditAction = "Created" | "Updated" | "Scheduled" | "Archived" | "Restored";
 export interface RateAuditEntry extends AuditEntry {
   action: RateAuditAction;
   sourceCurrency: string;
@@ -79,10 +91,10 @@ export const DEFAULT_RATE_TYPE: "MID" | "STD" = "MID";
 const HAND_SEEDED_MID_RATES: MidMarketRate[] = [
   { id: "mm-usd", baseCurrency: "PKR", sourceCurrency: "USD", sourceCurrencyName: "United States Dollar", rate: 278.5200, change24h: 0.12, effectiveDate: "2026-04-10", source: "API", status: "active" },
   { id: "mm-eur", baseCurrency: "PKR", sourceCurrency: "EUR", sourceCurrencyName: "Euro", rate: 304.8150, change24h: -0.23, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-gbp", baseCurrency: "PKR", sourceCurrency: "GBP", sourceCurrencyName: "British Pound Sterling", rate: 355.4200, change24h: 0.35, effectiveDate: "2026-04-10", source: "API", status: "active" },
+  { id: "mm-gbp", baseCurrency: "PKR", sourceCurrency: "GBP", sourceCurrencyName: "Pound Sterling", rate: 355.4200, change24h: 0.35, effectiveDate: "2026-04-10", source: "API", status: "active" },
   { id: "mm-aed", baseCurrency: "PKR", sourceCurrency: "AED", sourceCurrencyName: "United Arab Emirates Dirham", rate: 75.8400, change24h: 0.02, effectiveDate: "2026-04-10", source: "API", status: "active" },
   { id: "mm-sar", baseCurrency: "PKR", sourceCurrency: "SAR", sourceCurrencyName: "Saudi Riyal", rate: 74.2700, change24h: -0.01, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-cny", baseCurrency: "PKR", sourceCurrency: "CNY", sourceCurrencyName: "Chinese Yuan", rate: 38.3100, change24h: -0.45, effectiveDate: "2026-04-10", source: "API", status: "active" },
+  { id: "mm-cny", baseCurrency: "PKR", sourceCurrency: "CNY", sourceCurrencyName: "Renminbi", rate: 38.3100, change24h: -0.45, effectiveDate: "2026-04-10", source: "API", status: "active" },
   { id: "mm-jpy", baseCurrency: "PKR", sourceCurrency: "JPY", sourceCurrencyName: "Japanese Yen", rate: 1.9230, change24h: 0.08, effectiveDate: "2026-04-10", source: "API", status: "active" },
   { id: "mm-inr", baseCurrency: "PKR", sourceCurrency: "INR", sourceCurrencyName: "Indian Rupee", rate: 3.2700, change24h: 0.15, effectiveDate: "2026-04-10", source: "API", status: "active" },
   { id: "mm-aud", baseCurrency: "PKR", sourceCurrency: "AUD", sourceCurrencyName: "Australian Dollar", rate: 178.3500, change24h: -0.19, effectiveDate: "2026-04-10", source: "API", status: "active" },
@@ -144,7 +156,8 @@ export const SEED_MID_MARKET_RATES: MidMarketRate[] = (() => {
     if (c.code === BASE_CURRENCY) continue;
     const existing = seeded.get(c.code);
     if (existing) {
-      out.push(existing);
+      // The Currency Library's ISO name, so both tabs call a currency the same.
+      out.push({ ...existing, sourceCurrencyName: c.name });
       continue;
     }
     out.push({
@@ -163,14 +176,20 @@ export const SEED_MID_MARKET_RATES: MidMarketRate[] = (() => {
 })();
 
 // ─── Standard (Corporate) Rates Seed Data ───
-export const SEED_STANDARD_RATES: StandardRate[] = [
+const HAND_SEEDED_STANDARD_RATES: StandardRate[] = [
   { id: "std-usd", baseCurrency: "PKR", sourceCurrency: "USD", sourceCurrencyName: "United States Dollar", standardRate: 279.0000, midMarketRate: 278.5200, variance: 0.17, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
   { id: "std-eur", baseCurrency: "PKR", sourceCurrency: "EUR", sourceCurrencyName: "Euro", standardRate: 305.5000, midMarketRate: 304.8150, variance: 0.22, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
-  { id: "std-gbp", baseCurrency: "PKR", sourceCurrency: "GBP", sourceCurrencyName: "British Pound Sterling", standardRate: 356.0000, midMarketRate: 355.4200, variance: 0.16, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
+  { id: "std-gbp", baseCurrency: "PKR", sourceCurrency: "GBP", sourceCurrencyName: "Pound Sterling", standardRate: 356.0000, midMarketRate: 355.4200, variance: 0.16, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
   { id: "std-aed", baseCurrency: "PKR", sourceCurrency: "AED", sourceCurrencyName: "United Arab Emirates Dirham", standardRate: 76.0000, midMarketRate: 75.8400, variance: 0.21, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
   { id: "std-sar", baseCurrency: "PKR", sourceCurrency: "SAR", sourceCurrencyName: "Saudi Riyal", standardRate: 74.5000, midMarketRate: 74.2700, variance: 0.31, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
-  { id: "std-cny", baseCurrency: "PKR", sourceCurrency: "CNY", sourceCurrencyName: "Chinese Yuan", standardRate: 38.5000, midMarketRate: 38.3100, variance: 0.50, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
+  { id: "std-cny", baseCurrency: "PKR", sourceCurrency: "CNY", sourceCurrencyName: "Renminbi", standardRate: 38.5000, midMarketRate: 38.3100, variance: 0.50, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
 ];
+
+/** Named as the Currency Library names them (ISO 4217), like the mid-market rates. */
+export const SEED_STANDARD_RATES: StandardRate[] = HAND_SEEDED_STANDARD_RATES.map(r => ({
+  ...r,
+  sourceCurrencyName: SEED_CURRENCIES.find(c => c.code === r.sourceCurrency)?.name ?? r.sourceCurrencyName,
+}));
 
 // ─── Corporate rate audit seed ───
 // One "Created" entry per seeded corporate rate: when it was set up, by whom,
@@ -189,9 +208,33 @@ export const SEED_RATE_AUDIT: RateAuditEntry[] = SEED_STANDARD_RATES.map(r => ({
   midRate: r.midMarketRate,
 }));
 
-/** The active corporate rate for a currency. Archived records are never current. */
+/** The active corporate rate record for a currency. Archived records are never current. */
 export function activeStandardRateFor(code: string, rates: StandardRate[]): StandardRate | undefined {
   return rates.find(r => r.sourceCurrency === code && r.status === "active");
+}
+
+/** A record as it stands on `today`: a rate dated for later takes over once its day comes. */
+export function settleStandardRate(r: StandardRate, today: string): StandardRate {
+  if (!r.upcoming || r.upcoming.effectiveDate > today) return r;
+  const { upcoming, ...rest } = r;
+  return { ...rest, standardRate: upcoming.standardRate, effectiveDate: upcoming.effectiveDate, notes: upcoming.notes, updatedAt: upcoming.setAt };
+}
+
+/** Is the record's rate in effect on `today`? One added for a later date is not yet. */
+export const isRateInEffect = (r: StandardRate, today: string) => r.status === "active" && r.effectiveDate <= today;
+
+/** The corporate rate in effect for a currency on `today`, if any. */
+export function corporateRateInEffect(code: string, rates: StandardRate[], today: string): StandardRate | undefined {
+  const r = activeStandardRateFor(code, rates);
+  return r && isRateInEffect(r, today) ? r : undefined;
+}
+
+/** The rate a record will move to, and when: its scheduled rate, or, for a
+ *  record added for a later date, its own. Null when nothing is upcoming. */
+export function upcomingRateOf(r: StandardRate, today: string): { standardRate: number; effectiveDate: string } | null {
+  if (r.status !== "active") return null;
+  if (r.effectiveDate > today) return { standardRate: r.standardRate, effectiveDate: r.effectiveDate };
+  return r.upcoming ? { standardRate: r.upcoming.standardRate, effectiveDate: r.upcoming.effectiveDate } : null;
 }
 
 // ─── Mid-market history (deterministic) ───

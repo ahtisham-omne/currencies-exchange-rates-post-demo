@@ -1,11 +1,12 @@
 // The Currency Library's Filters modal on CoA's FiltersModal (a draft, applied
-// from the footer): Status, In use (Yes / No, with a min / max when Yes),
+// from the footer): Status, In use (Yes / No: on any transaction, open or not,
+// with a min / max of transactions when Yes),
 // Decimal places and Region - the four facets the library has always offered.
 import { useEffect, useState } from 'react'
 import type { Currency } from '../../data/currencies'
 import { FiltersModal, Section, FDivider, PillGrid, FilterPill, AllPill, PillSection, RangeMinMax } from '../../coa/components/Filters'
 import { fmtNumber } from '../../coa/lib/utils'
-import { countInUse, regionOf, statusOf } from './model'
+import { isInUse, regionOf, statusOf, transactionCount } from './model'
 
 export interface CurrencyPanelFilters {
   statuses: string[]
@@ -24,9 +25,9 @@ export const countCurrencyFilters = (f: CurrencyPanelFilters) =>
 
 const matchesInUse = (c: Currency, f: CurrencyPanelFilters) => {
   if (!f.inUse) return true
-  const n = countInUse(c)
-  if (f.inUse === 'no') return n === 0
-  if (n < 1) return false
+  if (f.inUse === 'no') return !isInUse(c)
+  if (!isInUse(c)) return false
+  const n = transactionCount(c)
   if (f.inUseMin !== '' && n < Number(f.inUseMin)) return false
   if (f.inUseMax !== '' && n > Number(f.inUseMax)) return false
   return true
@@ -72,16 +73,16 @@ export function CurrencyFiltersModal({ open, onClose, rows, filters, setFilters 
         </PillGrid>
       </Section>
       <FDivider />
-      <Section title="In use" desc="Show currencies that are on any document, or ones that aren't.">
+      <Section title="In use" desc="Show currencies that are on any transaction, or ones that aren't.">
         <PillGrid>
           <AllPill active={!draft.inUse} onClick={() => setDraft(d => ({ ...d, inUse: null }))} />
-          <FilterPill active={draft.inUse === 'yes'} onClick={() => setDraft(d => ({ ...d, inUse: d.inUse === 'yes' ? null : 'yes' }))} count={rows.filter(r => countInUse(r) > 0).length}>Yes</FilterPill>
-          <FilterPill active={draft.inUse === 'no'} onClick={() => setDraft(d => ({ ...d, inUse: d.inUse === 'no' ? null : 'no' }))} count={rows.filter(r => countInUse(r) === 0).length}>No</FilterPill>
+          <FilterPill active={draft.inUse === 'yes'} onClick={() => setDraft(d => ({ ...d, inUse: d.inUse === 'yes' ? null : 'yes' }))} count={rows.filter(isInUse).length}>Yes</FilterPill>
+          <FilterPill active={draft.inUse === 'no'} onClick={() => setDraft(d => ({ ...d, inUse: d.inUse === 'no' ? null : 'no' }))} count={rows.filter(r => !isInUse(r)).length}>No</FilterPill>
         </PillGrid>
         {draft.inUse === 'yes' && (
           <div className="mt-3">
             <RangeMinMax
-              values={rows.map(r => countInUse(r)).filter(n => n > 0)}
+              values={rows.filter(isInUse).map(transactionCount)}
               min={draft.inUseMin}
               max={draft.inUseMax}
               prefix="#"

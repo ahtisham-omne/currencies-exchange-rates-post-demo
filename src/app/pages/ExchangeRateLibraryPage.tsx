@@ -84,9 +84,10 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   const corpRows = useMemo(() => (corpPillRows.length ? [baseCorpRow(), ...corpPillRows] : []), [corpPillRows])
 
   /* ── Tables ── */
-  // 50 rates a page by default. The base row heads every page and stays out of
-  // the count; switching rate type goes back to page 1.
-  const paging = (resetKey: unknown[]) => ({ perPage: 50, options: [10, 20, 50, 100], pinnedOnEveryPage: true, resetKey: JSON.stringify(resetKey) })
+  // 100 rates a page by default, or All; the reader's choice survives a reload.
+  // The base row heads every page and stays out of the count; switching rate
+  // type goes back to page 1.
+  const paging = (resetKey: unknown[]) => ({ perPage: 100, options: [10, 20, 50, 100, 'all'] as (number | 'all')[], pinnedOnEveryPage: true, resetKey: JSON.stringify(resetKey) })
   const midCols = useMemo(() => midColumns(), [])
   const midTable = useCoaTable<MidRow>({
     columns: midCols, rows: midRows, query: debouncedQ, getRowId: r => r.id, rememberAs: 'fx.rates:mid',
@@ -132,9 +133,9 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
     const rows = (only ?? corpShown).filter(r => r.status === 'Active')
     void exportRows({
       fileBase: 'corporate_rates', sheetName: 'Corporate Rates', title: 'Corporate Exchange Rates', noun: 'rates', one: 'rate',
-      headers: ['Base currency', 'Source currency', 'Corporate exchange rate', 'Mid-market exchange rate', 'Variance', 'Effective date', 'Created by'],
-      rows: rows.map(r => [BASE, r.code, fmtRate(r.rate), r.mid == null ? '' : fmtRate(r.mid), r.variance == null ? '' : `${r.variance}%`, r.effectiveDate, r.createdBy]),
-      widths: [14, 16, 22, 24, 10, 14, 18],
+      headers: ['Base currency', 'Source currency', 'Corporate exchange rate', 'Mid-market exchange rate', 'Variance', 'Effective date', 'Upcoming rate', 'Upcoming from', 'Created by'],
+      rows: rows.map(r => [BASE, r.code, r.rate == null ? '' : fmtRate(r.rate), r.mid == null ? '' : fmtRate(r.mid), r.variance == null ? '' : `${r.variance}%`, r.effectiveDate, r.upcoming ? fmtRate(r.upcoming.rate) : '', r.upcoming?.effectiveDate ?? '', r.createdBy]),
+      widths: [14, 16, 22, 24, 10, 14, 14, 14, 18],
     }, fmt)
   }
 
@@ -272,7 +273,13 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                   canExpand={r => !r.isBase}
                   renderExpanded={r => (
                     <div className={`px-4 py-3 ${EXPANDED_FILL}`}>
-                      <PairInverter code={r.code} name={r.name} rate={r.rate} inverted={inverted.has(`corp:${r.id}`)} onToggle={() => toggleInvert(`corp:${r.id}`)} note={`Corporate rate, effective ${fmtDate(r.effectiveDate)}`} />
+                      {r.rate != null ? (
+                        <PairInverter code={r.code} name={r.name} rate={r.rate} inverted={inverted.has(`corp:${r.id}`)} onToggle={() => toggleInvert(`corp:${r.id}`)}
+                          note={r.upcoming ? `Corporate rate, effective ${fmtDate(r.effectiveDate)} · Upcoming ${fmtRate(r.upcoming.rate)} from ${fmtDate(r.upcoming.effectiveDate)}` : `Corporate rate, effective ${fmtDate(r.effectiveDate)}`} />
+                      ) : r.upcoming && (
+                        <PairInverter code={r.code} name={r.name} rate={r.upcoming.rate} inverted={inverted.has(`corp:${r.id}`)} onToggle={() => toggleInvert(`corp:${r.id}`)}
+                          note={`Upcoming corporate rate, from ${fmtDate(r.upcoming.effectiveDate)}`} />
+                      )}
                     </div>
                   )}
                   afterRow={r => (r.isBase ? <TableNoteRow band>All exchange rates below are quoted against this currency.</TableNoteRow> : null)}

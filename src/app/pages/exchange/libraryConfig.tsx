@@ -94,13 +94,14 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
     },
     {
       key: 'rate', label: 'Corporate exchange rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: RATE_TOOLTIPS.corporate,
-      render: (r, ctx) => <RateText value={fmtRate(r.rate)} q={ctx.q} strong />,
-      sortValue: r => (r.isBase ? null : r.rate), searchText: r => (r.isBase ? '' : fmtRate(r.rate)), filter: 'range',
+      // A rate added for a later date has none in effect yet: it shows under Upcoming rate.
+      render: (r, ctx) => (r.rate == null ? <EmptyCell /> : <RateText value={fmtRate(r.rate)} q={ctx.q} strong />),
+      sortValue: r => (r.isBase ? null : r.rate), searchText: r => (r.isBase || r.rate == null ? '' : fmtRate(r.rate)), filter: 'range',
     },
     {
       key: 'inverse', label: 'Inverse rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.inverse,
-      render: (r, ctx) => <RateText value={fmtInverse(r.rate)} q={ctx.q} />,
-      sortValue: r => (r.isBase ? null : 1 / r.rate), searchText: r => (r.isBase ? '' : fmtInverse(r.rate)), filter: 'range', filterValue: r => (r.isBase ? null : 1 / r.rate),
+      render: (r, ctx) => (r.rate == null ? <EmptyCell /> : <RateText value={fmtInverse(r.rate)} q={ctx.q} />),
+      sortValue: r => (r.isBase || r.rate == null ? null : 1 / r.rate), searchText: r => (r.isBase || r.rate == null ? '' : fmtInverse(r.rate)), filter: 'range', filterValue: r => (r.isBase || r.rate == null ? null : 1 / r.rate),
     },
     {
       key: 'mid', label: 'Mid-market exchange rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: RATE_TOOLTIPS.midMarket,
@@ -118,6 +119,19 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
       key: 'effective', label: 'Effective date', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.effectiveDate,
       render: (r, ctx) => (r.effectiveDate ? <span className="text-sm text-slate-700 tabular-nums whitespace-nowrap"><Marked text={fmtDate(r.effectiveDate)} q={ctx.q} /></span> : <EmptyCell />),
       sortValue: r => r.effectiveDate || null, searchText: r => (r.effectiveDate ? fmtDate(r.effectiveDate) : ''), filter: 'date', filterValue: r => r.effectiveDate || null,
+    },
+    {
+      key: 'upcoming', label: 'Upcoming rate', headerClassName: 'min-w-[220px]', info: RATE_TOOLTIPS.upcoming,
+      render: (r, ctx) => (r.upcoming ? (
+        <span className="inline-flex items-center gap-1.5 text-sm text-slate-700 tabular-nums whitespace-nowrap">
+          <Badge tone="info" className={PARTNER_CHIP_CLS}>Upcoming</Badge>
+          <span style={{ fontWeight: 500 }}><Marked text={fmtRate(r.upcoming.rate)} q={ctx.q} /></span>
+          <span className="text-fg-subtle">from <Marked text={fmtDate(r.upcoming.effectiveDate)} q={ctx.q} /></span>
+        </span>
+      ) : <EmptyCell />),
+      sortValue: r => r.upcoming?.effectiveDate ?? null,
+      searchText: r => (r.upcoming ? ['Upcoming', fmtRate(r.upcoming.rate), fmtDate(r.upcoming.effectiveDate)] : ''),
+      filter: 'date', filterValue: r => r.upcoming?.effectiveDate ?? null,
     },
     {
       key: 'createdBy', label: 'Created by', pad: 'person', cellClassName: 'px-4 max-w-[220px]', headerClassName: 'min-w-[170px]',

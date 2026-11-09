@@ -18,6 +18,15 @@ export const CURRENCY_STATUS_OPTIONS: StatusOption<CurrencyStatus>[] = [
   { value: 'Inactive', verb: 'Deactivate', meaning: ['Not offered on new transactions. Its rates and history are kept.'] },
 ]
 
+/** Why the base currency can't be deactivated: every rate is quoted against it. */
+export const baseStaysActive = (c: Currency) => `${c.code} is your base currency. Every exchange rate is quoted against it, so it stays active.`
+
+/** The status menu for one currency: the base currency's Deactivate is greyed out. */
+export const statusOptionsFor = (c: Currency): StatusOption<CurrencyStatus>[] =>
+  c.isBaseCurrency
+    ? CURRENCY_STATUS_OPTIONS.map(o => (o.value === 'Inactive' ? { ...o, disabledReason: baseStaysActive(c) } : o))
+    : CURRENCY_STATUS_OPTIONS
+
 /** ISO 3166 alpha-2 (lower case) for a currency's flag, '' when there is none. */
 export const flagOf = (code: string) => (getCountryCode(code) ?? '').toLowerCase()
 /** Flag code for a country name, as the Countries / Regions list names it. */
@@ -31,6 +40,15 @@ export const regionOf = (c: Currency): string | undefined => getRegionForCountry
 export const countriesOf = (c: Currency): string[] => [c.country, ...(c.additionalCountries ?? [])]
 
 export { countInUse, countOpenDocuments }
+
+/** Every transaction the currency has been on, open or closed. */
+export const transactionCount = (c: Currency) => Math.max(c.usage.totalLifetimeDocuments, countInUse(c))
+/** In use: on any transaction, open or not. */
+export const isInUse = (c: Currency) => transactionCount(c) > 0
+
+/** What a search may type for a symbol: "Rs" for the rupee sign (₨). */
+const SYMBOL_ALIASES: Record<string, string[]> = { '₨': ['Rs'] }
+export const symbolSearchText = (symbol: string) => [symbol, ...(SYMBOL_ALIASES[symbol] ?? [])]
 
 /* ── Linked documents ─────────────────────────────────────────────────── */
 

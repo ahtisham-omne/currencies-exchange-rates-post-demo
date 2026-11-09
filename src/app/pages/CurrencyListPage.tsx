@@ -18,7 +18,7 @@ import { cn, fmtNumber } from '../coa/lib/utils'
 import { useCurrencies } from '../context/CurrencyContext'
 import type { Currency } from '../data/currencies'
 import {
-  CURRENCY_STATUS_OPTIONS, countInUse, countriesOf, countryFlagOf, flagOf, placeFlagOf, regionOf, statusOf,
+  baseStaysActive, countInUse, countriesOf, countryFlagOf, flagOf, placeFlagOf, regionOf, statusOf, statusOptionsFor, symbolSearchText,
 } from './currency/model'
 import { useCurrencyLifecycle } from './currency/useCurrencyLifecycle'
 import { CurrencyFiltersModal, EMPTY_CURRENCY_FILTERS, applyCurrencyFilters, countCurrencyFilters, type CurrencyPanelFilters } from './currency/CurrencyFilters'
@@ -28,6 +28,10 @@ import { CurrencyExchangeHeader } from './CurrencyExchangeHeader'
 
 
 type Pill = 'all' | 'active' | 'base' | 'inactive'
+
+// Stable, so the table's row order is worked out only when the rows change.
+const isBase = (c: Currency) => c.isBaseCurrency
+const isInactive = (c: Currency) => c.status === 'inactive'
 
 export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
   const navigate = useNavigate()
@@ -74,7 +78,8 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
       key: 'symbol', label: 'Symbol', headerClassName: 'min-w-[90px]',
       info: 'The sign amounts in this currency are written with.',
       render: (c, ctx) => <span className="text-sm text-slate-700 whitespace-nowrap"><Marked text={c.symbol} q={ctx.q} /></span>,
-      searchText: c => c.symbol, filter: 'multiselect', filterValue: c => c.symbol,
+      // "Rs" finds the rupee sign (₨), as people type it.
+      searchText: c => symbolSearchText(c.symbol), filter: 'multiselect', filterValue: c => c.symbol,
     },
     {
       key: 'decimals', label: 'Decimals', align: 'right', headerClassName: 'min-w-[100px]', cellClassName: 'pl-4 pr-4',
@@ -100,8 +105,8 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
       sortValue: c => c.country, searchText: c => countriesOf(c), filter: 'multiselect', filterValue: c => c.country,
     },
     {
-      key: 'linked', label: 'Linked transactions', align: 'right', headerClassName: 'min-w-[170px]', cellClassName: 'pl-4 pr-4',
-      info: 'Open documents in this currency, and every document it has ever been on.',
+      key: 'linked', label: 'In use', align: 'right', headerClassName: 'min-w-[170px]', cellClassName: 'pl-4 pr-4',
+      info: 'Open transactions in this currency, and every transaction it has ever been on.',
       render: c => {
         const n = countInUse(c)
         return (
@@ -118,7 +123,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
     {
       key: 'status', label: 'Status', headerClassName: 'min-w-[120px]',
       info: 'Active currencies are offered on new transactions. Inactive ones keep their rates and history.',
-      render: (c, ctx) => <StatusMenu status={statusOf(c)} options={CURRENCY_STATUS_OPTIONS} onPick={next => lifecycleRef.current.request(next, c)} q={ctx.q} />,
+      render: (c, ctx) => <StatusMenu status={statusOf(c)} options={statusOptionsFor(c)} onPick={next => lifecycleRef.current.request(next, c)} q={ctx.q} />,
       sortValue: c => statusOf(c), searchText: c => statusOf(c), filter: 'multiselect', filterValue: c => statusOf(c),
     },
     {
@@ -131,15 +136,17 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
 
   const table = useCoaTable<Currency>({
     columns, rows: pillRows, query: debouncedQ, getRowId: c => c.code, rememberAs: 'currencies:table',
-    pinTop: c => c.isBaseCurrency, defaultSort: { key: 'linked', dir: 'desc' }, initialColumnSizing: 'fit',
-    // 50 a page by default; the base currency is page 1's first row.
-    pagination: { perPage: 50, options: [10, 25, 50, 100], resetKey: JSON.stringify([pill, filters]) },
+    // The base currency first, then active currencies, then inactive ones.
+    pinTop: isBase, sinkBottom: isInactive, defaultSort: { key: 'linked', dir: 'desc' }, initialColumnSizing: 'fit',
+    // 100 a page by default, or All; the reader's choice survives a reload. The
+    // base currency is page 1's first row.
+    pagination: { perPage: 100, options: [10, 25, 50, 100, 'all'], resetKey: JSON.stringify([pill, filters]) },
   })
 
   const selected = table.selected
   const selectedRows = currencies.filter(c => selected.has(c.code))
   const toActivate = selectedRows.filter(c => c.status === 'inactive')
-  const toDeactivate = selectedRows.filter(c => c.status === 'active')
+  const toDeactivate = selectedRows.filter(c => c.status === 'active' && !c.isBaseCurrency)
   const panelCount = countCurrencyFilters(filters)
   const otherNarrowing = pill !== 'all' || panelCount > 0 || Object.keys(table.colFilters).length > 0
   const clearNarrowing = () => { setPill('all'); setFilters(EMPTY_CURRENCY_FILTERS); table.setColFilters({}) }
@@ -195,7 +202,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
                   <QuickFilterPill label="Show All" active={pill === 'all'} onClick={() => setPill('all')} />
                   <QuickFilterPill label="Active" count={pillCounts.active} active={pill === 'active'} onClick={() => setPill('active')} />
                   <QuickFilterPill label="Base currency" count={pillCounts.base} active={pill === 'base'} onClick={() => setPill('base')} />
-                  <QuickFilterPill label="Inactive" tone="danger" count={pillCounts.inactive} active={pill === 'inactive'} onClick={() => setPill(p => (p === 'inactive' ? 'all' : 'inactive'))} />
+                  <QuickFilterPill label="Inactive" tone="warning" count={pillCounts.inactive} active={pill === 'inactive'} onClick={() => setPill(p => (p === 'inactive' ? 'all' : 'inactive'))} />
                 </PillRow>
               }
             >
@@ -208,7 +215,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
                   <>
                     <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(`/accounting/currencies/${c.code}`) }}>View details</MenuItem>
                     {c.status === 'active'
-                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }}>Deactivate currency</MenuItem>
+                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }} disabled={c.isBaseCurrency} disabledReason={baseStaysActive(c)}>Deactivate currency</MenuItem>
                       : <MenuItem icon={<Power size={14} />} onClick={() => { close(); lifecycle.request('Active', c) }}>Activate currency</MenuItem>}
                   </>
                 )}

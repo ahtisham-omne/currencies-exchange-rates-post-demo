@@ -9,7 +9,7 @@ import { hasOpenDocuments, type Currency } from '../../data/currencies'
 import { Quoted } from '../../coa/components/ui'
 import { OverflowCard } from '../../coa/components/cells'
 import { lifecycleIcon, useLifecycleFlow, type LifecyclePlan } from '../../coa/lib/lifecycle'
-import { openDocBreakdown, plural, type CurrencyStatus } from './model'
+import { baseStaysActive, openDocBreakdown, plural, type CurrencyStatus } from './model'
 
 /** "AED United Arab Emirates Dirham" with the code in CoA's Quoted pill. */
 function named(c: Currency, tail?: string): ReactNode {
@@ -45,16 +45,14 @@ export function useCurrencyLifecycle() {
     if (next === 'Active') {
       return { allowed: true, commit: () => activateCurrency(c.code), toast: `${c.code} activated` }
     }
+    // The menus grey Deactivate out for the base currency; this is the backstop.
     if (c.isBaseCurrency) {
       return {
         allowed: false,
         commit: () => {},
         refusal: {
           title: `Can't deactivate ${c.code}`,
-          description: [
-            `${c.code} is your base currency. Every exchange rate is quoted against it, so it stays active.`,
-            'To deactivate it, change your base currency in Company Settings first.',
-          ],
+          description: [baseStaysActive(c)],
           dismissLabel: 'Got it',
         },
       }
@@ -65,7 +63,7 @@ export function useCurrencyLifecycle() {
         commit: () => {},
         refusal: {
           title: `Can't deactivate ${c.code} yet`,
-          description: [`${c.code} is on open documents. Close or settle them first, then deactivate it.`],
+          description: [`${c.code} is on open transactions. Close or settle them first, then deactivate it.`],
           reasonsTitle: 'Still open',
           reasons: openDocBreakdown(c),
         },
@@ -136,7 +134,7 @@ export function useCurrencyLifecycle() {
             held.length === 1
               ? 'The currency below stays as it is, for the reason given beside it.'
               : 'The currencies below stay as they are, each for the reason given beside it.',
-            ...(held.some(c => !c.isBaseCurrency) ? ['A currency on open documents can be deactivated once they are closed or settled.'] : []),
+            ...(held.some(c => !c.isBaseCurrency) ? ['A currency on open transactions can be deactivated once they are closed or settled.'] : []),
           ],
           reasonsTitle: 'Why each one stayed',
           reasons: nameSome(heldLines, 'Why each one stayed'),

@@ -28,7 +28,7 @@ export const pairKpis = (code: string): DetailKpiDef[] => [
   { key: 'days_since_update', label: 'Days since rate updated', category: 'Operational', description: 'Days since the corporate rate in effect took effect.' },
   { key: 'corp_transactions_30d', label: 'Corporate transactions (30d)', category: 'Operational', description: 'Transactions priced using the corporate rate in the last 30 days.' },
   // Keyed fx_exposure_30d still, so layouts readers saved keep the tile.
-  { key: 'fx_exposure_30d', label: 'FX exposure', category: 'Operational', description: `The value of open ${code} documents, shown in ${BASE}. This is the amount that gains or loses value when the rate moves.` },
+  { key: 'fx_exposure_30d', label: 'FX exposure', category: 'Operational', description: `The value of open ${code} transactions, shown in ${BASE}. This is the amount that gains or loses value when the rate moves.` },
   { key: 'max_variance_30d', label: 'Max corporate variance (30d)', category: 'Analytics', description: 'The widest daily gap between the corporate and mid-market rates over the last 30 synced days.' },
   { key: 'avg_variance_30d', label: 'Average corporate variance (30d)', category: 'Analytics', description: 'The average daily gap between the corporate and mid-market rates over the last 30 synced days.' },
   { key: 'change_count_30d', label: 'Corporate rate changes (30d)', category: 'Operational', description: 'Times the corporate rate was set, updated, archived or restored in the last 30 days.' },
@@ -167,9 +167,9 @@ export function RateOverTimeBody({ code, points, label, isStd, corporate, lastDa
       </div>
       <WidgetStatRow
         stats={[
-          { label: 'Mid-market', value: latest ? fmtRate(latest.mid) : '-' },
+          { label: 'Mid-market', value: latest ? fmtRate(latest.mid) : '–' },
           { label: 'Corporate', value: corporate ? fmtRate(corporate.rate) : 'Not set', color: corporate ? undefined : '#94A3B8' },
-          { label: 'Gap', value: gap != null ? fmtSignedPct(gap) : '-', color: varianceColor(gap) },
+          { label: 'Gap', value: gap != null ? fmtSignedPct(gap) : '–', color: varianceColor(gap) },
         ]}
         trailing={<div className="flex items-center gap-3"><ChartLegendDot color={MID_C} label="Mid-market" />{(hasCorp || isStd) && <ChartLegendDot color={CORP_C} label="Corporate" />}</div>}
         swapKey={code}
@@ -292,7 +292,7 @@ export function CumulativeReturnBody({ code, points, label }: BodyProps) {
       </div>
       <WidgetStatRow stats={[
         { label: 'Start', value: fmtRate(first) },
-        { label: 'End', value: points.length ? fmtRate(points[points.length - 1].mid) : '-' },
+        { label: 'End', value: points.length ? fmtRate(points[points.length - 1].mid) : '–' },
         { label: 'Return', value: fmtSignedPct(end), color },
       ]} />
     </>
@@ -345,7 +345,7 @@ export function ConversionTrendBody({ code, points, label, isStd, corporate, avg
         stats={[
           { label: 'Current', value: money(amt * currentRate), color: '#059669' },
           { label: '30d avg', value: money(amt * avg30) },
-          { label: 'Range high', value: points.length ? money(amt * Math.max(...points.map(p => p.mid))) : '-' },
+          { label: 'Range high', value: points.length ? money(amt * Math.max(...points.map(p => p.mid))) : '–' },
         ]}
         trailing={showCorp ? <div className="flex items-center gap-3"><ChartLegendDot color={MID_C} label="Mid-market" /><ChartLegendDot color={CORP_C} label="Corporate" /></div> : undefined}
       />
@@ -381,8 +381,8 @@ export function DrawdownBody({ code, points, label }: BodyProps) {
       </div>
       <WidgetStatRow stats={[
         { label: 'Max drawdown', value: `${worst.toFixed(2)}%`, color: worst < 0 ? '#DC2626' : undefined },
-        { label: 'Current', value: now ? `${now.dd.toFixed(2)}%` : '-' },
-        { label: 'Peak', value: now ? fmtRate(now.peak) : '-' },
+        { label: 'Current', value: now ? `${now.dd.toFixed(2)}%` : '–' },
+        { label: 'Peak', value: now ? fmtRate(now.peak) : '–' },
       ]} />
     </>
   )
@@ -413,8 +413,8 @@ export function TransactionVolumeBody({ code, points, label }: BodyProps) {
       </div>
       <WidgetStatRow stats={[
         { label: 'Transactions', value: fmtNumber(total) },
-        { label: 'Daily average', value: days.length ? (total / days.length).toFixed(1) : '-' },
-        { label: 'Busiest day', value: busiest.date ? `${fmtNumber(busiest.n)} · ${fmtDate(busiest.date)}` : '-' },
+        { label: 'Daily average', value: days.length ? (total / days.length).toFixed(1) : '–' },
+        { label: 'Busiest day', value: busiest.date ? `${fmtNumber(busiest.n)} · ${fmtDate(busiest.date)}` : '–' },
       ]} />
     </>
   )

@@ -9,20 +9,22 @@ import { Calendar } from "../../components/ui/calendar";
 
 /** Ported verbatim from Vendor Invoicing (InsightsRangeMenu / InsightsRefresh /
  *  InsightsResetButton) so the Performance Insights band reads and behaves
- *  identically across modules — same options incl. "All time" + "Custom",
- *  same text-link CTA recipes and hover tints.
+ *  like the other modules' (text-link CTA recipes, hover tints). The rate
+ *  page's own periods replace Partners' "Last 7 days" to "All time".
  *
- *  Range menu is ONE panel: the preset shortcuts (Last 7/30/90 days...) sit
+ *  Range menu is ONE panel: the preset shortcuts (1D, 5D, 1M, 1Y, 5Y, Max) sit
  *  in a left rail that is always visible, next to a two-month range calendar.
  *  Presets apply on click; picking two days on the calendar enables Apply. */
-export type InsightsRange = "last_7" | "last_30" | "last_90" | "last_365" | "all_time" | "custom";
+export type InsightsRange = "1d" | "5d" | "1m" | "1y" | "5y" | "max" | "custom";
 
+/** The chart periods, 1M by default (see pairData DEFAULT_RANGE). */
 export const INSIGHTS_RANGE_OPTIONS: { key: InsightsRange; label: string }[] = [
-  { key: "last_7", label: "Last 7 days" },
-  { key: "last_30", label: "Last 30 days" },
-  { key: "last_90", label: "Last 90 days" },
-  { key: "last_365", label: "Last 12 months" },
-  { key: "all_time", label: "All time" },
+  { key: "1d", label: "1D" },
+  { key: "5d", label: "5D" },
+  { key: "1m", label: "1M" },
+  { key: "1y", label: "1Y" },
+  { key: "5y", label: "5Y" },
+  { key: "max", label: "Max" },
   { key: "custom", label: "Custom" },
 ];
 
@@ -31,7 +33,7 @@ export function insightsRangeLabel(range: InsightsRange, customFrom?: string, cu
     if (customFrom && customTo) return `${format(parseISO(customFrom), "MMM d")} to ${format(parseISO(customTo), "MMM d")}`;
     return "Custom";
   }
-  return INSIGHTS_RANGE_OPTIONS.find((o) => o.key === range)?.label ?? "Last 30 days";
+  return INSIGHTS_RANGE_OPTIONS.find((o) => o.key === range)?.label ?? "1M";
 }
 
 interface InsightsRangeMenuProps {

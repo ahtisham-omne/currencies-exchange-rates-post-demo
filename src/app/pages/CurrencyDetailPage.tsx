@@ -21,15 +21,15 @@ import { ChartWidgetCard } from '../coa/components/ChartWidgetCard'
 import { ActivityFeed } from '../coa/components/ActivityFeed'
 import { recordKey } from '../coa/lib/recordStore'
 import { useCommsDirectorySync } from '../coa/store'
-import { fmtDate, fmtDateTime } from '../coa/lib/utils'
+import { fmtDate, fmtDateTime, todayIso } from '../coa/lib/utils'
 import { useCurrencies } from '../context/CurrencyContext'
 import { useExchangeRates } from '../context/ExchangeRateContext'
-import { API_PROVIDER, BASE_CURRENCY_NAME, LAST_SYNC } from '../data/exchangeRates'
+import { API_PROVIDER, BASE_CURRENCY_NAME, LAST_SYNC, corporateRateInEffect, upcomingRateOf } from '../data/exchangeRates'
 import type { Currency } from '../data/currencies'
 import { CONVERTER_TOOLTIP, RATE_TOOLTIPS, inverseRateTooltip } from '../utils/rateCopy'
 import {
-  BASE, CURRENCY_STATUS_OPTIONS, auditFacts, countInUse, countriesOf, countryFlagOf, flagOf, fmtAmount, placeFlagOf, fmtRate,
-  linkedDocs, money, regionOf, statusOf,
+  BASE, auditFacts, baseStaysActive, countInUse, countriesOf, countryFlagOf, fmtRate, linkedDocs, money, placeFlagOf,
+  regionOf, statusOf, statusOptionsFor,
 } from './currency/model'
 import { useCurrencyLifecycle } from './currency/useCurrencyLifecycle'
 import { CurrencyConverter } from './currency/CurrencyConverter'
@@ -84,7 +84,11 @@ export function CurrencyDetailPage() {
   }
 
   const mid = c.isBaseCurrency ? 1 : midMarketRates.find(r => r.sourceCurrency === c.code)?.rate ?? null
-  const corporate = c.isBaseCurrency ? null : standardRates.find(r => r.sourceCurrency === c.code && r.status === 'active') ?? null
+  // The corporate rate in effect today; one dated for later shows as Upcoming.
+  const today = todayIso()
+  const corporate = c.isBaseCurrency ? null : corporateRateInEffect(c.code, standardRates, today) ?? null
+  const record = c.isBaseCurrency ? undefined : standardRates.find(r => r.sourceCurrency === c.code && r.status === 'active')
+  const upcoming = record ? upcomingRateOf(record, today) : null
   const setCorporate = () => navigate(`/accounting/exchange-rates?addCorp=${encodeURIComponent(c.code)}`)
   const status = statusOf(c)
 
@@ -106,7 +110,7 @@ export function CurrencyDetailPage() {
             typeLine={<><FlagImage code={placeFlagOf(c.country, c.code)} className="text-[13px]" />{c.country} · {c.decimalPlaces} decimal {c.decimalPlaces === 1 ? 'place' : 'places'}</>}
             titleBadges={
               <>
-                <StatusMenu status={status} options={CURRENCY_STATUS_OPTIONS} onPick={next => lifecycle.request(next, c)} />
+                <StatusMenu status={status} options={statusOptionsFor(c)} onPick={next => lifecycle.request(next, c)} />
                 <Tooltip side="bottom" content={`${c.name} (${c.code})`}>
                   <span className="inline-flex cursor-default"><Badge tone="neutral">{c.symbol}</Badge></span>
                 </Tooltip>
@@ -132,18 +136,18 @@ export function CurrencyDetailPage() {
                       disabled={c.isBaseCurrency}
                       disabledReason={`${c.code} is the base currency. Corporate rates are set for other currencies against it.`}
                     >
-                      {corporate ? 'Update corporate rate' : 'Set corporate rate'}
+                      {record ? 'Update corporate rate' : 'Set corporate rate'}
                     </MenuItem>
                     <MenuItem
                       icon={<Download size={14} />}
                       onClick={() => { close(); exportLinkedDocs(c.code, c.decimalPlaces, docs) }}
                       disabled={docs.length === 0}
-                      disabledReason={`${c.code} is on no open documents, so there is nothing to export.`}
+                      disabledReason={`${c.code} is on no open transactions, so there is nothing to export.`}
                     >
                       Export linked transactions
                     </MenuItem>
                     {status === 'Active'
-                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }}>Deactivate currency</MenuItem>
+                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }} disabled={c.isBaseCurrency} disabledReason={baseStaysActive(c)}>Deactivate currency</MenuItem>
                       : <MenuItem icon={<Power size={14} />} onClick={() => { close(); lifecycle.request('Active', c) }}>Activate currency</MenuItem>}
                   </>
                 )}
@@ -168,6 +172,7 @@ export function CurrencyDetailPage() {
             c={c}
             mid={mid}
             corporate={corporate}
+            upcoming={upcoming}
             onSetCorporate={setCorporate}
           />
         )}
@@ -185,14 +190,15 @@ export function CurrencyDetailPage() {
   )
 }
 
-function DashboardTab({ c, mid, corporate, onSetCorporate }: {
+function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate }: {
   c: Currency
   mid: number | null
   corporate: { standardRate: number; effectiveDate: string; createdBy: string } | null
+  /** A corporate rate dated for later. */
+  upcoming: { standardRate: number; effectiveDate: string } | null
   onSetCorporate: () => void
 }) {
   const dp = c.decimalPlaces
-  const rateDp = (n: number) => (n < 1 ? 6 : 4)
   const variance = corporate && mid ? ((corporate.standardRate - mid) / mid) * 100 : null
   const signed = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(2)}%`
   const facts = auditFacts(c)
@@ -228,7 +234,7 @@ function DashboardTab({ c, mid, corporate, onSetCorporate }: {
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.baseCurrency}>Base currency</DashInfoLabel>
                 <div className="mt-0.5"><Badge tone={c.isBaseCurrency ? 'base' : 'neutral'} className={PARTNER_CHIP_CLS}>{c.isBaseCurrency ? 'Yes' : 'No'}</Badge></div>
               </div>
-              <div className="min-w-0"><DashInfoLabel>Region</DashInfoLabel>{region ? <InfoValue>{region}</InfoValue> : <InfoValue empty>-</InfoValue>}</div>
+              <div className="min-w-0"><DashInfoLabel>Region</DashInfoLabel>{region ? <InfoValue>{region}</InfoValue> : <InfoValue empty>–</InfoValue>}</div>
               <div className="min-w-0"><DashInfoLabel align="right">Status</DashInfoLabel><div className="mt-0.5"><StatusChip status={statusOf(c)} /></div></div>
             </InfoGrid>
             <div className="mb-2.5 min-w-0">
@@ -242,9 +248,9 @@ function DashboardTab({ c, mid, corporate, onSetCorporate }: {
             </div>
             <InfoAuditGrid>
               <div className="min-w-0"><DashInfoLabel>Created by</DashInfoLabel><InfoPerson name={facts.createdBy} /></div>
-              <div className="min-w-0"><DashInfoLabel align="right">Created on</DashInfoLabel><InfoValue>{facts.createdAt ? fmtDate(facts.createdAt) : '-'}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right">Created on</DashInfoLabel><InfoValue>{facts.createdAt ? fmtDate(facts.createdAt) : '–'}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel>Last updated by</DashInfoLabel><InfoPerson name={facts.updatedBy} /></div>
-              <div className="min-w-0"><DashInfoLabel align="right">Last updated on</DashInfoLabel><InfoValue>{facts.updatedAt ? fmtDate(facts.updatedAt) : '-'}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right">Last updated on</DashInfoLabel><InfoValue>{facts.updatedAt ? fmtDate(facts.updatedAt) : '–'}</InfoValue></div>
             </InfoAuditGrid>
           </DashInfoCard>
 
@@ -252,30 +258,38 @@ function DashboardTab({ c, mid, corporate, onSetCorporate }: {
             <InfoGrid>
               <div className="min-w-0">
                 <DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-market rate</DashInfoLabel>
-                {mid != null ? <InfoValue strong className="tabular-nums">{fmtRate(mid, rateDp(mid))}</InfoValue> : <InfoValue empty>Not available</InfoValue>}
+                {mid != null ? <InfoValue strong className="tabular-nums">{fmtRate(mid)}</InfoValue> : <InfoValue empty>Not available</InfoValue>}
               </div>
               <div className="min-w-0">
-                <DashInfoLabel align="right" tooltip={mid ? inverseRateTooltip(c.code, BASE, fmtRate(1 / mid, 6)) : RATE_TOOLTIPS.inverse}>Inverse rate</DashInfoLabel>
-                {mid ? <InfoValue className="tabular-nums">{fmtRate(1 / mid, 6)}</InfoValue> : <InfoValue empty>-</InfoValue>}
+                <DashInfoLabel align="right" tooltip={mid ? inverseRateTooltip(c.code, BASE, fmtRate(1 / mid)) : RATE_TOOLTIPS.inverse}>Inverse rate</DashInfoLabel>
+                {mid ? <InfoValue className="tabular-nums">{fmtRate(1 / mid)}</InfoValue> : <InfoValue empty>–</InfoValue>}
               </div>
               <div className="min-w-0">
                 <DashInfoLabel tooltip={RATE_TOOLTIPS.corporate}>Corporate rate</DashInfoLabel>
                 {c.isBaseCurrency
                   ? <InfoValue empty>Not applicable</InfoValue>
                   : corporate
-                    ? <InfoValue className="tabular-nums">{fmtRate(corporate.standardRate, rateDp(corporate.standardRate))}</InfoValue>
-                    : <button type="button" onClick={onSetCorporate} className="text-[12px] text-primary hover:text-[#0862D0] hover:underline underline-offset-2 mt-0.5" style={{ fontWeight: 500 }}>Not set. Set one</button>}
+                    ? <InfoValue className="tabular-nums">{fmtRate(corporate.standardRate)}</InfoValue>
+                    : upcoming
+                      ? <InfoValue empty>None in effect yet</InfoValue>
+                      : <button type="button" onClick={onSetCorporate} className="text-[12px] text-primary hover:text-[#0862D0] hover:underline underline-offset-2 mt-0.5" style={{ fontWeight: 500 }}>Not set. Set one</button>}
               </div>
               <div className="min-w-0">
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.variance}>Variance</DashInfoLabel>
-                {variance != null ? <InfoValue className="tabular-nums">{signed(variance)}</InfoValue> : <InfoValue empty>-</InfoValue>}
+                {variance != null ? <InfoValue className="tabular-nums">{signed(variance)}</InfoValue> : <InfoValue empty>–</InfoValue>}
               </div>
               <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{c.isBaseCurrency ? 'Base currency' : API_PROVIDER}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last sync</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
             </InfoGrid>
-            {corporate && (
-              <div className="pt-2.5 border-t border-muted text-[11px] text-slate-500">
-                Corporate rate set by {corporate.createdBy}, effective {fmtDate(corporate.effectiveDate)}.
+            {(corporate || upcoming) && (
+              <div className="pt-2.5 border-t border-muted text-[11px] text-slate-500 space-y-1">
+                {corporate && <p>Corporate rate set by {corporate.createdBy}, effective {fmtDate(corporate.effectiveDate)}.</p>}
+                {upcoming && (
+                  <p className="flex items-center gap-1.5 tabular-nums">
+                    <Badge tone="info">Upcoming</Badge>
+                    {fmtRate(upcoming.standardRate)} {BASE} from {fmtDate(upcoming.effectiveDate)}
+                  </p>
+                )}
               </div>
             )}
           </DashInfoCard>

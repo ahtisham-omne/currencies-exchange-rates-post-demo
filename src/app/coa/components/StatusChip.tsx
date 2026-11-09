@@ -73,6 +73,8 @@ export interface StatusOption<S extends string = string> {
   /** One short line per kind of record, what the state means. */
   meaning: ReactNode[]
   tone?: StatusTone
+  /** Greyed out and not pickable, with why (e.g. the base currency can't be deactivated). */
+  disabledReason?: string
 }
 
 /* The status cell as a control: every state on show with what each one means,
@@ -98,19 +100,21 @@ export function StatusMenu<S extends string>({ status, options, onPick, q = '', 
           <div className="w-[min(440px,calc(100vw-32px))] p-2 space-y-0.5">
             {options.map(o => {
               const isCurrent = o.value === status
+              const disabled = !isCurrent && !!o.disabledReason
               return (
                 <button
                   key={o.value}
-                  onClick={() => { close(); if (!isCurrent) onPick(o.value) }}
+                  aria-disabled={disabled || undefined}
+                  onClick={() => { if (disabled) return; close(); if (!isCurrent) onPick(o.value) }}
                   className={cn('w-full text-left rounded-md border p-3 transition-colors',
-                    isCurrent ? 'bg-accent border-[#D0E3F7] cursor-default' : 'border-transparent hover:bg-bg-subtle')}
+                    isCurrent ? 'bg-accent border-[#D0E3F7] cursor-default' : disabled ? 'border-transparent opacity-60 cursor-not-allowed' : 'border-transparent hover:bg-bg-subtle')}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <StatusChip status={o.label ?? o.value} tone={o.tone} label={isCurrent ? (o.label ?? o.value) : o.verb} />
                     {isCurrent && <Check className="w-3.5 h-3.5 text-fg-subtle shrink-0" />}
                   </div>
                   <div className="mt-1.5 space-y-1">
-                    {o.meaning.map((line, i) => (
+                    {(disabled ? [o.disabledReason] : o.meaning).map((line, i) => (
                       <p key={i} className="text-xs leading-[17px] text-fg-muted">{line}</p>
                     ))}
                   </div>

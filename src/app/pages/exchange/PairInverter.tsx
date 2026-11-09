@@ -8,7 +8,7 @@ import { INVERSE_BADGE_TOOLTIP } from '../../utils/rateCopy'
 import { Tooltip } from '../../coa/components/ui'
 import { FlagImage } from '../../coa/components/FlagImage'
 import { cn } from '../../coa/lib/utils'
-import { BASE, BASE_NAME, countryOf, flagOf, fmtRate } from './rateModel'
+import { BASE, BASE_NAME, countryOf, flagOf, fmtAmountIn, fmtInverse, fmtRate } from './rateModel'
 
 const SPRING = { type: 'spring', stiffness: 520, damping: 38 } as const
 
@@ -45,11 +45,13 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
   className?: string
 }) {
   const stack = layout === 'stack'
-  const src = { id: 'src', label: inverted ? 'To' : 'From', code, name, amount: inverted ? (1 / rate).toFixed(6) : '1.0000' }
-  const base = { id: 'base', label: inverted ? 'From' : 'To', code: BASE, name: BASE_NAME, amount: inverted ? '1.0000' : fmtRate(rate) }
+  // Amounts carry their currency's own decimals (75.84 PKR, 0.00 USD); the rate
+  // line under the cards carries a rate's four.
+  const src = { id: 'src', label: inverted ? 'To' : 'From', code, name, amount: fmtAmountIn(inverted ? 1 / rate : 1, code) }
+  const base = { id: 'base', label: inverted ? 'From' : 'To', code: BASE, name: BASE_NAME, amount: fmtAmountIn(inverted ? 1 : rate, BASE) }
   const [first, second] = inverted ? [base, src] : [src, base]
   const Swap = stack ? ArrowUpDown : ArrowLeftRight
-  const line = inverted ? `1 ${BASE} = ${(1 / rate).toFixed(6)} ${code}` : `1 ${code} = ${fmtRate(rate)} ${BASE}`
+  const line = inverted ? `1 ${BASE} = ${fmtInverse(rate)} ${code}` : `1 ${code} = ${fmtRate(rate)} ${BASE}`
   return (
     <LayoutGroup>
       <div className={cn(stack ? 'flex flex-col items-stretch gap-2' : 'flex items-center gap-3 flex-wrap', className)}>

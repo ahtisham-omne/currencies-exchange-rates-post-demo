@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Layers, Minus, Plus } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { Marked } from './ui'
 import { FlagImage } from './FlagImage'
+import { searchMatcher } from '../lib/tableSearch'
 
 /** Table chips that read as entries rather than badges: the `.chip` recipe
  *  squared off and one step larger (rounded-md, 12px). Pass to `<Badge className>`. */
@@ -244,7 +245,9 @@ export function OverflowCard({ category, items, icon: RowIcon = Layers, children
 export const OVERFLOW_PILL = 'inline-flex items-center h-[22px] rounded-md text-xs border bg-muted text-muted-foreground border-border'
 
 /** The first value as a pill, the rest behind "+N" with a hover card. An empty
- *  cell is a plain "-". `values[0]` may carry a leading icon (a flag). */
+ *  cell is an en dash. `values[0]` may carry a leading icon (a flag). When a
+ *  search matches only a value behind "+N", that value takes the pill's place,
+ *  so the row shows why it matched ("germany" shows Germany on the EUR row). */
 export function OverflowPills({ values, category, icon, q = '', plain }: {
   values: OverflowItem[]
   /** The hover card's heading, e.g. "Countries / Regions". */
@@ -254,8 +257,11 @@ export function OverflowPills({ values, category, icon, q = '', plain }: {
   /** Print the first value as plain text rather than a pill. */
   plain?: boolean
 }) {
-  if (!values.length) return <span className="text-2xs text-fg-subtle">-</span>
-  const [first, ...rest] = values
+  if (!values.length) return <span className="text-2xs text-fg-subtle">–</span>
+  const match = q.trim() ? searchMatcher(q) : null
+  const hit = match && !match(values[0].name) ? values.findIndex(v => match(v.name)) : -1
+  const ordered = hit > 0 ? [values[hit], ...values.filter((_, i) => i !== hit)] : values
+  const [first, ...rest] = ordered
   return (
     <div className="flex items-center gap-1 min-w-0">
       {plain ? (
@@ -278,7 +284,7 @@ export function OverflowPills({ values, category, icon, q = '', plain }: {
   )
 }
 
-/** A dash for an empty cell: a plain hyphen, never "None" or an em dash. */
+/** A dash for an empty cell: an en dash, never "None", a hyphen or an em dash. */
 export function EmptyCell() {
-  return <span className="text-fg-subtle">-</span>
+  return <span className="text-fg-subtle">–</span>
 }

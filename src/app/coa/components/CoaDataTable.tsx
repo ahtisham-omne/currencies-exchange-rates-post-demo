@@ -5,7 +5,7 @@ import {
 } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, GripVertical, Info, MoreHorizontal } from 'lucide-react'
 import { cn } from '../lib/utils'
-import { useRememberedState } from '../lib/rememberedState'
+import { useRememberedState, useStoredState } from '../lib/rememberedState'
 import { searchMatcher } from '../lib/tableSearch'
 import { BLOCK_SIZE } from '../lib/blockWindow'
 import { useBlockWindow } from './useBlockWindow'
@@ -153,6 +153,8 @@ export interface UseCoaTableOptions<T> {
   rememberAs?: string
   /** Rows that always lead, whatever the sort or search (e.g. the base currency). */
   pinTop?: (row: T) => boolean
+  /** Rows that always trail the rest, whatever the sort (e.g. inactive currencies). */
+  sinkBottom?: (row: T) => boolean
   /** Opening sort; null = the rows' own order with no indicator. */
   defaultSort?: SortState | null
   /** Opening density etc. (CoA: Condensed, crosshair on). */
@@ -162,7 +164,8 @@ export interface UseCoaTableOptions<T> {
   /** Page the rows: CoaTableCard draws the Records per page select and pager
    *  under the table, and the table draws one page. Omit to draw every row. */
   pagination?: {
-    /** Opening page size. */
+    /** Opening page size. The reader's choice is kept in this browser's storage
+     *  (under `rememberAs`), so it comes back after a reload. */
     perPage: number
     /** The page-size choices ('all' offers All). */
     options?: (number | 'all')[]
@@ -183,7 +186,7 @@ export interface UseCoaTableOptions<T> {
  * "N of M" counts and what `CoaDataTable` draws.
  */
 export function useCoaTable<T>(o: UseCoaTableOptions<T>) {
-  const { columns, getRowId, rememberAs, pinTop } = o
+  const { columns, getRowId, rememberAs, pinTop, sinkBottom } = o
   const query = o.query ?? ''
   const key = (k: string) => (rememberAs ? `${rememberAs}:${k}` : undefined)
   const allKeys = useMemo(() => columns.map(c => c.key), [columns])
@@ -253,13 +256,16 @@ export function useCoaTable<T>(o: UseCoaTableOptions<T>) {
       })
     }
     const sorted = indexed.map(x => x.r)
-    if (!pinTop) return sorted
-    return [...sorted.filter(pinTop), ...sorted.filter(r => !pinTop(r))]
-  }, [filtered, sort, columns, pinTop])
+    const sunk = sinkBottom ? sorted.filter(r => sinkBottom(r) && !pinTop?.(r)) : []
+    const sunkSet = new Set(sunk)
+    const rest = sunk.length ? sorted.filter(r => !sunkSet.has(r)) : sorted
+    if (!pinTop) return [...rest, ...sunk]
+    return [...rest.filter(pinTop), ...rest.filter(r => !pinTop(r)), ...sunk]
+  }, [filtered, sort, columns, pinTop, sinkBottom])
 
   // Paging: one page of the rows, pinned rows leading every page when asked.
   const pg = o.pagination
-  const [perPage, setPerPage] = useRememberedState<number>(key('perPage'), pg?.perPage ?? -1)
+  const [perPage, setPerPage] = useStoredState<number>(key('perPage'), pg?.perPage ?? -1)
   const [page, setPage] = useState(1)
   useEffect(() => { setPage(1) }, [query, colFilters, sort, pg?.resetKey])
   const paging = useMemo(() => {
