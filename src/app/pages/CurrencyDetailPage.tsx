@@ -1,17 +1,15 @@
 // A currency's detail page, rebuilt on the CoA kit's detail skeleton: sticky
 // DetailHeaderCard (status menu, Actions, full width), tabs that honour ?tab=,
-// a Dashboard of insight tiles and widgets beside the information rail, the
-// Linked transactions register, and the record tabs (Notes, Attachments,
-// Communications, Activity).
+// a Dashboard holding the live exchange rate converter beside the information
+// rail, the Linked transactions register, and the record tabs (Notes,
+// Attachments, Communications, Activity).
 import { useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Activity, ArrowLeftRight, ChevronDown, CircleSlash, Coins, Download, FileText, Power } from 'lucide-react'
 import { CoaPage } from '../coa/components/CoaPage'
 import { DetailHeaderCard } from '../coa/components/DetailHeaderCard'
 import { DetailPageLayout, DashboardGrid, DetailNotFound, InfoAuditGrid, InfoGrid, InfoPerson, InfoValue, useDetailFullView, useDetailTab } from '../coa/components/DetailPageLayout'
-import { DetailInsightsSection, type DetailKpiFace } from '../coa/components/DetailInsights'
 import { DashInfoCard, DashInfoLabel } from '../coa/components/DashInfoCard'
-import { InternalIdField } from '../coa/components/InternalIdField'
 import { Badge, Menu, MenuItem, Tooltip } from '../coa/components/ui'
 import { StatusChip, StatusMenu } from '../coa/components/StatusChip'
 import { OverflowPills, PARTNER_CHIP_CLS } from '../coa/components/cells'
@@ -28,15 +26,14 @@ import { useCurrencies } from '../context/CurrencyContext'
 import { useExchangeRates } from '../context/ExchangeRateContext'
 import { API_PROVIDER, BASE_CURRENCY_NAME, LAST_SYNC } from '../data/exchangeRates'
 import type { Currency } from '../data/currencies'
-import { RATE_TOOLTIPS } from '../utils/rateCopy'
+import { CONVERTER_TOOLTIP, RATE_TOOLTIPS, inverseRateTooltip } from '../utils/rateCopy'
 import {
-  BASE, CURRENCY_STATUS_OPTIONS, auditFacts, countInUse, countOpenDocuments, countriesOf, countryFlagOf, flagOf, fmtAmount, placeFlagOf, fmtRate,
-  internalIdOf, linkedDocs, money, regionOf, statusOf, type LinkedDoc,
+  BASE, CURRENCY_STATUS_OPTIONS, auditFacts, countInUse, countriesOf, countryFlagOf, flagOf, fmtAmount, placeFlagOf, fmtRate,
+  linkedDocs, money, regionOf, statusOf,
 } from './currency/model'
 import { useCurrencyLifecycle } from './currency/useCurrencyLifecycle'
 import { CurrencyConverter } from './currency/CurrencyConverter'
 import { LinkedTransactionsTab } from './currency/LinkedTransactionsTab'
-import { CURRENCY_KPIS, CURRENCY_KPI_DEFAULT, CURRENCY_WIDGETS, CURRENCY_WIDGET_DEFAULT, LinkedDocsBody, RateTrendBody } from './currency/DashboardWidgets'
 import { exportLinkedDocs } from './currency/exportCurrencies'
 import { commsAnchorIso, currencyActivity, currencyAttachments, currencyNotes } from './currency/recordSamples'
 import { CX_TITLE } from './CurrencyExchangeHeader'
@@ -87,7 +84,6 @@ export function CurrencyDetailPage() {
   }
 
   const mid = c.isBaseCurrency ? 1 : midMarketRates.find(r => r.sourceCurrency === c.code)?.rate ?? null
-  const midRecord = midMarketRates.find(r => r.sourceCurrency === c.code) ?? null
   const corporate = c.isBaseCurrency ? null : standardRates.find(r => r.sourceCurrency === c.code && r.status === 'active') ?? null
   const setCorporate = () => navigate(`/accounting/exchange-rates?addCorp=${encodeURIComponent(c.code)}`)
   const status = statusOf(c)
@@ -116,7 +112,7 @@ export function CurrencyDetailPage() {
                 </Tooltip>
                 {c.isBaseCurrency && (
                   <Tooltip side="bottom" content={RATE_TOOLTIPS.baseCurrency}>
-                    <span className="inline-flex cursor-default"><Badge tone="brand">Base currency</Badge></span>
+                    <span className="inline-flex cursor-default"><Badge tone="base">Base currency</Badge></span>
                   </Tooltip>
                 )}
               </>
@@ -170,11 +166,8 @@ export function CurrencyDetailPage() {
         {tab === 'dashboard' && (
           <DashboardTab
             c={c}
-            docs={docs}
             mid={mid}
-            change={midRecord?.change24h ?? null}
             corporate={corporate}
-            onOpenLinked={() => setTab('linked')}
             onSetCorporate={setCorporate}
           />
         )}
@@ -192,82 +185,29 @@ export function CurrencyDetailPage() {
   )
 }
 
-/* The kit's insight section has no default widget sizes, so a record whose
-   layout has never been stored opens with the converter across the full row
-   (its two sides side by side) and the two charts beside each other below. */
-function seedWidgetSizes(storageKey: string) {
-  try {
-    const k = `${storageKey}.widgetSizes`
-    if (localStorage.getItem(k) == null) localStorage.setItem(k, JSON.stringify({ converter: 'lg' }))
-  } catch { /* storage unavailable: every widget opens Medium */ }
-}
-
-function DashboardTab({ c, docs, mid, change, corporate, onOpenLinked, onSetCorporate }: {
+function DashboardTab({ c, mid, corporate, onSetCorporate }: {
   c: Currency
-  docs: LinkedDoc[]
   mid: number | null
-  change: number | null
   corporate: { standardRate: number; effectiveDate: string; createdBy: string } | null
-  onOpenLinked: () => void
   onSetCorporate: () => void
 }) {
-  const storageKey = `fx.currency.${c.code}.insights.v1`
-  seedWidgetSizes(storageKey)
   const dp = c.decimalPlaces
-  const open = countOpenDocuments(c)
-  const total = docs.reduce((s, d) => s + d.amount, 0)
-  const last = docs[0]
   const rateDp = (n: number) => (n < 1 ? 6 : 4)
   const variance = corporate && mid ? ((corporate.standardRate - mid) / mid) * 100 : null
   const signed = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(2)}%`
-
-  const kpiValue = (key: string): DetailKpiFace => {
-    switch (key) {
-      case 'mid':
-        if (c.isBaseCurrency) return { value: '1.0000', subDetail: 'Base currency' }
-        return mid == null ? { value: 'Not available' } : { value: fmtRate(mid, rateDp(mid)), subDetail: `${BASE} per ${c.code}` }
-      case 'corporate':
-        if (c.isBaseCurrency) return { value: 'Not applicable', subDetail: 'Base currency' }
-        return corporate
-          ? { value: fmtRate(corporate.standardRate, rateDp(corporate.standardRate)), subDetail: `Effective ${fmtDate(corporate.effectiveDate)}` }
-          : { value: 'Not set', subDetail: 'Set one', onClick: onSetCorporate }
-      case 'change':
-        if (change == null) return { value: '-' }
-        return { value: <span className={change > 0 ? 'text-success-700' : change < 0 ? 'text-danger-700' : ''}>{signed(change)}</span> }
-      case 'open': return { value: open.toLocaleString('en-US'), subDetail: open ? 'Blocking deactivation' : undefined, onClick: onOpenLinked }
-      case 'value': return { value: money(c.symbol, total, dp), onClick: docs.length ? onOpenLinked : undefined }
-      case 'last': return last ? { value: fmtDate(last.date), subDetail: last.number, onClick: onOpenLinked } : { value: '-', subDetail: 'No documents yet' }
-      case 'inverse': return mid ? { value: fmtRate(1 / mid, 6), subDetail: `${c.code} per ${BASE}` } : { value: '-' }
-      case 'variance': return variance == null ? { value: c.isBaseCurrency ? 'Not applicable' : 'Not set' } : { value: signed(variance), subDetail: 'vs mid-market' }
-      case 'lifetime': return { value: c.usage.totalLifetimeDocuments.toLocaleString('en-US') }
-      default: return { value: '-' }
-    }
-  }
-  const kpiPreview = (key: string): string => {
-    if (key === 'change') return change == null ? '-' : signed(change)
-    const v = kpiValue(key).value
-    return typeof v === 'string' ? v : '-'
-  }
   const facts = auditFacts(c)
   const region = regionOf(c)
 
   return (
     <DashboardGrid
       main={
-        <DetailInsightsSection
-          storageKey={storageKey}
-          kpis={CURRENCY_KPIS}
-          widgets={CURRENCY_WIDGETS}
-          defaultKpis={CURRENCY_KPI_DEFAULT}
-          defaultWidgets={CURRENCY_WIDGET_DEFAULT}
-          kpiValue={kpiValue}
-          kpiPreview={kpiPreview}
-          noun="currency"
-          renderWidget={k =>
-            k === 'converter' ? <CurrencyConverter detail={c} />
-              : k === 'trend' ? <RateTrendBody code={c.code} rate={mid} corporate={corporate?.standardRate ?? null} />
-                : <LinkedDocsBody docs={docs} symbol={c.symbol} decimals={dp} />}
-        />
+        <ChartWidgetCard
+          title="Live exchange rate converter"
+          icon={ArrowLeftRight}
+          tooltip={CONVERTER_TOOLTIP}
+        >
+          <CurrencyConverter detail={c} />
+        </ChartWidgetCard>
       }
       rail={
         <>
@@ -286,7 +226,7 @@ function DashboardTab({ c, docs, mid, change, corporate, onOpenLinked, onSetCorp
               </div>
               <div className="min-w-0">
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.baseCurrency}>Base currency</DashInfoLabel>
-                <div className="mt-0.5"><Badge tone={c.isBaseCurrency ? 'brand' : 'neutral'} className={PARTNER_CHIP_CLS}>{c.isBaseCurrency ? 'Yes' : 'No'}</Badge></div>
+                <div className="mt-0.5"><Badge tone={c.isBaseCurrency ? 'base' : 'neutral'} className={PARTNER_CHIP_CLS}>{c.isBaseCurrency ? 'Yes' : 'No'}</Badge></div>
               </div>
               <div className="min-w-0"><DashInfoLabel>Region</DashInfoLabel>{region ? <InfoValue>{region}</InfoValue> : <InfoValue empty>-</InfoValue>}</div>
               <div className="min-w-0"><DashInfoLabel align="right">Status</DashInfoLabel><div className="mt-0.5"><StatusChip status={statusOf(c)} /></div></div>
@@ -305,7 +245,6 @@ function DashboardTab({ c, docs, mid, change, corporate, onOpenLinked, onSetCorp
               <div className="min-w-0"><DashInfoLabel align="right">Created on</DashInfoLabel><InfoValue>{facts.createdAt ? fmtDate(facts.createdAt) : '-'}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel>Last updated by</DashInfoLabel><InfoPerson name={facts.updatedBy} /></div>
               <div className="min-w-0"><DashInfoLabel align="right">Last updated on</DashInfoLabel><InfoValue>{facts.updatedAt ? fmtDate(facts.updatedAt) : '-'}</InfoValue></div>
-              <InternalIdField id={internalIdOf(c)} help="The system's ID for this currency. Quote it when you contact support." />
             </InfoAuditGrid>
           </DashInfoCard>
 
@@ -316,7 +255,7 @@ function DashboardTab({ c, docs, mid, change, corporate, onOpenLinked, onSetCorp
                 {mid != null ? <InfoValue strong className="tabular-nums">{fmtRate(mid, rateDp(mid))}</InfoValue> : <InfoValue empty>Not available</InfoValue>}
               </div>
               <div className="min-w-0">
-                <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.inverse}>Inverse rate</DashInfoLabel>
+                <DashInfoLabel align="right" tooltip={mid ? inverseRateTooltip(c.code, BASE, fmtRate(1 / mid, 6)) : RATE_TOOLTIPS.inverse}>Inverse rate</DashInfoLabel>
                 {mid ? <InfoValue className="tabular-nums">{fmtRate(1 / mid, 6)}</InfoValue> : <InfoValue empty>-</InfoValue>}
               </div>
               <div className="min-w-0">
@@ -332,7 +271,7 @@ function DashboardTab({ c, docs, mid, change, corporate, onOpenLinked, onSetCorp
                 {variance != null ? <InfoValue className="tabular-nums">{signed(variance)}</InfoValue> : <InfoValue empty>-</InfoValue>}
               </div>
               <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{c.isBaseCurrency ? 'Base currency' : API_PROVIDER}</InfoValue></div>
-              <div className="min-w-0"><DashInfoLabel align="right">Last sync</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last sync</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
             </InfoGrid>
             {corporate && (
               <div className="pt-2.5 border-t border-muted text-[11px] text-slate-500">

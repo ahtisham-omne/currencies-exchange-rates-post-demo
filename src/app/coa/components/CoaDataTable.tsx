@@ -16,6 +16,7 @@ import { DragBar, DragGhost, draggedHeaderStyle, useColumnDragReorder } from './
 import { lookSections, rowNumberGutter, useCrosshair, useTableLook, type ColumnSizing, type Density } from './tableLook'
 import { orderWithRevealed, useSearchReveal } from './SearchReveal'
 import { ExpandToggle, LEAF_LEAD } from './cells'
+import { pageCount, paginate } from './Pagination'
 
 /* ── Column definitions ───────────────────────────────────────────────────── */
 
@@ -158,6 +159,20 @@ export interface UseCoaTableOptions<T> {
   initialDensity?: Density
   /** Opening Column widths mode (CoA: Default). */
   initialColumnSizing?: ColumnSizing
+  /** Page the rows: CoaTableCard draws the Records per page select and pager
+   *  under the table, and the table draws one page. Omit to draw every row. */
+  pagination?: {
+    /** Opening page size. */
+    perPage: number
+    /** The page-size choices ('all' offers All). */
+    options?: (number | 'all')[]
+    /** Pinned rows lead every page and stay out of the page count; otherwise
+     *  they are the first rows of page 1. */
+    pinnedOnEveryPage?: boolean
+    /** Back to page 1 when this changes: the page's own pills and panel
+     *  filters (search, header filters and sort already go back). */
+    resetKey?: string
+  }
 }
 
 /**
@@ -242,6 +257,24 @@ export function useCoaTable<T>(o: UseCoaTableOptions<T>) {
     return [...sorted.filter(pinTop), ...sorted.filter(r => !pinTop(r))]
   }, [filtered, sort, columns, pinTop])
 
+  // Paging: one page of the rows, pinned rows leading every page when asked.
+  const pg = o.pagination
+  const [perPage, setPerPage] = useRememberedState<number>(key('perPage'), pg?.perPage ?? -1)
+  const [page, setPage] = useState(1)
+  useEffect(() => { setPage(1) }, [query, colFilters, sort, pg?.resetKey])
+  const paging = useMemo(() => {
+    if (!pg) return { rows, total: rows.length, page: 1, offset: 0 }
+    const lead = pg.pinnedOnEveryPage && pinTop ? rows.filter(pinTop) : []
+    const list = lead.length ? rows.filter(r => !pinTop!(r)) : rows
+    const current = Math.min(Math.max(1, page), pageCount(list.length, perPage))
+    return {
+      rows: [...lead, ...paginate(list, current, perPage)],
+      total: list.length,
+      page: current,
+      offset: perPage === -1 ? 0 : (current - 1) * perPage,
+    }
+  }, [pg, rows, pinTop, page, perPage])
+
   const shownVisibility = useMemo(
     () => (revealed.length ? { ...visibility, ...Object.fromEntries(revealed.map(k => [k, true])) } : visibility),
     [visibility, revealed],
@@ -268,8 +301,22 @@ export function useCoaTable<T>(o: UseCoaTableOptions<T>) {
 
   return {
     columns, getRowId, pinTop, query,
-    /** The rows to draw: searched, header-filtered and sorted, pinned rows first. */
+    /** Every row the table holds: searched, header-filtered and sorted, pinned
+     *  rows first. What the toolbar counts and the exports take. */
     rows,
+    /** The rows `CoaDataTable` draws: `rows`, or the current page of them. */
+    pageRows: paging.rows,
+    /** Rows on the pages before this one, so Row numbers carry on. */
+    pageOffset: paging.offset,
+    /** Spread onto <PaginationBar /> (CoaTableCard does); undefined when not paged. */
+    pagination: pg ? {
+      total: paging.total,
+      page: paging.page,
+      onPageChange: setPage,
+      perPage,
+      onPerPageChange: setPerPage,
+      options: pg.options,
+    } : undefined,
     order: fullOrder, setOrder,
     visibility, setVisibility,
     shownOrder, shownVisibility,
@@ -467,7 +514,9 @@ export function CoaDataTable<T>({
   table, selectable, isSelectable, onRowClick, rowMenu, isBand, renderExpanded, canExpand, expandStyle = 'chevron',
   afterRow, emptyState, windowAbove = 120, scrollClassName, textClassName = 'text-sm',
 }: CoaDataTableProps<T>) {
-  const { columns, rows, look, getRowId, pinTop, query: q } = table
+  const { columns, look, getRowId, pinTop, query: q } = table
+  // One page when the table is paged (useCoaTable's `pagination`), else every row.
+  const rows = table.pageRows
   const condensed = look.density === 'condensed'
   const padCls = condensed ? 'py-0.5' : 'py-3'
   const sizing: ColumnSizing = look.columnSizing
@@ -526,7 +575,7 @@ export function CoaDataTable<T>({
 
   // Pin geometry. The Row numbers gutter is the first cell's left border, so the
   // column that leads holds that much more width.
-  const gutter = look.rowNumbers ? rowNumberGutter(rows.length) : 0
+  const gutter = look.rowNumbers ? rowNumberGutter(table.pageOffset + rows.length) : 0
   const selW = selectable ? SELECT_W + gutter : 0
   const lockedW = (k: string, i: number) => (widths[k] ?? colByKey.get(k)?.width ?? LOCKED_W_DEFAULT) + (!selectable && i === 0 ? gutter : 0)
   const frozenW = (k: string) => widths[k] ?? colByKey.get(k)?.width ?? FROZEN_W_DEFAULT
@@ -617,6 +666,11 @@ export function CoaDataTable<T>({
   const comfort = !condensed
   const firstKey = drawKeys[0]
 
+  // Row numbers on a later page carry on from the pages before it: the page's
+  // first body row sets the counter (pinned rows drawn on this page count too).
+  const countFrom = table.pageOffset > 0 && body.length ? pinned.length + table.pageOffset : 0
+  const firstBodyId = countFrom ? getRowId(body[0]) : undefined
+
   const renderRow = (r: T, blockRow: boolean) => {
     const id = getRowId(r)
     const selected = table.selected.has(id)
@@ -643,6 +697,7 @@ export function CoaDataTable<T>({
             selected ? 'bg-[#F8FAFF]' : 'bg-white',
             band ? 'border-border' : 'border-border-subtle',
             onRowClick && 'cursor-pointer hover:bg-[#F0F7FF]')}
+          style={id === firstBodyId ? ({ counterSet: `fr-row ${countFrom}` } as CSSProperties) : undefined}
           onClick={openRow}
         >
           {selectable && (

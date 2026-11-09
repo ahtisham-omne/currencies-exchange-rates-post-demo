@@ -2,7 +2,7 @@
 // Exchange Rate Library and by the pair page. CoA FormModal + SectionCard field
 // layout (spec-detail §6.2) over the currency app's rules: duplicate detection
 // with "Update existing rate", the mid-market reference, live variance,
-// backdating block / warn, notes up to 500 characters and validation.
+// backdating block / warn, notes (no length limit) and validation.
 import { useMemo, useState } from 'react'
 import { ArrowLeftRight, Info, Pencil, Plus, StickyNote, TrendingUp } from 'lucide-react'
 import { useExchangeRates } from '../../context/ExchangeRateContext'
@@ -19,8 +19,6 @@ import {
 } from './rateModel'
 
 export type CorporateFormRequest = { mode: 'add'; code?: string } | { mode: 'update'; rateId: string }
-
-const NOTES_MAX = 500
 
 /**
  * The form as a hook, the way CoA pages hold their modals: `openAdd(code?)`,
@@ -259,10 +257,8 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
               <SectionCard icon={<StickyNote size={16} />} title="Notes" badge="Optional">
                 <Textarea
                   value={notes}
-                  maxLength={NOTES_MAX}
-                  onChange={e => setNotes(e.target.value.slice(0, NOTES_MAX))}
+                  onChange={e => setNotes(e.target.value)}
                   placeholder="Add notes about this rate..."
-                  hint={`${notes.length}/${NOTES_MAX}`}
                 />
               </SectionCard>
             </>

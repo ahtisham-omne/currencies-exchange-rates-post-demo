@@ -1,12 +1,10 @@
 // The Currency Library tab of Currency & Exchange Rates (CurrencyExchangePage),
-// on the CoA kit (src/app/coa): the shared header, the Performance Insights shelf,
-// and the CoA table card - toolbar,
+// on the CoA kit (src/app/coa): the shared header and the CoA table card - toolbar,
 // quick-filter pills / bulk bar, header menus, docked Columns panel, density.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown, CircleCheck, CircleSlash, Download, Eye, FileSpreadsheet, FileText, Power } from 'lucide-react'
 import { Badge, Button, Marked, Menu, MenuItem, useResponsiveIconSize } from '../coa/components/ui'
-import { PerformanceInsights, KpiInsightsPanel, activeKpiDefs, useKpiShelf, type KpiDefinition, type KpiValueOf } from '../coa/components/Insights'
 import { TableToolbar } from '../coa/components/TableToolbar'
 import { CoaTableCard, PillRow, TableEmptyState } from '../coa/components/TableCard'
 import { CoaDataTable, useCoaTable, type CoaColumn } from '../coa/components/CoaDataTable'
@@ -18,10 +16,9 @@ import { FlagImage } from '../coa/components/FlagImage'
 import { useRememberedState } from '../coa/lib/rememberedState'
 import { cn, fmtNumber } from '../coa/lib/utils'
 import { useCurrencies } from '../context/CurrencyContext'
-import { useExchangeRates } from '../context/ExchangeRateContext'
 import type { Currency } from '../data/currencies'
 import {
-  BASE, CURRENCY_STATUS_OPTIONS, countInUse, countOpenDocuments, countriesOf, countryFlagOf, flagOf, placeFlagOf, regionOf, statusOf,
+  CURRENCY_STATUS_OPTIONS, countInUse, countriesOf, countryFlagOf, flagOf, placeFlagOf, regionOf, statusOf,
 } from './currency/model'
 import { useCurrencyLifecycle } from './currency/useCurrencyLifecycle'
 import { CurrencyFiltersModal, EMPTY_CURRENCY_FILTERS, applyCurrencyFilters, countCurrencyFilters, type CurrencyPanelFilters } from './currency/CurrencyFilters'
@@ -32,25 +29,11 @@ import { CurrencyExchangeHeader } from './CurrencyExchangeHeader'
 
 type Pill = 'all' | 'active' | 'base' | 'inactive'
 
-const LIST_KPIS: KpiDefinition[] = [
-  { key: 'active', label: 'Active currencies', category: 'Status', tooltip: 'Currencies offered on new transactions.' },
-  { key: 'inactive', label: 'Inactive currencies', category: 'Status', tooltip: 'Currencies kept for history but not offered on new transactions.' },
-  { key: 'in_use', label: 'Currencies in use', category: 'Usage', tooltip: 'Currencies on at least one open document.' },
-  { key: 'blocking', label: 'Open documents', category: 'Usage', tooltip: 'Open documents in any currency. Each one keeps its currency from being deactivated.' },
-  { key: 'base', label: 'Base currency', category: 'Rates', tooltip: 'The currency every exchange rate is quoted against.' },
-  { key: 'countries', label: 'Countries / regions', category: 'Coverage', tooltip: 'Countries and territories the library covers.' },
-  { key: 'corporate', label: 'Corporate rates set', category: 'Rates', tooltip: 'Currencies with an active corporate rate against the base currency.' },
-  { key: 'regions', label: 'Regions covered', category: 'Coverage', tooltip: 'Geographic regions with at least one currency.' },
-  { key: 'zero_dp', label: 'Zero-decimal currencies', category: 'Coverage', tooltip: 'Currencies whose amounts carry no digits after the point.' },
-]
-const LIST_DEFAULT = ['active', 'inactive', 'in_use', 'blocking', 'base']
-
 export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const ic14 = useResponsiveIconSize(14)
   const { currencies } = useCurrencies()
-  const { standardRates } = useExchangeRates()
   const lifecycle = useCurrencyLifecycle()
   // The columns are memoised; they reach the lifecycle through a ref so they stay stable.
   const lifecycleRef = useRef(lifecycle)
@@ -66,7 +49,6 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
   const [filters, setFilters] = useRememberedState<CurrencyPanelFilters>('currencies:filters', EMPTY_CURRENCY_FILTERS)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
-  const shelf = useKpiShelf(LIST_DEFAULT, 'currencies:kpis')
 
   // Pill counts: the rows a click would show, over the panel-filtered set.
   const panelRows = useMemo(() => applyCurrencyFilters(currencies, filters), [currencies, filters])
@@ -84,7 +66,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
       info: 'The ISO 4217 code and name.',
       render: (c, ctx) => (
         <CurrencyCell code={c.code} country={flagOf(c.code)} name={c.name} q={ctx.q} showName strong={ctx.band} onOpen={ctx.openRow}
-          trailing={c.isBaseCurrency ? <Badge tone="brand" className="shrink-0">Base</Badge> : undefined} />
+          trailing={c.isBaseCurrency ? <Badge tone="base" className="shrink-0">Base</Badge> : undefined} />
       ),
       sortValue: c => c.code, searchText: c => [c.code, c.name], filter: 'text', filterValue: c => `${c.code} ${c.name}`,
     },
@@ -150,30 +132,9 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
   const table = useCoaTable<Currency>({
     columns, rows: pillRows, query: debouncedQ, getRowId: c => c.code, rememberAs: 'currencies:table',
     pinTop: c => c.isBaseCurrency, defaultSort: { key: 'linked', dir: 'desc' }, initialColumnSizing: 'fit',
+    // 50 a page by default; the base currency is page 1's first row.
+    pagination: { perPage: 50, options: [10, 25, 50, 100], resetKey: JSON.stringify([pill, filters]) },
   })
-
-  const corporateCodes = useMemo(() => new Set(standardRates.filter(r => r.status === 'active').map(r => r.sourceCurrency)), [standardRates])
-  const base = currencies.find(c => c.isBaseCurrency)
-  const kpiValue = (key: string): string => {
-    switch (key) {
-      case 'active': return fmtNumber(currencies.filter(c => c.status === 'active').length)
-      case 'inactive': return fmtNumber(currencies.filter(c => c.status === 'inactive').length)
-      case 'in_use': return fmtNumber(currencies.filter(c => countInUse(c) > 0).length)
-      case 'blocking': return fmtNumber(currencies.reduce((n, c) => n + countOpenDocuments(c), 0))
-      case 'base': return base ? `${base.code} · ${base.name}` : BASE
-      case 'countries': return fmtNumber(new Set(currencies.flatMap(countriesOf)).size)
-      case 'corporate': return fmtNumber(currencies.filter(c => corporateCodes.has(c.code)).length)
-      case 'regions': return fmtNumber(new Set(currencies.map(regionOf).filter(Boolean)).size)
-      case 'zero_dp': return fmtNumber(currencies.filter(c => c.decimalPlaces === 0).length)
-      default: return '-'
-    }
-  }
-  const kpiFace: KpiValueOf = key => {
-    if (key === 'base' && base) return { value: kpiValue(key), onSelect: () => navigate(`/accounting/currencies/${base.code}`), selectTitle: `Open ${base.code}` }
-    if (key === 'inactive') return { value: kpiValue(key), onSelect: () => setPill('inactive'), selectTitle: 'Show inactive currencies' }
-    if (key === 'in_use') return { value: kpiValue(key), onSelect: () => setFilters({ ...EMPTY_CURRENCY_FILTERS, inUse: 'yes' }), selectTitle: 'Show currencies in use' }
-    return kpiValue(key)
-  }
 
   const selected = table.selected
   const selectedRows = currencies.filter(c => selected.has(c.code))
@@ -204,20 +165,6 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
 
         {/* Steps in under the header when the page's tab changes. */}
         <div className={cn('flex-1 min-h-0 flex flex-col', swapIn)}>
-          <div className="px-6 lg:px-8 mt-4">
-            <PerformanceInsights
-              defs={LIST_KPIS}
-              valueOf={kpiFace}
-              activeKpis={shelf.activeKpis}
-              setActiveKpis={shelf.setActiveKpis}
-              defaultKpis={LIST_DEFAULT}
-              onOpenPanel={() => shelf.setPanelOpen(true)}
-              onReset={shelf.reset}
-              lastRefreshed={shelf.lastRefreshed}
-              onRefresh={shelf.refresh}
-            />
-          </div>
-
           <div className="flex-1 min-h-0 flex flex-col px-6 lg:px-8 mt-4">
             <CoaTableCard
               table={table}
@@ -226,7 +173,6 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
                   search={{ value: query, onChange: setQuery, placeholder: 'Search currencies' }}
                   filters={{ count: panelCount, onOpen: () => setFiltersOpen(true), onClear: () => setFilters(EMPTY_CURRENCY_FILTERS) }}
                   count={{ shown: table.rows.length, total: currencies.length, noun: 'currencies' }}
-                  insights={{ open: shelf.panelOpen, onClick: () => shelf.setPanelOpen(true), count: activeKpiDefs(shelf.activeKpis, LIST_KPIS).length }}
                   density={table.densityMenuProps}
                   columns={{ open: table.columnsOpen, onToggle: () => table.setColumnsOpen(o => !o), count: table.visibleCount }}
                 />
@@ -274,16 +220,6 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
       </div>
 
       <CurrencyFiltersModal open={filtersOpen} onClose={() => setFiltersOpen(false)} rows={currencies} filters={filters} setFilters={setFilters} />
-      <KpiInsightsPanel
-        open={shelf.panelOpen}
-        onOpenChange={shelf.setPanelOpen}
-        defs={LIST_KPIS}
-        valueOf={kpiFace}
-        activeKpis={shelf.activeKpis}
-        onToggleKpi={shelf.toggleKpi}
-        onReset={shelf.reset}
-        defaultKpis={LIST_DEFAULT}
-      />
       <ExportSelectedModal open={exportOpen} onClose={() => setExportOpen(false)} rows={selectedRows} />
       {lifecycle.modal}
     </>

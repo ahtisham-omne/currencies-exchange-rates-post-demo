@@ -1,11 +1,10 @@
-// Exchange Rate Library: the KPI catalogue, the two tables' columns (CoA §4 cell
-// recipes over rate data) and the Region filters modal.
+// Exchange Rate Library: the two tables' columns (CoA §4 cell recipes over
+// rate data) and the Region filters modal.
 import { useEffect, useState } from 'react'
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react'
 import { REGION_LIST } from '../../data/currencies'
 import { RATE_TOOLTIPS } from '../../utils/rateCopy'
 import { Badge, Marked } from '../../coa/components/ui'
-import type { KpiDefinition } from '../../coa/components/Insights'
 import type { CoaColumn } from '../../coa/components/CoaDataTable'
 import { CurrencyCell, EmptyCell, PARTNER_CHIP_CLS } from '../../coa/components/cells'
 import { PersonCell, StampCell, personText, stampText } from '../../coa/components/AuditCells'
@@ -15,22 +14,6 @@ import { FiltersModal, Section, PillSection, AllPill } from '../../coa/component
 import { cn, fmtDate, fmtNumber } from '../../coa/lib/utils'
 import { CORPORATE_STATUS_OPTIONS } from './rateLifecycle'
 import { fmtInverse, fmtRate, fmtSignedPct, type CorpRow, type CorpStatus, type MidRow } from './rateModel'
-
-/* ── KPI shelf (one shelf for both tabs, as General Ledger keeps one) ──── */
-
-export const LIBRARY_KPIS: KpiDefinition[] = [
-  { key: 'mid_count', label: 'Mid-market rates', category: 'Rates', tooltip: 'Rates synced from the provider, the base currency included.' },
-  { key: 'last_sync', label: 'Last sync', category: 'Freshness', tooltip: 'When the provider last refreshed the mid-market rates. They sync every 24 hours.' },
-  { key: 'active_corp', label: 'Active corporate rates', category: 'Rates', tooltip: 'Corporate rates your team set that are in effect now.' },
-  { key: 'avg_variance', label: 'Average corporate variance', category: 'Performance', tooltip: 'How far active corporate rates sit from the mid-market rate, on average.' },
-  { key: 'largest_variance', label: 'Largest variance', category: 'Performance', tooltip: 'The active corporate rate furthest from the mid-market rate.' },
-  { key: 'stale_corp', label: 'Corporate rates older than 30 days', category: 'Freshness', tooltip: 'Active corporate rates that took effect more than 30 days ago.' },
-  { key: 'archived_corp', label: 'Archived corporate rates', category: 'Rates', tooltip: 'Corporate rates kept in history that can no longer be selected.' },
-  { key: 'gain', label: 'Largest 24h gain', category: 'Performance', tooltip: 'The currency whose mid-market rate rose most over the last 24 hours.' },
-  { key: 'drop', label: 'Largest 24h drop', category: 'Performance', tooltip: 'The currency whose mid-market rate fell most over the last 24 hours.' },
-  { key: 'base', label: 'Base currency', category: 'Rates', tooltip: 'The currency every rate is quoted against.' },
-]
-export const LIBRARY_DEFAULT_KPIS = ['mid_count', 'last_sync', 'active_corp', 'avg_variance', 'largest_variance']
 
 /* ── Cells ──────────────────────────────────────────────────────────────── */
 
@@ -58,7 +41,7 @@ function CountryCell({ row, q }: { row: { flag: string; country: string; region:
   )
 }
 
-const baseChip = <Badge tone="brand" className="shrink-0">Base</Badge>
+const baseChip = <Badge tone="base" className="shrink-0">Base</Badge>
 
 /* ── Mid-market table ───────────────────────────────────────────────────── */
 

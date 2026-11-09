@@ -373,6 +373,9 @@
   .badge-brand { @apply chip bg-brand-50 text-brand-700 border border-brand-100; }
   .badge-purple { @apply chip bg-purple-50 text-purple-700 border border-purple-100; }
   .badge-teal { @apply chip bg-teal-50 text-teal-700 border border-teal-100; }
+  /* The base currency's chip: the yellow Currency & Exchange Rates has always
+     marked it with (#FEF3C7 behind #92400E), kept apart from the warning tone. */
+  .badge-base { @apply chip bg-amber-100 text-amber-800 border border-amber-200; }
   /* Extra tones reserved for the Account Type column so its chips never share a
      colour with the Category/Subcategory column. */
   .badge-indigo { @apply chip bg-indigo-50 text-indigo-700 border border-indigo-100; }

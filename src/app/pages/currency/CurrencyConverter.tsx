@@ -1,4 +1,4 @@
-// The "Live exchange rate converter" widget body, rebuilt in the kit's look: two
+// The "Live exchange rate converter" card body, rebuilt in the kit's look: two
 // sides (currency picker + amount), a swap that flips which side is anchored to
 // 1, a Mid-market / Corporate rate toggle, the corporate empty state and the
 // adaptive footer. Every behaviour of the old converter is kept. The sides are
@@ -14,7 +14,6 @@ import type { Currency } from '../../data/currencies'
 import { CONVERTER_SUBTITLE, CONVERTER_TOGGLE_TOOLTIPS, INVERSE_BADGE_TOOLTIP } from '../../utils/rateCopy'
 import { Badge, Banner, Button, Marked, Tooltip, useEscapeToClose } from '../../coa/components/ui'
 import { FlagImage } from '../../coa/components/FlagImage'
-import { useWidgetSize } from '../../coa/components/DetailInsights'
 import { cn, fmtDateTime } from '../../coa/lib/utils'
 import { BASE, flagOf } from './model'
 
@@ -225,10 +224,12 @@ function ConverterSide({ side, code, setCode, amount, onAmountChange, noRate, op
   )
 }
 
-export function CurrencyConverter({ detail }: { detail: Currency }) {
+export function CurrencyConverter({ detail, wide = true }: {
+  detail: Currency
+  /** The two sides next to each other (the dashboard's full-width card); false stacks them. */
+  wide?: boolean
+}) {
   const navigate = useNavigate()
-  const size = useWidgetSize()
-  const wide = size === 'lg'
   const { currencies } = useCurrencies()
   const { midMarketRates, standardRates } = useExchangeRates()
   const activeCurrencies = useMemo(() => currencies.filter(c => c.status === 'active'), [currencies])

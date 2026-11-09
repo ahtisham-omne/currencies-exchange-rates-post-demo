@@ -16,19 +16,19 @@ import { bucketBy, grainFor, rateTick, thin, tickLabelFor, transactionsOn, type 
 
 /* ── Catalogues ─────────────────────────────────────────────────────────── */
 
-const VOLATILITY_TIP = 'Standard deviation of daily rate changes within the selected range. Low: under 0.3%, a stable pair. Moderate: 0.3 to 0.8%, normal movement. High: over 0.8%, elevated risk.'
-
-export const PAIR_KPIS: DetailKpiDef[] = [
-  { key: 'current_mid', label: 'Current mid-market rate', category: 'Rates', description: 'The latest synced mid-market rate, and its change over the last 24 hours.' },
+/** The KPI catalogue; descriptions name the pair's currency (`code`) against the base. */
+export const pairKpis = (code: string): DetailKpiDef[] => [
+  { key: 'current_mid', label: 'Current mid-market rate', category: 'Rates', description: `The latest market rate. Example: 280.0000 means 1 ${code} = 280 ${BASE}.` },
   { key: 'current_std', label: 'Current corporate rate', category: 'Rates', description: 'The corporate rate in effect for this pair.' },
-  { key: 'range_change', label: 'Mid-market change', category: 'Performance', description: 'Percentage change in the mid-market rate over the currently selected range.' },
-  { key: 'range_high_low', label: 'Mid-market high / low', category: 'Analytics', description: 'Highest and lowest mid-market rates within the selected range.' },
-  { key: 'range_volatility', label: 'Mid-market volatility', category: 'Analytics', description: VOLATILITY_TIP },
-  { key: 'range_avg_rate', label: 'Mid-market average rate', category: 'Analytics', description: 'Average mid-market rate within the selected range.' },
+  { key: 'range_change', label: 'Mid-market change', category: 'Performance', description: 'How much the rate moved in the selected period. Example: 275 to 280 is +1.82%.' },
+  { key: 'range_high_low', label: 'Mid-market high / low', category: 'Analytics', description: 'The highest and lowest rate in the selected period.' },
+  { key: 'range_volatility', label: 'Mid-market volatility', category: 'Analytics', description: 'How much the rate usually moves in a day. Low means steady, high means big swings.' },
+  { key: 'range_avg_rate', label: 'Mid-market average rate', category: 'Analytics', description: 'The average daily rate in the selected period.' },
   { key: 'variance', label: 'Corporate variance', category: 'Rates', description: 'How far the corporate rate sits from the current mid-market rate.' },
   { key: 'days_since_update', label: 'Days since rate updated', category: 'Operational', description: 'Days since the corporate rate in effect took effect.' },
   { key: 'corp_transactions_30d', label: 'Corporate transactions (30d)', category: 'Operational', description: 'Transactions priced using the corporate rate in the last 30 days.' },
-  { key: 'fx_exposure_30d', label: 'FX exposure (30d)', category: 'Operational', description: 'Total absolute value of all transactions denominated in this currency pair over the last 30 days, expressed in the base currency.' },
+  // Keyed fx_exposure_30d still, so layouts readers saved keep the tile.
+  { key: 'fx_exposure_30d', label: 'FX exposure', category: 'Operational', description: `The value of open ${code} documents, shown in ${BASE}. This is the amount that gains or loses value when the rate moves.` },
   { key: 'max_variance_30d', label: 'Max corporate variance (30d)', category: 'Analytics', description: 'The widest daily gap between the corporate and mid-market rates over the last 30 synced days.' },
   { key: 'avg_variance_30d', label: 'Average corporate variance (30d)', category: 'Analytics', description: 'The average daily gap between the corporate and mid-market rates over the last 30 synced days.' },
   { key: 'change_count_30d', label: 'Corporate rate changes (30d)', category: 'Operational', description: 'Times the corporate rate was set, updated, archived or restored in the last 30 days.' },
@@ -45,12 +45,12 @@ const RED = { iconBg: '#FEF2F2', iconColor: '#DC2626' }
 const AMBER = { iconBg: '#FFFBEB', iconColor: '#D97706' }
 
 /** The chart catalogue; titles differ by rate type, as they did. */
-export function pairWidgets(isStd: boolean): DetailWidgetDef[] {
+export function pairWidgets(isStd: boolean, code: string): DetailWidgetDef[] {
   return [
     {
       key: 'rate_over_time', category: 'Charts', icon: TrendingUp, previewType: 'line',
       label: isStd ? 'Corporate rate over time' : 'Rate over time',
-      description: 'Shows both rates side by side over time. The market rate is the live line; your corporate rate is the stepped line. Hover any date to see both values and the gap between them.',
+      description: 'The daily rate over the selected period. If a corporate rate is set, it shows as a second line.',
     },
     {
       key: 'variance_trend', category: 'Charts', icon: BarChart3, previewType: 'bar', ...AMBER,
@@ -60,24 +60,22 @@ export function pairWidgets(isStd: boolean): DetailWidgetDef[] {
     {
       key: 'daily_change', category: 'Charts', icon: Activity, previewType: 'area', ...VIOLET,
       label: 'Daily % change',
-      description: 'Shows how much the mid-market rate moved each day, up or down. Tall swings mean big moves that day.',
+      description: 'How much the rate moved each day compared with the day before.',
     },
     {
       key: 'cumulative_return', category: 'Charts', icon: TrendingUp, previewType: 'area', ...GREEN,
       label: 'Cumulative return',
-      description: 'Shows the total movement of the mid-market rate since the start of the selected period. Answers: "how much has this rate moved overall?"',
+      description: 'How far the rate has moved since the start of the selected period.',
     },
     {
       key: 'conversion_trend', category: 'Charts', icon: Banknote, previewType: 'area',
       label: isStd ? 'Corporate conversion trend' : 'Conversion trend',
-      description: isStd
-        ? 'Historical trend of corporate rates set by your team for this currency pair.'
-        : 'Historical mid-market rate movement sourced from your configured provider.',
+      description: `What a fixed ${code} amount was worth in ${BASE} each day.`,
     },
     {
       key: 'drawdown_from_peak', category: 'Charts', icon: ArrowDownRight, previewType: 'area-red', ...RED,
       label: 'Drawdown from peak',
-      description: "Shows how far the mid-market rate has fallen from its recent high. 0% means it's at a new high; -2% means it's 2% below the highest point in the selected period.",
+      description: 'How far the rate is below its highest point in the selected period.',
     },
     {
       key: 'transaction_volume', category: 'Charts', icon: BarChart3, previewType: 'bar',
@@ -382,8 +380,8 @@ export function DrawdownBody({ code, points, label }: BodyProps) {
         </ResponsiveContainer>
       </div>
       <WidgetStatRow stats={[
-        { label: 'Deepest', value: `${worst.toFixed(2)}%`, color: worst < 0 ? '#DC2626' : undefined },
-        { label: 'Now', value: now ? `${now.dd.toFixed(2)}%` : '-' },
+        { label: 'Max drawdown', value: `${worst.toFixed(2)}%`, color: worst < 0 ? '#DC2626' : undefined },
+        { label: 'Current', value: now ? `${now.dd.toFixed(2)}%` : '-' },
         { label: 'Peak', value: now ? fmtRate(now.peak) : '-' },
       ]} />
     </>

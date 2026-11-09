@@ -16,7 +16,13 @@ export const RATE_TOOLTIPS = {
   inverse:
     "How much one unit of the base currency buys in the source currency. The mathematical inverse of the exchange rate.",
   change24h:
-    "The percentage change in the mid-market exchange rate over the last 24 hours, compared against the previous day's synced value.",
+    "How much the rate changed since the previous sync.",
+  rateType:
+    "Mid-market rates update automatically. Corporate rates are fixed rates your team sets.",
+  lastSync:
+    `When this rate was last updated from ${API_PROVIDER}.`,
+  internalId:
+    "The system ID for this rate.",
   variance:
     "The percentage difference between the corporate rate and the current mid-market rate. Indicates how far the corporate rate has drifted from live market value.",
   effectiveDate:
@@ -33,6 +39,14 @@ export const RATE_TOOLTIPS = {
 export const INVERSE_BADGE_TOOLTIP =
   "The inverse rate shows how much 1 unit of the base currency buys in the source currency. For example, if 1 AED equals 75.84 PKR, the inverse rate is 1 PKR equals 0.013186 AED.";
 
+// The "Inverse rate" field on the currency and rate detail pages, read for the
+// pair on screen: 1 [base] = [inverse rate] [currency].
+export const inverseRateTooltip = (code: string, base: string, inverse: string) =>
+  `1 ${base} = ${inverse} ${code}.`;
+
+// The converter card's header tooltip on the currency detail page.
+export const CONVERTER_TOOLTIP = "Convert any amount at the latest mid-market rate.";
+
 export const CONVERTER_SUBTITLE =
   "See how this currency converts against your base currency or any other active currency. Switch between mid-market and corporate rates to compare.";
 
@@ -44,7 +58,7 @@ export const CONVERTER_TOGGLE_TOOLTIPS = {
 } as const;
 
 export const EXPLANATORY_BLOCKS = {
-  midMarket: `Live interbank rates sourced from ${API_PROVIDER} and synced automatically every 24 hours. The mid-market rate represents the midpoint between the global buy and sell prices of a currency pair. It contains no markup, spread, or margin, making it the most accurate and unbiased reference value available for any currency.`,
+  midMarket: `The rate halfway between the buy and sell price, with no bank markup. Updated automatically from ${API_PROVIDER} every 24 hours.`,
   corporate:
-    "Fixed rates manually set by your team for specific currency pairs. A corporate rate stays in effect until someone on your team updates it, giving you a stable and predictable value for budgeting, intercompany transfers, and consistent reporting across documents — independent of daily market movement.",
+    "Fixed rates your team sets. They stay the same until someone changes them, so documents and budgets use a steady rate.",
 } as const;

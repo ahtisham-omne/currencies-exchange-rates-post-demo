@@ -31,10 +31,10 @@ import { parseISO, subMonths } from 'date-fns'
 import { recordKey } from '../coa/lib/recordStore'
 import { useCommsDirectorySync } from '../coa/store'
 import { cn, fmtDate, fmtDateTime, fmtNumber, todayIso } from '../coa/lib/utils'
-import { RATE_TOOLTIPS } from '../utils/rateCopy'
+import { RATE_TOOLTIPS, inverseRateTooltip } from '../utils/rateCopy'
 import { fmtCompactMoney } from '../coa/components/chartKit'
 import {
-  BASE, BASE_NAME, LAST_SYNC_DATE, LAST_SYNC_DAY, LAST_SYNC_TIME, SYNC_LINE, daysSince, fmtInverse, fmtRate, fmtSignedPct,
+  BASE, BASE_NAME, LAST_SYNC_DATE, LAST_SYNC_DAY, LAST_SYNC_TIME, daysSince, fmtInverse, fmtRate, fmtSignedPct,
   varianceColor, variancePct, pairPath,
 } from './exchange/rateModel'
 import {
@@ -42,8 +42,8 @@ import {
   rateHistory, windowRange,
 } from './exchange/pairData'
 import {
-  DEFAULT_MID_KPIS, DEFAULT_MID_WIDGETS, DEFAULT_STD_KPIS, DEFAULT_STD_WIDGETS, MID_KPI_KEYS, MID_WIDGET_KEYS, PAIR_KPIS,
-  STD_KPI_KEYS, STD_WIDGET_KEYS, pairWidgets, renderPairWidget,
+  DEFAULT_MID_KPIS, DEFAULT_MID_WIDGETS, DEFAULT_STD_KPIS, DEFAULT_STD_WIDGETS, MID_KPI_KEYS, MID_WIDGET_KEYS,
+  STD_KPI_KEYS, STD_WIDGET_KEYS, pairKpis, pairWidgets, renderPairWidget,
 } from './exchange/pairInsights'
 import { CORPORATE_STATUS_OPTIONS, MID_STATUS_OPTIONS, useCorporateRateLifecycle } from './exchange/rateLifecycle'
 import { useCorporateRateForm } from './exchange/CorporateRateForm'
@@ -52,6 +52,7 @@ import { RateHistoryTab } from './exchange/RateHistoryTab'
 import { exportRows } from './exchange/rateExport'
 import { corporatePairActivity, isSeededRate, midPairActivity, pairAttachments, pairNotes } from './exchange/recordSamples'
 import { commsAnchorIso } from './currency/recordSamples'
+import { linkedDocs } from './currency/model'
 import { CX_TITLE } from './CurrencyExchangeHeader'
 
 const TABS = ['dashboard', 'history', 'notes', 'attachments', 'communications', 'activity'] as const
@@ -126,6 +127,9 @@ export function CurrencyPairDetailPage() {
   const hasCorpHistory = series.some(p => p.corp != null) || !!active
   const variance = active ? variancePct(active.standardRate, mid.rate) : null
   const historyType = isStd ? 'Corporate' : 'Mid-market'
+  // FX exposure: the open documents in this currency, valued in the base currency.
+  const pairCurrency = currencies.find(c => c.code === code)
+  const openDocs = pairCurrency ? linkedDocs(pairCurrency) : []
 
   /* ── KPI tiles ── */
   const colored = (text: string, color?: string) => <span style={color ? { color } : undefined}>{text}</span>
@@ -172,9 +176,14 @@ export function CurrencyPairDetailPage() {
         return { text: t, value: t, subDetail: active ? undefined : 'No corporate rate in effect' }
       }
       case 'fx_exposure_30d': {
-        const total = Math.round(facts.transactions30d * facts.avg30 * 1200)
+        // At the current mid-market rate: what moves with the market.
+        const total = Math.round(openDocs.reduce((s, d) => s + d.amount, 0) * mid.rate)
         const t = `${BASE} ${total.toLocaleString('en-US')}`
-        return { text: t, value: <span title={t}>{fmtCompactMoney(total, `${BASE} `)}</span>, subDetail: `Across ${fmtNumber(facts.transactions30d)} documents` }
+        return {
+          text: t,
+          value: <span title={t}>{fmtCompactMoney(total, `${BASE} `)}</span>,
+          subDetail: openDocs.length ? `Across ${fmtNumber(openDocs.length)} open ${openDocs.length === 1 ? 'document' : 'documents'}` : 'No open documents',
+        }
       }
       case 'max_variance_30d':
       case 'avg_variance_30d': {
@@ -192,9 +201,9 @@ export function CurrencyPairDetailPage() {
   }
 
   const kpiKeys = isStd ? STD_KPI_KEYS : MID_KPI_KEYS
-  const kpis = PAIR_KPIS.filter(k => kpiKeys.includes(k.key)).sort((a, b) => kpiKeys.indexOf(a.key) - kpiKeys.indexOf(b.key))
+  const kpis = pairKpis(code).filter(k => kpiKeys.includes(k.key)).sort((a, b) => kpiKeys.indexOf(a.key) - kpiKeys.indexOf(b.key))
   const widgetKeys = (isStd ? STD_WIDGET_KEYS : MID_WIDGET_KEYS).filter(k => k !== 'variance_trend' || hasCorpHistory)
-  const widgets = pairWidgets(isStd).filter(w => widgetKeys.includes(w.key)).sort((a, b) => widgetKeys.indexOf(a.key) - widgetKeys.indexOf(b.key))
+  const widgets = pairWidgets(isStd, code).filter(w => widgetKeys.includes(w.key)).sort((a, b) => widgetKeys.indexOf(a.key) - widgetKeys.indexOf(b.key))
   const bodyProps = {
     code, points, label, isStd, lastDay: LAST_SYNC_DAY, avg30: facts.avg30,
     corporate: active ? { rate: active.standardRate, effectiveDate: active.effectiveDate } : null,
@@ -293,13 +302,13 @@ export function CurrencyPairDetailPage() {
       <DashInfoCard title="Rate information" icon={FileText}>
         <InfoGrid>
           <div className="min-w-0"><DashInfoLabel>Pair</DashInfoLabel><InfoValue strong>{code} / {BASE}</InfoValue></div>
-          <div className="min-w-0"><DashInfoLabel align="right" tooltip={isStd ? RATE_TOOLTIPS.corporate : RATE_TOOLTIPS.midMarket}>Rate type</DashInfoLabel><InfoValue>{isStd ? 'Corporate rate' : 'Mid-market rate'}</InfoValue></div>
+          <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.rateType}>Rate type</DashInfoLabel><InfoValue>{isStd ? 'Corporate rate' : 'Mid-market rate'}</InfoValue></div>
           <div className="min-w-0">
             <DashInfoLabel>{archived ? 'Rate (archived)' : 'Rate'}</DashInfoLabel>
             {shownRate != null ? <InfoValue strong className="tabular-nums">{fmtRate(shownRate)} {BASE}</InfoValue> : <InfoValue empty>Not set</InfoValue>}
           </div>
           <div className="min-w-0">
-            <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.inverse}>Inverse rate</DashInfoLabel>
+            <DashInfoLabel align="right" tooltip={shownRate != null ? inverseRateTooltip(code, BASE, fmtInverse(shownRate)) : RATE_TOOLTIPS.inverse}>Inverse rate</DashInfoLabel>
             {shownRate != null ? <InfoValue className="tabular-nums">{fmtInverse(shownRate)} {code}</InfoValue> : <InfoValue empty>-</InfoValue>}
           </div>
           <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{isStd ? 'Set by your team' : API_PROVIDER}</InfoValue></div>
@@ -321,7 +330,7 @@ export function CurrencyPairDetailPage() {
                 <DashInfoLabel tooltip={RATE_TOOLTIPS.change24h}>Change (24h)</DashInfoLabel>
                 <InfoValue className="tabular-nums"><span style={{ color: mid.change24h > 0 ? '#059669' : mid.change24h < 0 ? '#DC2626' : undefined }}>{fmtSignedPct(mid.change24h)}</span></InfoValue>
               </div>
-              <div className="min-w-0"><DashInfoLabel align="right" tooltip={SYNC_LINE}>Last sync</DashInfoLabel><InfoValue>{LAST_SYNC_DATE}, {LAST_SYNC_TIME} PKT</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last sync</DashInfoLabel><InfoValue>{LAST_SYNC_DATE}, {LAST_SYNC_TIME} PKT</InfoValue></div>
             </>
           )}
         </InfoGrid>
@@ -333,7 +342,8 @@ export function CurrencyPairDetailPage() {
           <div className="min-w-0"><DashInfoLabel>Created by</DashInfoLabel><InfoPerson name={isStd && record ? record.createdBy : 'System'} /></div>
           <div className="min-w-0"><DashInfoLabel align="right">{isStd ? 'Created on' : 'Last synced on'}</DashInfoLabel><InfoValue>{isStd && record ? fmtDate(record.createdAt) : LAST_SYNC_DATE}</InfoValue></div>
           {isStd && record && <div className="min-w-0"><DashInfoLabel>Last updated</DashInfoLabel><InfoValue>{fmtDateTime(record.updatedAt)}</InfoValue></div>}
-          <InternalIdField id={(isStd && record ? record.id : mid.id).toUpperCase()} help="The system's ID for this rate. Quote it when you contact support." />
+          {/* Only a corporate rate is a record of ours with an ID; mid-market rates come from the provider. */}
+          {isStd && record && <InternalIdField id={record.id.toUpperCase()} help={RATE_TOOLTIPS.internalId} />}
         </InfoAuditGrid>
         )}
       </DashInfoCard>

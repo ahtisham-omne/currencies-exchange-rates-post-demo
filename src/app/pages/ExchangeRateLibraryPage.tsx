@@ -1,7 +1,7 @@
 // The Exchange Rates tab of Currency & Exchange Rates (CurrencyExchangePage),
-// on the CoA kit: the shared header, the Performance Insights shelf, and one CoA
-// table card per rate type, switched by Cash Management's SegmentedTabs atop the
-// card (Mid-market rates | Corporate rates).
+// on the CoA kit: the shared header and one CoA table card per rate type,
+// switched by Cash Management's SegmentedTabs atop the card (Mid-market rates |
+// Corporate rates).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Archive, ArchiveRestore, ChevronDown, Download, Eye, FileSpreadsheet, FileText, Pencil, Plus } from 'lucide-react'
@@ -9,19 +9,18 @@ import { useExchangeRates } from '../context/ExchangeRateContext'
 import { EXPLANATORY_BLOCKS } from '../utils/rateCopy'
 import { SegmentedTabs } from '../coa/components/SegmentedTabs'
 import { Banner, Button, Menu, MenuItem, Tooltip, useResponsiveIconSize } from '../coa/components/ui'
-import { PerformanceInsights, KpiInsightsPanel, activeKpiDefs, useKpiShelf, type KpiValue } from '../coa/components/Insights'
 import { TableToolbar } from '../coa/components/TableToolbar'
 import { CoaTableCard, PillRow, TableEmptyState } from '../coa/components/TableCard'
 import { CoaDataTable, TableNoteRow, useCoaTable } from '../coa/components/CoaDataTable'
 import { QuickFilterPill } from '../coa/components/Filters'
 import { BulkActionBar } from '../coa/components/BulkActionBar'
 import { useRememberedState } from '../coa/lib/rememberedState'
-import { cn, fmtDate, fmtNumber } from '../coa/lib/utils'
+import { cn, fmtDate } from '../coa/lib/utils'
 import {
-  BASE, BASE_NAME, LAST_SYNC_DATE, LAST_SYNC_TIME, SYNC_LINE, SYNC_LINE_SHORT, baseCorpRow, daysSince, fmtInverse, fmtRate, fmtSignedPct, pairPath,
+  BASE, LAST_SYNC_DATE, SYNC_LINE, SYNC_LINE_SHORT, baseCorpRow, fmtInverse, fmtRate, fmtSignedPct, pairPath,
   toCorpRows, toMidRows, type CorpRow, type MidRow,
 } from './exchange/rateModel'
-import { LIBRARY_DEFAULT_KPIS, LIBRARY_KPIS, RateFiltersModal, corpColumns, midColumns } from './exchange/libraryConfig'
+import { RateFiltersModal, corpColumns, midColumns } from './exchange/libraryConfig'
 import { useCorporateRateLifecycle } from './exchange/rateLifecycle'
 import { useCorporateRateForm } from './exchange/CorporateRateForm'
 import { PairInverter } from './exchange/PairInverter'
@@ -68,8 +67,6 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
     setParams(p, { replace: true })
   }, [params]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const shelf = useKpiShelf(LIBRARY_DEFAULT_KPIS, 'fx.rates:kpis')
-
   /* ── Rows ── */
   const midAll = useMemo(() => toMidRows(midMarketRates, standardRates), [midMarketRates, standardRates])
   const corpAll = useMemo(() => toCorpRows(standardRates, midMarketRates), [standardRates, midMarketRates])
@@ -87,10 +84,14 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   const corpRows = useMemo(() => (corpPillRows.length ? [baseCorpRow(), ...corpPillRows] : []), [corpPillRows])
 
   /* ── Tables ── */
+  // 50 rates a page by default. The base row heads every page and stays out of
+  // the count; switching rate type goes back to page 1.
+  const paging = (resetKey: unknown[]) => ({ perPage: 50, options: [10, 20, 50, 100], pinnedOnEveryPage: true, resetKey: JSON.stringify(resetKey) })
   const midCols = useMemo(() => midColumns(), [])
   const midTable = useCoaTable<MidRow>({
     columns: midCols, rows: midRows, query: debouncedQ, getRowId: r => r.id, rememberAs: 'fx.rates:mid',
     pinTop: r => r.isBase, initialColumnSizing: 'fit',
+    pagination: paging([tab, regions]),
   })
   // The status chip's picks go through the lifecycle flow; a ref keeps the columns stable.
   const lifecycleRef = useRef(lifecycle)
@@ -99,6 +100,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   const corpTable = useCoaTable<CorpRow>({
     columns: corpCols, rows: corpRows, query: debouncedQ, getRowId: r => r.id, rememberAs: 'fx.rates:corp',
     pinTop: r => r.isBase, initialColumnSizing: 'fit',
+    pagination: paging([tab, regions, pill]),
   })
 
   const isMid = tab === 'mid'
@@ -114,43 +116,6 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
     />
   )
   const corpShown = corpTable.rows.filter(r => !r.isBase)
-
-  /* ── KPIs ── */
-  const activeCorp = corpAll.filter(r => r.status === 'Active')
-  const withVariance = activeCorp.filter(r => r.variance != null)
-  const kpiValue = (key: string): string | KpiValue => {
-    switch (key) {
-      case 'mid_count': return fmtNumber(midAll.length)
-      case 'last_sync': return { value: LAST_SYNC_DATE, caption: `${LAST_SYNC_TIME} PKT` }
-      case 'active_corp': return fmtNumber(activeCorp.length)
-      case 'avg_variance': {
-        if (!withVariance.length) return '-'
-        const avg = withVariance.reduce((s, r) => s + (r.variance ?? 0), 0) / withVariance.length
-        return { value: fmtSignedPct(avg), caption: `Across ${withVariance.length} ${withVariance.length === 1 ? 'rate' : 'rates'}` }
-      }
-      case 'largest_variance': {
-        const top = [...withVariance].sort((a, b) => Math.abs(b.variance ?? 0) - Math.abs(a.variance ?? 0))[0]
-        return top
-          ? { value: `${top.code} ${fmtSignedPct(top.variance ?? 0)}`, onSelect: () => navigate(pairPath(top.code, 'std')), selectTitle: `Open ${top.code} corporate rate` }
-          : '-'
-      }
-      case 'stale_corp': {
-        const n = activeCorp.filter(r => daysSince(r.effectiveDate) > 30).length
-        return { value: fmtNumber(n), caption: `of ${activeCorp.length} active` }
-      }
-      case 'archived_corp': return fmtNumber(corpAll.length - activeCorp.length)
-      case 'gain': {
-        const g = midAll.filter(r => !r.isBase).sort((a, b) => b.change24h - a.change24h)[0]
-        return g ? { value: `${g.code} ${fmtSignedPct(g.change24h)}`, onSelect: () => navigate(pairPath(g.code, 'mid')), selectTitle: `Open ${g.code}` } : '-'
-      }
-      case 'drop': {
-        const d = midAll.filter(r => !r.isBase).sort((a, b) => a.change24h - b.change24h)[0]
-        return d ? { value: `${d.code} ${fmtSignedPct(d.change24h)}`, onSelect: () => navigate(pairPath(d.code, 'mid')), selectTitle: `Open ${d.code}` } : '-'
-      }
-      case 'base': return `${BASE} · ${BASE_NAME}`
-      default: return '-'
-    }
-  }
 
   /* ── Export: the open tab, as filtered, archived rows left out ── */
   const exportCurrent = (fmt: ExportFormat, only?: CorpRow[]) => {
@@ -188,7 +153,6 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   const toolbarCommon = {
     search: { value: query, onChange: setQuery, placeholder: 'Search rates' },
     filters: { count: regions.length ? 1 : 0, onOpen: () => setFiltersOpen(true), onClear: () => setRegions([]) },
-    insights: { open: shelf.panelOpen, onClick: () => shelf.setPanelOpen(true), count: activeKpiDefs(shelf.activeKpis, LIBRARY_KPIS).length },
   }
 
   const emptyState = (
@@ -217,20 +181,6 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
 
         {/* Steps in under the header when the page's tab changes. */}
         <div className={cn('flex-1 min-h-0 flex flex-col', swapIn)}>
-          <div className="px-6 lg:px-8 mt-4">
-            <PerformanceInsights
-              defs={LIBRARY_KPIS}
-              valueOf={kpiValue}
-              activeKpis={shelf.activeKpis}
-              setActiveKpis={shelf.setActiveKpis}
-              defaultKpis={LIBRARY_DEFAULT_KPIS}
-              onOpenPanel={() => shelf.setPanelOpen(true)}
-              onReset={shelf.reset}
-              lastRefreshed={shelf.lastRefreshed}
-              onRefresh={shelf.refresh}
-            />
-          </div>
-
           <div className="flex-1 min-h-0 flex flex-col px-6 lg:px-8 mt-4">
             {isMid ? (
               <CoaTableCard
@@ -352,16 +302,6 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
         setRegions={setRegions}
         countFor={regionCount}
         matchCount={regionMatch}
-      />
-      <KpiInsightsPanel
-        open={shelf.panelOpen}
-        onOpenChange={shelf.setPanelOpen}
-        defs={LIBRARY_KPIS}
-        valueOf={kpiValue}
-        activeKpis={shelf.activeKpis}
-        onToggleKpi={shelf.toggleKpi}
-        onReset={shelf.reset}
-        defaultKpis={LIBRARY_DEFAULT_KPIS}
       />
       {lifecycle.modal}
       {form.modal}

@@ -41,6 +41,8 @@ export function useResponsiveIconSize(base: number = 14) {
 export type BadgeTone =
   | 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'brand'
   | 'purple' | 'teal' | 'indigo' | 'sky' | 'rose' | 'slate' | 'orange'
+  /** The base currency's yellow "Base" chip. */
+  | 'base'
 
 export function Badge({ tone = 'neutral', children, className }: {
   tone?: BadgeTone
@@ -61,6 +63,7 @@ export function Badge({ tone = 'neutral', children, className }: {
     rose:    'badge-rose',
     slate:   'badge-slate',
     orange:  'badge-orange',
+    base:    'badge-base',
   }[tone]
   return (
     <span className={cn(cls, className)}>

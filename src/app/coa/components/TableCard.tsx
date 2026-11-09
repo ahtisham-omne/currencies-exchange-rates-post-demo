@@ -7,6 +7,7 @@ import { Button, Card, EmptyState } from './ui'
 import { ColumnSelector } from './ColumnSelector'
 import { ColumnFiltersBar, blankFilter } from './columnFilters'
 import { SearchRevealNote } from './SearchReveal'
+import { PaginationBar } from './Pagination'
 import type { CoaTable } from './CoaDataTable'
 
 /**
@@ -14,8 +15,9 @@ import type { CoaTable } from './CoaDataTable'
  * fills the height the page leaves it, holding - top to bottom - an optional
  * period bar, the toolbar row, then a body row with the pill row (or the bulk
  * bar while rows are selected), the header-filter chips, the search-reveal note,
- * any notes, and the table; the docked Columns panel sits beside the body and
- * pushes the table aside rather than covering it.
+ * any notes, the table, and the pager when the table is paged; the docked
+ * Columns panel sits beside the body and pushes the table aside rather than
+ * covering it.
  */
 export function CoaTableCard<T>({ table, topBar, swapKey, periodBar, toolbar, pills, bulkBar, notes, children, className }: {
   table: CoaTable<T>
@@ -70,6 +72,7 @@ export function CoaTableCard<T>({ table, topBar, swapKey, periodBar, toolbar, pi
           <SearchRevealNote labels={table.revealedLabels} />
           {notes}
           {children}
+          {table.pagination && <PaginationBar {...table.pagination} />}
         </div>
         <ColumnSelector {...table.columnSelectorProps} />
       </div>

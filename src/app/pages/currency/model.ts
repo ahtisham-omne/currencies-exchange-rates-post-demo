@@ -131,6 +131,3 @@ export function auditFacts(c: Currency) {
     updatedAt: newest?.dateTime ?? '',
   }
 }
-
-/** The system's ID for a currency, from its ISO numeric code. */
-export const internalIdOf = (c: Currency) => `CUR-${c.numericCode.padStart(6, '0')}`
