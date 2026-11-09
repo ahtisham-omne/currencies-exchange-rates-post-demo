@@ -1,0 +1,25 @@
+Account Code,Account Name,Category,Account Type,Parent Code,Description
+1000,Assets,Asset,Summary,,All assets
+1010,Cash and Bank,Asset,Summary,1000,Bank and cash on hand
+1015,Operating Bank Account,Asset,Posting,1010,Main current account
+1020,Payroll Bank Account,Asset,Posting,1010,Funds set aside for payroll
+1030,Petty Cash,Asset,Posting,1010,Cash held on site
+1100,Accounts Receivable,Asset,Posting,1000,Amounts owed by customers
+1200,Inventory,Asset,Posting,1000,Goods held for resale
+1400,Prepaid Expenses,Asset,Posting,1000,Costs paid ahead of the period
+2000,Liabilities,Liability,Summary,,All liabilities
+2010,Accounts Payable,Liability,Posting,2000,Amounts owed to suppliers
+2020,Accrued Payroll,Liability,Posting,2000,Wages earned but not yet paid
+2100,Sales Tax Payable,Liability,Posting,2000,Tax collected on behalf of the state
+3000,Equity,Equity,Summary,,Owner interest
+3010,Common Stock,Equity,Posting,3000,Issued share capital
+3020,Retained Earnings,Equity,Posting,3000,Accumulated profit carried forward
+4000,Revenue,Revenue,Summary,,All income
+4010,Product Sales,Revenue,Posting,4000,Income from goods sold
+4020,Service Revenue,Revenue,Posting,4000,Income from services delivered
+5000,Expenses,Expense,Summary,,All operating costs
+5010,Cost of Goods Sold,Expense,Posting,5000,Direct cost of items sold
+5100,Salaries and Wages,Expense,Posting,5000,Employee compensation
+5200,Rent,Expense,Posting,5000,Premises rent
+5300,Marketing,Expense,Posting,5000,Advertising and campaigns
+5400,Software Subscriptions,Expense,Posting,5000,Recurring tooling costs

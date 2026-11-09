@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chart of Accounts — Views</title>
+<style>
+  :root{
+    --bg:#f6f7f9;
+    --surface:#ffffff;
+    --ink:#1a1d21;
+    --ink-2:#5b6470;
+    --ink-3:#8a929e;
+    --line:#e6e9ee;
+    --line-2:#eef1f5;
+    --accent:#2f6df6;
+    --accent-soft:#eaf1fe;
+    --accent-ink:#1b4fd0;
+    --asset:#0f9d76;     --asset-bg:#e6f6f0;
+    --liability:#d9822b; --liability-bg:#fbf0e2;
+    --equity:#7b61ff;    --equity-bg:#efebff;
+    --revenue:#2f6df6;   --revenue-bg:#eaf1fe;
+    --expense:#e5484d;   --expense-bg:#fceced;
+    --pos:#0f9d76;
+    --neg:#e5484d;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 16px rgba(16,24,40,.06);
+    --shadow-lg:0 8px 28px rgba(16,24,40,.14);
+    --radius:10px;
+    --mono:"SF Mono",ui-monospace,"Roboto Mono",Menlo,monospace;
+    --sans:"Inter Tight",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:var(--sans);
+    background:var(--bg);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    font-size:13.5px;
+    line-height:1.45;
+    padding:28px;
+  }
+  .app{max-width:1120px;margin:0 auto}
+
+  /* ---------- page header ---------- */
+  .page-head{display:flex;align-items:baseline;gap:12px;margin-bottom:4px}
+  .page-head h1{font-size:21px;font-weight:700;letter-spacing:-.02em}
+  .page-head .crumb{color:var(--ink-3);font-size:13px;font-weight:500}
+  .page-sub{color:var(--ink-2);margin-bottom:18px;font-size:13px}
+
+  /* ---------- toolbar (always visible) ---------- */
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:0;position:relative;min-height:34px}
+  .toolbar-actions{margin-left:auto;display:flex;gap:6px;align-items:center}
+
+  /* ---------- contextual tab strip (only when a view is active) ---------- */
+  .tabstrip{display:none;border-bottom:1px solid var(--line);padding:0 2px;margin-top:8px}
+  .tabstrip.show{display:flex;align-items:center}
+  .tabs{display:flex;align-items:center;gap:0;flex:1;overflow:hidden}
+  .tab{
+    display:inline-flex;align-items:center;gap:7px;
+    padding:10px 2px;margin-right:24px;
+    color:var(--ink-2);font-weight:500;font-size:14px;
+    cursor:pointer;white-space:nowrap;
+    border-bottom:2px solid transparent;position:relative;top:1px;
+    transition:color .12s,border-color .12s;
+  }
+  .tab:hover{color:var(--ink)}
+  .tab.active{color:var(--accent);font-weight:600;border-bottom-color:var(--accent)}
+  .tab .dot{width:8px;height:8px;border-radius:50%}
+  .tab .lens-ico{opacity:.6}
+  .tab.temp .lens-ico{color:var(--accent);opacity:1}
+  .tab .x{margin-left:1px;color:var(--ink-3);font-size:15px;line-height:1;
+    width:17px;height:17px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px}
+  .tab .x:hover{background:#e2e5ea;color:var(--ink)}
+
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;
+    border:1px solid var(--line);background:var(--surface);
+    color:var(--ink);font-family:inherit;font-size:13px;font-weight:500;
+    padding:7px 12px;border-radius:8px;cursor:pointer;transition:all .12s;
+  }
+  .btn:hover{border-color:#cfd5de;background:#fbfcfd}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}
+  .btn.ghost{border-color:transparent}
+  .btn.ghost:hover{background:#f0f2f5}
+  .btn svg{width:15px;height:15px}
+  .btn.sm{padding:5px 9px;font-size:12.5px}
+
+
+  /* ---------- views dropdown menu ---------- */
+  .menu{
+    position:absolute;z-index:40;top:calc(100% + 6px);right:0;
+    width:288px;background:var(--surface);border:1px solid var(--line);
+    border-radius:12px;box-shadow:var(--shadow-lg);padding:6px;
+    display:none;
+  }
+  .menu.open{display:block;animation:pop .12s ease}
+  @keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .menu-label{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--ink-3);padding:8px 10px 4px}
+  .menu-item{
+    display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;
+    cursor:pointer;font-size:13px;font-weight:500;color:var(--ink);
+  }
+  .menu-item:hover{background:#f3f5f8}
+  .menu-item .meta{margin-left:auto;color:var(--ink-3);font-size:11.5px;font-weight:500}
+  .menu-item.checked{background:var(--accent-soft);color:var(--accent-ink)}
+  .menu-item .shared{font-size:11px;color:var(--ink-3);display:inline-flex;align-items:center;gap:3px}
+  .menu-sep{height:1px;background:var(--line-2);margin:5px 2px}
+  .menu-item.create{color:var(--accent-ink);font-weight:600}
+
+  /* ---------- table ---------- */
+  .card{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-top:12px;
+  }
+  .card.attached{border-top:none;border-radius:0 0 var(--radius) var(--radius);margin-top:0}
+  table{width:100%;border-collapse:collapse}
+  thead th{
+    text-align:left;font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;
+    color:var(--ink-3);padding:11px 16px;border-bottom:1px solid var(--line);
+    background:#fbfcfd;position:sticky;top:0;
+  }
+  th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tbody td{padding:11px 16px;border-bottom:1px solid var(--line-2);font-size:13.5px;color:var(--ink)}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fafbfc}
+  .code{font-family:var(--mono);font-size:12.5px;color:var(--ink-2)}
+  .acct-name{font-weight:500}
+  .amt{font-family:var(--mono);font-size:12.5px;font-weight:500}
+  .amt.neg{color:var(--neg)}
+  .amt.pos{color:var(--ink)}
+
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+    padding:3px 9px;border-radius:999px}
+  .pill .d{width:7px;height:7px;border-radius:50%}
+  .pill.Asset{background:var(--asset-bg);color:#08664c} .pill.Asset .d{background:var(--asset)}
+  .pill.Liability{background:var(--liability-bg);color:#9a5a13} .pill.Liability .d{background:var(--liability)}
+  .pill.Equity{background:var(--equity-bg);color:#4a35c0} .pill.Equity .d{background:var(--equity)}
+  .pill.Revenue{background:var(--revenue-bg);color:#1b4fd0} .pill.Revenue .d{background:var(--revenue)}
+  .pill.Expense{background:var(--expense-bg);color:#b3262b} .pill.Expense .d{background:var(--expense)}
+
+  .status{font-size:11.5px;font-weight:500;color:var(--ink-2)}
+  .status.inactive{color:var(--ink-3)}
+  .status .d{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:5px;background:var(--pos)}
+  .status.inactive .d{background:#c4cad3}
+
+  /* pinned aggregation row */
+  .aggbar{
+    display:flex;align-items:center;gap:0;background:#101418;color:#fff;
+    padding:0;font-size:12.5px;
+  }
+  .aggbar .lead{display:flex;align-items:center;gap:8px;padding:11px 16px;font-weight:600;letter-spacing:.01em}
+  .aggbar .lead svg{width:14px;height:14px;opacity:.8}
+  .aggbar .stats{display:flex;gap:0;margin-left:auto}
+  .aggbar .stat{padding:9px 18px;border-left:1px solid rgba(255,255,255,.12);text-align:right;min-width:140px}
+  .aggbar .stat .k{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.55);font-weight:600}
+  .aggbar .stat .v{font-family:var(--mono);font-size:13.5px;font-weight:600;margin-top:1px}
+  .aggbar .stat .v.neg{color:#ff8a8d}
+
+  /* group sections */
+  .grp-head td{
+    background:#f3f6fb;font-weight:600;padding:9px 16px;border-bottom:1px solid var(--line);
+    cursor:pointer;user-select:none;
+  }
+  .grp-head .caret{display:inline-block;width:14px;color:var(--ink-3);transition:transform .15s;font-size:11px}
+  .grp-head.collapsed .caret{transform:rotate(-90deg)}
+  .grp-head .gtitle{display:inline-flex;align-items:center;gap:9px}
+  .grp-head .gcount{color:var(--ink-3);font-weight:500;font-size:12px}
+  .grp-head .gsum{float:right;font-family:var(--mono);font-weight:600;font-size:12.5px}
+  .grp-head .gsum.neg{color:var(--neg)}
+  tr.collapsed-row{display:none}
+
+  .empty{padding:48px;text-align:center;color:var(--ink-3)}
+
+  /* ---------- builder panel ---------- */
+  .scrim{position:fixed;inset:0;background:rgba(16,24,40,.34);backdrop-filter:blur(2px);
+    z-index:60;display:none;align-items:flex-start;justify-content:center;padding-top:80px}
+  .scrim.open{display:flex;animation:fade .12s ease}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .builder{
+    width:520px;background:var(--surface);border-radius:14px;box-shadow:var(--shadow-lg);
+    overflow:hidden;animation:rise .16s ease}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .builder header{padding:18px 20px 14px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:10px}
+  .builder header h3{font-size:15px;font-weight:700}
+  .builder header p{font-size:12px;color:var(--ink-3);margin-top:1px}
+  .builder .body{padding:18px 20px;display:flex;flex-direction:column;gap:18px}
+  .builder footer{padding:14px 20px;border-top:1px solid var(--line-2);display:flex;justify-content:space-between;align-items:center;gap:8px;background:#fbfcfd}
+  .field label{display:block;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-3);margin-bottom:7px}
+  .field .opt{text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-3);background:#f0f2f5;padding:1px 7px;border-radius:999px;font-size:10.5px;margin-left:4px}
+  .sublabel{font-size:11.5px;color:var(--ink-3);margin-top:7px}
+  .sublabel em{font-style:normal;color:var(--ink-2);font-weight:600}
+  .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:9px;overflow:hidden;width:fit-content}
+  .seg button{border:none;background:var(--surface);padding:7px 14px;font-family:inherit;font-size:12.5px;font-weight:500;color:var(--ink-2);cursor:pointer;border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:none}
+  .seg button.on{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{border:1px solid var(--line);background:var(--surface);padding:6px 11px;border-radius:999px;font-size:12.5px;font-weight:500;color:var(--ink-2);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .chip .d{width:7px;height:7px;border-radius:50%}
+  .chip.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+  select,input[type=text]{font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;color:var(--ink);background:var(--surface);width:100%}
+  select:focus,input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .agg-row{display:flex;gap:18px}
+  .check{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:500;cursor:pointer}
+  .check input{width:16px;height:16px;accent-color:var(--accent)}
+  .builder .note{font-size:11.5px;color:var(--ink-3);display:flex;gap:6px;align-items:center}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#101418;color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:500;
+    box-shadow:var(--shadow-lg);opacity:0;transition:all .25s;z-index:80;display:flex;align-items:center;gap:9px}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast .d{width:8px;height:8px;border-radius:50%;background:#3ddc97}
+
+  .hint{font-size:12px;color:var(--ink-3);margin-top:10px;display:flex;align-items:center;gap:6px}
+  .lens-note{display:inline-flex;align-items:center;gap:6px;color:var(--ink-3);font-size:12px;margin-left:4px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="page-head">
+    <span class="crumb">Finance · Accounting</span>
+    <h1>Chart of Accounts</h1>
+  </div>
+  <div class="page-sub">142 accounts · Fiscal year 2026 · Balances as of Jun 15</div>
+
+  <div class="toolbar">
+    <span class="lens-note" id="lensNote" style="display:none">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      viewing through a lens · data unchanged
+    </span>
+    <div class="toolbar-actions">
+      <button class="btn sm" id="saveBtn" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+        Save view
+      </button>
+      <div style="position:relative">
+        <button class="btn sm" id="viewsBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+          Views
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="menu" id="viewsMenu"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabstrip" id="tabstrip">
+    <div class="tabs" id="tabs"></div>
+  </div>
+
+  <div class="card" id="card">
+    <div id="aggbar"></div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:88px">Code</th>
+          <th>Account</th>
+          <th style="width:120px">Type</th>
+          <th>Category</th>
+          <th style="width:104px">Status</th>
+          <th class="num" style="width:150px">Balance</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <div class="hint">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+    Saved views are shared with everyone on the Accounting team. Temporary views (marked •) live only in your session until you save them.
+  </div>
+</div>
+
+<!-- builder -->
+<div class="scrim" id="scrim">
+  <div class="builder">
+    <header>
+      <div>
+        <h3 id="builderTitle">Create view</h3>
+        <p>A view is a saved lens. It filters or groups what you see — the underlying accounts never change.</p>
+      </div>
+    </header>
+    <div class="body">
+      <div class="field" id="filterField">
+        <label>1 · Filter — show account types</label>
+        <div class="chips" id="typeChips"></div>
+        <div class="sublabel" id="filterHint">Leave all unselected to include every type.</div>
+      </div>
+
+      <div class="field" id="groupField">
+        <label>2 · Group into sections <span class="opt">optional</span></label>
+        <select id="groupBy">
+          <option value="">Don't group — flat list</option>
+          <option value="type">Account type</option>
+          <option value="category">Category</option>
+          <option value="status">Status</option>
+        </select>
+        <div class="sublabel">Grouping applies <em>after</em> the filter, so sections only cover the rows you kept.</div>
+      </div>
+
+      <div class="field">
+        <label>3 · Auto-aggregation</label>
+        <div class="agg-row">
+          <label class="check"><input type="checkbox" id="aggCount" checked> Count rows</label>
+          <label class="check"><input type="checkbox" id="aggSum" checked> Sum of balance</label>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <span class="note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>
+        Applies as a temporary view — save it to share.
+      </span>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="cancelBuilder">Cancel</button>
+        <button class="btn primary" id="applyBuilder">Apply view</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- save name -->
+<div class="scrim" id="saveScrim">
+  <div class="builder" style="width:400px">
+    <header><div><h3>Save view</h3><p>Name it so the team can find it in the Views menu.</p></div></header>
+    <div class="body">
+      <div class="field">
+        <label>View name</label>
+        <input type="text" id="viewName" placeholder="e.g. Ashmita's Tasks, High Priority" autocomplete="off">
+      </div>
+    </div>
+    <footer>
+      <span class="note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Shared with Accounting
+      </span>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="cancelSave">Cancel</button>
+        <button class="btn primary" id="confirmSave">Save</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span class="d"></span><span id="toastMsg"></span></div>
+
+<script>
+/* ---------------- immutable base data ---------------- */
+const TYPES = ["Asset","Liability","Equity","Revenue","Expense"];
+const ACCOUNTS = [
+  {code:"1010",name:"Cash — Operating",type:"Asset",category:"Current Assets",status:"Active",balance:842500},
+  {code:"1020",name:"Cash — Payroll",type:"Asset",category:"Current Assets",status:"Active",balance:128400},
+  {code:"1100",name:"Accounts Receivable",type:"Asset",category:"Current Assets",status:"Active",balance:415900},
+  {code:"1150",name:"Allowance for Doubtful Accounts",type:"Asset",category:"Current Assets",status:"Active",balance:-18200},
+  {code:"1200",name:"Inventory — Finished Goods",type:"Asset",category:"Current Assets",status:"Active",balance:236750},
+  {code:"1400",name:"Prepaid Expenses",type:"Asset",category:"Current Assets",status:"Active",balance:54300},
+  {code:"1500",name:"Office Equipment",type:"Asset",category:"Fixed Assets",status:"Active",balance:312000},
+  {code:"1510",name:"Accumulated Depreciation",type:"Asset",category:"Fixed Assets",status:"Active",balance:-96400},
+  {code:"1600",name:"Leasehold Improvements",type:"Asset",category:"Fixed Assets",status:"Inactive",balance:0},
+  {code:"2010",name:"Accounts Payable",type:"Liability",category:"Current Liabilities",status:"Active",balance:-198600},
+  {code:"2050",name:"Accrued Payroll",type:"Liability",category:"Current Liabilities",status:"Active",balance:-87300},
+  {code:"2100",name:"Sales Tax Payable",type:"Liability",category:"Current Liabilities",status:"Active",balance:-42150},
+  {code:"2200",name:"Credit Card Payable",type:"Liability",category:"Current Liabilities",status:"Active",balance:-31900},
+  {code:"2500",name:"Notes Payable — Long Term",type:"Liability",category:"Long-Term Liabilities",status:"Active",balance:-450000},
+  {code:"3010",name:"Common Stock",type:"Equity",category:"Equity",status:"Active",balance:-500000},
+  {code:"3020",name:"Retained Earnings",type:"Equity",category:"Equity",status:"Active",balance:-628900},
+  {code:"3030",name:"Owner Distributions",type:"Equity",category:"Equity",status:"Active",balance:75000},
+  {code:"4010",name:"Product Revenue",type:"Revenue",category:"Operating Revenue",status:"Active",balance:-1842000},
+  {code:"4020",name:"Subscription Revenue",type:"Revenue",category:"Operating Revenue",status:"Active",balance:-964500},
+  {code:"4030",name:"Services Revenue",type:"Revenue",category:"Operating Revenue",status:"Active",balance:-318700},
+  {code:"4900",name:"Other Income",type:"Revenue",category:"Non-Operating",status:"Active",balance:-22400},
+  {code:"4950",name:"Interest Income",type:"Revenue",category:"Non-Operating",status:"Inactive",balance:0},
+  {code:"5010",name:"Cost of Goods Sold",type:"Expense",category:"Cost of Sales",status:"Active",balance:612300},
+  {code:"6010",name:"Salaries & Wages",type:"Expense",category:"Operating Expenses",status:"Active",balance:884000},
+  {code:"6020",name:"Payroll Taxes",type:"Expense",category:"Operating Expenses",status:"Active",balance:96800},
+  {code:"6100",name:"Rent",type:"Expense",category:"Operating Expenses",status:"Active",balance:144000},
+  {code:"6200",name:"Software & Subscriptions",type:"Expense",category:"Operating Expenses",status:"Active",balance:78500},
+  {code:"6300",name:"Marketing & Advertising",type:"Expense",category:"Operating Expenses",status:"Active",balance:162400},
+  {code:"6400",name:"Travel & Entertainment",type:"Expense",category:"Operating Expenses",status:"Active",balance:43200},
+  {code:"6900",name:"Depreciation Expense",type:"Expense",category:"Non-Operating",status:"Active",balance:38600},
+];
+
+/* ---------------- view definitions ---------------- */
+// each view: {id,name,kind:'all'|'filter'|'group', types:[], groupBy, agg:{count,sum}, shared, builtin}
+let VIEWS = [
+  {id:"all", name:"All accounts", kind:"all", shared:true, builtin:true},
+  {id:"rev-exp", name:"Revenue + Expense", kind:"group", groupBy:"type", types:["Revenue","Expense"], agg:{count:true,sum:true}, shared:true, builtin:true},
+  {id:"ass-lia", name:"Asset + Liability", kind:"group", groupBy:"type", types:["Asset","Liability"], agg:{count:true,sum:true}, shared:true, builtin:true},
+];
+let activeId = "all";
+let tempView = null;           // unsaved working view
+let collapsed = {};            // group collapse state
+
+/* ---------------- helpers ---------------- */
+const $ = s=>document.querySelector(s);
+const fmt = n => (n<0?"−":"") + "$" + Math.abs(n).toLocaleString("en-US");
+function activeView(){ return tempView && tempView.id===activeId ? tempView : VIEWS.find(v=>v.id===activeId); }
+function rowsFor(v){
+  if(!v || v.kind==="all") return ACCOUNTS.slice();
+  if(v.types && v.types.length) return ACCOUNTS.filter(a=>v.types.includes(a.type));
+  return ACCOUNTS.slice();
+}
+function sum(rows){ return rows.reduce((s,a)=>s+a.balance,0); }
+
+/* ---------------- render tabs ---------------- */
+function renderTabs(){
+  const tabs = $("#tabs");
+  tabs.innerHTML = "";
+  const list = tempView ? [...VIEWS, tempView] : VIEWS;
+  list.forEach(v=>{
+    const el = document.createElement("div");
+    el.className = "tab" + (v.id===activeId?" active":"") + (v.id==="__temp"?" temp":"");
+    let inner = "";
+    if(v.id==="all"){
+      inner = `<svg class="lens-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>`;
+    } else {
+      inner = `<svg class="lens-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`;
+    }
+    inner += `<span>${v.name}</span>`;
+    if(v.id==="__temp") inner += `<span class="x" data-close="1">×</span>`;
+    el.innerHTML = inner;
+    el.onclick = (e)=>{
+      if(e.target.dataset.close){ discardTemp(); return; }
+      activeId = v.id; render();
+    };
+    tabs.appendChild(el);
+  });
+}
+
+/* ---------------- render views menu ---------------- */
+function renderMenu(){
+  const m = $("#viewsMenu");
+  const builtin = VIEWS.filter(v=>v.builtin);
+  const saved = VIEWS.filter(v=>!v.builtin);
+  let html = `<div class="menu-label">Default views</div>`;
+  builtin.forEach(v=> html += menuItem(v));
+  if(saved.length){
+    html += `<div class="menu-sep"></div><div class="menu-label">Saved views · shared</div>`;
+    saved.forEach(v=> html += menuItem(v));
+  }
+  html += `<div class="menu-sep"></div>
+    <div class="menu-item create" data-create="1">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      Create view…
+    </div>`;
+  m.innerHTML = html;
+  m.querySelectorAll("[data-view]").forEach(el=>{
+    el.onclick = ()=>{ activeId = el.dataset.view; tempView=null; render(); closeMenu(); };
+  });
+  m.querySelector("[data-create]").onclick = ()=>{ openBuilder(); closeMenu(); };
+}
+function menuItem(v){
+  const rows = rowsFor(v);
+  const checked = v.id===activeId ? " checked" : "";
+  const meta = v.kind==="all" ? `${ACCOUNTS.length}` : `${rows.length} rows`;
+  const shared = !v.builtin ? `<span class="shared">· shared</span>` : "";
+  return `<div class="menu-item${checked}" data-view="${v.id}">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      ${v.kind==="all"?'<path d="M3 6h18M3 12h18M3 18h18"/>':'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'}
+    </svg>
+    <span>${v.name}</span><span class="meta">${meta} ${shared}</span></div>`;
+}
+
+/* ---------------- render aggregation bar ---------------- */
+function renderAgg(v){
+  const bar = $("#aggbar");
+  if(!v || v.kind==="all"){ bar.innerHTML=""; return; }
+  const rows = rowsFor(v);
+  const agg = v.agg || {count:true,sum:true};
+  const total = sum(rows);
+  let stats = "";
+  if(agg.count) stats += `<div class="stat"><div class="k">Accounts</div><div class="v">${rows.length}</div></div>`;
+  if(agg.sum)   stats += `<div class="stat"><div class="k">Sum of balance</div><div class="v ${total<0?'neg':''}">${fmt(total)}</div></div>`;
+  const label = v.kind==="group" ? `Grouped by ${v.groupBy}` : `Filtered view`;
+  bar.innerHTML = `<div class="aggbar">
+    <div class="lead">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-5"/></svg>
+      ${v.name} · ${label}
+    </div>
+    <div class="stats">${stats}</div>
+  </div>`;
+}
+
+/* ---------------- render table body ---------------- */
+function renderBody(v){
+  const tb = $("#tbody");
+  const rows = rowsFor(v);
+  if(!rows.length){ tb.innerHTML = `<tr><td colspan="6" class="empty">No accounts match this view.</td></tr>`; return; }
+
+  if(v && v.kind==="group"){
+    const key = v.groupBy;
+    const groups = {};
+    rows.forEach(a=>{ (groups[a[key]] = groups[a[key]]||[]).push(a); });
+    const order = key==="type" ? TYPES.filter(t=>groups[t]) : Object.keys(groups);
+    let html = "";
+    order.forEach(g=>{
+      const gr = groups[g];
+      const gsum = sum(gr);
+      const isC = collapsed[g];
+      html += `<tr class="grp-head ${isC?'collapsed':''}" data-grp="${g}">
+        <td colspan="6">
+          <span class="gtitle"><span class="caret">▾</span> ${g} <span class="gcount">${gr.length} accounts</span></span>
+          <span class="gsum ${gsum<0?'neg':''}">${fmt(gsum)}</span>
+        </td></tr>`;
+      gr.forEach(a=> html += rowHTML(a, isC));
+    });
+    tb.innerHTML = html;
+    tb.querySelectorAll(".grp-head").forEach(el=>{
+      el.onclick = ()=>{ const g=el.dataset.grp; collapsed[g]=!collapsed[g]; renderBody(activeView()); };
+    });
+  } else {
+    tb.innerHTML = rows.map(a=>rowHTML(a)).join("");
+  }
+}
+function rowHTML(a, hidden){
+  return `<tr class="${hidden?'collapsed-row':''}">
+    <td class="code">${a.code}</td>
+    <td class="acct-name">${a.name}</td>
+    <td><span class="pill ${a.type}"><span class="d"></span>${a.type}</span></td>
+    <td style="color:var(--ink-2)">${a.category}</td>
+    <td><span class="status ${a.status==='Inactive'?'inactive':''}"><span class="d"></span>${a.status}</span></td>
+    <td class="num amt ${a.balance<0?'neg':'pos'}">${fmt(a.balance)}</td>
+  </tr>`;
+}
+
+/* ---------------- master render ---------------- */
+function render(){
+  const v = activeView();
+  renderTabs();
+  renderMenu();
+  renderAgg(v);
+  renderBody(v);
+  const isView = v && v.kind!=="all";          // a lens is active (incl. temp views)
+  // contextual tab strip: only present while a view is active
+  $("#tabstrip").classList.toggle("show", isView);
+  $("#card").classList.toggle("attached", isView);
+  $("#lensNote").style.display = isView ? "inline-flex" : "none";
+  // show Save only for temp (unsaved) views
+  $("#saveBtn").style.display = (tempView && tempView.id===activeId) ? "inline-flex" : "none";
+}
+
+/* ---------------- builder ---------------- */
+function openBuilder(){
+  $("#aggCount").checked=true; $("#aggSum").checked=true;
+  $("#groupBy").value="";
+  // type chips
+  const tc = $("#typeChips"); tc.innerHTML="";
+  TYPES.forEach(t=>{
+    const c=document.createElement("span"); c.className="chip"; c.dataset.type=t;
+    c.innerHTML=`<span class="d" style="background:var(--${t.toLowerCase()})"></span>${t}`;
+    c.onclick=()=>{ c.classList.toggle("on"); updateFilterHint(); }; tc.appendChild(c);
+  });
+  updateFilterHint();
+  $("#scrim").classList.add("open");
+}
+function updateFilterHint(){
+  const n = $("#typeChips").querySelectorAll(".chip.on").length;
+  $("#filterHint").innerHTML = n ? `<em>${n} of ${TYPES.length}</em> types included.` : "Leave all unselected to include every type.";
+}
+$("#applyBuilder").onclick=()=>{
+  const chosen = [...$("#typeChips").querySelectorAll(".chip.on")].map(c=>c.dataset.type);
+  const groupBy = $("#groupBy").value;            // "" => flat
+  const isGrouped = !!groupBy;
+  // auto-name: combine filter + group description
+  let name;
+  if(isGrouped && chosen.length) name = `${chosen.join(" + ")} by ${groupBy}`;
+  else if(isGrouped)             name = `Grouped by ${groupBy}`;
+  else if(chosen.length)         name = `${chosen.join(" + ")}`;
+  else                           name = "Filtered view";
+  tempView = {
+    id:"__temp",
+    name,
+    kind: isGrouped ? "group" : "filter",
+    groupBy: groupBy || "type",
+    types: chosen.length ? chosen : null,         // filter layer — independent of grouping
+    agg:{count:$("#aggCount").checked, sum:$("#aggSum").checked},
+    shared:false, builtin:false
+  };
+  activeId="__temp";
+  $("#scrim").classList.remove("open");
+  render();
+  toast("Temporary view applied — Save it to share");
+};
+$("#cancelBuilder").onclick=()=>$("#scrim").classList.remove("open");
+
+function discardTemp(){ tempView=null; activeId="all"; render(); }
+
+/* ---------------- save flow ---------------- */
+$("#saveBtn").onclick=()=>{ $("#viewName").value=""; $("#saveScrim").classList.add("open"); setTimeout(()=>$("#viewName").focus(),60); };
+$("#cancelSave").onclick=()=>$("#saveScrim").classList.remove("open");
+$("#confirmSave").onclick=()=>{
+  const name = $("#viewName").value.trim() || "Untitled view";
+  const id = "v"+Date.now();
+  const nv = {...tempView, id, name, shared:true, builtin:false};
+  VIEWS.push(nv);
+  tempView=null; activeId=id;
+  $("#saveScrim").classList.remove("open");
+  render();
+  toast(`“${name}” saved & shared with the team`);
+};
+$("#viewName").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#confirmSave").click(); });
+
+/* ---------------- menu toggling ---------------- */
+function closeMenu(){ $("#viewsMenu").classList.remove("open"); }
+$("#viewsBtn").onclick=e=>{ e.stopPropagation(); $("#viewsMenu").classList.toggle("open"); };
+document.addEventListener("click",e=>{ if(!e.target.closest("#viewsMenu") && !e.target.closest("#viewsBtn")) closeMenu(); });
+
+/* ---------------- toast ---------------- */
+let tt;
+function toast(msg){ $("#toastMsg").textContent=msg; $("#toast").classList.add("show"); clearTimeout(tt); tt=setTimeout(()=>$("#toast").classList.remove("show"),2600); }
+
+render();
+</script>
+</body>
+</html>
