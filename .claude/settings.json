@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git reset *)",
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(pkill -9 -f \"Google Chrome\")",
+      "Bash(pkill -9 -f \"remote-debugging\")",
+      "Bash(grep -vE \"^-\\\\s*$|^-\\\\s*//|^-\\\\s*\\\\*\")",
+      "Bash(awk -F: '$1 > 1760 && $1 < 1815')"
+    ]
+  }
+}

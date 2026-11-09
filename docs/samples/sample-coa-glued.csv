@@ -1,0 +1,37 @@
+Account Code,Account Name,Category,Account Type,Parent Code,Description
+100-1000-000,Assets,Asset,Summary,,All assets of the US entity
+100-1010-000,Cash and Bank,Asset,Summary,100-1000-000,Bank and cash on hand
+100-1015-100,Operating Bank Account,Asset,Posting,100-1010-000,Main current account
+100-1020-100,Payroll Bank Account,Asset,Posting,100-1010-000,Funds set aside for payroll
+100-1030-300,Petty Cash,Asset,Posting,100-1010-000,Cash held on site
+100-1100-200,Accounts Receivable,Asset,Posting,100-1000-000,Amounts owed by customers
+100-1200-300,Inventory,Asset,Posting,100-1000-000,Goods held for resale
+100-1400-300,Prepaid Expenses,Asset,Posting,100-1000-000,Costs paid ahead of the period
+100-1500-300,Office Equipment,Asset,Posting,100-1000-000,Fixtures and hardware
+100-2000-000,Liabilities,Liability,Summary,,All liabilities of the US entity
+100-2010-200,Accounts Payable,Liability,Posting,100-2000-000,Amounts owed to suppliers
+100-2020-100,Accrued Payroll,Liability,Posting,100-2000-000,Wages earned but not yet paid
+100-2100-300,Sales Tax Payable,Liability,Posting,100-2000-000,Tax collected on behalf of the state
+100-2500-300,Long Term Loan,Liability,Posting,100-2000-000,Bank loan repayable after one year
+100-3000-000,Equity,Equity,Summary,,Owner interest in the US entity
+100-3010-000,Common Stock,Equity,Posting,100-3000-000,Issued share capital
+100-3020-000,Retained Earnings,Equity,Posting,100-3000-000,Accumulated profit carried forward
+100-4000-000,Revenue,Revenue,Summary,,All income of the US entity
+100-4010-100,Product Sales,Revenue,Posting,100-4000-000,Income from goods sold
+100-4020-100,Service Revenue,Revenue,Posting,100-4000-000,Income from services delivered
+100-4090-300,Sales Discounts,Revenue,Posting,100-4000-000,Reductions granted to customers
+100-5000-000,Expenses,Expense,Summary,,All operating costs of the US entity
+100-5010-300,Cost of Goods Sold,Expense,Posting,100-5000-000,Direct cost of items sold
+100-5100-100,Salaries and Wages,Expense,Posting,100-5000-000,Employee compensation
+100-5110-200,Employee Benefits,Expense,Posting,100-5000-000,Insurance and other benefits
+100-5200-300,Rent,Expense,Posting,100-5000-000,Premises rent
+100-5210-300,Utilities,Expense,Posting,100-5000-000,"Power, water and internet"
+100-5300-100,Marketing,Expense,Posting,100-5000-000,Advertising and campaigns
+100-5400-200,Software Subscriptions,Expense,Posting,100-5000-000,Recurring tooling costs
+100-5500-300,Professional Fees,Expense,Posting,100-5000-000,Legal and accounting advice
+200-1015-100,Operating Bank Account UK,Asset,Posting,,Main current account of the UK entity
+200-1100-200,Accounts Receivable UK,Asset,Posting,,Amounts owed by UK customers
+200-2010-200,Accounts Payable UK,Liability,Posting,,Amounts owed to UK suppliers
+200-4010-100,Product Sales UK,Revenue,Posting,,Income from goods sold in the UK
+200-5100-100,Salaries and Wages UK,Expense,Posting,,UK employee compensation
+200-5200-300,Rent UK,Expense,Posting,,UK premises rent

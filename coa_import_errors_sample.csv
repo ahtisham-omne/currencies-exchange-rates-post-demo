@@ -1,0 +1,6 @@
+Account Code,Account Name,Type,Section,Parent Code,Currency,Opening Balance,Effective Date,Description,Status,Normal Balance,Tax Code,Posting Account,Summary Account,Subsidiary,Bank Routing,Bank Account No.
+10750,Money Market Fund,Investment,,,USD,0,,Short-term investments,Active,,,Yes,No,,,
+,Accrued Bonuses,,,,USD,0,,Year-end bonus accrual,Active,,,Yes,No,,,
+62A0,,Expense,,,USD,0,,Misc office expense,Active,,,Yes,No,,,
+0600,Customer Goodwill,Liabilty,,,USD,0,,Goodwill liability,Active,,,Yes,No,,,
+6310,,Revenue,,,USD,0,,Subscription income,Active,,,Yes,No,,,

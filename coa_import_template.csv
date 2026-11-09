@@ -1,0 +1,9 @@
+Account Code,Account Name,Type,Section,Parent Code,Currency,Opening Balance,Effective Date,Description,Status,Normal Balance,Tax Code,Posting Account,Summary Account,Subsidiary,Bank Routing,Bank Account No.
+1045,Money Market Account,Asset,Current Assets,1000,USD,0,2026-07-01,Short-term liquid investments,Active,Debit,,Yes,No,,,
+1055,Customer Deposits Held,Asset,Current Assets,1000,USD,0,2026-07-01,Refundable customer deposits,Active,Debit,,Yes,No,,,
+2015,Accrued Payroll,Liability,Current Liabilities,2000,USD,0,2026-07-01,Wages earned but not yet paid,Active,Credit,,Yes,No,,,
+3300,Additional Paid-in Capital,Equity,Equity,3000,USD,0,2026-07-01,Capital contributed above par,Active,Credit,,Yes,No,,,
+4015,Marketplace Sales,Revenue,Operating Revenue,4000,EUR,0,2026-07-01,Revenue from marketplace channels,Active,Credit,,Yes,No,,,
+5015,Inbound Freight,Expense,Cost of Goods Sold,5000,USD,0,2026-07-01,Freight on inbound inventory,Active,Debit,,Yes,No,,,
+6215,Printing & Stationery,Expense,Operating Expenses,6200,USD,0,2026-07-01,Office printing and stationery,Active,Debit,,Yes,No,,,
+9010,Active Headcount,Statistical,Statistical,9000,,0,2026-07-01,Non-financial headcount metric,Active,n/a,,Yes,No,,,
