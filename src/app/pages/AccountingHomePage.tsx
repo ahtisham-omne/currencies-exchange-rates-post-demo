@@ -37,7 +37,7 @@ const modules: ModuleCard[] = [
     iconColor: "#7C3AED",
     iconBg: "#F5F3FF",
     path: "/accounting/chart-of-accounts",
-    enabled: false,
+    enabled: true,
   },
   {
     title: "Tax Setup",

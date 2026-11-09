@@ -1,0 +1,5 @@
+GL account no. *,GL account name *,Description,GL account category *,Statement classification,GL account type *,Normal balance,Parent,Account role,Currency,Status
+11000,Current Assets,Assets you expect to use or turn into cash within your operating cycle,Asset,Current asset,Summary,,,,,
+11100,Cash and Cash Equivalents,Cash in bank accounts and on hand,Asset,Current asset,Summary,,11000,,,
+11130,Operating - Chase Bank,Main account for day-to-day payments,Asset,Current asset,Posting,Debit,11100,Bank,,Active
+11160,EUR Account - Deutsche Bank,Euro bank account,Asset,Current asset,Posting,Debit,11100,Bank,EUR,Active

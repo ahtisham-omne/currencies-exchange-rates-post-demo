@@ -9,10 +9,17 @@ import {
   type TouchpointMatch,
 } from "../../touchpoints";
 
+/* The shell router's navigate, while TouchpointFrames is mounted. */
+let shellNavigate: ((path: string) => void) | null = null;
+
 /* Touchpoint apps check for this to hide their own sidebar, and ask it for the
    shell page of one of their URLs (a link opening in a new tab should show the
-   whole shell, not the bare touchpoint). */
+   whole shell, not the bare touchpoint). `navigate` opens one of the shell's
+   own pages, e.g. the Chart of Accounts "Accounting" crumb → /accounting. */
 (window as unknown as { __OMNE_SHELL__: unknown }).__OMNE_SHELL__ = {
+  navigate(path: string) {
+    shellNavigate?.(path);
+  },
   urlFor(frameUrl: string): string | null {
     const url = new URL(frameUrl, window.location.origin);
     const touchpoint = touchpoints.find(
@@ -39,6 +46,13 @@ export function TouchpointFrames({ match }: { match: TouchpointMatch | null }) {
   const [opened, setOpened] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState<Record<string, boolean>>({});
   const frames = useRef<Record<string, HTMLIFrameElement | null>>({});
+
+  useEffect(() => {
+    shellNavigate = (path) => navigate(path);
+    return () => {
+      shellNavigate = null;
+    };
+  }, [navigate]);
 
   const activeSlug = match?.touchpoint.slug;
   const target = match ? match.appPath + location.search : null;

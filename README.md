@@ -4,7 +4,7 @@ TODO: Document your project here
 
 ## Touchpoints
 
-The modules under Items & Inventory, Partners Management, Supply Chain Management, Sales and Vendor Invoices are touchpoint apps. Each lives in `touchpoints/<name>/` as its own Vite app and opens inside this app's layout.
+The modules under Items & Inventory, Partners Management, Supply Chain Management and Sales, and Chart of Accounts, General Ledger and Vendor Invoices under Accounting & Finance, are touchpoint apps. Each lives in `touchpoints/<name>/` as its own Vite app and opens inside this app's layout.
 
 The app serves each touchpoint from its built copy in `public/touchpoint-apps/<name>/`, so Lovable and any deploy show them with no extra setup.
 
@@ -77,3 +77,18 @@ Quotes is the redesigned app from [`quote-craft-hub-82`](https://github.com/ahti
 - where each is defined;
 - how the earlier touchpoint maps onto it;
 - how to pull later design changes.
+
+### Chart of Accounts
+
+Chart of Accounts is the app from [`chart-of-accounts-general-ledger-v2.1`](https://github.com/ahtisham-omne/chart-of-accounts-general-ledger-v2.1), added as a squashed subtree in `touchpoints/chart-of-accounts/`. It covers both Chart of Accounts and General Ledger under Accounting & Finance:
+
+- Shell paths are `/accounting` plus the app's own path: `/accounting/chart-of-accounts`, `/accounting/general-ledger`, and the Setup screens (`/accounting/numbering`, `/accounting/merge`, `/accounting/fiscal-year`, `/accounting/dimensions`).
+- `src/embedding.ts` holds everything it needs to run inside the shell. Its own sidebar is hidden, and its "Accounting" crumb opens the shell's Accounting overview.
+- Its currency and exchange-rate touchpoints aren't added yet.
+
+To pull later design changes:
+
+```sh
+git subtree pull --prefix=touchpoints/chart-of-accounts https://github.com/ahtisham-omne/chart-of-accounts-general-ledger-v2.1.git main --squash
+npm run touchpoints:build -- chart-of-accounts
+```

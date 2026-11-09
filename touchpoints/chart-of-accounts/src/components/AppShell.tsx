@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useStore } from '../store'
+import { embedded } from '../embedding'
 import { ConfirmModal } from './ui'
 import { clearSavedState } from '../lib/persistence'
 import logoWordmark from '../assets/omne-wordmark.png'
@@ -130,7 +131,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const hideChrome = inWizard || fullView
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      {!hideChrome && <AppSidebar />}
+      {/* Inside the Currency & Exchange shell, the shell's sidebar replaces it. */}
+      {!hideChrome && !embedded && <AppSidebar />}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col relative z-0">
         {/* TopBar lives INSIDE the scroll container (sticky), like the
             Partners pages' top nav - so it shares the same right edge as the

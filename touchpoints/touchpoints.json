@@ -4,5 +4,6 @@
   { "slug": "sales-order", "label": "Sales Orders", "port": 8103, "mount": "/sales", "repo": "https://github.com/ahtisham-omne/Sales-Order-V5.git" },
   { "slug": "items-v2", "label": "Items", "port": 8104, "mount": "/inventory", "repo": "https://github.com/ahtisham-omne/nimble-palette.git" },
   { "slug": "vendor-invoicing", "label": "Vendor Invoicing", "port": 8105, "mount": "/accounting/vendor-invoicing", "repo": "https://github.com/ahtisham-omne/vendor-invoicing-payments.git" },
-  { "slug": "quotes", "label": "Quotes", "port": 8106, "mount": "/sales/quotes", "repo": "https://github.com/ahtisham-omne/quote-craft-hub-82.git" }
+  { "slug": "quotes", "label": "Quotes", "port": 8106, "mount": "/sales/quotes", "repo": "https://github.com/ahtisham-omne/quote-craft-hub-82.git" },
+  { "slug": "chart-of-accounts", "label": "Chart of Accounts", "port": 8107, "mount": "/accounting", "prefixes": ["/accounting/chart-of-accounts", "/accounting/general-ledger", "/accounting/numbering", "/accounting/merge", "/accounting/fiscal-year", "/accounting/dimensions"], "repo": "https://github.com/ahtisham-omne/chart-of-accounts-general-ledger-v2.1.git" }
 ]

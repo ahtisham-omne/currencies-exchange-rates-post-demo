@@ -5,6 +5,7 @@ import { avatarColor, cleanName, initialsOf } from './Avatar'
 import { allPeople } from './comms/peopleData'
 import { cn, fmtDateTime } from '../lib/utils'
 import { Marked } from './ui'
+import { asset } from '../embedding'
 
 /* ─────────────────────── Who made it, and when ───────────────────────
    The four audit columns every grid offers: Created by, Created on, Last
@@ -73,11 +74,11 @@ const PERSON_PHOTOS: Record<string, string> = {
   Daniel: 'https://randomuser.me/api/portraits/men/18.jpg',
   Karen: 'https://randomuser.me/api/portraits/women/48.jpg',
   Brian: 'https://randomuser.me/api/portraits/men/67.jpg',
-  Ahtisham: '/avatars/ahtisham-ahmad.jpg',
-  Irtaza: '/avatars/irtaza-abid.jpg',
-  Mahreen: '/avatars/mahreen-ghafoor.png',
-  Nophil: '/avatars/nophil-anwer.png',
-  Eli: '/avatars/eli-rosenbloom.png',
+  Ahtisham: asset('/avatars/ahtisham-ahmad.jpg'),
+  Irtaza: asset('/avatars/irtaza-abid.jpg'),
+  Mahreen: asset('/avatars/mahreen-ghafoor.png'),
+  Nophil: asset('/avatars/nophil-anwer.png'),
+  Eli: asset('/avatars/eli-rosenbloom.png'),
   Abdullah: 'https://randomuser.me/api/portraits/men/29.jpg',
 }
 

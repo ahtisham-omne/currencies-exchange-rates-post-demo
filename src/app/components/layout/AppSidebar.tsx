@@ -103,6 +103,14 @@ const navItems: NavItem[] = [
     path: "/accounting",
     children: [
       { label: "Overview", path: "/accounting" },
+      // The Chart of Accounts app: its Setup screens (numbering, merge, fiscal year,
+      // dimensions) are reached from the chart and keep this link lit.
+      {
+        label: "Chart of Accounts",
+        path: "/accounting/chart-of-accounts",
+        also: ["/accounting/numbering", "/accounting/merge", "/accounting/fiscal-year", "/accounting/dimensions"],
+      },
+      { label: "General Ledger", path: "/accounting/general-ledger" },
       { label: "Currency & Exchange Rates", path: "/accounting/currencies", also: ["/accounting/exchange-rates"] },
       // Every page of the Vendor Invoicing app (payments, prepayments, …) keeps this link lit.
       { label: "Vendor Invoices", path: "/accounting/vendor-invoicing/invoices", also: ["/accounting/vendor-invoicing"] },
