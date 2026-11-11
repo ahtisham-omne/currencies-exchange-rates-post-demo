@@ -37,7 +37,7 @@ function SideCard({ label, code, name, stack, children }: { label: string; code:
   )
 }
 
-export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'row', note, className }: {
+export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'row', note, className, swapTip = INVERSE_BADGE_TOOLTIP, description }: {
   code: string
   name: string
   /** 1 SRC in PKR. */
@@ -48,6 +48,10 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
   /** A quiet line after the cards ("At the corporate rate"). */
   note?: string
   className?: string
+  /** The swap button's tooltip: the inverse-rate explanation in table rows, "Swap currencies" on the pair page. */
+  swapTip?: string
+  /** The line above the cards in the stacked layout (the pair page's card). */
+  description?: string
 }) {
   const stack = layout === 'stack'
   // What the reader typed, in the From currency. Starts at one unit.
@@ -71,7 +75,7 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
   return (
     <LayoutGroup>
       <div className={cn(stack ? 'flex flex-col items-stretch gap-2' : 'flex items-center gap-3 flex-wrap', className)} onClick={e => e.stopPropagation()}>
-        {stack && <p className="text-[11px] text-fg-subtle leading-snug">Type an amount in {first.code} to see what it comes to in {second.code} at this rate.</p>}
+        {stack && <p className="text-[11px] text-fg-subtle leading-snug">{description ?? `Type an amount in ${first.code} to see what it comes to in ${second.code} at this rate.`}</p>}
         <motion.div layout transition={SPRING} key={first.id} className={stack ? '' : 'shrink-0'}>
           <SideCard label="From" code={first.code} name={first.name} stack={stack}>
             <input
@@ -88,7 +92,7 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
           </SideCard>
         </motion.div>
         <div className={cn('flex items-center', stack && 'justify-center')}>
-          <Tooltip content={INVERSE_BADGE_TOOLTIP} side="top">
+          <Tooltip content={swapTip} side="top">
             <button
               type="button"
               onClick={swap}

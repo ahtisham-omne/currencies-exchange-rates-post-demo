@@ -1817,6 +1817,8 @@ export function Menu({ trigger, children, align = 'right', flush }: {
     const h = (e: MouseEvent) => {
       if (ref.current?.contains(e.target as Node)) return
       if (menuRef.current?.contains(e.target as Node)) return
+      // A date field inside the panel opens its calendar in a portal: a click there is still inside.
+      if ((e.target as Element).closest?.('[data-date-popover]')) return
       setOpen(false)
     }
     const shut = () => setOpen(false)

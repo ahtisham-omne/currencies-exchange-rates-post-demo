@@ -5,13 +5,13 @@ import { useMemo, useState } from 'react'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis,
 } from 'recharts'
-import { Activity, BarChart3, Banknote, TrendingUp } from 'lucide-react'
+import { BarChart3, Banknote, TrendingUp } from 'lucide-react'
 import type { DetailKpiDef, DetailWidgetDef } from '../../coa/components/DetailInsights'
 import { useWidgetChartH, useWidgetSize, widgetBarSize } from '../../coa/components/DetailInsights'
 import { AXIS_PROPS, CHART_MARGIN, CM_TT_STYLE, ChartEmpty, ChartTooltipCard, GRID_PROPS, ZERO_LINE_PROPS, areaGradient, tickInterval } from '../../coa/components/chartKit'
 import { ChartLegendDot } from '../../coa/components/ChartWidgetCard'
 import { fmtDate, fmtNumber } from '../../coa/lib/utils'
-import { BASE, decimalsOf, fmtPairRate, fmtRate, fmtSignedPct, symbolOf } from './rateModel'
+import { BASE, decimalsOf, fmtPairRate, fmtRate, symbolOf } from './rateModel'
 import { money as fmtMoney } from '../currency/model'
 import { bucketBy, grainFor, rateTick, thin, tickLabelFor, transactionsOn, type PairPoint } from './pairData'
 
@@ -19,14 +19,14 @@ import { bucketBy, grainFor, rateTick, thin, tickLabelFor, transactionsOn, type 
 
 /** The KPI catalogue; descriptions name the pair's currency (`code`) against the base. */
 export const pairKpis = (code: string): DetailKpiDef[] => [
-  { key: 'current_mid', label: 'Current Mid-Market Rate', category: 'Rates', description: `The latest market rate. Example: 280.0000 means 1 ${code} = 280 ${BASE}.` },
+  { key: 'current_mid', label: 'Current Mid-Market Rate', category: 'Rates', description: `Current mid-market rate for 1 ${code} in ${BASE}.` },
   { key: 'current_std', label: 'Current Corporate Rate', category: 'Rates', description: 'The corporate rate in effect for this pair.' },
-  { key: 'range_change', label: 'Mid-Market Change', category: 'Performance', description: 'How much the rate moved in the selected period. Example: 275 to 280 is +1.82%.' },
-  { key: 'range_volatility', label: 'Mid-Market Volatility', category: 'Analytics', description: 'How much the rate usually moves in a day. Low means steady, high means big swings.' },
+  { key: 'range_change', label: 'Mid-Market Change', category: 'Performance', description: 'How much the mid-market rate moved over the selected period.' },
+  { key: 'range_volatility', label: 'Mid-Market Volatility', category: 'Analytics', description: 'Average daily movement of the mid-market rate over the selected period.' },
   { key: 'variance', label: 'Corporate Variance', category: 'Rates', description: 'How far the corporate rate sat from the mid-market rate, on average, over the selected period.' },
   { key: 'days_since_update', label: 'Days Since Rate Updated', category: 'Operational', description: 'Days since the corporate rate in effect took effect.' },
   // Keyed fx_exposure_30d still, so layouts readers saved keep the tile.
-  { key: 'fx_exposure_30d', label: 'FX Exposure', category: 'Operational', description: `The total of your open ${code} transactions in the selected period, converted to ${BASE} at the mid-market rate on its last day. This is the amount that gains or loses value when the exchange rate moves.` },
+  { key: 'fx_exposure_30d', label: 'FX Exposure', category: 'Operational', description: `Value of active ${code} transactions in ${BASE}, at today’s mid-market rate.` },
 ]
 
 export const MID_KPI_KEYS = ['current_mid', 'range_change', 'range_volatility', 'fx_exposure_30d']
@@ -34,31 +34,18 @@ export const STD_KPI_KEYS = ['current_std', 'variance', 'days_since_update', 'fx
 export const DEFAULT_MID_KPIS = ['current_mid', 'range_change', 'range_volatility', 'fx_exposure_30d']
 export const DEFAULT_STD_KPIS = ['current_std', 'variance', 'days_since_update', 'fx_exposure_30d']
 
-const GREEN = { iconBg: '#ECFDF5', iconColor: '#059669' }
-const VIOLET = { iconBg: '#F5F3FF', iconColor: '#7C3AED' }
-
 /** The chart catalogue; titles differ by rate type, as they did. */
 export function pairWidgets(isStd: boolean, code: string): DetailWidgetDef[] {
   return [
     {
       key: 'rate_over_time', category: 'Charts', icon: TrendingUp, previewType: 'line',
       label: isStd ? 'Corporate Rate over Time' : 'Rate over Time',
-      description: 'The daily rate over the selected period. If a corporate rate is set, it shows as a second line.',
-    },
-    {
-      key: 'daily_change', category: 'Charts', icon: Activity, previewType: 'area', ...VIOLET,
-      label: 'Daily % Change',
-      description: 'How much the rate moved each day compared with the day before.',
-    },
-    {
-      key: 'cumulative_return', category: 'Charts', icon: TrendingUp, previewType: 'area', ...GREEN,
-      label: 'Cumulative Return',
-      description: 'How far the rate has moved since the start of the selected period.',
+      description: 'Daily mid-market rate over the selected period. If a corporate rate is set, it shows as a dashed line.',
     },
     {
       key: 'conversion_trend', category: 'Charts', icon: Banknote, previewType: 'area',
       label: isStd ? 'Corporate Conversion Trend' : 'Conversion Trend',
-      description: `What a fixed ${code} amount was worth in ${BASE} each day.`,
+      description: `What the entered amount in ${code} was worth in ${BASE} each day.`,
     },
     {
       key: 'transaction_volume', category: 'Charts', icon: BarChart3, previewType: 'bar',
@@ -67,9 +54,9 @@ export function pairWidgets(isStd: boolean, code: string): DetailWidgetDef[] {
     },
   ]
 }
-export const MID_WIDGET_KEYS = ['rate_over_time', 'daily_change', 'cumulative_return', 'conversion_trend']
+export const MID_WIDGET_KEYS = ['rate_over_time', 'conversion_trend']
 export const STD_WIDGET_KEYS = ['rate_over_time', 'transaction_volume', 'conversion_trend']
-export const DEFAULT_MID_WIDGETS = ['rate_over_time', 'daily_change']
+export const DEFAULT_MID_WIDGETS = ['rate_over_time']
 export const DEFAULT_STD_WIDGETS = ['rate_over_time']
 
 /* ── Shared body pieces ─────────────────────────────────────────────────── */
@@ -187,62 +174,6 @@ export function RateOverTimeBody({ code, points, label, isStd, corporate, lastDa
   )
 }
 
-export function DailyChangeBody({ code, points, label }: BodyProps) {
-  const chartH = useWidgetChartH()
-  const all = useMemo(() => points.slice(1).map((p, i) => ({ date: p.date, change: +(((p.mid - points[i].mid) / points[i].mid) * 100).toFixed(3) })), [points])
-  const data = useMemo(() => thin(all), [all])
-  const axis = useAxis(data)
-  if (all.length < 1) return <><Caption>{label}</Caption><ChartEmpty icon={Activity} title="Not enough history" description="Pick a range of two days or more to see the daily moves." /></>
-  const id = `fxDaily-${code}`
-  return (
-    <>
-      <Caption>{label}</Caption>
-      <div style={{ height: chartH }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={CHART_MARGIN}>
-            {areaGradient(id, '#7C3AED')}
-            <CartesianGrid {...GRID_PROPS} />
-            <XAxis dataKey="date" {...AXIS_PROPS} tickFormatter={axis.tickFormatter} interval={axis.interval} />
-            <YAxis {...AXIS_PROPS} width={44} tickFormatter={(v: number) => `${v}%`} />
-            <ReferenceLine {...ZERO_LINE_PROPS} />
-            <RTooltip contentStyle={CM_TT_STYLE} labelFormatter={(l: string) => fmtDate(l)} formatter={(v: number) => [fmtSignedPct(v, 3), 'Daily Change']} />
-            <Area type="monotone" dataKey="change" stroke="#7C3AED" strokeWidth={2} fill={`url(#${id})`} dot={false} activeDot={{ r: 4 }} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    </>
-  )
-}
-
-export function CumulativeReturnBody({ code, points, label }: BodyProps) {
-  const chartH = useWidgetChartH()
-  const first = points[0]?.mid ?? 1
-  const all = useMemo(() => points.map(p => ({ date: p.date, ret: +(((p.mid - first) / first) * 100).toFixed(3) })), [points, first])
-  const data = useMemo(() => thin(all), [all])
-  const axis = useAxis(data)
-  const end = all[all.length - 1]?.ret ?? 0
-  const color = end >= 0 ? '#059669' : '#DC2626'
-  const id = `fxCum-${code}`
-  return (
-    <>
-      <Caption>{label}</Caption>
-      <div style={{ height: chartH }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={CHART_MARGIN}>
-            {areaGradient(id, color)}
-            <CartesianGrid {...GRID_PROPS} />
-            <XAxis dataKey="date" {...AXIS_PROPS} tickFormatter={axis.tickFormatter} interval={axis.interval} />
-            <YAxis {...AXIS_PROPS} width={44} tickFormatter={(v: number) => `${v}%`} />
-            <ReferenceLine {...ZERO_LINE_PROPS} />
-            <RTooltip contentStyle={CM_TT_STYLE} labelFormatter={(l: string) => fmtDate(l)} formatter={(v: number) => [fmtSignedPct(v, 3), 'Cumulative Return']} />
-            <Area type="monotone" dataKey="ret" stroke={color} strokeWidth={2} fill={`url(#${id})`} dot={false} activeDot={{ r: 4 }} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    </>
-  )
-}
-
 export function ConversionTrendBody({ code, points, label, isStd }: BodyProps) {
   const chartH = useWidgetChartH()
   const [amount, setAmount] = useState('1000')
@@ -319,8 +250,6 @@ export function TransactionVolumeBody({ code, points, label }: BodyProps) {
 export function renderPairWidget(key: string, props: BodyProps) {
   switch (key) {
     case 'rate_over_time': return <RateOverTimeBody {...props} />
-    case 'daily_change': return <DailyChangeBody {...props} />
-    case 'cumulative_return': return <CumulativeReturnBody {...props} />
     case 'conversion_trend': return <ConversionTrendBody {...props} />
     case 'transaction_volume': return <TransactionVolumeBody {...props} />
     default: return null

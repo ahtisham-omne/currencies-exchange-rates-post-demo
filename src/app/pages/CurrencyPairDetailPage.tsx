@@ -92,7 +92,8 @@ export function CurrencyPairDetailPage() {
 
   const series = useMemo(() => (mid ? buildPairSeries(mid, rateAudit) : []), [mid, rateAudit])
   // The range calendar opens on the month before the last sync, where the data is.
-  const history = useMemo(() => rateHistory(code, series, rateAudit), [code, series, rateAudit])
+  // Only this page's rate type: mid-market syncs here, corporate changes on the corporate page.
+  const history = useMemo(() => rateHistory(code, series, rateAudit).filter(r => r.type === (isStd ? 'Corporate' : 'Mid-Market')), [code, series, rateAudit, isStd])
   const points = useMemo(() => windowRange(series, range), [series, range])
   const metrics = useMemo(() => rangeMetrics(points), [points])
 
@@ -182,9 +183,7 @@ export function CurrencyPairDetailPage() {
         return {
           text: t,
           value: <span title={t} className="whitespace-nowrap">{t}</span>,
-          subDetail: periodDocs.length
-            ? `${label}, across ${fmtNumber(periodDocs.length)} open ${periodDocs.length === 1 ? 'transaction' : 'transactions'}`
-            : `No open transactions ${label.replace(/^Over /, 'in ')}`,
+          subDetail: label,
         }
       }
       default: return { text: '–', value: '–' }
@@ -341,12 +340,12 @@ export function CurrencyPairDetailPage() {
           )
         })()}
       </DashInfoCard>
-      <DashInfoCard title="Pair Converter" icon={ArrowLeftRight} tooltip={`Converts an amount between ${code} and ${BASE} at this rate. Type an amount, or swap to convert the other way.`}>
+      <DashInfoCard title="Pair Converter" icon={ArrowLeftRight}>
         {shownRate != null ? (
-          <PairInverter layout="stack" code={code} name={mid.sourceCurrencyName} rate={shownRate}
+          <PairInverter layout="stack" swapTip="Swap currencies" description={isStd ? 'Converts amounts at the corporate rate.' : 'Converts amounts at the mid-market rate.'} code={code} name={mid.sourceCurrencyName} rate={shownRate}
             inverted={inverted} onToggle={() => setInverted(v => !v)} note={isStd ? (archived ? 'At the archived corporate rate' : 'At the corporate rate') : 'At the mid-market rate'} />
         ) : isStd && upcoming ? (
-          <PairInverter layout="stack" code={code} name={mid.sourceCurrencyName} rate={upcoming.standardRate}
+          <PairInverter layout="stack" swapTip="Swap currencies" description={isStd ? 'Converts amounts at the corporate rate.' : 'Converts amounts at the mid-market rate.'} code={code} name={mid.sourceCurrencyName} rate={upcoming.standardRate}
             inverted={inverted} onToggle={() => setInverted(v => !v)} note={`At the upcoming corporate rate, from ${fmtDate(upcoming.effectiveDate)}`} />
         ) : (
           <p className="text-[12px] text-slate-400">No corporate rate is set for this pair yet.</p>
