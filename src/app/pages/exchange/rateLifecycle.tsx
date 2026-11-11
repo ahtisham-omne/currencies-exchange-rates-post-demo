@@ -2,11 +2,13 @@
 // refusal, a confirmation or an immediate commit, then the toast). One rule set
 // for every door: the row menu, the status chip, the Actions menu and the bulk bar.
 import { useExchangeRates } from '../../context/ExchangeRateContext'
+import { useCurrencies } from '../../context/CurrencyContext'
 import { activeStandardRateFor, type StandardRate } from '../../data/exchangeRates'
 import { useLifecycleFlow, lifecycleIcon } from '../../coa/lib/lifecycle'
 import type { StatusOption } from '../../coa/components/StatusChip'
 import { fmtDate } from '../../coa/lib/utils'
-import { BASE, fmtRate, type CorpStatus } from './rateModel'
+import { corporateRateDocs, docTypeMeta, type LinkedDoc } from '../currency/model'
+import { BASE, fmtPairRate, fmtRate, type CorpStatus } from './rateModel'
 
 export const CORPORATE_STATUS_OPTIONS: StatusOption<CorpStatus>[] = [
   { value: 'Active', verb: 'Restore', meaning: ['The rate in effect for this pair. It can be selected on new transactions.'] },
@@ -19,12 +21,40 @@ export const MID_STATUS_OPTIONS: StatusOption<'Active'>[] = [
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
 
+/** "INV-2025-0520 · Vendor Invoice · Acme Corp", the first six, then a count. */
+const docLines = (docs: LinkedDoc[]) => docs.slice(0, 6)
+  .map(d => `${d.number} · ${docTypeMeta(d.type).label} · ${d.party}`)
+  .concat(docs.length > 6 ? [`and ${docs.length - 6} more`] : [])
+
 export function useCorporateRateLifecycle() {
   const { standardRates, archiveStandardRates, restoreStandardRate } = useExchangeRates()
+  const { currencies } = useCurrencies()
   const flow = useLifecycleFlow()
+
+  /** The active transactions priced at this rate: any at all keeps it from being archived. */
+  const linkedTo = (r: StandardRate): LinkedDoc[] => {
+    const c = currencies.find(x => x.code === r.sourceCurrency)
+    return c ? corporateRateDocs(c) : []
+  }
 
   const archive = (r: StandardRate, onDone?: () => void) => {
     const code = r.sourceCurrency
+    const linked = r.status === 'active' ? linkedTo(r) : []
+    if (linked.length) {
+      const n = linked.length
+      flow.request({
+        allowed: false,
+        commit: () => {},
+        refusal: {
+          title: `Can't archive the ${code} corporate rate`,
+          description: [`${n} active ${plural(n, 'transaction is', 'transactions are')} priced at ${fmtPairRate(code, r.standardRate)}. Close or settle ${plural(n, 'it', 'them')} first, then archive the rate.`],
+          reasonsTitle: 'Linked Transactions',
+          reasons: docLines(linked),
+          dismissLabel: 'Got It',
+        },
+      })
+      return
+    }
     flow.request({
       allowed: r.status === 'active',
       confirm: {
@@ -32,7 +62,7 @@ export function useCorporateRateLifecycle() {
         icon: lifecycleIcon('archive'),
         title: `Archive the ${code} corporate rate?`,
         description: [
-          `The ${code} corporate rate of ${fmtRate(r.standardRate)} ${BASE} will be archived. It stays in rate history, but it can no longer be selected for new transactions.`,
+          `The ${code} corporate rate (${fmtPairRate(code, r.standardRate)}) will be archived. It stays in rate history, but it can no longer be selected for new transactions.`,
           `${code} falls back to the mid-market rate until a new corporate rate is set.`,
         ],
         confirmLabel: 'Archive Rate',
@@ -70,17 +100,31 @@ export function useCorporateRateLifecycle() {
   const request = (next: CorpStatus, r: StandardRate, onDone?: () => void) => (next === 'Archived' ? archive(r, onDone) : restore(r, onDone))
 
   const archiveBulk = (records: StandardRate[], onDone?: () => void) => {
-    const ok = records.filter(r => r.status === 'active')
-    const held = records.filter(r => r.status !== 'active')
+    // Each picked rate either archives, is archived already, or is held by active transactions.
+    const linkedOf = new Map(records.filter(r => r.status === 'active').map(r => [r.id, linkedTo(r)]))
+    const ok = records.filter(r => r.status === 'active' && !linkedOf.get(r.id)!.length)
+    const held = records.filter(r => !ok.includes(r))
+    const why = (h: StandardRate) => {
+      const k = linkedOf.get(h.id)?.length ?? 0
+      return k ? `${h.sourceCurrency} · on ${k} active ${plural(k, 'transaction', 'transactions')}` : `${h.sourceCurrency} · already archived`
+    }
+    const heldByDocs = held.filter(h => (linkedOf.get(h.id)?.length ?? 0) > 0).length
+    const alreadyArchived = held.length - heldByDocs
     if (!ok.length) {
       flow.request({
         allowed: false,
         commit: () => {},
         refusal: {
           title: 'Nothing to archive',
-          description: ['Every rate you picked is archived already.'],
-          reasonsTitle: 'Already Archived',
-          reasons: held.map(h => `${h.sourceCurrency} · ${fmtRate(h.standardRate)} ${BASE}`),
+          description: [
+            heldByDocs && !alreadyArchived
+              ? `${plural(held.length, 'The rate you picked is', 'Every rate you picked is')} priced into active transactions. Close or settle them first, then archive.`
+              : !heldByDocs
+                ? 'Every rate you picked is archived already.'
+                : 'Each rate you picked is either archived already or priced into active transactions.',
+          ],
+          reasonsTitle: 'Why Each One Stayed',
+          reasons: held.map(why),
           dismissLabel: 'Got It',
         },
       })
@@ -99,16 +143,21 @@ export function useCorporateRateLifecycle() {
         ],
         reasonsTitle: held.length ? 'Not Included' : 'Rates to Archive',
         reasons: held.length
-          ? held.map(h => `${h.sourceCurrency} · already archived`)
+          ? held.map(why)
           : ok.slice(0, 6).map(r => `${r.sourceCurrency} · ${fmtRate(r.standardRate)} ${BASE}`).concat(ok.length > 6 ? [`and ${ok.length - 6} more`] : []),
         confirmLabel: `Archive ${plural(n, 'Rate', 'Rates')}`,
       },
       commit: () => archiveStandardRates(ok.map(r => r.id)),
       toast: `${n} corporate ${plural(n, 'rate', 'rates')} archived`,
-      toastDescription: held.length ? `${held.length} already archived.` : undefined,
+      toastDescription: held.length
+        ? `${[heldByDocs ? `${heldByDocs} held by active transactions` : '', alreadyArchived ? `${alreadyArchived} already archived` : ''].filter(Boolean).join(' · ')}.`
+        : undefined,
       toastTone: held.length ? 'info' : 'success',
     }, onDone)
   }
 
-  return { archive, restore, request, archiveBulk, modal: flow.modal }
+  /** Whether archive would go through: active, and no active transaction priced at it. */
+  const canArchive = (r: StandardRate) => r.status === 'active' && !linkedTo(r).length
+
+  return { archive, restore, request, archiveBulk, canArchive, modal: flow.modal }
 }

@@ -7,7 +7,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowLeftRight, Info, Pencil, Plus, StickyNote, TrendingUp } from 'lucide-react'
 import { useExchangeRates } from '../../context/ExchangeRateContext'
-import { activeStandardRateFor, isRateInEffect, upcomingRateOf, type StandardRate } from '../../data/exchangeRates'
+import { API_PROVIDER, activeStandardRateFor, isRateInEffect, upcomingRateOf, type StandardRate } from '../../data/exchangeRates'
 import { RATE_TOOLTIPS } from '../../utils/rateCopy'
 import { Badge, Banner, Button, ConfirmModal, FormModal, Input, RequiredMark, Select, Textarea, Tooltip } from '../../coa/components/ui'
 import { SectionCard, LockedField } from '../../coa/components/formKit'
@@ -16,7 +16,7 @@ import { FlagImage } from '../../coa/components/FlagImage'
 import { pushToast } from '../../coa/lib/toast'
 import { fmtDate, todayIso } from '../../coa/lib/utils'
 import {
-  ACTOR, BASE, BASE_NAME, LAST_SYNC_DATE, checkBackdate, flagOf, fmtRate, fmtSignedPct, variancePct,
+  ACTOR, BASE, BASE_NAME, LAST_SYNC_AT, checkBackdate, flagOf, fmtPairRate, fmtRate, fmtSignedPct, variancePct,
 } from './rateModel'
 
 export type CorporateFormRequest = { mode: 'add'; code?: string } | { mode: 'update'; rateId: string }
@@ -52,9 +52,12 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
 
   const startCode = request.mode === 'add' && request.code ? request.code.toUpperCase() : ''
   const validStart = startCode && startCode !== BASE && midMarketRates.some(m => m.sourceCurrency === startCode) ? startCode : ''
+  // A new rate starts from today's mid-market rate for its currency, to adjust from.
+  const midFor = (c: string) => midMarketRates.find(m => m.sourceCurrency === c)
+  const prefillFor = (c: string) => { const m = c ? midFor(c) : undefined; return m ? fmtRate(m.rate) : '' }
   const initial = useMemo(() => ({
     source: initialRecord?.sourceCurrency ?? validStart,
-    rate: initialRecord ? fmtRate(initialRecord.standardRate) : '',
+    rate: initialRecord ? fmtRate(initialRecord.standardRate) : prefillFor(validStart),
     date: today,
     // Each change carries its own note: the last one stays in the rate's history.
     notes: '',
@@ -66,6 +69,12 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
   const [notes, setNotes] = useState(initial.notes)
   const [attempted, setAttempted] = useState(false)
   const [discardOpen, setDiscardOpen] = useState(false)
+  // Once the reader types a rate, picking another currency no longer overwrites it.
+  const [rateTouched, setRateTouched] = useState(false)
+  const pickSource = (c: string) => {
+    setSource(c)
+    if (!rateTouched) setRate(prefillFor(c))
+  }
 
   // The source picker never offers the base currency: a rate against itself is 1.
   const options = useMemo(
@@ -149,8 +158,16 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
         title={isUpdate ? 'Update Corporate Rate' : 'Add Corporate Rate'}
         subtitle={isUpdate
           ? <>Update the corporate rate for <span className="text-fg" style={{ fontWeight: 600 }}>{code} / {BASE}</span>.</>
-          : 'Define a new corporate rate for a currency pair.'}
+          : (
+            // First thing under the title: what the new rate will be quoted against.
+            <span className="inline-flex items-center gap-1.5">
+              <FlagImage code={flagOf(BASE)} />
+              <span>Quoted against <span className="text-fg" style={{ fontWeight: 600 }}>{BASE}</span> ({BASE_NAME}), your base currency</span>
+            </span>
+          )}
         widthClass="max-w-[760px]"
+        // A few fields: the windowed form already shows all of them.
+        hideFullView
         footer={
           <>
             <Button variant="ghost" onClick={requestClose}>Cancel</Button>
@@ -192,7 +209,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                     placeholder="Choose a currency"
                     searchPlaceholder="Search currency code or name"
                     value={source}
-                    onChange={e => setSource(e.target.value)}
+                    onChange={e => pickSource(e.target.value)}
                     error={errorOf('source')}
                   >
                     {options.map(o => (
@@ -207,14 +224,14 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
           {duplicate ? (
             <Banner tone="warning" title="A corporate rate already exists for this currency pair.">
               {isRateInEffect(duplicate, today)
-                ? <p className="tabular-nums">Current rate: {fmtRate(duplicate.standardRate)} · Effective from {fmtDate(duplicate.effectiveDate)}</p>
-                : <p className="tabular-nums">Upcoming rate: {fmtRate(duplicate.standardRate)} · From {fmtDate(duplicate.effectiveDate)}</p>}
+                ? <p className="tabular-nums">Current rate: {fmtPairRate(duplicate.sourceCurrency, duplicate.standardRate)} · Effective from {fmtDate(duplicate.effectiveDate)}</p>
+                : <p className="tabular-nums">Upcoming rate: {fmtPairRate(duplicate.sourceCurrency, duplicate.standardRate)} · From {fmtDate(duplicate.effectiveDate)}</p>}
               <p className="mt-0.5">Do you want to update it?</p>
               <div className="flex items-center gap-2 mt-2.5">
                 <Button size="sm" icon={<Pencil size={13} />} onClick={() => { setEditing(duplicate); setRate(fmtRate(duplicate.standardRate)); setNotes(''); setAttempted(false) }}>
                   Update Existing Rate
                 </Button>
-                <Button size="sm" variant="secondary" onClick={() => setSource('')}>Choose Another Currency</Button>
+                <Button size="sm" variant="secondary" onClick={() => pickSource('')}>Choose Another Currency</Button>
               </div>
             </Banner>
           ) : (
@@ -224,9 +241,11 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                   <div>
                     <LockedField label="Mid-Market Reference" info={RATE_TOOLTIPS.midMarket} why="Synced from the rate provider every 24 hours. It can't be edited here.">
                       {mid
-                        ? <span className="tabular-nums truncate">{fmtRate(mid.rate)} {BASE} <span className="text-fg-subtle">· As of {LAST_SYNC_DATE}</span></span>
+                        ? <span className="tabular-nums truncate">{fmtPairRate(code, mid.rate)}</span>
                         : <span className="text-fg-subtle truncate">Choose a currency to see its mid-market rate</span>}
                     </LockedField>
+                    {/* When the figure was taken, to the minute, under the field like a hint. */}
+                    {mid && <p className="mt-1.5 text-2xs text-fg-subtle">Last synced {LAST_SYNC_AT} from {API_PROVIDER}</p>}
                   </div>
                   <Input
                     label="Corporate Exchange Rate"
@@ -238,10 +257,11 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                     inputMode="decimal"
                     placeholder="e.g., 279.0000"
                     value={rate}
-                    onChange={e => setRate(e.target.value)}
+                    onChange={e => { setRate(e.target.value); setRateTouched(true) }}
                     error={errorOf('rate')}
                     hint={variance != null
-                      ? `Variance from mid-market: ${fmtSignedPct(variance)}`
+                      // Green above mid-market, red below, grey when level.
+                      ? <>Variance from mid-market: <span className={variance > 0 ? 'text-success-700' : variance < 0 ? 'text-danger-700' : undefined} style={{ fontWeight: 600 }}>{fmtSignedPct(variance)}</span></>
                       : code ? `1 ${code} in ${BASE}` : undefined}
                   />
                   <div className="space-y-1.5">
@@ -260,11 +280,11 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                     <div className="space-y-1.5">
                       <span className="label block">Current Rate</span>
                       <div className="text-sm text-fg-muted tabular-nums min-h-9 flex flex-col justify-center">
-                        <p>{inEffect ? <>{fmtRate(inEffect.standardRate)} {BASE} · effective {fmtDate(inEffect.effectiveDate)}</> : 'None in effect yet'}</p>
+                        <p>{inEffect ? <>{fmtPairRate(code, inEffect.standardRate)} · effective {fmtDate(inEffect.effectiveDate)}</> : 'None in effect yet'}</p>
                         {pending && (
                           <p className="flex items-center gap-1.5 mt-0.5">
                             <Badge tone="info">Upcoming</Badge>
-                            {fmtRate(pending.standardRate)} {BASE} from {fmtDate(pending.effectiveDate)}
+                            {fmtPairRate(code, pending.standardRate)} from {fmtDate(pending.effectiveDate)}
                           </p>
                         )}
                       </div>

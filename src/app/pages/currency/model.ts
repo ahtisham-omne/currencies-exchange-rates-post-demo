@@ -1,6 +1,6 @@
 // Currency Library screens: shared, read-only views over the currency seed and
 // context (flags, regions, linked documents, audit facts). Pure helpers, no UI.
-import { countInUse, countOpenDocuments, getRegionForCountry, type Currency } from '../../data/currencies'
+import { countInUse, countOpenDocuments, getRegionForCountry, type Currency, type OpenTransaction } from '../../data/currencies'
 import { BASE_CURRENCY } from '../../data/exchangeRates'
 import { getCountryCode, getFlagUrlByCountry } from '../../utils/currencyFlags'
 import type { BadgeTone } from '../../coa/components/ui'
@@ -19,12 +19,14 @@ export const CURRENCY_STATUS_OPTIONS: StatusOption<CurrencyStatus>[] = [
 ]
 
 /** Why the base currency can't be deactivated: every rate is quoted against it. */
-export const baseStaysActive = (c: Currency) => `${c.code} is your base currency. Every exchange rate is quoted against it, so it stays active.`
+/** Why the base currency's status can't change: the menus' disabled reason, the
+ *  refusal, and the bulk dialog all say it in these words. */
+export const BASE_CURRENCY_LOCKED = 'Your base currency can’t be changed because transactions are linked to it.'
 
 /** The status menu for one currency: the base currency's Deactivate is greyed out. */
 export const statusOptionsFor = (c: Currency): StatusOption<CurrencyStatus>[] =>
   c.isBaseCurrency
-    ? CURRENCY_STATUS_OPTIONS.map(o => (o.value === 'Inactive' ? { ...o, disabledReason: baseStaysActive(c) } : o))
+    ? CURRENCY_STATUS_OPTIONS.map(o => (o.value === 'Inactive' ? { ...o, disabledReason: BASE_CURRENCY_LOCKED } : o))
     : CURRENCY_STATUS_OPTIONS
 
 /** ISO 3166 alpha-2 (lower case) for a currency's flag, '' when there is none. */
@@ -73,6 +75,8 @@ export interface LinkedDoc {
   status: string
   date: string
   amount: number
+  /** The rate it was priced at. */
+  rateType: 'corporate' | 'mid'
 }
 
 /** The number out of a formatted amount ("د.إ85,000.00" → 85000). The first run of
@@ -87,17 +91,24 @@ export const parseAmount = (amount: string): number => {
 export function linkedDocs(c: Currency): LinkedDoc[] {
   const u = c.usage
   const out: LinkedDoc[] = []
-  const push = (type: DocTypeKey, rows: { ref: string; vendor: string; amount: string; status: string; date: string }[]) =>
-    rows.forEach((d, i) => out.push({ id: `${type}-${d.ref}-${i}`, number: d.ref, type, party: d.vendor, status: d.status, date: d.date, amount: parseAmount(d.amount) }))
+  const push = (type: DocTypeKey, rows: OpenTransaction[]) =>
+    rows.forEach((d, i) => out.push({ id: `${type}-${d.ref}-${i}`, number: d.ref, type, party: d.vendor, status: d.status, date: d.date, amount: parseAmount(d.amount), rateType: d.rateType ?? 'mid' }))
   push('vendorInvoice', u.openInvoices)
   push('customerInvoice', u.openCustomerInvoices)
   push('purchaseOrder', u.openPurchaseOrders)
   push('salesOrder', u.openSalesOrders)
   ;(u.openPayments ?? []).forEach((p, i) => out.push({
     id: `pay-${p.ref}-${i}`, number: p.ref, type: p.type === 'Vendor Payment' ? 'vendorPayment' : 'customerPayment',
-    party: p.party, status: '', date: p.date, amount: parseAmount(p.amount),
+    party: p.party, status: '', date: p.date, amount: parseAmount(p.amount), rateType: 'mid',
   }))
   return out.sort((a, b) => b.date.localeCompare(a.date))
+}
+
+/** The active transactions priced at the currency's corporate rate: while any
+ *  is open, that rate can't be archived. A draft isn't active yet, and payments
+ *  carry no status of their own. */
+export function corporateRateDocs(c: Currency): LinkedDoc[] {
+  return linkedDocs(c).filter(d => d.rateType === 'corporate' && isActiveDoc(d))
 }
 
 /** Status chip tones for a document: Open blue, Paid / Closed green, Overdue red, Draft slate, Pending / Partial amber. */
@@ -131,6 +142,46 @@ export const fmtAmount = (n: number, dp: number) =>
 /** "د.إ 85,000.00": the symbol, a left-to-right mark so a right-to-left symbol
  *  does not pull the digits in front of it, then the amount. */
 export const money = (symbol: string, n: number, dp: number) => `${symbol}‎ ${fmtAmount(n, dp)}`
+
+/* ── Format preview ─────────────────────────────────────────────────────
+   How an amount is written where the currency is at home: the thousand and
+   decimal separators, the grouping (India writes 12,34,567.89), and which side
+   the symbol sits, from the locale of the currency's primary country (the
+   euro's from Germany), in the country's main language (Switzerland's German:
+   CHF 1'234'567.89) with Western digits. The library's own symbol stands in
+   for the locale's. Language and region only: a script subtag (de-Latn-CH)
+   loses the regional rules and falls back to the language's. */
+const PREVIEW_AMOUNT = 1234567.891
+
+function previewLocale(c: Currency): string {
+  const region = (c.country === 'Eurozone' ? 'de' : placeFlagOf(c.country, c.code)).toUpperCase()
+  if (!/^[A-Z]{2}$/.test(region)) return 'en-US'
+  try {
+    const likely = new Intl.Locale(`und-${region}`).maximize()
+    return likely.language && likely.region ? `${likely.language}-${likely.region}` : 'en-US'
+  } catch { return 'en-US' }
+}
+
+/** "$1,234,567.89", "1.234.567,89 €", "₹12,34,567.89", "CHF 1’234’567.89", "¥1,234,568". */
+export function formatPreview(c: Currency): { text: string; place: string } {
+  const nf = new Intl.NumberFormat(previewLocale(c), {
+    style: 'currency', currency: c.code, numberingSystem: 'latn',
+    minimumFractionDigits: c.decimalPlaces, maximumFractionDigits: c.decimalPlaces,
+  })
+  const text = nf.formatToParts(PREVIEW_AMOUNT)
+    .map(p => (p.type === 'currency' ? c.symbol : p.value))
+    .join('')
+    .replace(/[\u200e\u200f\u061c]/g, '')
+    .trim()
+  return { text, place: c.country === 'Eurozone' ? 'Germany' : c.country }
+}
+
+/* ── Active transactions ───────────────────────────────────────────────── */
+
+/** Statuses a transaction is still in play with. A draft hasn't started yet,
+ *  and payments carry no status of their own. */
+export const ACTIVE_DOC_STATUSES = ['Open', 'Pending', 'Overdue', 'Partial']
+export const isActiveDoc = (d: LinkedDoc) => ACTIVE_DOC_STATUSES.includes(d.status)
 
 export const fmtRate =(n: number, dp = 4) => n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
 

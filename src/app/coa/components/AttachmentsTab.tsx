@@ -10,6 +10,11 @@
  *
  * Substitutions made for this repo: Menu/MenuItem instead of the radix dropdown,
  * the store's pushToast instead of sonner, and this module's font/colour tokens.
+ *
+ * The card itself is Vendor Invoicing's (touchpoints/vendor-invoicing ›
+ * invoice-details/AttachmentsTab): a mock document thumbnail with the type badge
+ * bottom-left, a pill naming the record, then name, date and time, and
+ * size · uploader. Its parts live in AttachmentCardParts.
  */
 import { useEffect, useMemo, useRef, useState, type ElementType } from 'react'
 import {
@@ -17,19 +22,36 @@ import {
   ChevronDown, Check, FileText, FileSpreadsheet, Image as ImageIcon, Paperclip,
   Download, Eye, Trash2,
 } from 'lucide-react'
-import { Button, EmptyState, Marked, Menu, MenuItem } from './ui'
+import { Button, ConfirmModal, EmptyState, Marked, Menu, MenuItem } from './ui'
 import { cleanName } from './Avatar'
 import { searchMatcher } from '../lib/tableSearch'
 import { pushToast } from '../lib/toast'
 import { useRecordAttachments } from '../lib/recordStore'
 import { cn } from '../lib/utils'
 import { buildDummyAttachment, type DocumentContext } from '../lib/dummyAttachment'
+import { AttachmentThumb, RecordPill } from './AttachmentCardParts'
 
 /* Bytes for files picked in this session, held here rather than on the record so
    nothing tries to put a Blob through the store's serializer. A reload drops
    them and the file falls back to generated sample content, which is the same
    place every seeded attachment starts. */
 const uploadedBlobs = new Map<AttachmentFile['id'], File>()
+
+/* An image picked this session draws as itself on its card, as in Vendor
+   Invoicing. One object URL per file, made the first time a card asks and kept
+   for the session alongside the bytes it points at. */
+const uploadedImageUrls = new Map<AttachmentFile['id'], string>()
+const RENDERABLE_IMAGE = /^image\/(png|jpe?g|gif|webp|avif|bmp|svg\+xml)$/
+function uploadedImageUrl(id: AttachmentFile['id']): string | undefined {
+  const blob = uploadedBlobs.get(id)
+  if (!blob || !RENDERABLE_IMAGE.test(blob.type)) return undefined
+  let url = uploadedImageUrls.get(id)
+  if (!url) {
+    url = URL.createObjectURL(blob)
+    uploadedImageUrls.set(id, url)
+  }
+  return url
+}
 
 export type AttachmentFileType = 'pdf' | 'doc' | 'img' | 'xlsx' | 'other'
 export interface AttachmentFile {
@@ -41,10 +63,24 @@ export interface AttachmentFile {
   uploadedBy: string
 }
 
-function formatDate(dateStr: string): string {
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/* "Nov 4, 2025, 8:51 PM" when the stamp carries a time, "Nov 4, 2025" when it is
+   a bare date: Vendor Invoicing's date-and-time line. Spelled out by hand so no
+   locale renders it with "at" or a narrow space before PM, and a bare YYYY-MM-DD
+   reads as that calendar day rather than as UTC midnight. */
+function formatWhen(dateStr: string): string {
+  const bare = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr)
+  if (bare) {
+    const month = MONTH_SHORT[Number(bare[2]) - 1]
+    return month ? `${month} ${Number(bare[3])}, ${bare[1]}` : dateStr
+  }
   const d = new Date(dateStr)
   if (Number.isNaN(d.getTime())) return dateStr
-  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+  const day = `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
+  if (!/\d:\d{2}/.test(dateStr)) return day
+  const h = d.getHours()
+  return `${day}, ${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
 }
 
 function getFileTypeInfo(type: string, name: string): { color: string; bg: string; label: string; Icon: ElementType } {
@@ -238,6 +274,8 @@ export function AttachmentsTab({
   const [search, setSearch] = useState('')
   const [density, setDensity] = useState<AttachDensity>(initialDensity ?? (embedded ? 'comfort' : 'card'))
   const [cardSize, setCardSize] = useState<'small' | 'medium' | 'large'>('medium')
+  // Delete asks first, as Vendor Invoicing's attachments do.
+  const [confirmDelete, setConfirmDelete] = useState<AttachmentFile | null>(null)
 
   const filtered = useMemo(() => {
     /* Every field a file shows, as it prints - name, type, size, date and who
@@ -245,7 +283,7 @@ export function AttachmentsTab({
        2026-10-05: *"the search should have everything in it."* */
     if (!search.trim()) return items
     const found = searchMatcher(search)
-    return items.filter(f => [f.name, getFileTypeInfo(f.type, f.name).label, f.size, formatDate(f.date), f.uploadedBy].some(found))
+    return items.filter(f => [f.name, getFileTypeInfo(f.type, f.name).label, f.size, formatWhen(f.date), f.uploadedBy].some(found))
   }, [search, items])
 
   const handleUploadClick = () => {
@@ -274,7 +312,7 @@ export function AttachmentsTab({
       onFilesChange?.(next)
       return next
     })
-    pushToast('Attachment removed', 'success')
+    pushToast('Attachment deleted', 'success')
   }
 
   const isCondensed = density === 'condensed'
@@ -314,19 +352,31 @@ export function AttachmentsTab({
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
+  /* The pill on every card: the record the files belong to, by its code - the
+     first word of its label ("USD United States Dollar" → USD, "USD/PKR
+     corporate rate" → USD/PKR). Without a document context there is no record
+     to name, so no pill. */
+  const recordLabel = docContext?.recordLabel.trim()
+  const recordCode = recordLabel ? recordLabel.split(/\s+/)[0] : undefined
+
   /* Per-row actions. Shared by all three densities so Preview/Download/Delete
-     never drift apart between them. */
-  const RowMenu = ({ file, iconCls }: { file: AttachmentFile; iconCls: string }) => (
-    <Menu align="right" trigger={
-      <button className="p-1 rounded hover:bg-bg-subtle text-fg-subtle/50 hover:text-fg transition-colors opacity-0 group-hover:opacity-100">
+     never drift apart between them. The card's trigger is Vendor Invoicing's
+     22px square, and stays up while its menu is open. */
+  const RowMenu = ({ file, iconCls, card = false }: { file: AttachmentFile; iconCls: string; card?: boolean }) => (
+    <Menu align="right" trigger={(open) => (
+      <button className={cn(
+        card
+          ? 'flex items-center justify-center w-[22px] h-[22px] rounded hover:bg-sky-50 text-slate-500 transition-all'
+          : 'p-1 rounded hover:bg-bg-subtle text-fg-subtle/50 hover:text-fg transition-colors',
+        card && open ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
         <MoreVertical className={iconCls} />
       </button>
-    }>
+    )}>
       {(close) => (
         <>
           <MenuItem icon={<Eye size={14} />} onClick={() => { close(); void handlePreview(file) }}>Preview</MenuItem>
           <MenuItem icon={<Download size={14} />} onClick={() => { close(); void handleDownload(file) }}>Download</MenuItem>
-          <MenuItem icon={<Trash2 size={14} />} danger onClick={() => { close(); handleDelete(file.id) }}>Delete</MenuItem>
+          <MenuItem icon={<Trash2 size={14} />} danger onClick={() => { close(); setConfirmDelete(file) }}>Delete Attachment</MenuItem>
         </>
       )}
     </Menu>
@@ -340,6 +390,18 @@ export function AttachmentsTab({
         multiple
         className="hidden"
         onChange={(e) => { handleFilesPicked(e.target.files); e.target.value = '' }}
+      />
+      <ConfirmModal
+        open={!!confirmDelete}
+        tone="danger"
+        icon={<Trash2 size={26} className="text-danger-600" />}
+        badge="Delete Attachment"
+        title="Delete this attachment?"
+        description={confirmDelete ? `${confirmDelete.name} is removed from the record. This cannot be undone.` : ''}
+        confirmLabel="Delete Attachment"
+        dismissLabel="Keep Attachment"
+        onConfirm={() => { if (confirmDelete) handleDelete(confirmDelete.id); setConfirmDelete(null) }}
+        onDismiss={() => setConfirmDelete(null)}
       />
 
       {/* Toolbar */}
@@ -431,23 +493,40 @@ export function AttachmentsTab({
             {filtered.map(file => {
               const info = getFileTypeInfo(file.type, file.name)
               const previewH = cardSize === 'large' ? 'h-[160px]' : cardSize === 'small' ? 'h-[100px]' : 'h-[130px]'
-              const iconSz = cardSize === 'large' ? 'w-12 h-12' : cardSize === 'small' ? 'w-8 h-8' : 'w-10 h-10'
+              const small = cardSize === 'small'
+              const imageUrl = uploadedImageUrl(file.id)
+              const uploader = cleanName(file.uploadedBy)
               return (
-                <div key={file.id} className="group rounded-xl border border-border bg-white overflow-hidden hover:shadow-md hover:border-slate-300 transition-all">
-                  <div className={cn('relative flex items-center justify-center', previewH)} style={{ backgroundColor: info.bg }}>
-                    <info.Icon className={iconSz} style={{ color: info.color, opacity: 0.35 }} />
-                    <span className="absolute top-2.5 right-2.5 px-1.5 py-0.5 rounded text-xs tracking-wide"
-                      style={{ fontWeight: 700, color: info.color, backgroundColor: `${info.color}15`, border: `1px solid ${info.color}25` }}>
+                <div key={file.id} className="group relative flex flex-col min-w-0 rounded-xl bg-white border border-border shadow-xs hover:border-blue-200 hover:shadow-md transition-[border-color,box-shadow] duration-150">
+                  {/* Thumbnail: the content, not a watermark icon. Type badge bottom-left. */}
+                  <div className={cn('relative shrink-0 w-full overflow-hidden rounded-t-[11px]', previewH)} style={{ backgroundColor: info.bg }}>
+                    <AttachmentThumb type={file.type} name={file.name} bg={info.bg} color={info.color} recordLabel={recordLabel} imageUrl={imageUrl} />
+                    <span className="absolute bottom-1.5 left-1.5 z-[2] px-1 rounded bg-white border border-border text-[9px] tracking-wide"
+                      style={{ paddingTop: 1, paddingBottom: 1, fontWeight: 600, color: info.color, boxShadow: imageUrl ? '0 1px 2px rgba(0,0,0,0.2)' : undefined }}>
                       <Marked text={info.label} q={search} />
                     </span>
                   </div>
-                  <div className={cardSize === 'large' ? 'px-4 pt-3 pb-3.5' : cardSize === 'small' ? 'px-2.5 pt-2 pb-2.5' : 'px-3 pt-2.5 pb-3'}>
-                    <div className="flex items-start justify-between gap-1 mb-1">
-                      <span className={cn('text-fg truncate leading-none', cardSize === 'small' ? 'text-11' : 'text-xs')} style={{ fontWeight: 500 }}><Marked text={file.name} q={search} /></span>
-                      <div className="shrink-0"><RowMenu file={file} iconCls="w-3.5 h-3.5" /></div>
+                  {/* Body: record pill, file name, date and time, size · uploader. */}
+                  <div className={cn('flex items-start w-full gap-1', small ? 'px-2 pt-1.5 pb-2' : 'px-2.5 pt-2 pb-2.5')}>
+                    <div className="flex flex-col flex-1 min-w-0 gap-1">
+                      {recordCode && !small && (
+                        <div className="flex flex-wrap items-center gap-1">
+                          <RecordPill label={recordCode} title={`Filed against ${recordLabel}`} />
+                        </div>
+                      )}
+                      <p className={cn('text-fg truncate leading-snug', small ? 'text-11' : 'text-xs')} style={{ fontWeight: 500 }} title={file.name}>
+                        <Marked text={file.name} q={search} />
+                      </p>
+                      <div className="flex flex-col" style={{ gap: 1 }}>
+                        <p className={cn('text-slate-400 truncate leading-snug', small ? 'text-10' : 'text-11')}>
+                          <Marked text={formatWhen(file.date)} q={search} />
+                        </p>
+                        <p className={cn('text-slate-400 truncate leading-snug', small ? 'text-10' : 'text-11')} title={`${file.size} · ${uploader}`}>
+                          <Marked text={file.size} q={search} /> · <Marked text={uploader} q={search} />
+                        </p>
+                      </div>
                     </div>
-                    <p className={cn('text-slate-400 leading-none', cardSize === 'small' ? 'text-10' : 'text-11')}><Marked text={formatDate(file.date)} q={search} /></p>
-                    <p className={cn('text-slate-400 leading-none', cardSize === 'small' ? 'text-10' : 'text-11')}><Marked text={file.size} q={search} /> · <Marked text={cleanName(file.uploadedBy)} q={search} /></p>
+                    <div className="shrink-0 mt-px"><RowMenu file={file} iconCls="w-3.5 h-3.5" card /></div>
                   </div>
                 </div>
               )
@@ -476,7 +555,7 @@ export function AttachmentsTab({
                       <td className="px-4">
                         <div className={cn('flex items-center', isCondensed ? 'gap-2.5' : 'gap-3')}>
                           <div className={cn('flex items-center justify-center shrink-0', isCondensed ? 'w-7 h-7 rounded-md' : 'w-10 h-10 rounded-lg')} style={{ backgroundColor: info.bg }}>
-                            <info.Icon className={isCondensed ? 'w-3.5 h-3.5' : 'w-4 h-4'} style={{ color: info.color }} />
+                            <info.Icon className={isCondensed ? 'w-3.5 h-3.5' : 'w-[18px] h-[18px]'} style={{ color: info.color }} />
                           </div>
                           {isCondensed ? (
                             <span className="text-xs text-slate-700 truncate" style={{ fontWeight: 500 }}><Marked text={file.name} q={search} /></span>
@@ -488,9 +567,10 @@ export function AttachmentsTab({
                           )}
                         </div>
                       </td>
-                      <td className="px-4"><span className="text-xs text-slate-500"><Marked text={file.size} q={search} /></span></td>
-                      <td className="px-4 hidden md:table-cell"><span className="text-xs text-slate-500"><Marked text={formatDate(file.date)} q={search} /></span></td>
-                      <td className="px-4 hidden md:table-cell"><span className="text-xs text-slate-500"><Marked text={file.uploadedBy} q={search} /></span></td>
+                      {/* Condensed sets its cells a size down (11px), as Vendor Invoicing does. */}
+                      <td className="px-4"><span className={cn('text-slate-500', isCondensed ? 'text-11' : 'text-xs')}><Marked text={file.size} q={search} /></span></td>
+                      <td className="px-4 hidden md:table-cell"><span className={cn('text-slate-500 whitespace-nowrap', isCondensed ? 'text-11' : 'text-xs')}><Marked text={formatWhen(file.date)} q={search} /></span></td>
+                      <td className="px-4 hidden md:table-cell"><span className={cn('text-slate-500', isCondensed ? 'text-11' : 'text-xs')}><Marked text={file.uploadedBy} q={search} /></span></td>
                       <td className="px-2"><RowMenu file={file} iconCls={isCondensed ? 'w-3.5 h-3.5' : 'w-4 h-4'} /></td>
                     </tr>
                   )

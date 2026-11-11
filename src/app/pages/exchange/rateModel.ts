@@ -35,6 +35,10 @@ export const decimalsOf = (code: string) => SEED_BY_CODE.get(code)?.decimalPlace
 /** Every rate, and every inverse rate, prints with four decimals. */
 export const fmtRate = (n: number) => n.toFixed(4)
 export const fmtInverse = (n: number) => (n > 0 ? (1 / n).toFixed(4) : '–')
+/** A rate as the pair it prices: "1 AED = 75.8400 PKR". */
+export const fmtPairRate = (code: string, rate: number) => `1 ${code} = ${fmtRate(rate)} ${BASE}`
+/** Its inverse the same way round: "1 PKR = 0.0132 AED". */
+export const fmtPairInverse = (code: string, rate: number) => `1 ${BASE} = ${fmtInverse(rate)} ${code}`
 /** An amount in a currency, with that currency's own decimals (75.84 PKR, 0.00 USD). */
 export const fmtAmountIn = (n: number, code: string) => {
   const dp = decimalsOf(code)
@@ -118,22 +122,22 @@ export interface MidRow {
   rate: number
   change24h: number
   effectiveDate: string
-  isBase: boolean
   flag: string
   country: string
   region: string | null
   corporate?: StandardRate
 }
 
+/** Every active mid-market rate except the base's own (always 1, and every
+ *  rate here is quoted against it - the table says so above its header). */
 export function toMidRows(mid: MidMarketRate[], standard: StandardRate[]): MidRow[] {
-  return mid.filter(m => m.status === 'active').map(m => ({
+  return mid.filter(m => m.status === 'active' && m.sourceCurrency !== BASE).map(m => ({
     id: m.sourceCurrency,
     code: m.sourceCurrency,
     name: m.sourceCurrencyName,
     rate: m.rate,
     change24h: m.change24h,
     effectiveDate: m.effectiveDate,
-    isBase: m.sourceCurrency === BASE,
     flag: flagOf(m.sourceCurrency),
     country: countryOf(m.sourceCurrency),
     region: regionOf(m.sourceCurrency),
@@ -160,7 +164,6 @@ export interface CorpRow {
   updatedAt: string
   notes: string
   status: CorpStatus
-  isBase: boolean
   flag: string
   country: string
   region: string | null
@@ -187,35 +190,12 @@ export function toCorpRows(standard: StandardRate[], mid: MidMarketRate[], today
       updatedAt: s.updatedAt,
       notes: s.notes,
       status: s.status === 'archived' ? 'Archived' : 'Active',
-      isBase: false,
       flag: flagOf(s.sourceCurrency),
       country: countryOf(s.sourceCurrency),
       region: regionOf(s.sourceCurrency),
       record: s,
     }
   })
-}
-
-/** The base currency's banner row at the top of the Corporate table. */
-export function baseCorpRow(): CorpRow {
-  return {
-    id: `base-${BASE}`,
-    code: BASE,
-    name: BASE_NAME,
-    rate: 1,
-    mid: 1,
-    variance: null,
-    effectiveDate: '',
-    upcoming: null,
-    createdBy: '',
-    updatedAt: '',
-    notes: '',
-    status: 'Active',
-    isBase: true,
-    flag: flagOf(BASE),
-    country: countryOf(BASE),
-    region: regionOf(BASE),
-  }
 }
 
 export const pairPath = (code: string, type: 'mid' | 'std') => `/accounting/exchange-rates/${code}?type=${type}`

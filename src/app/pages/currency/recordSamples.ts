@@ -12,6 +12,7 @@ import type { RecordNote } from '../../coa/lib/recordStore'
 import { fmtDate } from '../../coa/lib/utils'
 import type { Currency } from '../../data/currencies'
 import { BASE_CURRENCY, SEED_STANDARD_RATES } from '../../data/exchangeRates'
+import { CURRENCY_SEED_SHIFT, shiftIso } from '../../data/demoClock'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -205,12 +206,13 @@ export function currencyActivity(c: Currency, now = new Date()): ActivityFeedIte
       verb: `updated decimal places (“${c.decimalPlaces + 1}” → “${c.decimalPlaces}”) for: “Match the ISO 4217 minor unit”`, target: c.name,
     },
   ]
-  /* A deactivation and the activation that undid it, in the spring of 2025:
-     after the library was set up and before any transaction still open today was
-     raised, so it cannot have been blocked by one. Not offered on the base
+  /* A deactivation and the activation that undid it, written in the spring of
+     2025 and moved to the demo clock with the rest of the library: after it was
+     set up and before any transaction still open today was raised, so it cannot
+     have been blocked by one. Not offered on the base
      currency, which can never be deactivated. */
   if (!c.isBaseCurrency) {
-    const day = (month: number, d: number, hour: number) => new Date(Date.UTC(2025, month, d, hour - 5, (h >>> 3) % 60)).toISOString()
+    const day = (month: number, d: number, hour: number) => shiftIso(new Date(Date.UTC(2025, month, d, hour - 5, (h >>> 3) % 60)).toISOString(), CURRENCY_SEED_SHIFT)
     sample.push(
       { id: `${c.code}-sample-activated`, type: 'apply', user: 'Daniel Osei', at: day(6, 8 + (h % 14), 9), date: '', verb: 'activated the currency: “New supplier contract signed”' },
       { id: `${c.code}-sample-deactivated`, type: 'delete', user: 'Ayesha Khan', at: day(4, 5 + (h % 14), 16), date: '', verb: 'marked the currency as inactive: “No open transactions after the office closed”' },

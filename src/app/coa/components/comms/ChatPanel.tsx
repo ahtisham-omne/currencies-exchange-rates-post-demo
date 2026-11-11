@@ -2850,12 +2850,19 @@ function ChannelDetailsModal({ channel, onUpdate, onClose }: {
 }
 
 function ActivityLogModal({ channel, onClose }: { channel: Channel; onClose: () => void }) {
+  // Counted back from today, like the channel's messages, keeping the source's
+  // five-day spread ("Jul 8 to Jul 12, 2025" became a fixed date that aged).
+  const at = (daysAgo: number, hour: number, minute: number) => {
+    const d = new Date()
+    d.setDate(d.getDate() - daysAgo)
+    return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`
+  }
   const log = [
-    { ts: 'Jul 12, 2025 2:15 PM', actor: 'Marcus Chen', action: 'sent a message' },
-    { ts: 'Jul 12, 2025 11:00 AM', actor: 'Ashmita Roy', action: 'pinned a message' },
-    { ts: 'Jul 11, 2025 4:30 PM', actor: 'James Wright', action: 'shared a file: Trial_Balance_Tieout.pdf' },
-    { ts: 'Jul 10, 2025 9:00 AM', actor: 'Rachel Kim', action: 'joined the channel' },
-    { ts: 'Jul 8, 2025 3:00 PM', actor: 'Ashmita Roy', action: `created the channel #${channel.name}` },
+    { ts: at(46, 14, 15), actor: 'Marcus Chen', action: 'sent a message' },
+    { ts: at(46, 11, 0), actor: 'Ashmita Roy', action: 'pinned a message' },
+    { ts: at(47, 16, 30), actor: 'James Wright', action: 'shared a file: Trial_Balance_Tieout.pdf' },
+    { ts: at(48, 9, 0), actor: 'Rachel Kim', action: 'joined the channel' },
+    { ts: at(50, 15, 0), actor: 'Ashmita Roy', action: `created the channel #${channel.name}` },
   ]
   return (
     <Modal open onClose={onClose} title="Activity Log" footer={<button onClick={onClose} className="btn-secondary">Close</button>}>

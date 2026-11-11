@@ -116,6 +116,27 @@ function personFacts(raw: string) {
   }
 }
 
+/** The person avatar on its own, at any size: the photo where there is one,
+ *  else the initials on the name's tint. Vendor Invoicing's `PhotoPersonAvatar`
+ *  in the record tabs (Notes) that follow its design. */
+export function PersonPhoto({ name, size = 28 }: { name: string; size?: number }) {
+  const shown = cleanName(name)
+  const photo = photoOf(shown)
+  const [failed, setFailed] = useState(false)
+  const showImg = photo && !failed
+  return (
+    <span
+      className="rounded-full flex items-center justify-center shrink-0 overflow-hidden border border-[#E8ECF1]"
+      style={{ width: size, height: size, backgroundColor: showImg ? 'transparent' : avatarTint(shown).bg }}
+      title={shown}
+    >
+      {showImg
+        ? <img src={photo} alt="" className="w-full h-full object-cover" onError={() => setFailed(true)} />
+        : <span className="text-slate-700" style={{ fontWeight: 700, fontSize: Math.round(size * 0.36) }}>{initialsOf(shown)}</span>}
+    </span>
+  )
+}
+
 /** Partners' `LogoAvatar` with `type="person"`: the photo where there is one,
  *  otherwise the initials on the name's tint, inside a hairline ring. */
 function PersonAvatar({ name, size }: { name: string; size: 'md' | 'lg' }) {

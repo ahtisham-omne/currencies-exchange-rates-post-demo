@@ -15,6 +15,8 @@ export interface RecordNote {
   at: string
   /** Where a note carried over came from, drawn as a chip before its author. */
   tag?: string
+  /** When it was last edited, if it has been. */
+  updatedAt?: string
 }
 
 /** The key a record's notes and files are kept under: one slice for every kind. */
@@ -42,6 +44,18 @@ export const recordStore = {
   addRecordNote: (key: string, text: string, author = 'Ahtisham Ahmad (You)') => set(s => ({
     recordNotes: { ...s.recordNotes, [key]: [{ id: uid('note'), text, author, at: new Date().toISOString() }, ...(s.recordNotes[key] ?? [])] },
   })),
+  /** Rewrites a note. A note the record opened with is kept as a written one
+   *  under the same id, which the tab then shows in its place. */
+  updateRecordNote: (key: string, note: RecordNote, text: string) => set(s => {
+    const list = s.recordNotes[key] ?? []
+    const edited = { ...note, text, updatedAt: new Date().toISOString() }
+    return {
+      recordNotes: {
+        ...s.recordNotes,
+        [key]: list.some(n => n.id === note.id) ? list.map(n => (n.id === note.id ? edited : n)) : [edited, ...list],
+      },
+    }
+  }),
   /** Takes a note off; Undo hands the same note back to `restoreRecordNote`. */
   removeRecordNote: (key: string, note: RecordNote) => set(s => ({
     recordNotes: { ...s.recordNotes, [key]: (s.recordNotes[key] ?? []).filter(n => n.id !== note.id) },

@@ -5,7 +5,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Activity, Archive, ArchiveRestore, ArrowLeftRight, Check, ChevronDown, FileText, Pencil, Plus, Star,
+  Activity, Archive, ArchiveRestore, ArrowLeftRight, Check, ChevronDown, FileText, History, MessageSquare, Pencil, Plus, Star,
 } from 'lucide-react'
 import { useExchangeRates } from '../context/ExchangeRateContext'
 import { useCurrencies } from '../context/CurrencyContext'
@@ -17,28 +17,22 @@ import {
 } from '../coa/components/DetailPageLayout'
 import { DetailInsightsSection, type DetailKpiFace } from '../coa/components/DetailInsights'
 import { DashInfoCard, DashInfoLabel } from '../coa/components/DashInfoCard'
-import { InternalIdField } from '../coa/components/InternalIdField'
 import { Badge, Menu, MenuItem } from '../coa/components/ui'
 import { StatusChip, StatusMenu } from '../coa/components/StatusChip'
-import { NotesTab, useRecordNotes } from '../coa/components/NotesTab'
+import { useRecordNotes } from '../coa/components/NotesTab'
 import { RecordAttachmentsTab, useRecordAttachmentCount } from '../coa/components/AttachmentsTab'
-import { CommsTab, useCommsCount, type Subject } from '../coa/components/CommsTab'
-import { ChartWidgetCard } from '../coa/components/ChartWidgetCard'
-import { ActivityFeed } from '../coa/components/ActivityFeed'
 import type { RangeValue } from '../coa/components/PeriodBar'
-import { InsightsRangeMenu, type InsightsRange } from './exchange/InsightsRangeMenu'
+import { InsightsRangeMenu, InsightsRangeReset, type InsightsRange } from './exchange/InsightsRangeMenu'
 import { parseISO, subMonths } from 'date-fns'
 import { recordKey } from '../coa/lib/recordStore'
-import { useCommsDirectorySync } from '../coa/store'
 import { cn, fmtDate, fmtDateTime, fmtNumber, todayIso } from '../coa/lib/utils'
 import { RATE_TOOLTIPS, inverseRateTooltip } from '../utils/rateCopy'
-import { fmtCompactMoney } from '../coa/components/chartKit'
 import {
-  BASE, BASE_NAME, LAST_SYNC_AT, LAST_SYNC_DATE, LAST_SYNC_DAY, daysSince, fmtInverse, fmtRate, fmtSignedPct,
+  BASE, BASE_NAME, LAST_SYNC_AT, LAST_SYNC_DATE, LAST_SYNC_DAY, daysSince, decimalsOf, fmtInverse, fmtRate, fmtSignedPct,
   varianceColor, variancePct, pairPath,
 } from './exchange/rateModel'
 import {
-  DEFAULT_RANGE, buildPairSeries, corporateRecordFor, rangeLabel, rangeMetrics,
+  DEFAULT_RANGE, buildPairSeries, corporateRecordFor, isDefaultRange, rangeAverageLabel, rangeLabel, rangeMetrics,
   rateHistory, windowRange,
 } from './exchange/pairData'
 import {
@@ -49,8 +43,9 @@ import { CORPORATE_STATUS_OPTIONS, MID_STATUS_OPTIONS, useCorporateRateLifecycle
 import { useCorporateRateForm } from './exchange/CorporateRateForm'
 import { PairInverter } from './exchange/PairInverter'
 import { RateHistoryTab } from './exchange/RateHistoryTab'
-import { corporatePairActivity, isSeededRate, midPairActivity, pairAttachments, pairNotes } from './exchange/recordSamples'
-import { commsAnchorIso } from './currency/recordSamples'
+import { pairAttachments, pairNotes } from './exchange/recordSamples'
+import { RecordNotesTab } from './recordTabs/NotesTab'
+import { ComingSoonTab } from './recordTabs/ComingSoonTab'
 import { linkedDocs } from './currency/model'
 import { CX_TITLE } from './CurrencyExchangeHeader'
 
@@ -67,7 +62,6 @@ export function CurrencyPairDetailPage() {
   const navigate = useNavigate()
   const { midMarketRates, standardRates, rateAudit } = useExchangeRates()
   const { currencies } = useCurrencies()
-  useCommsDirectorySync(currencies, midMarketRates, standardRates)
   const lifecycle = useCorporateRateLifecycle()
   const form = useCorporateRateForm()
 
@@ -95,16 +89,6 @@ export function CurrencyPairDetailPage() {
   const seedFiles = useCallback(() => pairAttachments(code, type, record), [code, type, record])
   const noteCount = useRecordNotes(key, derivedNotes).length
   const attachmentCount = useRecordAttachmentCount(key, seedFiles)
-  /* Read before the not-found return, because the thread is a hook. A corporate
-     rate set up in this session has nothing said about it yet. */
-  const commsSubject: Subject = {
-    subjectId: mid ? key : '',
-    kind: isStd ? 'corporate' : 'mid',
-    label: `${code}/${BASE} ${isStd ? 'corporate rate' : 'mid-market rate'}`,
-    anchorIso: commsAnchorIso(),
-    fresh: isStd && !isSeededRate(record),
-  }
-  const commsCount = useCommsCount(commsSubject)
 
   const series = useMemo(() => (mid ? buildPairSeries(mid, rateAudit) : []), [mid, rateAudit])
   // The range calendar opens on the month before the last sync, where the data is.
@@ -132,15 +116,32 @@ export function CurrencyPairDetailPage() {
   const pairCurrency = currencies.find(c => c.code === code)
   const openDocs = pairCurrency ? linkedDocs(pairCurrency) : []
 
-  /* ── KPI tiles ── */
+  /* ── KPI tiles ──
+     Every tile answers for the selected period. Figures over the period (change,
+     volatility, the average corporate variance) cover all of it; a rate a tile
+     quotes is the one on the period's last day, which is the last sync for the
+     presets and the chosen end day for a custom range. FX Exposure is about the
+     transactions open today, and says so. */
   const colored = (text: string, color?: string) => <span style={color ? { color } : undefined}>{text}</span>
+  const end = points[points.length - 1]
+  const atLatest = !end || end.date === series[series.length - 1]?.date
+  const before = end ? series[series.findIndex(p => p.date === end.date) - 1] : undefined
+  const endChange = atLatest ? mid.change24h : end && before ? ((end.mid - before.mid) / before.mid) * 100 : 0
+  const corpDays = points.filter(p => p.corp != null)
+  const avgVariance = corpDays.length ? corpDays.reduce((s, p) => s + (variancePct(p.corp!, p.mid) ?? 0), 0) / corpDays.length : null
   const face = (k: string): DetailKpiFace & { text: string } => {
     switch (k) {
       case 'current_mid': {
-        const c = mid.change24h >= 0 ? '#059669' : '#DC2626'
-        return { text: fmtRate(mid.rate), value: fmtRate(mid.rate), subDetail: <>{colored(fmtSignedPct(mid.change24h), c)} · as of {LAST_SYNC_DATE}</> }
+        const rate = atLatest ? mid.rate : end.mid
+        const c = endChange >= 0 ? '#059669' : '#DC2626'
+        return { text: fmtRate(rate), value: fmtRate(rate), subDetail: <>{colored(fmtSignedPct(endChange), c)} · as of {atLatest ? LAST_SYNC_DATE : fmtDate(end.date)}</> }
       }
       case 'current_std':
+        if (!atLatest) {
+          return end.corp != null
+            ? { text: fmtRate(end.corp), value: fmtRate(end.corp), subDetail: `As of ${fmtDate(end.date)}` }
+            : { text: 'Not Set', value: 'Not Set', subDetail: `None in effect on ${fmtDate(end.date)}` }
+        }
         return inEffect
           ? { text: fmtRate(inEffect.standardRate), value: fmtRate(inEffect.standardRate), subDetail: upcomingLine ?? `Effective ${fmtDate(inEffect.effectiveDate)}` }
           : { text: 'Not Set', value: 'Not Set', subDetail: upcomingLine ?? (record ? 'Last rate archived' : undefined) }
@@ -155,9 +156,10 @@ export function CurrencyPairDetailPage() {
         return { text: `${v.toFixed(3)}%`, value: <>{v.toFixed(3)}% <span className="text-[12px]" style={{ color: c, fontWeight: 600 }}>{level}</span></>, subDetail: label }
       }
       case 'variance':
-        return variance == null
-          ? { text: 'N/A', value: 'N/A', subDetail: 'No corporate rate in effect' }
-          : { text: fmtSignedPct(variance), value: colored(fmtSignedPct(variance), varianceColor(variance)), subDetail: 'vs current mid-market' }
+        // Averaged over the days in the period a corporate rate was in effect.
+        return avgVariance == null
+          ? { text: 'N/A', value: 'N/A', subDetail: 'No corporate rate in this period' }
+          : { text: fmtSignedPct(avgVariance), value: colored(fmtSignedPct(avgVariance), varianceColor(avgVariance)), subDetail: rangeAverageLabel(range) }
       case 'days_since_update': {
         if (!inEffect) return upcoming ? { text: '0 days', value: '0 days', subDetail: `Takes effect ${fmtDate(upcoming.effectiveDate)}` } : { text: 'N/A', value: 'N/A' }
         const d = daysSince(inEffect.effectiveDate)
@@ -166,12 +168,14 @@ export function CurrencyPairDetailPage() {
       }
       case 'fx_exposure_30d': {
         // At the current mid-market rate: what moves with the market.
-        const total = Math.round(openDocs.reduce((s, d) => s + d.amount, 0) * mid.rate)
-        const t = `${BASE} ${total.toLocaleString('en-US')}`
+        // In full, to the base currency's own decimals.
+        const dp = decimalsOf(BASE)
+        const total = openDocs.reduce((s, d) => s + d.amount, 0) * mid.rate
+        const t = `${BASE} ${total.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`
         return {
           text: t,
-          value: <span title={t}>{fmtCompactMoney(total, `${BASE} `)}</span>,
-          subDetail: openDocs.length ? `Across ${fmtNumber(openDocs.length)} open ${openDocs.length === 1 ? 'transaction' : 'transactions'}` : 'No open transactions',
+          value: <span title={t} className="whitespace-nowrap">{t}</span>,
+          subDetail: openDocs.length ? `Today, across ${fmtNumber(openDocs.length)} open ${openDocs.length === 1 ? 'transaction' : 'transactions'}` : 'No open transactions today',
         }
       }
       default: return { text: '–', value: '–' }
@@ -312,17 +316,17 @@ export function CurrencyPairDetailPage() {
         {isStd && record?.notes && (
           <div className="mb-2.5 min-w-0"><DashInfoLabel>Notes</DashInfoLabel><p className="text-[12px] text-slate-700 mt-0.5 leading-relaxed" style={{ fontWeight: 500 }}>{record.notes}</p></div>
         )}
-        {(!isStd || record) && (
+        {/* Who set a corporate rate up and when. A mid-market rate is the
+            provider's, already dated by Last Sync above, so it has no audit row. */}
+        {isStd && record && (
         <InfoAuditGrid>
-          <div className="min-w-0"><DashInfoLabel>Created By</DashInfoLabel><InfoPerson name={isStd && record ? record.createdBy : 'System'} /></div>
-          <div className="min-w-0"><DashInfoLabel align="right">{isStd ? 'Created On' : 'Last Synced On'}</DashInfoLabel><InfoValue>{isStd && record ? fmtDate(record.createdAt) : LAST_SYNC_DATE}</InfoValue></div>
-          {isStd && record && <div className="min-w-0"><DashInfoLabel>Last Updated On</DashInfoLabel><InfoValue>{fmtDateTime(record.updatedAt)}</InfoValue></div>}
-          {/* Only a corporate rate is a record of ours with an ID; mid-market rates come from the provider. */}
-          {isStd && record && <InternalIdField id={`STD-${record.sourceCurrency}`} help={RATE_TOOLTIPS.internalId} />}
+          <div className="min-w-0"><DashInfoLabel>Created By</DashInfoLabel><InfoPerson name={record.createdBy} /></div>
+          <div className="min-w-0"><DashInfoLabel align="right">Created On</DashInfoLabel><InfoValue>{fmtDate(record.createdAt)}</InfoValue></div>
+          <div className="min-w-0"><DashInfoLabel>Last Updated On</DashInfoLabel><InfoValue>{fmtDateTime(record.updatedAt)}</InfoValue></div>
         </InfoAuditGrid>
         )}
       </DashInfoCard>
-      <DashInfoCard title="Pair Converter" icon={ArrowLeftRight} tooltip="One unit of either currency at this rate. Swap to read the inverse.">
+      <DashInfoCard title="Pair Converter" icon={ArrowLeftRight} tooltip={`Converts an amount between ${code} and ${BASE} at this rate. Type an amount, or swap to convert the other way.`}>
         {shownRate != null ? (
           <PairInverter layout="stack" code={code} name={mid.sourceCurrencyName} rate={shownRate}
             inverted={inverted} onToggle={() => setInverted(v => !v)} note={isStd ? (archived ? 'At the archived corporate rate' : 'At the corporate rate') : 'At the mid-market rate'} />
@@ -360,7 +364,7 @@ export function CurrencyPairDetailPage() {
               { id: 'history', label: 'Rate History', count: history.length },
               { id: 'notes', label: 'Notes', count: noteCount },
               { id: 'attachments', label: 'Attachments', count: attachmentCount },
-              { id: 'communications', label: 'Communications', count: commsCount },
+              { id: 'communications', label: 'Communications' },
               { id: 'activity', label: 'Activity' },
             ]}
             activeTab={tab}
@@ -375,6 +379,7 @@ export function CurrencyPairDetailPage() {
               <>
                 <DetailInsightsSection
                   titleExtra={
+                    <>
                     <InsightsRangeMenu
                       range={range.kind === 'custom' ? 'custom' : (range.key as InsightsRange)}
                       onRangeChange={k => { if (k !== 'custom') setRange({ kind: 'preset', key: k }) }}
@@ -383,6 +388,9 @@ export function CurrencyPairDetailPage() {
                       onCustomChange={(from, to) => setRange({ kind: 'custom', from, to })}
                       defaultMonth={rangeMonth}
                     />
+                    {/* Back to 1M, Vendor Invoicing's Reset recipe. */}
+                    <InsightsRangeReset dirty={!isDefaultRange(range)} onReset={() => setRange(DEFAULT_RANGE)} />
+                    </>
                   }
                   storageKey={`fx.pair.${code}.${type}.insights.v1`}
                   kpis={kpis}
@@ -400,24 +408,19 @@ export function CurrencyPairDetailPage() {
           />
         )}
         {tab === 'history' && <RateHistoryTab rows={history} code={code} />}
-        {tab === 'notes' && <NotesTab noteKey={key} noun="rate" derived={derivedNotes} />}
+        {tab === 'notes' && <RecordNotesTab noteKey={key} noun="exchange rate" derived={derivedNotes} />}
         {tab === 'attachments' && (
           <RecordAttachmentsTab recordKey={key} seed={seedFiles} document={{ recordLabel: `${pair} ${isStd ? 'corporate rate' : 'mid-market rate'}`, recordKind: 'exchange rate' }} />
         )}
-        {tab === 'communications' && <CommsTab {...commsSubject} />}
+        {/* Communications and Activity follow Vendor Invoicing, which shows these
+            two as Coming Soon until their backends land. */}
+        {tab === 'communications' && (
+          <ComingSoonTab label="Communications" icon={MessageSquare}
+            description="Message history for this exchange rate, with your team and partners, will live here. The shared communication surface keeps every conversation attached to the record it is about." />
+        )}
         {tab === 'activity' && (
-          <ChartWidgetCard title="Activity Timeline" icon={Activity}>
-            {isStd ? (
-              <ActivityFeed items={corporatePairActivity(code, rateAudit, record, mid.rate)} />
-            ) : (
-              <>
-                <ActivityFeed items={midPairActivity(code, series)} />
-                <p className="mt-4 pt-3 border-t border-muted text-[12px] text-slate-400">
-                  Mid-market rates are sourced from {API_PROVIDER}; manual changes are tracked on the corporate rate detail.
-                </p>
-              </>
-            )}
-          </ChartWidgetCard>
+          <ComingSoonTab label="Activity" icon={History}
+            description="A chronological audit trail of every action on this exchange rate: rate updates, archives and restores. The activity feed arrives with backend integration." />
         )}
       </DetailPageLayout>
     </CoaPage>

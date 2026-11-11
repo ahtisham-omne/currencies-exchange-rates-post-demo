@@ -1,37 +1,27 @@
 // The Currency Library's Filters modal on CoA's FiltersModal (a draft, applied
-// from the footer): Status, In use (Yes / No: on any transaction, open or not,
-// with a min / max of transactions when Yes),
-// Decimal places and Region - the four facets the library has always offered.
+// from the footer): Status, In Use (Yes / No: on any transaction, open or not),
+// Decimal Places and Region. In Use had a min / max of transactions under Yes;
+// it read as unexplained and duplicated sorting the In Use column, so it went.
 import { useEffect, useState } from 'react'
 import type { Currency } from '../../data/currencies'
-import { FiltersModal, Section, FDivider, PillGrid, FilterPill, AllPill, PillSection, RangeMinMax } from '../../coa/components/Filters'
+import { FiltersModal, Section, FDivider, PillGrid, FilterPill, AllPill, PillSection } from '../../coa/components/Filters'
 import { fmtNumber } from '../../coa/lib/utils'
-import { isInUse, regionOf, statusOf, transactionCount } from './model'
+import { isInUse, regionOf, statusOf } from './model'
 
 export interface CurrencyPanelFilters {
   statuses: string[]
   inUse: 'yes' | 'no' | null
-  inUseMin: string
-  inUseMax: string
   decimals: string[]
   regions: string[]
 }
 
-export const EMPTY_CURRENCY_FILTERS: CurrencyPanelFilters = { statuses: [], inUse: null, inUseMin: '', inUseMax: '', decimals: [], regions: [] }
+export const EMPTY_CURRENCY_FILTERS: CurrencyPanelFilters = { statuses: [], inUse: null, decimals: [], regions: [] }
 
 /** One per facet in use, as the Filters button counts them. */
 export const countCurrencyFilters = (f: CurrencyPanelFilters) =>
   (f.statuses.length ? 1 : 0) + (f.inUse ? 1 : 0) + (f.decimals.length ? 1 : 0) + (f.regions.length ? 1 : 0)
 
-const matchesInUse = (c: Currency, f: CurrencyPanelFilters) => {
-  if (!f.inUse) return true
-  if (f.inUse === 'no') return !isInUse(c)
-  if (!isInUse(c)) return false
-  const n = transactionCount(c)
-  if (f.inUseMin !== '' && n < Number(f.inUseMin)) return false
-  if (f.inUseMax !== '' && n > Number(f.inUseMax)) return false
-  return true
-}
+const matchesInUse = (c: Currency, f: CurrencyPanelFilters) => !f.inUse || (f.inUse === 'yes') === isInUse(c)
 
 export const applyCurrencyFilters = (rows: Currency[], f: CurrencyPanelFilters) => rows.filter(c =>
   (!f.statuses.length || f.statuses.includes(statusOf(c))) &&
@@ -79,19 +69,6 @@ export function CurrencyFiltersModal({ open, onClose, rows, filters, setFilters 
           <FilterPill active={draft.inUse === 'yes'} onClick={() => setDraft(d => ({ ...d, inUse: d.inUse === 'yes' ? null : 'yes' }))} count={rows.filter(isInUse).length}>Yes</FilterPill>
           <FilterPill active={draft.inUse === 'no'} onClick={() => setDraft(d => ({ ...d, inUse: d.inUse === 'no' ? null : 'no' }))} count={rows.filter(r => !isInUse(r)).length}>No</FilterPill>
         </PillGrid>
-        {draft.inUse === 'yes' && (
-          <div className="mt-3">
-            <RangeMinMax
-              values={rows.filter(isInUse).map(transactionCount)}
-              min={draft.inUseMin}
-              max={draft.inUseMax}
-              prefix="#"
-              magnitude
-              onMinChange={v => setDraft(d => ({ ...d, inUseMin: v }))}
-              onMaxChange={v => setDraft(d => ({ ...d, inUseMax: v }))}
-            />
-          </div>
-        )}
       </Section>
       <FDivider />
       <Section title="Decimal Places" desc="Show currencies by how many digits their amounts carry after the point.">

@@ -1,7 +1,7 @@
 // Ported from Partner-Management---Vendor/src/app/components/vendors/InsightsControls.tsx (InsightsRangeMenu); adapted: date-fns instead of dayjs, Partners' popover variant (6px offset + arrow) kept local, and a `defaultMonth` so the calendar opens on the data's last month rather than today's.
 import { useState, type ComponentProps } from "react";
 import { format, parseISO, subMonths } from "date-fns";
-import { Calendar as CalendarIcon, ChevronDown, Check } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronDown, Check, RotateCcw } from "lucide-react";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import type { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
@@ -184,5 +184,27 @@ function PopoverContent({ className, align = "center", sideOffset = 6, children,
         />
       </PopoverPrimitive.Content>
     </PopoverPrimitive.Portal>
+  );
+}
+
+/** Vendor Invoicing's InsightsResetButton recipe, for the period: a text-link
+ *  Reset beside the range menu, grey while the period is the default (1M) and
+ *  red once it isn't, putting it back to 1M. */
+export function InsightsRangeReset({ dirty, onReset }: { dirty: boolean; onReset: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onReset}
+      disabled={!dirty}
+      title={dirty ? "Back to 1M" : "Already showing 1M"}
+      className={cn(
+        "inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md transition-colors",
+        dirty ? "text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer" : "text-slate-300 cursor-not-allowed",
+      )}
+      style={{ fontWeight: 500 }}
+    >
+      <RotateCcw className="w-3 h-3" />
+      Reset
+    </button>
   );
 }

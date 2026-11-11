@@ -1,18 +1,31 @@
-// Exchange Rates screens: the one-unit pair inverter. A row's expanded detail on
-// the library tables (`layout="row"`) and the pair page's rail card
-// (`layout="stack"`): From / To cards, and a swap that turns 1 SRC = rate PKR
-// into 1 PKR = 1/rate SRC, the cards changing places.
+// Exchange Rates screens: the pair converter. A row's expanded detail on the
+// library tables (`layout="row"`) and the pair page's rail card
+// (`layout="stack"`): type an amount in one currency and read it in the other at
+// this rate. The swap turns USD → PKR into PKR → USD, carrying the converted
+// amount across so 1 USD = 278.52 PKR swaps to 278.52 PKR = 1.00 USD.
+//
+// The swap used to convert one unit each way, so the inverse read 1 PKR = 0.00
+// USD: 0.0036 rounded to the dollar's two decimals. Converting the amount the
+// reader is holding gives an answer worth reading, and the rate line under the
+// cards keeps the inverse rate itself to four decimals.
+import { useState } from 'react'
 import { ArrowLeftRight, ArrowUpDown } from 'lucide-react'
 import { LayoutGroup, motion } from 'motion/react'
 import { INVERSE_BADGE_TOOLTIP } from '../../utils/rateCopy'
 import { Tooltip } from '../../coa/components/ui'
 import { FlagImage } from '../../coa/components/FlagImage'
 import { cn } from '../../coa/lib/utils'
-import { BASE, BASE_NAME, countryOf, flagOf, fmtAmountIn, fmtInverse, fmtRate } from './rateModel'
+import { BASE, BASE_NAME, countryOf, decimalsOf, flagOf, fmtAmountIn, fmtInverse, fmtRate } from './rateModel'
 
 const SPRING = { type: 'spring', stiffness: 520, damping: 38 } as const
 
-function SideCard({ label, code, name, amount, stack }: { label: string; code: string; name: string; amount: string; stack?: boolean }) {
+/** A number as the input shows it: the currency's own decimals, no grouping, no trailing zeros. */
+const plain = (n: number, code: string) => {
+  const dp = decimalsOf(code)
+  return String(Number(n.toFixed(dp)))
+}
+
+function SideCard({ label, code, name, stack, children }: { label: string; code: string; name: string; stack?: boolean; children: React.ReactNode }) {
   return (
     <div className={cn('rounded-lg border border-border bg-white px-3 py-2 min-w-0', stack ? 'w-full' : 'w-[260px] shrink-0')}>
       <div className="flex items-center justify-between gap-2">
@@ -25,9 +38,9 @@ function SideCard({ label, code, name, amount, stack }: { label: string; code: s
           <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-info-50 text-info-700 text-2xs font-semibold border border-info-100 shrink-0">{code}</span>
           <span className="text-[12px] text-slate-700 truncate" style={{ fontWeight: 500 }} title={name}>{name}</span>
         </div>
-        <span className="text-[13px] text-slate-700 tabular-nums whitespace-nowrap" style={{ fontWeight: 600 }}>{amount}</span>
+        {children}
       </div>
-      <p className="text-[11px] text-fg-subtle truncate mt-0.5">{countryOf(code) || ' '}</p>
+      <p className="text-[11px] text-fg-subtle truncate mt-0.5">{countryOf(code) || ' '}</p>
     </div>
   )
 }
@@ -40,31 +53,58 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
   inverted: boolean
   onToggle: () => void
   layout?: 'row' | 'stack'
-  /** A quiet line after the cards ("Effective Apr 1, 2026"). */
+  /** A quiet line after the cards ("At the corporate rate"). */
   note?: string
   className?: string
 }) {
   const stack = layout === 'stack'
-  // Amounts carry their currency's own decimals (75.84 PKR, 0.00 USD); the rate
-  // line under the cards carries a rate's four.
-  const src = { id: 'src', label: inverted ? 'To' : 'From', code, name, amount: fmtAmountIn(inverted ? 1 / rate : 1, code) }
-  const base = { id: 'base', label: inverted ? 'From' : 'To', code: BASE, name: BASE_NAME, amount: fmtAmountIn(inverted ? 1 : rate, BASE) }
+  // What the reader typed, in the From currency. Starts at one unit.
+  const [amount, setAmount] = useState('1')
+  const n = Number(amount)
+  const valid = amount.trim() !== '' && Number.isFinite(n) && n >= 0
+  const fromCode = inverted ? BASE : code
+  const toCode = inverted ? code : BASE
+  // From SRC: multiply by the rate. From PKR: divide by it.
+  const converted = valid ? (inverted ? n / rate : n * rate) : 0
+
+  const swap = () => {
+    // The converted amount becomes the new From amount, so the swap reads both ways.
+    if (valid) setAmount(plain(converted, toCode))
+    onToggle()
+  }
+
+  const src = { id: 'src', code, name }
+  const base = { id: 'base', code: BASE, name: BASE_NAME }
   const [first, second] = inverted ? [base, src] : [src, base]
   const Swap = stack ? ArrowUpDown : ArrowLeftRight
   const line = inverted ? `1 ${BASE} = ${fmtInverse(rate)} ${code}` : `1 ${code} = ${fmtRate(rate)} ${BASE}`
+
   return (
     <LayoutGroup>
-      <div className={cn(stack ? 'flex flex-col items-stretch gap-2' : 'flex items-center gap-3 flex-wrap', className)}>
+      <div className={cn(stack ? 'flex flex-col items-stretch gap-2' : 'flex items-center gap-3 flex-wrap', className)} onClick={e => e.stopPropagation()}>
+        {stack && <p className="text-[11px] text-fg-subtle leading-snug">Type an amount in {first.code} to see what it comes to in {second.code} at this rate.</p>}
         <motion.div layout transition={SPRING} key={first.id} className={stack ? '' : 'shrink-0'}>
-          <SideCard label={first.label} code={first.code} name={first.name} amount={first.amount} stack={stack} />
+          <SideCard label="From" code={first.code} name={first.name} stack={stack}>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              aria-label={`Amount in ${fromCode}`}
+              className="w-[110px] text-right text-[13px] text-slate-700 tabular-nums bg-transparent rounded-md px-1.5 py-0.5 -mr-1.5 border border-transparent hover:border-border focus:border-primary focus:ring-2 focus:ring-primary/10 outline-none transition-colors"
+              style={{ fontWeight: 600 }}
+            />
+          </SideCard>
         </motion.div>
         <div className={cn('flex items-center', stack && 'justify-center')}>
-          <Tooltip content={inverted ? INVERSE_BADGE_TOOLTIP : 'Swap direction'} side="top">
+          <Tooltip content={inverted ? INVERSE_BADGE_TOOLTIP : `Convert from ${BASE} to ${code} instead`} side="top">
             <button
               type="button"
-              onClick={e => { e.stopPropagation(); onToggle() }}
+              onClick={swap}
               aria-pressed={inverted}
-              aria-label={inverted ? 'Show the rate as quoted' : 'Swap direction'}
+              aria-label={`Convert from ${toCode} to ${fromCode} instead`}
               className={cn('w-8 h-8 rounded-full border flex items-center justify-center transition-colors cursor-pointer shadow-xs',
                 inverted ? 'border-primary/30 bg-accent text-primary' : 'border-border bg-white text-fg-subtle hover:bg-bg-subtle hover:text-fg')}
             >
@@ -73,7 +113,12 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
           </Tooltip>
         </div>
         <motion.div layout transition={SPRING} key={second.id} className={stack ? '' : 'shrink-0'}>
-          <SideCard label={second.label} code={second.code} name={second.name} amount={second.amount} stack={stack} />
+          <SideCard label="To" code={second.code} name={second.name} stack={stack}>
+            {/* In the To currency's own decimals: 278.52 PKR, 3.59 USD, 520 JPY. */}
+            <span className="text-[13px] text-slate-700 tabular-nums whitespace-nowrap" style={{ fontWeight: 600 }}>
+              {valid ? fmtAmountIn(converted, toCode) : '–'}
+            </span>
+          </SideCard>
         </motion.div>
         <div className={cn('min-w-0', stack ? 'text-center' : '')}>
           <p className="text-[12px] text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>{line}</p>

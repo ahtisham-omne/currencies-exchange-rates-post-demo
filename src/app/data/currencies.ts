@@ -1,4 +1,5 @@
 // ─── Currency Library — Seed Data & Types ───
+import { CURRENCY_SEED_SHIFT, shiftIso } from "./demoClock";
 
 export interface OpenTransaction {
   ref: string;
@@ -6,6 +7,10 @@ export interface OpenTransaction {
   amount: string;
   status: string;
   date: string;
+  /** The rate the transaction was priced at; left out means the mid-market rate.
+   *  One priced at the corporate rate holds that rate: it can't be archived while
+   *  the transaction is active. */
+  rateType?: "corporate" | "mid";
 }
 
 export interface AuditLogEntry {
@@ -82,6 +87,7 @@ export const REGION_LIST = [
   "Southeast Asia",
   "East Asia",
   "Europe",
+  "Eurozone",
   "North America",
   "South America",
   "Central America & Caribbean",
@@ -97,16 +103,16 @@ const COUNTRY_TO_REGION: Record<string, Region> = {
   "United Arab Emirates": "Middle East",
   "Afghanistan": "South Asia",
   "Albania": "Europe",
-  "Armenia": "Central Asia",
+  "Armenia": "Europe",
   "Angola": "Sub-Saharan Africa",
   "Argentina": "South America",
   "Australia": "Oceania",
   "Aruba": "Central America & Caribbean",
-  "Azerbaijan": "Central Asia",
+  "Azerbaijan": "Europe",
   "Bosnia and Herzegovina": "Europe",
   "Barbados": "Central America & Caribbean",
   "Bangladesh": "South Asia",
-  "Bulgaria": "Europe",
+  "Bulgaria": "Eurozone",
   "Bahrain": "Middle East",
   "Burundi": "Sub-Saharan Africa",
   "Bermuda": "North America",
@@ -136,11 +142,11 @@ const COUNTRY_TO_REGION: Record<string, Region> = {
   "Eritrea": "Sub-Saharan Africa",
   "Ethiopia": "Sub-Saharan Africa",
   "European Union": "Europe",
-  "Eurozone": "Europe",
+  "Eurozone": "Eurozone",
   "Fiji": "Oceania",
   "Falkland Islands": "South America",
   "United Kingdom": "Europe",
-  "Georgia": "Central Asia",
+  "Georgia": "Europe",
   "Ghana": "Sub-Saharan Africa",
   "Gibraltar": "Europe",
   "Gambia": "Sub-Saharan Africa",
@@ -259,47 +265,47 @@ const COUNTRY_TO_REGION: Record<string, Region> = {
   "Tuvalu": "Oceania",
   "Liechtenstein": "Europe",
   "Faroe Islands": "Europe",
-  "Greenland": "Europe",
+  "Greenland": "North America",
   "Andorra": "Europe",
   "Kosovo": "Europe",
   "Monaco": "Europe",
   "Montenegro": "Europe",
   "San Marino": "Europe",
   "Vatican City": "Europe",
-  "Austria": "Europe",
-  "Belgium": "Europe",
-  "Croatia": "Europe",
-  "Cyprus": "Europe",
-  "Estonia": "Europe",
-  "Finland": "Europe",
-  "France": "Europe",
-  "Germany": "Europe",
-  "Greece": "Europe",
-  "Ireland": "Europe",
-  "Italy": "Europe",
-  "Latvia": "Europe",
-  "Lithuania": "Europe",
-  "Luxembourg": "Europe",
-  "Malta": "Europe",
-  "Netherlands": "Europe",
-  "Portugal": "Europe",
-  "Slovakia": "Europe",
-  "Slovenia": "Europe",
-  "Spain": "Europe",
+  "Austria": "Eurozone",
+  "Belgium": "Eurozone",
+  "Croatia": "Eurozone",
+  "Cyprus": "Eurozone",
+  "Estonia": "Eurozone",
+  "Finland": "Eurozone",
+  "France": "Eurozone",
+  "Germany": "Eurozone",
+  "Greece": "Eurozone",
+  "Ireland": "Eurozone",
+  "Italy": "Eurozone",
+  "Latvia": "Eurozone",
+  "Lithuania": "Eurozone",
+  "Luxembourg": "Eurozone",
+  "Malta": "Eurozone",
+  "Netherlands": "Eurozone",
+  "Portugal": "Eurozone",
+  "Slovakia": "Eurozone",
+  "Slovenia": "Eurozone",
+  "Spain": "Eurozone",
   "Isle of Man": "Europe",
   "Jersey": "Europe",
   "Guernsey": "Europe",
   "Tristan da Cunha": "Sub-Saharan Africa",
   "Western Sahara": "North Africa",
   "Svalbard and Jan Mayen": "Europe",
-  "Bouvet Island": "Europe",
+  "Bouvet Island": "South America",
   "Cook Islands": "Oceania",
   "Niue": "Oceania",
   "Pitcairn Islands": "Oceania",
   "Tokelau": "Oceania",
   "Ascension Island": "Sub-Saharan Africa",
   "American Samoa": "Oceania",
-  "British Indian Ocean Territory": "South Asia",
+  "British Indian Ocean Territory": "Sub-Saharan Africa",
   "British Virgin Islands": "Central America & Caribbean",
   "Bonaire Sint Eustatius and Saba": "Central America & Caribbean",
   "Ecuador": "South America",
@@ -387,11 +393,11 @@ function cur(
   return base;
 }
 
-export const SEED_CURRENCIES: Currency[] = [
+const AUTHORED_CURRENCIES: Currency[] = [
   cur("AED", "United Arab Emirates Dirham", "784", "د.إ", 2, "United Arab Emirates", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0710", vendor: "Dubai Steel Industries", amount: "د.إ85,000.00", status: "Open", date: "2025-11-18" },
+        { ref: "INV-2025-0710", vendor: "Dubai Steel Industries", amount: "د.إ85,000.00", status: "Open", date: "2025-11-18", rateType: "corporate" },
       ],
       openCustomerInvoices: [
         { ref: "AR-2025-0130", vendor: "Abu Dhabi Exports LLC", amount: "د.إ42,500.00", status: "Open", date: "2025-12-01" },
@@ -522,7 +528,7 @@ export const SEED_CURRENCIES: Currency[] = [
       ],
       openPurchaseOrders: [],
       openSalesOrders: [
-        { ref: "SO-2025-0112", vendor: "Amsterdam Trading BV", amount: "€55,000.00", status: "Open", date: "2025-12-01" },
+        { ref: "SO-2025-0112", vendor: "Amsterdam Trading BV", amount: "€55,000.00", status: "Open", date: "2025-12-01", rateType: "corporate" },
       ],
       bankAccounts: 2, unsettledPayments: 0, exchangeRateEntries: 8, totalLifetimeDocuments: 95,
     },
@@ -711,16 +717,16 @@ export const SEED_CURRENCIES: Currency[] = [
   cur("USD", "United States Dollar", "840", "$", 2, "United States", ["American Samoa", "British Indian Ocean Territory", "British Virgin Islands", "Bonaire Sint Eustatius and Saba", "Ecuador", "El Salvador", "Guam", "Marshall Islands", "Federated States of Micronesia", "Northern Mariana Islands", "Palau", "Panama", "Puerto Rico", "Timor-Leste", "Turks and Caicos Islands", "US Virgin Islands", "United States Minor Outlying Islands"], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0520", vendor: "Acme Corp", amount: "$18,500.00", status: "Open", date: "2025-11-01" },
+        { ref: "INV-2025-0520", vendor: "Acme Corp", amount: "$18,500.00", status: "Open", date: "2025-11-01", rateType: "corporate" },
         { ref: "INV-2025-0533", vendor: "Global Supplies Inc.", amount: "$7,200.00", status: "Pending", date: "2025-11-20" },
         { ref: "INV-2025-0541", vendor: "Pacific Trading LLC", amount: "$34,100.00", status: "Open", date: "2025-12-05" },
       ],
       openCustomerInvoices: [
-        { ref: "AR-2025-0102", vendor: "New York Imports LLC", amount: "$22,800.00", status: "Open", date: "2025-11-08" },
+        { ref: "AR-2025-0102", vendor: "New York Imports LLC", amount: "$22,800.00", status: "Open", date: "2025-11-08", rateType: "corporate" },
         { ref: "AR-2025-0115", vendor: "Texas Energy Co.", amount: "$41,500.00", status: "Overdue", date: "2025-10-01" },
       ],
       openPurchaseOrders: [
-        { ref: "PO-2025-0290", vendor: "Acme Corp", amount: "$12,000.00", status: "Open", date: "2025-11-10" },
+        { ref: "PO-2025-0290", vendor: "Acme Corp", amount: "$12,000.00", status: "Open", date: "2025-11-10", rateType: "corporate" },
         { ref: "PO-2025-0305", vendor: "Summit Materials", amount: "$5,800.00", status: "Pending", date: "2025-12-01" },
       ],
       openSalesOrders: [
@@ -749,3 +755,24 @@ export const SEED_CURRENCIES: Currency[] = [
   cur("ZMW", "Zambian Kwacha", "967", "ZK", 2, "Zambia", []),
   cur("ZWG", "Zimbabwe Gold", "924", "ZiG", 2, "Zimbabwe", []),
 ];
+
+/* The library as authored, moved to the demo clock (demoClock.ts): every date
+   shifts by the same number of days, and a transaction number takes the year
+   of its moved date ("INV-2025-0520" dated 2026 reads "INV-2026-0520"). */
+const moveTx = <T extends { ref: string; date: string }>(t: T): T => {
+  const date = shiftIso(t.date, CURRENCY_SEED_SHIFT);
+  return { ...t, date, ref: t.ref.replace(/-20\d\d-/, `-${date.slice(0, 4)}-`) };
+};
+
+export const SEED_CURRENCIES: Currency[] = AUTHORED_CURRENCIES.map((c) => ({
+  ...c,
+  usage: {
+    ...c.usage,
+    openInvoices: c.usage.openInvoices.map(moveTx),
+    openCustomerInvoices: c.usage.openCustomerInvoices.map(moveTx),
+    openPurchaseOrders: c.usage.openPurchaseOrders.map(moveTx),
+    openSalesOrders: c.usage.openSalesOrders.map(moveTx),
+    openPayments: c.usage.openPayments.map(moveTx),
+  },
+  auditLog: c.auditLog.map((e) => ({ ...e, dateTime: shiftIso(e.dateTime, CURRENCY_SEED_SHIFT) })),
+}));

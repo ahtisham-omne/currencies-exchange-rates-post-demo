@@ -2,22 +2,25 @@
 // on the CoA kit: the shared header and one CoA table card per rate type,
 // switched by Cash Management's SegmentedTabs atop the card (Mid-market rates |
 // Corporate rates).
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Archive, ArchiveRestore, ChevronDown, Download, Eye, FileSpreadsheet, FileText, Pencil, Plus } from 'lucide-react'
+import { Archive, ArchiveRestore, ChevronDown, Download, ExternalLink, Eye, FileSpreadsheet, FileText, Pencil, Plus } from 'lucide-react'
 import { useExchangeRates } from '../context/ExchangeRateContext'
+import { API_PROVIDER, API_PROVIDER_URL } from '../data/exchangeRates'
 import { EXPLANATORY_BLOCKS } from '../utils/rateCopy'
 import { SegmentedTabs } from '../coa/components/SegmentedTabs'
-import { Banner, Button, Menu, MenuItem, Tooltip, useResponsiveIconSize } from '../coa/components/ui'
+import { Banner, Button, Menu, MenuItem, useResponsiveIconSize } from '../coa/components/ui'
 import { TableToolbar } from '../coa/components/TableToolbar'
 import { CoaTableCard, PillRow, TableEmptyState } from '../coa/components/TableCard'
-import { CoaDataTable, TableNoteRow, useCoaTable } from '../coa/components/CoaDataTable'
+import { CoaDataTable, useCoaTable } from '../coa/components/CoaDataTable'
+import { FlagImage } from '../coa/components/FlagImage'
 import { QuickFilterPill } from '../coa/components/Filters'
 import { BulkActionBar } from '../coa/components/BulkActionBar'
-import { useRememberedState } from '../coa/lib/rememberedState'
+import { setStoredValue, useRememberedState, useStoredState } from '../coa/lib/rememberedState'
+import { pushToast } from '../coa/lib/toast'
 import { cn, fmtDate } from '../coa/lib/utils'
 import {
-  BASE, LAST_SYNC_DATE, SYNC_LINE, SYNC_LINE_SHORT, baseCorpRow, fmtInverse, fmtRate, fmtSignedPct, pairPath,
+  BASE, LAST_SYNC_AT, LAST_SYNC_DATE, flagOf, fmtInverse, fmtRate, fmtSignedPct, pairPath,
   toCorpRows, toMidRows, type CorpRow, type MidRow,
 } from './exchange/rateModel'
 import { RateFiltersModal, corpColumns, midColumns } from './exchange/libraryConfig'
@@ -31,6 +34,55 @@ type Tab = 'mid' | 'corp'
 type CorpPill = 'all' | 'active' | 'archived'
 
 const EXPANDED_FILL = 'bg-[color-mix(in_srgb,hsl(var(--muted))_30%,#fff)]'
+
+/* The explanation banner above each table. "Don’t Show Again" hides it in this
+   browser for good, with an Undo in case it was a slip. Renders nothing once
+   hidden, so the table moves up instead of leaving an empty strip. */
+function ExplainerBanner({ id, title, children }: { id: Tab; title: string; children: ReactNode }) {
+  const hiddenKey = `fx.rates:banner:${id}:hidden`
+  const [hidden, setHidden] = useStoredState(hiddenKey, false)
+  if (hidden) return null
+  const hideForGood = () => {
+    setHidden(true)
+    // Undo writes storage directly too: the reader may have switched tabs first.
+    pushToast(`${title} banner hidden`, 'success', 'It won’t show again in this browser.', {
+      label: 'Undo', onClick: () => { setStoredValue(hiddenKey, false); setHidden(false) },
+    })
+  }
+  return (
+    <div className="px-4 py-3 border-b border-border">
+      <Banner tone="info" title={title} onDontShowAgain={hideForGood}>{children}</Banner>
+    </div>
+  )
+}
+
+/** The rate provider's site, in a new tab. */
+function SourceLink({ className }: { className?: string }) {
+  return (
+    <a href={API_PROVIDER_URL} target="_blank" rel="noopener noreferrer" className={cn('inline-flex items-center gap-0.5 font-medium hover:opacity-80', className)}>
+      {API_PROVIDER}<ExternalLink size={11} aria-hidden />
+    </a>
+  )
+}
+
+/* The line above each table's header: what every rate is quoted against, where
+   the market figures come from and how often they refresh. It replaces the base
+   currency's own row (always 1.0000) and, unlike the banner, can't be hidden. */
+function QuotedStrip({ kind }: { kind: Tab }) {
+  return (
+    <div className="px-4 py-2 border-b border-border flex items-center justify-between gap-x-4 gap-y-1 flex-wrap text-xs text-fg-muted">
+      <span className="inline-flex items-center gap-1.5">
+        <FlagImage code={flagOf(BASE)} />
+        <span>Quoted against <span className="font-medium text-fg">{BASE}</span></span>
+      </span>
+      <span>
+        {kind === 'mid' ? 'Rates from ' : 'Mid-market rates from '}
+        <SourceLink className="text-primary" />, updated every 24 hours
+        {kind === 'mid' && <> · Last updated {LAST_SYNC_AT}</>}
+      </span>
+    </div>
+  )
+}
 
 export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   const navigate = useNavigate()
@@ -72,8 +124,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   const corpAll = useMemo(() => toCorpRows(standardRates, midMarketRates), [standardRates, midMarketRates])
   const inRegion = (r: { region: string | null }, list = regions) => !list.length || (r.region != null && list.includes(r.region))
 
-  // The base row is the reference every rate is quoted against, so the Region filter never hides it.
-  const midRows = useMemo(() => midAll.filter(r => r.isBase || inRegion(r)), [midAll, regions]) // eslint-disable-line react-hooks/exhaustive-deps
+  const midRows = useMemo(() => midAll.filter(r => inRegion(r)), [midAll, regions]) // eslint-disable-line react-hooks/exhaustive-deps
   const corpPanel = useMemo(() => corpAll.filter(r => inRegion(r)), [corpAll, regions]) // eslint-disable-line react-hooks/exhaustive-deps
   const pillCounts = {
     active: corpPanel.filter(r => r.status === 'Active').length,
@@ -81,17 +132,15 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   }
   // Show All lists what is in force (archived rows wait behind their own pill).
   const corpPillRows = useMemo(() => corpPanel.filter(r => (pill === 'archived' ? r.status === 'Archived' : r.status === 'Active')), [corpPanel, pill])
-  const corpRows = useMemo(() => (corpPillRows.length ? [baseCorpRow(), ...corpPillRows] : []), [corpPillRows])
 
   /* ── Tables ── */
   // 100 rates a page by default, or All; the reader's choice survives a reload.
-  // The base row heads every page and stays out of the count; switching rate
-  // type goes back to page 1.
-  const paging = (resetKey: unknown[]) => ({ perPage: 100, options: [10, 20, 50, 100, 'all'] as (number | 'all')[], pinnedOnEveryPage: true, resetKey: JSON.stringify(resetKey) })
+  // Switching rate type goes back to page 1.
+  const paging = (resetKey: unknown[]) => ({ perPage: 100, options: [10, 20, 50, 100, 'all'] as (number | 'all')[], resetKey: JSON.stringify(resetKey) })
   const midCols = useMemo(() => midColumns(), [])
   const midTable = useCoaTable<MidRow>({
     columns: midCols, rows: midRows, query: debouncedQ, getRowId: r => r.id, rememberAs: 'fx.rates:mid',
-    pinTop: r => r.isBase, initialColumnSizing: 'fit',
+    initialColumnSizing: 'fit',
     pagination: paging([tab, regions]),
   })
   // The status chip's picks go through the lifecycle flow; a ref keeps the columns stable.
@@ -99,8 +148,8 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   lifecycleRef.current = lifecycle
   const corpCols = useMemo(() => corpColumns((next, row) => { if (row.record) lifecycleRef.current.request(next, row.record) }), [])
   const corpTable = useCoaTable<CorpRow>({
-    columns: corpCols, rows: corpRows, query: debouncedQ, getRowId: r => r.id, rememberAs: 'fx.rates:corp',
-    pinTop: r => r.isBase, initialColumnSizing: 'fit',
+    columns: corpCols, rows: corpPillRows, query: debouncedQ, getRowId: r => r.id, rememberAs: 'fx.rates:corp',
+    initialColumnSizing: 'fit',
     pagination: paging([tab, regions, pill]),
   })
 
@@ -116,7 +165,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
       ariaLabel="Rate types"
     />
   )
-  const corpShown = corpTable.rows.filter(r => !r.isBase)
+  const corpShown = corpTable.rows
 
   /* ── Export: the open tab, as filtered, archived rows left out ── */
   const exportCurrent = (fmt: ExportFormat, only?: CorpRow[]) => {
@@ -141,14 +190,15 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
 
   /* ── Selection (Corporate) ── */
   const selectedRecords = corpAll.filter(r => corpTable.selected.has(r.id) && r.record).map(r => r.record!)
-  const selectedActive = selectedRecords.filter(r => r.status === 'active')
+  // What Archive would actually take: active rates no active transaction is priced at.
+  const selectedArchivable = selectedRecords.filter(r => lifecycle.canArchive(r))
 
   const narrowing = regions.length > 0 || Object.keys(isMid ? midTable.colFilters : corpTable.colFilters).length > 0 || (!isMid && pill === 'archived')
   const clearNarrowing = () => { setRegions([]); setPill('all'); (isMid ? midTable : corpTable).setColFilters({}) }
 
-  const regionCount = (region: string) => (isMid ? midAll.filter(r => !r.isBase) : corpAll).filter(r => r.region === region).length
+  const regionCount = (region: string) => (isMid ? midAll : corpAll).filter(r => r.region === region).length
   const regionMatch = (draft: string[]) => (isMid
-    ? midAll.filter(r => r.isBase || inRegion(r, draft)).length
+    ? midAll.filter(r => inRegion(r, draft)).length
     : corpAll.filter(r => inRegion(r, draft) && (pill === 'archived' ? r.status === 'Archived' : r.status === 'Active')).length)
 
   const toolbarCommon = {
@@ -192,35 +242,31 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                   <TableToolbar
                     {...toolbarCommon}
                     count={{ shown: midTable.rows.length, total: midAll.length, noun: 'rates' }}
-                    meta={<Tooltip content={SYNC_LINE} side="bottom" align="right"><span className="cursor-default">{SYNC_LINE_SHORT}</span></Tooltip>}
                     density={midTable.densityMenuProps}
                     columns={{ open: midTable.columnsOpen, onToggle: () => midTable.setColumnsOpen(o => !o), count: midTable.visibleCount }}
                   />
                 }
-                notes={
-                  <div className="px-4 py-3 border-b border-border">
-                    <Banner tone="info" title="Mid-Market Rates">{EXPLANATORY_BLOCKS.midMarket}</Banner>
-                  </div>
-                }
+                notes={<>
+                  <ExplainerBanner id="mid" title="Mid-Market Rates">
+                    The rate halfway between the buy and sell price, with no bank markup. Updated automatically from <SourceLink className="underline underline-offset-2" /> every 24 hours.
+                  </ExplainerBanner>
+                  <QuotedStrip kind="mid" />
+                </>}
               >
                 <CoaDataTable
                   table={midTable}
-                  isBand={r => r.isBase}
                   onRowClick={r => navigate(pairPath(r.code, 'mid'))}
                   renderExpanded={r => (
                     <div className={`px-4 py-3 ${EXPANDED_FILL}`}>
                       <PairInverter code={r.code} name={r.name} rate={r.rate} inverted={inverted.has(`mid:${r.id}`)} onToggle={() => toggleInvert(`mid:${r.id}`)} note={`Mid-market rate as of ${LAST_SYNC_DATE}`} />
                     </div>
                   )}
-                  afterRow={r => (r.isBase ? <TableNoteRow band>All exchange rates below are quoted against this currency.</TableNoteRow> : null)}
                   rowMenu={(r, close) => (
                     <>
                       <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(r.code, 'mid')) }}>View Details</MenuItem>
-                      {r.isBase
-                        ? <MenuItem icon={<Plus size={14} />} disabled disabledReason={`${BASE} is the base currency. Its rate is always 1.0000.`}>Set Corporate Rate</MenuItem>
-                        : r.corporate
-                          ? <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.corporate!.id) }}>Update Corporate Rate</MenuItem>
-                          : <MenuItem icon={<Plus size={14} />} onClick={() => { close(); form.openAdd(r.code) }}>Set Corporate Rate</MenuItem>}
+                      {r.corporate
+                        ? <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.corporate!.id) }}>Update Corporate Rate</MenuItem>
+                        : <MenuItem icon={<Plus size={14} />} onClick={() => { close(); form.openAdd(r.code) }}>Set Corporate Rate</MenuItem>}
                     </>
                   )}
                   emptyState={emptyState}
@@ -246,7 +292,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                     nounPlural="rates"
                     onClear={corpTable.clearSelection}
                     actions={[
-                      { key: 'archive', label: 'Archive', icon: Archive, tone: 'destructive', count: selectedActive.length, onClick: () => lifecycle.archiveBulk(selectedRecords, corpTable.clearSelection) },
+                      { key: 'archive', label: 'Archive', icon: Archive, tone: 'destructive', count: selectedArchivable.length, onClick: () => lifecycle.archiveBulk(selectedRecords, corpTable.clearSelection) },
                       { key: 'export', label: 'Export Selected', icon: Download, tone: 'neutral', onClick: () => exportCurrent('csv', corpAll.filter(r => corpTable.selected.has(r.id))) },
                     ]}
                   />
@@ -258,19 +304,15 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                     <QuickFilterPill label="Archived" tone="danger" count={pillCounts.archived} active={pill === 'archived'} onClick={() => setPill(p => (p === 'archived' ? 'all' : 'archived'))} />
                   </PillRow>
                 }
-                notes={
-                  <div className="px-4 py-3 border-b border-border">
-                    <Banner tone="info" title="Corporate Rates">{EXPLANATORY_BLOCKS.corporate}</Banner>
-                  </div>
-                }
+                notes={<>
+                  <ExplainerBanner id="corp" title="Corporate Rates">{EXPLANATORY_BLOCKS.corporate}</ExplainerBanner>
+                  <QuotedStrip kind="corp" />
+                </>}
               >
                 <CoaDataTable
                   table={corpTable}
                   selectable
-                  isSelectable={r => !r.isBase}
-                  isBand={r => r.isBase}
-                  onRowClick={r => navigate(r.isBase ? pairPath(BASE, 'mid') : pairPath(r.code, 'std'))}
-                  canExpand={r => !r.isBase}
+                  onRowClick={r => navigate(pairPath(r.code, 'std'))}
                   renderExpanded={r => (
                     <div className={`px-4 py-3 ${EXPANDED_FILL}`}>
                       {r.rate != null ? (
@@ -282,10 +324,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                       )}
                     </div>
                   )}
-                  afterRow={r => (r.isBase ? <TableNoteRow band>All exchange rates below are quoted against this currency.</TableNoteRow> : null)}
-                  rowMenu={(r, close) => r.isBase ? (
-                    <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(BASE, 'mid')) }}>View Details</MenuItem>
-                  ) : (
+                  rowMenu={(r, close) => (
                     <>
                       <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(r.code, 'std')) }}>View Details</MenuItem>
                       {r.status === 'Active' && <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.id) }}>Update Rate</MenuItem>}

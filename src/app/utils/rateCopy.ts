@@ -30,7 +30,7 @@ export const RATE_TOOLTIPS = {
   effectiveDate:
     "The date the current corporate rate took effect. The rate remains active until manually updated by a team member.",
   totalValueAllDocs:
-    "Sum of every active transaction booked in this currency, expressed in the currency's own units.",
+    "The combined amount of this currency’s active transactions: open, pending and overdue. Drafts aren’t counted.",
   documentTypeTotal:
     "Sum of all active transactions of this type, in this currency.",
 } as const;
@@ -39,7 +39,7 @@ export const RATE_TOOLTIPS = {
 // that appears below the converter when the user swaps direction. Shorter
 // column-header copy lives in RATE_TOOLTIPS.inverse.
 export const INVERSE_BADGE_TOOLTIP =
-  "The inverse rate shows how much 1 unit of the base currency buys in the source currency. For example, if 1 AED equals 75.84 PKR, the inverse rate is 1 PKR equals 0.013186 AED.";
+  "The inverse rate shows how much 1 unit of the base currency buys in the source currency. For example, if 1 AED equals 75.84 PKR, the inverse rate is 1 PKR equals 0.0132 AED.";
 
 // The "Inverse rate" field on the currency and rate detail pages, read for the
 // pair on screen: 1 [base] = [inverse rate] [currency].
@@ -60,7 +60,7 @@ export const CONVERTER_TOGGLE_TOOLTIPS = {
 } as const;
 
 export const EXPLANATORY_BLOCKS = {
-  midMarket: `The rate halfway between the buy and sell price, with no bank markup. Updated automatically from ${API_PROVIDER} every 24 hours.`,
+  // The mid-market banner is written in ExchangeRateLibraryPage, where it links the provider.
   corporate:
     "Fixed rates your team sets. They stay the same until someone changes them, so transactions and budgets use a steady rate.",
 } as const;

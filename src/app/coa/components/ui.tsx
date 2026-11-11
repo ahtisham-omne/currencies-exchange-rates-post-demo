@@ -816,7 +816,8 @@ export function Marked({ text, q, className }: { text: string; q: string; classN
 // =========================
 export function Input({ label, hint, error, leadingIcon, required, className, info, ...props }: {
   label?: string
-  hint?: string
+  /** A line under the field; a node, so part of it can carry its own colour. */
+  hint?: ReactNode
   error?: ReactNode
   leadingIcon?: ReactNode
   info?: ReactNode
@@ -1603,7 +1604,7 @@ export function EmptyState({ icon, title, description, action, framed, tone = 'n
 // =========================
 // Banner / Alert
 // =========================
-export function Banner({ tone = 'info', title, children, action, className, icon, hideIcon }: {
+export function Banner({ tone = 'info', title, children, action, className, icon, hideIcon, onDontShowAgain }: {
   tone?: 'info' | 'success' | 'warning' | 'danger'
   title?: string
   children: ReactNode
@@ -1611,6 +1612,8 @@ export function Banner({ tone = 'info', title, children, action, className, icon
   className?: string
   icon?: ReactNode
   hideIcon?: boolean
+  /** Shows "Don’t Show Again": the caller hides the banner for good. */
+  onDontShowAgain?: () => void
 }) {
   const cls = {
     info: 'bg-info-50 border-info-100 text-info-700',
@@ -1627,6 +1630,9 @@ export function Banner({ tone = 'info', title, children, action, className, icon
     warning: <AlertTriangle size={16} />,
     danger: <AlertCircle size={16} />,
   }[tone]
+  const hoverCls = {
+    info: 'hover:bg-info-100', success: 'hover:bg-success-100', warning: 'hover:bg-warning-100', danger: 'hover:bg-danger-100',
+  }[tone]
   const iconNode = hideIcon ? null : (icon ?? defaultIcon)
   // Matches the Partners notice style: rounded-xl card, tone-tinted icon, and
   // tone-coloured body text (rather than neutral grey).
@@ -1641,6 +1647,18 @@ export function Banner({ tone = 'info', title, children, action, className, icon
         <div className={cn(title && 'mt-0.5', 'text-xs leading-4 opacity-90')}>{children}</div>
       </div>
       {action}
+      {/* On the title's line, like the icon, as a quiet text button. */}
+      {onDontShowAgain && (
+        <div className="shrink-0 flex items-center h-4">
+          <button
+            type="button"
+            onClick={onDontShowAgain}
+            className={cn('h-6 px-1.5 -mr-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors', hoverCls)}
+          >
+            Don’t Show Again
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -58,6 +58,12 @@ function readStored<T>(key: string): { value: T } | null {
   }
 }
 
+/** Write a stored value from outside the hook - e.g. a toast's Undo that can
+ *  outlive the component that set it. */
+export function setStoredValue<T>(key: string, value: T) {
+  try { window.localStorage.setItem(STORED_PREFIX + key, JSON.stringify(value)) } catch { /* nothing to keep */ }
+}
+
 export function useStoredState<T>(key: string | undefined, initial: T): [T, Dispatch<SetStateAction<T>>] {
   const [value, setValue] = useState<T>(() => (key ? readStored<T>(key)?.value ?? initial : initial))
   const set = useCallback<Dispatch<SetStateAction<T>>>(next => {

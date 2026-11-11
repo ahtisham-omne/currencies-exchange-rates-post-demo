@@ -69,6 +69,18 @@ export function windowRange<P extends { date: string }>(series: P[], range: Rang
 export const rangeLabel = (range: RangeValue) =>
   range.kind === 'preset' ? RANGE_LONG[range.key] ?? '' : insightsRangeLabel('custom', range.from, range.to)
 
+/** An average's caption for the range, written out rather than built by
+ *  lowercasing the label: "Average over the last month", "Average, Sep 1 to Sep 30". */
+const RANGE_AVERAGE: Record<string, string> = {
+  '1d': 'Average over the last day', '5d': 'Average over the last 5 days', '1m': 'Average over the last month',
+  '1y': 'Average over the last year', '5y': 'Average over the last 5 years', max: 'Average over the full history',
+}
+export const rangeAverageLabel = (range: RangeValue) =>
+  range.kind === 'preset' ? RANGE_AVERAGE[range.key] ?? 'Average' : `Average, ${insightsRangeLabel('custom', range.from, range.to)}`
+
+/** Whether the range is the page's default (1M), so Reset has nothing to do. */
+export const isDefaultRange = (range: RangeValue) => range.kind === 'preset' && range.key === '1m'
+
 export interface RangeMetrics { change: number; high: number; low: number; avg: number; volatility: number }
 
 export function rangeMetrics(points: PairPoint[]): RangeMetrics {
@@ -124,8 +136,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export const tickLabelFor = (spanDays: number) => (iso: string) =>
   spanDays > 366 ? `${MONTHS[+iso.slice(5, 7) - 1]} '${iso.slice(2, 4)}` : `${MONTHS[+iso.slice(5, 7) - 1]} ${+iso.slice(8, 10)}`
 
-/** A rate's ticks: four decimals for small rates, two otherwise. */
-export const rateTick = (v: number) => (Math.abs(v) < 10 ? v.toFixed(4) : v.toFixed(2))
+/** A rate's ticks: four decimals, like every rate the module shows. */
+export const rateTick = (v: number) => v.toFixed(4)
 
 export const transactionsOn = pairTransactionsOn
 

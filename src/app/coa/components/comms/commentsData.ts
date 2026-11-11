@@ -35,6 +35,18 @@ export interface EmailComment {
    grouping is what the panel's per-message cards are showing. */
 const MESSAGE_OFFSETS = [2, 3, 3, 4, 5]
 
+/* When each comment was left, counted back from today so the panel never shows
+   a conversation from months before the thread it sits on. The source spread
+   them over twelve days (Jun 21 to Jul 3); the spacing is kept, ending two days
+   ago. Shaped like the source's literals: "Oct 28, 2026, 3:15 PM". */
+function stamp(daysAgo: number, hour: number, minute: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - daysAgo)
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const h12 = hour % 12 || 12
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}, ${h12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`
+}
+
 /** The comments a thread carries in the demo.
  *
  *  Called bare it returns the source's own seeding, keyed on its literal ids.
@@ -52,7 +64,7 @@ export function generateMockComments(messageIds?: string[]): EmailComment[] {
       authorName: 'Daniel Osei',
       authorInitials: 'DO',
       text: 'Good read on the variance. Should we flag the rate change to treasury before it goes into the pack?',
-      timestamp: 'Jun 21, 2026, 3:15 PM',
+      timestamp: stamp(14, 15, 15),
       isRead: true,
       isResolved: false,
       replies: [
@@ -61,7 +73,7 @@ export function generateMockComments(messageIds?: string[]): EmailComment[] {
           authorName: 'Mahad Ejaz',
           authorInitials: 'ME',
           text: 'Already raised it with treasury and they are happy with where it sits.',
-          timestamp: 'Jun 21, 2026, 4:02 PM',
+          timestamp: stamp(14, 16, 2),
         },
       ],
     },
@@ -71,7 +83,7 @@ export function generateMockComments(messageIds?: string[]): EmailComment[] {
       authorName: 'Priya Raman',
       authorInitials: 'PR',
       text: 'The variance threshold on this alert looks tight for a currency this volatile. Did anyone agree it with the controller?',
-      timestamp: 'Jun 25, 2026, 11:40 AM',
+      timestamp: stamp(10, 11, 40),
       isRead: false,
       isResolved: false,
       replies: [],
@@ -82,7 +94,7 @@ export function generateMockComments(messageIds?: string[]): EmailComment[] {
       authorName: 'Daniel Osei',
       authorInitials: 'DO',
       text: 'The rounding looks right to me. Worth naming the decimal places we used so the next reader does not ask again.',
-      timestamp: 'Jun 25, 2026, 12:10 PM',
+      timestamp: stamp(10, 12, 10),
       isRead: true,
       isResolved: true,
       replies: [
@@ -91,7 +103,7 @@ export function generateMockComments(messageIds?: string[]): EmailComment[] {
           authorName: 'Mahad Ejaz',
           authorInitials: 'ME',
           text: 'Noted it on the currency itself.',
-          timestamp: 'Jun 25, 2026, 1:30 PM',
+          timestamp: stamp(10, 13, 30),
         },
       ],
     },
@@ -101,7 +113,7 @@ export function generateMockComments(messageIds?: string[]): EmailComment[] {
       authorName: 'Tom Brennan',
       authorInitials: 'TB',
       text: 'Good news that the review cleared. Make sure the rate approval is on the pair before close.',
-      timestamp: 'Jul 2, 2026, 6:00 PM',
+      timestamp: stamp(3, 18, 0),
       isRead: false,
       isResolved: false,
       replies: [
@@ -110,14 +122,14 @@ export function generateMockComments(messageIds?: string[]): EmailComment[] {
           authorName: 'Daniel Osei',
           authorInitials: 'DO',
           text: 'I will attach it. Should be on there by the end of the day.',
-          timestamp: 'Jul 2, 2026, 6:30 PM',
+          timestamp: stamp(3, 18, 30),
         },
         {
           id: 'c4-r2',
           authorName: 'Mahad Ejaz',
           authorInitials: 'ME',
           text: 'Thanks Daniel, I have copied group reporting on the summary as well.',
-          timestamp: 'Jul 2, 2026, 7:00 PM',
+          timestamp: stamp(3, 19, 0),
         },
       ],
     },
@@ -127,7 +139,7 @@ export function generateMockComments(messageIds?: string[]): EmailComment[] {
       authorName: 'Priya Raman',
       authorInitials: 'PR',
       text: 'The backdated effective date might need a word with treasury. Should I set up a call?',
-      timestamp: 'Jul 3, 2026, 11:00 AM',
+      timestamp: stamp(2, 11, 0),
       isRead: false,
       isResolved: false,
       replies: [],

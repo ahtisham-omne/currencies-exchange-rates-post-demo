@@ -5,22 +5,19 @@
 // Attachments, Communications, Activity).
 import { useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Activity, ArrowLeftRight, ChevronDown, CircleSlash, Coins, Download, FileText, Power } from 'lucide-react'
+import { ArrowLeftRight, ChevronDown, CircleSlash, Coins, Download, FileText, History, MessageSquare, Power } from 'lucide-react'
 import { CoaPage } from '../coa/components/CoaPage'
 import { DetailHeaderCard } from '../coa/components/DetailHeaderCard'
-import { DetailPageLayout, DashboardGrid, DetailNotFound, InfoAuditGrid, InfoGrid, InfoPerson, InfoValue, useDetailFullView, useDetailTab } from '../coa/components/DetailPageLayout'
+import { DetailPageLayout, DashboardGrid, DetailNotFound, InfoAuditGrid, InfoGrid, InfoValue, useDetailFullView, useDetailTab } from '../coa/components/DetailPageLayout'
 import { DashInfoCard, DashInfoLabel } from '../coa/components/DashInfoCard'
 import { Badge, Menu, MenuItem, Tooltip } from '../coa/components/ui'
 import { StatusChip, StatusMenu } from '../coa/components/StatusChip'
 import { OverflowPills, PARTNER_CHIP_CLS } from '../coa/components/cells'
 import { FlagImage } from '../coa/components/FlagImage'
-import { NotesTab, useRecordNotes } from '../coa/components/NotesTab'
+import { useRecordNotes } from '../coa/components/NotesTab'
 import { RecordAttachmentsTab, useRecordAttachmentCount } from '../coa/components/AttachmentsTab'
-import { CommsTab, useCommsCount, type Subject } from '../coa/components/CommsTab'
 import { ChartWidgetCard } from '../coa/components/ChartWidgetCard'
-import { ActivityFeed } from '../coa/components/ActivityFeed'
 import { recordKey } from '../coa/lib/recordStore'
-import { useCommsDirectorySync } from '../coa/store'
 import { fmtDate, fmtDateTime, todayIso } from '../coa/lib/utils'
 import { useCurrencies } from '../context/CurrencyContext'
 import { useExchangeRates } from '../context/ExchangeRateContext'
@@ -28,14 +25,16 @@ import { API_PROVIDER, BASE_CURRENCY_NAME, LAST_SYNC, corporateRateInEffect, upc
 import type { Currency } from '../data/currencies'
 import { CONVERTER_TOOLTIP, RATE_TOOLTIPS, inverseRateTooltip } from '../utils/rateCopy'
 import {
-  BASE, auditFacts, baseStaysActive, countInUse, countriesOf, countryFlagOf, fmtRate, linkedDocs, money, placeFlagOf,
-  regionOf, statusOf, statusOptionsFor,
+  BASE, auditFacts, BASE_CURRENCY_LOCKED, countInUse, countriesOf, countryFlagOf, fmtRate, formatPreview, linkedDocs, placeFlagOf,
+  plural, regionOf, statusOf, statusOptionsFor,
 } from './currency/model'
 import { useCurrencyLifecycle } from './currency/useCurrencyLifecycle'
 import { CurrencyConverter } from './currency/CurrencyConverter'
 import { LinkedTransactionsTab } from './currency/LinkedTransactionsTab'
 import { exportLinkedDocs } from './currency/exportCurrencies'
-import { commsAnchorIso, currencyActivity, currencyAttachments, currencyNotes } from './currency/recordSamples'
+import { currencyAttachments, currencyNotes } from './currency/recordSamples'
+import { RecordNotesTab } from './recordTabs/NotesTab'
+import { ComingSoonTab } from './recordTabs/ComingSoonTab'
 import { CX_TITLE } from './CurrencyExchangeHeader'
 
 const TABS = ['dashboard', 'linked', 'notes', 'attachments', 'communications', 'activity'] as const
@@ -50,7 +49,6 @@ export function CurrencyDetailPage() {
   const navigate = useNavigate()
   const { getCurrency, currencies } = useCurrencies()
   const { midMarketRates, standardRates } = useExchangeRates()
-  useCommsDirectorySync(currencies, midMarketRates, standardRates)
   const lifecycle = useCurrencyLifecycle()
   const c = getCurrency(code)
   const [tab, setTab] = useDetailTab<Tab>(TABS, code)
@@ -62,16 +60,6 @@ export function CurrencyDetailPage() {
   const seedFiles = useCallback(() => currencyAttachments(c), [c])
   const noteCount = useRecordNotes(key, derivedNotes).length
   const attachmentCount = useRecordAttachmentCount(key, seedFiles)
-  /* Read before the not-found return, because the thread is a hook (CoA reads
-     its comms subject the same way). Nothing is seeded against an empty id. */
-  const commsSubject: Subject = {
-    subjectId: c ? key : '',
-    kind: c?.isBaseCurrency ? 'base' : 'currency',
-    label: c ? `${c.code} ${c.name}` : '',
-    anchorIso: commsAnchorIso(),
-  }
-  // Messages, not threads, as CoA counts them.
-  const commsCount = useCommsCount(commsSubject)
   const docs = useMemo(() => (c ? linkedDocs(c) : []), [c])
 
   const crumbs = [{ label: 'Accounting', to: '/accounting' }, { label: CX_TITLE, to: LIST_PATH }, { label: code }]
@@ -147,7 +135,7 @@ export function CurrencyDetailPage() {
                       Export Linked Transactions
                     </MenuItem>
                     {status === 'Active'
-                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }} disabled={c.isBaseCurrency} disabledReason={baseStaysActive(c)}>Deactivate Currency</MenuItem>
+                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }} disabled={c.isBaseCurrency} disabledReason={BASE_CURRENCY_LOCKED}>Deactivate Currency</MenuItem>
                       : <MenuItem icon={<Power size={14} />} onClick={() => { close(); lifecycle.request('Active', c) }}>Activate Currency</MenuItem>}
                   </>
                 )}
@@ -158,7 +146,7 @@ export function CurrencyDetailPage() {
               { id: 'linked', label: 'Linked Transactions', count: countInUse(c) },
               { id: 'notes', label: 'Notes', count: noteCount },
               { id: 'attachments', label: 'Attachments', count: attachmentCount },
-              { id: 'communications', label: 'Communications', count: commsCount },
+              { id: 'communications', label: 'Communications' },
               { id: 'activity', label: 'Activity' },
             ]}
             activeTab={tab}
@@ -174,35 +162,43 @@ export function CurrencyDetailPage() {
             corporate={corporate}
             upcoming={upcoming}
             onSetCorporate={setCorporate}
+            onOpenLinked={() => setTab('linked')}
           />
         )}
         {tab === 'linked' && <LinkedTransactionsTab currency={c} docs={docs} />}
-        {tab === 'notes' && <NotesTab noteKey={key} noun="currency" derived={derivedNotes} />}
+        {tab === 'notes' && <RecordNotesTab noteKey={key} noun="currency" derived={derivedNotes} />}
         {tab === 'attachments' && <RecordAttachmentsTab recordKey={key} seed={seedFiles} document={{ recordLabel: `${c.code} ${c.name}`, recordKind: 'currency' }} />}
-        {tab === 'communications' && <CommsTab {...commsSubject} />}
+        {/* Communications and Activity follow Vendor Invoicing, which shows these
+            two as Coming Soon until their backends land. */}
+        {tab === 'communications' && (
+          <ComingSoonTab label="Communications" icon={MessageSquare}
+            description="Message history for this currency, with your team and partners, will live here. The shared communication surface keeps every conversation attached to the record it is about." />
+        )}
         {tab === 'activity' && (
-          <ChartWidgetCard title="Activity Timeline" icon={Activity}>
-            <ActivityFeed items={currencyActivity(c)} />
-          </ChartWidgetCard>
+          <ComingSoonTab label="Activity" icon={History}
+            description="A chronological audit trail of every action on this currency: status changes, rate updates and edits. The activity feed arrives with backend integration." />
         )}
       </DetailPageLayout>
     </CoaPage>
   )
 }
 
-function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate }: {
+function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate, onOpenLinked }: {
   c: Currency
   mid: number | null
   corporate: { standardRate: number; effectiveDate: string; createdBy: string } | null
   /** A corporate rate dated for later. */
   upcoming: { standardRate: number; effectiveDate: string } | null
   onSetCorporate: () => void
+  /** Opens the Linked Transactions tab. */
+  onOpenLinked: () => void
 }) {
-  const dp = c.decimalPlaces
   const variance = corporate && mid ? ((corporate.standardRate - mid) / mid) * 100 : null
   const signed = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(2)}%`
   const facts = auditFacts(c)
   const region = regionOf(c)
+  const preview = formatPreview(c)
+  const linkedCount = countInUse(c)
 
   return (
     <DashboardGrid
@@ -227,8 +223,8 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate }: {
               <div className="min-w-0"><DashInfoLabel tooltip="The ISO 4217 three-digit code.">Numeric Code</DashInfoLabel><InfoValue className="tabular-nums">{c.numericCode}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel align="right" tooltip="Digits after the decimal point that amounts in this currency carry.">Decimal Places</DashInfoLabel><InfoValue className="tabular-nums">{c.decimalPlaces}</InfoValue></div>
               <div className="min-w-0">
-                <DashInfoLabel tooltip="How an amount of 1,000 is written in this currency.">Format Preview</DashInfoLabel>
-                <InfoValue className="tabular-nums">{money(c.symbol, 1000, dp)}</InfoValue>
+                <DashInfoLabel tooltip={`How a large amount is written in ${c.code}: the thousand and decimal separators and where the symbol goes, as used in ${preview.place}.`}>Format Preview</DashInfoLabel>
+                <InfoValue className="tabular-nums"><span dir="ltr">{preview.text}</span></InfoValue>
               </div>
               <div className="min-w-0">
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.baseCurrency}>Base Currency</DashInfoLabel>
@@ -237,6 +233,13 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate }: {
               <div className="min-w-0"><DashInfoLabel>Region</DashInfoLabel>{region ? <InfoValue>{region}</InfoValue> : <InfoValue empty>–</InfoValue>}</div>
               <div className="min-w-0"><DashInfoLabel align="right">Status</DashInfoLabel><div className="mt-0.5"><StatusChip status={statusOf(c)} /></div></div>
             </InfoGrid>
+            {/* The count opens the Linked Transactions tab, like the In Use count in the library. */}
+            <div className="mb-2.5 min-w-0">
+              <DashInfoLabel tooltip="The transactions that use this currency. Select the count to see them.">Linked Transactions</DashInfoLabel>
+              {linkedCount > 0
+                ? <button type="button" onClick={onOpenLinked} className="text-[13px] text-primary hover:text-[#0862D0] hover:underline underline-offset-2 mt-0.5 tabular-nums" style={{ fontWeight: 600 }}>{plural(linkedCount, 'transaction', 'transactions')}</button>
+                : <InfoValue empty>None</InfoValue>}
+            </div>
             <div className="mb-2.5 min-w-0">
               <DashInfoLabel>Countries / Regions</DashInfoLabel>
               <div className="mt-0.5">
@@ -246,10 +249,10 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate }: {
                 />
               </div>
             </div>
+            {/* Who made and changed it is left off: the library is set up by the
+                system, and "System" told the reader nothing. */}
             <InfoAuditGrid>
-              <div className="min-w-0"><DashInfoLabel>Created By</DashInfoLabel><InfoPerson name={facts.createdBy} /></div>
-              <div className="min-w-0"><DashInfoLabel align="right">Created On</DashInfoLabel><InfoValue>{facts.createdAt ? fmtDate(facts.createdAt) : '–'}</InfoValue></div>
-              <div className="min-w-0"><DashInfoLabel>Last Updated By</DashInfoLabel><InfoPerson name={facts.updatedBy} /></div>
+              <div className="min-w-0"><DashInfoLabel>Created On</DashInfoLabel><InfoValue>{facts.createdAt ? fmtDate(facts.createdAt) : '–'}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel align="right">Last Updated On</DashInfoLabel><InfoValue>{facts.updatedAt ? fmtDate(facts.updatedAt) : '–'}</InfoValue></div>
             </InfoAuditGrid>
           </DashInfoCard>

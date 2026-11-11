@@ -11,7 +11,7 @@ import { useWidgetChartH, useWidgetSize, widgetBarSize } from '../../coa/compone
 import { AXIS_PROPS, CHART_MARGIN, CM_TT_STYLE, ChartEmpty, ChartTooltipCard, GRID_PROPS, ZERO_LINE_PROPS, areaGradient, tickInterval } from '../../coa/components/chartKit'
 import { ChartLegendDot } from '../../coa/components/ChartWidgetCard'
 import { fmtDate, fmtNumber } from '../../coa/lib/utils'
-import { BASE, fmtRate, fmtSignedPct, variancePct } from './rateModel'
+import { BASE, decimalsOf, fmtPairRate, fmtRate, fmtSignedPct } from './rateModel'
 import { bucketBy, grainFor, rateTick, thin, tickLabelFor, transactionsOn, type PairPoint } from './pairData'
 
 /* ── Catalogues ─────────────────────────────────────────────────────────── */
@@ -22,10 +22,10 @@ export const pairKpis = (code: string): DetailKpiDef[] => [
   { key: 'current_std', label: 'Current Corporate Rate', category: 'Rates', description: 'The corporate rate in effect for this pair.' },
   { key: 'range_change', label: 'Mid-Market Change', category: 'Performance', description: 'How much the rate moved in the selected period. Example: 275 to 280 is +1.82%.' },
   { key: 'range_volatility', label: 'Mid-Market Volatility', category: 'Analytics', description: 'How much the rate usually moves in a day. Low means steady, high means big swings.' },
-  { key: 'variance', label: 'Corporate Variance', category: 'Rates', description: 'How far the corporate rate sits from the current mid-market rate.' },
+  { key: 'variance', label: 'Corporate Variance', category: 'Rates', description: 'How far the corporate rate sat from the mid-market rate, on average, over the selected period.' },
   { key: 'days_since_update', label: 'Days Since Rate Updated', category: 'Operational', description: 'Days since the corporate rate in effect took effect.' },
   // Keyed fx_exposure_30d still, so layouts readers saved keep the tile.
-  { key: 'fx_exposure_30d', label: 'FX Exposure', category: 'Operational', description: 'The value of open transactions in this currency, converted at today’s mid-market rate.' },
+  { key: 'fx_exposure_30d', label: 'FX Exposure', category: 'Operational', description: `The total of your open ${code} transactions, converted to ${BASE} at today’s mid-market rate. This is the amount that gains or loses value when the exchange rate moves.` },
 ]
 
 export const MID_KPI_KEYS = ['current_mid', 'range_change', 'range_volatility', 'fx_exposure_30d']
@@ -116,39 +116,66 @@ function useAxis(points: { date: string }[]) {
   return { tickFormatter: tickLabelFor(span), interval: wide ? tickInterval(points.length) : Math.max(0, Math.ceil(points.length / 6) - 1) }
 }
 
-const pendingNote = (corporate: BodyProps['corporate'], lastDay: string) =>
+/* A corporate rate that took effect after the last daily sync isn't on the chart
+   yet: the chart ends at the sync. Said in full, so it doesn't read as a delay. */
+const pendingNote = (code: string, corporate: BodyProps['corporate'], lastDay: string) =>
   corporate && corporate.effectiveDate > lastDay
-    ? <span className="text-[10.5px] text-[#94A3B8]">{fmtRate(corporate.rate)} takes effect {fmtDate(corporate.effectiveDate)}, after the last sync</span>
+    ? <span className="text-[10.5px] text-[#94A3B8]">The new rate, {fmtPairRate(code, corporate.rate)}, took effect {fmtDate(corporate.effectiveDate)}. It shows on the chart after the next daily update.</span>
     : null
+
+/** A signed amount of the base currency to a rate's four decimals: "+0.4800 PKR". */
+const signedRate = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmtRate(Math.abs(n))} ${BASE}`
+
+/** The days a corporate rate was set inside the window. Each is drawn at the
+ *  first charted day on or after it (a long range thins the series and may skip
+ *  the day itself) but labelled with the day it was really set. */
+function setDatesIn(points: PairPoint[], data: PairPoint[]): { x: string; date: string }[] {
+  const set = points.filter((p, i) => i > 0 && p.corp != null && p.corp !== points[i - 1].corp).map(p => p.date)
+  const out: { x: string; date: string }[] = []
+  for (const date of set) {
+    const x = data.find(p => p.date >= date)?.date
+    if (x && !out.some(m => m.x === x)) out.push({ x, date })
+  }
+  return out
+}
 
 /* ── Bodies ─────────────────────────────────────────────────────────────── */
 
-export function RateOverTimeBody({ points, label, isStd, corporate, lastDay }: BodyProps) {
+export function RateOverTimeBody({ code, points, label, isStd, corporate, lastDay }: BodyProps) {
   const chartH = useWidgetChartH()
   const data = useMemo(() => thin(points), [points])
   const axis = useAxis(data)
   const hasCorp = data.some(p => p.corp != null)
+  // Each day a corporate rate was set in the window, marked on the chart.
+  const setDates = useMemo(() => (hasCorp ? setDatesIn(points, data) : []), [hasCorp, points, data])
   return (
     <>
-      <Caption right={pendingNote(corporate, lastDay)}>{label}</Caption>
+      <Caption right={pendingNote(code, corporate, lastDay)}>{label}</Caption>
       <div style={{ height: chartH }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={CHART_MARGIN}>
             <CartesianGrid {...GRID_PROPS} />
             <XAxis dataKey="date" {...AXIS_PROPS} tickFormatter={axis.tickFormatter} interval={axis.interval} />
-            <YAxis {...AXIS_PROPS} width={56} domain={['auto', 'auto']} tickFormatter={rateTick} />
+            <YAxis {...AXIS_PROPS} width={66} domain={['auto', 'auto']} tickFormatter={rateTick} />
             <RTooltip content={({ active, payload }) => {
               const p = active && payload?.[0]?.payload as PairPoint | undefined
               if (!p) return null
-              const v = p.corp != null ? variancePct(p.corp, p.mid) : null
+              // The gap as an amount of the base currency, not a percentage.
+              const gap = p.corp != null ? p.corp - p.mid : null
               return (
                 <ChartTooltipCard title={fmtDate(p.date)} rows={[
                   { label: 'Mid-Market', value: `${fmtRate(p.mid)} ${BASE}` },
                   { label: 'Corporate', value: p.corp != null ? `${fmtRate(p.corp)} ${BASE}` : 'Not Set' },
-                  ...(v != null ? [{ label: 'Gap', value: fmtSignedPct(v) }] : []),
+                  ...(gap != null ? [{ label: 'Gap', value: signedRate(gap) }] : []),
+                  ...setDates.filter(m => m.x === p.date).map(m => ({ label: 'Rate Set', value: fmtDate(m.date) })),
                 ]} />
               )
             }} />
+            {setDates.map(m => (
+              // The label reads away from the nearer edge, so one late in the window isn't cut off.
+              <ReferenceLine key={m.x} x={m.x} stroke={CORP_C} strokeDasharray="3 3" strokeOpacity={0.9}
+                label={{ value: `Rate set ${fmtDate(m.date).replace(/, \d{4}$/, '')}`, position: data.findIndex(p => p.date === m.x) > data.length / 2 ? 'insideTopRight' : 'insideTopLeft', fill: '#B45309', fontSize: 10, fontWeight: 600 }} />
+            ))}
             <Line type="monotone" dataKey="mid" name="Mid-Market" stroke={MID_C} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
             {hasCorp && <Line type="stepAfter" dataKey="corp" name="Corporate" stroke={CORP_C} strokeWidth={2} strokeDasharray="4 4" dot={false} activeDot={{ r: 4 }} connectNulls={false} />}
           </LineChart>
@@ -222,7 +249,9 @@ export function ConversionTrendBody({ code, points, label, isStd }: BodyProps) {
   const data = useMemo(() => thin(points).map(p => ({ date: p.date, mid: +(amt * p.mid).toFixed(2), corp: p.corp != null ? +(amt * p.corp).toFixed(2) : null })), [points, amt])
   const axis = useAxis(data)
   const showCorp = isStd && data.some(d => d.corp != null)
-  const money = (n: number) => `${n.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${BASE}`
+  // In the base currency's own decimals.
+  const baseDp = decimalsOf(BASE)
+  const money = (n: number) => `${n.toLocaleString('en-US', { minimumFractionDigits: baseDp, maximumFractionDigits: baseDp })} ${BASE}`
   const id = `fxConv-${code}`
   return (
     <>

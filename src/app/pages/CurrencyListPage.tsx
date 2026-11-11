@@ -3,8 +3,8 @@
 // quick-filter pills / bulk bar, header menus, docked Columns panel, density.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronDown, CircleCheck, CircleSlash, Download, Eye, FileSpreadsheet, FileText, Power } from 'lucide-react'
-import { Badge, Button, Marked, Menu, MenuItem, useResponsiveIconSize } from '../coa/components/ui'
+import { ChevronDown, CircleCheck, CircleSlash, Download, Eye, FileSpreadsheet, FileText, Info, Power } from 'lucide-react'
+import { Badge, Button, Marked, Menu, MenuItem, Tooltip, useResponsiveIconSize } from '../coa/components/ui'
 import { TableToolbar } from '../coa/components/TableToolbar'
 import { CoaTableCard, PillRow, TableEmptyState } from '../coa/components/TableCard'
 import { CoaDataTable, useCoaTable, type CoaColumn } from '../coa/components/CoaDataTable'
@@ -16,9 +16,9 @@ import { FlagImage } from '../coa/components/FlagImage'
 import { useRememberedState } from '../coa/lib/rememberedState'
 import { cn, fmtNumber } from '../coa/lib/utils'
 import { useCurrencies } from '../context/CurrencyContext'
-import type { Currency } from '../data/currencies'
+import { hasOpenDocuments, type Currency } from '../data/currencies'
 import {
-  baseStaysActive, countInUse, countriesOf, countryFlagOf, flagOf, placeFlagOf, regionOf, statusOf, statusOptionsFor, symbolSearchText,
+  BASE_CURRENCY_LOCKED, countInUse, countriesOf, countryFlagOf, flagOf, placeFlagOf, regionOf, statusOf, statusOptionsFor, symbolSearchText,
 } from './currency/model'
 import { useCurrencyLifecycle } from './currency/useCurrencyLifecycle'
 import { CurrencyFiltersModal, EMPTY_CURRENCY_FILTERS, applyCurrencyFilters, countCurrencyFilters, type CurrencyPanelFilters } from './currency/CurrencyFilters'
@@ -67,7 +67,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
   const columns = useMemo<CoaColumn<Currency>[]>(() => [
     {
       key: 'currency', label: 'Currency', locked: true, width: 300,
-      info: 'The ISO 4217 code and name.',
+      info: 'The currency’s three-letter code and full name, like USD for US dollars.',
       render: (c, ctx) => (
         <CurrencyCell code={c.code} country={flagOf(c.code)} name={c.name} q={ctx.q} showName strong={ctx.band} onOpen={ctx.openRow}
           trailing={c.isBaseCurrency ? <Badge tone="base" className="shrink-0">Base</Badge> : undefined} />
@@ -76,20 +76,20 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
     },
     {
       key: 'symbol', label: 'Symbol', headerClassName: 'min-w-[90px]',
-      info: 'The sign amounts in this currency are written with.',
+      info: 'The sign shown next to amounts, like $ or €.',
       render: (c, ctx) => <span className="text-sm text-slate-700 whitespace-nowrap"><Marked text={c.symbol} q={ctx.q} /></span>,
       // "Rs" finds the rupee sign (₨), as people type it.
       searchText: c => symbolSearchText(c.symbol), filter: 'multiselect', filterValue: c => c.symbol,
     },
     {
       key: 'decimals', label: 'Decimals', align: 'right', headerClassName: 'min-w-[100px]', cellClassName: 'pl-4 pr-4',
-      info: 'Digits after the decimal point that amounts in this currency carry.',
+      info: 'How many digits amounts show after the decimal point. With 2, an amount shows as 10.50.',
       render: c => <span className="text-sm text-slate-700 tabular-nums">{c.decimalPlaces}</span>,
       sortValue: c => c.decimalPlaces, searchText: c => String(c.decimalPlaces), filter: 'multiselect', filterValue: c => String(c.decimalPlaces),
     },
     {
       key: 'country', label: 'Country / Region', headerClassName: 'min-w-[220px]',
-      info: 'Where the currency is used: its primary country first, then every other country or territory.',
+      info: 'The countries that use this currency. The main one is listed first.',
       render: (c, ctx) => (
         <OverflowPills
           plain
@@ -97,7 +97,8 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
           category="Countries / Regions"
           values={countriesOf(c).map((name, i) => ({
             name,
-            subtitle: i === 0 ? regionOf(c) : undefined,
+            // The primary country carries its region, unless the two read the same (EUR: Eurozone).
+            subtitle: i === 0 && regionOf(c) !== name ? regionOf(c) : undefined,
             icon: <FlagImage code={i === 0 ? placeFlagOf(name, c.code) : countryFlagOf(name)} className="text-base" />,
           }))}
         />
@@ -106,7 +107,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
     },
     {
       key: 'linked', label: 'In Use', align: 'right', headerClassName: 'min-w-[170px]', cellClassName: 'pl-4 pr-4',
-      info: 'Open transactions in this currency, and every transaction it has ever been on.',
+      info: 'How many open transactions use this currency now, and how many have used it in total.',
       render: c => {
         const n = countInUse(c)
         return (
@@ -122,13 +123,13 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
     },
     {
       key: 'status', label: 'Status', headerClassName: 'min-w-[120px]',
-      info: 'Active currencies are offered on new transactions. Inactive ones keep their rates and history.',
+      info: 'Active currencies can be picked on new transactions. Inactive ones can’t, but their rates and history are kept.',
       render: (c, ctx) => <StatusMenu status={statusOf(c)} options={statusOptionsFor(c)} onPick={next => lifecycleRef.current.request(next, c)} q={ctx.q} />,
       sortValue: c => statusOf(c), searchText: c => statusOf(c), filter: 'multiselect', filterValue: c => statusOf(c),
     },
     {
       key: 'numeric', label: 'Numeric Code', defaultHidden: true, headerClassName: 'min-w-[120px]',
-      info: 'The ISO 4217 three-digit code.',
+      info: 'The currency’s three-digit number, used by banks and payment systems.',
       render: (c, ctx) => <span className="text-sm text-slate-700 tabular-nums"><Marked text={c.numericCode} q={ctx.q} /></span>,
       sortValue: c => c.numericCode, searchText: c => c.numericCode, filter: 'text',
     },
@@ -147,6 +148,13 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
   const selectedRows = currencies.filter(c => selected.has(c.code))
   const toActivate = selectedRows.filter(c => c.status === 'inactive')
   const toDeactivate = selectedRows.filter(c => c.status === 'active' && !c.isBaseCurrency)
+  // The base currency can be picked, so it exports with the rest; the bar says up
+  // front that Activate and Deactivate leave it as it is.
+  const selectedBase = selectedRows.find(c => c.isBaseCurrency)
+  // What Deactivate would actually take. When every candidate is held by open
+  // transactions the button stays, without a count, so the dialog can say why.
+  const deactivatable = toDeactivate.filter(c => !hasOpenDocuments(c)).length
+  const deactivateCount = deactivatable || (toDeactivate.length ? undefined : 0)
   const panelCount = countCurrencyFilters(filters)
   const otherNarrowing = pill !== 'all' || panelCount > 0 || Object.keys(table.colFilters).length > 0
   const clearNarrowing = () => { setPill('all'); setFilters(EMPTY_CURRENCY_FILTERS); table.setColFilters({}) }
@@ -190,9 +198,16 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
                   noun="currency"
                   nounPlural="currencies"
                   onClear={table.clearSelection}
+                  trailing={selectedBase && (
+                    <Tooltip content={BASE_CURRENCY_LOCKED} side="bottom" align="right">
+                      <span className="inline-flex items-center gap-1 text-xs text-fg-muted cursor-default whitespace-nowrap">
+                        <Info size={12} className="text-fg-subtle" />{selectedBase.code} stays active
+                      </span>
+                    </Tooltip>
+                  )}
                   actions={[
                     { key: 'activate', label: 'Activate', icon: CircleCheck, tone: 'success', count: toActivate.length, onClick: () => lifecycle.requestBulk('Active', selectedRows, table.clearSelection) },
-                    { key: 'deactivate', label: 'Deactivate', icon: CircleSlash, tone: 'warning', count: toDeactivate.length, onClick: () => lifecycle.requestBulk('Inactive', selectedRows, table.clearSelection) },
+                    { key: 'deactivate', label: 'Deactivate', icon: CircleSlash, tone: 'warning', count: deactivateCount, onClick: () => lifecycle.requestBulk('Inactive', selectedRows, table.clearSelection) },
                     { key: 'export', label: 'Export Selected', icon: Download, tone: 'neutral', onClick: () => setExportOpen(true) },
                   ]}
                 />
@@ -215,7 +230,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
                   <>
                     <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(`/accounting/currencies/${c.code}`) }}>View Details</MenuItem>
                     {c.status === 'active'
-                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }} disabled={c.isBaseCurrency} disabledReason={baseStaysActive(c)}>Deactivate Currency</MenuItem>
+                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }} disabled={c.isBaseCurrency} disabledReason={BASE_CURRENCY_LOCKED}>Deactivate Currency</MenuItem>
                       : <MenuItem icon={<Power size={14} />} onClick={() => { close(); lifecycle.request('Active', c) }}>Activate Currency</MenuItem>}
                   </>
                 )}

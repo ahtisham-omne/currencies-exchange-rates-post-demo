@@ -1,5 +1,6 @@
 // ─── Exchange Rate Library — Data Model & Seed Data ───
 import { SEED_CURRENCIES } from "./currencies";
+import { CORPORATE_CREATED, CORPORATE_EFFECTIVE, CORPORATE_NOTE, LAST_SYNC, SYNC_DAY } from "./demoClock";
 
 export interface MidMarketRate {
   id: string;
@@ -81,6 +82,7 @@ export interface RateAuditEntry extends AuditEntry {
 export const BASE_CURRENCY = "PKR";
 export const BASE_CURRENCY_NAME = "Pakistani Rupee";
 export const API_PROVIDER = "Open Exchange Rates";
+export const API_PROVIDER_URL = "https://openexchangerates.org";
 export const SYNC_FREQUENCY = "Every 30 min";
 export const DEFAULT_RATE_TYPE: "MID" | "STD" = "MID";
 
@@ -89,30 +91,30 @@ export const DEFAULT_RATE_TYPE: "MID" | "STD" = "MID";
 // Hand-seeded rates below cover real quotable currencies; the rest are filled in
 // deterministically from the Currency Library so every active currency has a rate.
 const HAND_SEEDED_MID_RATES: MidMarketRate[] = [
-  { id: "mm-usd", baseCurrency: "PKR", sourceCurrency: "USD", sourceCurrencyName: "United States Dollar", rate: 278.5200, change24h: 0.12, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-eur", baseCurrency: "PKR", sourceCurrency: "EUR", sourceCurrencyName: "Euro", rate: 304.8150, change24h: -0.23, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-gbp", baseCurrency: "PKR", sourceCurrency: "GBP", sourceCurrencyName: "Pound Sterling", rate: 355.4200, change24h: 0.35, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-aed", baseCurrency: "PKR", sourceCurrency: "AED", sourceCurrencyName: "United Arab Emirates Dirham", rate: 75.8400, change24h: 0.02, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-sar", baseCurrency: "PKR", sourceCurrency: "SAR", sourceCurrencyName: "Saudi Riyal", rate: 74.2700, change24h: -0.01, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-cny", baseCurrency: "PKR", sourceCurrency: "CNY", sourceCurrencyName: "Renminbi", rate: 38.3100, change24h: -0.45, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-jpy", baseCurrency: "PKR", sourceCurrency: "JPY", sourceCurrencyName: "Japanese Yen", rate: 1.9230, change24h: 0.08, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-inr", baseCurrency: "PKR", sourceCurrency: "INR", sourceCurrencyName: "Indian Rupee", rate: 3.2700, change24h: 0.15, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-aud", baseCurrency: "PKR", sourceCurrency: "AUD", sourceCurrencyName: "Australian Dollar", rate: 178.3500, change24h: -0.19, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-cad", baseCurrency: "PKR", sourceCurrency: "CAD", sourceCurrencyName: "Canadian Dollar", rate: 199.8700, change24h: 0.05, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-chf", baseCurrency: "PKR", sourceCurrency: "CHF", sourceCurrencyName: "Swiss Franc", rate: 315.6100, change24h: 0.28, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-nzd", baseCurrency: "PKR", sourceCurrency: "NZD", sourceCurrencyName: "New Zealand Dollar", rate: 162.4500, change24h: -0.11, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-sgd", baseCurrency: "PKR", sourceCurrency: "SGD", sourceCurrencyName: "Singapore Dollar", rate: 210.1400, change24h: 0.14, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-hkd", baseCurrency: "PKR", sourceCurrency: "HKD", sourceCurrencyName: "Hong Kong Dollar", rate: 35.7100, change24h: 0.09, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-sek", baseCurrency: "PKR", sourceCurrency: "SEK", sourceCurrencyName: "Swedish Krona", rate: 27.1400, change24h: -0.07, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-nok", baseCurrency: "PKR", sourceCurrency: "NOK", sourceCurrencyName: "Norwegian Krone", rate: 26.5500, change24h: 0.22, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-dkk", baseCurrency: "PKR", sourceCurrency: "DKK", sourceCurrencyName: "Danish Krone", rate: 40.8500, change24h: -0.18, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-myr", baseCurrency: "PKR", sourceCurrency: "MYR", sourceCurrencyName: "Malaysian Ringgit", rate: 63.1200, change24h: 0.31, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-thb", baseCurrency: "PKR", sourceCurrency: "THB", sourceCurrencyName: "Thai Baht", rate: 8.1400, change24h: -0.05, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-krw", baseCurrency: "PKR", sourceCurrency: "KRW", sourceCurrencyName: "South Korean Won", rate: 0.2010, change24h: 0.41, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-zar", baseCurrency: "PKR", sourceCurrency: "ZAR", sourceCurrencyName: "South African Rand", rate: 14.8200, change24h: 0.55, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-try", baseCurrency: "PKR", sourceCurrency: "TRY", sourceCurrencyName: "Turkish Lira", rate: 7.6500, change24h: -0.92, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-brl", baseCurrency: "PKR", sourceCurrency: "BRL", sourceCurrencyName: "Brazilian Real", rate: 48.9000, change24h: -0.34, effectiveDate: "2026-04-10", source: "API", status: "active" },
-  { id: "mm-mxn", baseCurrency: "PKR", sourceCurrency: "MXN", sourceCurrencyName: "Mexican Peso", rate: 16.4300, change24h: 0.19, effectiveDate: "2026-04-10", source: "API", status: "active" },
+  { id: "mm-usd", baseCurrency: "PKR", sourceCurrency: "USD", sourceCurrencyName: "United States Dollar", rate: 278.5200, change24h: 0.12, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-eur", baseCurrency: "PKR", sourceCurrency: "EUR", sourceCurrencyName: "Euro", rate: 304.8150, change24h: -0.23, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-gbp", baseCurrency: "PKR", sourceCurrency: "GBP", sourceCurrencyName: "Pound Sterling", rate: 355.4200, change24h: 0.35, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-aed", baseCurrency: "PKR", sourceCurrency: "AED", sourceCurrencyName: "United Arab Emirates Dirham", rate: 75.8400, change24h: 0.02, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-sar", baseCurrency: "PKR", sourceCurrency: "SAR", sourceCurrencyName: "Saudi Riyal", rate: 74.2700, change24h: -0.01, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-cny", baseCurrency: "PKR", sourceCurrency: "CNY", sourceCurrencyName: "Renminbi", rate: 38.3100, change24h: -0.45, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-jpy", baseCurrency: "PKR", sourceCurrency: "JPY", sourceCurrencyName: "Japanese Yen", rate: 1.9230, change24h: 0.08, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-inr", baseCurrency: "PKR", sourceCurrency: "INR", sourceCurrencyName: "Indian Rupee", rate: 3.2700, change24h: 0.15, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-aud", baseCurrency: "PKR", sourceCurrency: "AUD", sourceCurrencyName: "Australian Dollar", rate: 178.3500, change24h: -0.19, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-cad", baseCurrency: "PKR", sourceCurrency: "CAD", sourceCurrencyName: "Canadian Dollar", rate: 199.8700, change24h: 0.05, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-chf", baseCurrency: "PKR", sourceCurrency: "CHF", sourceCurrencyName: "Swiss Franc", rate: 315.6100, change24h: 0.28, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-nzd", baseCurrency: "PKR", sourceCurrency: "NZD", sourceCurrencyName: "New Zealand Dollar", rate: 162.4500, change24h: -0.11, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-sgd", baseCurrency: "PKR", sourceCurrency: "SGD", sourceCurrencyName: "Singapore Dollar", rate: 210.1400, change24h: 0.14, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-hkd", baseCurrency: "PKR", sourceCurrency: "HKD", sourceCurrencyName: "Hong Kong Dollar", rate: 35.7100, change24h: 0.09, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-sek", baseCurrency: "PKR", sourceCurrency: "SEK", sourceCurrencyName: "Swedish Krona", rate: 27.1400, change24h: -0.07, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-nok", baseCurrency: "PKR", sourceCurrency: "NOK", sourceCurrencyName: "Norwegian Krone", rate: 26.5500, change24h: 0.22, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-dkk", baseCurrency: "PKR", sourceCurrency: "DKK", sourceCurrencyName: "Danish Krone", rate: 40.8500, change24h: -0.18, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-myr", baseCurrency: "PKR", sourceCurrency: "MYR", sourceCurrencyName: "Malaysian Ringgit", rate: 63.1200, change24h: 0.31, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-thb", baseCurrency: "PKR", sourceCurrency: "THB", sourceCurrencyName: "Thai Baht", rate: 8.1400, change24h: -0.05, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-krw", baseCurrency: "PKR", sourceCurrency: "KRW", sourceCurrencyName: "South Korean Won", rate: 0.2010, change24h: 0.41, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-zar", baseCurrency: "PKR", sourceCurrency: "ZAR", sourceCurrencyName: "South African Rand", rate: 14.8200, change24h: 0.55, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-try", baseCurrency: "PKR", sourceCurrency: "TRY", sourceCurrencyName: "Turkish Lira", rate: 7.6500, change24h: -0.92, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-brl", baseCurrency: "PKR", sourceCurrency: "BRL", sourceCurrencyName: "Brazilian Real", rate: 48.9000, change24h: -0.34, effectiveDate: SYNC_DAY, source: "API", status: "active" },
+  { id: "mm-mxn", baseCurrency: "PKR", sourceCurrency: "MXN", sourceCurrencyName: "Mexican Peso", rate: 16.4300, change24h: 0.19, effectiveDate: SYNC_DAY, source: "API", status: "active" },
 ];
 
 // Deterministic string hash so generated rates are stable across reloads.
@@ -148,7 +150,7 @@ export const SEED_MID_MARKET_RATES: MidMarketRate[] = (() => {
     sourceCurrencyName: BASE_CURRENCY_NAME,
     rate: 1.0000,
     change24h: 0.00,
-    effectiveDate: "2026-04-10",
+    effectiveDate: SYNC_DAY,
     source: "API",
     status: "active",
   });
@@ -167,7 +169,7 @@ export const SEED_MID_MARKET_RATES: MidMarketRate[] = (() => {
       sourceCurrencyName: c.name,
       rate: _generatedMidRate(c.code),
       change24h: _generatedChange24h(c.code),
-      effectiveDate: "2026-04-10",
+      effectiveDate: SYNC_DAY,
       source: "API",
       status: "active",
     });
@@ -177,12 +179,12 @@ export const SEED_MID_MARKET_RATES: MidMarketRate[] = (() => {
 
 // ─── Standard (Corporate) Rates Seed Data ───
 const HAND_SEEDED_STANDARD_RATES: StandardRate[] = [
-  { id: "std-usd", baseCurrency: "PKR", sourceCurrency: "USD", sourceCurrencyName: "United States Dollar", standardRate: 279.0000, midMarketRate: 278.5200, variance: 0.17, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
-  { id: "std-eur", baseCurrency: "PKR", sourceCurrency: "EUR", sourceCurrencyName: "Euro", standardRate: 305.5000, midMarketRate: 304.8150, variance: 0.22, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
-  { id: "std-gbp", baseCurrency: "PKR", sourceCurrency: "GBP", sourceCurrencyName: "Pound Sterling", standardRate: 356.0000, midMarketRate: 355.4200, variance: 0.16, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
-  { id: "std-aed", baseCurrency: "PKR", sourceCurrency: "AED", sourceCurrencyName: "United Arab Emirates Dirham", standardRate: 76.0000, midMarketRate: 75.8400, variance: 0.21, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
-  { id: "std-sar", baseCurrency: "PKR", sourceCurrency: "SAR", sourceCurrencyName: "Saudi Riyal", standardRate: 74.5000, midMarketRate: 74.2700, variance: 0.31, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
-  { id: "std-cny", baseCurrency: "PKR", sourceCurrency: "CNY", sourceCurrencyName: "Renminbi", standardRate: 38.5000, midMarketRate: 38.3100, variance: 0.50, effectiveDate: "2026-04-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-15", updatedAt: "2026-04-01", notes: "Q2 2026 corporate rate", status: "active", isStale: false },
+  { id: "std-usd", baseCurrency: "PKR", sourceCurrency: "USD", sourceCurrencyName: "United States Dollar", standardRate: 279.0000, midMarketRate: 278.5200, variance: 0.17, effectiveDate: CORPORATE_EFFECTIVE, createdBy: "Ahtisham Ahmad", createdAt: CORPORATE_CREATED, updatedAt: CORPORATE_EFFECTIVE, notes: CORPORATE_NOTE, status: "active", isStale: false },
+  { id: "std-eur", baseCurrency: "PKR", sourceCurrency: "EUR", sourceCurrencyName: "Euro", standardRate: 305.5000, midMarketRate: 304.8150, variance: 0.22, effectiveDate: CORPORATE_EFFECTIVE, createdBy: "Ahtisham Ahmad", createdAt: CORPORATE_CREATED, updatedAt: CORPORATE_EFFECTIVE, notes: CORPORATE_NOTE, status: "active", isStale: false },
+  { id: "std-gbp", baseCurrency: "PKR", sourceCurrency: "GBP", sourceCurrencyName: "Pound Sterling", standardRate: 356.0000, midMarketRate: 355.4200, variance: 0.16, effectiveDate: CORPORATE_EFFECTIVE, createdBy: "Ahtisham Ahmad", createdAt: CORPORATE_CREATED, updatedAt: CORPORATE_EFFECTIVE, notes: CORPORATE_NOTE, status: "active", isStale: false },
+  { id: "std-aed", baseCurrency: "PKR", sourceCurrency: "AED", sourceCurrencyName: "United Arab Emirates Dirham", standardRate: 76.0000, midMarketRate: 75.8400, variance: 0.21, effectiveDate: CORPORATE_EFFECTIVE, createdBy: "Ahtisham Ahmad", createdAt: CORPORATE_CREATED, updatedAt: CORPORATE_EFFECTIVE, notes: CORPORATE_NOTE, status: "active", isStale: false },
+  { id: "std-sar", baseCurrency: "PKR", sourceCurrency: "SAR", sourceCurrencyName: "Saudi Riyal", standardRate: 74.5000, midMarketRate: 74.2700, variance: 0.31, effectiveDate: CORPORATE_EFFECTIVE, createdBy: "Ahtisham Ahmad", createdAt: CORPORATE_CREATED, updatedAt: CORPORATE_EFFECTIVE, notes: CORPORATE_NOTE, status: "active", isStale: false },
+  { id: "std-cny", baseCurrency: "PKR", sourceCurrency: "CNY", sourceCurrencyName: "Renminbi", standardRate: 38.5000, midMarketRate: 38.3100, variance: 0.50, effectiveDate: CORPORATE_EFFECTIVE, createdBy: "Ahtisham Ahmad", createdAt: CORPORATE_CREATED, updatedAt: CORPORATE_EFFECTIVE, notes: CORPORATE_NOTE, status: "active", isStale: false },
 ];
 
 /** Named as the Currency Library names them (ISO 4217), like the mid-market rates. */
@@ -302,5 +304,5 @@ export function pairTransactionsOn(code: string, isoDay: string): number {
 }
 
 // Last sync timestamp
-export const LAST_SYNC = "2026-04-10T14:30:00Z";
+export { LAST_SYNC };
 export const SYNC_STATUS: "connected" | "disconnected" = "connected";
