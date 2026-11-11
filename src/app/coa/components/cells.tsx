@@ -47,7 +47,7 @@ export function PrimaryCellText({ text, q = '', strong, onOpen, title }: {
    CoA's Currency cell. The full name lives in the title tooltip rather than the
    cell, keeping the column compact; pass `name` to print it beside the chip too
    (the Currency Library's identity column). */
-export function CurrencyCell({ code, country, name, q = '', showName, trailing, onOpen, strong }: {
+export function CurrencyCell({ code, country, name, q = '', showName, trailing, onOpen, strong, hideFlag }: {
   code: string
   /** ISO 3166 alpha-2 for the flag ('us', 'eu'). Omit to draw the code's own letters. */
   country?: string | null
@@ -60,10 +60,12 @@ export function CurrencyCell({ code, country, name, q = '', showName, trailing, 
   /** Makes the name the row's keyboard door (see PrimaryCellText). */
   onOpen?: () => void
   strong?: boolean
+  /** Leave the flag off (the Currency Library, where the Country column carries it). */
+  hideFlag?: boolean
 }) {
   return (
     <div className="flex items-center gap-1.5 min-w-0" title={name}>
-      <span className="inline-flex items-center text-base leading-none shrink-0" aria-hidden><FlagImage code={country ?? ''} /></span>
+      {!hideFlag && <span className="inline-flex items-center text-base leading-none shrink-0" aria-hidden><FlagImage code={country ?? ''} /></span>}
       <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-info-50 text-info-700 text-2xs font-semibold border border-info-100 shrink-0"><Marked text={code} q={q} /></span>
       {showName && name && <PrimaryCellText text={name} q={q} onOpen={onOpen} strong={strong} />}
       {trailing}

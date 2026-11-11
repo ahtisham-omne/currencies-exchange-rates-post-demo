@@ -9,7 +9,7 @@ import {
 } from '../../data/exchangeRates'
 import type { ActivityFeedItem } from '../../coa/components/ActivityFeed'
 import type { RangeOption, RangeValue } from '../../coa/components/PeriodBar'
-import { INSIGHTS_RANGE_OPTIONS, insightsRangeLabel } from './InsightsRangeMenu'
+import { insightsRangeLabel } from './InsightsRangeMenu'
 import { windowSeries, windowSeriesBetween } from '../../coa/components/chartKit'
 import { cleanName } from '../../coa/components/Avatar'
 import { fmtDate, fmtDateTime, localDayOf } from '../../coa/lib/utils'
@@ -49,20 +49,27 @@ export function buildPairSeries(mid: MidMarketRate, audit: RateAuditEntry[]): Pa
   })
 }
 
-/* ── Ranges (1D, 5D, 1M, 1Y, 5Y, Max and Custom, 1M by default; see
-   InsightsRangeMenu) ───────────────────────────────────────────────────── */
+/* Ranges: CoA's Insights presets (DetailInsights PeriodSelector, drawn by
+   DateField's PeriodRangePicker) - Last 7 / 30 / 90 days, Last 12 months, All
+   time and a custom range - the last 30 days by default. */
 
-export const RANGES: RangeOption[] = INSIGHTS_RANGE_OPTIONS.filter(o => o.key !== 'custom')
-const RANGE_DAYS: Record<string, number> = { '1d': 1, '5d': 5, '1m': 30, '1y': 365, '5y': 5 * 365 }
+export const RANGES: RangeOption[] = [
+  { key: '7d', label: 'Last 7 days' },
+  { key: '30d', label: 'Last 30 days' },
+  { key: '90d', label: 'Last 90 days' },
+  { key: '365d', label: 'Last 12 months' },
+  { key: 'all', label: 'All time' },
+]
+const RANGE_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '365d': 365 }
 export const RANGE_LONG: Record<string, string> = {
-  '1d': 'Over the last day', '5d': 'Over the last 5 days', '1m': 'Over the last month',
-  '1y': 'Over the last year', '5y': 'Over the last 5 years', max: 'Over the full history',
+  '7d': 'Over the last 7 days', '30d': 'Over the last 30 days', '90d': 'Over the last 90 days',
+  '365d': 'Over the last 12 months', all: 'Over the full history',
 }
-export const DEFAULT_RANGE: RangeValue = { kind: 'preset', key: '1m' }
+export const DEFAULT_RANGE: RangeValue = { kind: 'preset', key: '30d' }
 
 export function windowRange<P extends { date: string }>(series: P[], range: RangeValue): P[] {
   if (range.kind === 'custom') return windowSeriesBetween(series, range.from, range.to)
-  if (range.key === 'max') return series
+  if (range.key === 'all') return series
   return windowSeries(series, RANGE_DAYS[range.key] ?? 30)
 }
 
@@ -72,14 +79,17 @@ export const rangeLabel = (range: RangeValue) =>
 /** An average's caption for the range, written out rather than built by
  *  lowercasing the label: "Average over the last month", "Average, Sep 1 to Sep 30". */
 const RANGE_AVERAGE: Record<string, string> = {
-  '1d': 'Average over the last day', '5d': 'Average over the last 5 days', '1m': 'Average over the last month',
-  '1y': 'Average over the last year', '5y': 'Average over the last 5 years', max: 'Average over the full history',
+  '7d': 'Average over the last 7 days', '30d': 'Average over the last 30 days', '90d': 'Average over the last 90 days',
+  '365d': 'Average over the last 12 months', all: 'Average over the full history',
 }
 export const rangeAverageLabel = (range: RangeValue) =>
   range.kind === 'preset' ? RANGE_AVERAGE[range.key] ?? 'Average' : `Average, ${insightsRangeLabel('custom', range.from, range.to)}`
 
-/** Whether the range is the page's default (1M), so Reset has nothing to do. */
-export const isDefaultRange = (range: RangeValue) => range.kind === 'preset' && range.key === '1m'
+/** Whether the range is the page's default (the last 30 days), so Reset has nothing to do. */
+export const isDefaultRange = (range: RangeValue) => range.kind === 'preset' && range.key === '30d'
+/** The range picker's trigger text: the preset's name, or the custom dates. */
+export const rangeTriggerLabel = (range: RangeValue) =>
+  range.kind === 'preset' ? RANGES.find(r => r.key === range.key)?.label ?? 'Last 30 days' : insightsRangeLabel('custom', range.from, range.to)
 
 export interface RangeMetrics { change: number; high: number; low: number; avg: number; volatility: number }
 
@@ -154,6 +164,8 @@ export interface RateHistoryRow {
   rate: number
   changePct: number | null
   variance: number | null
+  /** The mid-market rate the variance is measured against, for its amount. */
+  mid: number | null
   by: string
   source: string
   note: string
@@ -173,6 +185,7 @@ export function rateHistory(code: string, series: PairPoint[], audit: RateAuditE
     rate: p.mid,
     changePct: ((p.mid - mids[i].mid) / mids[i].mid) * 100,
     variance: null,
+    mid: null,
     by: 'System',
     source: API_PROVIDER,
     note: '',
@@ -190,6 +203,7 @@ export function rateHistory(code: string, series: PairPoint[], audit: RateAuditE
       rate,
       changePct: (e.action === 'Updated' || e.action === 'Scheduled') && e.oldValue ? ((rate - e.oldValue) / e.oldValue) * 100 : null,
       variance: e.action === 'Archived' ? null : variancePct(rate, midThen),
+      mid: e.action === 'Archived' ? null : midThen ?? null,
       by: e.user,
       source: 'Manual',
       note: e.reason,

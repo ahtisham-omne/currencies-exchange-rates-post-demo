@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useExchangeRates } from '../context/ExchangeRateContext'
 import { useCurrencies } from '../context/CurrencyContext'
-import { API_PROVIDER, isRateInEffect, upcomingRateOf } from '../data/exchangeRates'
+import { API_PROVIDER, LAST_SYNC, isRateInEffect, upcomingRateOf } from '../data/exchangeRates'
 import { CoaPage } from '../coa/components/CoaPage'
 import { DetailHeaderCard } from '../coa/components/DetailHeaderCard'
 import {
@@ -22,17 +22,17 @@ import { StatusChip, StatusMenu } from '../coa/components/StatusChip'
 import { useRecordNotes } from '../coa/components/NotesTab'
 import { RecordAttachmentsTab, useRecordAttachmentCount } from '../coa/components/AttachmentsTab'
 import type { RangeValue } from '../coa/components/PeriodBar'
-import { InsightsRangeMenu, InsightsRangeReset, type InsightsRange } from './exchange/InsightsRangeMenu'
-import { parseISO, subMonths } from 'date-fns'
+import { PeriodRangePicker } from '../coa/components/DateField'
 import { recordKey } from '../coa/lib/recordStore'
 import { cn, fmtDate, fmtDateTime, fmtNumber, todayIso } from '../coa/lib/utils'
-import { RATE_TOOLTIPS, inverseRateTooltip } from '../utils/rateCopy'
+import { CONVERTER_TOGGLE_TOOLTIPS, NOTES_TOOLTIP, RATE_TOOLTIPS } from '../utils/rateCopy'
+import { auditTooltips } from './auditColumns'
 import {
-  BASE, BASE_NAME, LAST_SYNC_AT, LAST_SYNC_DATE, LAST_SYNC_DAY, daysSince, decimalsOf, fmtInverse, fmtRate, fmtSignedPct,
-  varianceColor, variancePct, pairPath,
+  BASE, BASE_NAME, LAST_SYNC_AT, LAST_SYNC_DAY, daysSince, decimalsOf, fmtInverse, fmtRate, fmtSignedPct,
+  fmtVariance, fmtVarianceOf, midAuditOf, symbolOf, varianceColor, variancePct, pairPath,
 } from './exchange/rateModel'
 import {
-  DEFAULT_RANGE, buildPairSeries, corporateRecordFor, isDefaultRange, rangeAverageLabel, rangeLabel, rangeMetrics,
+  DEFAULT_RANGE, RANGES, buildPairSeries, corporateRecordFor, isDefaultRange, rangeAverageLabel, rangeLabel, rangeMetrics, rangeTriggerLabel,
   rateHistory, windowRange,
 } from './exchange/pairData'
 import {
@@ -46,7 +46,7 @@ import { RateHistoryTab } from './exchange/RateHistoryTab'
 import { pairAttachments, pairNotes } from './exchange/recordSamples'
 import { RecordNotesTab } from './recordTabs/NotesTab'
 import { ComingSoonTab } from './recordTabs/ComingSoonTab'
-import { linkedDocs } from './currency/model'
+import { isActiveDoc, linkedDocs, money } from './currency/model'
 import { CX_TITLE } from './CurrencyExchangeHeader'
 
 const TABS = ['dashboard', 'history', 'notes', 'attachments', 'communications', 'activity'] as const
@@ -92,7 +92,6 @@ export function CurrencyPairDetailPage() {
 
   const series = useMemo(() => (mid ? buildPairSeries(mid, rateAudit) : []), [mid, rateAudit])
   // The range calendar opens on the month before the last sync, where the data is.
-  const rangeMonth = useMemo(() => (series.length ? subMonths(parseISO(series[series.length - 1].date), 1) : undefined), [series])
   const history = useMemo(() => rateHistory(code, series, rateAudit), [code, series, rateAudit])
   const points = useMemo(() => windowRange(series, range), [series, range])
   const metrics = useMemo(() => rangeMetrics(points), [points])
@@ -114,14 +113,15 @@ export function CurrencyPairDetailPage() {
   const upcomingLine = upcoming ? `Upcoming ${fmtRate(upcoming.standardRate)} from ${fmtDate(upcoming.effectiveDate)}` : undefined
   // FX exposure: the open documents in this currency, valued in the base currency.
   const pairCurrency = currencies.find(c => c.code === code)
-  const openDocs = pairCurrency ? linkedDocs(pairCurrency) : []
+  // FX Exposure is the open ones: drafts and finished documents (paid, received, shipped) don't move with the rate.
+  const openDocs = pairCurrency ? linkedDocs(pairCurrency).filter(isActiveDoc) : []
 
   /* ── KPI tiles ──
      Every tile answers for the selected period. Figures over the period (change,
      volatility, the average corporate variance) cover all of it; a rate a tile
      quotes is the one on the period's last day, which is the last sync for the
-     presets and the chosen end day for a custom range. FX Exposure is about the
-     transactions open today, and says so. */
+     presets and the chosen end day for a custom range. FX Exposure follows the period
+     too: the open transactions dated in it, at the rate on its last day. */
   const colored = (text: string, color?: string) => <span style={color ? { color } : undefined}>{text}</span>
   const end = points[points.length - 1]
   const atLatest = !end || end.date === series[series.length - 1]?.date
@@ -129,12 +129,19 @@ export function CurrencyPairDetailPage() {
   const endChange = atLatest ? mid.change24h : end && before ? ((end.mid - before.mid) / before.mid) * 100 : 0
   const corpDays = points.filter(p => p.corp != null)
   const avgVariance = corpDays.length ? corpDays.reduce((s, p) => s + (variancePct(p.corp!, p.mid) ?? 0), 0) / corpDays.length : null
+  // The average gap in PKR over the same days, shown before the percentage.
+  const avgGap = corpDays.length ? corpDays.reduce((s, p) => s + (p.corp! - p.mid), 0) / corpDays.length : null
+  // The sync that set a day's rate: the latest one, or the same time on an earlier day.
+  const syncOn = (day: string) => (day === series[series.length - 1]?.date ? LAST_SYNC_AT : fmtDateTime(`${day}${LAST_SYNC.slice(10)}`))
+  // FX Exposure over the period: the open transactions dated in it.
+  const startDay = points[0]?.date ?? ''
+  const periodDocs = end ? openDocs.filter(d => d.date >= startDay && d.date <= end.date) : []
   const face = (k: string): DetailKpiFace & { text: string } => {
     switch (k) {
       case 'current_mid': {
         const rate = atLatest ? mid.rate : end.mid
         const c = endChange >= 0 ? '#059669' : '#DC2626'
-        return { text: fmtRate(rate), value: fmtRate(rate), subDetail: <>{colored(fmtSignedPct(endChange), c)} · as of {atLatest ? LAST_SYNC_DATE : fmtDate(end.date)}</> }
+        return { text: fmtRate(rate), value: fmtRate(rate), subDetail: <>{colored(fmtSignedPct(endChange), c)} · as of {atLatest ? LAST_SYNC_AT : syncOn(end.date)}</> }
       }
       case 'current_std':
         if (!atLatest) {
@@ -159,7 +166,7 @@ export function CurrencyPairDetailPage() {
         // Averaged over the days in the period a corporate rate was in effect.
         return avgVariance == null
           ? { text: 'N/A', value: 'N/A', subDetail: 'No corporate rate in this period' }
-          : { text: fmtSignedPct(avgVariance), value: colored(fmtSignedPct(avgVariance), varianceColor(avgVariance)), subDetail: rangeAverageLabel(range) }
+          : { text: fmtVarianceOf(avgGap ?? 0, avgVariance), value: colored(fmtVarianceOf(avgGap ?? 0, avgVariance), varianceColor(avgVariance)), subDetail: rangeAverageLabel(range) }
       case 'days_since_update': {
         if (!inEffect) return upcoming ? { text: '0 days', value: '0 days', subDetail: `Takes effect ${fmtDate(upcoming.effectiveDate)}` } : { text: 'N/A', value: 'N/A' }
         const d = daysSince(inEffect.effectiveDate)
@@ -167,15 +174,17 @@ export function CurrencyPairDetailPage() {
         return { text: t, value: t, subDetail: `Since ${fmtDate(inEffect.effectiveDate)}` }
       }
       case 'fx_exposure_30d': {
-        // At the current mid-market rate: what moves with the market.
-        // In full, to the base currency's own decimals.
+        // The period's open transactions at the mid-market rate on its last day: what
+        // moves with the market. In full, to the base currency's own decimals.
         const dp = decimalsOf(BASE)
-        const total = openDocs.reduce((s, d) => s + d.amount, 0) * mid.rate
-        const t = `${BASE} ${total.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`
+        const total = periodDocs.reduce((s, d) => s + d.amount, 0) * (atLatest ? mid.rate : end.mid)
+        const t = money(symbolOf(BASE), total, dp)
         return {
           text: t,
           value: <span title={t} className="whitespace-nowrap">{t}</span>,
-          subDetail: openDocs.length ? `Today, across ${fmtNumber(openDocs.length)} open ${openDocs.length === 1 ? 'transaction' : 'transactions'}` : 'No open transactions today',
+          subDetail: periodDocs.length
+            ? `${label}, across ${fmtNumber(periodDocs.length)} open ${periodDocs.length === 1 ? 'transaction' : 'transactions'}`
+            : `No open transactions ${label.replace(/^Over /, 'in ')}`,
         }
       }
       default: return { text: '–', value: '–' }
@@ -272,14 +281,14 @@ export function CurrencyPairDetailPage() {
     <>
       <DashInfoCard title="Rate Information" icon={FileText}>
         <InfoGrid>
-          <div className="min-w-0"><DashInfoLabel>Pair</DashInfoLabel><InfoValue strong>{code} / {BASE}</InfoValue></div>
+          <div className="min-w-0"><DashInfoLabel>Currency Pair</DashInfoLabel><InfoValue strong>{code} / {BASE}</InfoValue></div>
           <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.rateType}>Rate Type</DashInfoLabel><InfoValue>{isStd ? 'Corporate Rate' : 'Mid-Market Rate'}</InfoValue></div>
           <div className="min-w-0">
-            <DashInfoLabel>{archived ? 'Rate (Archived)' : 'Rate'}</DashInfoLabel>
+            <DashInfoLabel tooltip={isStd ? RATE_TOOLTIPS.corporate : CONVERTER_TOGGLE_TOOLTIPS.midMarket}>{archived ? 'Rate (Archived)' : 'Rate'}</DashInfoLabel>
             {shownRate != null ? <InfoValue strong className="tabular-nums">{fmtRate(shownRate)} {BASE}</InfoValue> : <InfoValue empty>{upcoming ? 'None in effect yet' : 'Not Set'}</InfoValue>}
           </div>
           <div className="min-w-0">
-            <DashInfoLabel align="right" tooltip={shownRate != null ? inverseRateTooltip(code, BASE, fmtInverse(shownRate)) : RATE_TOOLTIPS.inverse}>Inverse Rate</DashInfoLabel>
+            <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.inverse}>Inverse Rate</DashInfoLabel>
             {shownRate != null ? <InfoValue className="tabular-nums">{fmtInverse(shownRate)} {code}</InfoValue> : <InfoValue empty>–</InfoValue>}
           </div>
           <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{isStd ? 'Set by your team' : API_PROVIDER}</InfoValue></div>
@@ -300,7 +309,7 @@ export function CurrencyPairDetailPage() {
               <div className="min-w-0"><DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-Market Rate</DashInfoLabel><InfoValue className="tabular-nums">{fmtRate(mid.rate)} {BASE}</InfoValue></div>
               <div className="min-w-0">
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.variance}>Variance</DashInfoLabel>
-                {variance != null ? <InfoValue className="tabular-nums"><span style={{ color: varianceColor(variance) }}>{fmtSignedPct(variance)}</span></InfoValue> : <InfoValue empty>–</InfoValue>}
+                {variance != null && inEffect ? <InfoValue className="tabular-nums"><span style={{ color: varianceColor(variance) }}>{fmtVariance(inEffect.standardRate, mid.rate)}</span></InfoValue> : <InfoValue empty>–</InfoValue>}
               </div>
             </>
           ) : (
@@ -309,22 +318,28 @@ export function CurrencyPairDetailPage() {
                 <DashInfoLabel tooltip={RATE_TOOLTIPS.change24h}>Change (24h)</DashInfoLabel>
                 <InfoValue className="tabular-nums"><span style={{ color: mid.change24h > 0 ? '#059669' : mid.change24h < 0 ? '#DC2626' : undefined }}>{fmtSignedPct(mid.change24h)}</span></InfoValue>
               </div>
-              <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last Sync</DashInfoLabel><InfoValue>{LAST_SYNC_AT}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last Synced</DashInfoLabel><InfoValue>{LAST_SYNC_AT}</InfoValue></div>
             </>
           )}
         </InfoGrid>
         {isStd && record?.notes && (
-          <div className="mb-2.5 min-w-0"><DashInfoLabel>Notes</DashInfoLabel><p className="text-[12px] text-slate-700 mt-0.5 leading-relaxed" style={{ fontWeight: 500 }}>{record.notes}</p></div>
+          <div className="mb-2.5 min-w-0"><DashInfoLabel tooltip={NOTES_TOOLTIP}>Notes</DashInfoLabel><p className="text-[12px] text-slate-700 mt-0.5 leading-relaxed" style={{ fontWeight: 500 }}>{record.notes}</p></div>
         )}
-        {/* Who set a corporate rate up and when. A mid-market rate is the
-            provider's, already dated by Last Sync above, so it has no audit row. */}
-        {isStd && record && (
-        <InfoAuditGrid>
-          <div className="min-w-0"><DashInfoLabel>Created By</DashInfoLabel><InfoPerson name={record.createdBy} /></div>
-          <div className="min-w-0"><DashInfoLabel align="right">Created On</DashInfoLabel><InfoValue>{fmtDate(record.createdAt)}</InfoValue></div>
-          <div className="min-w-0"><DashInfoLabel>Last Updated On</DashInfoLabel><InfoValue>{fmtDateTime(record.updatedAt)}</InfoValue></div>
-        </InfoAuditGrid>
-        )}
+        {/* Who set the rate up and last changed it, and when: the same four as the
+            tables' audit columns. A mid-market rate is the provider's, so "System". */}
+        {(() => {
+          const a = isStd
+            ? record && { createdBy: record.createdBy, createdAt: record.createdAt, updatedBy: record.updatedBy ?? record.createdBy, updatedAt: record.updatedAt }
+            : midAuditOf(code)
+          return a && (
+            <InfoAuditGrid>
+              <div className="min-w-0"><DashInfoLabel tooltip={auditTooltips('rate').createdBy}>Created By</DashInfoLabel><InfoPerson name={a.createdBy} /></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={auditTooltips('rate').createdAt}>Created On</DashInfoLabel><InfoValue>{a.createdAt ? fmtDateTime(a.createdAt) : '–'}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel tooltip={auditTooltips('rate').updatedBy}>Last Updated By</DashInfoLabel><InfoPerson name={a.updatedBy} /></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={auditTooltips('rate').updatedAt}>Last Updated On</DashInfoLabel><InfoValue>{a.updatedAt ? fmtDateTime(a.updatedAt) : '–'}</InfoValue></div>
+            </InfoAuditGrid>
+          )
+        })()}
       </DashInfoCard>
       <DashInfoCard title="Pair Converter" icon={ArrowLeftRight} tooltip={`Converts an amount between ${code} and ${BASE} at this rate. Type an amount, or swap to convert the other way.`}>
         {shownRate != null ? (
@@ -355,7 +370,7 @@ export function CurrencyPairDetailPage() {
             numberLabel={code}
             title={mid.sourceCurrencyName}
             tone={archived ? 'danger' : 'default'}
-            typeLine={`Quoted against ${BASE} (${BASE_NAME})`}
+            typeLine={`Base currency: ${BASE} (${BASE_NAME})`}
             titleBadges={<>{statusBadge}{rateTypeChip}</>}
             actions={actions}
             tabs={[
@@ -379,18 +394,17 @@ export function CurrencyPairDetailPage() {
               <>
                 <DetailInsightsSection
                   titleExtra={
-                    <>
-                    <InsightsRangeMenu
-                      range={range.kind === 'custom' ? 'custom' : (range.key as InsightsRange)}
-                      onRangeChange={k => { if (k !== 'custom') setRange({ kind: 'preset', key: k }) }}
-                      customFrom={range.kind === 'custom' ? range.from : ''}
-                      customTo={range.kind === 'custom' ? range.to : ''}
-                      onCustomChange={(from, to) => setRange({ kind: 'custom', from, to })}
-                      defaultMonth={rangeMonth}
+                    // CoA's Insights date range (PeriodRangePicker): presets on the
+                    // left, a two-month calendar on the right, and Reset back to the
+                    // last 30 days in its footer.
+                    <PeriodRangePicker
+                      presets={RANGES}
+                      value={range}
+                      onChange={setRange}
+                      label={rangeTriggerLabel(range)}
+                      onReset={() => setRange(DEFAULT_RANGE)}
+                      canReset={!isDefaultRange(range)}
                     />
-                    {/* Back to 1M, Vendor Invoicing's Reset recipe. */}
-                    <InsightsRangeReset dirty={!isDefaultRange(range)} onReset={() => setRange(DEFAULT_RANGE)} />
-                    </>
                   }
                   storageKey={`fx.pair.${code}.${type}.insights.v1`}
                   kpis={kpis}

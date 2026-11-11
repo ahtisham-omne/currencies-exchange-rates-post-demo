@@ -16,7 +16,7 @@ import { FlagImage } from '../../coa/components/FlagImage'
 import { pushToast } from '../../coa/lib/toast'
 import { fmtDate, todayIso } from '../../coa/lib/utils'
 import {
-  ACTOR, BASE, BASE_NAME, LAST_SYNC_AT, checkBackdate, flagOf, fmtPairRate, fmtRate, fmtSignedPct, variancePct,
+  ACTOR, BASE, BASE_NAME, LAST_SYNC_AT, checkBackdate, flagOf, fmtPairRate, fmtRate, fmtSignedPct, fmtVariance, variancePct,
 } from './rateModel'
 
 export type CorporateFormRequest = { mode: 'add'; code?: string } | { mode: 'update'; rateId: string }
@@ -163,7 +163,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
             // First thing under the title: what the new rate will be quoted against.
             <span className="inline-flex items-center gap-1.5">
               <FlagImage code={flagOf(BASE)} />
-              <span>Quoted against <span className="text-fg" style={{ fontWeight: 600 }}>{BASE}</span> ({BASE_NAME}), your base currency</span>
+              <span>Base currency: <span className="text-fg" style={{ fontWeight: 600 }}>{BASE}</span> ({BASE_NAME})</span>
             </span>
           )}
         widthClass="max-w-[760px]"
@@ -264,7 +264,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                     error={errorOf('rate')}
                     hint={variance != null
                       // Green above mid-market, red below, grey when level.
-                      ? <>Variance from mid-market: <span className={variance > 0 ? 'text-success-700' : variance < 0 ? 'text-danger-700' : undefined} style={{ fontWeight: 600 }}>{fmtSignedPct(variance)}</span></>
+                      ? <>Variance from mid-market: <span className={variance > 0 ? 'text-success-700' : variance < 0 ? 'text-danger-700' : undefined} style={{ fontWeight: 600 }}>{fmtVariance(n, mid!.rate) ?? fmtSignedPct(variance)}</span></>
                       : code ? `1 ${code} in ${BASE}` : undefined}
                   />
                   <div className="space-y-1.5">

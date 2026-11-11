@@ -126,6 +126,11 @@ const COUNTRY_NAME_TO_ALPHA2: Record<string, string> = {
   "Turks and Caicos Islands": "TC", "Tuvalu": "TV",
   "US Virgin Islands": "VI", "United States Minor Outlying Islands": "UM",
   "Vatican City": "VA", "Wallis and Futuna": "WF", "Western Sahara": "EH",
+  // Euro territories, Palestine and South Georgia, added with the M49 region check (Nov 2026).
+  "Guadeloupe": "GP", "Martinique": "MQ", "French Guiana": "GF", "Réunion": "RE", "Mayotte": "YT",
+  "Saint Martin": "MF", "Saint Barthélemy": "BL", "Saint Pierre and Miquelon": "PM",
+  "French Southern Territories": "TF", "Åland Islands": "AX", "Palestine": "PS",
+  "South Georgia and the South Sandwich Islands": "GS",
 };
 
 /**

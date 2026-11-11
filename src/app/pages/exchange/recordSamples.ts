@@ -10,7 +10,7 @@ import type { RecordNote } from '../../coa/lib/recordStore'
 import { API_PROVIDER, LAST_SYNC, SEED_STANDARD_RATES, type RateAuditEntry, type StandardRate } from '../../data/exchangeRates'
 import { ACCOUNTANTS, CONTROLLER, dayMinus, daysAgo, feedOf, sizeOf, type DatedActivity } from '../currency/recordSamples'
 import { corporateActivity, type PairPoint } from './pairData'
-import { BASE, fmtRate, fmtSignedPct, variancePct } from './rateModel'
+import { BASE, fmtRate, fmtSignedPct, fmtVariance, variancePct } from './rateModel'
 
 export type RateKind = 'mid' | 'std'
 
@@ -114,7 +114,7 @@ export function corporatePairActivity(code: string, audit: RateAuditEntry[], rec
   const v = variancePct(set, midRate)
   const sample: DatedActivity[] = [
     { id: `${record.id}-sample-review-1`, type: 'info', user: 'Daniel Osei', at: plusDays(from, 9, 11), date: '', target: pair,
-      verb: `reviewed the variance${v == null ? '' : ` (“${fmtSignedPct(v)}”)`} for` },
+      verb: `reviewed the variance${v == null ? '' : ` (“${fmtVariance(set, midRate) ?? fmtSignedPct(v)}”)`} for` },
     { id: `${record.id}-sample-update-1`, type: 'edit', user: 'Marcus Lee', at: plusDays(from, 38, 10), date: '', target: pair,
       verb: `updated the corporate rate (“${fmtRate(set)}” → “${fmtRate(revised)}”; note: “Treasury’s revised figure”) for` },
     { id: `${record.id}-sample-update-2`, type: 'edit', user: 'Ayesha Khan', at: plusDays(from, 40, 15), date: '', target: pair,

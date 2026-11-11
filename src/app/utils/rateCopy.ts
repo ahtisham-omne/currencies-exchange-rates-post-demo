@@ -14,7 +14,7 @@ export const RATE_TOOLTIPS = {
   corporate:
     "Fixed rate set by your company. Applies until a new rate takes effect.",
   inverse:
-    "How much one unit of the base currency buys in the source currency. The mathematical inverse of the exchange rate.",
+    "The value of 1 unit of your base currency in this currency.\n\nExample: If 1 AED equals 75.8400 PKR, the inverse rate is 1 PKR = 0.0132 AED.",
   change24h:
     "How much the rate moved since the last sync.",
   rateType:
@@ -26,7 +26,7 @@ export const RATE_TOOLTIPS = {
   upcoming:
     "A rate saved for a later date. The current rate stays in effect until then.",
   variance:
-    "Difference between the corporate rate and the mid-market rate. A positive value means the corporate rate is higher.",
+    "How far the corporate rate is from the mid-market rate, shown in your base currency and as a percentage.\n\nExample: A corporate rate of 279.0000 PKR against a mid-market rate of 278.5200 PKR shows +0.4800 PKR (+0.17%).",
   effectiveDate:
     "Date from which this rate is applicable.",
   totalValueAllDocs:
@@ -35,29 +35,37 @@ export const RATE_TOOLTIPS = {
     "Sum of all active transactions of this type, in this currency.",
 } as const;
 
-// Longer, example-driven tooltip used specifically on the "Inverse rate" badge
-// that appears below the converter when the user swaps direction. Shorter
-// column-header copy lives in RATE_TOOLTIPS.inverse.
+// The converters' swap button (and the currency converter's Inverse Rate badge).
+// The column headers say the same in RATE_TOOLTIPS.inverse. The "Example:" line
+// renders on its own line in blue (Tooltip's TooltipText).
 export const INVERSE_BADGE_TOOLTIP =
-  "The inverse rate shows how much 1 unit of the base currency buys in the source currency. For example, if 1 AED equals 75.84 PKR, the inverse rate is 1 PKR equals 0.0132 AED.";
+  "Show the inverse rate: the value of 1 unit of your base currency in this currency.\n\nExample: If 1 AED equals 75.8400 PKR, the inverse rate is 1 PKR = 0.0132 AED.";
 
-// The "Inverse rate" field on the currency and rate detail pages, read for the
-// pair on screen: 1 [base] = [inverse rate] [currency].
-export const inverseRateTooltip = (code: string, base: string, inverse: string) =>
-  `1 ${base} = ${inverse} ${code}.`;
-
-// The converter card's header tooltip on the currency detail page.
-export const CONVERTER_TOOLTIP = "Convert any amount at the latest mid-market rate.";
 
 export const CONVERTER_SUBTITLE =
-  "See how this currency converts against your base currency or any other active currency. Switch between mid-market and corporate rates to compare.";
+  "Convert amounts between this currency and other currencies, at the mid-market or corporate rate.";
 
+// The converter's rate toggles say what the listing's columns say.
 export const CONVERTER_TOGGLE_TOOLTIPS = {
-  midMarket:
-    "The live market rate sourced from your configured rate provider. Updated automatically every 24 hours.",
-  corporate:
-    "A fixed rate manually set by your team and applied to specific currency pairs. Updated only when someone in your team changes it.",
+  midMarket: `${RATE_TOOLTIPS.midMarket} Synced every 24 hours.`,
+  corporate: RATE_TOOLTIPS.corporate,
 } as const;
+
+// The Currency Library's column tooltips, which the currency detail page's
+// fields share, so a field and its column always say the same thing.
+export const CURRENCY_TOOLTIPS = {
+  currency: "This currency’s three-letter ISO (International Organization for Standardization) code and name.",
+  symbol: "The sign shown with this currency’s amounts.",
+  decimals: "The number of decimal places in this currency’s amounts.",
+  country: "Where this currency is used.",
+  region: "The region of this currency’s main country.",
+  inUse: "Active and total transactions in this currency.",
+  status: "Whether this currency can be used on new transactions. Inactive currencies keep their history.",
+  numericCode: "This currency’s three-digit ISO (International Organization for Standardization) code.",
+} as const;
+
+// The exchange rate tables' Notes column, shared by the rate detail page.
+export const NOTES_TOOLTIP = "Note added with this rate.";
 
 export const EXPLANATORY_BLOCKS = {
   // The mid-market banner is written in ExchangeRateLibraryPage, where it links the provider.

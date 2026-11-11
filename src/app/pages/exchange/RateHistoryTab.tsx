@@ -15,7 +15,7 @@ import { AllPill, DateRangeFromTo, FDivider, FilterPill, FiltersModal, PillGrid,
 import { EmptyCell, PARTNER_CHIP_CLS } from '../../coa/components/cells'
 import { PersonCell, StampCell, personText, stampText } from '../../coa/components/AuditCells'
 import { cn, fmtDate, fmtNumber, todayIso } from '../../coa/lib/utils'
-import { fmtInverse, fmtRate, fmtSignedPct } from './rateModel'
+import { fmtInverse, fmtRate, fmtSignedPct, fmtVariance } from './rateModel'
 import type { HistoryEvent, RateHistoryRow } from './pairData'
 
 const EVENT_TONE: Record<HistoryEvent, 'neutral' | 'success' | 'info' | 'danger' | 'warning'> = {
@@ -116,11 +116,11 @@ export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: s
       sortValue: r => r.changePct, filter: 'range',
     },
     {
-      key: 'variance', label: 'Variance vs Mid', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.variance,
+      key: 'variance', label: 'Variance vs Mid', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[220px]', info: RATE_TOOLTIPS.variance,
       render: (r, ctx) => (r.variance == null ? <EmptyCell /> : (
-        <Badge tone={Math.abs(r.variance) > 1 ? 'warning' : 'success'} className={cn(PARTNER_CHIP_CLS, 'tabular-nums')}><Marked text={fmtSignedPct(r.variance)} q={ctx.q} /></Badge>
+        <Badge tone={Math.abs(r.variance) > 1 ? 'warning' : 'success'} className={cn(PARTNER_CHIP_CLS, 'tabular-nums')}><Marked text={fmtVariance(r.rate!, r.mid) ?? fmtSignedPct(r.variance)} q={ctx.q} /></Badge>
       )),
-      sortValue: r => r.variance, searchText: r => (r.variance == null ? '' : fmtSignedPct(r.variance)), filter: 'range',
+      sortValue: r => r.variance, searchText: r => (r.variance == null ? '' : fmtVariance(r.rate!, r.mid) ?? fmtSignedPct(r.variance)), filter: 'range',
     },
     {
       key: 'by', label: 'Set By', pad: 'person', cellClassName: 'px-4 max-w-[220px]', headerClassName: 'min-w-[160px]',

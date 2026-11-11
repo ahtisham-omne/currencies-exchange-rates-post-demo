@@ -21,7 +21,7 @@ export const MID_STATUS_OPTIONS: StatusOption<'Active'>[] = [
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
 
-/** "INV-2025-0520 · Vendor Invoice · Acme Corp", the first six, then a count. */
+/** "INV-000217 · Vendor Invoice · Acme Corp", the first six, then a count. */
 const docLines = (docs: LinkedDoc[]) => docs.slice(0, 6)
   .map(d => `${d.number} · ${docTypeMeta(d.type).label} · ${d.party}`)
   .concat(docs.length > 6 ? [`and ${docs.length - 6} more`] : [])

@@ -1,6 +1,6 @@
 // Currency Library screens: shared, read-only views over the currency seed and
 // context (flags, regions, linked documents, audit facts). Pure helpers, no UI.
-import { countInUse, countOpenDocuments, getRegionForCountry, type Currency, type OpenTransaction } from '../../data/currencies'
+import { countInUse, countOpenDocuments, getRegionForCountry, isActiveStatus, type Currency, type OpenTransaction } from '../../data/currencies'
 import { BASE_CURRENCY } from '../../data/exchangeRates'
 import { getCountryCode, getFlagUrlByCountry } from '../../utils/currencyFlags'
 import type { BadgeTone } from '../../coa/components/ui'
@@ -98,7 +98,7 @@ export function linkedDocs(c: Currency): LinkedDoc[] {
   push('salesOrder', u.openSalesOrders)
   ;(u.openPayments ?? []).forEach((p, i) => out.push({
     id: `pay-${p.ref}-${i}`, number: p.ref, type: p.type === 'Vendor Payment' ? 'vendorPayment' : 'customerPayment',
-    party: p.party, status: '', date: p.date, amount: parseAmount(p.amount), rateType: 'mid',
+    party: p.party, status: p.status ?? 'Scheduled', date: p.date, amount: parseAmount(p.amount), rateType: 'mid',
   }))
   return out.sort((a, b) => b.date.localeCompare(a.date))
 }
@@ -110,27 +110,31 @@ export function corporateRateDocs(c: Currency): LinkedDoc[] {
   return linkedDocs(c).filter(d => d.rateType === 'corporate' && isActiveDoc(d))
 }
 
-/** Status chip tones for a document: Open blue, Paid / Closed green, Overdue red, Draft slate, Pending / Partial amber. */
+/** Status chip tones, by what the status means across the modules: done green,
+ *  in play blue, waiting or part-way amber, a problem red, not started or
+ *  stopped grey. */
 export function docStatusTone(status: string): BadgeTone {
-  switch (status.toLowerCase()) {
-    case 'open': return 'info'
-    case 'paid': case 'closed': return 'success'
-    case 'overdue': return 'danger'
-    case 'pending': case 'partial': return 'warning'
-    default: return 'neutral'
+  switch (status) {
+    case 'Paid': case 'Fully Received': case 'Shipped': case 'Closed': return 'success'
+    case 'Approved': case 'Unpaid': case 'Sent': case 'Confirmed': case 'Cleared': case 'Scheduled': return 'info'
+    case 'Pending Approval': case 'Pending Review': case 'On Hold':
+    case 'Partially Paid': case 'Partially Received': case 'Partially Shipped': return 'warning'
+    case 'Overdue': case 'Exception': case 'Rejected': return 'danger'
+    default: return 'neutral' // Draft, Cancelled, Written Off, Reversed
   }
 }
 
 /** The open documents that hold a currency back, per type, for a refusal's reasons box. */
 export function openDocBreakdown(c: Currency): string[] {
   const u = c.usage
+  const n = (rows: { status?: string }[]) => rows.filter(r => isActiveStatus(r.status ?? '')).length
   const rows: [number, string, string][] = [
-    [u.openInvoices.length, 'open vendor invoice', 'open vendor invoices'],
-    [u.openCustomerInvoices.length, 'open customer invoice', 'open customer invoices'],
-    [u.openPurchaseOrders.length, 'open purchase order', 'open purchase orders'],
-    [u.openSalesOrders.length, 'open sales order', 'open sales orders'],
+    [n(u.openInvoices), 'open vendor invoice', 'open vendor invoices'],
+    [n(u.openCustomerInvoices), 'open customer invoice', 'open customer invoices'],
+    [n(u.openPurchaseOrders), 'open purchase order', 'open purchase orders'],
+    [n(u.openSalesOrders), 'open sales order', 'open sales orders'],
   ]
-  return rows.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`)
+  return rows.filter(([k]) => k > 0).map(([k, one, many]) => `${k} ${k === 1 ? one : many}`)
 }
 
 /* ── Formatting ───────────────────────────────────────────────────────── */
@@ -167,8 +171,12 @@ export function formatPreview(c: Currency): { text: string; place: string } {
     style: 'currency', currency: c.code, numberingSystem: 'latn',
     minimumFractionDigits: c.decimalPlaces, maximumFractionDigits: c.decimalPlaces,
   })
-  const text = nf.formatToParts(PREVIEW_AMOUNT)
-    .map(p => (p.type === 'currency' ? c.symbol : p.value))
+  const parts = nf.formatToParts(PREVIEW_AMOUNT)
+  // Where the symbol is the decimal mark itself, it is not written a second time:
+  // the Cape Verdean escudo reads 1 234 567$89, not 1 234 567$89 $.
+  const symbolIsDecimal = parts.some(p => p.type === 'decimal' && p.value === c.symbol)
+  const text = parts
+    .map(p => (p.type === 'currency' ? (symbolIsDecimal ? '' : c.symbol) : p.value))
     .join('')
     .replace(/[\u200e\u200f\u061c]/g, '')
     .trim()
@@ -179,8 +187,8 @@ export function formatPreview(c: Currency): { text: string; place: string } {
 
 /** Statuses a transaction is still in play with. A draft hasn't started yet,
  *  and payments carry no status of their own. */
-export const ACTIVE_DOC_STATUSES = ['Open', 'Pending', 'Overdue', 'Partial']
-export const isActiveDoc = (d: LinkedDoc) => ACTIVE_DOC_STATUSES.includes(d.status)
+/** Still in play, by its module's statuses (DOC_STATUSES): not a draft, not finished. */
+export const isActiveDoc = (d: LinkedDoc) => isActiveStatus(d.status)
 
 export const fmtRate =(n: number, dp = 4) => n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
 

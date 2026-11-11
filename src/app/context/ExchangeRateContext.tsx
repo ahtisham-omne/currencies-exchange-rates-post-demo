@@ -89,6 +89,7 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
       id: `std-${rate.sourceCurrency.toLowerCase()}-${Date.now()}`,
       createdAt: now,
       updatedAt: now,
+      updatedBy: meta?.by ?? rate.createdBy,
       isStale: false,
     };
     const log = entry("Created", newRate, now, { by: meta?.by ?? rate.createdBy, reason: meta?.reason ?? rate.notes }, {
@@ -106,7 +107,7 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
       if (!raw) return prev;
       // A scheduled rate whose day has come is the current one now.
       const current = settleStandardRate(raw, todayIso());
-      const next: StandardRate = { ...current, ...updates, updatedAt: now };
+      const next: StandardRate = { ...current, ...updates, updatedAt: now, updatedBy: meta?.by ?? DEFAULT_ACTOR };
       const moved = next.standardRate !== current.standardRate || next.effectiveDate !== current.effectiveDate;
       const log = moved
         ? [entry("Updated", next, now, { by: meta?.by, reason: meta?.reason ?? updates.notes }, {
@@ -128,7 +129,7 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
       if (!raw) return prev;
       const current = settleStandardRate(raw, todayIso());
       const by = meta?.by ?? DEFAULT_ACTOR;
-      const next: StandardRate = { ...current, upcoming: { ...upcoming, setBy: by, setAt: now }, updatedAt: now };
+      const next: StandardRate = { ...current, upcoming: { ...upcoming, setBy: by, setAt: now }, updatedAt: now, updatedBy: by };
       const log = entry("Scheduled", next, now, { by, reason: meta?.reason ?? upcoming.notes }, {
         oldValue: current.standardRate, newValue: upcoming.standardRate, effectiveDate: upcoming.effectiveDate,
       });
@@ -148,7 +149,7 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
       const targetIds = new Set(targets.map(t => t.id));
       return {
         // A rate still waiting for its day goes with the record.
-        standardRates: prev.standardRates.map(r => (targetIds.has(r.id) ? { ...settleStandardRate(r, todayIso()), upcoming: undefined, status: "archived" as const, updatedAt: now } : r)),
+        standardRates: prev.standardRates.map(r => (targetIds.has(r.id) ? { ...settleStandardRate(r, todayIso()), upcoming: undefined, status: "archived" as const, updatedAt: now, updatedBy: meta?.by ?? DEFAULT_ACTOR } : r)),
         rateAudit: [
           ...prev.rateAudit,
           ...targets.map(t => entry("Archived", t, now, meta, { oldValue: t.standardRate, newValue: null, effectiveDate: null })),
@@ -168,7 +169,7 @@ export function ExchangeRateProvider({ children }: { children: ReactNode }) {
       // Only one active corporate rate per currency.
       if (activeStandardRateFor(current.sourceCurrency, prev.standardRates)) return prev;
       return {
-        standardRates: prev.standardRates.map(r => (r.id === id ? { ...r, status: "active" as const, updatedAt: now } : r)),
+        standardRates: prev.standardRates.map(r => (r.id === id ? { ...r, status: "active" as const, updatedAt: now, updatedBy: meta?.by ?? DEFAULT_ACTOR } : r)),
         rateAudit: [
           ...prev.rateAudit,
           entry("Restored", current, now, meta, { oldValue: null, newValue: current.standardRate, effectiveDate: null }),

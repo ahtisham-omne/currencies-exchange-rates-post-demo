@@ -749,12 +749,32 @@ export function Tooltip({ content, children, align = 'center', side = 'top', ric
           className={cn('fixed pointer-events-none bg-white border border-border rounded-lg shadow-lg w-max max-w-[240px] text-left px-2.5 py-1.5 text-2xs text-fg-muted whitespace-normal leading-snug', z)}
           style={{ left, top, transform: `translate(${tx}, ${ty})` }}
         >
-          {content}
+          {typeof content === 'string' ? <TooltipText text={content} /> : content}
           <span className={cn('absolute w-2 h-2 rotate-45 bg-white border-border', caretX, caretY)} aria-hidden />
         </span>,
         document.body,
       )}
     </span>
+  )
+}
+
+/* A plain tooltip's text. An example, whether on a line of its own ("How far …\n\n
+   Example: …") or after the explanation ("The latest rate. Example: …"), sits
+   below it in an inset panel, the way Partners' currency tooltip shows its
+   "Current rate" (CurrencyAmount's RateLine): a light slate panel with a thin
+   border, a muted "Example:" label and the example in darker text. */
+function TooltipText({ text }: { text: string }) {
+  const at = text.search(/(^|\s)Example:/)
+  if (at < 0) return <>{text}</>
+  const main = text.slice(0, at).trim()
+  const example = text.slice(at).trim().replace(/^Example:\s*/, '')
+  return (
+    <>
+      {main && <span className="block">{main}</span>}
+      <span className={cn('block px-2 py-1.5 rounded-md bg-slate-50 border border-slate-100 text-[11px] text-slate-700 tabular-nums leading-4', main && 'mt-1.5')}>
+        <span className="text-slate-500" style={{ fontWeight: 500 }}>Example: </span>{example}
+      </span>
+    </>
   )
 }
 
@@ -1612,7 +1632,7 @@ export function Banner({ tone = 'info', title, children, action, className, icon
   className?: string
   icon?: ReactNode
   hideIcon?: boolean
-  /** Shows "Don’t Show Again": the caller hides the banner for good. */
+  /** Shows "Dismiss": the caller hides the banner for good. */
   onDontShowAgain?: () => void
 }) {
   const cls = {
@@ -1655,7 +1675,7 @@ export function Banner({ tone = 'info', title, children, action, className, icon
             onClick={onDontShowAgain}
             className={cn('h-6 px-1.5 -mr-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors', hoverCls)}
           >
-            Don’t Show Again
+            Dismiss
           </button>
         </div>
       )}

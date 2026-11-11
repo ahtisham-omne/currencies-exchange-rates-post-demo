@@ -6,11 +6,12 @@
 // an amount box keeps its focus while you type.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { LayoutGroup, motion } from 'motion/react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeftRight, Check, ChevronDown, Info, Plus, Search, X } from 'lucide-react'
 import { useCurrencies } from '../../context/CurrencyContext'
 import { useExchangeRates } from '../../context/ExchangeRateContext'
-import { API_PROVIDER, LAST_SYNC, corporateRateInEffect, upcomingRateOf } from '../../data/exchangeRates'
+import { LAST_SYNC, corporateRateInEffect, upcomingRateOf } from '../../data/exchangeRates'
 import type { Currency } from '../../data/currencies'
 import { CONVERTER_SUBTITLE, CONVERTER_TOGGLE_TOOLTIPS, INVERSE_BADGE_TOOLTIP } from '../../utils/rateCopy'
 import { Badge, Banner, Button, Marked, Tooltip, useEscapeToClose } from '../../coa/components/ui'
@@ -18,8 +19,15 @@ import { FlagImage } from '../../coa/components/FlagImage'
 import { cn, fmtDate, fmtDateTime, todayIso } from '../../coa/lib/utils'
 import { BASE, flagOf } from './model'
 import { fmtConverted } from '../exchange/rateModel'
+import { SourceLink } from '../exchange/SourceLink'
 
 type RateMode = 'mid' | 'std'
+
+/** The library row converter's spring (PairInverter), so a swap moves the same way here. */
+const SPRING = { type: 'spring', stiffness: 520, damping: 38 } as const
+
+/** The Base badge, compact, so it fits the picker's two-line field without crowding it. */
+const BASE_BADGE_SM = 'shrink-0 !h-4 !px-1.5 !text-[10px] !leading-none'
 
 /* ── Currency picker ──────────────────────────────────────────────────────
    Looks like an input (flag, code, name) and opens a portalled list with a
@@ -93,7 +101,7 @@ function CurrencyPicker({ value, onChange, options, all, ariaLabel }: {
             <span className="min-w-0 flex-1 flex flex-col leading-tight">
               <span className="inline-flex items-center gap-1.5 min-w-0">
                 <span className="text-[13px] text-fg tabular-nums truncate" style={{ fontWeight: 600 }}>{selected.code}</span>
-                {selected.isBaseCurrency && <Badge tone="base" className="shrink-0">Base</Badge>}
+                {selected.isBaseCurrency && <Badge tone="base" className={BASE_BADGE_SM}>Base</Badge>}
               </span>
               <span className="text-[11px] text-fg-subtle truncate" title={selected.name}>{selected.name}</span>
             </span>
@@ -143,7 +151,7 @@ function CurrencyPicker({ value, onChange, options, all, ariaLabel }: {
                   <span className="w-[22px] shrink-0 text-[16px] leading-none inline-flex justify-center" aria-hidden><FlagImage code={flagOf(c.code)} /></span>
                   <span className="tabular-nums shrink-0" style={{ fontWeight: 600 }}><Marked text={c.code} q={query} /></span>
                   <span className={cn('truncate min-w-0', isSel ? 'text-primary/80' : 'text-fg-muted')}><Marked text={c.name} q={query} /></span>
-                  {c.isBaseCurrency && <Badge tone="base" className="shrink-0">Base</Badge>}
+                  {c.isBaseCurrency && <Badge tone="base" className={BASE_BADGE_SM}>Base</Badge>}
                   {isSel && <Check size={15} className="ml-auto text-primary shrink-0" />}
                 </button>
               )
@@ -329,7 +337,6 @@ export function CurrencyConverter({ detail, wide = true }: {
   // Every rate prints with four decimals.
   const rate4 = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
   // The currencies themselves swap, so the rate always reads From to To.
-  const rateDisplay = rate === null ? 'rate unavailable' : `1 ${fromCode} = ${rate4(rate)} ${toCode}`
   const showCorporateEmpty = rateMode === 'std' && !hasCorporate
 
   const sides = { options: activeCurrencies, all: currencies, noRate: rate === null }
@@ -341,8 +348,12 @@ export function CurrencyConverter({ detail, wide = true }: {
         <RateTypeToggle mode={rateMode} onChange={setRateMode} corporateAvailable={hasCorporate} />
       </div>
 
+      <LayoutGroup>
       <div className={cn('flex gap-2.5', wide ? 'items-stretch' : 'flex-col')}>
-        <ConverterSide side="From" code={fromCode} setCode={pickFrom} amount={fromAmount} onAmountChange={onFromChange} {...sides} />
+        {/* Each card is keyed by its currency, so a swap slides the two past each other, as the library row's does. */}
+        <motion.div layout transition={SPRING} key={`side-${fromCode}`} className="flex-1 min-w-0 flex">
+          <ConverterSide side="From" code={fromCode} setCode={pickFrom} amount={fromAmount} onAmountChange={onFromChange} {...sides} />
+        </motion.div>
         <div className="flex items-center justify-center">
           <Tooltip content={isSwapped ? 'Inverse direction. Click to restore.' : 'Swap direction'} side="top">
             <button
@@ -357,8 +368,11 @@ export function CurrencyConverter({ detail, wide = true }: {
             </button>
           </Tooltip>
         </div>
-        <ConverterSide side="To" code={toCode} setCode={pickTo} amount={toAmount} onAmountChange={onToChange} {...sides} />
+        <motion.div layout transition={SPRING} key={toCode === fromCode ? `side-${toCode}-to` : `side-${toCode}`} className="flex-1 min-w-0 flex">
+          <ConverterSide side="To" code={toCode} setCode={pickTo} amount={toAmount} onAmountChange={onToChange} {...sides} />
+        </motion.div>
       </div>
+      </LayoutGroup>
 
       {showCorporateEmpty && (
         <Banner
@@ -372,11 +386,10 @@ export function CurrencyConverter({ detail, wide = true }: {
 
       <div className="flex items-center gap-1.5 flex-wrap text-[12px] text-fg-muted leading-relaxed">
         <span>
-          Using <span className="text-fg" style={{ fontWeight: 600 }}>{effectiveMode === 'std' ? 'corporate rate' : 'mid-market rate'}</span>
-          {' · '}<span className={cn('tabular-nums', rate !== null && 'text-fg')} style={{ fontWeight: rate !== null ? 600 : 400 }}>{rateDisplay}</span>
-          {effectiveMode === 'mid' && midRecord && <>{' · '}Auto-synced from {API_PROVIDER}{' · '}Last updated {fmtDateTime(LAST_SYNC)}</>}
+          {/* Where the rate comes from and when; the rate itself is in the boxes above. */}
+          {effectiveMode === 'mid' && midRecord && <>Auto-synced from <SourceLink className="text-primary" />{' · '}Last updated {fmtDateTime(LAST_SYNC)}</>}
           {/* Scheduling a later rate moves the record's last update, not this rate's, so name the day it took effect then. */}
-          {effectiveMode === 'std' && stdRecord && <>{' · '}Manually set by {stdRecord.createdBy} on {fmtDateTime(stdRecord.upcoming ? stdRecord.effectiveDate : stdRecord.updatedAt || stdRecord.effectiveDate)}</>}
+          {effectiveMode === 'std' && stdRecord && <>Manually set by {stdRecord.createdBy} on {fmtDateTime(stdRecord.upcoming ? stdRecord.effectiveDate : stdRecord.updatedAt || stdRecord.effectiveDate)}</>}
         </span>
         {upcoming && (
           <span className="inline-flex items-center gap-1.5 tabular-nums">

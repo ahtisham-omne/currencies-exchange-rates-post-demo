@@ -4,9 +4,8 @@
 // Corporate rates).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Archive, ArchiveRestore, ChevronDown, Download, ExternalLink, Eye, FileSpreadsheet, FileText, Pencil, Plus } from 'lucide-react'
+import { Archive, ArchiveRestore, ChevronDown, Download, Eye, FileSpreadsheet, FileText, Pencil, Plus } from 'lucide-react'
 import { useExchangeRates } from '../context/ExchangeRateContext'
-import { API_PROVIDER, API_PROVIDER_URL } from '../data/exchangeRates'
 import { EXPLANATORY_BLOCKS } from '../utils/rateCopy'
 import { SegmentedTabs } from '../coa/components/SegmentedTabs'
 import { Banner, Button, Menu, MenuItem, useResponsiveIconSize } from '../coa/components/ui'
@@ -20,7 +19,7 @@ import { setStoredValue, useRememberedState, useStoredState } from '../coa/lib/r
 import { pushToast } from '../coa/lib/toast'
 import { cn, fmtDate } from '../coa/lib/utils'
 import {
-  BASE, LAST_SYNC_AT, LAST_SYNC_DATE, flagOf, fmtInverse, fmtRate, fmtSignedPct, pairPath,
+  BASE, LAST_SYNC_AT, flagOf, fmtInverse, fmtRate, fmtSignedPct, pairPath,
   toCorpRows, toMidRows, type CorpRow, type MidRow,
 } from './exchange/rateModel'
 import { corpColumns, midColumns } from './exchange/libraryConfig'
@@ -28,6 +27,7 @@ import { RegionPill } from './currency/RegionPill'
 import { useCorporateRateLifecycle } from './exchange/rateLifecycle'
 import { useCorporateRateForm } from './exchange/CorporateRateForm'
 import { PairInverter } from './exchange/PairInverter'
+import { SourceLink } from './exchange/SourceLink'
 import { exportRows, type ExportFormat } from './exchange/rateExport'
 import { CurrencyExchangeHeader } from './CurrencyExchangeHeader'
 
@@ -36,7 +36,7 @@ type CorpPill = 'all' | 'active' | 'archived'
 
 const EXPANDED_FILL = 'bg-[color-mix(in_srgb,hsl(var(--muted))_30%,#fff)]'
 
-/* The explanation banner above each table. "Don’t Show Again" hides it in this
+/* The explanation banner above each table. "Dismiss" hides it in this
    browser for good, with an Undo in case it was a slip. Renders nothing once
    hidden, so the table moves up instead of leaving an empty strip. */
 function ExplainerBanner({ id, title, children }: { id: Tab; title: string; children: ReactNode }) {
@@ -58,14 +58,6 @@ function ExplainerBanner({ id, title, children }: { id: Tab; title: string; chil
 }
 
 /** The rate provider's site, in a new tab. */
-function SourceLink({ className }: { className?: string }) {
-  return (
-    <a href={API_PROVIDER_URL} target="_blank" rel="noopener noreferrer" className={cn('inline-flex items-center gap-0.5 font-medium hover:opacity-80', className)}>
-      {API_PROVIDER}<ExternalLink size={11} aria-hidden />
-    </a>
-  )
-}
-
 /* The line above each table's header: what every rate is quoted against, where
    the market figures come from and how often they refresh. It replaces the base
    currency's own row (always 1.0000) and, unlike the banner, can't be hidden. */
@@ -74,7 +66,7 @@ function QuotedStrip({ kind }: { kind: Tab }) {
     <div className="px-4 py-2 border-b border-border flex items-center justify-between gap-x-4 gap-y-1 flex-wrap text-xs text-fg-muted">
       <span className="inline-flex items-center gap-1.5">
         <FlagImage code={flagOf(BASE)} />
-        <span>Quoted against <span className="font-medium text-fg">{BASE}</span></span>
+        <span>Base currency: <span className="font-medium text-fg">{BASE}</span></span>
       </span>
       <span>
         {kind === 'mid' ? 'Rates from ' : 'Mid-market rates from '}
@@ -260,7 +252,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                   onRowClick={r => navigate(pairPath(r.code, 'mid'))}
                   renderExpanded={r => (
                     <div className={`px-4 py-3 ${EXPANDED_FILL}`}>
-                      <PairInverter code={r.code} name={r.name} rate={r.rate} inverted={inverted.has(`mid:${r.id}`)} onToggle={() => toggleInvert(`mid:${r.id}`)} note={`Mid-market rate as of ${LAST_SYNC_DATE}`} />
+                      <PairInverter code={r.code} name={r.name} rate={r.rate} inverted={inverted.has(`mid:${r.id}`)} onToggle={() => toggleInvert(`mid:${r.id}`)} />
                     </div>
                   )}
                   rowMenu={(r, close) => (

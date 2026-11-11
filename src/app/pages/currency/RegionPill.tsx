@@ -1,5 +1,5 @@
 // Region as a pill on a table's quick-filter row, the way CoA's Dimensions pill
-// sits on the chart's: both exchange rate tables (the Currency Library has PlacePill). Every
+// sits on the chart's: the Currency Library and both exchange rate tables. Every
 // region is listed, alphabetically, so the list reads the same on each table; a
 // count of 0 says the region has nothing there rather than hiding it.
 import { Globe } from 'lucide-react'

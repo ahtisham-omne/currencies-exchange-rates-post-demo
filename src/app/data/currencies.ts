@@ -26,6 +26,8 @@ export interface PaymentTransaction {
   amount: string;
   type: "Vendor Payment" | "Customer Payment";
   date: string;
+  /** Scheduled until it goes out (Payments' lifecycle); none given reads Scheduled. */
+  status?: string;
 }
 
 export interface UsageSummary {
@@ -54,13 +56,46 @@ export interface Currency {
   auditLog: AuditLogEntry[];
 }
 
-/** Helper to count all open documents for a currency (excludes payments — used for deactivation guard) */
+/** Each transaction type's statuses, named and ordered as its own module has them
+ *  (Vendor Invoicing, Customer Invoices, Purchase Orders, Sales Orders, Payments),
+ *  and which of them are still in play. A draft hasn't started; paid, received,
+ *  shipped, rejected, written-off and cancelled ones are done. */
+export const DOC_STATUSES = {
+  vendorInvoice: {
+    all: ["Pending Approval", "Approved", "On Hold", "Exception", "Partially Paid", "Paid", "Rejected", "Cancelled"],
+    active: ["Pending Approval", "Approved", "On Hold", "Exception", "Partially Paid"],
+  },
+  customerInvoice: {
+    all: ["Draft", "Pending Approval", "Unpaid", "Partially Paid", "Overdue", "Paid", "Written Off", "Cancelled"],
+    active: ["Pending Approval", "Unpaid", "Partially Paid", "Overdue"],
+  },
+  purchaseOrder: {
+    all: ["Draft", "Sent", "Confirmed", "Partially Received", "Fully Received", "Closed", "Cancelled"],
+    active: ["Sent", "Confirmed", "Partially Received"],
+  },
+  salesOrder: {
+    all: ["Draft", "Pending Review", "Cleared", "Partially Shipped", "Shipped", "Cancelled"],
+    active: ["Pending Review", "Cleared", "Partially Shipped"],
+  },
+  payment: {
+    all: ["Scheduled", "Paid", "Reversed", "Cancelled"],
+    active: ["Scheduled"],
+  },
+} as const;
+
+/** No status is active for one type and done for another, so one set answers for all. */
+const ACTIVE_STATUSES = new Set<string>(Object.values(DOC_STATUSES).flatMap(t => [...t.active]));
+export const isActiveStatus = (status: string) => ACTIVE_STATUSES.has(status);
+const activeIn = (rows: { status?: string }[]) => rows.filter(r => isActiveStatus(r.status ?? "Scheduled")).length;
+
+/** Active documents (excludes payments; the deactivation guard). The usage lists also
+ *  hold finished ones (paid, received, shipped), which don't count. */
 export function countOpenDocuments(c: Currency): number {
   return (
-    c.usage.openInvoices.length +
-    c.usage.openCustomerInvoices.length +
-    c.usage.openPurchaseOrders.length +
-    c.usage.openSalesOrders.length
+    activeIn(c.usage.openInvoices) +
+    activeIn(c.usage.openCustomerInvoices) +
+    activeIn(c.usage.openPurchaseOrders) +
+    activeIn(c.usage.openSalesOrders)
   );
 }
 
@@ -69,15 +104,9 @@ export function hasOpenDocuments(c: Currency): boolean {
   return countOpenDocuments(c) > 0;
 }
 
-/** Total "In Use" count across Vendor Invoices, Customer Invoices, Purchase Orders, Sales Orders, Payments */
+/** The "N active" In Use count: active documents and scheduled payments. */
 export function countInUse(c: Currency): number {
-  return (
-    c.usage.openInvoices.length +
-    c.usage.openCustomerInvoices.length +
-    c.usage.openPurchaseOrders.length +
-    c.usage.openSalesOrders.length +
-    c.usage.openPayments.length
-  );
+  return countOpenDocuments(c) + activeIn(c.usage.openPayments);
 }
 
 /* ─── Region mapping ─── */
@@ -87,7 +116,6 @@ export const REGION_LIST = [
   "Southeast Asia",
   "East Asia",
   "Europe",
-  "Eurozone",
   "North America",
   "South America",
   "Central America & Caribbean",
@@ -103,16 +131,16 @@ const COUNTRY_TO_REGION: Record<string, Region> = {
   "United Arab Emirates": "Middle East",
   "Afghanistan": "South Asia",
   "Albania": "Europe",
-  "Armenia": "Europe",
+  "Armenia": "Middle East",
   "Angola": "Sub-Saharan Africa",
   "Argentina": "South America",
   "Australia": "Oceania",
   "Aruba": "Central America & Caribbean",
-  "Azerbaijan": "Europe",
+  "Azerbaijan": "Middle East",
   "Bosnia and Herzegovina": "Europe",
   "Barbados": "Central America & Caribbean",
   "Bangladesh": "South Asia",
-  "Bulgaria": "Eurozone",
+  "Bulgaria": "Europe",
   "Bahrain": "Middle East",
   "Burundi": "Sub-Saharan Africa",
   "Bermuda": "North America",
@@ -141,12 +169,11 @@ const COUNTRY_TO_REGION: Record<string, Region> = {
   "Egypt": "North Africa",
   "Eritrea": "Sub-Saharan Africa",
   "Ethiopia": "Sub-Saharan Africa",
-  "European Union": "Europe",
-  "Eurozone": "Eurozone",
+  "Eurozone": "Europe",
   "Fiji": "Oceania",
   "Falkland Islands": "South America",
   "United Kingdom": "Europe",
-  "Georgia": "Europe",
+  "Georgia": "Middle East",
   "Ghana": "Sub-Saharan Africa",
   "Gibraltar": "Europe",
   "Gambia": "Sub-Saharan Africa",
@@ -161,7 +188,7 @@ const COUNTRY_TO_REGION: Record<string, Region> = {
   "Israel": "Middle East",
   "India": "South Asia",
   "Iraq": "Middle East",
-  "Iran": "Middle East",
+  "Iran": "South Asia",
   "Iceland": "Europe",
   "Jamaica": "Central America & Caribbean",
   "Jordan": "Middle East",
@@ -192,7 +219,7 @@ const COUNTRY_TO_REGION: Record<string, Region> = {
   "Mauritius": "Sub-Saharan Africa",
   "Maldives": "South Asia",
   "Malawi": "Sub-Saharan Africa",
-  "Mexico": "North America",
+  "Mexico": "Central America & Caribbean",
   "Malaysia": "Southeast Asia",
   "Mozambique": "Sub-Saharan Africa",
   "Namibia": "Sub-Saharan Africa",
@@ -234,7 +261,7 @@ const COUNTRY_TO_REGION: Record<string, Region> = {
   "Turkmenistan": "Central Asia",
   "Tunisia": "North Africa",
   "Tonga": "Oceania",
-  "Turkey": "Europe",
+  "Turkey": "Middle East",
   "Trinidad and Tobago": "Central America & Caribbean",
   "Taiwan": "East Asia",
   "Tanzania": "Sub-Saharan Africa",
@@ -272,32 +299,49 @@ const COUNTRY_TO_REGION: Record<string, Region> = {
   "Montenegro": "Europe",
   "San Marino": "Europe",
   "Vatican City": "Europe",
-  "Austria": "Eurozone",
-  "Belgium": "Eurozone",
-  "Croatia": "Eurozone",
-  "Cyprus": "Eurozone",
-  "Estonia": "Eurozone",
-  "Finland": "Eurozone",
-  "France": "Eurozone",
-  "Germany": "Eurozone",
-  "Greece": "Eurozone",
-  "Ireland": "Eurozone",
-  "Italy": "Eurozone",
-  "Latvia": "Eurozone",
-  "Lithuania": "Eurozone",
-  "Luxembourg": "Eurozone",
-  "Malta": "Eurozone",
-  "Netherlands": "Eurozone",
-  "Portugal": "Eurozone",
-  "Slovakia": "Eurozone",
-  "Slovenia": "Eurozone",
-  "Spain": "Eurozone",
+  "Austria": "Europe",
+  "Belgium": "Europe",
+  "Croatia": "Europe",
+  "Cyprus": "Europe",
+  "Estonia": "Europe",
+  "Finland": "Europe",
+  "France": "Europe",
+  "Germany": "Europe",
+  "Greece": "Europe",
+  "Ireland": "Europe",
+  "Italy": "Europe",
+  "Latvia": "Europe",
+  "Lithuania": "Europe",
+  "Luxembourg": "Europe",
+  "Malta": "Europe",
+  "Netherlands": "Europe",
+  "Portugal": "Europe",
+  "Slovakia": "Europe",
+  "Slovenia": "Europe",
+  "Spain": "Europe",
   "Isle of Man": "Europe",
   "Jersey": "Europe",
   "Guernsey": "Europe",
   "Tristan da Cunha": "Sub-Saharan Africa",
   "Western Sahara": "North Africa",
   "Svalbard and Jan Mayen": "Europe",
+  // Checked against UN M49 (Nov 2026). Its Western Asia is our Middle East, so the
+  // Caucasus and Turkey sit there; Iran is in M49's Southern Asia and Mexico in its
+  // Central America. Euro-area members are Europe like the rest of the continent
+  // (Eurozone is a currency union, not a region); Cyprus files with them as an EU
+  // member. Overseas euro territories file by geography.
+  "Guadeloupe": "Central America & Caribbean",
+  "Martinique": "Central America & Caribbean",
+  "Saint Martin": "Central America & Caribbean",
+  "Saint Barthélemy": "Central America & Caribbean",
+  "French Guiana": "South America",
+  "Réunion": "Sub-Saharan Africa",
+  "Mayotte": "Sub-Saharan Africa",
+  "French Southern Territories": "Sub-Saharan Africa",
+  "Saint Pierre and Miquelon": "North America",
+  "Åland Islands": "Europe",
+  "Palestine": "Middle East",
+  "South Georgia and the South Sandwich Islands": "South America",
   "Bouvet Island": "South America",
   "Cook Islands": "Oceania",
   "Niue": "Oceania",
@@ -397,13 +441,13 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("AED", "United Arab Emirates Dirham", "784", "د.إ", 2, "United Arab Emirates", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0710", vendor: "Dubai Steel Industries", amount: "د.إ85,000.00", status: "Open", date: "2025-11-18", rateType: "corporate" },
+        { ref: "INV-000201", vendor: "Dubai Steel Industries", amount: "د.إ85,000.00", status: "Approved", date: "2025-11-18", rateType: "corporate" },
       ],
       openCustomerInvoices: [
-        { ref: "AR-2025-0130", vendor: "Abu Dhabi Exports LLC", amount: "د.إ42,500.00", status: "Open", date: "2025-12-01" },
+        { ref: "INV-000088", vendor: "Abu Dhabi Exports LLC", amount: "د.إ42,500.00", status: "Unpaid", date: "2025-12-01" },
       ],
       openPurchaseOrders: [
-        { ref: "PO-2025-0420", vendor: "Sharjah Building Materials", amount: "د.إ67,200.00", status: "Pending", date: "2025-11-25" },
+        { ref: "395-9825", vendor: "Sharjah Building Materials", amount: "د.إ67,200.00", status: "Sent", date: "2025-11-25" },
       ],
       openSalesOrders: [],
       bankAccounts: 2, unsettledPayments: 1, exchangeRateEntries: 3, totalLifetimeDocuments: 48,
@@ -417,14 +461,14 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("AUD", "Australian Dollar", "036", "A$", 2, "Australia", ["Christmas Island", "Cocos (Keeling) Islands", "Heard Island and McDonald Islands", "Kiribati", "Nauru", "Norfolk Island", "Tuvalu"], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0622", vendor: "Sydney Mining Corp.", amount: "A$32,400.00", status: "Open", date: "2025-10-30" },
+        { ref: "INV-000202", vendor: "Sydney Mining Corp.", amount: "A$32,400.00", status: "Approved", date: "2025-10-30" },
       ],
       openCustomerInvoices: [
-        { ref: "AR-2025-0078", vendor: "Melbourne Retail Group", amount: "A$18,750.00", status: "Overdue", date: "2025-09-20" },
+        { ref: "INV-000089", vendor: "Melbourne Retail Group", amount: "A$18,750.00", status: "Overdue", date: "2025-09-20" },
       ],
       openPurchaseOrders: [],
       openSalesOrders: [
-        { ref: "SO-2025-0055", vendor: "Brisbane Logistics Pty.", amount: "A$24,000.00", status: "Open", date: "2025-11-28" },
+        { ref: "SO-000-000-031", vendor: "Brisbane Logistics Pty.", amount: "A$24,000.00", status: "Cleared", date: "2025-11-28" },
       ],
       bankAccounts: 1, unsettledPayments: 1, exchangeRateEntries: 2, totalLifetimeDocuments: 35,
     },
@@ -434,7 +478,15 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("BAM", "Bosnia and Herzegovina Convertible Mark", "977", "KM", 2, "Bosnia and Herzegovina", []),
   cur("BBD", "Barbados Dollar", "052", "$", 2, "Barbados", []),
   cur("BDT", "Bangladeshi Taka", "050", "৳", 2, "Bangladesh", []),
-  cur("BGN", "Bulgarian Lev", "975", "лв", 2, "Bulgaria", []),
+  // Bulgaria joined the euro area on 1 January 2026; the lev is no longer issued.
+  cur("BGN", "Bulgarian Lev", "975", "лв", 2, "Bulgaria", [], {
+    status: "inactive",
+    auditLog: [
+      // Newest first, as every audit log here is.
+      { dateTime: "2026-01-01T09:00:00Z", action: "Deactivated", changedBy: "System", reason: "Bulgaria adopted the euro" },
+      { dateTime: "2025-01-15T09:00:00Z", action: "Activated", changedBy: "System", reason: "System initialization" },
+    ],
+  }),
   cur("BHD", "Bahraini Dinar", "048", "BD", 3, "Bahrain", [], {
     usage: { ...emptyUsage(), exchangeRateEntries: 1, totalLifetimeDocuments: 5 },
   }),
@@ -453,12 +505,12 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("CAD", "Canadian Dollar", "124", "C$", 2, "Canada", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0455", vendor: "Toronto Manufacturing Inc.", amount: "C$28,600.00", status: "Open", date: "2025-11-12" },
-        { ref: "INV-2025-0478", vendor: "Vancouver Imports Ltd.", amount: "C$15,300.00", status: "Pending", date: "2025-12-03" },
+        { ref: "INV-000203", vendor: "Toronto Manufacturing Inc.", amount: "C$28,600.00", status: "Approved", date: "2025-11-12" },
+        { ref: "INV-000204", vendor: "Vancouver Imports Ltd.", amount: "C$15,300.00", status: "Pending Approval", date: "2025-12-03" },
       ],
       openCustomerInvoices: [],
       openPurchaseOrders: [
-        { ref: "PO-2025-0340", vendor: "Montreal Supplies Co.", amount: "C$9,800.00", status: "Open", date: "2025-11-20" },
+        { ref: "395-9826", vendor: "Montreal Supplies Co.", amount: "C$9,800.00", status: "Partially Received", date: "2025-11-20" },
       ],
       openSalesOrders: [],
       bankAccounts: 1, unsettledPayments: 0, exchangeRateEntries: 4, totalLifetimeDocuments: 42,
@@ -468,10 +520,10 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("CHF", "Swiss Franc", "756", "CHF", 2, "Switzerland", ["Liechtenstein"], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0350", vendor: "Zurich Precision AG", amount: "CHF 52,800.00", status: "Open", date: "2025-11-14" },
+        { ref: "INV-000205", vendor: "Zurich Precision AG", amount: "CHF 52,800.00", status: "Approved", date: "2025-11-14" },
       ],
       openCustomerInvoices: [
-        { ref: "AR-2025-0060", vendor: "Geneva Watches SA", amount: "CHF 34,500.00", status: "Open", date: "2025-11-30" },
+        { ref: "INV-000090", vendor: "Geneva Watches SA", amount: "CHF 34,500.00", status: "Unpaid", date: "2025-11-30" },
       ],
       openPurchaseOrders: [],
       openSalesOrders: [],
@@ -482,14 +534,14 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("CNY", "Renminbi", "156", "¥", 2, "China", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0412", vendor: "Shenzhen Electronics Co.", amount: "¥245,000.00", status: "Open", date: "2025-11-15" },
-        { ref: "INV-2025-0489", vendor: "Beijing Industrial Ltd.", amount: "¥128,500.00", status: "Pending", date: "2025-12-02" },
+        { ref: "INV-000206", vendor: "Shenzhen Electronics Co.", amount: "¥245,000.00", status: "Approved", date: "2025-11-15" },
+        { ref: "INV-000207", vendor: "Beijing Industrial Ltd.", amount: "¥128,500.00", status: "Pending Approval", date: "2025-12-02" },
       ],
       openCustomerInvoices: [
-        { ref: "AR-2025-0088", vendor: "Shanghai Exports Inc.", amount: "¥312,000.00", status: "Open", date: "2025-11-20" },
+        { ref: "INV-000091", vendor: "Shanghai Exports Inc.", amount: "¥312,000.00", status: "Partially Paid", date: "2025-11-20" },
       ],
       openPurchaseOrders: [
-        { ref: "PO-2025-0178", vendor: "Guangzhou Materials", amount: "¥89,200.00", status: "Open", date: "2025-11-28" },
+        { ref: "395-9827", vendor: "Guangzhou Materials", amount: "¥89,200.00", status: "Confirmed", date: "2025-11-28" },
       ],
       openSalesOrders: [],
       bankAccounts: 2, unsettledPayments: 1, exchangeRateEntries: 5, totalLifetimeDocuments: 67,
@@ -507,7 +559,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("EGP", "Egyptian Pound", "818", "£", 2, "Egypt", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0620", vendor: "Cairo Textiles Ltd.", amount: "£125,000.00", status: "Open", date: "2025-11-10" },
+        { ref: "INV-000208", vendor: "Cairo Textiles Ltd.", amount: "£125,000.00", status: "Approved", date: "2025-11-10" },
       ],
       openCustomerInvoices: [],
       openPurchaseOrders: [],
@@ -517,29 +569,29 @@ const AUTHORED_CURRENCIES: Currency[] = [
   }),
   cur("ERN", "Eritrean Nakfa", "232", "Nfk", 2, "Eritrea", []),
   cur("ETB", "Ethiopian Birr", "230", "Br", 2, "Ethiopia", []),
-  cur("EUR", "Euro", "978", "€", 2, "Eurozone", ["Andorra", "Kosovo", "Monaco", "Montenegro", "San Marino", "Vatican City", "Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Estonia", "Finland", "France", "Germany", "Greece", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg", "Malta", "Netherlands", "Portugal", "Slovakia", "Slovenia", "Spain"], {
+  cur("EUR", "Euro", "978", "€", 2, "Eurozone", ["Andorra", "Kosovo", "Monaco", "Montenegro", "San Marino", "Vatican City", "Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Estonia", "Finland", "France", "Germany", "Greece", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg", "Malta", "Netherlands", "Portugal", "Slovakia", "Slovenia", "Spain", "Åland Islands", "Guadeloupe", "Martinique", "French Guiana", "Réunion", "Mayotte", "Saint Martin", "Saint Barthélemy", "Saint Pierre and Miquelon", "French Southern Territories"], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0301", vendor: "Deutsche Maschinenbau GmbH", amount: "€42,750.00", status: "Open", date: "2025-10-22" },
+        { ref: "INV-000209", vendor: "Deutsche Maschinenbau GmbH", amount: "€42,750.00", status: "Partially Paid", date: "2025-10-22" },
       ],
       openCustomerInvoices: [
-        { ref: "AR-2025-0045", vendor: "Paris Luxury Goods SA", amount: "€18,900.00", status: "Open", date: "2025-11-05" },
-        { ref: "AR-2025-0067", vendor: "Milan Fashion House SRL", amount: "€27,300.00", status: "Overdue", date: "2025-09-15" },
+        { ref: "INV-000092", vendor: "Paris Luxury Goods SA", amount: "€18,900.00", status: "Partially Paid", date: "2025-11-05" },
+        { ref: "INV-000093", vendor: "Milan Fashion House SRL", amount: "€27,300.00", status: "Overdue", date: "2025-09-15" },
       ],
       openPurchaseOrders: [],
       openSalesOrders: [
-        { ref: "SO-2025-0112", vendor: "Amsterdam Trading BV", amount: "€55,000.00", status: "Open", date: "2025-12-01", rateType: "corporate" },
+        { ref: "SO-000-000-032", vendor: "Amsterdam Trading BV", amount: "€55,000.00", status: "Cleared", date: "2025-12-01", rateType: "corporate" },
       ],
       bankAccounts: 2, unsettledPayments: 0, exchangeRateEntries: 8, totalLifetimeDocuments: 95,
     },
   }),
   cur("FJD", "Fiji Dollar", "242", "$", 2, "Fiji", []),
   cur("FKP", "Falkland Islands Pound", "238", "£", 2, "Falkland Islands", []),
-  cur("GBP", "Pound Sterling", "826", "£", 2, "United Kingdom", ["Isle of Man", "Jersey", "Guernsey", "Tristan da Cunha"], {
+  cur("GBP", "Pound Sterling", "826", "£", 2, "United Kingdom", ["Isle of Man", "Jersey", "Guernsey", "Tristan da Cunha", "South Georgia and the South Sandwich Islands"], {
     usage: {
       ...emptyUsage(),
       openCustomerInvoices: [
-        { ref: "AR-2025-0091", vendor: "London Consulting Ltd.", amount: "£14,200.00", status: "Open", date: "2025-11-28" },
+        { ref: "INV-000094", vendor: "London Consulting Ltd.", amount: "£14,200.00", status: "Unpaid", date: "2025-11-28" },
       ],
       bankAccounts: 1, exchangeRateEntries: 6, totalLifetimeDocuments: 72,
     },
@@ -558,21 +610,21 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("HTG", "Haitian Gourde", "332", "G", 2, "Haiti", []),
   cur("HUF", "Hungarian Forint", "348", "Ft", 2, "Hungary", []),
   cur("IDR", "Indonesian Rupiah", "360", "Rp", 2, "Indonesia", []),
-  cur("ILS", "Israeli New Shekel", "376", "₪", 2, "Israel", []),
+  cur("ILS", "Israeli New Shekel", "376", "₪", 2, "Israel", ["Palestine"]),
   cur("INR", "Indian Rupee", "356", "₹", 2, "India", ["Bhutan"], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0390", vendor: "Mumbai Textiles Pvt.", amount: "₹1,850,000.00", status: "Open", date: "2025-11-05" },
-        { ref: "INV-2025-0412", vendor: "Delhi Pharmaceuticals Ltd.", amount: "₹720,000.00", status: "Pending", date: "2025-11-22" },
+        { ref: "INV-000210", vendor: "Mumbai Textiles Pvt.", amount: "₹1,850,000.00", status: "On Hold", date: "2025-11-05" },
+        { ref: "INV-000211", vendor: "Delhi Pharmaceuticals Ltd.", amount: "₹720,000.00", status: "Pending Approval", date: "2025-11-22" },
       ],
       openCustomerInvoices: [
-        { ref: "AR-2025-0055", vendor: "Bangalore IT Services", amount: "₹2,100,000.00", status: "Open", date: "2025-10-28" },
+        { ref: "INV-000095", vendor: "Bangalore IT Services", amount: "₹2,100,000.00", status: "Unpaid", date: "2025-10-28" },
       ],
       openPurchaseOrders: [
-        { ref: "PO-2025-0280", vendor: "Chennai Auto Parts", amount: "₹450,000.00", status: "Open", date: "2025-12-01" },
+        { ref: "395-9828", vendor: "Chennai Auto Parts", amount: "₹450,000.00", status: "Partially Received", date: "2025-12-01" },
       ],
       openSalesOrders: [
-        { ref: "SO-2025-0033", vendor: "Hyderabad Electronics", amount: "₹980,000.00", status: "Open", date: "2025-11-15" },
+        { ref: "SO-000-000-033", vendor: "Hyderabad Electronics", amount: "₹980,000.00", status: "Cleared", date: "2025-11-15" },
       ],
       bankAccounts: 2, unsettledPayments: 1, exchangeRateEntries: 3, totalLifetimeDocuments: 88,
     },
@@ -581,14 +633,14 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("IRR", "Iranian Rial", "364", "﷼", 2, "Iran", []),
   cur("ISK", "Icelandic Króna", "352", "kr", 0, "Iceland", []),
   cur("JMD", "Jamaican Dollar", "388", "$", 2, "Jamaica", []),
-  cur("JOD", "Jordanian Dinar", "400", "د.ا", 3, "Jordan", []),
+  cur("JOD", "Jordanian Dinar", "400", "د.ا", 3, "Jordan", ["Palestine"]),
   cur("JPY", "Japanese Yen", "392", "¥", 0, "Japan", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0280", vendor: "Tokyo Electronics Ltd.", amount: "¥3,250,000", status: "Open", date: "2025-11-08" },
+        { ref: "INV-000212", vendor: "Tokyo Electronics Ltd.", amount: "¥3,250,000", status: "Approved", date: "2025-11-08" },
       ],
       openCustomerInvoices: [
-        { ref: "AR-2025-0042", vendor: "Osaka Trading Co.", amount: "¥1,800,000", status: "Open", date: "2025-11-25" },
+        { ref: "INV-000096", vendor: "Osaka Trading Co.", amount: "¥1,800,000", status: "Unpaid", date: "2025-11-25" },
       ],
       openPurchaseOrders: [],
       openSalesOrders: [],
@@ -628,7 +680,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("MXN", "Mexican Peso", "484", "$", 2, "Mexico", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0580", vendor: "Mexico City Imports SA", amount: "$320,000.00", status: "Open", date: "2025-11-15" },
+        { ref: "INV-000213", vendor: "Mexico City Imports SA", amount: "$320,000.00", status: "Approved", date: "2025-11-15" },
       ],
       openCustomerInvoices: [],
       openPurchaseOrders: [],
@@ -653,12 +705,12 @@ const AUTHORED_CURRENCIES: Currency[] = [
     isBaseCurrency: true,
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0601", vendor: "Lahore Textiles Pvt.", amount: "₨1,250,000.00", status: "Open", date: "2025-11-10" },
+        { ref: "INV-000214", vendor: "Lahore Textiles Pvt.", amount: "₨1,250,000.00", status: "Partially Paid", date: "2025-11-10" },
       ],
       openCustomerInvoices: [],
       openPurchaseOrders: [],
       openSalesOrders: [
-        { ref: "SO-2025-0044", vendor: "Karachi Trading Co.", amount: "₨890,000.00", status: "Open", date: "2025-12-03" },
+        { ref: "SO-000-000-034", vendor: "Karachi Trading Co.", amount: "₨890,000.00", status: "Partially Shipped", date: "2025-12-03" },
       ],
       bankAccounts: 3, unsettledPayments: 0, exchangeRateEntries: 12, totalLifetimeDocuments: 120,
     },
@@ -680,7 +732,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
     usage: {
       ...emptyUsage(),
       openPurchaseOrders: [
-        { ref: "PO-2025-0310", vendor: "Riyadh Steel Corp.", amount: "SR 45,000.00", status: "Open", date: "2025-11-22" },
+        { ref: "395-9829", vendor: "Riyadh Steel Corp.", amount: "SR 45,000.00", status: "Confirmed", date: "2025-11-22" },
       ],
       bankAccounts: 1, exchangeRateEntries: 3, totalLifetimeDocuments: 30,
     },
@@ -717,21 +769,26 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("USD", "United States Dollar", "840", "$", 2, "United States", ["American Samoa", "British Indian Ocean Territory", "British Virgin Islands", "Bonaire Sint Eustatius and Saba", "Ecuador", "El Salvador", "Guam", "Marshall Islands", "Federated States of Micronesia", "Northern Mariana Islands", "Palau", "Panama", "Puerto Rico", "Timor-Leste", "Turks and Caicos Islands", "US Virgin Islands", "United States Minor Outlying Islands"], {
     usage: {
       openInvoices: [
-        { ref: "INV-2025-0520", vendor: "Acme Corp", amount: "$18,500.00", status: "Open", date: "2025-11-01", rateType: "corporate" },
-        { ref: "INV-2025-0533", vendor: "Global Supplies Inc.", amount: "$7,200.00", status: "Pending", date: "2025-11-20" },
-        { ref: "INV-2025-0541", vendor: "Pacific Trading LLC", amount: "$34,100.00", status: "Open", date: "2025-12-05" },
+        { ref: "INV-000215", vendor: "Acme Corp", amount: "$18,500.00", status: "Partially Paid", date: "2025-11-01", rateType: "corporate" },
+        { ref: "INV-000216", vendor: "Global Supplies Inc.", amount: "$7,200.00", status: "Pending Approval", date: "2025-11-20" },
+        { ref: "INV-000217", vendor: "Pacific Trading LLC", amount: "$34,100.00", status: "Approved", date: "2025-12-05" },
+        // Finished documents stay on the record (they show under their statuses) but no longer count as active.
+        { ref: "INV-000218", vendor: "Acme Corp", amount: "$9,750.00", status: "Paid", date: "2025-10-14" },
       ],
       openCustomerInvoices: [
-        { ref: "AR-2025-0102", vendor: "New York Imports LLC", amount: "$22,800.00", status: "Open", date: "2025-11-08", rateType: "corporate" },
-        { ref: "AR-2025-0115", vendor: "Texas Energy Co.", amount: "$41,500.00", status: "Overdue", date: "2025-10-01" },
+        { ref: "INV-000097", vendor: "New York Imports LLC", amount: "$22,800.00", status: "Pending Approval", date: "2025-11-08", rateType: "corporate" },
+        { ref: "INV-000098", vendor: "Texas Energy Co.", amount: "$41,500.00", status: "Overdue", date: "2025-10-01" },
+        { ref: "INV-000099", vendor: "New York Imports LLC", amount: "$13,200.00", status: "Paid", date: "2025-09-22" },
       ],
       openPurchaseOrders: [
-        { ref: "PO-2025-0290", vendor: "Acme Corp", amount: "$12,000.00", status: "Open", date: "2025-11-10", rateType: "corporate" },
-        { ref: "PO-2025-0305", vendor: "Summit Materials", amount: "$5,800.00", status: "Pending", date: "2025-12-01" },
+        { ref: "395-9830", vendor: "Acme Corp", amount: "$12,000.00", status: "Confirmed", date: "2025-11-10", rateType: "corporate" },
+        { ref: "395-9831", vendor: "Summit Materials", amount: "$5,800.00", status: "Sent", date: "2025-12-01" },
+        { ref: "395-9832", vendor: "Summit Materials", amount: "$6,400.00", status: "Fully Received", date: "2025-09-30" },
       ],
       openSalesOrders: [
-        { ref: "SO-2025-0089", vendor: "Midwest Distributors", amount: "$15,600.00", status: "Open", date: "2025-11-25" },
-        { ref: "SO-2025-0094", vendor: "Coastal Retailers Inc.", amount: "$8,400.00", status: "Draft", date: "2025-12-10" },
+        { ref: "SO-000-000-035", vendor: "Midwest Distributors", amount: "$15,600.00", status: "Pending Review", date: "2025-11-25" },
+        { ref: "SO-000-000-036", vendor: "Coastal Retailers Inc.", amount: "$8,400.00", status: "Draft", date: "2025-12-10" },
+        { ref: "SO-000-000-037", vendor: "Midwest Distributors", amount: "$11,900.00", status: "Shipped", date: "2025-10-08" },
       ],
       bankAccounts: 3, unsettledPayments: 2, exchangeRateEntries: 10, totalLifetimeDocuments: 150,
     },
@@ -757,12 +814,10 @@ const AUTHORED_CURRENCIES: Currency[] = [
 ];
 
 /* The library as authored, moved to the demo clock (demoClock.ts): every date
-   shifts by the same number of days, and a transaction number takes the year
-   of its moved date ("INV-2025-0520" dated 2026 reads "INV-2026-0520"). */
-const moveTx = <T extends { ref: string; date: string }>(t: T): T => {
-  const date = shiftIso(t.date, CURRENCY_SEED_SHIFT);
-  return { ...t, date, ref: t.ref.replace(/-20\d\d-/, `-${date.slice(0, 4)}-`) };
-};
+   shifts by the same number of days. Transaction IDs are the modules' own, which
+   carry no year (Vendor Invoicing's INV-000201, Purchase Orders' 395-9825, Sales
+   Orders' SO-000-000-031), so they stay as they are. */
+const moveTx = <T extends { ref: string; date: string }>(t: T): T => ({ ...t, date: shiftIso(t.date, CURRENCY_SEED_SHIFT) });
 
 export const SEED_CURRENCIES: Currency[] = AUTHORED_CURRENCIES.map((c) => ({
   ...c,

@@ -5,7 +5,7 @@
    Same trigger, down to the classes - icon, label, a count once anything is
    ticked, a chevron that turns - so it reads as the CoA control it is. Same
    panel: a title and a line on how the ticks combine, a search field once the
-   list passes eight, checkbox rows with counts, and a Reset footer. The list
+   list passes eight, checkbox rows with counts, and a Clear footer. The list
    shows about eight rows and scrolls for the rest; on a short window it shrinks
    further, and the panel opens upwards when there is more room above.
 
@@ -22,7 +22,7 @@ const PANEL_FALLBACK_H = 400
 // Long lists get a search field, at CoA's threshold.
 const SEARCH_THRESHOLD = 8
 
-export interface PillFilterOption { value: string; label: string; count: number; /** A flag or mark before the label. */ icon?: ReactNode }
+export interface PillFilterOption { value: string; label: string; /** Shown at the row's end when given. */ count?: number; /** A flag or mark before the label. */ icon?: ReactNode }
 
 export function PillFilter({ label, icon, description, options, selected, onChange, searchPlaceholder }: {
   /** The pill's label and the panel's title, in Title Case: "Region". */
@@ -190,7 +190,7 @@ export function PillFilter({ label, icon, description, options, selected, onChan
                   </span>
                   {o.icon && <span className="inline-flex shrink-0 text-base leading-none" aria-hidden>{o.icon}</span>}
                   <span className="truncate min-w-0 text-fg" style={{ fontWeight: ticked ? 500 : 400 }}>{o.label}</span>
-                  <span className="text-11 text-muted-foreground tabular-nums ml-auto shrink-0">{fmtNumber(o.count)}</span>
+                  {o.count != null && <span className="text-11 text-muted-foreground tabular-nums ml-auto shrink-0">{fmtNumber(o.count)}</span>}
                 </button>
               )
             })}
@@ -203,7 +203,7 @@ export function PillFilter({ label, icon, description, options, selected, onChan
               onClick={() => onChange([])}
               className="h-9 px-3 -ml-3 rounded-lg text-13 text-fg-muted hover:text-fg hover:bg-bg-subtle disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-fg-muted transition-colors cursor-pointer"
               style={{ fontWeight: 500 }}
-            >Reset</button>
+            >Clear</button>
             {total > 0 && <span className="text-[12px] text-muted-foreground">{total} selected</span>}
           </div>
         </div>,

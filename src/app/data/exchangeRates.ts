@@ -12,6 +12,9 @@ export interface MidMarketRate {
   effectiveDate: string;
   source: "API";
   status: "active" | "inactive";
+  /** Set when the latest sync returned no rate for this currency: the rate and its
+   *  date are the last good sync's, until the next one succeeds. */
+  syncFailed?: { failedAt: string; lastSyncedAt: string };
 }
 
 export interface StandardRate {
@@ -26,6 +29,8 @@ export interface StandardRate {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /** Who changed it last; the creator until anyone else does. */
+  updatedBy?: string;
   notes: string;
   // Corporate rates only have two valid states — they either exist (active)
   // or have been retired (archived). "Inactive" was ambiguous and removed.
@@ -118,6 +123,9 @@ const HAND_SEEDED_MID_RATES: MidMarketRate[] = [
 ];
 
 // Deterministic string hash so generated rates are stable across reloads.
+/** Currencies the latest sync failed for (the failed-sync edge case). */
+export const SYNC_FAILED_CODES = new Set(["VES"]);
+
 function _hash(str: string): number {
   let h = 0;
   for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
@@ -174,6 +182,14 @@ export const SEED_MID_MARKET_RATES: MidMarketRate[] = (() => {
       status: "active",
     });
   }
+  // The edge case: the latest sync returned nothing for the bolívar, so it keeps
+  // the rate and date of the sync before, and has no 24-hour change to show.
+  const prevSync = new Date(Date.parse(LAST_SYNC) - 86_400_000).toISOString();
+  for (const r of out) {
+    if (!SYNC_FAILED_CODES.has(r.sourceCurrency)) continue;
+    r.effectiveDate = prevSync.slice(0, 10);
+    r.syncFailed = { failedAt: LAST_SYNC, lastSyncedAt: prevSync };
+  }
   return out.sort((a, b) => a.sourceCurrency.localeCompare(b.sourceCurrency));
 })();
 
@@ -190,6 +206,7 @@ const HAND_SEEDED_STANDARD_RATES: StandardRate[] = [
 /** Named as the Currency Library names them (ISO 4217), like the mid-market rates. */
 export const SEED_STANDARD_RATES: StandardRate[] = HAND_SEEDED_STANDARD_RATES.map(r => ({
   ...r,
+  updatedBy: r.updatedBy ?? r.createdBy,
   sourceCurrencyName: SEED_CURRENCIES.find(c => c.code === r.sourceCurrency)?.name ?? r.sourceCurrencyName,
 }));
 

@@ -7,15 +7,15 @@
 // The full transaction belongs to the module that raised it, so "Open Full
 // Transaction" leaves for a new tab there, as CoA's linked documents do. Like
 // CoA, every transaction lands on one real invoice in Vendor Invoicing: these
-// references are seeded here, and no module holds an INV-2026-0520 to show.
+// references are seeded here, in the modules' own ID formats.
 import { ArrowLeftRight, FileText } from 'lucide-react'
 import type { Currency } from '../../data/currencies'
 import { corporateRateInEffect } from '../../data/exchangeRates'
 import { useExchangeRates } from '../../context/ExchangeRateContext'
 import { QuickViewCard, QuickViewFields, QuickViewModal } from '../../coa/components/QuickView'
 import { fmtDate, todayIso } from '../../coa/lib/utils'
-import { BASE, fmtPairRate } from '../exchange/rateModel'
-import { docStatusTone, docTypeMeta, fmtAmount, type LinkedDoc } from './model'
+import { BASE, decimalsOf, fmtPairRate, symbolOf } from '../exchange/rateModel'
+import { docStatusTone, docTypeMeta, money, type LinkedDoc } from './model'
 
 /** The one real invoice every transaction opens to, in the Vendor Invoicing module. */
 const FULL_TRANSACTION_URL = '/accounting/vendor-invoicing/invoices/INV-000001'
@@ -57,12 +57,12 @@ export function TransactionQuickView({ doc, currency: c, onClose }: {
     >
       <QuickViewCard title="Transaction Details" icon={FileText}>
         <QuickViewFields fields={[
-          { label: 'Number', value: doc.number },
+          { label: 'ID', value: doc.number },
           { label: 'Type', value: meta.label },
           { label: meta.party, value: doc.party },
           { label: 'Status', value: doc.status || 'No Status' },
           { label: 'Date', value: fmtDate(doc.date) },
-          { label: 'Amount', value: `${c.code} ${fmtAmount(doc.amount, dp)}` },
+          { label: 'Amount', value: money(c.symbol, doc.amount, dp) },
         ]} />
       </QuickViewCard>
       {!c.isBaseCurrency && (
@@ -70,7 +70,7 @@ export function TransactionQuickView({ doc, currency: c, onClose }: {
           <QuickViewFields fields={[
             { label: 'Rate Used', value: usedCorporate ? 'Corporate Rate' : 'Mid-Market Rate' },
             { label: 'Exchange Rate', value: rate != null ? fmtPairRate(c.code, rate) : 'Not available' },
-            { label: `Value in ${BASE}`, value: baseValue != null ? `${BASE} ${fmtAmount(baseValue, 2)}` : '–' },
+            { label: `Value in ${BASE}`, value: baseValue != null ? money(symbolOf(BASE), baseValue, decimalsOf(BASE)) : '–' },
           ]} />
         </QuickViewCard>
       )}

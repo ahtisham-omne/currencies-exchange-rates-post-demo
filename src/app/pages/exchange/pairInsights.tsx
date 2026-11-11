@@ -11,7 +11,8 @@ import { useWidgetChartH, useWidgetSize, widgetBarSize } from '../../coa/compone
 import { AXIS_PROPS, CHART_MARGIN, CM_TT_STYLE, ChartEmpty, ChartTooltipCard, GRID_PROPS, ZERO_LINE_PROPS, areaGradient, tickInterval } from '../../coa/components/chartKit'
 import { ChartLegendDot } from '../../coa/components/ChartWidgetCard'
 import { fmtDate, fmtNumber } from '../../coa/lib/utils'
-import { BASE, decimalsOf, fmtPairRate, fmtRate, fmtSignedPct } from './rateModel'
+import { BASE, decimalsOf, fmtPairRate, fmtRate, fmtSignedPct, symbolOf } from './rateModel'
+import { money as fmtMoney } from '../currency/model'
 import { bucketBy, grainFor, rateTick, thin, tickLabelFor, transactionsOn, type PairPoint } from './pairData'
 
 /* ── Catalogues ─────────────────────────────────────────────────────────── */
@@ -25,7 +26,7 @@ export const pairKpis = (code: string): DetailKpiDef[] => [
   { key: 'variance', label: 'Corporate Variance', category: 'Rates', description: 'How far the corporate rate sat from the mid-market rate, on average, over the selected period.' },
   { key: 'days_since_update', label: 'Days Since Rate Updated', category: 'Operational', description: 'Days since the corporate rate in effect took effect.' },
   // Keyed fx_exposure_30d still, so layouts readers saved keep the tile.
-  { key: 'fx_exposure_30d', label: 'FX Exposure', category: 'Operational', description: `The total of your open ${code} transactions, converted to ${BASE} at today’s mid-market rate. This is the amount that gains or loses value when the exchange rate moves.` },
+  { key: 'fx_exposure_30d', label: 'FX Exposure', category: 'Operational', description: `The total of your open ${code} transactions in the selected period, converted to ${BASE} at the mid-market rate on its last day. This is the amount that gains or loses value when the exchange rate moves.` },
 ]
 
 export const MID_KPI_KEYS = ['current_mid', 'range_change', 'range_volatility', 'fx_exposure_30d']
@@ -246,12 +247,13 @@ export function ConversionTrendBody({ code, points, label, isStd }: BodyProps) {
   const chartH = useWidgetChartH()
   const [amount, setAmount] = useState('1000')
   const amt = Number(amount) > 0 ? Number(amount) : 0
-  const data = useMemo(() => thin(points).map(p => ({ date: p.date, mid: +(amt * p.mid).toFixed(2), corp: p.corp != null ? +(amt * p.corp).toFixed(2) : null })), [points, amt])
+  // In the base currency's own decimals, for the plotted values and their labels alike.
+  const baseDp = decimalsOf(BASE)
+  const data = useMemo(() => thin(points).map(p => ({ date: p.date, mid: +(amt * p.mid).toFixed(baseDp), corp: p.corp != null ? +(amt * p.corp).toFixed(baseDp) : null })), [points, amt, baseDp])
   const axis = useAxis(data)
   const showCorp = isStd && data.some(d => d.corp != null)
-  // In the base currency's own decimals.
-  const baseDp = decimalsOf(BASE)
-  const money = (n: number) => `${n.toLocaleString('en-US', { minimumFractionDigits: baseDp, maximumFractionDigits: baseDp })} ${BASE}`
+  // Amounts carry the symbol, as everywhere in the module: ₨ 278,520.00.
+  const money = (n: number) => fmtMoney(symbolOf(BASE), n, baseDp)
   const id = `fxConv-${code}`
   return (
     <>
@@ -259,6 +261,7 @@ export function ConversionTrendBody({ code, points, label, isStd }: BodyProps) {
         <p className="text-[11px] text-muted-foreground">{label}</p>
         <label className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground" onMouseDown={e => e.stopPropagation()}>
           Amount
+          <span className="text-fg-subtle">{symbolOf(code)}</span>
           <input
             type="number"
             min="0"
@@ -267,7 +270,6 @@ export function ConversionTrendBody({ code, points, label, isStd }: BodyProps) {
             aria-label={`Amount in ${code}`}
             className="w-[96px] h-7 px-2 rounded-md border border-border bg-white text-11 text-fg tabular-nums hover:border-primary/50 focus:border-primary focus:ring-2 focus:ring-primary/10 outline-none transition-colors"
           />
-          <span className="text-fg-subtle">{code}</span>
         </label>
       </div>
       <div style={{ height: chartH }}>

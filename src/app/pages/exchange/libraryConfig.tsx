@@ -1,16 +1,16 @@
 // Exchange Rate Library: the two tables' columns (CoA §4 cell recipes over
 // rate data). Region filters from the quick-filter row's Region pill (../currency/RegionPill).
-import { Minus, TrendingDown, TrendingUp } from 'lucide-react'
-import { RATE_TOOLTIPS } from '../../utils/rateCopy'
+import { AlertTriangle, Minus, TrendingDown, TrendingUp } from 'lucide-react'
+import { NOTES_TOOLTIP, RATE_TOOLTIPS } from '../../utils/rateCopy'
 import { Badge, Marked, Tooltip } from '../../coa/components/ui'
 import type { CoaColumn } from '../../coa/components/CoaDataTable'
 import { CurrencyCell, EmptyCell, PARTNER_CHIP_CLS } from '../../coa/components/cells'
-import { PersonCell, StampCell, personText, stampText } from '../../coa/components/AuditCells'
 import { StatusMenu } from '../../coa/components/StatusChip'
 import { FlagImage } from '../../coa/components/FlagImage'
-import { cn, fmtDate } from '../../coa/lib/utils'
+import { cn, fmtDate, fmtDateTime } from '../../coa/lib/utils'
 import { CORPORATE_STATUS_OPTIONS } from './rateLifecycle'
-import { BASE, fmtInverse, fmtPairRate, fmtRate, fmtSignedPct, type CorpRow, type CorpStatus, type MidRow } from './rateModel'
+import { auditColumns } from '../auditColumns'
+import { BASE, fmtInverse, fmtPairRate, fmtRate, fmtSignedPct, fmtVariance, type CorpRow, type CorpStatus, type MidRow } from './rateModel'
 
 /* ── Cells ──────────────────────────────────────────────────────────────── */
 
@@ -75,12 +75,25 @@ function CountryCell({ row, q }: { row: { flag: string; country: string; region:
 
 /* ── Mid-market table ───────────────────────────────────────────────────── */
 
+/* The failed-sync edge case: the latest sync returned no rate for this currency,
+   so the row keeps the last good one. The badge says so beside the name, and its
+   tooltip says when it failed and how old the rate on screen is. */
+function SyncFailedBadge({ row }: { row: MidRow }) {
+  const f = row.syncFailed!
+  return (
+    <Tooltip content={`The sync on ${fmtDateTime(f.failedAt)} didn’t return a rate for ${row.code}. This is the rate from ${fmtDateTime(f.lastSyncedAt)}, and it updates at the next successful sync.`} side="top">
+      <Badge tone="warning" className={cn(PARTNER_CHIP_CLS, 'shrink-0 gap-1')}><AlertTriangle size={11} aria-hidden />Sync Failed</Badge>
+    </Tooltip>
+  )
+}
+
 export function midColumns(): CoaColumn<MidRow>[] {
   return [
     {
       key: 'currency', label: 'Currency', locked: true, width: 300,
-      render: (r, ctx) => <CurrencyCell code={r.code} country={r.flag} name={r.name} q={ctx.q} showName strong={ctx.band} onOpen={ctx.openRow} />,
-      sortValue: r => r.code, searchText: r => [r.code, r.name], filter: 'text', filterValue: r => `${r.code} ${r.name}`,
+      render: (r, ctx) => <CurrencyCell code={r.code} country={r.flag} name={r.name} q={ctx.q} showName strong={ctx.band} onOpen={ctx.openRow}
+        trailing={r.syncFailed ? <SyncFailedBadge row={r} /> : undefined} />,
+      sortValue: r => r.code, searchText: r => [r.code, r.name, r.syncFailed ? 'Sync Failed' : ''], filter: 'text', filterValue: r => `${r.code} ${r.name}`,
     },
     {
       key: 'rate', label: 'Mid-Market Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: `${RATE_TOOLTIPS.midMarket} Synced every 24 hours.`,
@@ -88,15 +101,16 @@ export function midColumns(): CoaColumn<MidRow>[] {
       sortValue: r => r.rate, searchText: r => fmtRate(r.rate), filter: 'range',
     },
     {
-      key: 'inverse', label: 'Inverse Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[180px]',
+      key: 'inverse', label: 'Inverse Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[180px]', info: RATE_TOOLTIPS.inverse,
       render: (r, ctx) => <RateText from={BASE} value={fmtInverse(r.rate)} to={r.code} q={ctx.q} />,
       // The inverse is not a stored field, so it sorts on the figure it prints.
       sortValue: r => 1 / r.rate, searchText: r => fmtInverse(r.rate), filter: 'range', filterValue: r => 1 / r.rate,
     },
     {
       key: 'change', label: 'Change (24h)', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.change24h,
-      render: r => <ChangeCell value={r.change24h} />,
-      sortValue: r => r.change24h, searchText: r => fmtSignedPct(r.change24h), filter: 'range',
+      // A failed sync has no fresh rate to compare, so no change to show.
+      render: r => (r.syncFailed ? <EmptyCell /> : <ChangeCell value={r.change24h} />),
+      sortValue: r => (r.syncFailed ? null : r.change24h), searchText: r => (r.syncFailed ? '' : fmtSignedPct(r.change24h)), filter: 'range',
     },
     {
       key: 'country', label: 'Country / Region', defaultHidden: true, headerClassName: 'min-w-[240px]',
@@ -110,6 +124,8 @@ export function midColumns(): CoaColumn<MidRow>[] {
       render: (r, ctx) => <span className="text-sm text-slate-700 tabular-nums whitespace-nowrap"><Marked text={fmtDate(r.effectiveDate)} q={ctx.q} /></span>,
       sortValue: r => r.effectiveDate, searchText: r => fmtDate(r.effectiveDate), filter: 'date', filterValue: r => r.effectiveDate,
     },
+    // Synced by the provider: "System" sets each rate up and keeps it current.
+    ...auditColumns<MidRow>(r => r, 'rate'),
   ]
 }
 
@@ -133,7 +149,7 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
       filter: 'range', filterValue: r => shownRate(r),
     },
     {
-      key: 'inverse', label: 'Inverse Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[180px]',
+      key: 'inverse', label: 'Inverse Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[180px]', info: RATE_TOOLTIPS.inverse,
       // The inverse of the figure the row shows, so the two always pair up.
       render: (r, ctx) => { const rate = shownRate(r); return rate == null ? <EmptyCell /> : <RateText from={BASE} value={fmtInverse(rate)} to={r.code} q={ctx.q} /> },
       sortValue: r => { const rate = shownRate(r); return rate == null ? null : 1 / rate },
@@ -146,11 +162,11 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
       sortValue: r => r.mid, searchText: r => (r.mid == null ? '' : fmtRate(r.mid)), filter: 'range',
     },
     {
-      key: 'variance', label: 'Variance', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[120px]', info: RATE_TOOLTIPS.variance,
+      key: 'variance', label: 'Variance', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[220px]', info: RATE_TOOLTIPS.variance,
       render: (r, ctx) => (r.variance == null ? <EmptyCell /> : (
-        <Badge tone={Math.abs(r.variance) > 1 ? 'warning' : 'success'} className={cn(PARTNER_CHIP_CLS, 'tabular-nums')}><Marked text={fmtSignedPct(r.variance)} q={ctx.q} /></Badge>
+        <Badge tone={Math.abs(r.variance) > 1 ? 'warning' : 'success'} className={cn(PARTNER_CHIP_CLS, 'tabular-nums')}><Marked text={fmtVariance(r.rate!, r.mid) ?? fmtSignedPct(r.variance)} q={ctx.q} /></Badge>
       )),
-      sortValue: r => r.variance, searchText: r => (r.variance == null ? '' : fmtSignedPct(r.variance)), filter: 'range',
+      sortValue: r => r.variance, searchText: r => (r.variance == null ? '' : fmtVariance(r.rate!, r.mid) ?? fmtSignedPct(r.variance)), filter: 'range',
     },
     {
       key: 'effective', label: 'Effective Date', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.effectiveDate,
@@ -159,26 +175,14 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
       sortValue: r => shownDate(r) || null, searchText: r => (shownDate(r) ? fmtDate(shownDate(r)) : ''), filter: 'date', filterValue: r => shownDate(r) || null,
     },
     {
-      key: 'createdBy', label: 'Created By', pad: 'person', cellClassName: 'px-4 max-w-[220px]', headerClassName: 'min-w-[170px]',
-      info: 'User who added this rate.',
-      render: (r, ctx) => (r.createdBy ? <PersonCell name={r.createdBy} comfort={ctx.comfort} q={ctx.q} /> : <EmptyCell />),
-      sortValue: r => personText(r.createdBy) || null, searchText: r => personText(r.createdBy), filter: 'multiselect', filterValue: r => personText(r.createdBy),
-    },
-    {
       key: 'status', label: 'Status', headerClassName: 'min-w-[120px]',
       info: 'Whether you can use this rate on new transactions.',
       render: (r, ctx) => <StatusMenu status={r.status} options={CORPORATE_STATUS_OPTIONS} onPick={next => onStatus(next, r)} q={ctx.q} />,
       sortValue: r => r.status, searchText: r => r.status, filter: 'multiselect', filterValue: r => r.status,
     },
     {
-      key: 'updatedAt', label: 'Last Updated', defaultHidden: true, headerClassName: 'min-w-[170px]',
-      info: 'When this rate was last changed.',
-      render: (r, ctx) => (r.updatedAt ? <StampCell at={r.updatedAt} q={ctx.q} /> : <EmptyCell />),
-      sortValue: r => r.updatedAt || null, searchText: r => stampText(r.updatedAt), filter: 'date', filterValue: r => r.updatedAt || null,
-    },
-    {
       key: 'notes', label: 'Notes', defaultHidden: true, headerClassName: 'min-w-[220px]',
-      info: 'Note added with this rate.',
+      info: NOTES_TOOLTIP,
       render: (r, ctx) => (r.notes ? <span className="text-sm text-slate-700 block truncate max-w-[320px]" title={r.notes}><Marked text={r.notes} q={ctx.q} /></span> : <EmptyCell />),
       sortValue: r => r.notes || null, searchText: r => r.notes, filter: 'text',
     },
@@ -188,5 +192,7 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
       render: (r, ctx) => <CountryCell row={r} q={ctx.q} />,
       sortValue: r => r.country, searchText: r => [r.country, r.region ?? ''], filter: 'multiselect', filterValue: r => r.region ?? '',
     },
+    // Shown by default here, where people set the rates; hidden on the mid-market and library tables.
+    ...auditColumns<CorpRow>(r => r, 'rate', ['createdBy', 'createdAt', 'updatedBy', 'updatedAt']),
   ]
 }

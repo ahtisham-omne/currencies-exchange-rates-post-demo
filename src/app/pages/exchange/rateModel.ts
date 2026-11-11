@@ -16,6 +16,14 @@ export const ACTOR = 'Ahtisham Ahmad'
 /* ── A currency's flag, country and region ─────────────────────────────── */
 
 const SEED_BY_CODE = new Map(SEED_CURRENCIES.map(c => [c.code, c]))
+/** Who set up and keeps a provider-synced rate. */
+const SYSTEM = 'System'
+/** A mid-market rate's audit details: "System" set it up the day its currency entered the
+ *  library, and the provider's last sync is its last update. */
+export function midAuditOf(code: string) {
+  const log = SEED_BY_CODE.get(code)?.auditLog
+  return { createdBy: SYSTEM, createdAt: log?.[log.length - 1]?.dateTime ?? '', updatedBy: SYSTEM, updatedAt: LAST_SYNC }
+}
 
 /** ISO 3166 alpha-2 for the flag ('ae'), or '' when there is none. */
 export const flagOf = (code: string) => (getCountryCode(code) ?? '').toLowerCase()
@@ -29,6 +37,8 @@ export const regionOf = (code: string): string | null => {
 export const nameOf = (code: string) => SEED_BY_CODE.get(code)?.name ?? code
 /** Digits after the point that amounts in the currency carry (2 when unknown). */
 export const decimalsOf = (code: string) => SEED_BY_CODE.get(code)?.decimalPlaces ?? 2
+/** The sign amounts in the currency carry (₨, $, €); the code when there is none. */
+export const symbolOf = (code: string) => SEED_BY_CODE.get(code)?.symbol ?? code
 
 /* ── Numbers ───────────────────────────────────────────────────────────── */
 
@@ -49,6 +59,15 @@ export const fmtAmountIn = (n: number, code: string) => {
 export const fmtConverted = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
 export const fmtSignedPct =(n: number, dp = 2) => `${n > 0 ? '+' : ''}${n.toFixed(dp)}%`
+/** Variance as the amount and, in brackets, the percentage: "+0.4800 PKR (+0.17%)".
+ *  The amount is corporate minus mid-market, in PKR per unit, to a rate's four decimals. */
+export function fmtVariance(rate: number, mid: number | null | undefined): string | null {
+  const pct = variancePct(rate, mid)
+  return pct == null || mid == null ? null : fmtVarianceOf(rate - mid, pct)
+}
+/** The same from an amount and a percentage already worked out (an average, say). */
+export const fmtVarianceOf = (diff: number, pct: number) =>
+  `${diff > 0 ? '+' : diff < 0 ? '-' : ''}${fmtRate(Math.abs(diff))} ${BASE} (${fmtSignedPct(pct)})`
 
 /** (corporate - mid) / mid, in percent to 2dp. */
 export function variancePct(rate: number, mid: number | null | undefined): number | null {
@@ -121,6 +140,8 @@ export function daysSince(isoDay: string, today = todayIso()): number {
 
 export interface MidRow {
   id: string
+  /** The latest sync returned no rate: the rate shown is the last good sync's. */
+  syncFailed: { failedAt: string; lastSyncedAt: string } | null
   code: string
   name: string
   rate: number
@@ -129,6 +150,11 @@ export interface MidRow {
   flag: string
   country: string
   region: string | null
+  /** Rates come from the provider's sync, so "System" set them up and keeps them current. */
+  createdBy: string
+  createdAt: string
+  updatedBy: string
+  updatedAt: string
   corporate?: StandardRate
 }
 
@@ -145,6 +171,10 @@ export function toMidRows(mid: MidMarketRate[], standard: StandardRate[]): MidRo
     flag: flagOf(m.sourceCurrency),
     country: countryOf(m.sourceCurrency),
     region: regionOf(m.sourceCurrency),
+    ...midAuditOf(m.sourceCurrency),
+    syncFailed: m.syncFailed ?? null,
+    // A failed sync didn't update it: its last update is the last good sync.
+    ...(m.syncFailed ? { updatedAt: m.syncFailed.lastSyncedAt } : {}),
     corporate: standard.find(s => s.sourceCurrency === m.sourceCurrency && s.status === 'active'),
   }))
 }
@@ -165,6 +195,8 @@ export interface CorpRow {
   /** A rate dated for later, shown as Upcoming until its day. */
   upcoming: { rate: number; effectiveDate: string } | null
   createdBy: string
+  createdAt: string
+  updatedBy: string
   updatedAt: string
   notes: string
   status: CorpStatus
@@ -191,6 +223,8 @@ export function toCorpRows(standard: StandardRate[], mid: MidMarketRate[], today
       effectiveDate: current ? s.effectiveDate : '',
       upcoming: next ? { rate: next.standardRate, effectiveDate: next.effectiveDate } : null,
       createdBy: s.createdBy,
+      createdAt: s.createdAt,
+      updatedBy: s.updatedBy ?? s.createdBy,
       updatedAt: s.updatedAt,
       notes: s.notes,
       status: s.status === 'archived' ? 'Archived' : 'Active',

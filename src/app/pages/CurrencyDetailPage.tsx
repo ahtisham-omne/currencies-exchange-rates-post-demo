@@ -8,11 +8,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeftRight, ChevronDown, CircleSlash, Coins, Download, FileText, History, MessageSquare, Power } from 'lucide-react'
 import { CoaPage } from '../coa/components/CoaPage'
 import { DetailHeaderCard } from '../coa/components/DetailHeaderCard'
-import { DetailPageLayout, DashboardGrid, DetailNotFound, InfoAuditGrid, InfoGrid, InfoValue, useDetailFullView, useDetailTab } from '../coa/components/DetailPageLayout'
+import { DetailPageLayout, DashboardGrid, DetailNotFound, InfoAuditGrid, InfoGrid, InfoPerson, InfoValue, useDetailFullView, useDetailTab } from '../coa/components/DetailPageLayout'
 import { DashInfoCard, DashInfoLabel } from '../coa/components/DashInfoCard'
 import { Badge, Menu, MenuItem, Tooltip } from '../coa/components/ui'
 import { StatusChip, StatusMenu } from '../coa/components/StatusChip'
-import { OverflowPills, PARTNER_CHIP_CLS } from '../coa/components/cells'
+import { PARTNER_CHIP_CLS } from '../coa/components/cells'
 import { FlagImage } from '../coa/components/FlagImage'
 import { useRecordNotes } from '../coa/components/NotesTab'
 import { RecordAttachmentsTab, useRecordAttachmentCount } from '../coa/components/AttachmentsTab'
@@ -23,10 +23,12 @@ import { useCurrencies } from '../context/CurrencyContext'
 import { useExchangeRates } from '../context/ExchangeRateContext'
 import { API_PROVIDER, BASE_CURRENCY_NAME, LAST_SYNC, corporateRateInEffect, upcomingRateOf } from '../data/exchangeRates'
 import type { Currency } from '../data/currencies'
-import { CONVERTER_TOOLTIP, RATE_TOOLTIPS, inverseRateTooltip } from '../utils/rateCopy'
+import { CURRENCY_TOOLTIPS, RATE_TOOLTIPS } from '../utils/rateCopy'
+import { auditTooltips } from './auditColumns'
+import { fmtVariance } from './exchange/rateModel'
 import {
-  BASE, auditFacts, BASE_CURRENCY_LOCKED, countInUse, countriesOf, countryFlagOf, fmtRate, formatPreview, linkedDocs, placeFlagOf,
-  plural, regionOf, statusOf, statusOptionsFor,
+  BASE, auditFacts, BASE_CURRENCY_LOCKED, countInUse, fmtRate, formatPreview, linkedDocs, placeFlagOf,
+  regionOf, statusOf, statusOptionsFor,
 } from './currency/model'
 import { useCurrencyLifecycle } from './currency/useCurrencyLifecycle'
 import { CurrencyConverter } from './currency/CurrencyConverter'
@@ -161,8 +163,6 @@ export function CurrencyDetailPage() {
             mid={mid}
             corporate={corporate}
             upcoming={upcoming}
-            onSetCorporate={setCorporate}
-            onOpenLinked={() => setTab('linked')}
           />
         )}
         {tab === 'linked' && <LinkedTransactionsTab currency={c} docs={docs} />}
@@ -183,22 +183,17 @@ export function CurrencyDetailPage() {
   )
 }
 
-function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate, onOpenLinked }: {
+function DashboardTab({ c, mid, corporate, upcoming }: {
   c: Currency
   mid: number | null
   corporate: { standardRate: number; effectiveDate: string; createdBy: string } | null
   /** A corporate rate dated for later. */
   upcoming: { standardRate: number; effectiveDate: string } | null
-  onSetCorporate: () => void
-  /** Opens the Linked Transactions tab. */
-  onOpenLinked: () => void
 }) {
   const variance = corporate && mid ? ((corporate.standardRate - mid) / mid) * 100 : null
-  const signed = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(2)}%`
   const facts = auditFacts(c)
   const region = regionOf(c)
   const preview = formatPreview(c)
-  const linkedCount = countInUse(c)
 
   return (
     <DashboardGrid
@@ -206,7 +201,6 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate, onOpenLinke
         <ChartWidgetCard
           title="Live Exchange Rate Converter"
           icon={ArrowLeftRight}
-          tooltip={CONVERTER_TOOLTIP}
         >
           <CurrencyConverter detail={c} />
         </ChartWidgetCard>
@@ -216,12 +210,12 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate, onOpenLinke
           <DashInfoCard title="Currency Information" icon={FileText}>
             <InfoGrid>
               <div className="min-w-0"><DashInfoLabel>Currency Code</DashInfoLabel><InfoValue strong>{c.code}</InfoValue></div>
-              <div className="min-w-0"><DashInfoLabel align="right">Symbol</DashInfoLabel><InfoValue strong>{c.symbol}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={CURRENCY_TOOLTIPS.symbol}>Symbol</DashInfoLabel><InfoValue strong>{c.symbol}</InfoValue></div>
             </InfoGrid>
             <div className="mb-2.5 min-w-0"><DashInfoLabel>Currency Name</DashInfoLabel><InfoValue title={c.name}>{c.name}</InfoValue></div>
             <InfoGrid>
-              <div className="min-w-0"><DashInfoLabel tooltip="The ISO 4217 three-digit code.">Numeric Code</DashInfoLabel><InfoValue className="tabular-nums">{c.numericCode}</InfoValue></div>
-              <div className="min-w-0"><DashInfoLabel align="right" tooltip="Digits after the decimal point that amounts in this currency carry.">Decimal Places</DashInfoLabel><InfoValue className="tabular-nums">{c.decimalPlaces}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel tooltip={CURRENCY_TOOLTIPS.numericCode}>ISO Numeric Code</DashInfoLabel><InfoValue className="tabular-nums">{c.numericCode}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={CURRENCY_TOOLTIPS.decimals}>Decimal Places</DashInfoLabel><InfoValue className="tabular-nums">{c.decimalPlaces}</InfoValue></div>
               <div className="min-w-0">
                 <DashInfoLabel tooltip={`How a large amount is written in ${c.code}: the thousand and decimal separators and where the symbol goes, as used in ${preview.place}.`}>Format Preview</DashInfoLabel>
                 <InfoValue className="tabular-nums"><span dir="ltr">{preview.text}</span></InfoValue>
@@ -230,41 +224,26 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate, onOpenLinke
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.baseCurrency}>Base Currency</DashInfoLabel>
                 <div className="mt-0.5"><Badge tone={c.isBaseCurrency ? 'base' : 'neutral'} className={PARTNER_CHIP_CLS}>{c.isBaseCurrency ? 'Yes' : 'No'}</Badge></div>
               </div>
-              <div className="min-w-0"><DashInfoLabel>Region</DashInfoLabel>{region ? <InfoValue>{region}</InfoValue> : <InfoValue empty>–</InfoValue>}</div>
-              <div className="min-w-0"><DashInfoLabel align="right">Status</DashInfoLabel><div className="mt-0.5"><StatusChip status={statusOf(c)} /></div></div>
+              <div className="min-w-0"><DashInfoLabel tooltip={CURRENCY_TOOLTIPS.region}>Region</DashInfoLabel>{region ? <InfoValue>{region}</InfoValue> : <InfoValue empty>–</InfoValue>}</div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={CURRENCY_TOOLTIPS.status}>Status</DashInfoLabel><div className="mt-0.5"><StatusChip status={statusOf(c)} /></div></div>
             </InfoGrid>
-            {/* The count opens the Linked Transactions tab, like the In Use count in the library. */}
-            <div className="mb-2.5 min-w-0">
-              <DashInfoLabel tooltip="The transactions that use this currency. Select the count to see them.">Linked Transactions</DashInfoLabel>
-              {linkedCount > 0
-                ? <button type="button" onClick={onOpenLinked} className="text-[13px] text-primary hover:text-[#0862D0] hover:underline underline-offset-2 mt-0.5 tabular-nums" style={{ fontWeight: 600 }}>{plural(linkedCount, 'transaction', 'transactions')}</button>
-                : <InfoValue empty>None</InfoValue>}
-            </div>
-            <div className="mb-2.5 min-w-0">
-              <DashInfoLabel>Countries / Regions</DashInfoLabel>
-              <div className="mt-0.5">
-                <OverflowPills
-                  category="Countries / Regions"
-                  values={countriesOf(c).map((name, i) => ({ name, icon: <FlagImage code={i === 0 ? placeFlagOf(name, c.code) : countryFlagOf(name)} className="text-[13px]" /> }))}
-                />
-              </div>
-            </div>
-            {/* Who made and changed it is left off: the library is set up by the
-                system, and "System" told the reader nothing. */}
+            {/* Who made and last changed it, and when: the same four as the library's audit columns. */}
             <InfoAuditGrid>
-              <div className="min-w-0"><DashInfoLabel>Created On</DashInfoLabel><InfoValue>{facts.createdAt ? fmtDate(facts.createdAt) : '–'}</InfoValue></div>
-              <div className="min-w-0"><DashInfoLabel align="right">Last Updated On</DashInfoLabel><InfoValue>{facts.updatedAt ? fmtDate(facts.updatedAt) : '–'}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel tooltip={auditTooltips('currency').createdBy}>Created By</DashInfoLabel><InfoPerson name={facts.createdBy} /></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={auditTooltips('currency').createdAt}>Created On</DashInfoLabel><InfoValue>{facts.createdAt ? fmtDateTime(facts.createdAt) : '–'}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel tooltip={auditTooltips('currency').updatedBy}>Last Updated By</DashInfoLabel><InfoPerson name={facts.updatedBy} /></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={auditTooltips('currency').updatedAt}>Last Updated On</DashInfoLabel><InfoValue>{facts.updatedAt ? fmtDateTime(facts.updatedAt) : '–'}</InfoValue></div>
             </InfoAuditGrid>
           </DashInfoCard>
 
-          <DashInfoCard title="Exchange Rate" icon={ArrowLeftRight} tooltip={`Quoted against ${BASE} (${BASE_CURRENCY_NAME}).`}>
+          <DashInfoCard title="Exchange Rate" icon={ArrowLeftRight} tooltip={`Base currency: ${BASE} (${BASE_CURRENCY_NAME}).`}>
             <InfoGrid>
               <div className="min-w-0">
                 <DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-Market Rate</DashInfoLabel>
                 {mid != null ? <InfoValue strong className="tabular-nums">{fmtRate(mid)}</InfoValue> : <InfoValue empty>Not available</InfoValue>}
               </div>
               <div className="min-w-0">
-                <DashInfoLabel align="right" tooltip={mid ? inverseRateTooltip(c.code, BASE, fmtRate(1 / mid)) : RATE_TOOLTIPS.inverse}>Inverse Rate</DashInfoLabel>
+                <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.inverse}>Inverse Rate</DashInfoLabel>
                 {mid ? <InfoValue className="tabular-nums">{fmtRate(1 / mid)}</InfoValue> : <InfoValue empty>–</InfoValue>}
               </div>
               <div className="min-w-0">
@@ -275,14 +254,14 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate, onOpenLinke
                     ? <InfoValue className="tabular-nums">{fmtRate(corporate.standardRate)}</InfoValue>
                     : upcoming
                       ? <InfoValue empty>None in effect yet</InfoValue>
-                      : <button type="button" onClick={onSetCorporate} className="text-[12px] text-primary hover:text-[#0862D0] hover:underline underline-offset-2 mt-0.5" style={{ fontWeight: 500 }}>Not set. Set one</button>}
+                      : <InfoValue empty>–</InfoValue>}
               </div>
               <div className="min-w-0">
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.variance}>Variance</DashInfoLabel>
-                {variance != null ? <InfoValue className="tabular-nums">{signed(variance)}</InfoValue> : <InfoValue empty>–</InfoValue>}
+                {variance != null && corporate && mid ? <InfoValue className="tabular-nums">{fmtVariance(corporate.standardRate, mid)}</InfoValue> : <InfoValue empty>–</InfoValue>}
               </div>
               <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{c.isBaseCurrency ? 'Base Currency' : API_PROVIDER}</InfoValue></div>
-              <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last Sync</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last Synced</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
             </InfoGrid>
             {(corporate || upcoming) && (
               <div className="pt-2.5 border-t border-muted text-[11px] text-slate-500 space-y-1">

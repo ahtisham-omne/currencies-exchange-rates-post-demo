@@ -3,14 +3,15 @@
 // quick-filter pills / bulk bar, header menus, docked Columns panel, density.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronDown, CircleCheck, CircleSlash, Download, Eye, FileSpreadsheet, FileText, Info, Power } from 'lucide-react'
+import { ChevronDown, CircleCheck, CircleSlash, Download, Eye, FileSpreadsheet, FileText, Hash, Info, Power } from 'lucide-react'
 import { Badge, Button, Marked, Menu, MenuItem, Tooltip, useResponsiveIconSize } from '../coa/components/ui'
 import { TableToolbar } from '../coa/components/TableToolbar'
 import { CoaTableCard, PillRow, TableEmptyState } from '../coa/components/TableCard'
 import { CoaDataTable, useCoaTable, type CoaColumn } from '../coa/components/CoaDataTable'
 import { QuickFilterPill } from '../coa/components/Filters'
+import { PillFilter } from '../coa/components/PillFilter'
 import { BulkActionBar } from '../coa/components/BulkActionBar'
-import { CurrencyCell, OverflowPills } from '../coa/components/cells'
+import { CurrencyCell, EmptyCell } from '../coa/components/cells'
 import { StatusMenu } from '../coa/components/StatusChip'
 import { FlagImage } from '../coa/components/FlagImage'
 import { useRememberedState } from '../coa/lib/rememberedState'
@@ -18,17 +19,18 @@ import { cn, fmtNumber } from '../coa/lib/utils'
 import { useCurrencies } from '../context/CurrencyContext'
 import { hasOpenDocuments, type Currency } from '../data/currencies'
 import {
-  BASE_CURRENCY_LOCKED, countInUse, countriesOf, countryFlagOf, flagOf, placeFlagOf, regionOf, statusOf, statusOptionsFor, symbolSearchText,
+  BASE_CURRENCY_LOCKED, auditFacts, countInUse, placeFlagOf, regionOf, statusOf, statusOptionsFor, symbolSearchText,
 } from './currency/model'
 import { useCurrencyLifecycle } from './currency/useCurrencyLifecycle'
-import { CurrencyFiltersModal, EMPTY_CURRENCY_FILTERS, applyCurrencyFilters, countCurrencyFilters, type CurrencyPanelFilters } from './currency/CurrencyFilters'
-import { PlacePill, placesOf, usedInAny } from './currency/PlacePill'
+import { RegionPill } from './currency/RegionPill'
+import { CURRENCY_TOOLTIPS } from '../utils/rateCopy'
+import { auditColumns } from './auditColumns'
 import { exportCurrencies, type ExportFormat } from './currency/exportCurrencies'
 import { ExportSelectedModal } from './currency/ExportSelectedModal'
 import { CurrencyExchangeHeader } from './CurrencyExchangeHeader'
 
 
-type Pill = 'all' | 'active' | 'base' | 'inactive'
+type Pill = 'all' | 'active' | 'inactive'
 
 // Stable, so the table's row order is worked out only when the rows change.
 const isBase = (c: Currency) => c.isBaseCurrency
@@ -51,71 +53,75 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
   useEffect(() => { const q = params.get('q'); if (q != null) setQuery(q) }, [params]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [pill, setPill] = useRememberedState<Pill>('currencies:pill', 'all')
-  const [filters, setFilters] = useRememberedState<CurrencyPanelFilters>('currencies:panel', EMPTY_CURRENCY_FILTERS)
-  // The Country / Region pill on the quick-filter row: any place the column lists.
-  const [regions, setRegions] = useRememberedState<string[]>('currencies:places', [])
-  const places = useMemo(() => placesOf(currencies), [currencies])
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  // Every filter sits on the quick-filter row, so there is no Filters panel: the
+  // Region and Decimal Places dropdowns, then the status pills.
+  const [regions, setRegions] = useRememberedState<string[]>('currencies:regions', [])
+  const [decimals, setDecimals] = useRememberedState<string[]>('currencies:decimals', [])
   const [exportOpen, setExportOpen] = useState(false)
 
-  // Pill counts: the rows a click would show, over the panel- and region-filtered set.
-  const outsideRegion = useMemo(() => applyCurrencyFilters(currencies, filters), [currencies, filters])
-  const panelRows = useMemo(() => (regions.length ? outsideRegion.filter(c => usedInAny(c, regions)) : outsideRegion), [outsideRegion, regions])
+  const inPlaces = (c: Currency) => !regions.length || regions.includes(regionOf(c) ?? '')
+  const inDecimals = (c: Currency) => !decimals.length || decimals.includes(String(c.decimalPlaces))
+  const inPill = (c: Currency) => (pill === 'active' ? c.status === 'active' : pill === 'inactive' ? c.status === 'inactive' : true)
+  // Pill counts: the rows a click would show, over the two dropdowns.
+  const panelRows = useMemo(() => currencies.filter(c => inPlaces(c) && inDecimals(c)), [currencies, regions, decimals]) // eslint-disable-line react-hooks/exhaustive-deps
   const pillCounts = {
     active: panelRows.filter(c => c.status === 'active').length,
     inactive: panelRows.filter(c => c.status === 'inactive').length,
-    base: panelRows.filter(c => c.isBaseCurrency).length,
   }
-  const pillRows = useMemo(() => panelRows.filter(c =>
-    pill === 'active' ? c.status === 'active' : pill === 'inactive' ? c.status === 'inactive' : pill === 'base' ? c.isBaseCurrency : true), [panelRows, pill])
-  // A place's count is what ticking it alone would list: the panel's filters and the status pill, used there.
-  const regionCount = (place: string) => outsideRegion.filter(c => countriesOf(c).includes(place) &&
-    (pill === 'active' ? c.status === 'active' : pill === 'inactive' ? c.status === 'inactive' : pill === 'base' ? c.isBaseCurrency : true)).length
+  const pillRows = useMemo(() => panelRows.filter(inPill), [panelRows, pill]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Decimal Places, each with what ticking it alone would list beside Country / Region and the status pill.
+  const decimalOptions = useMemo(() => {
+    const around = currencies.filter(c => inPlaces(c) && inPill(c))
+    return [...new Set(currencies.map(c => c.decimalPlaces))].sort((a, b) => a - b).map(String)
+      .map(n => ({ value: n, label: n, count: around.filter(c => String(c.decimalPlaces) === n).length }))
+  }, [currencies, regions, pill]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A region's count is what ticking it alone would list beside Decimal Places and the status pill.
+  const regionCount = (r: string) => currencies.filter(c => regionOf(c) === r && inDecimals(c) && inPill(c)).length
 
   const columns = useMemo<CoaColumn<Currency>[]>(() => [
     {
       key: 'currency', label: 'Currency', locked: true, width: 300,
-      info: 'This currency’s three-letter ISO (International Organization for Standardization) code and name.',
+      info: CURRENCY_TOOLTIPS.currency,
       render: (c, ctx) => (
-        <CurrencyCell code={c.code} country={flagOf(c.code)} name={c.name} q={ctx.q} showName strong={ctx.band} onOpen={ctx.openRow}
+        <CurrencyCell code={c.code} hideFlag name={c.name} q={ctx.q} showName strong={ctx.band} onOpen={ctx.openRow}
           trailing={c.isBaseCurrency ? <Badge tone="base" className="shrink-0">Base</Badge> : undefined} />
       ),
       sortValue: c => c.code, searchText: c => [c.code, c.name], filter: 'text', filterValue: c => `${c.code} ${c.name}`,
     },
     {
       key: 'symbol', label: 'Symbol', headerClassName: 'min-w-[90px]',
-      info: 'The sign shown with this currency’s amounts.',
+      info: CURRENCY_TOOLTIPS.symbol,
       render: (c, ctx) => <span className="text-sm text-slate-700 whitespace-nowrap"><Marked text={c.symbol} q={ctx.q} /></span>,
       // "Rs" finds the rupee sign (₨), as people type it.
       searchText: c => symbolSearchText(c.symbol), filter: 'multiselect', filterValue: c => c.symbol,
     },
     {
       key: 'decimals', label: 'Decimals', align: 'right', headerClassName: 'min-w-[100px]', cellClassName: 'pl-4 pr-4',
-      info: 'The number of decimal places in this currency’s amounts.',
+      info: CURRENCY_TOOLTIPS.decimals,
       render: c => <span className="text-sm text-slate-700 tabular-nums">{c.decimalPlaces}</span>,
       sortValue: c => c.decimalPlaces, searchText: c => String(c.decimalPlaces), filter: 'multiselect', filterValue: c => String(c.decimalPlaces),
     },
     {
-      key: 'country', label: 'Country / Region', headerClassName: 'min-w-[220px]',
-      info: 'Where this currency is used.',
+      // The currency's main country alone: the other places it is used are left off the row.
+      key: 'country', label: 'Country', headerClassName: 'min-w-[200px]',
+      info: CURRENCY_TOOLTIPS.country,
       render: (c, ctx) => (
-        <OverflowPills
-          plain
-          q={ctx.q}
-          category="Countries / Regions"
-          values={countriesOf(c).map((name, i) => ({
-            name,
-            // The primary country carries its region, unless the two read the same (EUR: Eurozone).
-            subtitle: i === 0 && regionOf(c) !== name ? regionOf(c) : undefined,
-            icon: <FlagImage code={i === 0 ? placeFlagOf(name, c.code) : countryFlagOf(name)} className="text-base" />,
-          }))}
-        />
+        <span className="inline-flex items-center gap-2 min-w-0 text-sm text-slate-700">
+          <FlagImage code={placeFlagOf(c.country, c.code)} className="text-base shrink-0" />
+          <span className="truncate" title={c.country}><Marked text={c.country} q={ctx.q} /></span>
+        </span>
       ),
-      sortValue: c => c.country, searchText: c => countriesOf(c), filter: 'multiselect', filterValue: c => c.country,
+      sortValue: c => c.country, searchText: c => c.country, filter: 'multiselect', filterValue: c => c.country,
+    },
+    {
+      key: 'region', label: 'Region', defaultHidden: true, headerClassName: 'min-w-[180px]',
+      info: CURRENCY_TOOLTIPS.region,
+      render: (c, ctx) => { const r = regionOf(c); return r ? <span className="text-sm text-slate-700 whitespace-nowrap"><Marked text={r} q={ctx.q} /></span> : <EmptyCell /> },
+      sortValue: c => regionOf(c) ?? null, searchText: c => regionOf(c) ?? '', filter: 'multiselect', filterValue: c => regionOf(c) ?? '',
     },
     {
       key: 'linked', label: 'In Use', align: 'right', headerClassName: 'min-w-[170px]', cellClassName: 'pl-4 pr-4',
-      info: 'Active and total transactions in this currency.',
+      info: CURRENCY_TOOLTIPS.inUse,
       render: c => {
         const n = countInUse(c)
         return (
@@ -131,16 +137,17 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
     },
     {
       key: 'status', label: 'Status', headerClassName: 'min-w-[120px]',
-      info: 'Whether this currency can be used on new transactions. Inactive currencies keep their history.',
+      info: CURRENCY_TOOLTIPS.status,
       render: (c, ctx) => <StatusMenu status={statusOf(c)} options={statusOptionsFor(c)} onPick={next => lifecycleRef.current.request(next, c)} q={ctx.q} />,
       sortValue: c => statusOf(c), searchText: c => statusOf(c), filter: 'multiselect', filterValue: c => statusOf(c),
     },
     {
       key: 'numeric', label: 'ISO Numeric Code', defaultHidden: true, headerClassName: 'min-w-[120px]',
-      info: 'This currency’s three-digit ISO (International Organization for Standardization) code.',
+      info: CURRENCY_TOOLTIPS.numericCode,
       render: (c, ctx) => <span className="text-sm text-slate-700 tabular-nums"><Marked text={c.numericCode} q={ctx.q} /></span>,
       sortValue: c => c.numericCode, searchText: c => c.numericCode, filter: 'text',
     },
+    ...auditColumns<Currency>(auditFacts, 'currency'),
   ], [navigate])
 
   const table = useCoaTable<Currency>({
@@ -149,7 +156,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
     pinTop: isBase, sinkBottom: isInactive, defaultSort: { key: 'linked', dir: 'desc' }, initialColumnSizing: 'fit',
     // 100 a page by default, or All; the reader's choice survives a reload. The
     // base currency is page 1's first row.
-    pagination: { perPage: 100, options: [10, 25, 50, 100, 'all'], resetKey: JSON.stringify([pill, filters, regions]) },
+    pagination: { perPage: 100, options: [10, 25, 50, 100, 'all'], resetKey: JSON.stringify([pill, regions, decimals]) },
   })
 
   const selected = table.selected
@@ -163,9 +170,8 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
   // transactions the button stays, without a count, so the dialog can say why.
   const deactivatable = toDeactivate.filter(c => !hasOpenDocuments(c)).length
   const deactivateCount = deactivatable || (toDeactivate.length ? undefined : 0)
-  const panelCount = countCurrencyFilters(filters)
-  const otherNarrowing = pill !== 'all' || panelCount > 0 || regions.length > 0 || Object.keys(table.colFilters).length > 0
-  const clearNarrowing = () => { setPill('all'); setFilters(EMPTY_CURRENCY_FILTERS); setRegions([]); table.setColFilters({}) }
+  const otherNarrowing = pill !== 'all' || regions.length > 0 || decimals.length > 0 || Object.keys(table.colFilters).length > 0
+  const clearNarrowing = () => { setPill('all'); setRegions([]); setDecimals([]); table.setColFilters({}) }
   const exportFiltered = (fmt: ExportFormat) => exportCurrencies(table.rows, fmt, 'filtered')
 
   return (
@@ -194,7 +200,6 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
               toolbar={
                 <TableToolbar
                   search={{ value: query, onChange: setQuery, placeholder: 'Search currencies' }}
-                  filters={{ count: panelCount, onOpen: () => setFiltersOpen(true), onClear: () => setFilters(EMPTY_CURRENCY_FILTERS) }}
                   count={{ shown: table.rows.length, total: currencies.length, noun: 'currencies' }}
                   density={table.densityMenuProps}
                   columns={{ open: table.columnsOpen, onToggle: () => table.setColumnsOpen(o => !o), count: table.visibleCount }}
@@ -221,10 +226,12 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
                 />
               ) : null}
               pills={
-                <PillRow leading={<PlacePill places={places} selected={regions} onChange={setRegions} countFor={regionCount} />}>
+                <PillRow leading={<>
+                  <RegionPill selected={regions} onChange={setRegions} countFor={regionCount} noun="currencies" />
+                  <PillFilter label="Decimal Places" icon={<Hash size={14} />} description="Show currencies by the number of decimal places in their amounts." options={decimalOptions} selected={decimals} onChange={setDecimals} />
+                </>}>
                   <QuickFilterPill label="Show All" active={pill === 'all'} onClick={() => setPill('all')} />
                   <QuickFilterPill label="Active" count={pillCounts.active} active={pill === 'active'} onClick={() => setPill('active')} />
-                  <QuickFilterPill label="Base Currency" count={pillCounts.base} active={pill === 'base'} onClick={() => setPill('base')} />
                   <QuickFilterPill label="Inactive" tone="warning" count={pillCounts.inactive} active={pill === 'inactive'} onClick={() => setPill(p => (p === 'inactive' ? 'all' : 'inactive'))} />
                 </PillRow>
               }
@@ -249,7 +256,6 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
         </div>
       </div>
 
-      <CurrencyFiltersModal open={filtersOpen} onClose={() => setFiltersOpen(false)} rows={currencies} filters={filters} setFilters={setFilters} />
       <ExportSelectedModal open={exportOpen} onClose={() => setExportOpen(false)} rows={selectedRows} />
       {lifecycle.modal}
     </>

@@ -88,7 +88,7 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
           </SideCard>
         </motion.div>
         <div className={cn('flex items-center', stack && 'justify-center')}>
-          <Tooltip content={inverted ? INVERSE_BADGE_TOOLTIP : `Convert from ${BASE} to ${code} instead`} side="top">
+          <Tooltip content={INVERSE_BADGE_TOOLTIP} side="top">
             <button
               type="button"
               onClick={swap}

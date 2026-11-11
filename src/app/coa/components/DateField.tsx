@@ -490,7 +490,7 @@ export function RangeMonthPane({ base, weeks, from, to, todayIso, onPick, onSet,
 }
 
 export function PeriodRangePicker({
-  presets, value, onChange, label, triggerClassName, customLabel = 'Custom',
+  presets, value, onChange, label, triggerClassName, customLabel = 'Custom', onReset, canReset = true,
 }: {
   presets: PeriodPresetOption[]
   value: DateRangeValue
@@ -500,6 +500,10 @@ export function PeriodRangePicker({
   label: string
   triggerClassName?: string
   customLabel?: string
+  /** Adds Reset to the footer: back to the caller's default range, and closes. */
+  onReset?: () => void
+  /** Reset is greyed out while the range is already the default. */
+  canReset?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -664,6 +668,15 @@ export function PeriodRangePicker({
               <div className="mt-3 pt-3 border-t border-border flex items-center justify-between gap-3">
                 <span className={cn('text-13 tabular-nums', from ? 'text-fg-muted' : 'text-fg-subtle')}>{footerLabel}</span>
                 <div className="flex items-center gap-2">
+                  {onReset && (
+                    <button
+                      type="button"
+                      disabled={!canReset}
+                      onClick={() => { onReset(); setOpen(false) }}
+                      className="h-9 px-3 rounded-lg text-13 text-fg-muted hover:text-fg hover:bg-bg-subtle disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-fg-muted transition-colors cursor-pointer"
+                      style={{ fontWeight: 500 }}
+                    >Reset</button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setOpen(false)}
