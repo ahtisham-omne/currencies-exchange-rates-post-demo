@@ -225,7 +225,7 @@ function LoadOlderMessages({ onClick }: { onClick: () => void }) {
         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-border bg-background text-[12px] font-medium text-fg-muted hover:bg-bg-subtle hover:text-fg transition-colors"
       >
         <ChevronDown className="w-3 h-3 rotate-180" />
-        Load older messages
+        Load Older Messages
       </button>
     </div>
   )
@@ -379,7 +379,7 @@ function SidebarSection({ label, expanded, onToggle, count, onAdd, addTooltip, c
       <div className="flex items-center px-4 py-1.5">
         <button onClick={onToggle} className="flex items-center gap-1.5 flex-1 text-left">
           <ChevronDown className={cn('w-3 h-3 text-fg-muted/50 transition-transform', !expanded && '-rotate-90')} />
-          <span className="text-[11px] font-semibold text-[var(--color-slate-500)] uppercase tracking-wider">{label}</span>
+          <span className="text-[11px] font-semibold text-[var(--color-slate-500)]">{label}</span>
           <span
             className="min-w-[18px] h-[18px] rounded-full text-[10px] flex items-center justify-center px-1 font-semibold"
             style={{ backgroundColor: 'var(--color-slate-200)', color: 'var(--color-slate-600)' }}
@@ -632,7 +632,7 @@ function SentMessagesView({ groups, onOpen, highlightQuery }: {
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
         {groups.map(group => (
           <div key={group.label} className="mb-3">
-            <div className="px-3 py-1.5 text-[11px] uppercase tracking-wide text-fg-muted" style={{ fontWeight: 600 }}>
+            <div className="px-3 py-1.5 text-[11px] text-fg-muted" style={{ fontWeight: 600 }}>
               {group.label}
             </div>
             <div className="space-y-1">
@@ -1357,7 +1357,7 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
   const exportConversation = () => {
     if (!selected) return
     const rows = [
-      ['Timestamp', 'Author', 'Message', 'Has attachments'].join(','),
+      ['Timestamp', 'Author', 'Message', 'Has Attachments'].join(','),
       ...channelMessages.map(m => [
         `"${m.timestamp}"`,
         `"${m.authorName}"`,
@@ -1447,7 +1447,7 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
   const composeRecipients = useMemo<ComposeRecipient[]>(() => {
     const active = myChannels.filter(c => !c.archived)
     const fromChannels: ComposeRecipient[] = active.map(c => c.type === 'dm'
-      ? { id: c.id, name: c.name, subtitle: USERS.find(u => u.name === c.name)?.email, type: 'dm', group: 'Recent conversations' }
+      ? { id: c.id, name: c.name, subtitle: USERS.find(u => u.name === c.name)?.email, type: 'dm', group: 'Recent Conversations' }
       : { id: c.id, name: c.name, subtitle: c.topic ?? c.description, type: c.type === 'private' ? 'channel-private' : 'channel-public', group: 'Channels' })
     const dmNames = new Set(active.filter(c => c.type === 'dm').map(c => c.name))
     const fromUsers: ComposeRecipient[] = USERS
@@ -1708,7 +1708,7 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
           {isComposeOpen && (
             <>
               <div className="shrink-0 flex items-center justify-between px-5 h-[44px] border-b border-border bg-white">
-                <span className="text-[15px] text-[var(--color-slate-900)]" style={{ fontWeight: 600 }}>New message</span>
+                <span className="text-[15px] text-[var(--color-slate-900)]" style={{ fontWeight: 600 }}>New Message</span>
                 <button
                   type="button"
                   onClick={closeCompose}
@@ -1772,7 +1772,7 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
                     ) : (
                       Object.entries(composeGroups).map(([group, items]) => (
                         <div key={group} className="py-1.5">
-                          <div className="px-3 pb-1 pt-0.5 text-[10px] text-[var(--color-slate-400)] uppercase tracking-wider" style={{ fontWeight: 600 }}>
+                          <div className="px-3 pb-1 pt-0.5 text-[10px] text-[var(--color-slate-400)]" style={{ fontWeight: 600 }}>
                             {group}
                           </div>
                           {items.map(r => (
@@ -2000,13 +2000,13 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
                               icon={<Search className="w-3.5 h-3.5" />}
                               onClick={() => { close(); setSearchQueryInput(''); setSearchInConversation(true) }}
                             >
-                              Search in conversation
+                              Search in Conversation
                             </MenuItem>
                             <MenuItem
                               icon={selected.pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
                               onClick={() => { close(); togglePinChannel(selected.id) }}
                             >
-                              {selected.pinned ? 'Unpin channel' : 'Pin channel'}
+                              {selected.pinned ? 'Unpin Channel' : 'Pin Channel'}
                             </MenuItem>
                             <MenuItem
                               icon={selected.muted ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
@@ -2016,14 +2016,14 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
                             </MenuItem>
                             {selected.type !== 'dm' && (
                               <MenuItem icon={<Pencil className="w-3.5 h-3.5" />} onClick={() => { close(); setShowChannelDetails(true) }}>
-                                Edit channel details
+                                Edit Channel Details
                               </MenuItem>
                             )}
                             <MenuItem icon={<Activity className="w-3.5 h-3.5" />} onClick={() => { close(); setShowActivityLog(true) }}>
-                              Activity log
+                              Activity Log
                             </MenuItem>
                             <MenuItem icon={<Download className="w-3.5 h-3.5" />} onClick={() => { close(); exportConversation() }}>
-                              Export conversation
+                              Export Conversation
                             </MenuItem>
                             {/* Archiving removes the channel for everyone, so only
                                 its owner can start it. Unarchiving stays a single
@@ -2038,12 +2038,12 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
                                   else setArchiveConfirmChannelId(selected.id)
                                 }}
                               >
-                                {selected.archived ? 'Unarchive' : 'Archive channel'}
+                                {selected.archived ? 'Unarchive' : 'Archive Channel'}
                               </MenuItem>
                             )}
                             {selected.type !== 'dm' && selected.ownerId !== ME_ID && !selected.archived && (
                               <MenuItem danger icon={<LogOut className="w-3.5 h-3.5" />} onClick={() => { close(); setLeaveConfirmChannelId(selected.id) }}>
-                                Leave channel
+                                Leave Channel
                               </MenuItem>
                             )}
                           </>
@@ -2057,7 +2057,7 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
               {activeFilterCount > 0 && (
                 <div className="shrink-0 px-5 py-2 border-b border-border bg-blue-50/40 flex items-center gap-2 text-[11px]">
                   <Filter className="w-3 h-3 text-[var(--color-sky-500)]" />
-                  <span className="text-[var(--color-sky-500)] font-medium">Filters active:</span>
+                  <span className="text-[var(--color-sky-500)] font-medium">Filters Active:</span>
                   {filters.sender && (
                     <span className="px-1.5 py-0.5 bg-white rounded border border-[var(--color-sky-500)]/20">
                       Sender: {USERS.find(u => u.id === filters.sender)?.name}
@@ -2065,10 +2065,10 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
                   )}
                   {filters.dateRange && (
                     <span className="px-1.5 py-0.5 bg-white rounded border border-[var(--color-sky-500)]/20">
-                      Date: {filters.dateRange === 'today' ? 'Today' : filters.dateRange === 'week' ? 'This week' : 'This month'}
+                      Date: {filters.dateRange === 'today' ? 'Today' : filters.dateRange === 'week' ? 'This Week' : 'This Month'}
                     </span>
                   )}
-                  <button onClick={() => setFilters({})} className="ml-auto text-[var(--color-sky-500)] hover:underline">Clear all</button>
+                  <button onClick={() => setFilters({})} className="ml-auto text-[var(--color-sky-500)] hover:underline">Clear All</button>
                 </div>
               )}
 
@@ -2098,7 +2098,7 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
                             className="self-start inline-flex items-center gap-1 text-[11.5px] text-[var(--color-sky-500)] hover:underline"
                           >
                             <CornerDownRight className="w-3 h-3" />
-                            Go to message
+                            Go to Message
                           </button>
                         </div>
                       ))}
@@ -2524,12 +2524,12 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
         <ConfirmModal
           open={!!archiveConfirmChannel}
           tone="warning"
-          badge="ARCHIVE"
+          badge="Archive"
           icon={<Archive size={20} />}
           title={`Archive #${archiveConfirmChannel?.name ?? ''}?`}
           description="This channel will be moved to the archive. You can still find it later under the Archived tab."
-          confirmLabel="Archive"
-          dismissLabel="Keep active"
+          confirmLabel="Archive Channel"
+          dismissLabel="Keep Active"
           onConfirm={() => {
             if (archiveConfirmChannelId) toggleArchiveChannel(archiveConfirmChannelId)
             setArchiveConfirmChannelId(null)
@@ -2540,12 +2540,12 @@ export function ChatPanel({ subjectId, kind, label, anchorIso, density, composeO
         <ConfirmModal
           open={!!leaveConfirmChannel}
           tone="danger"
-          badge="LEAVE"
+          badge="Leave"
           icon={<LogOut size={20} />}
           title={`Leave #${leaveConfirmChannel?.name ?? ''}?`}
           description={`You'll stop receiving messages from #${leaveConfirmChannel?.name ?? ''}. You can be re-added by another member later.`}
-          confirmLabel="Leave channel"
-          dismissLabel="Stay in channel"
+          confirmLabel="Leave Channel"
+          dismissLabel="Stay in Channel"
           onConfirm={() => {
             if (leaveConfirmChannelId) leaveChannel(leaveConfirmChannelId)
             setLeaveConfirmChannelId(null)
@@ -2574,11 +2574,11 @@ function ChatFiltersModal({ filters, channelMessages, onApply, onClose }: {
     <Modal
       open
       onClose={onClose}
-      title="Filter messages"
+      title="Filter Messages"
       footerAlign="between"
       footer={
         <>
-          <button onClick={() => { setDraft({}); onApply({}) }} className="text-[13px] text-fg-muted hover:text-fg">Clear all</button>
+          <button onClick={() => { setDraft({}); onApply({}) }} className="text-[13px] text-fg-muted hover:text-fg">Clear All</button>
           <div className="flex gap-2">
             <button onClick={onClose} className="btn-secondary">Cancel</button>
             <button onClick={() => onApply(draft)} className="btn-primary">Apply</button>
@@ -2592,18 +2592,18 @@ function ChatFiltersModal({ filters, channelMessages, onApply, onClose }: {
           value={draft.sender ?? ''}
           onChange={e => setDraft({ ...draft, sender: e.target.value || undefined })}
         >
-          <option value="">All senders</option>
+          <option value="">All Senders</option>
           {senders.map(s => <option key={s} value={s}>{USERS.find(u => u.id === s)?.name ?? s}</option>)}
         </Select>
         <Select
-          label="Date range"
+          label="Date Range"
           value={draft.dateRange ?? ''}
           onChange={e => setDraft({ ...draft, dateRange: (e.target.value || undefined) as ChatFilters['dateRange'] })}
         >
-          <option value="">All time</option>
+          <option value="">All Time</option>
           <option value="today">Today</option>
-          <option value="week">This week</option>
-          <option value="month">This month</option>
+          <option value="week">This Week</option>
+          <option value="month">This Month</option>
         </Select>
       </div>
     </Modal>
@@ -2621,7 +2621,7 @@ function ForwardMessageModal({ message, channels, onForward, onClose }: {
     <Modal
       open
       onClose={onClose}
-      title="Forward message"
+      title="Forward Message"
       footer={
         <>
           <button onClick={onClose} className="btn-secondary">Cancel</button>
@@ -2629,7 +2629,7 @@ function ForwardMessageModal({ message, channels, onForward, onClose }: {
         </>
       }
     >
-      <p className="text-[12px] text-fg-muted mb-3">Forward to channel or DM:</p>
+      <p className="text-[12px] text-fg-muted mb-3">Forward to Channel or DM:</p>
       <div className="space-y-1 max-h-[280px] overflow-y-auto">
         {channels.map(c => (
           <button
@@ -2649,7 +2649,7 @@ function ForwardMessageModal({ message, channels, onForward, onClose }: {
         ))}
       </div>
       <div className="mt-4 p-3 bg-bg-subtle rounded-md border border-border">
-        <p className="text-[11px] text-fg-muted mb-1">Message preview</p>
+        <p className="text-[11px] text-fg-muted mb-1">Message Preview</p>
         <p className="text-[12px] text-fg line-clamp-2">{message.text}</p>
       </div>
     </Modal>
@@ -2668,7 +2668,7 @@ function CreateChannelModal({ onCreate, onClose }: {
     <Modal
       open
       onClose={onClose}
-      title="Create a channel"
+      title="Create a Channel"
       footer={
         <>
           <button onClick={onClose} className="btn-secondary">Cancel</button>
@@ -2699,14 +2699,14 @@ function CreateChannelModal({ onCreate, onClose }: {
           </div>
         </div>
         <Input
-          label="Description (optional)"
+          label="Description (Optional)"
           value={description}
           onChange={e => setDescription(e.target.value)}
           placeholder="What's this channel about?"
         />
-        <Toggle checked={isPrivate} onChange={setIsPrivate} label="Make private" />
+        <Toggle checked={isPrivate} onChange={setIsPrivate} label="Make Private" />
         <div>
-          <label className="label">Add members</label>
+          <label className="label">Add Members</label>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {USERS.filter(u => u.id !== ME_ID).map(u => (
               <button
@@ -2744,7 +2744,7 @@ function ChannelDetailsModal({ channel, onUpdate, onClose }: {
       open
       onClose={onClose}
       title={channel.type === 'dm' ? channel.name : `#${channel.name}`}
-      subtitle={channel.type === 'private' ? 'Private channel' : channel.type === 'dm' ? 'Direct message' : 'Public channel'}
+      subtitle={channel.type === 'private' ? 'Private Channel' : channel.type === 'dm' ? 'Direct Message' : 'Public Channel'}
       subheader={
         <div className="px-5 flex items-center gap-4 border-b border-border">
           {(['about', 'members'] as const).map(t => (
@@ -2769,7 +2769,7 @@ function ChannelDetailsModal({ channel, onUpdate, onClose }: {
               onClick={() => { onUpdate({ topic: topic || undefined, description: description || undefined }); onClose() }}
               className="btn-primary"
             >
-              Save changes
+              Save Changes
             </button>
           </>
         ) : (
@@ -2795,7 +2795,7 @@ function ChannelDetailsModal({ channel, onUpdate, onClose }: {
           />
           <div className="rounded-md border border-border bg-bg-subtle px-3 py-2.5 text-[12px] text-fg-muted space-y-1">
             <p>Owner: {USERS.find(u => u.id === channel.ownerId)?.name ?? 'Unknown'}</p>
-            <p>Last activity: {channel.lastActivity}</p>
+            <p>Last Activity: {channel.lastActivity}</p>
           </div>
           {!isOwner && (
             <p className="text-[12px] text-fg-muted">Only the channel owner can change the topic and description.</p>
@@ -2828,7 +2828,7 @@ function ChannelDetailsModal({ channel, onUpdate, onClose }: {
           </div>
           {isOwner && candidates.length > 0 && (
             <div>
-              <p className="text-[12px] font-medium text-fg-muted mb-1.5">Add members</p>
+              <p className="text-[12px] font-medium text-fg-muted mb-1.5">Add Members</p>
               <div className="flex flex-wrap gap-1.5">
                 {candidates.map(u => (
                   <button
@@ -2858,7 +2858,7 @@ function ActivityLogModal({ channel, onClose }: { channel: Channel; onClose: () 
     { ts: 'Jul 8, 2025 3:00 PM', actor: 'Ashmita Roy', action: `created the channel #${channel.name}` },
   ]
   return (
-    <Modal open onClose={onClose} title="Activity log" footer={<button onClick={onClose} className="btn-secondary">Close</button>}>
+    <Modal open onClose={onClose} title="Activity Log" footer={<button onClick={onClose} className="btn-secondary">Close</button>}>
       <div className="space-y-3">
         {log.map((e, i) => (
           <div key={i} className="flex items-start gap-2.5">

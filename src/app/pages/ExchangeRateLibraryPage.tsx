@@ -108,8 +108,8 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   const rateTypeTabs = (
     <SegmentedTabs<Tab>
       tabs={[
-        { key: 'mid', label: 'Mid-market rates', count: midAll.length },
-        { key: 'corp', label: 'Corporate rates', count: corpAll.length },
+        { key: 'mid', label: 'Mid-Market Rates', count: midAll.length },
+        { key: 'corp', label: 'Corporate Rates', count: corpAll.length },
       ]}
       activeKey={tab}
       onChange={setTab}
@@ -123,8 +123,8 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
     if (isMid && !only) {
       const rows = midTable.rows
       void exportRows({
-        fileBase: 'mid_market_rates', sheetName: 'Mid-market rates', title: 'Mid-market exchange rates', noun: 'rates', one: 'rate',
-        headers: ['Base currency', 'Source currency', 'Currency name', 'Mid-market exchange rate', 'Inverse rate', 'Change (24h)', 'Effective date'],
+        fileBase: 'mid_market_rates', sheetName: 'Mid-Market Rates', title: 'Mid-Market Exchange Rates', noun: 'rates', one: 'rate',
+        headers: ['Base Currency', 'Source Currency', 'Currency Name', 'Mid-Market Exchange Rate', 'Inverse Rate', 'Change (24h)', 'Effective Date'],
         rows: rows.map(r => [BASE, r.code, r.name, fmtRate(r.rate), fmtInverse(r.rate), fmtSignedPct(r.change24h), r.effectiveDate]),
         widths: [14, 16, 28, 24, 14, 12, 14],
       }, fmt)
@@ -133,7 +133,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
     const rows = (only ?? corpShown).filter(r => r.status === 'Active')
     void exportRows({
       fileBase: 'corporate_rates', sheetName: 'Corporate Rates', title: 'Corporate Exchange Rates', noun: 'rates', one: 'rate',
-      headers: ['Base currency', 'Source currency', 'Corporate exchange rate', 'Mid-market exchange rate', 'Variance', 'Effective date', 'Upcoming rate', 'Upcoming from', 'Created by'],
+      headers: ['Base Currency', 'Source Currency', 'Corporate Exchange Rate', 'Mid-Market Exchange Rate', 'Variance', 'Effective Date', 'Upcoming Rate', 'Upcoming From', 'Created By'],
       rows: rows.map(r => [BASE, r.code, r.rate == null ? '' : fmtRate(r.rate), r.mid == null ? '' : fmtRate(r.mid), r.variance == null ? '' : `${r.variance}%`, r.effectiveDate, r.upcoming ? fmtRate(r.upcoming.rate) : '', r.upcoming?.effectiveDate ?? '', r.createdBy]),
       widths: [14, 16, 22, 24, 10, 14, 14, 14, 18],
     }, fmt)
@@ -177,7 +177,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
               )}
             </Menu>
           }
-          primaryAction={<Button icon={<Plus size={ic14} />} onClick={() => form.openAdd()}>Add corporate rate</Button>}
+          primaryAction={<Button icon={<Plus size={ic14} />} onClick={() => form.openAdd()}>Add Corporate Rate</Button>}
         />
 
         {/* Steps in under the header when the page's tab changes. */}
@@ -199,7 +199,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                 }
                 notes={
                   <div className="px-4 py-3 border-b border-border">
-                    <Banner tone="info" title="Mid-market rates">{EXPLANATORY_BLOCKS.midMarket}</Banner>
+                    <Banner tone="info" title="Mid-Market Rates">{EXPLANATORY_BLOCKS.midMarket}</Banner>
                   </div>
                 }
               >
@@ -215,12 +215,12 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                   afterRow={r => (r.isBase ? <TableNoteRow band>All exchange rates below are quoted against this currency.</TableNoteRow> : null)}
                   rowMenu={(r, close) => (
                     <>
-                      <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(r.code, 'mid')) }}>View details</MenuItem>
+                      <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(r.code, 'mid')) }}>View Details</MenuItem>
                       {r.isBase
-                        ? <MenuItem icon={<Plus size={14} />} disabled disabledReason={`${BASE} is the base currency. Its rate is always 1.0000.`}>Set corporate rate</MenuItem>
+                        ? <MenuItem icon={<Plus size={14} />} disabled disabledReason={`${BASE} is the base currency. Its rate is always 1.0000.`}>Set Corporate Rate</MenuItem>
                         : r.corporate
-                          ? <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.corporate!.id) }}>Update corporate rate</MenuItem>
-                          : <MenuItem icon={<Plus size={14} />} onClick={() => { close(); form.openAdd(r.code) }}>Set corporate rate</MenuItem>}
+                          ? <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.corporate!.id) }}>Update Corporate Rate</MenuItem>
+                          : <MenuItem icon={<Plus size={14} />} onClick={() => { close(); form.openAdd(r.code) }}>Set Corporate Rate</MenuItem>}
                     </>
                   )}
                   emptyState={emptyState}
@@ -247,7 +247,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                     onClear={corpTable.clearSelection}
                     actions={[
                       { key: 'archive', label: 'Archive', icon: Archive, tone: 'destructive', count: selectedActive.length, onClick: () => lifecycle.archiveBulk(selectedRecords, corpTable.clearSelection) },
-                      { key: 'export', label: 'Export selected', icon: Download, tone: 'neutral', onClick: () => exportCurrent('csv', corpAll.filter(r => corpTable.selected.has(r.id))) },
+                      { key: 'export', label: 'Export Selected', icon: Download, tone: 'neutral', onClick: () => exportCurrent('csv', corpAll.filter(r => corpTable.selected.has(r.id))) },
                     ]}
                   />
                 ) : null}
@@ -260,7 +260,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                 }
                 notes={
                   <div className="px-4 py-3 border-b border-border">
-                    <Banner tone="info" title="Corporate rates">{EXPLANATORY_BLOCKS.corporate}</Banner>
+                    <Banner tone="info" title="Corporate Rates">{EXPLANATORY_BLOCKS.corporate}</Banner>
                   </div>
                 }
               >
@@ -284,14 +284,14 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                   )}
                   afterRow={r => (r.isBase ? <TableNoteRow band>All exchange rates below are quoted against this currency.</TableNoteRow> : null)}
                   rowMenu={(r, close) => r.isBase ? (
-                    <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(BASE, 'mid')) }}>View details</MenuItem>
+                    <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(BASE, 'mid')) }}>View Details</MenuItem>
                   ) : (
                     <>
-                      <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(r.code, 'std')) }}>View details</MenuItem>
-                      {r.status === 'Active' && <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.id) }}>Update rate</MenuItem>}
+                      <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(pairPath(r.code, 'std')) }}>View Details</MenuItem>
+                      {r.status === 'Active' && <MenuItem icon={<Pencil size={14} />} onClick={() => { close(); form.openUpdate(r.id) }}>Update Rate</MenuItem>}
                       {r.status === 'Active'
-                        ? <MenuItem icon={<Archive size={14} />} danger onClick={() => { close(); lifecycle.archive(r.record!) }}>Archive rate</MenuItem>
-                        : <MenuItem icon={<ArchiveRestore size={14} />} onClick={() => { close(); lifecycle.restore(r.record!) }}>Restore rate</MenuItem>}
+                        ? <MenuItem icon={<Archive size={14} />} danger onClick={() => { close(); lifecycle.archive(r.record!) }}>Archive Rate</MenuItem>
+                        : <MenuItem icon={<ArchiveRestore size={14} />} onClick={() => { close(); lifecycle.restore(r.record!) }}>Restore Rate</MenuItem>}
                     </>
                   )}
                   emptyState={emptyState}

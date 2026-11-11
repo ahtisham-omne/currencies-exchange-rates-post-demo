@@ -458,7 +458,7 @@ export function EmailComposeInline({
 
   const ConfidentialEyeIcon = isConfidential ? EyeOff : Eye
   const remainingSuggestions = suggestedRecipients.filter(r => !toChips.includes(r))
-  const sendLabel = isNote ? 'Send out' : mode === 'forward' ? 'Forward' : 'Send'
+  const sendLabel = isNote ? 'Send Out' : mode === 'forward' ? 'Forward' : 'Send'
   const showRecordRow = !hideSubjectAndRecord && !hideRecord
 
   return (
@@ -488,14 +488,14 @@ export function EmailComposeInline({
             className="shrink-0 inline-flex items-center h-7 px-3 rounded-md border border-[var(--color-amber-700)] bg-white text-[12px] text-[var(--color-amber-900)] hover:bg-[var(--color-amber-50)] transition-colors cursor-pointer"
             style={{ fontWeight: 600 }}
           >
-            Link a record
+            Link a Record
           </button>
         </div>
       )}
 
       {showRecordRow && (
         <div className="shrink-0 px-5 py-2.5 border-b border-gray-200 bg-[var(--color-mist-200)] flex items-center gap-2" aria-labelledby="compose-linked-record-label">
-          <span id="compose-linked-record-label" className="text-[11px] text-gray-500" style={{ fontWeight: 500 }}>Linked record:</span>
+          <span id="compose-linked-record-label" className="text-[11px] text-gray-500" style={{ fontWeight: 500 }}>Linked Record:</span>
           {(() => {
             const chipContent = noRecord ? (
               <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11.5px] bg-[var(--color-slate-200)] text-[var(--color-slate-600)] border border-[var(--color-slate-300)]" style={{ fontWeight: 500 }}>
@@ -736,11 +736,11 @@ export function EmailComposeInline({
       <ConfirmModal
         open={showNoSubjectConfirm}
         tone="info"
-        badge="No subject"
+        badge="No Subject"
         title="Send without a subject?"
         description="This message has no subject line. A thread with no subject is harder to find later."
-        confirmLabel="Yes, send"
-        dismissLabel="No, let me add one"
+        confirmLabel="Yes, Send"
+        dismissLabel="No, Let Me Add One"
         onConfirm={() => { setShowNoSubjectConfirm(false); doSend() }}
         onDismiss={() => setShowNoSubjectConfirm(false)}
       />
@@ -874,7 +874,7 @@ export function EmailComposeInline({
                 style={{ fontWeight: 500 }}
               >
                 <FileEdit className="w-3.5 h-3.5" />
-                Save as draft
+                Save as Draft
               </button>
             )}
             <button

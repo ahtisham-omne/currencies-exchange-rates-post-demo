@@ -126,7 +126,7 @@ export function CrossedRangeNote({ what, onSwap }: { what: string; onSwap: () =>
         className="ml-1.5 underline underline-offset-2 hover:no-underline cursor-pointer"
         style={{ fontWeight: 500 }}
       >
-        Swap them
+        Swap Them
       </button>
     </p>
   )
@@ -182,7 +182,7 @@ export function FilterEditorBody({ label, filter, onFilterChange, uniqueValues }
               <div className="border-t border-border/40" />
               <div className="px-3 py-2 flex items-center justify-between">
                 <span className="text-[12px] text-muted-foreground">{filter.values.length} selected</span>
-                <button type="button" onClick={clear} className="text-[12px] cursor-pointer transition-colors hover:text-primary" style={{ fontWeight: 500, color: 'hsl(var(--primary))' }}>Clear selection</button>
+                <button type="button" onClick={clear} className="text-[12px] cursor-pointer transition-colors hover:text-primary" style={{ fontWeight: 500, color: 'hsl(var(--primary))' }}>Clear Selection</button>
               </div>
             </>
           )}
@@ -190,7 +190,7 @@ export function FilterEditorBody({ label, filter, onFilterChange, uniqueValues }
       )}
       {filter.type === 'text' && (
         <div className="px-3 pb-3">
-          <input type="text" value={filter.text} onChange={e => onFilterChange({ ...filter, text: e.target.value })} placeholder={`Filter by ${label.toLowerCase()}`} autoFocus className={FILTER_INPUT_CLS} />
+          <input type="text" value={filter.text} onChange={e => onFilterChange({ ...filter, text: e.target.value })} placeholder="Type to filter…" autoFocus className={FILTER_INPUT_CLS} />
         </div>
       )}
       {filter.type === 'range' && (() => {
@@ -334,12 +334,12 @@ export function HeaderMenu({ label, sortable, currentSort, onSortDir, filter, on
                   <>
                     <button type="button" onClick={() => handleSort('asc')} className={cn(itemCls, currentSort === 'asc' ? 'text-primary bg-primary/5' : 'text-foreground')}>
                       <ArrowUp className="w-4 h-4 text-muted-foreground" />
-                      <span style={{ fontWeight: 400 }}>Sort ascending</span>
+                      <span style={{ fontWeight: 400 }}>Sort Ascending</span>
                       {currentSort === 'asc' && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
                     </button>
                     <button type="button" onClick={() => handleSort('desc')} className={cn(itemCls, currentSort === 'desc' ? 'text-primary bg-primary/5' : 'text-foreground')}>
                       <ArrowDown className="w-4 h-4 text-muted-foreground" />
-                      <span style={{ fontWeight: 400 }}>Sort descending</span>
+                      <span style={{ fontWeight: 400 }}>Sort Descending</span>
                       {currentSort === 'desc' && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
                     </button>
                   </>
@@ -579,7 +579,7 @@ export function ColumnFiltersBar<K extends string>({ filters, onChange, availabl
             className="text-[12px] text-muted-foreground hover:text-foreground cursor-pointer transition-colors whitespace-nowrap shrink-0"
             style={{ fontWeight: 500 }}
           >
-            Clear all
+            Clear All
           </button>
         </>
       )}

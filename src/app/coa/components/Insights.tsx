@@ -78,8 +78,8 @@ export function useKpiShelf(defaultKpis: string[], rememberAs?: string) {
    icons below stay, because they group a list rather than decorate a number. */
 function CategoryIcon({ category }: { category: string }) {
   switch (category) {
-    case 'Current balances': return <Wallet className="w-4 h-4 text-muted-foreground" />
-    case 'Last full month': return <TrendingUp className="w-4 h-4 text-muted-foreground" />
+    case 'Current Balances': return <Wallet className="w-4 h-4 text-muted-foreground" />
+    case 'Last Full Month': return <TrendingUp className="w-4 h-4 text-muted-foreground" />
     case 'Performance': return <TrendingUp className="w-4 h-4 text-muted-foreground" />
     case 'Movement': return <ArrowDownUp className="w-4 h-4 text-muted-foreground" />
     case 'Liquidity': return <Wallet className="w-4 h-4 text-muted-foreground" />
@@ -308,7 +308,7 @@ export function PerformanceInsights({
             </button>
           )}
           <button onClick={onOpenPanel} className="inline-flex items-center gap-1 text-[11px] text-primary hover:text-[#0862D0] transition-colors cursor-pointer" style={{ fontWeight: 600 }}>
-            <SlidersHorizontal className="w-3 h-3" /> Customize insights
+            <SlidersHorizontal className="w-3 h-3" /> Customize Insights
           </button>
         </div>
       </div>
@@ -495,7 +495,7 @@ export function InsightsPanel({
             <div key={cat.name} className="mt-5 first:mt-4">
               <div className="flex items-center gap-1.5 mb-2">
                 <CategoryIcon category={cat.name} />
-                <span className="text-xs text-muted-foreground/70 uppercase tracking-wide" style={{ fontWeight: 600 }}>{cat.name}</span>
+                <span className="text-xs text-muted-foreground/70" style={{ fontWeight: 600 }}>{cat.name}</span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {cat.kpis.map((kpi) => {

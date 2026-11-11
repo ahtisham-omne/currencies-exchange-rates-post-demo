@@ -83,7 +83,7 @@ export function PersonContactCardModal({
             iconRight={<ExternalLink size={14} />}
             onClick={() => pushToast('Contacts are outside the Currency Library.', 'info')}
           >
-            Go to contact
+            Go to Contact
           </Button>
         </>
       }
@@ -140,9 +140,9 @@ export function PersonContactCardModal({
           </div>
           <div className="rounded-lg border border-[var(--color-slate-200)] bg-white px-2 py-2 text-center">
             <p className="text-[14px] text-[var(--color-slate-900)]" style={{ fontWeight: 700, lineHeight: 1 }}>
-              {stats.avgResponseHrs}<span className="text-[10px] text-[var(--color-slate-400)] ml-0.5" style={{ fontWeight: 500 }}>hrs</span>
+              {stats.avgResponseHrs}<span className="text-[10px] text-[var(--color-slate-400)] ml-0.5" style={{ fontWeight: 500 }}>h</span>
             </p>
-            <p className="text-[10px] text-[var(--color-slate-400)] mt-1" style={{ fontWeight: 500 }}>Avg response</p>
+            <p className="text-[10px] text-[var(--color-slate-400)] mt-1" style={{ fontWeight: 500 }}>Avg Response</p>
           </div>
         </div>
 
@@ -180,7 +180,7 @@ export function PersonContactCardModal({
             title={`Message ${person.name}`}
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            Send message
+            Send Message
           </button>
         </div>
 

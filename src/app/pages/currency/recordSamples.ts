@@ -184,7 +184,7 @@ export function currencyActivity(c: Currency, now = new Date()): ActivityFeedIte
   const sample: DatedActivity[] = [
     {
       id: `${c.code}-sample-rounding`, type: 'edit', user: 'Ayesha Khan', at: at(4 + (h % 5), 10), date: '',
-      verb: 'updated rounding (“Half even” → “Half up”) for', target: c.name,
+      verb: 'updated rounding (“Half Even” → “Half Up”) for', target: c.name,
     },
     c.isBaseCurrency
       ? {

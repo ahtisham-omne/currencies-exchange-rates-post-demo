@@ -37,7 +37,7 @@ const MID_NOTES = [
 export function pairNotes(code: string, kind: RateKind, record: StandardRate | undefined, now = new Date()): RecordNote[] {
   const pair = `${code}/${BASE}`
   const carried: RecordNote[] = kind === 'std' && record?.notes
-    ? [{ id: `${record.id}-notes`, text: record.notes, author: record.createdBy, at: record.updatedAt, tag: 'Rate notes' }]
+    ? [{ id: `${record.id}-notes`, text: record.notes, author: record.createdBy, at: record.updatedAt, tag: 'Rate Notes' }]
     : []
   if (kind === 'std' && !isSeededRate(record)) return carried
   const lines = kind === 'std' ? CORPORATE_NOTES : MID_NOTES

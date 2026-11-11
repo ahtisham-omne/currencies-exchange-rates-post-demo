@@ -16,7 +16,7 @@ import { cn, fmtNumber, invertedDates, invertedRange } from '../lib/utils'
    Renders nothing when nothing is filtered. A disabled control would hold space
    on every table for a state most readers never reach, and the Filters button
    beside it already says "no filters" by showing no badge. */
-export function ClearFiltersLink({ onClear, label = 'Clear all' }: { onClear: () => void; label?: string }) {
+export function ClearFiltersLink({ onClear, label = 'Clear All' }: { onClear: () => void; label?: string }) {
   return (
     <>
       <div className="w-px h-5 bg-border/60 shrink-0" />
@@ -132,7 +132,7 @@ export function FiltersModal({
             className="text-[13px] text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-muted-foreground/30 hover:decoration-foreground/50 transition-colors cursor-pointer"
             style={{ fontWeight: 500 }}
           >
-            Clear all
+            Clear All
           </button>
           <button
             type="button"
@@ -309,7 +309,7 @@ export function PillSection({ options, selected, onToggle, getCount, threshold =
           className="inline-flex items-center gap-1 mt-2.5 text-[13px] cursor-pointer transition-colors hover:opacity-80"
           style={{ fontWeight: 500, color: 'hsl(var(--primary))' }}
         >
-          {showAll ? 'Show less' : `Show all ${options.length}`}
+          {showAll ? 'Show Less' : `Show All ${options.length}`}
           {showAll ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
       )}
@@ -435,7 +435,7 @@ export function SearchableDropdownSelect({ options, selected, onToggle, onClear,
             <div className="border-t border-border/40" />
             <div className="px-3 py-2 flex items-center justify-between">
               <span className="text-[12px] text-muted-foreground">{selected.length} selected</span>
-              <button type="button" onClick={onClear} className="text-[12px] cursor-pointer transition-colors hover:opacity-80" style={{ fontWeight: 500, color: 'hsl(var(--primary))' }}>Clear selection</button>
+              <button type="button" onClick={onClear} className="text-[12px] cursor-pointer transition-colors hover:opacity-80" style={{ fontWeight: 500, color: 'hsl(var(--primary))' }}>Clear Selection</button>
             </div>
           </>
         )}

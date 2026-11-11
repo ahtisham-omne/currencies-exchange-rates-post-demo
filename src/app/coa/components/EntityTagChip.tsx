@@ -146,7 +146,7 @@ export function TagInputField({ tags, onChange }: { tags: string[]; onChange: (n
       </div>
       {error
         ? <p className="mt-1.5 text-2xs leading-snug text-danger-600">{error}</p>
-        : <p className="mt-1.5 text-2xs leading-snug text-fg-muted">Press enter or comma to add tags. Up to {MAX_TAGS} tags, {MAX_TAG_LENGTH} characters each.</p>}
+        : <p className="mt-1.5 text-2xs leading-snug text-fg-muted">Press Enter or comma to add tags. Up to {MAX_TAGS} tags, {MAX_TAG_LENGTH} characters each.</p>}
     </div>
   )
 }

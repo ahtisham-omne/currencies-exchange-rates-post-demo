@@ -24,7 +24,7 @@ const AUTOMATED_LABEL_STYLES: Record<string, { bg: string; fg: string; valueClas
   Reason: { bg: 'var(--color-red-100)', fg: 'var(--color-red-800)' },
   Subject: { bg: 'var(--color-brand-75)', fg: 'var(--color-sky-500)' },
   To: { bg: 'var(--color-slate-100)', fg: 'var(--color-slate-600)' },
-  'What to do next': { bg: 'var(--color-amber-100)', fg: 'var(--color-amber-800)' },
+  'What to Do Next': { bg: 'var(--color-amber-100)', fg: 'var(--color-amber-800)' },
 }
 
 export function AutomatedEmailTemplate({ body }: { body: string }) {

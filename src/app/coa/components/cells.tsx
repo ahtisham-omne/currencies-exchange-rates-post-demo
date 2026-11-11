@@ -212,7 +212,7 @@ export function OverflowCard({ category, items, icon: RowIcon = Layers, children
             style={{ border: '1px solid rgba(226, 232, 240, 0.5)', boxShadow: '0 4px 20px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)' }}
           >
             <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between">
-              <span className="text-[11px] tracking-wide uppercase" style={{ fontWeight: 600, color: 'rgba(71, 85, 105, 0.7)' }}>{category}</span>
+              <span className="text-[11px]" style={{ fontWeight: 600, color: 'rgba(71, 85, 105, 0.7)' }}>{category}</span>
               <span className="text-[10px] tabular-nums" style={{ color: 'rgba(71, 85, 105, 0.5)' }}>{items.length}</span>
             </div>
 

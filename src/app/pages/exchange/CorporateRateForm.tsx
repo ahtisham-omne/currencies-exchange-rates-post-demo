@@ -146,7 +146,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
         open
         onClose={requestClose}
         icon={isUpdate ? <Pencil size={16} /> : <Plus size={16} />}
-        title={isUpdate ? 'Update corporate rate' : 'Add corporate rate'}
+        title={isUpdate ? 'Update Corporate Rate' : 'Add Corporate Rate'}
         subtitle={isUpdate
           ? <>Update the corporate rate for <span className="text-fg" style={{ fontWeight: 600 }}>{code} / {BASE}</span>.</>
           : 'Define a new corporate rate for a currency pair.'}
@@ -156,7 +156,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
             <Button variant="ghost" onClick={requestClose}>Cancel</Button>
             {!duplicate && (
               <Button onClick={save} disabled={blocked} icon={isUpdate ? undefined : <Plus size={14} />}>
-                {isUpdate ? 'Update rate' : 'Save rate'}
+                {isUpdate ? 'Update Rate' : 'Save Rate'}
               </Button>
             )}
           </>
@@ -171,21 +171,21 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
             </Banner>
           )}
 
-          <SectionCard icon={<ArrowLeftRight size={16} />} title="Currency pair">
+          <SectionCard icon={<ArrowLeftRight size={16} />} title="Currency Pair">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
               <div>
-                <LockedField label="Base currency" info={RATE_TOOLTIPS.baseCurrency} why="Every rate is quoted against the base currency. Change it in Company Settings.">
+                <LockedField label="Base Currency" info={RATE_TOOLTIPS.baseCurrency} why="Every rate is quoted against the base currency. Change it in Company Settings.">
                   <span className="inline-flex items-center gap-2 min-w-0 truncate"><FlagImage code={flagOf(BASE)} />{BASE} · {BASE_NAME}</span>
                 </LockedField>
               </div>
               <div>
                 {isUpdate ? (
-                  <LockedField label="Source currency" info={RATE_TOOLTIPS.sourceCurrency} why="The pair is fixed once its corporate rate exists.">
+                  <LockedField label="Source Currency" info={RATE_TOOLTIPS.sourceCurrency} why="The pair is fixed once its corporate rate exists.">
                     <span className="inline-flex items-center gap-2 min-w-0 truncate"><FlagImage code={flagOf(code)} />{code} · {name}</span>
                   </LockedField>
                 ) : (
                   <Select
-                    label="Source currency"
+                    label="Source Currency"
                     required
                     info={RATE_TOOLTIPS.sourceCurrency}
                     searchable
@@ -212,9 +212,9 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
               <p className="mt-0.5">Do you want to update it?</p>
               <div className="flex items-center gap-2 mt-2.5">
                 <Button size="sm" icon={<Pencil size={13} />} onClick={() => { setEditing(duplicate); setRate(fmtRate(duplicate.standardRate)); setNotes(''); setAttempted(false) }}>
-                  Update existing rate
+                  Update Existing Rate
                 </Button>
-                <Button size="sm" variant="secondary" onClick={() => setSource('')}>Choose another currency</Button>
+                <Button size="sm" variant="secondary" onClick={() => setSource('')}>Choose Another Currency</Button>
               </div>
             </Banner>
           ) : (
@@ -222,14 +222,14 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
               <SectionCard icon={<TrendingUp size={16} />} title="Rate">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                   <div>
-                    <LockedField label="Mid-market reference" info={RATE_TOOLTIPS.midMarket} why="Synced from the rate provider every 24 hours. It can't be edited here.">
+                    <LockedField label="Mid-Market Reference" info={RATE_TOOLTIPS.midMarket} why="Synced from the rate provider every 24 hours. It can't be edited here.">
                       {mid
                         ? <span className="tabular-nums truncate">{fmtRate(mid.rate)} {BASE} <span className="text-fg-subtle">· As of {LAST_SYNC_DATE}</span></span>
                         : <span className="text-fg-subtle truncate">Choose a currency to see its mid-market rate</span>}
                     </LockedField>
                   </div>
                   <Input
-                    label="Corporate exchange rate"
+                    label="Corporate Exchange Rate"
                     required
                     info={RATE_TOOLTIPS.corporate}
                     type="number"
@@ -246,7 +246,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                   />
                   <div className="space-y-1.5">
                     <label className="label flex items-center gap-1">
-                      Effective date<RequiredMark show />
+                      Effective Date<RequiredMark show />
                       <Tooltip content={RATE_TOOLTIPS.effectiveDate} side="top">
                         <span className="inline-flex cursor-help text-fg-subtle/60 hover:text-fg-subtle"><Info size={12} /></span>
                       </Tooltip>
@@ -258,7 +258,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                   </div>
                   {existing && (
                     <div className="space-y-1.5">
-                      <span className="label block">Current rate</span>
+                      <span className="label block">Current Rate</span>
                       <div className="text-sm text-fg-muted tabular-nums min-h-9 flex flex-col justify-center">
                         <p>{inEffect ? <>{fmtRate(inEffect.standardRate)} {BASE} · effective {fmtDate(inEffect.effectiveDate)}</> : 'None in effect yet'}</p>
                         {pending && (
@@ -301,8 +301,8 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
         badge="Discard"
         title="Discard changes?"
         description={['What you entered in this form will be lost.']}
-        confirmLabel="Discard changes"
-        dismissLabel="Continue editing"
+        confirmLabel="Discard Changes"
+        dismissLabel="Continue Editing"
         onConfirm={() => { setDiscardOpen(false); onClose() }}
         onDismiss={() => setDiscardOpen(false)}
       />

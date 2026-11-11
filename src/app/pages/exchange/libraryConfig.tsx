@@ -48,17 +48,17 @@ const baseChip = <Badge tone="base" className="shrink-0">Base</Badge>
 export function midColumns(): CoaColumn<MidRow>[] {
   return [
     {
-      key: 'currency', label: 'Source currency', locked: true, width: 300, info: RATE_TOOLTIPS.sourceCurrency,
+      key: 'currency', label: 'Source Currency', locked: true, width: 300, info: RATE_TOOLTIPS.sourceCurrency,
       render: (r, ctx) => <CurrencyCell code={r.code} country={r.flag} name={r.name} q={ctx.q} showName strong={ctx.band} onOpen={ctx.openRow} trailing={r.isBase ? baseChip : undefined} />,
       sortValue: r => r.code, searchText: r => [r.code, r.name], filter: 'text', filterValue: r => `${r.code} ${r.name}`,
     },
     {
-      key: 'rate', label: 'Mid-market exchange rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: RATE_TOOLTIPS.midMarket,
+      key: 'rate', label: 'Mid-Market Exchange Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: RATE_TOOLTIPS.midMarket,
       render: (r, ctx) => <RateText value={fmtRate(r.rate)} q={ctx.q} strong />,
       sortValue: r => r.rate, searchText: r => fmtRate(r.rate), filter: 'range',
     },
     {
-      key: 'inverse', label: 'Inverse rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.inverse,
+      key: 'inverse', label: 'Inverse Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.inverse,
       render: (r, ctx) => <RateText value={fmtInverse(r.rate)} q={ctx.q} />,
       // The inverse is not a stored field, so it sorts on the figure it prints.
       sortValue: r => 1 / r.rate, searchText: r => fmtInverse(r.rate), filter: 'range', filterValue: r => 1 / r.rate,
@@ -75,7 +75,7 @@ export function midColumns(): CoaColumn<MidRow>[] {
       sortValue: r => r.country, searchText: r => [r.country, r.region ?? ''], filter: 'multiselect', filterValue: r => r.region ?? '',
     },
     {
-      key: 'effective', label: 'Last synced', defaultHidden: true, headerClassName: 'min-w-[130px]',
+      key: 'effective', label: 'Last Synced', defaultHidden: true, headerClassName: 'min-w-[130px]',
       info: 'The day the provider last refreshed this rate.',
       render: (r, ctx) => <span className="text-sm text-slate-700 tabular-nums whitespace-nowrap"><Marked text={fmtDate(r.effectiveDate)} q={ctx.q} /></span>,
       sortValue: r => r.effectiveDate, searchText: r => fmtDate(r.effectiveDate), filter: 'date', filterValue: r => r.effectiveDate,
@@ -88,23 +88,23 @@ export function midColumns(): CoaColumn<MidRow>[] {
 export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void): CoaColumn<CorpRow>[] {
   return [
     {
-      key: 'currency', label: 'Source currency', locked: true, width: 300, info: RATE_TOOLTIPS.sourceCurrency,
+      key: 'currency', label: 'Source Currency', locked: true, width: 300, info: RATE_TOOLTIPS.sourceCurrency,
       render: (r, ctx) => <CurrencyCell code={r.code} country={r.flag} name={r.name} q={ctx.q} showName strong={ctx.band} onOpen={ctx.openRow} trailing={r.isBase ? baseChip : undefined} />,
       sortValue: r => r.code, searchText: r => [r.code, r.name], filter: 'text', filterValue: r => `${r.code} ${r.name}`,
     },
     {
-      key: 'rate', label: 'Corporate exchange rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: RATE_TOOLTIPS.corporate,
+      key: 'rate', label: 'Corporate Exchange Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: RATE_TOOLTIPS.corporate,
       // A rate added for a later date has none in effect yet: it shows under Upcoming rate.
       render: (r, ctx) => (r.rate == null ? <EmptyCell /> : <RateText value={fmtRate(r.rate)} q={ctx.q} strong />),
       sortValue: r => (r.isBase ? null : r.rate), searchText: r => (r.isBase || r.rate == null ? '' : fmtRate(r.rate)), filter: 'range',
     },
     {
-      key: 'inverse', label: 'Inverse rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.inverse,
+      key: 'inverse', label: 'Inverse Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.inverse,
       render: (r, ctx) => (r.rate == null ? <EmptyCell /> : <RateText value={fmtInverse(r.rate)} q={ctx.q} />),
       sortValue: r => (r.isBase || r.rate == null ? null : 1 / r.rate), searchText: r => (r.isBase || r.rate == null ? '' : fmtInverse(r.rate)), filter: 'range', filterValue: r => (r.isBase || r.rate == null ? null : 1 / r.rate),
     },
     {
-      key: 'mid', label: 'Mid-market exchange rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: RATE_TOOLTIPS.midMarket,
+      key: 'mid', label: 'Mid-Market Exchange Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: RATE_TOOLTIPS.midMarket,
       render: (r, ctx) => (r.mid == null ? <EmptyCell /> : <RateText value={fmtRate(r.mid)} q={ctx.q} />),
       sortValue: r => (r.isBase ? null : r.mid), searchText: r => (r.mid == null || r.isBase ? '' : fmtRate(r.mid)), filter: 'range',
     },
@@ -116,12 +116,12 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
       sortValue: r => r.variance, searchText: r => (r.variance == null ? '' : fmtSignedPct(r.variance)), filter: 'range',
     },
     {
-      key: 'effective', label: 'Effective date', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.effectiveDate,
+      key: 'effective', label: 'Effective Date', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.effectiveDate,
       render: (r, ctx) => (r.effectiveDate ? <span className="text-sm text-slate-700 tabular-nums whitespace-nowrap"><Marked text={fmtDate(r.effectiveDate)} q={ctx.q} /></span> : <EmptyCell />),
       sortValue: r => r.effectiveDate || null, searchText: r => (r.effectiveDate ? fmtDate(r.effectiveDate) : ''), filter: 'date', filterValue: r => r.effectiveDate || null,
     },
     {
-      key: 'upcoming', label: 'Upcoming rate', headerClassName: 'min-w-[220px]', info: RATE_TOOLTIPS.upcoming,
+      key: 'upcoming', label: 'Upcoming Rate', headerClassName: 'min-w-[220px]', info: RATE_TOOLTIPS.upcoming,
       render: (r, ctx) => (r.upcoming ? (
         <span className="inline-flex items-center gap-1.5 text-sm text-slate-700 tabular-nums whitespace-nowrap">
           <Badge tone="info" className={PARTNER_CHIP_CLS}>Upcoming</Badge>
@@ -134,7 +134,7 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
       filter: 'date', filterValue: r => r.upcoming?.effectiveDate ?? null,
     },
     {
-      key: 'createdBy', label: 'Created by', pad: 'person', cellClassName: 'px-4 max-w-[220px]', headerClassName: 'min-w-[170px]',
+      key: 'createdBy', label: 'Created By', pad: 'person', cellClassName: 'px-4 max-w-[220px]', headerClassName: 'min-w-[170px]',
       info: 'Who set the rate up.',
       render: (r, ctx) => (r.createdBy ? <PersonCell name={r.createdBy} comfort={ctx.comfort} q={ctx.q} /> : <EmptyCell />),
       sortValue: r => personText(r.createdBy) || null, searchText: r => personText(r.createdBy), filter: 'multiselect', filterValue: r => personText(r.createdBy),
@@ -146,7 +146,7 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
       sortValue: r => (r.isBase ? null : r.status), searchText: r => (r.isBase ? '' : r.status), filter: 'multiselect', filterValue: r => (r.isBase ? null : r.status),
     },
     {
-      key: 'updatedAt', label: 'Last updated on', defaultHidden: true, headerClassName: 'min-w-[170px]',
+      key: 'updatedAt', label: 'Last Updated On', defaultHidden: true, headerClassName: 'min-w-[170px]',
       info: 'When the rate was changed last, in your time zone.',
       render: (r, ctx) => (r.updatedAt ? <StampCell at={r.updatedAt} q={ctx.q} /> : <EmptyCell />),
       sortValue: r => r.updatedAt || null, searchText: r => stampText(r.updatedAt), filter: 'date', filterValue: r => r.updatedAt || null,
@@ -188,7 +188,7 @@ export function RateFiltersModal({ open, onClose, regions, setRegions, countFor,
       activeCount={draft.length ? 1 : 0}
       onClear={() => setDraft([])}
       onApply={() => { setRegions(draft); onClose() }}
-      applyLabel={`Show ${fmtNumber(n)} ${n === 1 ? 'rate' : 'rates'}`}
+      applyLabel={`Show ${fmtNumber(n)} ${n === 1 ? 'Rate' : 'Rates'}`}
     >
       <Section title="Region" desc="Filter by geographic region.">
         <PillSection

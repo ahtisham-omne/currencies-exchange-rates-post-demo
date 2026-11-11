@@ -120,7 +120,7 @@ export function InsertLinkDialog({
         />
       </div>
       <div className="flex items-center gap-2">
-        <label className={labelClass} style={{ fontWeight: 500 }}>Display text</label>
+        <label className={labelClass} style={{ fontWeight: 500 }}>Display Text</label>
         <input
           type="text"
           value={text}

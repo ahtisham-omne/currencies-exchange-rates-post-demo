@@ -37,7 +37,7 @@ export interface CellCtx {
 
 export interface CoaColumn<T> {
   key: string
-  /** Sentence case, never uppercase ("Linked transactions"). */
+  /** Title Case, written at the source and never transformed ("Linked Transactions"). */
   label: string
   /** The header's info icon: a plain-English one-liner. */
   info?: string

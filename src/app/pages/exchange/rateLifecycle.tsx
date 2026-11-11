@@ -35,7 +35,7 @@ export function useCorporateRateLifecycle() {
           `The ${code} corporate rate of ${fmtRate(r.standardRate)} ${BASE} will be archived. It stays in rate history, but it can no longer be selected for new transactions.`,
           `${code} falls back to the mid-market rate until a new corporate rate is set.`,
         ],
-        confirmLabel: 'Archive rate',
+        confirmLabel: 'Archive Rate',
       },
       commit: () => archiveStandardRates([r.id]),
       toast: `Corporate rate for ${code} archived`,
@@ -52,9 +52,9 @@ export function useCorporateRateLifecycle() {
         refusal: {
           title: `Can't restore the ${code} corporate rate`,
           description: [`${code} already has an active corporate rate, and a pair has one at a time. Archive that one first, or update it instead.`],
-          reasonsTitle: 'Active now',
+          reasonsTitle: 'Active Now',
           reasons: [`${fmtRate(other.standardRate)} ${BASE} · effective ${fmtDate(other.effectiveDate)}`],
-          dismissLabel: 'Got it',
+          dismissLabel: 'Got It',
         },
       })
       return
@@ -79,9 +79,9 @@ export function useCorporateRateLifecycle() {
         refusal: {
           title: 'Nothing to archive',
           description: ['Every rate you picked is archived already.'],
-          reasonsTitle: 'Already archived',
+          reasonsTitle: 'Already Archived',
           reasons: held.map(h => `${h.sourceCurrency} · ${fmtRate(h.standardRate)} ${BASE}`),
-          dismissLabel: 'Got it',
+          dismissLabel: 'Got It',
         },
       })
       return
@@ -97,11 +97,11 @@ export function useCorporateRateLifecycle() {
         description: [
           `${plural(n, 'It stays', 'They stay')} in rate history, but ${plural(n, 'it', 'they')} can no longer be selected for new transactions. Each currency falls back to the mid-market rate until a new corporate rate is set.`,
         ],
-        reasonsTitle: held.length ? 'Not included' : 'Rates to archive',
+        reasonsTitle: held.length ? 'Not Included' : 'Rates to Archive',
         reasons: held.length
           ? held.map(h => `${h.sourceCurrency} · already archived`)
           : ok.slice(0, 6).map(r => `${r.sourceCurrency} · ${fmtRate(r.standardRate)} ${BASE}`).concat(ok.length > 6 ? [`and ${ok.length - 6} more`] : []),
-        confirmLabel: `Archive ${plural(n, 'rate', 'rates')}`,
+        confirmLabel: `Archive ${plural(n, 'Rate', 'Rates')}`,
       },
       commit: () => archiveStandardRates(ok.map(r => r.id)),
       toast: `${n} corporate ${plural(n, 'rate', 'rates')} archived`,

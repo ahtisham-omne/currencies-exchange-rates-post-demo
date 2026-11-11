@@ -28,7 +28,7 @@ export function InternalIdField({ id, help, label = INTERNAL_ID_LABEL }: { id: s
       <div className="flex items-center gap-1 mt-0.5 min-w-0">
         <span className="text-[12px] text-slate-700 tabular-nums truncate" style={{ fontWeight: 500 }}>{id || '–'}</span>
         {id && (
-          <Tooltip content={copied ? 'Copied' : `Copy ${label.toLowerCase()}`}>
+          <Tooltip content={copied ? 'Copied' : label === INTERNAL_ID_LABEL ? 'Copy internal ID' : 'Copy to clipboard'}>
             <button
               type="button"
               onClick={copy}

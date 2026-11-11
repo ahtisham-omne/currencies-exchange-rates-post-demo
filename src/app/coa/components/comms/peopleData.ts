@@ -35,7 +35,7 @@ const ROSTER: PersonDetail[] = [
   { name: 'Group treasury', role: 'Treasury', department: 'Management', org: 'Omnesoft', email: 'treasury@omne.example', phone: '+1 (512) 555-0157' },
   { name: 'Hartley & Co', role: 'External auditor', department: 'External', org: 'Hartley & Co', email: 'reviews@hartleyco.example', phone: '+1 (312) 555-0168' },
   { name: 'Meridian Supplies', role: 'Supplier', department: 'External', org: 'Meridian Supplies', email: 'ap@meridiansupplies.example', phone: '+1 (312) 555-0179' },
-  { name: SYSTEM_SENDER.name, role: 'Automated mailbox', department: 'Omne', org: 'Omnesoft', email: SYSTEM_SENDER.email, phone: '' },
+  { name: SYSTEM_SENDER.name, role: 'Automated Mailbox', department: 'Omne', org: 'Omnesoft', email: SYSTEM_SENDER.email, phone: '' },
 ]
 
 /** Whoever is signed in. Read from the seat the comms module already owns rather
@@ -85,7 +85,7 @@ export function getPersonDetail(name: string, emailHint?: string): PersonDetail 
   const slug = name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.+|\.+$/g, '')
   return {
     name,
-    role: 'Team member',
+    role: 'Team Member',
     department: 'General',
     org: 'Omnesoft',
     email: emailHint?.trim() || `${slug}@omnesoft.com`,

@@ -88,7 +88,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
       sortValue: c => c.decimalPlaces, searchText: c => String(c.decimalPlaces), filter: 'multiselect', filterValue: c => String(c.decimalPlaces),
     },
     {
-      key: 'country', label: 'Country / region', headerClassName: 'min-w-[220px]',
+      key: 'country', label: 'Country / Region', headerClassName: 'min-w-[220px]',
       info: 'Where the currency is used: its primary country first, then every other country or territory.',
       render: (c, ctx) => (
         <OverflowPills
@@ -105,7 +105,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
       sortValue: c => c.country, searchText: c => countriesOf(c), filter: 'multiselect', filterValue: c => c.country,
     },
     {
-      key: 'linked', label: 'In use', align: 'right', headerClassName: 'min-w-[170px]', cellClassName: 'pl-4 pr-4',
+      key: 'linked', label: 'In Use', align: 'right', headerClassName: 'min-w-[170px]', cellClassName: 'pl-4 pr-4',
       info: 'Open transactions in this currency, and every transaction it has ever been on.',
       render: c => {
         const n = countInUse(c)
@@ -127,7 +127,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
       sortValue: c => statusOf(c), searchText: c => statusOf(c), filter: 'multiselect', filterValue: c => statusOf(c),
     },
     {
-      key: 'numeric', label: 'Numeric code', defaultHidden: true, headerClassName: 'min-w-[120px]',
+      key: 'numeric', label: 'Numeric Code', defaultHidden: true, headerClassName: 'min-w-[120px]',
       info: 'The ISO 4217 three-digit code.',
       render: (c, ctx) => <span className="text-sm text-slate-700 tabular-nums"><Marked text={c.numericCode} q={ctx.q} /></span>,
       sortValue: c => c.numericCode, searchText: c => c.numericCode, filter: 'text',
@@ -193,7 +193,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
                   actions={[
                     { key: 'activate', label: 'Activate', icon: CircleCheck, tone: 'success', count: toActivate.length, onClick: () => lifecycle.requestBulk('Active', selectedRows, table.clearSelection) },
                     { key: 'deactivate', label: 'Deactivate', icon: CircleSlash, tone: 'warning', count: toDeactivate.length, onClick: () => lifecycle.requestBulk('Inactive', selectedRows, table.clearSelection) },
-                    { key: 'export', label: 'Export selected', icon: Download, tone: 'neutral', onClick: () => setExportOpen(true) },
+                    { key: 'export', label: 'Export Selected', icon: Download, tone: 'neutral', onClick: () => setExportOpen(true) },
                   ]}
                 />
               ) : null}
@@ -201,7 +201,7 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
                 <PillRow>
                   <QuickFilterPill label="Show All" active={pill === 'all'} onClick={() => setPill('all')} />
                   <QuickFilterPill label="Active" count={pillCounts.active} active={pill === 'active'} onClick={() => setPill('active')} />
-                  <QuickFilterPill label="Base currency" count={pillCounts.base} active={pill === 'base'} onClick={() => setPill('base')} />
+                  <QuickFilterPill label="Base Currency" count={pillCounts.base} active={pill === 'base'} onClick={() => setPill('base')} />
                   <QuickFilterPill label="Inactive" tone="warning" count={pillCounts.inactive} active={pill === 'inactive'} onClick={() => setPill(p => (p === 'inactive' ? 'all' : 'inactive'))} />
                 </PillRow>
               }
@@ -213,10 +213,10 @@ export function CurrencyLibraryPanel({ swapIn }: { swapIn?: string } = {}) {
                 onRowClick={c => navigate(`/accounting/currencies/${c.code}`)}
                 rowMenu={(c, close) => (
                   <>
-                    <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(`/accounting/currencies/${c.code}`) }}>View details</MenuItem>
+                    <MenuItem icon={<Eye size={14} />} onClick={() => { close(); navigate(`/accounting/currencies/${c.code}`) }}>View Details</MenuItem>
                     {c.status === 'active'
-                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }} disabled={c.isBaseCurrency} disabledReason={baseStaysActive(c)}>Deactivate currency</MenuItem>
-                      : <MenuItem icon={<Power size={14} />} onClick={() => { close(); lifecycle.request('Active', c) }}>Activate currency</MenuItem>}
+                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }} disabled={c.isBaseCurrency} disabledReason={baseStaysActive(c)}>Deactivate Currency</MenuItem>
+                      : <MenuItem icon={<Power size={14} />} onClick={() => { close(); lifecycle.request('Active', c) }}>Activate Currency</MenuItem>}
                   </>
                 )}
                 emptyState={<TableEmptyState noun="currencies" query={debouncedQ} filtersActive={otherNarrowing} onClearSearch={() => setQuery('')} onClearFilters={clearNarrowing} where="the library" />}

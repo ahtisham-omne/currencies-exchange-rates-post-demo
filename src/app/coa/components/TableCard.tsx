@@ -145,12 +145,12 @@ export function TableEmptyState({ noun, query, filtersActive, onClearSearch, onC
         <div className="flex items-center justify-center gap-2">
           {q && (
             <Button variant={filtersActive ? 'secondary' : 'primary'} onClick={onClearSearch}>
-              {filtersActive ? 'Clear search, keep filters' : 'Clear search'}
+              {filtersActive ? 'Clear Search, Keep Filters' : 'Clear Search'}
             </Button>
           )}
           {filtersActive && (
             <Button variant="primary" onClick={q ? () => { onClearSearch(); onClearFilters() } : onClearFilters}>
-              {q ? 'Clear both' : 'Clear filters'}
+              {q ? 'Clear Both' : 'Clear Filters'}
             </Button>
           )}
         </div>

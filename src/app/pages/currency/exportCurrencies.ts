@@ -93,7 +93,7 @@ export async function exportCurrencies(rows: Currency[], fmt: ExportFormat, scop
 export function exportLinkedDocs(code: string, decimals: number, docs: LinkedDoc[]) {
   const label = (k: LinkedDoc['type']) => DOC_TYPES.find(t => t.key === k)?.label ?? k
   writeCsv(
-    ['Number', 'Type', 'Vendor / customer', 'Status', 'Date', `Amount (${code})`],
+    ['Number', 'Type', 'Vendor / Customer', 'Status', 'Date', `Amount (${code})`],
     docs.map(d => [d.number, label(d.type), d.party, d.status, d.date, fmtAmount(d.amount, decimals)]),
     `${code.toLowerCase()}_linked_transactions.csv`,
   )

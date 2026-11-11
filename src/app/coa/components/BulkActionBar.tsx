@@ -111,7 +111,7 @@ export function BulkActionBar({ count, noun, nounPlural, actions, onClear, trail
           aria-label="Clear selection"
         >
           <X className="w-3.5 h-3.5" />
-          Clear selection
+          Clear Selection
         </button>
       </div>
     </div>

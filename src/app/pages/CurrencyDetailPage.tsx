@@ -116,7 +116,7 @@ export function CurrencyDetailPage() {
                 </Tooltip>
                 {c.isBaseCurrency && (
                   <Tooltip side="bottom" content={RATE_TOOLTIPS.baseCurrency}>
-                    <span className="inline-flex cursor-default"><Badge tone="base">Base currency</Badge></span>
+                    <span className="inline-flex cursor-default"><Badge tone="base">Base Currency</Badge></span>
                   </Tooltip>
                 )}
               </>
@@ -136,7 +136,7 @@ export function CurrencyDetailPage() {
                       disabled={c.isBaseCurrency}
                       disabledReason={`${c.code} is the base currency. Corporate rates are set for other currencies against it.`}
                     >
-                      {record ? 'Update corporate rate' : 'Set corporate rate'}
+                      {record ? 'Update Corporate Rate' : 'Set Corporate Rate'}
                     </MenuItem>
                     <MenuItem
                       icon={<Download size={14} />}
@@ -144,18 +144,18 @@ export function CurrencyDetailPage() {
                       disabled={docs.length === 0}
                       disabledReason={`${c.code} is on no open transactions, so there is nothing to export.`}
                     >
-                      Export linked transactions
+                      Export Linked Transactions
                     </MenuItem>
                     {status === 'Active'
-                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }} disabled={c.isBaseCurrency} disabledReason={baseStaysActive(c)}>Deactivate currency</MenuItem>
-                      : <MenuItem icon={<Power size={14} />} onClick={() => { close(); lifecycle.request('Active', c) }}>Activate currency</MenuItem>}
+                      ? <MenuItem icon={<CircleSlash size={14} />} warning onClick={() => { close(); lifecycle.request('Inactive', c) }} disabled={c.isBaseCurrency} disabledReason={baseStaysActive(c)}>Deactivate Currency</MenuItem>
+                      : <MenuItem icon={<Power size={14} />} onClick={() => { close(); lifecycle.request('Active', c) }}>Activate Currency</MenuItem>}
                   </>
                 )}
               </Menu>
             }
             tabs={[
               { id: 'dashboard', label: 'Dashboard' },
-              { id: 'linked', label: 'Linked transactions', count: countInUse(c) },
+              { id: 'linked', label: 'Linked Transactions', count: countInUse(c) },
               { id: 'notes', label: 'Notes', count: noteCount },
               { id: 'attachments', label: 'Attachments', count: attachmentCount },
               { id: 'communications', label: 'Communications', count: commsCount },
@@ -208,7 +208,7 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate }: {
     <DashboardGrid
       main={
         <ChartWidgetCard
-          title="Live exchange rate converter"
+          title="Live Exchange Rate Converter"
           icon={ArrowLeftRight}
           tooltip={CONVERTER_TOOLTIP}
         >
@@ -217,28 +217,28 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate }: {
       }
       rail={
         <>
-          <DashInfoCard title="Currency information" icon={FileText}>
+          <DashInfoCard title="Currency Information" icon={FileText}>
             <InfoGrid>
-              <div className="min-w-0"><DashInfoLabel>Currency code</DashInfoLabel><InfoValue strong>{c.code}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel>Currency Code</DashInfoLabel><InfoValue strong>{c.code}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel align="right">Symbol</DashInfoLabel><InfoValue strong>{c.symbol}</InfoValue></div>
             </InfoGrid>
-            <div className="mb-2.5 min-w-0"><DashInfoLabel>Currency name</DashInfoLabel><InfoValue title={c.name}>{c.name}</InfoValue></div>
+            <div className="mb-2.5 min-w-0"><DashInfoLabel>Currency Name</DashInfoLabel><InfoValue title={c.name}>{c.name}</InfoValue></div>
             <InfoGrid>
-              <div className="min-w-0"><DashInfoLabel tooltip="The ISO 4217 three-digit code.">Numeric code</DashInfoLabel><InfoValue className="tabular-nums">{c.numericCode}</InfoValue></div>
-              <div className="min-w-0"><DashInfoLabel align="right" tooltip="Digits after the decimal point that amounts in this currency carry.">Decimal places</DashInfoLabel><InfoValue className="tabular-nums">{c.decimalPlaces}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel tooltip="The ISO 4217 three-digit code.">Numeric Code</DashInfoLabel><InfoValue className="tabular-nums">{c.numericCode}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip="Digits after the decimal point that amounts in this currency carry.">Decimal Places</DashInfoLabel><InfoValue className="tabular-nums">{c.decimalPlaces}</InfoValue></div>
               <div className="min-w-0">
-                <DashInfoLabel tooltip="How an amount of 1,000 is written in this currency.">Format preview</DashInfoLabel>
+                <DashInfoLabel tooltip="How an amount of 1,000 is written in this currency.">Format Preview</DashInfoLabel>
                 <InfoValue className="tabular-nums">{money(c.symbol, 1000, dp)}</InfoValue>
               </div>
               <div className="min-w-0">
-                <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.baseCurrency}>Base currency</DashInfoLabel>
+                <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.baseCurrency}>Base Currency</DashInfoLabel>
                 <div className="mt-0.5"><Badge tone={c.isBaseCurrency ? 'base' : 'neutral'} className={PARTNER_CHIP_CLS}>{c.isBaseCurrency ? 'Yes' : 'No'}</Badge></div>
               </div>
               <div className="min-w-0"><DashInfoLabel>Region</DashInfoLabel>{region ? <InfoValue>{region}</InfoValue> : <InfoValue empty>–</InfoValue>}</div>
               <div className="min-w-0"><DashInfoLabel align="right">Status</DashInfoLabel><div className="mt-0.5"><StatusChip status={statusOf(c)} /></div></div>
             </InfoGrid>
             <div className="mb-2.5 min-w-0">
-              <DashInfoLabel>Countries / regions</DashInfoLabel>
+              <DashInfoLabel>Countries / Regions</DashInfoLabel>
               <div className="mt-0.5">
                 <OverflowPills
                   category="Countries / Regions"
@@ -247,25 +247,25 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate }: {
               </div>
             </div>
             <InfoAuditGrid>
-              <div className="min-w-0"><DashInfoLabel>Created by</DashInfoLabel><InfoPerson name={facts.createdBy} /></div>
-              <div className="min-w-0"><DashInfoLabel align="right">Created on</DashInfoLabel><InfoValue>{facts.createdAt ? fmtDate(facts.createdAt) : '–'}</InfoValue></div>
-              <div className="min-w-0"><DashInfoLabel>Last updated by</DashInfoLabel><InfoPerson name={facts.updatedBy} /></div>
-              <div className="min-w-0"><DashInfoLabel align="right">Last updated on</DashInfoLabel><InfoValue>{facts.updatedAt ? fmtDate(facts.updatedAt) : '–'}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel>Created By</DashInfoLabel><InfoPerson name={facts.createdBy} /></div>
+              <div className="min-w-0"><DashInfoLabel align="right">Created On</DashInfoLabel><InfoValue>{facts.createdAt ? fmtDate(facts.createdAt) : '–'}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel>Last Updated By</DashInfoLabel><InfoPerson name={facts.updatedBy} /></div>
+              <div className="min-w-0"><DashInfoLabel align="right">Last Updated On</DashInfoLabel><InfoValue>{facts.updatedAt ? fmtDate(facts.updatedAt) : '–'}</InfoValue></div>
             </InfoAuditGrid>
           </DashInfoCard>
 
-          <DashInfoCard title="Exchange rate" icon={ArrowLeftRight} tooltip={`Quoted against ${BASE} (${BASE_CURRENCY_NAME}).`}>
+          <DashInfoCard title="Exchange Rate" icon={ArrowLeftRight} tooltip={`Quoted against ${BASE} (${BASE_CURRENCY_NAME}).`}>
             <InfoGrid>
               <div className="min-w-0">
-                <DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-market rate</DashInfoLabel>
+                <DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-Market Rate</DashInfoLabel>
                 {mid != null ? <InfoValue strong className="tabular-nums">{fmtRate(mid)}</InfoValue> : <InfoValue empty>Not available</InfoValue>}
               </div>
               <div className="min-w-0">
-                <DashInfoLabel align="right" tooltip={mid ? inverseRateTooltip(c.code, BASE, fmtRate(1 / mid)) : RATE_TOOLTIPS.inverse}>Inverse rate</DashInfoLabel>
+                <DashInfoLabel align="right" tooltip={mid ? inverseRateTooltip(c.code, BASE, fmtRate(1 / mid)) : RATE_TOOLTIPS.inverse}>Inverse Rate</DashInfoLabel>
                 {mid ? <InfoValue className="tabular-nums">{fmtRate(1 / mid)}</InfoValue> : <InfoValue empty>–</InfoValue>}
               </div>
               <div className="min-w-0">
-                <DashInfoLabel tooltip={RATE_TOOLTIPS.corporate}>Corporate rate</DashInfoLabel>
+                <DashInfoLabel tooltip={RATE_TOOLTIPS.corporate}>Corporate Rate</DashInfoLabel>
                 {c.isBaseCurrency
                   ? <InfoValue empty>Not applicable</InfoValue>
                   : corporate
@@ -278,8 +278,8 @@ function DashboardTab({ c, mid, corporate, upcoming, onSetCorporate }: {
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.variance}>Variance</DashInfoLabel>
                 {variance != null ? <InfoValue className="tabular-nums">{signed(variance)}</InfoValue> : <InfoValue empty>–</InfoValue>}
               </div>
-              <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{c.isBaseCurrency ? 'Base currency' : API_PROVIDER}</InfoValue></div>
-              <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last sync</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{c.isBaseCurrency ? 'Base Currency' : API_PROVIDER}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last Sync</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
             </InfoGrid>
             {(corporate || upcoming) && (
               <div className="pt-2.5 border-t border-muted text-[11px] text-slate-500 space-y-1">

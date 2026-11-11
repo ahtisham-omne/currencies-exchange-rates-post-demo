@@ -576,7 +576,7 @@ export function ChatSearchBar({
                   )}
                   {matchingChannels.length > 0 && (
                     <div className="py-2">
-                      <p className="px-4 pt-1 pb-1.5 text-[10.5px] uppercase tracking-wider font-semibold text-muted-foreground/80">Channels</p>
+                      <p className="px-4 pt-1 pb-1.5 text-[10.5px] font-semibold text-muted-foreground/80">Channels</p>
                       {matchingChannels.map((c, i) => {
                         const idx = channelStartIndex + i
                         const isActive = activeIndex === idx
@@ -603,7 +603,7 @@ export function ChatSearchBar({
                   )}
                   {matchingMessages.length > 0 && (
                     <div className="py-2">
-                      <p className="px-4 pt-1 pb-1.5 text-[10.5px] uppercase tracking-wider font-semibold text-muted-foreground/80">All search results</p>
+                      <p className="px-4 pt-1 pb-1.5 text-[10.5px] font-semibold text-muted-foreground/80">All Search Results</p>
                       {matchingMessages.map((m, i) => {
                         const ch = channelById.get(m.channelId)
                         const idx = messageStartIndex + i
@@ -639,7 +639,7 @@ export function ChatSearchBar({
               ) : (
                 recentSearches.length > 0 && (
                   <div className="py-2">
-                    <p className="px-4 pt-1 pb-1.5 text-[10.5px] uppercase tracking-wider font-semibold text-muted-foreground/80">Recent searches</p>
+                    <p className="px-4 pt-1 pb-1.5 text-[10.5px] font-semibold text-muted-foreground/80">Recent Searches</p>
                     {recentSearches.map((q, i) => {
                       const idx = recentStartIndex + i
                       const isActive = activeIndex === idx

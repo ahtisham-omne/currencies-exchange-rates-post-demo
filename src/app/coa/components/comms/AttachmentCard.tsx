@@ -139,7 +139,7 @@ export function AttachmentCard({
               never obscures the faux document text underneath. In staged mode
               the remove button owns the top-right, so the badge moves left. */}
           <span
-            className={`absolute top-1.5 ${onRemove ? 'left-1.5' : 'right-1.5'} text-[9px] tracking-wider`}
+            className={`absolute top-1.5 ${onRemove ? 'left-1.5' : 'right-1.5'} text-[9px]`}
             style={{
               fontWeight: 700,
               color,
@@ -147,7 +147,6 @@ export function AttachmentCard({
               border: '1px solid var(--color-slate-200)',
               padding: '1px 6px',
               borderRadius: 4,
-              textTransform: 'uppercase',
             }}
           >
             {type}
@@ -232,7 +231,7 @@ function AttachmentPreviewModal({
         {file.extracts?.length ? (
           <div className="mt-5">
             <DetailTable
-              caption="What this covers"
+              caption="What This Covers"
               rows={file.extracts.map(r => ({
                 label: r.name,
                 value: [`${r.from} to ${r.to}`, r.entity].filter(Boolean).join(' · '),

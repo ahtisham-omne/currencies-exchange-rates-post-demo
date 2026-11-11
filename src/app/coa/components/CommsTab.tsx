@@ -454,7 +454,7 @@ export function CommsTab(subject: Subject) {
                   description={threads.length
                     ? 'Choose a conversation from the list to read its thread.'
                     : 'Ask a question or leave a note, and it stays with the record instead of in an inbox.'}
-                  action={<Button size="sm" icon={<Plus className="w-3.5 h-3.5" />} onClick={() => setComposing(true)}>Compose new email</Button>}
+                  action={<Button size="sm" icon={<Plus className="w-3.5 h-3.5" />} onClick={() => setComposing(true)}>Compose New Email</Button>}
                 />
               </div>
             )}
@@ -514,7 +514,7 @@ function ComposeModal({ open, onClose, label, onSend }: {
     <Modal
       open={open}
       onClose={onClose}
-      title="Compose new email"
+      title="Compose New Email"
       subtitle={`On ${label}`}
       width="md"
       footer={
@@ -530,7 +530,7 @@ function ComposeModal({ open, onClose, label, onSend }: {
               body: body.trim(),
             })}
           >
-            {channel === 'Note' ? 'Add note' : 'Send email'}
+            {channel === 'Note' ? 'Add Note' : 'Send Email'}
           </Button>
         </>
       }

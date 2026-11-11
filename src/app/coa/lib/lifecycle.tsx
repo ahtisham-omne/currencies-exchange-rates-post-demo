@@ -28,14 +28,14 @@ export interface RefusalSpec {
   dismissLabel?: string
 }
 
-/** What a confirmation says. Sentence case, no em dashes, plain consequences. */
+/** What a confirmation says. Titles that ask or state are sentence case; buttons are Title Case. No em dashes, plain consequences. */
 export interface ConfirmSpec {
   tone: 'warning' | 'danger' | 'info'
   icon?: ReactNode
   badge?: string
   title: string
   description: ReactNode | ReactNode[]
-  /** The verb + noun: "Deactivate currency", "Archive rate". */
+  /** The verb + noun, in Title Case like the menu item: "Deactivate Currency", "Archive Rate". */
   confirmLabel: string
   dismissLabel?: string
   reasonsTitle?: string

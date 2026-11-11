@@ -93,7 +93,7 @@ function statusTint(status: string): string {
 // ─── Owner sub-record flow ────────────────────────────────────────────────
 
 const ownerRecordTypes: { key: RecordOwnerKind; label: string; icon: typeof FileText }[] = [
-  { key: 'rate', label: 'Exchange rates', icon: ArrowLeftRight },
+  { key: 'rate', label: 'Exchange Rates', icon: ArrowLeftRight },
 ];
 
 /* The source generated a partner's POs / SOs / Quotes / Contacts / Locations
@@ -405,7 +405,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
         open={open}
         onClose={handleClose}
         width="lg"
-        title={title ?? "Link email conversation to another record"}
+        title={title ?? "Link Email Conversation to Another Record"}
         subtitle={subtitle ?? "Move this conversation and link it to another record. One conversation is linked to a record"}
         footer={
           <>
@@ -417,7 +417,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
               disabled={!selectedRecord || selectedRecord === currentQuoteNumber}
               onClick={handleConfirm}
             >
-              {confirmLabel ?? "Confirm transfer"}
+              {confirmLabel ?? "Confirm Transfer"}
             </Button>
           </>
         }
@@ -454,7 +454,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
                 <div className="w-6 h-6 rounded-md bg-accent flex items-center justify-center shrink-0">
                   <Link2 className="w-3.5 h-3.5 text-primary" />
                 </div>
-                <span id="modify-tag-linked-record-label" className="text-[13px] text-fg" style={{ fontWeight: 600 }}>Current linked record</span>
+                <span id="modify-tag-linked-record-label" className="text-[13px] text-fg" style={{ fontWeight: 600 }}>Current Linked Record</span>
                 <Tooltip
                   rich
                   align="left"
@@ -528,7 +528,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
               <div className="w-6 h-6 rounded-md bg-success-50 flex items-center justify-center shrink-0">
                 <Folder className="w-3.5 h-3.5 text-success-600" />
               </div>
-              <span className="text-[13px] text-fg" style={{ fontWeight: 600 }}>{destinationLabel ?? "Move email conversation to a module"}</span>
+              <span className="text-[13px] text-fg" style={{ fontWeight: 600 }}>{destinationLabel ?? "Move Email Conversation to a Module"}</span>
               <Tooltip
                 rich
                 align="left"
@@ -613,7 +613,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
             <>
               {/* Owner dropdown */}
               <div>
-                <p className="text-[12px] text-fg-muted mb-1.5 font-medium">Select currency</p>
+                <p className="text-[12px] text-fg-muted mb-1.5 font-medium">Select Currency</p>
                 <div className="relative">
                   <button
                     ref={ownerTriggerRef}
@@ -680,7 +680,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
               {selectedOwner && (
                 <>
                   <div>
-                    <p className="text-[12px] text-fg-muted mb-1.5 font-medium">Record type</p>
+                    <p className="text-[12px] text-fg-muted mb-1.5 font-medium">Record Type</p>
                     <div className="flex flex-wrap gap-1.5">
                       {(() => {
                         const ownerScopedNoRecordId = selectedOwner.ref;
@@ -702,7 +702,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
                             style={{ fontWeight: 500 }}
                           >
                             <Ban className="w-3.5 h-3.5" />
-                            No record
+                            No Record
                           </button>
                         );
                       })()}
@@ -732,7 +732,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
                   {selectedRecord !== selectedOwner.ref && (
                   <div>
                     <p className="text-[12px] text-fg-muted mb-1.5 font-medium">
-                      Select {ownerRecordTypes.find(rt => rt.key === ownerRecordType)?.label.toLowerCase()} in {selectedOwner.name}
+                      Select {ownerRecordTypes.find(rt => rt.key === ownerRecordType)?.label} in {selectedOwner.name}
                     </p>
                     <div className="relative" ref={recordFieldRef}>
                       <div className="relative">
@@ -773,7 +773,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
                                     <div className="min-w-0">
                                       {r.isNoRecord ? (
                                         <>
-                                          <span className={cn('text-[13px] font-medium', isSelected ? 'text-primary' : 'text-fg')}>No record</span>
+                                          <span className={cn('text-[13px] font-medium', isSelected ? 'text-primary' : 'text-fg')}>No Record</span>
                                           <p className="text-[11px] text-fg-muted mt-0.5">
                                             Attach the thread to {selectedOwner?.name ?? 'this record'} without linking a specific record.
                                           </p>
@@ -817,7 +817,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
           ) : (
             /* Record dropdown */
             <div>
-              <p className="text-[12px] text-fg-muted mb-1.5 font-medium">Select record</p>
+              <p className="text-[12px] text-fg-muted mb-1.5 font-medium">Select Record</p>
               <div className="relative" ref={recordFieldRef}>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-fg-muted pointer-events-none" />
@@ -826,7 +826,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
                     value={
                       selectedRecord && !recordDropdownOpen
                         ? (selectedRecord === NO_RECORD_SENTINEL
-                            ? "No record"
+                            ? "No Record"
                             : `${selectedRecord} · ${selectedRecordData?.name ?? ''}`)
                         : recordSearchQuery
                     }
@@ -875,7 +875,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
                                 {directIdSuggestion.moduleLabel}
                               </span>
                             </div>
-                            <p className="text-[11px] text-fg-muted mt-0.5">Use this exact id — module is inferred from the prefix.</p>
+                            <p className="text-[11px] text-fg-muted mt-0.5">Use this exact ID — module is inferred from the prefix.</p>
                           </div>
                         </button>
                         <div className="border-t border-border mx-3 my-1" />
@@ -895,7 +895,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
                                 )}
                               >
                                 <div className="min-w-0">
-                                  <span className={cn('text-[13px] font-medium', isSelected ? 'text-primary' : 'text-fg')}>No record</span>
+                                  <span className={cn('text-[13px] font-medium', isSelected ? 'text-primary' : 'text-fg')}>No Record</span>
                                   <p className="text-[11px] text-fg-muted mt-0.5">
                                     Tag in {selectedMod?.label ?? 'this module'} without linking a specific record.
                                   </p>
@@ -985,7 +985,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
                       )
                     ) : (
                       <p className="text-[12px] text-fg-muted text-center py-6 px-3">
-                        Start typing a record id (e.g. CUR-USD) or pick a module above to browse.
+                        Start typing a record ID (e.g. CUR-USD) or pick a module above to browse.
                       </p>
                     )}
                   </PickerMenu>
@@ -1012,7 +1012,7 @@ export function ModifyTagModal({ open, onClose, onConfirm, currentQuoteNumber, t
           </>
         }
         confirmLabel="Detach"
-        dismissLabel="Keep linked"
+        dismissLabel="Keep Linked"
         onConfirm={handleDetachConfirm}
         onDismiss={() => setDetachConfirmOpen(false)}
       />

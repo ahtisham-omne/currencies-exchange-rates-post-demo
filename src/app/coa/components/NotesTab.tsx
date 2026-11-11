@@ -78,7 +78,7 @@ export function NotesTab({ noteKey, noun, derived = EMPTY }: {
   return (
     <div className="rounded-xl border border-border bg-white p-4" data-notes-tab>
       <div className="max-w-[37.5rem]">
-        <h3 className="text-[0.9375rem] text-black" style={{ fontWeight: 600 }}>Add a note</h3>
+        <h3 className="text-[0.9375rem] text-black" style={{ fontWeight: 600 }}>Add a Note</h3>
         <div className="mt-3">
           <Textarea
             aria-label="Add a note"

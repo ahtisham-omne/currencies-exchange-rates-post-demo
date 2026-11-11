@@ -266,7 +266,7 @@ export function HowItWorksButton({ open, onClick, walkthrough, place = 'modal', 
         style={{ fontWeight: 500 }}
       >
         <Info className={f.icon} strokeWidth={2.25} />
-        How it works
+        How It Works
       </button>
     )
   }
@@ -434,7 +434,7 @@ export function FormModal({
                   style={{ fontWeight: 500 }}
                 >
                   {full ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                  {full ? 'Exit full' : 'Full view'}
+                  {full ? 'Exit Full View' : 'Full View'}
                 </button>
               )}
               <button onClick={onClose} className="btn-icon"><X size={18} /></button>
@@ -507,7 +507,7 @@ export function Modal({
 // ConfirmModal (centered action-warning dialog)
 // =========================
 // Design-system confirmation pattern: a soft radial glow, a tinted icon
-// circle, an uppercase badge, centered title and body, an optional reasons
+// circle, a badge, centered title and body, an optional reasons
 // box, and stacked confirm / dismiss buttons. Tone drives the accent colour
 // (warning = amber, danger = red, info = blue).
 export function ConfirmModal({
@@ -564,7 +564,7 @@ export function ConfirmModal({
           style={{ background: `radial-gradient(ellipse 120% 60% at 50% 0%, ${t.glow} 0%, transparent 70%)`, opacity: 0.12 }} />
         <div className="relative flex flex-col items-center w-full px-8 pt-8 pb-5">
           <div className={cn('flex items-center justify-center rounded-2xl w-14 h-14 mb-3', t.circle)}>{iconNode}</div>
-          {badge && <div className={cn('text-2xs font-semibold uppercase tracking-[0.08em] mb-3', t.badge)}>{badge}</div>}
+          {badge && <div className={cn('text-2xs font-semibold mb-3', t.badge)}>{badge}</div>}
           <h3 className="text-lg font-semibold text-fg text-center mb-1.5">{title}</h3>
           <div className="text-sm text-fg-muted text-center leading-relaxed space-y-0.5">
             {lines.map((l, i) => <div key={i}>{l}</div>)}
@@ -574,7 +574,7 @@ export function ConfirmModal({
         {reasons && reasons.length > 0 && (
           <div className="relative w-full px-8 pb-3">
             <div className={cn('border rounded-lg px-4 py-3', t.box)}>
-              {reasonsTitle && <div className={cn('text-2xs font-semibold uppercase tracking-wider mb-2', t.boxText)}>{reasonsTitle}</div>}
+              {reasonsTitle && <div className={cn('text-2xs font-semibold mb-2', t.boxText)}>{reasonsTitle}</div>}
               <ul className="space-y-1.5">
                 {reasons.map((r, i) => (
                   <li key={i} className={cn('text-xs leading-snug flex items-start gap-2', t.boxText)}>
@@ -589,7 +589,7 @@ export function ConfirmModal({
         {aside && aside.length > 0 && (
           <div className="relative w-full px-8 pb-3">
             <div className="border border-border rounded-lg px-4 py-3 bg-bg-subtle">
-              {asideTitle && <div className="text-2xs font-semibold uppercase tracking-wider mb-2 text-fg-muted">{asideTitle}</div>}
+              {asideTitle && <div className="text-2xs font-semibold mb-2 text-fg-muted">{asideTitle}</div>}
               <ul className="space-y-1.5">
                 {aside.map((r, i) => (
                   <li key={i} className="text-xs leading-snug flex items-start gap-2 text-fg-muted">
@@ -1218,7 +1218,7 @@ export function Select({ label, ariaLabel, hint, error, children, required, clas
                 className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-accent text-sm font-medium text-primary hover:bg-primary/[0.12] transition-colors"
               >
                 <Plus size={15} className="shrink-0" />
-                <span className="truncate">{named ? `Create "${q0}"` : `Create new ${createNoun ?? 'item'}`}</span>
+                <span className="truncate">{named ? `Create "${q0}"` : `Create New ${createNoun ?? 'Item'}`}</span>
               </button>
             </div>
           )}

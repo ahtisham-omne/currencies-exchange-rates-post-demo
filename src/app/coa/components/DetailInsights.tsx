@@ -47,9 +47,9 @@ const PRESET_LABEL: Record<PeriodPreset, string> = {
 }
 
 const PRESET_LABEL_LONG: Record<PeriodPreset, string> = {
-  '7d': 'Last 7 days', '14d': 'Last 14 days', '30d': 'Last 30 days',
-  '90d': 'Last 90 days', '365d': 'Last 12 months', all: 'All time',
-  '3m': 'Last 3 months', '6m': 'Last 6 months', '12m': 'Last 12 months',
+  '7d': 'Last 7 Days', '14d': 'Last 14 Days', '30d': 'Last 30 Days',
+  '90d': 'Last 90 Days', '365d': 'Last 12 Months', all: 'All Time',
+  '3m': 'Last 3 Months', '6m': 'Last 6 Months', '12m': 'Last 12 Months',
 }
 
 // The month presets still carry a day span, for the code paths that window a
@@ -198,7 +198,7 @@ function MonthRangeMenu({ initialFrom, initialTo, onApply, onCancel }: {
   return (
     <div className="p-1 w-[268px]" data-coa-month-range>
       <div className="mb-3">
-        <div className="text-sm text-fg" style={{ fontWeight: 600 }}>Custom month range</div>
+        <div className="text-sm text-fg" style={{ fontWeight: 600 }}>Custom Month Range</div>
         <div className="text-[12px] text-fg-muted mt-0.5">{heading}</div>
       </div>
       <div className="flex items-center justify-between mb-2">
@@ -585,7 +585,7 @@ export function WidgetContentCard({
               onClick={e => {
                 e.stopPropagation()
                 onRemove()
-                pushToast(`Removed "${title}". Re-enable it from Customize insights.`, 'success')
+                pushToast(`Removed "${title}". Re-enable it from Customize Insights.`, 'success')
               }}
               onMouseDown={e => e.stopPropagation()}
               className={`group/rm w-7 h-7 rounded-md flex items-center justify-center text-slate-400 transition-all duration-150 cursor-pointer hover:bg-red-100 hover:text-red-600 ${
@@ -1090,7 +1090,7 @@ export function DetailInsightsPanel({
                 <Sliders className="w-5 h-5" style={{ color: '#0A77FF' }} />
               </div>
               <div>
-                <h2 className="text-base text-foreground" style={{ fontWeight: 600 }}>Customize insights</h2>
+                <h2 className="text-base text-foreground" style={{ fontWeight: 600 }}>Customize Insights</h2>
                 <p className="text-[13px] text-muted-foreground mt-0.5">Pick the KPIs and widgets you want to see for this {noun}.</p>
               </div>
             </div>
@@ -1188,7 +1188,7 @@ export function DetailInsightsPanel({
                 <div key={cat.name} className="mt-5 first:mt-4">
                   <div className="flex items-center gap-1.5 mb-2 px-1">
                     <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-[12px] text-muted-foreground/70 uppercase tracking-wide" style={{ fontWeight: 600 }}>{cat.name}</span>
+                    <span className="text-[12px] text-muted-foreground/70" style={{ fontWeight: 600 }}>{cat.name}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {cat.kpis.map(kpi => {
@@ -1242,7 +1242,7 @@ export function DetailInsightsPanel({
                 <div key={cat.name} className="mt-5 first:mt-4">
                   <div className="flex items-center gap-1.5 mb-2 px-1">
                     <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-[12px] text-muted-foreground/70 uppercase tracking-wide" style={{ fontWeight: 600 }}>{cat.name}</span>
+                    <span className="text-[12px] text-muted-foreground/70" style={{ fontWeight: 600 }}>{cat.name}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {cat.widgets.map(widget => {
@@ -1469,7 +1469,7 @@ function DetailInsightsInner({ storageKey, kpis, widgets, defaultKpis: dk, defau
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] text-white bg-primary hover:bg-[#0862D0] transition-colors cursor-pointer"
             style={{ fontWeight: 500 }}
           >
-            <Plus className="w-3.5 h-3.5" /> Add insight
+            <Plus className="w-3.5 h-3.5" /> Add Insights
           </button>
         </div>
       )}

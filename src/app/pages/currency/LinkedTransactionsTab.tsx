@@ -41,7 +41,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
       sortValue: d => docTypeMeta(d.type).label, searchText: d => docTypeMeta(d.type).label, filter: 'multiselect',
     },
     {
-      key: 'party', label: 'Vendor / customer', headerClassName: 'min-w-[220px]',
+      key: 'party', label: 'Vendor / Customer', headerClassName: 'min-w-[220px]',
       info: 'The vendor on invoices and purchase orders, the customer on customer invoices and sales orders, and the party on payments.',
       render: (d, ctx) => <span className="text-sm text-slate-700 block truncate max-w-[320px]" title={d.party}><Marked text={d.party} q={ctx.q} /></span>,
       sortValue: d => d.party, searchText: d => d.party, filter: 'multiselect',
@@ -104,7 +104,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
       notes={
         <div className="px-4 py-2 border-b border-border bg-bg-subtle/40 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs text-fg-muted">
           <span className="inline-flex items-center gap-1.5">
-            Total value across all transactions:
+            Total Value Across All Transactions:
             <Tooltip content={RATE_TOOLTIPS.totalValueAllDocs} side="bottom" align="left">
               <span className="inline-flex cursor-help text-fg-subtle/60 hover:text-fg-subtle"><Info size={12} /></span>
             </Tooltip>
@@ -114,7 +114,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
           <span>
             {inUse} active {inUse === 1 ? 'transaction' : 'transactions'}
             {blocking && <span className="text-warning-700" style={{ fontWeight: 500 }}> · blocking deactivation</span>}
-            {' · '}Last transaction: {lastDate ? fmtDate(lastDate) : 'N/A'}
+            {' · '}Last Transaction: {lastDate ? fmtDate(lastDate) : 'N/A'}
             {' · '}{c.usage.totalLifetimeDocuments.toLocaleString('en-US')} {c.usage.totalLifetimeDocuments === 1 ? 'transaction' : 'transactions'} in total
           </span>
         </div>

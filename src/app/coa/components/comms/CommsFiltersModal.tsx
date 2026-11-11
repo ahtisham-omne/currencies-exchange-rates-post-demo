@@ -128,12 +128,12 @@ export function CommsFiltersModal({ open, onClose, value, onApply, records, resu
             )}
             style={{ fontWeight: 500 }}
           >
-            Clear all
+            Clear All
           </button>
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
             <Button onClick={() => { onApply(draft); onClose() }}>
-              Show {count} email{count === 1 ? '' : 's'}
+              Show {count} Email{count === 1 ? '' : 's'}
             </Button>
           </div>
         </>
@@ -222,7 +222,7 @@ export function CommsFiltersModal({ open, onClose, value, onApply, records, resu
           ))}
         </Section>
 
-        <Section title="Email type" description="Show only the kinds of email you pick.">
+        <Section title="Email Type" description="Show only the kinds of email you pick.">
           <Choice
             active={draft.writtenBy.length === 0}
             onClick={() => setDraft(d => ({ ...d, writtenBy: [] }))}
@@ -290,7 +290,7 @@ export function CommsFiltersModal({ open, onClose, value, onApply, records, resu
           >
             Any
           </Choice>
-          {[{ v: true, l: 'Has attachments' }, { v: false, l: 'No attachments' }].map(o => (
+          {[{ v: true, l: 'Has Attachments' }, { v: false, l: 'No Attachments' }].map(o => (
             <Choice
               key={String(o.v)}
               active={draft.hasAttachments === o.v}
@@ -307,20 +307,20 @@ export function CommsFiltersModal({ open, onClose, value, onApply, records, resu
             different moments: one is a reader choosing what to look at, this is
             a reader clearing the noise out of what they already had open. */}
         <div className="py-3 border-b border-border">
-          <p className="text-[12.5px] text-fg" style={{ fontWeight: 600 }}>Quick filters</p>
+          <p className="text-[12.5px] text-fg" style={{ fontWeight: 600 }}>Quick Filters</p>
           <p className="text-[11.5px] text-fg-muted mt-0.5">Toggle common filters.</p>
           <div className="mt-2.5">
             <Toggle
               checked={draft.hideAutomated}
               onChange={v => setDraft(d => ({ ...d, hideAutomated: v }))}
-              label="Hide automated emails"
+              label="Hide Automated Emails"
               hint="System-generated notification emails sent by Omne."
             />
           </div>
         </div>
 
         <div className="py-3">
-          <p className="text-[12.5px] text-fg" style={{ fontWeight: 600 }}>Date range</p>
+          <p className="text-[12.5px] text-fg" style={{ fontWeight: 600 }}>Date Range</p>
           <p className="text-[11.5px] text-fg-muted mt-0.5">Filter by when the thread was last written to.</p>
           {/* The module's own calendar, not the browser's, so its Today and
               Clear read as they do everywhere else (Mahad, 2026-10-08). */}

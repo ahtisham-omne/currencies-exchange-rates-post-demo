@@ -81,7 +81,7 @@ export function rateOwners({ midMarketRates, standardRates }: Pick<RecordSource,
       out.push({
         id: recordKey('exchangeRate', `${m.sourceCurrency}:std`),
         ref: `CR-${pair}`,
-        name: `${m.sourceCurrencyName} corporate rate`,
+        name: `${m.sourceCurrencyName} Corporate Rate`,
         meta: `Corporate · ${fmtRate(corp.standardRate)} ${BASE_CURRENCY} · Effective ${fmtDate(corp.effectiveDate)}`,
         status: corp.status === 'active' ? 'Active' : 'Archived',
       })
@@ -89,8 +89,8 @@ export function rateOwners({ midMarketRates, standardRates }: Pick<RecordSource,
     out.push({
       id: recordKey('exchangeRate', `${m.sourceCurrency}:mid`),
       ref: `MR-${pair}`,
-      name: `${m.sourceCurrencyName} mid-market rate`,
-      meta: `Mid-market · ${fmtRate(m.rate)} ${BASE_CURRENCY} · ${fmtDate(m.effectiveDate)}`,
+      name: `${m.sourceCurrencyName} Mid-Market Rate`,
+      meta: `Mid-Market · ${fmtRate(m.rate)} ${BASE_CURRENCY} · ${fmtDate(m.effectiveDate)}`,
       status: 'Active',
     })
   }
@@ -116,7 +116,7 @@ export function ownersForModule(moduleKey: string, src: RecordSource): RecordOwn
 export function getOwnerSubRecords(owner: RecordOwner, kind: RecordOwnerKind, src: RecordSource): RecordSubRecord[] {
   const noRecord: RecordSubRecord = {
     id: owner.ref,
-    label: 'No record',
+    label: 'No Record',
     isNoRecord: true,
   }
   if (kind !== 'rate') return [noRecord]

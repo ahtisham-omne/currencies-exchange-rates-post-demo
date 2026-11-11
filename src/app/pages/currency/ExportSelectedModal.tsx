@@ -70,7 +70,7 @@ export function ExportSelectedModal({ open, onClose, rows }: { open: boolean; on
       hideFullView
       widthClass="max-w-[760px]"
       icon={<Download size={16} />}
-      title="Export currencies"
+      title="Export Selected Currencies"
       subtitle="Choose a format. The file holds the currencies you selected, with code, name, ISO numeric code, symbol, decimal places, every country, whether it is the base currency, and status."
       footer={
         <>

@@ -70,7 +70,7 @@ export function DensityMenu({ value, onChange, sections }: {
               {/* Space alone separates the sections: the captions already mark
                   where one ends and the next begins, and a rule between them
                   read as a divider between two menus. */}
-              <p style={{ padding: '12px 12px 4px', fontSize: 10, fontWeight: 600, lineHeight: 1.4, textTransform: 'uppercase', letterSpacing: '0.025em', color: 'var(--color-slate-400)' }}>
+              <p style={{ padding: '12px 12px 4px', fontSize: 10, fontWeight: 600, lineHeight: 1.4, color: 'var(--color-slate-400)' }}>
                 {sec.title}
               </p>
               {/* One column per option, so two cards are wide and three are

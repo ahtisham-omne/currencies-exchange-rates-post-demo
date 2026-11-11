@@ -77,7 +77,7 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
         </motion.div>
         <div className={cn('min-w-0', stack ? 'text-center' : '')}>
           <p className="text-[12px] text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>{line}</p>
-          {inverted && <p className="text-[11px] text-fg-subtle">Inverse rate</p>}
+          {inverted && <p className="text-[11px] text-fg-subtle">Inverse Rate</p>}
           {note && <p className="text-[11px] text-fg-subtle">{note}</p>}
         </div>
       </div>

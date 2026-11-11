@@ -62,7 +62,7 @@ export function CurrencyFiltersModal({ open, onClose, rows, filters, setFilters 
       activeCount={countCurrencyFilters(draft)}
       onClear={() => setDraft(EMPTY_CURRENCY_FILTERS)}
       onApply={() => { setFilters(draft); onClose() }}
-      applyLabel={`Show ${fmtNumber(live)} ${live === 1 ? 'currency' : 'currencies'}`}
+      applyLabel={`Show ${fmtNumber(live)} ${live === 1 ? 'Currency' : 'Currencies'}`}
     >
       <Section title="Status" desc="Show active currencies, inactive ones, or both.">
         <PillGrid>
@@ -73,7 +73,7 @@ export function CurrencyFiltersModal({ open, onClose, rows, filters, setFilters 
         </PillGrid>
       </Section>
       <FDivider />
-      <Section title="In use" desc="Show currencies that are on any transaction, or ones that aren't.">
+      <Section title="In Use" desc="Show currencies that are on any transaction, or ones that aren't.">
         <PillGrid>
           <AllPill active={!draft.inUse} onClick={() => setDraft(d => ({ ...d, inUse: null }))} />
           <FilterPill active={draft.inUse === 'yes'} onClick={() => setDraft(d => ({ ...d, inUse: d.inUse === 'yes' ? null : 'yes' }))} count={rows.filter(isInUse).length}>Yes</FilterPill>
@@ -94,12 +94,12 @@ export function CurrencyFiltersModal({ open, onClose, rows, filters, setFilters 
         )}
       </Section>
       <FDivider />
-      <Section title="Decimal places" desc="Show currencies by how many digits their amounts carry after the point.">
+      <Section title="Decimal Places" desc="Show currencies by how many digits their amounts carry after the point.">
         <PillGrid>
           <AllPill active={!draft.decimals.length} onClick={() => setDraft(d => ({ ...d, decimals: [] }))} />
           {decimals.map(n => (
             <FilterPill key={n} active={draft.decimals.includes(n)} onClick={() => toggle('decimals', n)} count={rows.filter(r => String(r.decimalPlaces) === n).length}>
-              {n} {n === '1' ? 'decimal' : 'decimals'}
+              {n} {n === '1' ? 'Decimal' : 'Decimals'}
             </FilterPill>
           ))}
         </PillGrid>

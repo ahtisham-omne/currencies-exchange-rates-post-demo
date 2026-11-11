@@ -146,7 +146,7 @@ export function MultiSelectFilter({ label, options, selected, onChange, searchab
                 autoFocus
                 value={search}
                 onChange={e => { setSearch(e.target.value); setVisibleCount(PAGE) }}
-                placeholder={`Search ${label.toLowerCase()}...`}
+                placeholder="Search…"
                 className="w-full h-8 pl-8 pr-7 rounded-md border border-border bg-white text-[12px] outline-none placeholder:text-muted-foreground/50 focus:border-primary"
               />
               {search && (

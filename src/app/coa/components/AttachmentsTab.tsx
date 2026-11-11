@@ -66,6 +66,8 @@ const ATTACH_DENSITY_CONFIG: { key: AttachDensity; label: string; description: s
   { key: 'card', label: 'Card', description: 'Thumbnail grid', Icon: LayoutGrid },
 ]
 
+const CARD_SIZE_LABEL: Record<'small' | 'medium' | 'large', string> = { small: 'Small', medium: 'Medium', large: 'Large' }
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -141,7 +143,7 @@ export function AttachmentDropzone({ files, onChange, hint, required, error }: {
         </div>
         <span className="text-13 text-fg" style={{ fontWeight: 600 }}>Attachments</span>
         <span className={cn('text-11', required ? 'text-danger-600' : 'text-fg-subtle')} style={{ fontWeight: 500 }}>
-          {required ? 'required' : 'optional'}
+          {required ? 'Required' : 'Optional'}
         </span>
         {files.length > 0 && (
           <span className="text-10 text-slate-500 bg-bg-muted px-1.5 py-0.5 rounded-full" style={{ fontWeight: 500 }}>{files.length}</span>
@@ -391,14 +393,14 @@ export function AttachmentsTab({
                 <>
                   <div className="mx-2 my-1.5 border-t border-muted" />
                   <div className="px-3 py-1.5">
-                    <p className="text-10 text-slate-400 uppercase tracking-wide mb-2" style={{ fontWeight: 600 }}>Card Size</p>
+                    <p className="text-10 text-slate-400 mb-2" style={{ fontWeight: 600 }}>Card Size</p>
                     <div className="flex items-center gap-1.5">
                       {(['large', 'medium', 'small'] as const).map(size => (
                         <button key={size} onClick={() => setCardSize(size)}
-                          className={cn('flex-1 py-1.5 rounded-md text-11 text-center transition-all capitalize',
+                          className={cn('flex-1 py-1.5 rounded-md text-11 text-center transition-all',
                             cardSize === size ? 'bg-primary text-white shadow-sm' : 'bg-bg-muted text-slate-500 hover:bg-border')}
                           style={{ fontWeight: cardSize === size ? 600 : 500 }}>
-                          {size}
+                          {CARD_SIZE_LABEL[size]}
                         </button>
                       ))}
                     </div>
@@ -505,7 +507,7 @@ export function AttachmentsTab({
             description={items.length === 0 ? undefined : 'Nothing uploaded here carries that in its name.'}
             action={items.length === 0 ? (
               <Button variant="secondary" size="sm" icon={<Upload size={14} />} onClick={handleUploadClick}>
-                Upload your first file
+                Upload Your First File
               </Button>
             ) : undefined}
           />

@@ -390,5 +390,5 @@ export function ColumnSelector({
 /* Pinned clears the search above it by 10; Columns only clears the rule under
    Pinned, and takes 8. */
 function SectionLabel({ children, top = 10 }: { children: ReactNode; top?: number }) {
-  return <div className="px-3.5 pb-1 text-[10px] uppercase tracking-[1px] font-semibold" style={{ paddingTop: top, color: 'var(--color-slate-500)' }}>{children}</div>
+  return <div className="px-3.5 pb-1 text-[10px] font-semibold" style={{ paddingTop: top, color: 'var(--color-slate-500)' }}>{children}</div>
 }

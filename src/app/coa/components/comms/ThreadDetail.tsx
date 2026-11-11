@@ -47,7 +47,7 @@ function plainTextFrom(html: string): string {
 
 const REPLY_LABEL: Record<ReplyMode, string> = {
   reply: 'Reply',
-  replyAll: 'Reply all',
+  replyAll: 'Reply All',
   forward: 'Forward',
 }
 
@@ -441,7 +441,7 @@ export function ThreadDetail({
                   close()
                 }}
               >
-                {unread ? 'Mark as read' : 'Mark as unread'}
+                {unread ? 'Mark as Read' : 'Mark as Unread'}
               </MenuItem>
               <MenuItem
                 icon={<Link2 className="w-3.5 h-3.5" />}
@@ -450,7 +450,7 @@ export function ThreadDetail({
                   close()
                 }}
               >
-                Link email conversation to another record
+                Link Email Conversation to Another Record
               </MenuItem>
               <MenuItem
                 icon={<Download className="w-3.5 h-3.5" />}
@@ -483,7 +483,7 @@ export function ThreadDetail({
                   close()
                 }}
               >
-                Export conversation
+                Export Conversation
               </MenuItem>
               <MenuItem
                 icon={<ShieldAlert className="w-3.5 h-3.5" />}
@@ -496,7 +496,7 @@ export function ThreadDetail({
                   close()
                 }}
               >
-                Report spam
+                Report as Spam
               </MenuItem>
               <MenuItem
                 icon={archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
@@ -514,7 +514,7 @@ export function ThreadDetail({
                   close()
                 }}
               >
-                {archived ? 'Unarchive thread' : 'Archive'}
+                {archived ? 'Unarchive Thread' : 'Archive'}
               </MenuItem>
             </>
           )}

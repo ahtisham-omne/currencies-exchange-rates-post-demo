@@ -58,6 +58,11 @@ const sizeConfig: Record<CardSize, { minmax: string; gap: number }> = {
   large: { minmax: '280px', gap: 14 },
 }
 
+/* Display labels for the sort and card-size options, written in their shown
+   case rather than capitalised from the stored key at render. */
+const SORT_LABEL: Record<SortOrder, string> = { latest: 'Latest', oldest: 'Oldest' }
+const CARD_SIZE_LABEL: Record<CardSize, string> = { small: 'Small', medium: 'Medium', large: 'Large' }
+
 export function AttachmentsSlidePanel({
   open,
   onClose,
@@ -173,7 +178,7 @@ export function AttachmentsSlidePanel({
             pushToast(`Downloaded ${filtered.length} attachment${filtered.length === 1 ? '' : 's'}`, 'success')
           }}
         >
-          Download all
+          Download All
         </Button>
       ) : undefined}
     >
@@ -193,7 +198,7 @@ export function AttachmentsSlidePanel({
                   style={{ fontWeight: 500 }}
                 >
                   <Filter className="w-3 h-3 text-muted-foreground" />
-                  {fileTypeFilter === 'all' ? 'All file types' : fileTypeFilter}
+                  {fileTypeFilter === 'all' ? 'All File Types' : fileTypeFilter}
                   <ChevronDown className="w-3 h-3 text-muted-foreground" />
                 </span>
               }
@@ -205,7 +210,7 @@ export function AttachmentsSlidePanel({
                     onClick={() => { setFileTypeFilter('all'); close() }}
                   >
                     <span className="flex-1 flex items-center justify-between gap-6">
-                      All file types
+                      All File Types
                       {fileTypeFilter === 'all' && <Check className="w-3 h-3 text-[var(--color-sky-500)]" />}
                     </span>
                   </MenuItem>
@@ -233,7 +238,7 @@ export function AttachmentsSlidePanel({
                   style={{ fontWeight: 500 }}
                 >
                   <ArrowDownNarrowWide className="w-3 h-3 text-muted-foreground" />
-                  {sortOrder === 'latest' ? 'Latest' : 'Oldest'}
+                  {SORT_LABEL[sortOrder]}
                   <ChevronDown className="w-3 h-3 text-muted-foreground" />
                 </span>
               }
@@ -246,8 +251,8 @@ export function AttachmentsSlidePanel({
                       active={sortOrder === o}
                       onClick={() => { setSortOrder(o); close() }}
                     >
-                      <span className="flex-1 flex items-center justify-between gap-6 capitalize">
-                        {o}
+                      <span className="flex-1 flex items-center justify-between gap-6">
+                        {SORT_LABEL[o]}
                         {sortOrder === o && <Check className="w-3 h-3 text-[var(--color-sky-500)]" />}
                       </span>
                     </MenuItem>
@@ -322,21 +327,21 @@ export function AttachmentsSlidePanel({
                   </button>
                   {density === 'card' && (
                     <>
-                      <div className="px-2 pt-2 pb-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">Card size</div>
+                      <div className="px-2 pt-2 pb-1 text-[10px] font-semibold text-muted-foreground">Card Size</div>
                       <div className="flex items-center gap-1 px-1 pb-1">
                         {(['large', 'medium', 'small'] as CardSize[]).map(s => (
                           <button
                             key={s}
                             type="button"
                             onClick={() => setCardSize(s)}
-                            className={`flex-1 h-7 rounded-md text-[11.5px] capitalize transition-colors ${
+                            className={`flex-1 h-7 rounded-md text-[11.5px] transition-colors ${
                               cardSize === s
                                 ? 'bg-[var(--color-sky-500)] text-white'
                                 : 'bg-muted/40 text-foreground hover:bg-muted/60'
                             }`}
                             style={{ fontWeight: 500 }}
                           >
-                            {s}
+                            {CARD_SIZE_LABEL[s]}
                           </button>
                         ))}
                       </div>
@@ -384,7 +389,7 @@ export function AttachmentsSlidePanel({
                       onClick={() => group.messageId && goToMessage(group.messageId)}
                       className="shrink-0 text-[11px] font-medium text-[var(--color-sky-500)] hover:underline"
                     >
-                      Go to message
+                      Go to Message
                     </button>
                   )}
                 </div>

@@ -296,11 +296,6 @@ function _mix(h: number): number {
   return h >>> 0;
 }
 
-/** Documents priced in this pair over the last 30 days (deterministic, 50 to 449). */
-export function pairTransactions30d(code: string): number {
-  return 50 + (_mix(_hash(`${code}#tx30`)) % 400);
-}
-
 /** Documents priced in this pair on one day (deterministic, 3 to 22). */
 export function pairTransactionsOn(code: string, isoDay: string): number {
   return 3 + (_mix(_hash(`${code}#${isoDay}`)) % 20);

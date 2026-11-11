@@ -258,10 +258,10 @@ export function lookSections(opts: {
   if (opts.tree) {
     const tree = opts.tree
     out.push({
-      title: 'Tree layout',
+      title: 'Tree Layout',
       value: tree.value,
       options: [
-        { key: 'lines', label: 'Tree lines', thumb: <NestingThumb kind="lines" /> },
+        { key: 'lines', label: 'Tree Lines', thumb: <NestingThumb kind="lines" /> },
         { key: 'arrows', label: 'Arrows', thumb: <NestingThumb kind="arrows" /> },
       ],
       onChange: k => tree.onChange(k === 'arrows' ? 'arrows' : 'lines'),
@@ -270,7 +270,7 @@ export function lookSections(opts: {
   if (opts.widths) {
     const widths = opts.widths
     out.push({
-      title: 'Column widths',
+      title: 'Column Widths',
       value: widths.value,
       options: [
         { key: 'default', label: 'Default', thumb: <WidthThumb kind="default" /> },
@@ -379,13 +379,13 @@ export function VisualConfigView({ values, offers, onToggle, onBack }: {
         <span style={{ fontSize: 13, fontWeight: 600, color: 'hsl(var(--foreground))' }}>Configure Visuals</span>
       </div>
       <div className="flex flex-col" style={{ padding: '14px 14px 12px', gap: 12 }}>
-        <SwitchRow label="Crosshair on hover" on={values.crosshair} onToggle={() => onToggle('crosshair')} info="Hovering a figure shades its row and column, so you can see exactly which line and which column it belongs to." />
-        <SwitchRow label="Striped rows" on={values.zebra} onToggle={() => onToggle('zebra')} />
-        <SwitchRow label="Lines between columns" on={values.gridLines} onToggle={() => onToggle('gridLines')} />
-        <SwitchRow label="Row numbers" on={values.rowNumbers} onToggle={() => onToggle('rowNumbers')} />
-        <SwitchRow label="Truncate long text" on={values.truncate} onToggle={() => onToggle('truncate')} info="Cuts text off at the column edge with three dots instead of wrapping it. Drag a column edge to set how much shows." />
+        <SwitchRow label="Crosshair on Hover" on={values.crosshair} onToggle={() => onToggle('crosshair')} info="Hovering a figure shades its row and column, so you can see exactly which line and which column it belongs to." />
+        <SwitchRow label="Striped Rows" on={values.zebra} onToggle={() => onToggle('zebra')} />
+        <SwitchRow label="Lines Between Columns" on={values.gridLines} onToggle={() => onToggle('gridLines')} />
+        <SwitchRow label="Row Numbers" on={values.rowNumbers} onToggle={() => onToggle('rowNumbers')} />
+        <SwitchRow label="Truncate Long Text" on={values.truncate} onToggle={() => onToggle('truncate')} info="Cuts text off at the column edge with three dots instead of wrapping it. Drag a column edge to set how much shows." />
         {offers.pinGroups && (
-          <SwitchRow label="Pin group headings" on={values.pinGroups} onToggle={() => onToggle('pinGroups')} info="Keeps a group's heading under the column headings while its own rows scroll past." />
+          <SwitchRow label="Pin Group Headings" on={values.pinGroups} onToggle={() => onToggle('pinGroups')} info="Keeps a group's heading under the column headings while its own rows scroll past." />
         )}
       </div>
       {/* No footer: the switches are live, so there is nothing to save and

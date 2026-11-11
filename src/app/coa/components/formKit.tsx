@@ -10,7 +10,7 @@ export function SectionCard({ icon, title, badge, titleExtra, children }: { icon
       <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border bg-bg-subtle/50">
         {icon && <span className="text-primary shrink-0">{icon}</span>}
         <h3 className="text-sm font-semibold text-fg">{title}</h3>
-        {badge && <span className="text-2xs font-semibold uppercase tracking-[0.08em] text-slate-300">{badge}</span>}
+        {badge && <span className="text-2xs font-semibold text-slate-300">{badge}</span>}
         {titleExtra}
       </div>
       <div className="p-4">{children}</div>

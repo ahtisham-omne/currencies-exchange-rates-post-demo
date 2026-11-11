@@ -109,7 +109,7 @@ function personFacts(raw: string) {
   if (known) return known
   const tag = raw.match(/\((.*?)\)/)?.[1]
   return {
-    role: tag && tag !== 'You' ? tag : 'Team member',
+    role: tag && tag !== 'You' ? tag : 'Team Member',
     dept: 'General',
     email: `${name.toLowerCase().replace(/[^a-z]+/g, '.')}@omnesoft.com`,
     phone: '',

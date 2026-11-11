@@ -286,11 +286,11 @@ export function InlineReplyPane({
      note the pane composes a send-out and says so in the header. */
   const isNote = channel === 'Note'
   const headerLabel = isNote
-    ? 'Send as email'
+    ? 'Send as Email'
     : normalised === 'forward'
       ? 'Forward'
       : normalised === 'reply-all'
-        ? 'Reply all'
+        ? 'Reply All'
         : 'Reply'
 
   useEffect(() => {
@@ -594,7 +594,7 @@ function InlineCompose({
 
   const ConfidentialEyeIcon = isConfidential ? EyeOff : Eye
   const remainingSuggestions = suggestedRecipients.filter(r => !toChips.includes(r))
-  const sendLabel = isNote ? 'Send out' : mode === 'forward' ? 'Forward' : 'Send'
+  const sendLabel = isNote ? 'Send Out' : mode === 'forward' ? 'Forward' : 'Send'
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -793,11 +793,11 @@ function InlineCompose({
       <ConfirmModal
         open={showNoSubjectConfirm}
         tone="info"
-        badge="No subject"
+        badge="No Subject"
         title="Send without a subject?"
         description="This message has no subject line. A thread with no subject is harder to find later."
-        confirmLabel="Yes, send"
-        dismissLabel="No, let me add one"
+        confirmLabel="Yes, Send"
+        dismissLabel="No, Let Me Add One"
         onConfirm={() => { setShowNoSubjectConfirm(false); doSend() }}
         onDismiss={() => setShowNoSubjectConfirm(false)}
       />

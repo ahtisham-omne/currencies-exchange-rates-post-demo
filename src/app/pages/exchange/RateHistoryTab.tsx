@@ -18,7 +18,7 @@ const EVENT_TONE: Record<HistoryEvent, 'neutral' | 'success' | 'info' | 'danger'
   Synced: 'neutral', Created: 'success', Updated: 'info', Scheduled: 'info', Archived: 'danger', Restored: 'warning',
 }
 
-type TypePill = 'all' | 'Mid-market' | 'Corporate'
+type TypePill = 'all' | 'Mid-Market' | 'Corporate'
 
 export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: string }) {
   const [query, setQuery] = useState('')
@@ -27,16 +27,16 @@ export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: s
   // Opens on every entry, as the tab's count does.
   const [pill, setPill] = useState<TypePill>('all')
   const shown = pill === 'all' ? rows : rows.filter(r => r.type === pill)
-  const counts = { mid: rows.filter(r => r.type === 'Mid-market').length, corp: rows.filter(r => r.type === 'Corporate').length }
+  const counts = { mid: rows.filter(r => r.type === 'Mid-Market').length, corp: rows.filter(r => r.type === 'Corporate').length }
 
   const columns = useMemo<CoaColumn<RateHistoryRow>[]>(() => [
     {
-      key: 'effective', label: 'Effective date', locked: true, width: 170, info: RATE_TOOLTIPS.effectiveDate,
+      key: 'effective', label: 'Effective Date', locked: true, width: 170, info: RATE_TOOLTIPS.effectiveDate,
       render: (r, ctx) => <span className="text-sm text-slate-700 tabular-nums whitespace-nowrap" style={{ fontWeight: 500 }}><Marked text={fmtDate(r.effectiveDate)} q={ctx.q} /></span>,
       sortValue: r => `${r.effectiveDate}|${r.at}`, searchText: r => fmtDate(r.effectiveDate), filter: 'date', filterValue: r => r.effectiveDate,
     },
     {
-      key: 'type', label: 'Rate type', headerClassName: 'min-w-[130px]',
+      key: 'type', label: 'Rate Type', headerClassName: 'min-w-[130px]',
       render: (r, ctx) => <Badge tone={r.type === 'Corporate' ? 'orange' : 'purple'} className={PARTNER_CHIP_CLS}><Marked text={r.type} q={ctx.q} /></Badge>,
       sortValue: r => r.type, searchText: r => r.type, filter: 'multiselect',
     },
@@ -47,13 +47,13 @@ export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: s
       sortValue: r => r.event, searchText: r => r.event, filter: 'multiselect',
     },
     {
-      key: 'rate', label: 'Rate value', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]',
+      key: 'rate', label: 'Rate Value', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]',
       info: `One ${code} in the base currency.`,
       render: (r, ctx) => <span className="text-sm font-medium text-slate-700 tabular-nums whitespace-nowrap"><Marked text={fmtRate(r.rate)} q={ctx.q} /></span>,
       sortValue: r => r.rate, searchText: r => fmtRate(r.rate), filter: 'range',
     },
     {
-      key: 'inverse', label: 'Inverse rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]', info: RATE_TOOLTIPS.inverse,
+      key: 'inverse', label: 'Inverse Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]', info: RATE_TOOLTIPS.inverse,
       render: r => <span className="text-sm text-slate-500 tabular-nums whitespace-nowrap">{fmtInverse(r.rate)}</span>,
       sortValue: r => 1 / r.rate, filter: 'range', filterValue: r => 1 / r.rate,
     },
@@ -68,14 +68,14 @@ export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: s
       sortValue: r => r.changePct, filter: 'range',
     },
     {
-      key: 'variance', label: 'Variance vs mid', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.variance,
+      key: 'variance', label: 'Variance vs Mid', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.variance,
       render: (r, ctx) => (r.variance == null ? <EmptyCell /> : (
         <Badge tone={Math.abs(r.variance) > 1 ? 'warning' : 'success'} className={cn(PARTNER_CHIP_CLS, 'tabular-nums')}><Marked text={fmtSignedPct(r.variance)} q={ctx.q} /></Badge>
       )),
       sortValue: r => r.variance, searchText: r => (r.variance == null ? '' : fmtSignedPct(r.variance)), filter: 'range',
     },
     {
-      key: 'by', label: 'Set by', pad: 'person', cellClassName: 'px-4 max-w-[220px]', headerClassName: 'min-w-[160px]',
+      key: 'by', label: 'Set By', pad: 'person', cellClassName: 'px-4 max-w-[220px]', headerClassName: 'min-w-[160px]',
       render: (r, ctx) => <PersonCell name={r.by} comfort={ctx.comfort} q={ctx.q} />,
       sortValue: r => personText(r.by), searchText: r => personText(r.by), filter: 'multiselect', filterValue: r => personText(r.by),
     },
@@ -90,7 +90,7 @@ export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: s
       sortValue: r => r.note || null, searchText: r => r.note, filter: 'text',
     },
     {
-      key: 'at', label: 'Recorded on', defaultHidden: true, headerClassName: 'min-w-[180px]',
+      key: 'at', label: 'Recorded On', defaultHidden: true, headerClassName: 'min-w-[180px]',
       info: 'When the sync ran or the change was saved, in your time zone.',
       render: (r, ctx) => <StampCell at={r.at} q={ctx.q} />,
       sortValue: r => r.at, searchText: r => stampText(r.at), filter: 'date', filterValue: r => r.at,
@@ -118,7 +118,7 @@ export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: s
       pills={
         <PillRow>
           <QuickFilterPill label="All" count={rows.length} active={pill === 'all'} onClick={() => setPill('all')} />
-          <QuickFilterPill label="Mid-market" count={counts.mid} active={pill === 'Mid-market'} onClick={() => setPill('Mid-market')} />
+          <QuickFilterPill label="Mid-Market" count={counts.mid} active={pill === 'Mid-Market'} onClick={() => setPill('Mid-Market')} />
           <QuickFilterPill label="Corporate" count={counts.corp} active={pill === 'Corporate'} onClick={() => setPill('Corporate')} />
         </PillRow>
       }

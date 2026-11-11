@@ -90,7 +90,7 @@ export function RecordRefHoverCard({
       if (rate) {
         const status = rate.status === 'active' ? 'Active' : 'Archived'
         preview = {
-          name: `${rate.sourceCurrencyName} corporate rate`,
+          name: `${rate.sourceCurrencyName} Corporate Rate`,
           status,
           statusColor: RATE_STATUS_COLOR[status] ?? 'var(--color-slate-400)',
           meta: longDate(rate.effectiveDate),
@@ -101,7 +101,7 @@ export function RecordRefHoverCard({
       const rate = midMarketRates.find(r => r.sourceCurrency === code)
       if (rate) {
         preview = {
-          name: `${rate.sourceCurrencyName} mid-market rate`,
+          name: `${rate.sourceCurrencyName} Mid-Market Rate`,
           status: 'Active',
           statusColor: RATE_STATUS_COLOR.Active,
           meta: longDate(rate.effectiveDate),

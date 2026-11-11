@@ -46,10 +46,13 @@ export function FlagImage({ code, className }: {
   const [failed, setFailed] = useState(false)
   const box = 'inline-block align-[-0.12em] w-[1.33em] h-[1em] rounded-[0.15em] shrink-0'
   if (!code || failed) {
+    // The stand-in is a monogram of the flag, like an avatar's initials, so it
+    // takes the ISO code in its own written form (upper case) whatever case the
+    // caller passed it in, rather than a CSS case transform.
     return (
-      <span aria-hidden className={cn(box, 'inline-flex items-center justify-center bg-bg-subtle border border-border text-fg-muted uppercase', className)}
+      <span aria-hidden className={cn(box, 'inline-flex items-center justify-center bg-bg-subtle border border-border text-fg-muted', className)}
         style={{ fontSize: '0.55em', fontWeight: 700, width: '2.4em', height: '1.8em' }}>
-        {code}
+        {code.toUpperCase()}
       </span>
     )
   }

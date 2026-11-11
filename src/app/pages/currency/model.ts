@@ -55,12 +55,12 @@ export const symbolSearchText = (symbol: string) => [symbol, ...(SYMBOL_ALIASES[
 export type DocTypeKey = 'vendorInvoice' | 'customerInvoice' | 'purchaseOrder' | 'salesOrder' | 'vendorPayment' | 'customerPayment'
 
 export const DOC_TYPES: { key: DocTypeKey; label: string; plural: string; party: string; short: string }[] = [
-  { key: 'vendorInvoice', label: 'Vendor invoice', plural: 'Vendor invoices', party: 'Vendor', short: 'Vend. inv' },
-  { key: 'customerInvoice', label: 'Customer invoice', plural: 'Customer invoices', party: 'Customer', short: 'Cust. inv' },
-  { key: 'purchaseOrder', label: 'Purchase order', plural: 'Purchase orders', party: 'Vendor', short: 'PO' },
-  { key: 'salesOrder', label: 'Sales order', plural: 'Sales orders', party: 'Customer', short: 'SO' },
-  { key: 'vendorPayment', label: 'Vendor payment', plural: 'Vendor payments', party: 'Party', short: 'Vend. pay' },
-  { key: 'customerPayment', label: 'Customer payment', plural: 'Customer payments', party: 'Party', short: 'Cust. pay' },
+  { key: 'vendorInvoice', label: 'Vendor Invoice', plural: 'Vendor Invoices', party: 'Vendor', short: 'Vend. Inv' },
+  { key: 'customerInvoice', label: 'Customer Invoice', plural: 'Customer Invoices', party: 'Customer', short: 'Cust. Inv' },
+  { key: 'purchaseOrder', label: 'Purchase Order', plural: 'Purchase Orders', party: 'Vendor', short: 'PO' },
+  { key: 'salesOrder', label: 'Sales Order', plural: 'Sales Orders', party: 'Customer', short: 'SO' },
+  { key: 'vendorPayment', label: 'Vendor Payment', plural: 'Vendor Payments', party: 'Party', short: 'Vend. Pay' },
+  { key: 'customerPayment', label: 'Customer Payment', plural: 'Customer Payments', party: 'Party', short: 'Cust. Pay' },
 ]
 export const docTypeMeta = (k: DocTypeKey) => DOC_TYPES.find(t => t.key === k)!
 

@@ -54,7 +54,7 @@ export function PaginationBar({ total, page, onPageChange, perPage, onPerPageCha
   return (
     <div className="flex flex-col sm:flex-row items-center justify-center px-4 py-3 border-t border-border gap-3 shrink-0">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span>Records per page</span>
+        <span>Rows per Page</span>
         <div className="relative">
           <select
             value={perPage === -1 ? 'all' : String(perPage)}

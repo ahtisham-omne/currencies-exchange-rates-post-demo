@@ -270,7 +270,7 @@ export function DragBar({ hiding }: { hiding: boolean }) {
 
 /** The label that follows the cursor during a column drag - Partners' chip. Red,
  *  with an eye-off in place of the grip, while a release would hide the column.
- *  `caps` keeps the import grid's uppercase headers. */
+ *  `caps` keeps the heavier header weight; the label shows as written. */
 export function DragGhost({ ghostRef, label, hiding = false, caps = true }: { ghostRef: React.RefObject<HTMLDivElement>; label: string | null; hiding?: boolean; caps?: boolean }) {
   // Nothing to portal into where there is no page (a table rendered to a string).
   if (typeof document === 'undefined') return null
@@ -298,7 +298,7 @@ export function DragGhost({ ghostRef, label, hiding = false, caps = true }: { gh
           {hiding
             ? <EyeOff className="w-3 h-3 shrink-0" style={{ color: '#DC2626' }} />
             : <GripVertical className="w-3 h-3 shrink-0 text-primary" />}
-          <span className={cn('text-[13px]', caps && 'uppercase tracking-wide')} style={{ fontWeight: caps ? 600 : 500, color: hiding ? '#DC2626' : 'hsl(var(--primary))' }}>{label}</span>
+          <span className="text-[13px]" style={{ fontWeight: caps ? 600 : 500, color: hiding ? '#DC2626' : 'hsl(var(--primary))' }}>{label}</span>
         </div>
       )}
     </div>,

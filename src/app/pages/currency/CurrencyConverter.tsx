@@ -167,7 +167,7 @@ function RateTypeToggle({ mode, onChange, corporateAvailable }: { mode: RateMode
     <div className="flex items-center h-8 rounded-lg border border-border bg-slate-50 p-0.5 gap-0.5 shrink-0" role="tablist" aria-label="Rate type">
       <Tooltip content={CONVERTER_TOGGLE_TOOLTIPS.midMarket} side="top">
         <button type="button" role="tab" aria-selected={mode === 'mid'} onClick={() => onChange('mid')} className={seg(mode === 'mid')} style={{ fontWeight: mode === 'mid' ? 600 : 500 }}>
-          Mid-market rate
+          Mid-Market Rate
           <Info className="w-3 h-3 text-fg-subtle/70" />
         </button>
       </Tooltip>
@@ -181,7 +181,7 @@ function RateTypeToggle({ mode, onChange, corporateAvailable }: { mode: RateMode
           className={seg(mode === 'std' && corporateAvailable, !corporateAvailable)}
           style={{ fontWeight: mode === 'std' ? 600 : 500 }}
         >
-          Corporate rate
+          Corporate Rate
           <Info className="w-3 h-3 text-fg-subtle/70" />
         </button>
       </Tooltip>
@@ -206,7 +206,7 @@ function ConverterSide({ side, code, setCode, amount, onAmountChange, noRate, op
     <div className="flex-1 min-w-0 rounded-lg border border-border bg-bg-subtle/60 p-3">
       <div className="flex items-end gap-2.5">
         <div className="flex-1 min-w-0 space-y-1.5">
-          <span className="label block">{side === 'From' ? 'Convert from' : 'Convert to'}</span>
+          <span className="label block">{side === 'From' ? 'Convert From' : 'Convert To'}</span>
           <CurrencyPicker value={code} onChange={setCode} options={options} all={all} ariaLabel={`Change ${side.toLowerCase()} currency`} />
         </div>
         <div className="w-[42%] min-w-[110px] max-w-[180px] shrink-0 space-y-1.5">
@@ -364,7 +364,7 @@ export function CurrencyConverter({ detail, wide = true }: {
         <Banner
           tone="warning"
           title="No corporate rate has been set for this currency pair yet."
-          action={<Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => navigate(`/accounting/exchange-rates?addCorp=${encodeURIComponent(pairCode)}`)}>Set corporate rate</Button>}
+          action={<Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => navigate(`/accounting/exchange-rates?addCorp=${encodeURIComponent(pairCode)}`)}>Set Corporate Rate</Button>}
         >
           The mid-market rate is being used by default.
         </Banner>
@@ -387,7 +387,7 @@ export function CurrencyConverter({ detail, wide = true }: {
         {isSwapped && (
           <Tooltip content={INVERSE_BADGE_TOOLTIP} side="top">
             <span className="inline-flex cursor-help" tabIndex={0}>
-              <Badge tone="info"><ArrowLeftRight className="w-2.5 h-2.5 mr-1" />Inverse rate</Badge>
+              <Badge tone="info"><ArrowLeftRight className="w-2.5 h-2.5 mr-1" />Inverse Rate</Badge>
             </span>
           </Tooltip>
         )}

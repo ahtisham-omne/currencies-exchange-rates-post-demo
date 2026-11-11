@@ -18,7 +18,7 @@ export interface SearchDestination {
 /* The module's own pages. A query that names one offers it; any other query is
    offered to the two library pages, which read `?q=` into their table search. */
 const DEFAULT_DESTINATIONS: SearchDestination[] = [
-  { label: 'Accounting overview', to: '/accounting', hint: 'Accounting' },
+  { label: 'Accounting Overview', to: '/accounting', hint: 'Accounting' },
   { label: 'Currency Library', to: '/accounting/currencies', hint: 'Currency & Exchange Rates' },
   { label: 'Exchange Rates', to: '/accounting/exchange-rates', hint: 'Currency & Exchange Rates' },
 ]

@@ -53,7 +53,7 @@ export function useCurrencyLifecycle() {
         refusal: {
           title: `Can't deactivate ${c.code}`,
           description: [baseStaysActive(c)],
-          dismissLabel: 'Got it',
+          dismissLabel: 'Got It',
         },
       }
     }
@@ -64,7 +64,7 @@ export function useCurrencyLifecycle() {
         refusal: {
           title: `Can't deactivate ${c.code} yet`,
           description: [`${c.code} is on open transactions. Close or settle them first, then deactivate it.`],
-          reasonsTitle: 'Still open',
+          reasonsTitle: 'Still Open',
           reasons: openDocBreakdown(c),
         },
       }
@@ -76,7 +76,7 @@ export function useCurrencyLifecycle() {
         icon: lifecycleIcon('deactivate'),
         title: `Deactivate ${c.code}?`,
         description: [`${c.code} will stop being offered on new transactions. Its rates and history are kept, and you can activate it again anytime.`],
-        confirmLabel: 'Deactivate currency',
+        confirmLabel: 'Deactivate Currency',
       },
       commit: () => deactivateCurrency(c.code),
       toast: `${c.code} deactivated`,
@@ -105,9 +105,9 @@ export function useCurrencyLifecycle() {
           description: [n === 1
             ? 'It will be offered on new transactions, rates and reports again.'
             : 'They will be offered on new transactions, rates and reports again.'],
-          reasonsTitle: 'Currencies affected',
-          reasons: nameSome(targets.map(c => ({ node: named(c), text: `${c.code} ${c.name}` })), 'Currencies affected'),
-          confirmLabel: `Activate ${plural(n, 'currency', 'currencies')}`,
+          reasonsTitle: 'Currencies Affected',
+          reasons: nameSome(targets.map(c => ({ node: named(c), text: `${c.code} ${c.name}` })), 'Currencies Affected'),
+          confirmLabel: `Activate ${plural(n, 'Currency', 'Currencies')}`,
         },
         commit: () => { bulkActivate(targets.map(c => c.code)) },
         toast: `${plural(n, 'currency', 'currencies')} activated`,
@@ -136,8 +136,8 @@ export function useCurrencyLifecycle() {
               : 'The currencies below stay as they are, each for the reason given beside it.',
             ...(held.some(c => !c.isBaseCurrency) ? ['A currency on open transactions can be deactivated once they are closed or settled.'] : []),
           ],
-          reasonsTitle: 'Why each one stayed',
-          reasons: nameSome(heldLines, 'Why each one stayed'),
+          reasonsTitle: 'Why Each One Stayed',
+          reasons: nameSome(heldLines, 'Why Each One Stayed'),
         },
       })
       return
@@ -156,11 +156,11 @@ export function useCurrencyLifecycle() {
             : 'They will stop being offered on new transactions. Their rates and history are kept, and you can activate them again anytime.',
           ...(held.length ? [`${held.length === 1 ? '1 currency stays as it is' : `${held.length} currencies stay as they are`}, named below.`] : []),
         ],
-        reasonsTitle: 'Currencies affected',
-        reasons: nameSome(targets.map(c => ({ node: named(c), text: `${c.code} ${c.name}` })), 'Currencies affected'),
-        asideTitle: held.length ? 'Why each one stayed' : undefined,
-        aside: held.length ? nameSome(heldLines, 'Why each one stayed') : undefined,
-        confirmLabel: `Deactivate ${plural(n, 'currency', 'currencies')}`,
+        reasonsTitle: 'Currencies Affected',
+        reasons: nameSome(targets.map(c => ({ node: named(c), text: `${c.code} ${c.name}` })), 'Currencies Affected'),
+        asideTitle: held.length ? 'Why Each One Stayed' : undefined,
+        aside: held.length ? nameSome(heldLines, 'Why Each One Stayed') : undefined,
+        confirmLabel: `Deactivate ${plural(n, 'Currency', 'Currencies')}`,
       },
       commit: () => { bulkDeactivate(targets.map(c => c.code)) },
       toast: `${plural(n, 'currency', 'currencies')} deactivated${held.length ? `, ${held.length} skipped` : ''}`,

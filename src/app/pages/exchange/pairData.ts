@@ -4,7 +4,7 @@
 // corporate line comes from the audit log, so an edit moves the KPIs, the
 // charts, the rate history and the activity feed together.
 import {
-  API_PROVIDER, midMarketHistory, pairTransactions30d, pairTransactionsOn,
+  API_PROVIDER, midMarketHistory, pairTransactionsOn,
   type MidMarketRate, type RateAuditEntry, type StandardRate,
 } from '../../data/exchangeRates'
 import type { ActivityFeedItem } from '../../coa/components/ActivityFeed'
@@ -12,7 +12,7 @@ import type { RangeOption, RangeValue } from '../../coa/components/PeriodBar'
 import { INSIGHTS_RANGE_OPTIONS, insightsRangeLabel } from './InsightsRangeMenu'
 import { windowSeries, windowSeriesBetween } from '../../coa/components/chartKit'
 import { cleanName } from '../../coa/components/Avatar'
-import { fmtDate, fmtDateTime, localDayOf, todayIso } from '../../coa/lib/utils'
+import { fmtDate, fmtDateTime, localDayOf } from '../../coa/lib/utils'
 import { BASE, LAST_SYNC_TIME, fmtRate, variancePct } from './rateModel'
 
 export interface PairPoint {
@@ -127,30 +127,6 @@ export const tickLabelFor = (spanDays: number) => (iso: string) =>
 /** A rate's ticks: four decimals for small rates, two otherwise. */
 export const rateTick = (v: number) => (Math.abs(v) < 10 ? v.toFixed(4) : v.toFixed(2))
 
-/* ── KPIs that do not depend on the range ───────────────────────────────── */
-
-export interface PairFacts {
-  transactions30d: number
-  /** Average mid-market rate over the last 30 synced days. */
-  avg30: number
-  /** Corporate variance per synced day over the last 30 (only days a corporate rate was in effect). */
-  variances30: number[]
-  /** Corporate rate changes made in the last 30 days. */
-  changes30: number
-}
-
-export function pairFacts(code: string, series: PairPoint[], audit: RateAuditEntry[], today = todayIso()): PairFacts {
-  const last30 = series.slice(-30)
-  const cutoff = new Date(`${today}T00:00:00`)
-  cutoff.setDate(cutoff.getDate() - 30)
-  return {
-    transactions30d: pairTransactions30d(code),
-    avg30: last30.reduce((s, p) => s + p.mid, 0) / Math.max(1, last30.length),
-    variances30: last30.filter(p => p.corp != null).map(p => variancePct(p.corp!, p.mid) ?? 0),
-    changes30: audit.filter(e => e.sourceCurrency === code && new Date(e.dateTime) >= cutoff).length,
-  }
-}
-
 export const transactionsOn = pairTransactionsOn
 
 /* ── Rate history (the table tab) ───────────────────────────────────────── */
@@ -158,7 +134,7 @@ export const transactionsOn = pairTransactionsOn
 export type HistoryEvent = 'Synced' | 'Created' | 'Updated' | 'Scheduled' | 'Archived' | 'Restored'
 export interface RateHistoryRow {
   id: string
-  type: 'Mid-market' | 'Corporate'
+  type: 'Mid-Market' | 'Corporate'
   event: HistoryEvent
   effectiveDate: string
   /** When it was recorded (the sync, or the change). */
@@ -178,7 +154,7 @@ export function rateHistory(code: string, series: PairPoint[], audit: RateAuditE
   const mids = series.slice(-(midDays + 1))
   const rows: RateHistoryRow[] = mids.slice(1).map((p, i) => ({
     id: `mid-${p.date}`,
-    type: 'Mid-market',
+    type: 'Mid-Market',
     event: 'Synced',
     effectiveDate: p.date,
     at: `${p.date}T${LAST_SYNC_TIME}:00+05:00`,

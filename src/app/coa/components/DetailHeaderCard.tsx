@@ -246,7 +246,7 @@ function HeaderDescription({ text }: { text: string }) {
                 className="inline-flex items-center gap-0.5 text-[11px] text-primary hover:text-[#0862D0] cursor-pointer align-baseline"
                 style={{ fontWeight: 500 }}
               >
-                Show less <ChevronUp className="w-3 h-3 inline" />
+                Show Less <ChevronUp className="w-3 h-3 inline" />
               </button>
             </>
           )}
@@ -259,7 +259,7 @@ function HeaderDescription({ text }: { text: string }) {
           className="absolute right-0 bottom-0 bg-gradient-to-l from-white via-white to-transparent pl-6 pr-0 inline-flex items-center gap-0.5 text-[11px] text-primary hover:text-[#0862D0] cursor-pointer"
           style={{ fontWeight: 500, lineHeight: '20px' }}
         >
-          ... more <ChevronDown className="w-3 h-3" />
+          ... More <ChevronDown className="w-3 h-3" />
         </button>
       )}
     </div>

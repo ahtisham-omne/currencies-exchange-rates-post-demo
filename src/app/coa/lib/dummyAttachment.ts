@@ -43,14 +43,22 @@ function longDate(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
+/* The label each record kind takes on the document, written out rather than
+   built by capitalizing the sentence form ("exchange rate" → Exchange Rate). */
+const RECORD_KIND_LABEL: Record<string, string> = {
+  currency: 'Currency',
+  'exchange rate': 'Exchange Rate',
+  record: 'Record',
+}
+
 /* The lines every format carries, so a reader who opens the PDF and the
    workbook of the same folder sees the document agree with the card. */
 function facts(file: AttachmentFile, ctx: DocumentContext): [string, string][] {
   return [
     ['Document', titleOf(file.name)],
-    [ctx.recordKind.charAt(0).toUpperCase() + ctx.recordKind.slice(1), ctx.recordLabel],
-    ['Filed on', longDate(file.date)],
-    ['Filed by', cleanName(file.uploadedBy)],
+    [RECORD_KIND_LABEL[ctx.recordKind] ?? 'Record', ctx.recordLabel],
+    ['Filed On', longDate(file.date)],
+    ['Filed By', cleanName(file.uploadedBy)],
     ['Reference', String(file.id)],
   ]
 }
@@ -64,7 +72,7 @@ async function buildPdf(file: AttachmentFile, ctx: DocumentContext): Promise<Blo
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9)
   doc.setTextColor(10, 119, 255)
-  doc.text('OMNE', left, y)
+  doc.text('Omne', left, y)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(120, 130, 145)
   doc.text('Currencies & Exchange Rates', left + 46, y)
@@ -129,7 +137,7 @@ function buildRtf(file: AttachmentFile, ctx: DocumentContext): Blob {
   const lines = facts(file, ctx).map(([l, v]) => `\\b ${esc(l)}:\\b0  ${esc(v)}\\par`)
   const rtf = [
     '{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Helvetica;}}',
-    '\\fs18 OMNE  Currencies & Exchange Rates\\par\\par',
+    '\\fs18 Omne  Currencies & Exchange Rates\\par\\par',
     `\\fs32\\b ${esc(titleOf(file.name))}\\b0\\fs20\\par\\par`,
     ...lines,
     '\\par',
@@ -152,7 +160,7 @@ async function buildImage(file: AttachmentFile, ctx: DocumentContext): Promise<B
 
   g.fillStyle = '#0A77FF'
   g.font = 'bold 22px Helvetica, Arial, sans-serif'
-  g.fillText('OMNE', 88, 116)
+  g.fillText('Omne', 88, 116)
   g.fillStyle = '#788291'
   g.font = '22px Helvetica, Arial, sans-serif'
   g.fillText('Currencies & Exchange Rates', 190, 116)

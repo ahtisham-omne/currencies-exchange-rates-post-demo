@@ -98,7 +98,7 @@ export function SystemNoticeCard({
           <FileText className="h-3.5 w-3.5 text-[var(--color-sky-500)]" strokeWidth={1.75} />
         </div>
         <span className="text-[12.5px] text-[var(--color-slate-900)]" style={{ fontWeight: 600 }}>
-          Report delivered
+          Report Delivered
         </span>
         <span
           className="ml-auto text-[11px] text-[var(--color-slate-400)]"
@@ -118,14 +118,14 @@ export function SystemNoticeCard({
             href={card.reportHref}
             onActivate={onNavigate ? () => onNavigate('report', card.reportHref) : undefined}
           >
-            Open report
+            Open Report
           </CardLink>
           <span className="text-[var(--color-slate-300)]" aria-hidden="true">·</span>
           <CardLink
             href={card.automationHref}
             onActivate={onNavigate ? () => onNavigate('automation', card.automationHref) : undefined}
           >
-            Open automation
+            Open Automation
           </CardLink>
         </div>
       </div>

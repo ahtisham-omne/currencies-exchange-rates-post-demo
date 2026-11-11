@@ -56,7 +56,7 @@ export function StorageUsageBar({
   usedGb = 0.78,
   totalGb = 1.5,
   warnThreshold = 80,
-  label = 'Inbox storage',
+  label = 'Inbox Storage',
   bannerTitle = 'Your inbox is almost full',
   className,
   onManage,
@@ -137,7 +137,7 @@ export function StorageUsageBar({
               className="mt-2 inline-flex items-center h-7 px-2.5 rounded-md border border-red-300 bg-white text-[11.5px] text-red-700 hover:bg-red-50 transition-colors"
               style={{ fontWeight: 500 }}
             >
-              Manage storage
+              Manage Storage
             </button>
           </div>
         </div>
@@ -270,7 +270,7 @@ function StorageHoverCard({
           className="h-auto justify-start p-0 text-left text-[11px] text-[var(--color-sky-500)] hover:no-underline"
           style={{ fontWeight: 500 }}
         >
-          Manage storage in Settings
+          Manage Storage in Settings
         </button>
       </div>
     </div>,

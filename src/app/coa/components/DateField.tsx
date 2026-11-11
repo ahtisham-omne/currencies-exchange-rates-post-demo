@@ -381,7 +381,7 @@ export function CustomRangeMenu({ initialFrom, initialTo, onApply, onCancel }: {
   return (
     <div className="p-1">
       <div className="mb-3">
-        <div className="text-sm font-semibold text-fg">Custom date range</div>
+        <div className="text-sm font-semibold text-fg">Custom Date Range</div>
         <div className="text-[12px] text-fg-muted mt-0.5">{rangeLabel}</div>
       </div>
       <DateRangeCalendar from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
