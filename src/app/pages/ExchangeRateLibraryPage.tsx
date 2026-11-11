@@ -23,7 +23,8 @@ import {
   BASE, LAST_SYNC_AT, LAST_SYNC_DATE, flagOf, fmtInverse, fmtRate, fmtSignedPct, pairPath,
   toCorpRows, toMidRows, type CorpRow, type MidRow,
 } from './exchange/rateModel'
-import { RateFiltersModal, corpColumns, midColumns } from './exchange/libraryConfig'
+import { corpColumns, midColumns } from './exchange/libraryConfig'
+import { RegionPill } from './currency/RegionPill'
 import { useCorporateRateLifecycle } from './exchange/rateLifecycle'
 import { useCorporateRateForm } from './exchange/CorporateRateForm'
 import { PairInverter } from './exchange/PairInverter'
@@ -102,7 +103,6 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
 
   const [pill, setPill] = useRememberedState<CorpPill>('fx.rates:pill', 'all')
   const [regions, setRegions] = useRememberedState<string[]>('fx.rates:regions', [])
-  const [filtersOpen, setFiltersOpen] = useState(false)
   const [inverted, setInverted] = useState<Set<string>>(new Set())
   const toggleInvert = (id: string) => setInverted(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
@@ -196,14 +196,15 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   const narrowing = regions.length > 0 || Object.keys(isMid ? midTable.colFilters : corpTable.colFilters).length > 0 || (!isMid && pill === 'archived')
   const clearNarrowing = () => { setRegions([]); setPill('all'); (isMid ? midTable : corpTable).setColFilters({}) }
 
-  const regionCount = (region: string) => (isMid ? midAll : corpAll).filter(r => r.region === region).length
-  const regionMatch = (draft: string[]) => (isMid
-    ? midAll.filter(r => inRegion(r, draft)).length
-    : corpAll.filter(r => inRegion(r, draft) && (pill === 'archived' ? r.status === 'Archived' : r.status === 'Active')).length)
+  // What ticking a region alone would list on the open tab (the corporate one as its status pill leaves it).
+  const regionCount = (region: string) => (isMid
+    ? midAll.filter(r => r.region === region).length
+    : corpAll.filter(r => r.region === region && (pill === 'archived' ? r.status === 'Archived' : r.status === 'Active')).length)
+  // Region is the one filter here, so it is a pill on the row, as CoA's Dimensions is, and there is no Filters button.
+  const regionPill = <RegionPill selected={regions} onChange={setRegions} countFor={regionCount} noun="rates" />
 
   const toolbarCommon = {
     search: { value: query, onChange: setQuery, placeholder: 'Search rates' },
-    filters: { count: regions.length ? 1 : 0, onOpen: () => setFiltersOpen(true), onClear: () => setRegions([]) },
   }
 
   const emptyState = (
@@ -246,9 +247,10 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                     columns={{ open: midTable.columnsOpen, onToggle: () => midTable.setColumnsOpen(o => !o), count: midTable.visibleCount }}
                   />
                 }
+                pills={<PillRow>{regionPill}</PillRow>}
                 notes={<>
                   <ExplainerBanner id="mid" title="Mid-Market Rates">
-                    The rate halfway between the buy and sell price, with no bank markup. Updated automatically from <SourceLink className="underline underline-offset-2" /> every 24 hours.
+                    The midpoint of global buy and sell rates. Synced from <SourceLink className="underline underline-offset-2" /> every 24 hours.
                   </ExplainerBanner>
                   <QuotedStrip kind="mid" />
                 </>}
@@ -298,7 +300,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                   />
                 ) : null}
                 pills={
-                  <PillRow>
+                  <PillRow leading={regionPill}>
                     <QuickFilterPill label="Show All" active={pill === 'all'} onClick={() => setPill('all')} />
                     <QuickFilterPill label="Active" count={pillCounts.active} active={pill === 'active'} onClick={() => setPill('active')} />
                     <QuickFilterPill label="Archived" tone="danger" count={pillCounts.archived} active={pill === 'archived'} onClick={() => setPill(p => (p === 'archived' ? 'all' : 'archived'))} />
@@ -341,14 +343,6 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
         </div>
       </div>
 
-      <RateFiltersModal
-        open={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        regions={regions}
-        setRegions={setRegions}
-        countFor={regionCount}
-        matchCount={regionMatch}
-      />
       {lifecycle.modal}
       {form.modal}
     </>

@@ -1,17 +1,19 @@
 // The currency's Linked transactions tab on CoA's register-tab pattern
 // (AccountDetail RegisterTab, spec-detail §5.1): one flat table with a Type
-// column, type quick-filter pills with counts, a Status filter that opens on
-// Open, the table search (which also finds an amount however it is typed), and
+// column, a Type pill (the Region pill's dropdown, as CoA's Dimensions is: one
+// control however many kinds of transaction there are), a Status filter that
+// opens on Open, the table search (which also finds an amount however it is typed), and
 // the value of the active transactions in a summary strip above the rows.
 import { useEffect, useMemo, useState } from 'react'
-import { FileText, Inbox, Info } from 'lucide-react'
+import { FileStack, FileText, Inbox, Info } from 'lucide-react'
 import type { Currency } from '../../data/currencies'
 import { RATE_TOOLTIPS } from '../../utils/rateCopy'
 import { Badge, EmptyState, Marked, Tooltip } from '../../coa/components/ui'
 import { CoaTableCard, PillRow, TableEmptyState } from '../../coa/components/TableCard'
 import { TableToolbar } from '../../coa/components/TableToolbar'
 import { CoaDataTable, useCoaTable, type CoaColumn } from '../../coa/components/CoaDataTable'
-import { AllPill, FilterPill, FiltersModal, PillGrid, QuickFilterPill, Section } from '../../coa/components/Filters'
+import { AllPill, FilterPill, FiltersModal, PillGrid, Section } from '../../coa/components/Filters'
+import { PillFilter } from '../../coa/components/PillFilter'
 import { EmptyCell, PARTNER_CHIP_CLS } from '../../coa/components/cells'
 import { fmtDate, fmtNumber } from '../../coa/lib/utils'
 import { hasOpenDocuments } from '../../data/currencies'
@@ -30,14 +32,14 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
   const [query, setQuery] = useState('')
   const [debouncedQ, setDebouncedQ] = useState(query)
   useEffect(() => { const t = setTimeout(() => setDebouncedQ(query), 300); return () => clearTimeout(t) }, [query])
-  const [type, setType] = useState<DocTypeKey | 'all'>('all')
+  const [types, setTypes] = useState<DocTypeKey[]>([])
   const [statuses, setStatuses] = useState<string[]>(DEFAULT_STATUSES)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [quick, setQuick] = useState<LinkedDoc | null>(null)
   const dp = c.decimalPlaces
-  // Status narrows first, so the type pills count what the reader can see.
+  // Status narrows first, so the Type pill counts what the reader can see.
   const inStatus = useMemo(() => (statuses.length ? docs.filter(d => statuses.includes(statusOf(d))) : docs), [docs, statuses])
-  const rows = useMemo(() => (type === 'all' ? inStatus : inStatus.filter(d => d.type === type)), [inStatus, type])
+  const rows = useMemo(() => (types.length ? inStatus.filter(d => types.includes(d.type)) : inStatus), [inStatus, types])
 
   const columns = useMemo<CoaColumn<LinkedDoc>[]>(() => [
     {
@@ -100,7 +102,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
   const blocking = hasOpenDocuments(c)
   const statusOptions = STATUS_ORDER.filter(s => docs.some(d => d.status === s))
     .concat(docs.some(d => !d.status) ? [NO_STATUS] : [])
-  const narrowing = type !== 'all' || statuses.length > 0 || Object.keys(table.colFilters).length > 0
+  const narrowing = types.length > 0 || statuses.length > 0 || Object.keys(table.colFilters).length > 0
 
   if (docs.length === 0) {
     return (
@@ -126,10 +128,14 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
       }
       pills={
         <PillRow>
-          <QuickFilterPill label="All" count={inStatus.length} active={type === 'all'} onClick={() => setType('all')} />
-          {DOC_TYPES.map(t => (
-            <QuickFilterPill key={t.key} label={t.plural} count={inStatus.filter(d => d.type === t.key).length} active={type === t.key} onClick={() => setType(t.key)} />
-          ))}
+          <PillFilter
+            label="Type"
+            icon={<FileStack size={14} />}
+            description="Show the kinds of transaction you tick."
+            options={DOC_TYPES.map(t => ({ value: t.key, label: t.plural, count: inStatus.filter(d => d.type === t.key).length }))}
+            selected={types}
+            onChange={next => setTypes(next as DocTypeKey[])}
+          />
         </PillRow>
       }
       notes={
@@ -153,7 +159,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
       <CoaDataTable
         table={table}
         windowAbove={0}
-        emptyState={<TableEmptyState noun="transactions" query={debouncedQ} filtersActive={narrowing} onClearSearch={() => setQuery('')} onClearFilters={() => { setType('all'); setStatuses([]); table.setColFilters({}) }} where={`${c.code}'s transactions`} />}
+        emptyState={<TableEmptyState noun="transactions" query={debouncedQ} filtersActive={narrowing} onClearSearch={() => setQuery('')} onClearFilters={() => { setTypes([]); setStatuses([]); table.setColFilters({}) }} where={`${c.code}'s transactions`} />}
       />
       {quick && <TransactionQuickView doc={quick} currency={c} onClose={() => setQuick(null)} />}
       <StatusFiltersModal open={filtersOpen} onClose={() => setFiltersOpen(false)} docs={docs} options={statusOptions} statuses={statuses} setStatuses={setStatuses} />

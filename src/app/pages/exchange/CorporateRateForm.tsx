@@ -95,7 +95,8 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
   const pending = existing ? upcomingRateOf(existing, today) : null
   // A later date keeps today's rate in effect and saves this one as Upcoming.
   const scheduling = !!inEffect && !!date && date > today
-  const n = Number(rate)
+  // Saved to four decimals, the way every rate in the module reads.
+  const n = Math.round(Number(rate) * 1e4) / 1e4
   const rateValid = rate.trim() !== '' && Number.isFinite(n) && n > 0
   const variance = rateValid ? variancePct(n, mid?.rate) : null
   const backdate = checkBackdate(inEffect, date, today)
@@ -258,6 +259,8 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                     placeholder="e.g., 279.0000"
                     value={rate}
                     onChange={e => { setRate(e.target.value); setRateTouched(true) }}
+                    // Shows the four decimals it will be saved with: 279.5 reads 279.5000.
+                    onBlur={() => { if (rateValid) setRate(fmtRate(n)) }}
                     error={errorOf('rate')}
                     hint={variance != null
                       // Green above mid-market, red below, grey when level.

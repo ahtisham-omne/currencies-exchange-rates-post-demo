@@ -1,8 +1,9 @@
 // The "Live exchange rate converter" card body, rebuilt in the kit's look: two
-// sides (currency picker + amount), a swap that flips which side is anchored to
-// 1, a Mid-market / Corporate rate toggle, the corporate empty state and the
-// adaptive footer. Every behaviour of the old converter is kept. The sides are
-// top-level components now, so an amount box keeps its focus while you type.
+// sides (currency picker + amount), a swap that trades the two currencies and
+// keeps the From amount, as Google's converter does (1 USD = 278.52 PKR swaps to
+// 1 PKR = 0.0036 USD), a Mid-market / Corporate rate toggle, the corporate
+// empty state and the adaptive footer. The sides are top-level components, so
+// an amount box keeps its focus while you type.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
@@ -16,6 +17,7 @@ import { Badge, Banner, Button, Marked, Tooltip, useEscapeToClose } from '../../
 import { FlagImage } from '../../coa/components/FlagImage'
 import { cn, fmtDate, fmtDateTime, todayIso } from '../../coa/lib/utils'
 import { BASE, flagOf } from './model'
+import { fmtConverted } from '../exchange/rateModel'
 
 type RateMode = 'mid' | 'std'
 
@@ -271,10 +273,9 @@ export function CurrencyConverter({ detail, wide = true }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromCode, toCode, effectiveMode, midMarketRates, standardRates])
 
-  // An amount carries its currency's own decimals (1 PKR = 0.00 USD); the rate
-  // line below carries the rate's four.
-  const fmt = (n: number, c: Currency) =>
-    n.toLocaleString('en-US', { minimumFractionDigits: c.decimalPlaces, maximumFractionDigits: c.decimalPlaces })
+  // A converted amount carries four decimals, as every rate does, so converting
+  // one unit reads as the rate itself (1 PKR = 0.0036 USD).
+  const fmt = fmtConverted
 
   // Recompute whichever side was not typed in when the pair or rate changes.
   useEffect(() => {
@@ -284,10 +285,10 @@ export function CurrencyConverter({ detail, wide = true }: {
     }
     if (lastEdited === 'from') {
       const n = Number(fromAmount.replace(/,/g, ''))
-      setToAmount(fromAmount.trim() !== '' && Number.isFinite(n) ? fmt(n * rate, toCurrency) : '')
+      setToAmount(fromAmount.trim() !== '' && Number.isFinite(n) ? fmt(n * rate) : '')
     } else {
       const n = Number(toAmount.replace(/,/g, ''))
-      setFromAmount(toAmount.trim() !== '' && Number.isFinite(n) ? fmt(n / rate, fromCurrency) : '')
+      setFromAmount(toAmount.trim() !== '' && Number.isFinite(n) ? fmt(n / rate) : '')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rate, fromCode, toCode])
@@ -297,26 +298,26 @@ export function CurrencyConverter({ detail, wide = true }: {
     setLastEdited('from')
     if (rate === null) return
     const n = Number(v.replace(/,/g, ''))
-    setToAmount(Number.isFinite(n) && v.trim() !== '' ? fmt(n * rate, toCurrency) : '')
+    setToAmount(Number.isFinite(n) && v.trim() !== '' ? fmt(n * rate) : '')
   }
   const onToChange = (v: string) => {
     setToAmount(v)
     setLastEdited('to')
     if (rate === null) return
     const n = Number(v.replace(/,/g, ''))
-    setFromAmount(Number.isFinite(n) && v.trim() !== '' ? fmt(n / rate, fromCurrency) : '')
+    setFromAmount(Number.isFinite(n) && v.trim() !== '' ? fmt(n / rate) : '')
   }
   const pickFrom = (c: string) => { setFromCode(c); setIsSwapped(false) }
   const pickTo = (c: string) => { setToCode(c); setIsSwapped(false) }
 
-  // Swap keeps the currencies where they are and flips which side reads 1:
-  // From = 1, To = rate; inverse: To = 1, From = 1 / rate.
+  // Swap trades the two currencies and keeps the From amount, as Google's converter
+  // does: 1 USD = 278.52 PKR becomes 1 PKR = 0.0036 USD. The To side follows.
   const swap = () => {
-    const next = !isSwapped
-    setIsSwapped(next)
-    if (rate === null) return
-    if (next) { setToAmount('1'); setFromAmount(fmt(1 / rate, fromCurrency)); setLastEdited('to') }
-    else { setFromAmount('1'); setToAmount(fmt(rate, toCurrency)); setLastEdited('from') }
+    setIsSwapped(s => !s)
+    setFromCode(toCode)
+    setToCode(fromCode)
+    setFromAmount(a => a || '1')
+    setLastEdited('from')
   }
 
   // The pair's non-base side names the rate; a cross pair falls back to From.
@@ -327,9 +328,8 @@ export function CurrencyConverter({ detail, wide = true }: {
   const midRecord = midMarketRates.find(r => r.sourceCurrency === pairCode) ?? null
   // Every rate prints with four decimals.
   const rate4 = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-  const rateDisplay = rate === null ? 'rate unavailable' : isSwapped
-    ? `1 ${toCode} = ${rate4(1 / rate)} ${fromCode}`
-    : `1 ${fromCode} = ${rate4(rate)} ${toCode}`
+  // The currencies themselves swap, so the rate always reads From to To.
+  const rateDisplay = rate === null ? 'rate unavailable' : `1 ${fromCode} = ${rate4(rate)} ${toCode}`
   const showCorporateEmpty = rateMode === 'std' && !hasCorporate
 
   const sides = { options: activeCurrencies, all: currencies, noRate: rate === null }

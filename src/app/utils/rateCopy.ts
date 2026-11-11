@@ -10,25 +10,25 @@ export const RATE_TOOLTIPS = {
   baseCurrency:
     "The reference currency configured for your company. All exchange rates in the system are expressed relative to this currency.",
   midMarket:
-    "The live interbank rate sourced from your configured rate provider. Represents the midpoint between the global buy and sell prices of the source currency against the base currency.",
+    "Midpoint of global buy and sell rates.",
   corporate:
-    "A fixed exchange rate manually set by your team for this currency pair.",
+    "Fixed rate set by your company. Applies until a new rate takes effect.",
   inverse:
     "How much one unit of the base currency buys in the source currency. The mathematical inverse of the exchange rate.",
   change24h:
-    "How much the rate changed since the previous sync.",
+    "How much the rate moved since the last sync.",
   rateType:
     "Mid-market rates update automatically. Corporate rates are fixed rates your team sets.",
   lastSync:
-    `When this rate was last updated from ${API_PROVIDER}.`,
+    `When ${API_PROVIDER} last updated this rate.`,
   internalId:
     "The system ID for this rate.",
   upcoming:
     "A rate saved for a later date. The current rate stays in effect until then.",
   variance:
-    "The percentage difference between the corporate rate and the current mid-market rate. Indicates how far the corporate rate has drifted from live market value.",
+    "Difference between the corporate rate and the mid-market rate. A positive value means the corporate rate is higher.",
   effectiveDate:
-    "The date the current corporate rate took effect. The rate remains active until manually updated by a team member.",
+    "Date from which this rate is applicable.",
   totalValueAllDocs:
     "The combined amount of this currency’s active transactions: open, pending and overdue. Drafts aren’t counted.",
   documentTypeTotal:
@@ -62,5 +62,5 @@ export const CONVERTER_TOGGLE_TOOLTIPS = {
 export const EXPLANATORY_BLOCKS = {
   // The mid-market banner is written in ExchangeRateLibraryPage, where it links the provider.
   corporate:
-    "Fixed rates your team sets. They stay the same until someone changes them, so transactions and budgets use a steady rate.",
+    "A fixed exchange rate set by your company. It applies until a new rate takes effect.",
 } as const;

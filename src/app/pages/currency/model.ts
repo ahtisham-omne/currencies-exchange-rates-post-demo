@@ -14,19 +14,20 @@ export const statusOf = (c: Currency): CurrencyStatus => (c.status === 'active' 
 
 /** The status menu's two states, with what each one means for a currency. */
 export const CURRENCY_STATUS_OPTIONS: StatusOption<CurrencyStatus>[] = [
-  { value: 'Active', verb: 'Activate', meaning: ['Offered on new transactions, rates and reports.'] },
-  { value: 'Inactive', verb: 'Deactivate', meaning: ['Not offered on new transactions. Its rates and history are kept.'] },
+  { value: 'Active', verb: 'Activate', meaning: ['You can use it on new transactions.'] },
+  { value: 'Inactive', verb: 'Deactivate', meaning: ['You can’t use it on new transactions. Past transactions aren’t affected.'] },
 ]
 
-/** Why the base currency can't be deactivated: every rate is quoted against it. */
-/** Why the base currency's status can't change: the menus' disabled reason, the
- *  refusal, and the bulk dialog all say it in these words. */
+/** Why the base currency's status can't change: the row menus' disabled reason,
+ *  the refusal, and the bulk dialog all say it in these words. */
 export const BASE_CURRENCY_LOCKED = 'Your base currency can’t be changed because transactions are linked to it.'
+/** Why Inactive is greyed out on the base currency's status menu. */
+export const BASE_CURRENCY_NO_DEACTIVATE = 'Your base currency can’t be deactivated. You can change it in General settings until the first posting to the General Ledger.'
 
 /** The status menu for one currency: the base currency's Deactivate is greyed out. */
 export const statusOptionsFor = (c: Currency): StatusOption<CurrencyStatus>[] =>
   c.isBaseCurrency
-    ? CURRENCY_STATUS_OPTIONS.map(o => (o.value === 'Inactive' ? { ...o, disabledReason: BASE_CURRENCY_LOCKED } : o))
+    ? CURRENCY_STATUS_OPTIONS.map(o => (o.value === 'Inactive' ? { ...o, disabledReason: BASE_CURRENCY_NO_DEACTIVATE } : o))
     : CURRENCY_STATUS_OPTIONS
 
 /** ISO 3166 alpha-2 (lower case) for a currency's flag, '' when there is none. */
@@ -43,10 +44,8 @@ export const countriesOf = (c: Currency): string[] => [c.country, ...(c.addition
 
 export { countInUse, countOpenDocuments }
 
-/** Every transaction the currency has been on, open or closed. */
-export const transactionCount = (c: Currency) => Math.max(c.usage.totalLifetimeDocuments, countInUse(c))
-/** In use: on any transaction, open or not. */
-export const isInUse = (c: Currency) => transactionCount(c) > 0
+/** In use: on at least one active transaction, the "N active" in the In Use column. */
+export const isInUse = (c: Currency) => countInUse(c) > 0
 
 /** What a search may type for a symbol: "Rs" for the rupee sign (₨). */
 const SYMBOL_ALIASES: Record<string, string[]> = { '₨': ['Rs'] }

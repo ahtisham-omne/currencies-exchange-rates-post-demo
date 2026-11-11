@@ -1,13 +1,11 @@
 // Exchange Rates screens: the pair converter. A row's expanded detail on the
 // library tables (`layout="row"`) and the pair page's rail card
 // (`layout="stack"`): type an amount in one currency and read it in the other at
-// this rate. The swap turns USD → PKR into PKR → USD, carrying the converted
-// amount across so 1 USD = 278.52 PKR swaps to 278.52 PKR = 1.00 USD.
-//
-// The swap used to convert one unit each way, so the inverse read 1 PKR = 0.00
-// USD: 0.0036 rounded to the dollar's two decimals. Converting the amount the
-// reader is holding gives an answer worth reading, and the rate line under the
-// cards keeps the inverse rate itself to four decimals.
+// this rate. The swap works as Google's converter does: it turns USD → PKR into
+// PKR → USD and keeps the amount typed, so 1 USD = 278.52 PKR swaps to
+// 1 PKR = 0.0036 USD, the same rate read the other way. (It used to carry the
+// converted amount across, so the swap read 278.52 PKR = 1.00 USD.) The result
+// carries four decimals like every rate (fmtConverted), so it never reads 0.00.
 import { useState } from 'react'
 import { ArrowLeftRight, ArrowUpDown } from 'lucide-react'
 import { LayoutGroup, motion } from 'motion/react'
@@ -15,15 +13,9 @@ import { INVERSE_BADGE_TOOLTIP } from '../../utils/rateCopy'
 import { Tooltip } from '../../coa/components/ui'
 import { FlagImage } from '../../coa/components/FlagImage'
 import { cn } from '../../coa/lib/utils'
-import { BASE, BASE_NAME, countryOf, decimalsOf, flagOf, fmtAmountIn, fmtInverse, fmtRate } from './rateModel'
+import { BASE, BASE_NAME, countryOf, flagOf, fmtConverted, fmtInverse, fmtRate } from './rateModel'
 
 const SPRING = { type: 'spring', stiffness: 520, damping: 38 } as const
-
-/** A number as the input shows it: the currency's own decimals, no grouping, no trailing zeros. */
-const plain = (n: number, code: string) => {
-  const dp = decimalsOf(code)
-  return String(Number(n.toFixed(dp)))
-}
 
 function SideCard({ label, code, name, stack, children }: { label: string; code: string; name: string; stack?: boolean; children: React.ReactNode }) {
   return (
@@ -67,11 +59,8 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
   // From SRC: multiply by the rate. From PKR: divide by it.
   const converted = valid ? (inverted ? n / rate : n * rate) : 0
 
-  const swap = () => {
-    // The converted amount becomes the new From amount, so the swap reads both ways.
-    if (valid) setAmount(plain(converted, toCode))
-    onToggle()
-  }
+  // The amount stays; the currencies trade places.
+  const swap = () => onToggle()
 
   const src = { id: 'src', code, name }
   const base = { id: 'base', code: BASE, name: BASE_NAME }
@@ -114,9 +103,9 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
         </div>
         <motion.div layout transition={SPRING} key={second.id} className={stack ? '' : 'shrink-0'}>
           <SideCard label="To" code={second.code} name={second.name} stack={stack}>
-            {/* In the To currency's own decimals: 278.52 PKR, 3.59 USD, 520 JPY. */}
+            {/* Four decimals, as every rate reads: 1 USD = 278.5200 PKR, 1 PKR = 0.0036 USD. */}
             <span className="text-[13px] text-slate-700 tabular-nums whitespace-nowrap" style={{ fontWeight: 600 }}>
-              {valid ? fmtAmountIn(converted, toCode) : '–'}
+              {valid ? fmtConverted(converted) : '–'}
             </span>
           </SideCard>
         </motion.div>

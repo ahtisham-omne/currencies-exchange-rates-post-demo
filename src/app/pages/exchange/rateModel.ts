@@ -44,7 +44,11 @@ export const fmtAmountIn = (n: number, code: string) => {
   const dp = decimalsOf(code)
   return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
 }
-export const fmtSignedPct = (n: number, dp = 2) => `${n > 0 ? '+' : ''}${n.toFixed(dp)}%`
+/** A converter's result, with the four decimals every rate carries, so converting
+ *  one unit reads as the rate itself: 1 AFN = 19.7000 PKR, 1 PKR = 0.0036 USD. */
+export const fmtConverted = (n: number) =>
+  n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+export const fmtSignedPct =(n: number, dp = 2) => `${n > 0 ? '+' : ''}${n.toFixed(dp)}%`
 
 /** (corporate - mid) / mid, in percent to 2dp. */
 export function variancePct(rate: number, mid: number | null | undefined): number | null {

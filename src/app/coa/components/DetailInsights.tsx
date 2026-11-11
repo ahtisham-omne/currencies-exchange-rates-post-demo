@@ -994,15 +994,6 @@ export function DetailInsightsPanel({
       w.category.toLowerCase().includes(q))
   }, [searchQuery, widgets])
 
-  const kpiCategories = useMemo(() => {
-    const map = new Map<string, DetailKpiDef[]>()
-    for (const kpi of filteredKpis) {
-      if (!map.has(kpi.category)) map.set(kpi.category, [])
-      map.get(kpi.category)!.push(kpi)
-    }
-    return Array.from(map.entries()).map(([name, items]) => ({ name, kpis: items }))
-  }, [filteredKpis])
-
   const widgetCategories = useMemo(() => {
     const map = new Map<string, DetailWidgetDef[]>()
     for (const w of filteredWidgets) {
@@ -1178,20 +1169,17 @@ export function DetailInsightsPanel({
         <div className="flex-1 overflow-y-auto px-4 pb-4">
           {activeTab === 'kpis' ? (
             <>
-              {kpiCategories.length === 0 && (
+              {filteredKpis.length === 0 && (
                 <div className="flex flex-col items-center py-12 text-muted-foreground">
                   <Search className="w-5 h-5 mb-2 opacity-40" />
                   <p className="text-xs text-muted-foreground/60">No KPIs match your search</p>
                 </div>
               )}
-              {kpiCategories.map(cat => (
-                <div key={cat.name} className="mt-5 first:mt-4">
-                  <div className="flex items-center gap-1.5 mb-2 px-1">
-                    <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-[12px] text-muted-foreground/70" style={{ fontWeight: 600 }}>{cat.name}</span>
-                  </div>
+              {/* No category headings: the KPIs sit two to a row in one grid. */}
+              {filteredKpis.length > 0 && (
+                <div className="mt-4">
                   <div className="grid grid-cols-2 gap-2">
-                    {cat.kpis.map(kpi => {
+                    {filteredKpis.map(kpi => {
                       const isActive = activeKpis.includes(kpi.key)
                       return (
                         <button
@@ -1228,7 +1216,7 @@ export function DetailInsightsPanel({
                     })}
                   </div>
                 </div>
-              ))}
+              )}
             </>
           ) : (
             <>
