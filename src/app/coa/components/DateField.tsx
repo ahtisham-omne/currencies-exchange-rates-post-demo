@@ -84,7 +84,7 @@ function MonthCaption({ shown, onSet, onPrev, onNext }: {
 }
 
 export function DateField({
-  value, onChange, placeholder = 'Select date', id, ariaLabel, disabled, triggerClassName, clearable,
+  value, onChange, placeholder = 'Select date', id, ariaLabel, disabled, triggerClassName, clearable, min,
 }: {
   value?: string | null
   onChange: (iso: string) => void
@@ -102,6 +102,8 @@ export function DateField({
   // it because an empty end of a range is a meaningful value ("everything
   // before X"); required form fields do not.
   clearable?: boolean
+  /** The earliest pickable day (YYYY-MM-DD): days before it are greyed out and can't be clicked. */
+  min?: string
 }) {
   const selected = parseISO(value)
   const [open, setOpen] = useState(false)
@@ -236,9 +238,11 @@ export function DateField({
                 {d !== null && (
                   <button
                     type="button"
+                    disabled={!!min && toISO(viewYear, viewMonth, d) < min}
                     onClick={() => { onChange(toISO(viewYear, viewMonth, d)); setOpen(false) }}
                     className={cn(
                       'h-9 w-9 rounded-md text-sm font-normal inline-flex items-center justify-center transition-colors',
+                      'disabled:text-fg-subtle/40 disabled:cursor-not-allowed disabled:hover:bg-transparent',
                       isSel(d)
                         ? 'bg-primary text-white hover:bg-primary'
                         : isToday(d)

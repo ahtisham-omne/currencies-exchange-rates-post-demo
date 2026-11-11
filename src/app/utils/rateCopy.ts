@@ -6,7 +6,7 @@ import { API_PROVIDER } from "../data/exchangeRates";
 
 export const RATE_TOOLTIPS = {
   sourceCurrency:
-    "The currency being valued. Each row shows how much one unit of this currency is worth in the base currency.",
+    "The currency this rate is for, quoted against your base currency.",
   baseCurrency:
     "The reference currency configured for your company. All exchange rates in the system are expressed relative to this currency.",
   midMarket:

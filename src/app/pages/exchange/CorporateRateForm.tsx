@@ -8,7 +8,8 @@ import { useMemo, useState } from 'react'
 import { ArrowLeftRight, Info, Pencil, Plus, StickyNote, TrendingUp } from 'lucide-react'
 import { useExchangeRates } from '../../context/ExchangeRateContext'
 import { API_PROVIDER, activeStandardRateFor, isRateInEffect, upcomingRateOf, type StandardRate } from '../../data/exchangeRates'
-import { RATE_TOOLTIPS } from '../../utils/rateCopy'
+import { CONVERTER_TOGGLE_TOOLTIPS, RATE_TOOLTIPS } from '../../utils/rateCopy'
+import { SourceLink } from './SourceLink'
 import { Badge, Banner, Button, ConfirmModal, FormModal, Input, RequiredMark, Select, Textarea, Tooltip } from '../../coa/components/ui'
 import { SectionCard, LockedField } from '../../coa/components/formKit'
 import { DateField } from '../../coa/components/DateField'
@@ -192,7 +193,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
           <SectionCard icon={<ArrowLeftRight size={16} />} title="Currency Pair">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
               <div>
-                <LockedField label="Base Currency" info={RATE_TOOLTIPS.baseCurrency} why="Every rate is quoted against the base currency. Change it in Company Settings.">
+                <LockedField label="Base Currency" info={RATE_TOOLTIPS.baseCurrency} why="Every rate is quoted against your base currency. You can change it in General settings until the first posting to the General Ledger.">
                   <span className="inline-flex items-center gap-2 min-w-0 truncate"><FlagImage code={flagOf(BASE)} />{BASE} · {BASE_NAME}</span>
                 </LockedField>
               </div>
@@ -240,13 +241,13 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
               <SectionCard icon={<TrendingUp size={16} />} title="Rate">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                   <div>
-                    <LockedField label="Mid-Market Reference" info={RATE_TOOLTIPS.midMarket} why="Synced from the rate provider every 24 hours. It can't be edited here.">
+                    <LockedField label="Mid-Market Reference" info={CONVERTER_TOGGLE_TOOLTIPS.midMarket} why={`Synced from ${API_PROVIDER} every 24 hours. It can’t be edited here.`}>
                       {mid
                         ? <span className="tabular-nums truncate">{fmtPairRate(code, mid.rate)}</span>
                         : <span className="text-fg-subtle truncate">Choose a currency to see its mid-market rate</span>}
                     </LockedField>
                     {/* When the figure was taken, to the minute, under the field like a hint. */}
-                    {mid && <p className="mt-1.5 text-2xs text-fg-subtle">Last synced {LAST_SYNC_AT} from {API_PROVIDER}</p>}
+                    {mid && <p className="mt-1.5 text-2xs text-fg-subtle">Last synced {LAST_SYNC_AT} from <SourceLink className="text-primary" /></p>}
                   </div>
                   <Input
                     label="Corporate Exchange Rate"
@@ -274,7 +275,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                         <span className="inline-flex cursor-help text-fg-subtle/60 hover:text-fg-subtle"><Info size={12} /></span>
                       </Tooltip>
                     </label>
-                    <DateField value={date} onChange={setDate} ariaLabel="Effective date" />
+                    <DateField value={date} onChange={setDate} ariaLabel="Effective date" min={today} />
                     {backdate?.kind === 'block'
                       ? <p data-field-error className="text-xs text-danger-600">{backdate.message}</p>
                       : errorOf('date') && <p data-field-error className="text-xs text-danger-600">{errorOf('date')}</p>}

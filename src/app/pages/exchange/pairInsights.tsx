@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis,
 } from 'recharts'
-import { BarChart3, Banknote, TrendingUp } from 'lucide-react'
+import { Banknote, TrendingUp } from 'lucide-react'
 import type { DetailKpiDef, DetailWidgetDef } from '../../coa/components/DetailInsights'
 import { useWidgetChartH, useWidgetSize, widgetBarSize } from '../../coa/components/DetailInsights'
 import { AXIS_PROPS, CHART_MARGIN, CM_TT_STYLE, ChartEmpty, ChartTooltipCard, GRID_PROPS, ZERO_LINE_PROPS, areaGradient, tickInterval } from '../../coa/components/chartKit'
@@ -13,20 +13,22 @@ import { ChartLegendDot } from '../../coa/components/ChartWidgetCard'
 import { fmtDate, fmtNumber } from '../../coa/lib/utils'
 import { BASE, decimalsOf, fmtPairRate, fmtRate, symbolOf } from './rateModel'
 import { money as fmtMoney } from '../currency/model'
-import { bucketBy, grainFor, rateTick, thin, tickLabelFor, transactionsOn, type PairPoint } from './pairData'
+import { rateTick, thin, tickLabelFor, type PairPoint } from './pairData'
 
 /* ── Catalogues ─────────────────────────────────────────────────────────── */
 
 /** The KPI catalogue; descriptions name the pair's currency (`code`) against the base. */
-export const pairKpis = (code: string): DetailKpiDef[] => [
+export const pairKpis = (code: string, isStd = false): DetailKpiDef[] => [
   { key: 'current_mid', label: 'Current Mid-Market Rate', category: 'Rates', description: `Current mid-market rate for 1 ${code} in ${BASE}.` },
-  { key: 'current_std', label: 'Current Corporate Rate', category: 'Rates', description: 'The corporate rate in effect for this pair.' },
+  { key: 'current_std', label: 'Current Corporate Rate', category: 'Rates', description: `The corporate rate set by your company for 1 ${code} in ${BASE}.` },
   { key: 'range_change', label: 'Mid-Market Change', category: 'Performance', description: 'How much the mid-market rate moved over the selected period.' },
   { key: 'range_volatility', label: 'Mid-Market Volatility', category: 'Analytics', description: 'Average daily movement of the mid-market rate over the selected period.' },
-  { key: 'variance', label: 'Corporate Variance', category: 'Rates', description: 'How far the corporate rate sat from the mid-market rate, on average, over the selected period.' },
-  { key: 'days_since_update', label: 'Days Since Rate Updated', category: 'Operational', description: 'Days since the corporate rate in effect took effect.' },
+  { key: 'variance', label: 'Corporate Variance', category: 'Rates', description: 'How far the corporate rate is from the mid-market rate, shown in your base currency and as a percentage. Updated each time the mid-market rate syncs.\n\nExample: A corporate rate of 279.0000 PKR against a mid-market rate of 278.5200 PKR shows +0.4800 PKR (+0.17%).' },
+  { key: 'days_since_update', label: 'Days Since Rate Updated', category: 'Operational', description: 'Days since the corporate rate was last updated.' },
   // Keyed fx_exposure_30d still, so layouts readers saved keep the tile.
-  { key: 'fx_exposure_30d', label: 'FX Exposure', category: 'Operational', description: `Value of active ${code} transactions in ${BASE}, at today’s mid-market rate.` },
+  { key: 'fx_exposure_30d', label: 'FX Exposure', category: 'Operational', description: isStd
+    ? `Value of active ${code} transactions in ${BASE}. This is the amount affected if the rate changes before they’re settled.`
+    : `Value of active ${code} transactions in ${BASE}, at today’s mid-market rate.` },
 ]
 
 export const MID_KPI_KEYS = ['current_mid', 'range_change', 'range_volatility', 'fx_exposure_30d']
@@ -40,24 +42,24 @@ export function pairWidgets(isStd: boolean, code: string): DetailWidgetDef[] {
     {
       key: 'rate_over_time', category: 'Charts', icon: TrendingUp, previewType: 'line',
       label: isStd ? 'Corporate Rate over Time' : 'Rate over Time',
-      description: 'Daily mid-market rate over the selected period. If a corporate rate is set, it shows as a dashed line.',
+      description: isStd
+        ? 'Daily mid-market rate over the selected period, shown with the corporate rate.'
+        : 'Daily mid-market rate over the selected period, shown with the corporate rate when one is set.',
     },
     {
       key: 'conversion_trend', category: 'Charts', icon: Banknote, previewType: 'area',
       label: isStd ? 'Corporate Conversion Trend' : 'Conversion Trend',
-      description: `What the entered amount in ${code} was worth in ${BASE} each day.`,
-    },
-    {
-      key: 'transaction_volume', category: 'Charts', icon: BarChart3, previewType: 'bar',
-      label: isStd ? 'Corporate Transactions' : 'Transaction Volume',
-      description: 'Bar chart of daily transaction count priced using this corporate rate.',
+      description: isStd
+        ? `What the entered amount in ${code} was worth in ${BASE} each day, at the mid-market and corporate rates.`
+        : `What the entered amount in ${code} was worth in ${BASE} each day.`,
     },
   ]
 }
 export const MID_WIDGET_KEYS = ['rate_over_time', 'conversion_trend']
-export const STD_WIDGET_KEYS = ['rate_over_time', 'transaction_volume', 'conversion_trend']
-export const DEFAULT_MID_WIDGETS = ['rate_over_time']
-export const DEFAULT_STD_WIDGETS = ['rate_over_time']
+export const STD_WIDGET_KEYS = ['rate_over_time', 'conversion_trend']
+// Both charts on both pages, side by side.
+export const DEFAULT_MID_WIDGETS = ['rate_over_time', 'conversion_trend']
+export const DEFAULT_STD_WIDGETS = ['rate_over_time', 'conversion_trend']
 
 /* ── Shared body pieces ─────────────────────────────────────────────────── */
 
@@ -222,36 +224,10 @@ export function ConversionTrendBody({ code, points, label, isStd }: BodyProps) {
   )
 }
 
-export function TransactionVolumeBody({ code, points, label }: BodyProps) {
-  const chartH = useWidgetChartH()
-  const size = useWidgetSize()
-  const days = useMemo(() => points.map(p => ({ date: p.date, n: transactionsOn(code, p.date) })), [points, code])
-  const grain = grainFor(days.length)
-  const data = useMemo(() => bucketBy(days, grain).map(b => ({ date: b.date, n: b.items.reduce((s, x) => s + x.n, 0) })), [days, grain])
-  const axis = useAxis(data)
-  return (
-    <>
-      <Caption>{label}{grain !== 'day' ? ` · ${grain === 'week' ? 'weekly' : 'monthly'} totals` : ''}</Caption>
-      <div style={{ height: chartH }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={CHART_MARGIN}>
-            <CartesianGrid {...GRID_PROPS} />
-            <XAxis dataKey="date" {...AXIS_PROPS} tickFormatter={axis.tickFormatter} interval={axis.interval} />
-            <YAxis {...AXIS_PROPS} width={36} allowDecimals={false} />
-            <RTooltip cursor={{ fill: 'rgba(148,163,184,0.12)' }} contentStyle={CM_TT_STYLE} labelFormatter={(l: string) => fmtDate(l)} formatter={(v: number) => [fmtNumber(v), 'Transactions']} />
-            <Bar dataKey="n" fill={MID_C} radius={[4, 4, 0, 0]} maxBarSize={widgetBarSize(size, 32)} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    </>
-  )
-}
-
 export function renderPairWidget(key: string, props: BodyProps) {
   switch (key) {
     case 'rate_over_time': return <RateOverTimeBody {...props} />
     case 'conversion_trend': return <ConversionTrendBody {...props} />
-    case 'transaction_volume': return <TransactionVolumeBody {...props} />
     default: return null
   }
 }

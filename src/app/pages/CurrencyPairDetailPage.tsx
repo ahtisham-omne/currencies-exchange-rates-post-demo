@@ -29,10 +29,10 @@ import { CONVERTER_TOGGLE_TOOLTIPS, NOTES_TOOLTIP, RATE_TOOLTIPS } from '../util
 import { auditTooltips } from './auditColumns'
 import {
   BASE, BASE_NAME, LAST_SYNC_AT, LAST_SYNC_DAY, daysSince, decimalsOf, fmtInverse, fmtRate, fmtSignedPct,
-  fmtVariance, fmtVarianceOf, midAuditOf, symbolOf, varianceColor, variancePct, pairPath,
+  fmtVariance, midAuditOf, symbolOf, varianceColor, variancePct, pairPath,
 } from './exchange/rateModel'
 import {
-  DEFAULT_RANGE, RANGES, buildPairSeries, corporateRecordFor, isDefaultRange, rangeAverageLabel, rangeLabel, rangeMetrics, rangeTriggerLabel,
+  DEFAULT_RANGE, RANGES, buildPairSeries, corporateRecordFor, isDefaultRange, rangeLabel, rangeMetrics, rangeTriggerLabel,
   rateHistory, windowRange,
 } from './exchange/pairData'
 import {
@@ -128,10 +128,6 @@ export function CurrencyPairDetailPage() {
   const atLatest = !end || end.date === series[series.length - 1]?.date
   const before = end ? series[series.findIndex(p => p.date === end.date) - 1] : undefined
   const endChange = atLatest ? mid.change24h : end && before ? ((end.mid - before.mid) / before.mid) * 100 : 0
-  const corpDays = points.filter(p => p.corp != null)
-  const avgVariance = corpDays.length ? corpDays.reduce((s, p) => s + (variancePct(p.corp!, p.mid) ?? 0), 0) / corpDays.length : null
-  // The average gap in PKR over the same days, shown before the percentage.
-  const avgGap = corpDays.length ? corpDays.reduce((s, p) => s + (p.corp! - p.mid), 0) / corpDays.length : null
   // The sync that set a day's rate: the latest one, or the same time on an earlier day.
   const syncOn = (day: string) => (day === series[series.length - 1]?.date ? LAST_SYNC_AT : fmtDateTime(`${day}${LAST_SYNC.slice(10)}`))
   // FX Exposure over the period: the open transactions dated in it.
@@ -163,11 +159,14 @@ export function CurrencyPairDetailPage() {
         const c = v < 0.3 ? '#059669' : v < 0.8 ? '#D97706' : '#DC2626'
         return { text: `${v.toFixed(3)}%`, value: <>{v.toFixed(3)}% <span className="text-[12px]" style={{ color: c, fontWeight: 600 }}>{level}</span></>, subDetail: label }
       }
-      case 'variance':
-        // Averaged over the days in the period a corporate rate was in effect.
-        return avgVariance == null
-          ? { text: 'N/A', value: 'N/A', subDetail: 'No corporate rate in this period' }
-          : { text: fmtVarianceOf(avgGap ?? 0, avgVariance), value: colored(fmtVarianceOf(avgGap ?? 0, avgVariance), varianceColor(avgVariance)), subDetail: rangeAverageLabel(range) }
+      case 'variance': {
+        // Current, not an average over the period: the corporate rate in effect
+        // against today's mid-market rate, as the Rate Information panel shows it.
+        const t = inEffect ? fmtVariance(inEffect.standardRate, mid.rate) : null
+        return t && variance != null
+          ? { text: t, value: colored(t, varianceColor(variance)), subDetail: 'Updated as of today’s mid-market rate' }
+          : { text: 'N/A', value: 'N/A', subDetail: 'No corporate rate in effect' }
+      }
       case 'days_since_update': {
         if (!inEffect) return upcoming ? { text: '0 days', value: '0 days', subDetail: `Takes effect ${fmtDate(upcoming.effectiveDate)}` } : { text: 'N/A', value: 'N/A' }
         const d = daysSince(inEffect.effectiveDate)
@@ -191,7 +190,7 @@ export function CurrencyPairDetailPage() {
   }
 
   const kpiKeys = isStd ? STD_KPI_KEYS : MID_KPI_KEYS
-  const kpis = pairKpis(code).filter(k => kpiKeys.includes(k.key)).sort((a, b) => kpiKeys.indexOf(a.key) - kpiKeys.indexOf(b.key))
+  const kpis = pairKpis(code, isStd).filter(k => kpiKeys.includes(k.key)).sort((a, b) => kpiKeys.indexOf(a.key) - kpiKeys.indexOf(b.key))
   const widgetKeys = isStd ? STD_WIDGET_KEYS : MID_WIDGET_KEYS
   const widgets = pairWidgets(isStd, code).filter(w => widgetKeys.includes(w.key)).sort((a, b) => widgetKeys.indexOf(a.key) - widgetKeys.indexOf(b.key))
   const bodyProps = {
@@ -405,7 +404,7 @@ export function CurrencyPairDetailPage() {
                       canReset={!isDefaultRange(range)}
                     />
                   }
-                  storageKey={`fx.pair.${code}.${type}.insights.v1`}
+                  storageKey={`fx.pair.${code}.${type}.insights.v2`}
                   kpis={kpis}
                   widgets={widgets}
                   defaultKpis={isStd ? DEFAULT_STD_KPIS : DEFAULT_MID_KPIS}
