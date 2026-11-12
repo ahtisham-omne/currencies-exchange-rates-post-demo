@@ -94,10 +94,16 @@ export function fmtDate(s: string) {
    reads as the date alone rather than as midnight. */
 export function fmtDateTime(s: string) {
   if (!s) return ''
-  if (DATE_ONLY.test(s)) return fmtDate(s)
-  const d = new Date(s)
+  // The module's date-and-time format, 11/11/2026 5:39 PM, spelled out by hand so
+  // no locale adds "at", a comma or a narrow space before PM. A bare day has no
+  // time to give, so it reads as 11/11/2026 alone rather than as midnight.
+  const d = new Date(DATE_ONLY.test(s) ? `${s}T00:00:00` : s)
   if (Number.isNaN(d.getTime())) return s
-  return `${fmtDate(s)}, ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+  const two = (n: number) => String(n).padStart(2, '0')
+  const day = `${two(d.getMonth() + 1)}/${two(d.getDate())}/${d.getFullYear()}`
+  if (DATE_ONLY.test(s)) return day
+  const h = d.getHours()
+  return `${day} ${h % 12 || 12}:${two(d.getMinutes())} ${h < 12 ? 'AM' : 'PM'}`
 }
 
 /* The calendar day a moment fell on, in the reader's zone, so a From/To date

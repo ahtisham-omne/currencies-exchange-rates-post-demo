@@ -27,7 +27,7 @@ import { cleanName } from './Avatar'
 import { searchMatcher } from '../lib/tableSearch'
 import { pushToast } from '../lib/toast'
 import { useRecordAttachments } from '../lib/recordStore'
-import { cn } from '../lib/utils'
+import { cn, fmtDateTime } from '../lib/utils'
 import { buildDummyAttachment, type DocumentContext } from '../lib/dummyAttachment'
 import { AttachmentThumb, RecordPill } from './AttachmentCardParts'
 
@@ -63,24 +63,9 @@ export interface AttachmentFile {
   uploadedBy: string
 }
 
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-/* "Nov 4, 2025, 8:51 PM" when the stamp carries a time, "Nov 4, 2025" when it is
-   a bare date: Vendor Invoicing's date-and-time line. Spelled out by hand so no
-   locale renders it with "at" or a narrow space before PM, and a bare YYYY-MM-DD
-   reads as that calendar day rather than as UTC midnight. */
 function formatWhen(dateStr: string): string {
-  const bare = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr)
-  if (bare) {
-    const month = MONTH_SHORT[Number(bare[2]) - 1]
-    return month ? `${month} ${Number(bare[3])}, ${bare[1]}` : dateStr
-  }
-  const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return dateStr
-  const day = `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
-  if (!/\d:\d{2}/.test(dateStr)) return day
-  const h = d.getHours()
-  return `${day}, ${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+  // The module's date-and-time format (11/11/2026 5:39 PM; a bare day reads 11/11/2026).
+  return fmtDateTime(dateStr)
 }
 
 function getFileTypeInfo(type: string, name: string): { color: string; bg: string; label: string; Icon: ElementType } {
