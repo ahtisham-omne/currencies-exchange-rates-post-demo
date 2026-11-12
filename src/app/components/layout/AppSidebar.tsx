@@ -27,6 +27,8 @@ interface NavChild {
   path: string;
   /** Other path prefixes that also mark this link active (one page spanning several paths). */
   also?: string[];
+  /** Path prefixes inside `also` that belong to a sibling link instead. */
+  except?: string[];
   /** No design yet: shown greyed out and not clickable, as the module's own sidebar does. */
   disabled?: boolean;
 }
@@ -112,8 +114,20 @@ const navItems: NavItem[] = [
       },
       { label: "General Ledger", path: "/accounting/general-ledger" },
       { label: "Currency & Exchange Rates", path: "/accounting/currencies", also: ["/accounting/exchange-rates"] },
-      // Every page of the Vendor Invoicing app (payments, prepayments, …) keeps this link lit.
-      { label: "Vendor Invoices", path: "/accounting/vendor-invoicing/invoices", also: ["/accounting/vendor-invoicing"] },
+      // The Vendor Invoicing app holds both ledgers, and its own sidebar lists them
+      // as two entries. Its pages keep Vendor Invoices lit, except the payment ones.
+      {
+        label: "Vendor Invoices",
+        path: "/accounting/vendor-invoicing/invoices",
+        also: ["/accounting/vendor-invoicing"],
+        except: ["/accounting/vendor-invoicing/payments-v2", "/accounting/vendor-invoicing/prepayments"],
+      },
+      // Payments, payment runs and a payment's page; prepayments are payments too.
+      {
+        label: "Vendor Payments",
+        path: "/accounting/vendor-invoicing/payments-v2",
+        also: ["/accounting/vendor-invoicing/prepayments"],
+      },
     ],
   },
   {
@@ -150,7 +164,8 @@ function isPathInItem(pathname: string, item: NavItem) {
 }
 
 function isPathInAlso(pathname: string, child: NavChild) {
-  return !!child.also?.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  const under = (p: string) => pathname === p || pathname.startsWith(p + "/");
+  return !!child.also?.some(under) && !child.except?.some(under);
 }
 
 /* A child is matched exactly when a sibling lives under its path (e.g. Overview). */
