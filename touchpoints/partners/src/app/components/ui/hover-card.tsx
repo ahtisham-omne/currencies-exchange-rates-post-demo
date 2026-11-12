@@ -26,8 +26,12 @@ function HoverCardContent({
   align = "center",
   sideOffset = 6,
   children,
+  arrow,
   ...props
-}: React.ComponentProps<typeof HoverCardPrimitive.Content>) {
+}: React.ComponentProps<typeof HoverCardPrimitive.Content> & {
+  /** Replaces the default pointer, e.g. the currency card's bordered one. */
+  arrow?: React.ReactNode;
+}) {
   return (
     <HoverCardPrimitive.Portal data-slot="hover-card-portal">
       <HoverCardPrimitive.Content
@@ -41,11 +45,13 @@ function HoverCardContent({
         {...props}
       >
         {children}
-        <HoverCardPrimitive.Arrow
-          width={11}
-          height={5}
-          className="fill-popover drop-shadow-[0_1px_1px_rgba(0,0,0,0.06)]"
-        />
+        {arrow ?? (
+          <HoverCardPrimitive.Arrow
+            width={11}
+            height={5}
+            className="fill-popover drop-shadow-[0_1px_1px_rgba(0,0,0,0.06)]"
+          />
+        )}
       </HoverCardPrimitive.Content>
     </HoverCardPrimitive.Portal>
   );

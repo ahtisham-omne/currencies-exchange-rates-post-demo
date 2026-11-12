@@ -24,6 +24,7 @@ import { accountRange, formatRange, numberBeside } from '../lib/numberRange'
 import { INTERNAL_ID_HELP, INTERNAL_ID_LABEL, internalIdSeq } from '../lib/internalId'
 import { rowNumberGutter, type ColumnSizing, type TreeStyle } from './tableLook'
 import { CurrencyFlag } from './CurrencyFlag'
+import { FxAlert, FxHead, FxInset, FxLine, FxLines, FxNote, FxRateType } from './FxCard'
 import { useColumnDragReorder, DragGhost, draggedHeaderStyle, DragBar } from './tableColumns'
 
 // Frozen columns (Partner vendors pattern): Number + Name stay pinned to the
@@ -955,28 +956,15 @@ function fmtMoneySigned(n: number, symbol: string) {
 }
 
 // Card header shared by the balance and posting cards: flag, full name, and the
-// reminder that this is the account's currency rather than the company's.
+// reminder that this is the account's currency rather than the company's. The
+// parts come from FxCard, the currency card every module shares.
 function FxCardHeader({ code }: { code: string }) {
   const m = currencyMeta(code)
-  return (
-    <div className="flex items-center gap-2 whitespace-nowrap">
-      <CurrencyFlag meta={m} className="text-lg leading-none shrink-0" />
-      <span className="text-sm font-semibold text-fg">{m.name} ({m.code})</span>
-      <span className="text-sm text-fg-subtle">· account currency</span>
-    </div>
-  )
+  return <FxHead flag={<CurrencyFlag meta={m} className="text-[15px] leading-none" />} name={m.name} code={m.code} role="account currency" />
 }
 
-// One labelled figure, label left and amount right, so the card's amounts line
-// up down a single edge and can be compared without reading across.
-function FxLine({ label, amount, strong }: { label: string; amount: string; strong?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-6 whitespace-nowrap">
-      <span className="text-sm text-fg-muted">{label}</span>
-      <span className={cn('text-sm tabular-nums text-fg', strong ? 'font-semibold' : 'font-medium')}>{amount}</span>
-    </div>
-  )
-}
+// The rate a figure was struck at, "1 USD = £0.7862 GBP".
+const fxRate = (base: string, code: string, rate: number) => `1 ${base} = ${symbolFor(code)}${formatRate(rate)} ${code}`
 
 /* Hover card for the converted Running balance on a foreign-currency account.
 
@@ -998,41 +986,35 @@ function FxLine({ label, amount, strong }: { label: string; amount: string; stro
 export function FxBalanceTooltip({ code, base, booked, own, children }: { code: string; base: string; booked: number; /** The balance in its own currency, where it differs from the restatement. */ own?: number; children: React.ReactNode }) {
   const fx = fxStanding(booked, code, own)
   const card = (
-    <div className="p-3.5 whitespace-nowrap">
+    <div className="p-[12px] whitespace-nowrap">
       <FxCardHeader code={code} />
-      <div className="mt-2.5">
-        <FxLine label={`Balance in ${code}`} amount={`${fmtMoney(fx.own, symbolFor(code))} ${code}`} />
-      </div>
-      <div className="mt-2.5 rounded-lg bg-bg-subtle/50 border border-border p-3 space-y-1.5">
-        <FxLine strong label={`Booked in ${base}`} amount={`${fmtMoney(fx.booked, symbolFor(base))} ${base}`} />
-        <div className="text-xs text-fg-muted whitespace-nowrap">
-          Revalued at 1 {base} = {symbolFor(code)}{formatRate(fx.bookedRate)} {code} · {REVALUED_ON}
-        </div>
-        <div className="text-2xs text-fg-subtle whitespace-nowrap">Carried in the ledger. Column totals add this figure.</div>
-      </div>
+      <FxLines>
+        <FxLine label={`Balance in ${code}`} value={`${fmtMoney(fx.own, symbolFor(code))} ${code}`} />
+      </FxLines>
+      <FxInset>
+        <FxLine strong label={`Booked in ${base}`} value={`${fmtMoney(fx.booked, symbolFor(base))} ${base}`} />
+        <FxNote>Revalued at {fxRate(base, code, fx.bookedRate)} · {REVALUED_ON}</FxNote>
+        <FxNote small>Carried in the ledger. Column totals add this figure.</FxNote>
+      </FxInset>
       {PEGGED_TO_BASE.has(code) ? (
         /* A peg has no unrealized movement to report, and an "Unrealized $ 0.00"
            line would read as a revaluation waiting to be posted rather than as a
            rate that cannot move. */
-        <div className="mt-2 text-xs text-fg-muted whitespace-nowrap">
-          {code} is pegged to {base} at {symbolFor(code)}{formatRate(fx.rate)}, so there is no unrealized difference.
+        <div className="mt-[8px]">
+          <FxNote>{code} is pegged to {base} at {symbolFor(code)}{formatRate(fx.rate)}, so there is no unrealized difference.</FxNote>
         </div>
       ) : (
-        <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 p-3 space-y-1.5">
-          <FxLine label="At today's rate" amount={`${fmtMoney(fx.indicative, symbolFor(base))} ${base}`} />
+        <FxInset tone="amber">
+          <FxLine label="At today's rate" value={`${fmtMoney(fx.indicative, symbolFor(base))} ${base}`} />
           {/* Deliberately not coloured as a gain or a loss. Whether a rise in the
               base value is one or the other depends on which side of the balance
               sheet the account sits, and the cell does not know. */}
-          <FxLine label="Unrealized difference" amount={`${fmtMoneySigned(fx.difference, symbolFor(base))} ${base}`} />
-          <div className="text-xs flex items-center gap-1.5 whitespace-nowrap">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-            <span className="text-amber-700 font-medium">Not yet posted to FX Gain/Loss</span>
-          </div>
-          <div className="text-xs text-fg-muted whitespace-nowrap">
-            1 {base} = {symbolFor(code)}{formatRate(fx.rate)} {code} · Mid-market · {RATE_SOURCE}
-          </div>
-          <div className="text-2xs text-fg-subtle whitespace-nowrap">Indicative only, as of {RATE_AS_OF}</div>
-        </div>
+          <FxLine label="Unrealized difference" value={`${fmtMoneySigned(fx.difference, symbolFor(base))} ${base}`} />
+          <FxAlert>Not yet posted to FX Gain/Loss</FxAlert>
+          <FxNote>{fxRate(base, code, fx.rate)}</FxNote>
+          <FxRateType type="mid" label="Mid-market" source={RATE_SOURCE} />
+          <FxNote small>Indicative only, as of {RATE_AS_OF}</FxNote>
+        </FxInset>
       )}
     </div>
   )
@@ -1048,15 +1030,13 @@ export function FxBalanceTooltip({ code, base, booked, own, children }: { code: 
 export function FxPostingTooltip({ code, base, booked, children }: { code: string; base: string; booked: number; children: React.ReactNode }) {
   const fx = fxStanding(booked, code)
   const card = (
-    <div className="p-3.5 whitespace-nowrap">
+    <div className="p-[12px] whitespace-nowrap">
       <FxCardHeader code={code} />
-      <div className="mt-2.5 rounded-lg bg-bg-subtle/50 border border-border p-3 space-y-1.5">
-        <FxLine strong label={`Booked in ${base}`} amount={`${fmtMoney(fx.booked, symbolFor(base))} ${base}`} />
-        <div className="text-xs text-fg-muted whitespace-nowrap">
-          At 1 {base} = {symbolFor(code)}{formatRate(fx.bookedRate)} {code} · {REVALUED_ON}
-        </div>
-        <div className="text-2xs text-fg-subtle whitespace-nowrap">The rate this posting was booked at, not today's.</div>
-      </div>
+      <FxInset>
+        <FxLine strong label={`Booked in ${base}`} value={`${fmtMoney(fx.booked, symbolFor(base))} ${base}`} />
+        <FxNote>At {fxRate(base, code, fx.bookedRate)} · {REVALUED_ON}</FxNote>
+        <FxNote small>The rate this posting was booked at, not today's.</FxNote>
+      </FxInset>
     </div>
   )
   return <Tooltip rich align="right" side="top" content={card}>{children}</Tooltip>
@@ -1074,17 +1054,15 @@ export function FxPostingTooltip({ code, base, booked, children }: { code: strin
 function bookedBaseCard(code: string, base: string, booked: number) {
   const fx = fxStanding(booked, code)
   return (
-    <div className="p-3.5">
+    <div className="p-[12px] whitespace-nowrap">
       <FxCardHeader code={code} />
-      <div className="mt-2.5">
-        <FxLine label={`In ${code}`} amount={`${fmtMoney(fx.own, symbolFor(code))} ${code}`} />
-      </div>
-      <div className="mt-2.5 rounded-lg bg-bg-subtle/50 border border-border p-3 space-y-1.5">
-        <FxLine strong label={`Booked in ${base}`} amount={`${fmtMoney(fx.booked, symbolFor(base))} ${base}`} />
-        <div className="text-xs text-fg-muted whitespace-nowrap">
-          Revalued at 1 {base} = {symbolFor(code)}{formatRate(fx.bookedRate)} {code} · {REVALUED_ON}
-        </div>
-      </div>
+      <FxLines>
+        <FxLine label={`In ${code}`} value={`${fmtMoney(fx.own, symbolFor(code))} ${code}`} />
+      </FxLines>
+      <FxInset>
+        <FxLine strong label={`Booked in ${base}`} value={`${fmtMoney(fx.booked, symbolFor(base))} ${base}`} />
+        <FxNote>Revalued at {fxRate(base, code, fx.bookedRate)} · {REVALUED_ON}</FxNote>
+      </FxInset>
     </div>
   )
 }

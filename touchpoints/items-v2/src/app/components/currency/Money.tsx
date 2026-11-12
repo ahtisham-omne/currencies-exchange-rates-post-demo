@@ -4,13 +4,14 @@ import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/curre
 import { formatMoney, formatRateDate, rateSentence } from '@/app/currency/money';
 import { RATE_TYPE_LABEL, toBase, type RateType } from '@/app/currency/rates';
 import { CurrencyFlag } from './CurrencyChip';
+import { FX_ARROW_PADDING, FX_CARD_CLASS, FX_FLAG_PX, FxArrow, FxHead, FxInset, FxLine, FxLines, FxNote, FxRateType, withCode } from './FxCard';
 
 /* ── Money with its rate ──────────────────────────────────────────────
- * Shared with Vendor Invoicing and Purchase Orders (from the earlier
- * touchpoints' CurrencyAmount):
- * an amount in a foreign currency wears a dotted underline, and hovering it
- * shows what it is in the base currency, at which rate, of which type, and
- * for which day. Base-currency amounts are plain text. */
+ * An amount in a foreign currency wears a dotted underline, and hovering it
+ * shows what it is in the base currency, at which rate, of which type, and for
+ * which day. Base-currency amounts are plain text. The card is the shared
+ * currency card (FxCard), so it reads the same as the Partners and Chart of
+ * Accounts cards. */
 
 export interface MoneyFx {
   /** Base currency per one unit of the amount's currency. */
@@ -22,86 +23,37 @@ export interface MoneyFx {
   source: string;
 }
 
-/** Rate · type · rate date rows, shared by every rate hover. */
-export function RateDetails({
-  currency,
-  fx,
-  dateLabel = 'today',
-}: {
-  currency: string;
-  fx: MoneyFx;
-  /** What the rate date is, e.g. "today". */
-  dateLabel?: string;
-}) {
-  const rows: [string, React.ReactNode][] = [
-    ['Rate', <span className="tabular-nums">{rateSentence(currency, fx.rate)}</span>],
-    [
-      'Type',
-      <span>
-        <span style={{ fontWeight: 600, color: fx.rateType === 'mid' ? '#6D28D9' : '#B45309' }}>
-          {RATE_TYPE_LABEL[fx.rateType]}
-        </span>
-        <span className="text-slate-400"> · </span>
-        {fx.source}
-      </span>,
-    ],
-    [
-      'Rate date',
-      <span>
-        {formatRateDate(fx.rateDate)} <span className="text-slate-400">({dateLabel})</span>
-      </span>,
-    ],
-  ];
-  return (
-    <dl className="grid grid-cols-[64px_1fr] gap-x-3 gap-y-1.5 text-[11px] leading-snug">
-      {rows.map(([k, v]) => (
-        <React.Fragment key={k}>
-          <dt className="text-slate-400" style={{ fontWeight: 500 }}>{k}</dt>
-          <dd className="text-slate-700 min-w-0">{v}</dd>
-        </React.Fragment>
-      ))}
-    </dl>
-  );
-}
-
-/** The hover body: the amount, its base equivalent, then the rate rows. */
+/** The hover body: the currency, the amount in it, then a grey block with the
+ *  base-currency figure and the rate it was converted at. */
 export function MoneyCard({
   value,
   currency,
   fx,
-  dateLabel,
+  dateLabel = 'today',
   role,
 }: {
   value: number;
   currency: string;
   fx: MoneyFx;
+  /** What the rate date is, e.g. "today". */
   dateLabel?: string;
   /** "vendor currency", … */
   role?: string;
 }) {
   const cur = getCurrency(currency);
+  const day = `${formatRateDate(fx.rateDate)} (${dateLabel})`;
   return (
-    <div className="w-[300px]">
-      <div className="px-3.5 pt-3 pb-2.5">
-        <div className="flex items-center gap-2 text-[11px] text-slate-500" style={{ fontWeight: 500 }}>
-          <CurrencyFlag code={currency} />
-          <span className="truncate">
-            {cur?.name ?? currency} ({currency})
-          </span>
-          {role && <span className="text-slate-400 shrink-0">· {role}</span>}
-        </div>
-        <div className="mt-1.5 text-[16px] text-slate-900 tabular-nums" style={{ fontWeight: 600 }}>
-          {formatMoney(value, currency)}
-        </div>
-        <div className="mt-0.5 text-[12px] text-slate-600 tabular-nums">
-          ≈ {formatMoney(toBase(value, fx.rate), BASE_CURRENCY)}{' '}
-          <span className="text-slate-400">{BASE_CURRENCY} · base currency</span>
-        </div>
-      </div>
-      <div className="border-t border-slate-100 bg-slate-50/60 px-3.5 py-2.5 rounded-b-xl">
-        <RateDetails currency={currency} fx={fx} dateLabel={dateLabel} />
-      </div>
-    </div>
+    <>
+      <FxHead flag={<CurrencyFlag code={currency} size={FX_FLAG_PX} />} name={cur?.name ?? currency} code={currency} role={role} />
+      <FxLines>
+        <FxLine label={`In ${currency}`} value={withCode(formatMoney(value, currency), currency)} />
+      </FxLines>
+      <FxInset>
+        <FxLine strong label={`In ${BASE_CURRENCY} (base)`} value={withCode(formatMoney(toBase(value, fx.rate), BASE_CURRENCY), BASE_CURRENCY)} />
+        <FxNote>At {rateSentence(currency, fx.rate)} · {day}</FxNote>
+        <FxRateType type={fx.rateType} label={RATE_TYPE_LABEL[fx.rateType]} source={fx.source} />
+      </FxInset>
+    </>
   );
 }
 
@@ -146,10 +98,12 @@ export function Money({
       <HoverCardContent
         side="top"
         align="start"
-        className="w-auto p-0 rounded-xl border border-border/80 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+        className={FX_CARD_CLASS}
+        arrowPadding={FX_ARROW_PADDING}
         onClick={(e) => e.stopPropagation()}
       >
         <MoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} />
+        <FxArrow />
       </HoverCardContent>
     </HoverCard>
   );

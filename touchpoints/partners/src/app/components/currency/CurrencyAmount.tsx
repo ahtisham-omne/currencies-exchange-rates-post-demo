@@ -7,6 +7,7 @@ import { RATE_PROVIDER, RATE_TYPE_LABEL } from "@/app/currency/rates";
 import { MID_RATE_UPDATED, convertNow, currentRate } from "@/app/currency/partnerCurrency";
 import { formatMoneyWithCode, type CurrencyStream } from "@/app/currency/partnerAmounts";
 import { CurrencyFlag } from "./CurrencyFlag";
+import { FX_ARROW_PADDING, FX_CARD_CLASS, FxArrow, FxHead, FxInset, FxLine, FxLines, FxNote, FxRateType } from "./FxCard";
 
 export type CurrencyAmountMode = "single" | "listing-base" | "listing-partner" | "aggregated-base" | "partner-rolled-up";
 
@@ -29,8 +30,6 @@ export interface CurrencyAmountProps {
   className?: string;
 }
 
-// The module's mid-market colour (purple), as the Quotes and Sales Order touchpoints use it.
-const MID_HEX = "#7c3aed";
 
 /**
  * An amount with its currency's symbol, and a hover that says what it is in
@@ -70,10 +69,9 @@ export function CurrencyAmount(props: CurrencyAmountProps) {
       <HoverCardContent
         side="top"
         align="start"
-        className={cn(
-          "rounded-lg border border-slate-200 shadow-lg bg-white z-[300]",
-          props.mode === "aggregated-base" ? "w-[280px] p-0 overflow-hidden" : "w-auto min-w-[260px] max-w-[320px] p-3",
-        )}
+        className={cn(FX_CARD_CLASS, "z-[300]", props.mode === "aggregated-base" && "min-w-[280px]")}
+        arrow={<FxArrow />}
+        arrowPadding={FX_ARROW_PADDING}
       >
         <TooltipBody {...props} currency={code} />
       </HoverCardContent>
@@ -95,50 +93,42 @@ function shouldShowHover(props: CurrencyAmountProps, code: string): boolean {
   }
 }
 
-function HeaderLine({ code, tail }: { code: string; tail: string }) {
-  return (
-    <div className="flex items-baseline gap-2 text-[13px] font-semibold text-slate-900">
-      <span className="self-center"><CurrencyFlag code={code} /></span>
-      <span>{getCurrency(code)?.name ?? code} ({code})</span>
-      <span className="text-slate-500 font-normal">{tail}</span>
-    </div>
-  );
+/** Flag and name of the currency the card is about, and what it is to the partner. */
+function CardHead({ code, role }: { code: string; role: string }) {
+  return <FxHead flag={<CurrencyFlag code={code} className="text-[15px]" />} name={getCurrency(code)?.name ?? code} code={code} role={role} />;
 }
 
-/** Today's rate for a currency, where it comes from and when it was last synced. */
-export function RateLine({ code }: { code: string }) {
+/** Today's mid-market rate for a currency, where it comes from and when it was last synced. */
+export function RateLine({ code, lead = "At" }: { code: string; lead?: string }) {
   const rate = currentRate(code).rate;
   return (
-    <div className="mt-1.5 px-2 py-1.5 rounded-md bg-slate-50 border border-slate-100">
-      {rate != null && (
-        <div className="text-[11px] text-slate-700 tabular-nums leading-4">
-          <span className="text-slate-500" style={{ fontWeight: 500 }}>Current rate: </span>
-          {rateSentence(code, rate)}
-        </div>
-      )}
-      <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
-        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: MID_HEX }} />
-        <span style={{ color: MID_HEX, fontWeight: 600 }}>{RATE_TYPE_LABEL.mid} rate</span>
-        <span className="text-slate-400">· Source: {RATE_PROVIDER}</span>
-      </div>
-      <div className="text-[10px] text-slate-400 mt-0.5">{MID_RATE_UPDATED}</div>
-    </div>
+    <>
+      {rate != null && <FxNote>{lead} {rateSentence(code, rate)}</FxNote>}
+      <FxRateType type="mid" label={RATE_TYPE_LABEL.mid} source={RATE_PROVIDER} />
+      <FxNote small>{MID_RATE_UPDATED}</FxNote>
+    </>
   );
 }
 
+/* The shared currency card (FxCard), as the rate card and Chart of Accounts'
+   FX card lay it out: the partner's currency on top, the amount in it, then a
+   grey block with the base-currency figure and today's rate. */
 function TooltipBody(props: CurrencyAmountProps) {
   const code = props.currency;
 
   if (props.mode === "listing-base") {
+    // The cell shows the base figure; the card leads with the partner's own.
     const partner = (props.partnerCurrency ?? code).toUpperCase();
     return (
       <>
-        <HeaderLine code={code} tail="— base currency" />
-        <div className="border-t border-slate-100 my-2" />
-        <div className="text-[12px] text-slate-700">
-          Partner currency: {formatMoneyWithCode(props.partnerValue ?? 0, partner)}
-        </div>
-        <RateLine code={partner} />
+        <CardHead code={partner} role="partner currency" />
+        <FxLines>
+          <FxLine label={`In ${partner}`} value={formatMoneyWithCode(props.partnerValue ?? 0, partner)} />
+        </FxLines>
+        <FxInset>
+          <FxLine strong label={`In ${BASE_CURRENCY} (base)`} value={formatMoneyWithCode(props.value, BASE_CURRENCY)} />
+          <RateLine code={partner} />
+        </FxInset>
       </>
     );
   }
@@ -147,23 +137,26 @@ function TooltipBody(props: CurrencyAmountProps) {
     const rows = props.rollupBreakdown ?? [];
     return (
       <>
-        <HeaderLine code={code} tail="— rolled up" />
-        <div className="border-t border-slate-100 my-2" />
-        <div className="text-[12px] text-slate-500 mb-1.5">
-          Across {rows.length} {rows.length === 1 ? "currency" : "currencies"}
-        </div>
-        {rows.map((r) => {
-          const same = r.code.toUpperCase() === code;
-          return (
-            <div key={r.code} className="text-[12px] text-slate-700 leading-5">
-              {r.code.toUpperCase()} · {r.txCount} transactions · {same ? "" : "≈ "}
-              {formatMoney(same ? r.amount : convertNow(r.amount, r.code, code), code)}
-            </div>
-          );
-        })}
-        <div className="text-[10px] text-slate-400 mt-1.5">
-          Converted at today's {RATE_TYPE_LABEL.mid.toLowerCase()} rates · {RATE_PROVIDER}
-        </div>
+        <CardHead code={code} role="rolled up" />
+        <FxLines>
+          {rows.map((r) => {
+            const same = r.code.toUpperCase() === code;
+            return (
+              <FxLine
+                key={r.code}
+                label={`${r.code.toUpperCase()} · ${r.txCount} transactions`}
+                value={`${same ? "" : "≈ "}${formatMoneyWithCode(same ? r.amount : convertNow(r.amount, r.code, code), code)}`}
+              />
+            );
+          })}
+        </FxLines>
+        <FxInset>
+          <FxLine strong label={`Total in ${code}`} value={formatMoneyWithCode(props.value, code)} />
+          <FxNote>
+            Across {rows.length} {rows.length === 1 ? "currency" : "currencies"}, converted at today's rates
+          </FxNote>
+          <FxRateType type="mid" label={RATE_TYPE_LABEL.mid} source={RATE_PROVIDER} />
+        </FxInset>
       </>
     );
   }
@@ -178,14 +171,11 @@ function TooltipBody(props: CurrencyAmountProps) {
     const totalPartners = rows.reduce((n, r) => n + r.partnerCount, 0);
     const scrollable = rows.length > 5;
     return (
-      <div className="w-full">
-        <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between">
-          <span className="text-[11px] tracking-wide uppercase text-muted-foreground/70" style={{ fontWeight: 600 }}>Currencies</span>
-          <span className="text-[10px] text-muted-foreground/50 tabular-nums">{rows.length}</span>
-        </div>
+      <>
+        <FxHead name="Currencies" role={`${rows.length} in use`} />
         <div
-          className={cn("px-1.5 pb-1.5", scrollable && "overflow-y-auto overscroll-contain")}
-          style={{ maxHeight: scrollable ? 5 * 44 : undefined }}
+          className={cn("mt-[8px] -mx-[6px]", scrollable && "overflow-y-auto overscroll-contain")}
+          style={{ maxHeight: scrollable ? 5 * 36 : undefined }}
           // A Radix Dialog's scroll lock swallows wheel events on portaled
           // content; scroll the list by hand so it still scrolls in one.
           onWheelCapture={scrollable ? (e) => {
@@ -201,18 +191,11 @@ function TooltipBody(props: CurrencyAmountProps) {
             return (
               <div
                 key={r.code}
-                className={cn("flex items-center gap-2.5 px-2.5 py-2 rounded-md", isBase && "bg-primary/5 ring-1 ring-inset ring-primary/15")}
+                className={cn("flex items-center gap-[8px] h-[36px] px-[6px] rounded-[8px] whitespace-nowrap", isBase && "bg-primary/5")}
               >
-                <div
-                  className={cn(
-                    "shrink-0 w-7 h-7 rounded-md overflow-hidden border flex items-center justify-center",
-                    isBase ? "bg-white border-primary/25" : "bg-muted border-[#E8ECF1]",
-                  )}
-                >
-                  <CurrencyFlag code={r.code} />
-                </div>
+                <span className="inline-flex shrink-0 leading-none"><CurrencyFlag code={r.code} className="text-[15px]" /></span>
                 <div className="min-w-0 flex-1">
-                  <span className="text-[12px] truncate flex items-center gap-1.5 text-foreground" style={{ fontWeight: 600 }}>
+                  <span className="text-[12px] leading-[16px] flex items-center gap-[6px] text-[#0F1729]" style={{ fontWeight: 600 }}>
                     {r.code}
                     {isBase && (
                       <span className="inline-flex items-center px-1.5 py-[1px] rounded-full bg-primary text-white text-[9px] tracking-wide uppercase leading-none" style={{ fontWeight: 700 }}>
@@ -220,40 +203,38 @@ function TooltipBody(props: CurrencyAmountProps) {
                       </span>
                     )}
                   </span>
-                  <span className="text-[10px] text-muted-foreground/70 block truncate">{getCurrency(r.code)?.name ?? r.code}</span>
+                  <span className="text-[11px] leading-[14px] text-[#48566A] block truncate">{getCurrency(r.code)?.name ?? r.code}</span>
                 </div>
-                <span className="text-[11px] text-slate-600 tabular-nums shrink-0" style={{ fontWeight: 500 }}>
+                <span className="text-[12px] leading-[16px] text-[#0F1729] tabular-nums shrink-0 pl-[16px]" style={{ fontWeight: 500 }}>
                   {r.partnerCount} {r.partnerCount === 1 ? "partner" : "partners"}
                 </span>
               </div>
             );
           })}
         </div>
-        <div className="px-3 py-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
-          <span className="text-[10px] text-muted-foreground/70">
-            Across {totalPartners} {totalPartners === 1 ? "partner" : "partners"}
-            <span className="mx-1 text-muted-foreground/40">·</span>
-            Base <span className="text-foreground" style={{ fontWeight: 600 }}>{moneyPrefix(BASE_CURRENCY).trim()} {BASE_CURRENCY}</span>
-          </span>
-          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70 ml-auto">
-            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: MID_HEX }} />
-            <span style={{ color: MID_HEX, fontWeight: 600 }}>{RATE_TYPE_LABEL.mid} rate</span>
-          </span>
-          {scrollable && <span className="basis-full text-[10px] text-muted-foreground/40 italic text-right">Scroll for more</span>}
-        </div>
-      </div>
+        <FxInset>
+          <FxLine strong label={`In ${BASE_CURRENCY} (base)`} value={formatMoneyWithCode(props.value, BASE_CURRENCY)} />
+          <FxNote>
+            Across {totalPartners} {totalPartners === 1 ? "partner" : "partners"}, converted at today's rates
+          </FxNote>
+          <FxRateType type="mid" label={RATE_TYPE_LABEL.mid} source={RATE_PROVIDER} />
+          {scrollable && <FxNote small>Scroll the list for more currencies</FxNote>}
+        </FxInset>
+      </>
     );
   }
 
   // single / listing-partner: an amount in the partner's currency.
   return (
     <>
-      <HeaderLine code={code} tail="— partner currency" />
-      <div className="border-t border-slate-100 my-2" />
-      <div className="text-[12px] text-slate-700">
-        Base equivalent: {formatMoneyWithCode(convertNow(props.value, code, BASE_CURRENCY), BASE_CURRENCY)}
-      </div>
-      <RateLine code={code} />
+      <CardHead code={code} role="partner currency" />
+      <FxLines>
+        <FxLine label={`In ${code}`} value={formatMoneyWithCode(props.value, code)} />
+      </FxLines>
+      <FxInset>
+        <FxLine strong label={`In ${BASE_CURRENCY} (base)`} value={formatMoneyWithCode(convertNow(props.value, code, BASE_CURRENCY), BASE_CURRENCY)} />
+        <RateLine code={code} />
+      </FxInset>
     </>
   );
 }
