@@ -61,6 +61,8 @@ export function TransactionQuickView({ doc, currency: c, onClose }: {
           { label: 'Type', value: meta.label },
           { label: meta.party, value: doc.party },
           { label: 'Status', value: doc.status || 'No Status' },
+          // A vendor invoice's second status, as Vendor Invoicing shows it.
+          ...(doc.paymentStatus ? [{ label: 'Payment Status', value: doc.paymentStatus }] : []),
           { label: 'Date', value: fmtDate(doc.date) },
           { label: 'Amount', value: money(c.symbol, doc.amount, dp) },
         ]} />
@@ -70,7 +72,7 @@ export function TransactionQuickView({ doc, currency: c, onClose }: {
           <QuickViewFields fields={[
             { label: 'Rate Used', value: usedCorporate ? 'Corporate Rate' : 'Mid-Market Rate' },
             { label: 'Exchange Rate', value: rate != null ? fmtPairRate(c.code, rate) : 'Not available' },
-            { label: `Value in ${BASE}`, value: baseValue != null ? money(symbolOf(BASE), baseValue, decimalsOf(BASE)) : '–' },
+            { label: 'Value in Base Currency', value: baseValue != null ? money(symbolOf(BASE), baseValue, decimalsOf(BASE)) : '–' },
           ]} />
         </QuickViewCard>
       )}

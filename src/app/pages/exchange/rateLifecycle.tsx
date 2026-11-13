@@ -8,7 +8,7 @@ import { useLifecycleFlow, lifecycleIcon } from '../../coa/lib/lifecycle'
 import type { StatusOption } from '../../coa/components/StatusChip'
 import { fmtDate } from '../../coa/lib/utils'
 import { corporateRateDocs, docTypeMeta, type LinkedDoc } from '../currency/model'
-import { BASE, fmtPairRate, fmtRate, type CorpStatus } from './rateModel'
+import { BASE, fmtRate, type CorpStatus } from './rateModel'
 
 export const CORPORATE_STATUS_OPTIONS: StatusOption<CorpStatus>[] = [
   { value: 'Active', verb: 'Restore', meaning: ['The rate in effect for this pair. It can be selected on new transactions.'] },
@@ -16,7 +16,7 @@ export const CORPORATE_STATUS_OPTIONS: StatusOption<CorpStatus>[] = [
 ]
 
 export const MID_STATUS_OPTIONS: StatusOption<'Active'>[] = [
-  { value: 'Active', verb: 'Activate', meaning: ['Synced from the rate provider every 24 hours.'] },
+  { value: 'Active', verb: 'Activate', meaning: ['Synced from the rate provider.'] },
 ]
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
@@ -38,7 +38,6 @@ export function useCorporateRateLifecycle() {
   }
 
   const archive = (r: StandardRate, onDone?: () => void) => {
-    const code = r.sourceCurrency
     const linked = r.status === 'active' ? linkedTo(r) : []
     if (linked.length) {
       const n = linked.length
@@ -46,8 +45,8 @@ export function useCorporateRateLifecycle() {
         allowed: false,
         commit: () => {},
         refusal: {
-          title: `Can't archive the ${code} corporate rate`,
-          description: [`${n} active ${plural(n, 'transaction is', 'transactions are')} priced at ${fmtPairRate(code, r.standardRate)}. Close or settle ${plural(n, 'it', 'them')} first, then archive the rate.`],
+          title: "Can't archive this corporate rate",
+          description: [`${n} active ${plural(n, 'transaction is', 'transactions are')} priced at this rate. Close or settle ${plural(n, 'it', 'them')} first, then archive the rate.`],
           reasonsTitle: 'Linked Transactions',
           reasons: docLines(linked),
           dismissLabel: 'Got It',
@@ -60,15 +59,15 @@ export function useCorporateRateLifecycle() {
       confirm: {
         tone: 'danger',
         icon: lifecycleIcon('archive'),
-        title: `Archive the ${code} corporate rate?`,
+        title: 'Archive this corporate rate?',
         description: [
-          `The ${code} corporate rate (${fmtPairRate(code, r.standardRate)}) will be archived. It stays in rate history, but it can no longer be selected for new transactions.`,
-          `${code} falls back to the mid-market rate until a new corporate rate is set.`,
+          'This corporate rate will be archived. It stays in rate history, but it can no longer be selected for new transactions.',
+          'The currency falls back to the mid-market rate until a new corporate rate is set.',
         ],
         confirmLabel: 'Archive Rate',
       },
       commit: () => archiveStandardRates([r.id]),
-      toast: `Corporate rate for ${code} archived`,
+      toast: 'Corporate rate archived',
     }, onDone)
   }
 
@@ -80,8 +79,8 @@ export function useCorporateRateLifecycle() {
         allowed: false,
         commit: () => {},
         refusal: {
-          title: `Can't restore the ${code} corporate rate`,
-          description: [`${code} already has an active corporate rate, and a pair has one at a time. Archive that one first, or update it instead.`],
+          title: "Can't restore this corporate rate",
+          description: ['This currency already has an active corporate rate, and a pair has one at a time. Archive that one first, or update it instead.'],
           reasonsTitle: 'Active Now',
           reasons: [`${fmtRate(other.standardRate)} ${BASE} · effective ${fmtDate(other.effectiveDate)}`],
           dismissLabel: 'Got It',
@@ -92,7 +91,7 @@ export function useCorporateRateLifecycle() {
     flow.request({
       allowed: r.status === 'archived',
       commit: () => restoreStandardRate(r.id),
-      toast: `Corporate rate for ${code} restored`,
+      toast: 'Corporate rate restored',
     }, onDone)
   }
 

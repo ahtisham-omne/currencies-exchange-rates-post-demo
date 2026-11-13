@@ -77,7 +77,7 @@ export function CurrencyPairDetailPage() {
   const upcoming = active ? upcomingRateOf(active, today) : null
 
   const [tab, setTab] = useDetailTab<Tab>(TABS, `${code}:${type}`)
-  const [fullscreen, toggleFullscreen] = useDetailFullView('fx.pair.fullView', tab, { history: true })
+  const [fullscreen, toggleFullscreen] = useDetailFullView('fx.pair.fullView', tab)
   const [range, setRange] = useState<RangeValue>(DEFAULT_RANGE)
   const [inverted, setInverted] = useState(false)
 
@@ -154,10 +154,8 @@ export function CurrencyPairDetailPage() {
         return { text: t, value: colored(t, metrics.change >= 0 ? '#059669' : '#DC2626'), subDetail: label }
       }
       case 'range_volatility': {
-        const v = metrics.volatility
-        const level = v < 0.3 ? 'Low' : v < 0.8 ? 'Moderate' : 'High'
-        const c = v < 0.3 ? '#059669' : v < 0.8 ? '#D97706' : '#DC2626'
-        return { text: `${v.toFixed(3)}%`, value: <>{v.toFixed(3)}% <span className="text-[12px]" style={{ color: c, fontWeight: 600 }}>{level}</span></>, subDetail: label }
+        const t = `${metrics.volatility.toFixed(3)}%`
+        return { text: t, value: t, subDetail: label }
       }
       case 'variance': {
         // Current, not an average over the period: the corporate rate in effect
@@ -289,13 +287,19 @@ export function CurrencyPairDetailPage() {
             <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.inverse}>Inverse Rate</DashInfoLabel>
             {shownRate != null ? <InfoValue className="tabular-nums">{fmtInverse(shownRate)} {code}</InfoValue> : <InfoValue empty>–</InfoValue>}
           </div>
-          <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{isStd ? 'Set by your team' : API_PROVIDER}</InfoValue></div>
-          <div className="min-w-0">
-            <DashInfoLabel align="right" tooltip={isStd ? RATE_TOOLTIPS.effectiveDate : undefined}>Effective Date</DashInfoLabel>
-            {isStd ? (currentRecord ? <InfoValue>{fmtDate(currentRecord.effectiveDate)}</InfoValue> : <InfoValue empty>–</InfoValue>) : <InfoValue>{fmtDate(mid.effectiveDate)}</InfoValue>}
-          </div>
           {isStd ? (
+            // A corporate rate has no Source field: the team sets it, which Rate Type
+            // already says. Mid-market and variance share a row; the dates close the card.
             <>
+              <div className="min-w-0"><DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-Market Rate</DashInfoLabel><InfoValue className="tabular-nums">{fmtRate(mid.rate)} {BASE}</InfoValue></div>
+              <div className="min-w-0">
+                <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.variance}>Variance</DashInfoLabel>
+                {variance != null && inEffect ? <InfoValue className="tabular-nums"><span style={{ color: varianceColor(variance) }}>{fmtVariance(inEffect.standardRate, mid.rate)}</span></InfoValue> : <InfoValue empty>–</InfoValue>}
+              </div>
+              <div className="min-w-0">
+                <DashInfoLabel tooltip={RATE_TOOLTIPS.effectiveDate}>Effective Date</DashInfoLabel>
+                {currentRecord ? <InfoValue>{fmtDate(currentRecord.effectiveDate)}</InfoValue> : <InfoValue empty>–</InfoValue>}
+              </div>
               {upcoming && (
                 <div className="min-w-0 col-span-2">
                   <DashInfoLabel tooltip={RATE_TOOLTIPS.upcoming}>Upcoming Rate</DashInfoLabel>
@@ -304,16 +308,16 @@ export function CurrencyPairDetailPage() {
                   </InfoValue>
                 </div>
               )}
-              <div className="min-w-0"><DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-Market Rate</DashInfoLabel><InfoValue className="tabular-nums">{fmtRate(mid.rate)} {BASE}</InfoValue></div>
-              <div className="min-w-0">
-                <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.variance}>Variance</DashInfoLabel>
-                {variance != null && inEffect ? <InfoValue className="tabular-nums"><span style={{ color: varianceColor(variance) }}>{fmtVariance(inEffect.standardRate, mid.rate)}</span></InfoValue> : <InfoValue empty>–</InfoValue>}
-              </div>
             </>
           ) : (
             <>
+              <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{API_PROVIDER}</InfoValue></div>
               <div className="min-w-0">
-                <DashInfoLabel tooltip={RATE_TOOLTIPS.change24h}>Change (24h)</DashInfoLabel>
+                <DashInfoLabel align="right">Effective Date</DashInfoLabel>
+                <InfoValue>{fmtDate(mid.effectiveDate)}</InfoValue>
+              </div>
+              <div className="min-w-0">
+                <DashInfoLabel tooltip={RATE_TOOLTIPS.change24h}>Change</DashInfoLabel>
                 <InfoValue className="tabular-nums"><span style={{ color: mid.change24h > 0 ? '#059669' : mid.change24h < 0 ? '#DC2626' : undefined }}>{fmtSignedPct(mid.change24h)}</span></InfoValue>
               </div>
               <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last Synced</DashInfoLabel><InfoValue>{LAST_SYNC_AT}</InfoValue></div>

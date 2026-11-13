@@ -25,7 +25,7 @@ export function useCurrencyLifecycle() {
 
   const plan = (next: CurrencyStatus, c: Currency): LifecyclePlan => {
     if (next === 'Active') {
-      return { allowed: true, commit: () => activateCurrency(c.code), toast: `${c.code} activated` }
+      return { allowed: true, commit: () => activateCurrency(c.code), toast: 'Currency activated' }
     }
     // The menus grey Deactivate out for the base currency; this is the backstop.
     if (c.isBaseCurrency) {
@@ -33,7 +33,7 @@ export function useCurrencyLifecycle() {
         allowed: false,
         commit: () => {},
         refusal: {
-          title: `Can't deactivate ${c.code}`,
+          title: "Can't deactivate this currency",
           description: [BASE_CURRENCY_LOCKED],
           dismissLabel: 'Got It',
         },
@@ -44,8 +44,8 @@ export function useCurrencyLifecycle() {
         allowed: false,
         commit: () => {},
         refusal: {
-          title: `Can't deactivate ${c.code} yet`,
-          description: [`${c.code} is on open transactions. Close or settle them first, then deactivate it.`],
+          title: "Can't deactivate this currency yet",
+          description: ['This currency is on open transactions. Close or settle them first, then deactivate it.'],
           reasonsTitle: 'Still Open',
           reasons: openDocBreakdown(c),
         },
@@ -56,12 +56,12 @@ export function useCurrencyLifecycle() {
       confirm: {
         tone: 'warning',
         icon: lifecycleIcon('deactivate'),
-        title: `Deactivate ${c.code}?`,
-        description: [`${c.code} will stop being offered on new transactions. Its rates and history are kept, and you can activate it again anytime.`],
+        title: 'Deactivate this currency?',
+        description: ['This currency will stop being offered on new transactions. Its rates and history are kept, and you can activate it again anytime.'],
         confirmLabel: 'Deactivate Currency',
       },
       commit: () => deactivateCurrency(c.code),
-      toast: `${c.code} deactivated`,
+      toast: 'Currency deactivated',
     }
   }
 

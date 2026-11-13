@@ -1,12 +1,12 @@
 // The currency's Linked transactions tab on CoA's register-tab pattern
 // (AccountDetail RegisterTab, spec-detail §5.1): one flat table with a Type
-// column, Type and Status pills (the Region pill's dropdown, as CoA's Dimensions
+// column, Type, Status and (for vendor invoices) Payment Status pills (the Region pill's dropdown, as CoA's Dimensions
 // is: one control however long the list), the statuses each module itself uses
-// (Pending Approval, Partially Paid, Fully Received, Shipped …), opening on the
+// (Pending Approval, Released, Fully Received, Partially Applied …), opening on the
 // active ones, the table search (which also finds an amount however it is typed), and
 // nothing else above the rows.
 import { useEffect, useMemo, useState } from 'react'
-import { CircleDot, FileStack, FileText, Inbox } from 'lucide-react'
+import { CircleDot, FileStack, FileText, Inbox, Wallet } from 'lucide-react'
 import type { Currency } from '../../data/currencies'
 import { Badge, EmptyState, Marked } from '../../coa/components/ui'
 import { CoaTableCard, PillRow, TableEmptyState } from '../../coa/components/TableCard'
@@ -14,33 +14,43 @@ import { TableToolbar } from '../../coa/components/TableToolbar'
 import { CoaDataTable, useCoaTable, type CoaColumn } from '../../coa/components/CoaDataTable'
 import { PillFilter } from '../../coa/components/PillFilter'
 import { EmptyCell, PARTNER_CHIP_CLS } from '../../coa/components/cells'
-import { fmtDate } from '../../coa/lib/utils'
-import { DOC_STATUSES } from '../../data/currencies'
+import { cn, fmtDate } from '../../coa/lib/utils'
+import { DOC_STATUSES, VENDOR_INVOICE_PAYMENT_STATUSES } from '../../data/currencies'
 import { TransactionQuickView } from './TransactionQuickView'
 import { DOC_TYPES, docStatusTone, docTypeMeta, fmtAmount, isActiveDoc, money, type DocTypeKey, type LinkedDoc } from './model'
 
 /** Every module's statuses in one list, roughly in the order a transaction moves
  *  through them: not started, waiting, in play, part-way, late, done, stopped. */
 const STATUS_ORDER = [
-  'Draft', 'Pending Approval', 'Pending Review', 'Approved', 'Sent', 'Confirmed', 'Cleared', 'Unpaid', 'Scheduled',
-  'On Hold', 'Exception', 'Partially Paid', 'Partially Received', 'Partially Shipped', 'Overdue',
-  'Paid', 'Fully Received', 'Shipped', 'Closed', 'Rejected', 'Written Off', 'Reversed', 'Cancelled',
+  'Draft', 'Pending Approval', 'Pending Review', 'Exception', 'Rejected', 'Approved', 'Sent', 'Confirmed', 'Released',
+  'Unpaid', 'Scheduled', 'Unapplied', 'Partially Paid', 'Partially Received', 'Partially Shipped', 'Partially Cancelled',
+  'Partially Applied', 'Active with Cancellation', 'Overdue', 'Paid', 'Applied', 'Fully Received', 'Shipped',
+  'Closed with Cancellations', 'Written Off', 'Reversed', 'Void', 'Cancelled', 'Archived',
 ].filter(s => Object.values(DOC_STATUSES).some(t => (t.all as readonly string[]).includes(s)))
-const statusOf = (d: LinkedDoc) => d.status
+/** A vendor invoice's Payment Status, in Vendor Invoicing's order. */
+const PAYMENT_STATUS_ORDER: readonly string[] = VENDOR_INVOICE_PAYMENT_STATUSES.all
 
 export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currency; docs: LinkedDoc[] }) {
   const [query, setQuery] = useState('')
   const [debouncedQ, setDebouncedQ] = useState(query)
   useEffect(() => { const t = setTimeout(() => setDebouncedQ(query), 300); return () => clearTimeout(t) }, [query])
   const [types, setTypes] = useState<DocTypeKey[]>([])
-  // Opens on the active ones: what is still in play, as the tab always has.
+  // Opens on the active ones: what is still in play, as the tab always has. An
+  // Approved vendor invoice is active only while money is owed, so the Payment
+  // Status pill opens on the owing ones too.
   const [statuses, setStatuses] = useState<string[]>(() => STATUS_ORDER.filter(s => docs.some(d => d.status === s && isActiveDoc(d))))
+  const [payStatuses, setPayStatuses] = useState<string[]>(() => PAYMENT_STATUS_ORDER.filter(s => docs.some(d => d.paymentStatus === s && isActiveDoc(d))))
   const [quick, setQuick] = useState<LinkedDoc | null>(null)
   const dp = c.decimalPlaces
-  // Each pill counts what the other leaves, so a count is what ticking it would show.
-  const inType = useMemo(() => (types.length ? docs.filter(d => types.includes(d.type)) : docs), [docs, types])
-  const inStatus = useMemo(() => (statuses.length ? docs.filter(d => statuses.includes(statusOf(d))) : docs), [docs, statuses])
-  const rows = useMemo(() => (types.length ? inStatus.filter(d => types.includes(d.type)) : inStatus), [inStatus, types])
+  // Each pill counts what the others leave, so a count is what ticking it would show.
+  // Payment Status narrows vendor invoices only; other rows have none and pass.
+  const byType = (d: LinkedDoc) => !types.length || types.includes(d.type)
+  const byStatus = (d: LinkedDoc) => !statuses.length || statuses.includes(d.status)
+  const byPay = (d: LinkedDoc) => !payStatuses.length || !d.paymentStatus || payStatuses.includes(d.paymentStatus)
+  const inType = useMemo(() => docs.filter(d => byType(d) && byPay(d)), [docs, types, payStatuses]) // eslint-disable-line react-hooks/exhaustive-deps
+  const inStatus = useMemo(() => docs.filter(d => byStatus(d) && byPay(d)), [docs, statuses, payStatuses]) // eslint-disable-line react-hooks/exhaustive-deps
+  const inPayPill = useMemo(() => docs.filter(d => byType(d) && byStatus(d)), [docs, types, statuses]) // eslint-disable-line react-hooks/exhaustive-deps
+  const rows = useMemo(() => docs.filter(d => byType(d) && byStatus(d) && byPay(d)), [docs, types, statuses, payStatuses]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns = useMemo<CoaColumn<LinkedDoc>[]>(() => [
     {
@@ -71,9 +81,15 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
       sortValue: d => d.party, searchText: d => d.party, filter: 'multiselect',
     },
     {
-      key: 'status', label: 'Status', headerClassName: 'min-w-[110px]',
-      render: (d, ctx) => d.status ? <Badge tone={docStatusTone(d.status)} className={PARTNER_CHIP_CLS}><Marked text={d.status} q={ctx.q} /></Badge> : <EmptyCell />,
+      key: 'status', label: 'Status', headerClassName: 'min-w-[190px]',
+      render: (d, ctx) => d.status ? <Badge tone={docStatusTone(d.status)} className={cn(PARTNER_CHIP_CLS, 'whitespace-nowrap')}><Marked text={d.status} q={ctx.q} /></Badge> : <EmptyCell />,
       sortValue: d => d.status || null, searchText: d => d.status, filter: 'multiselect',
+    },
+    {
+      // Vendor invoices' second status, as Vendor Invoicing shows it beside the first.
+      key: 'paymentStatus', label: 'Payment Status', headerClassName: 'min-w-[150px]',
+      render: (d, ctx) => d.paymentStatus ? <Badge tone={docStatusTone(d.paymentStatus)} className={cn(PARTNER_CHIP_CLS, 'whitespace-nowrap')}><Marked text={d.paymentStatus} q={ctx.q} /></Badge> : <EmptyCell />,
+      sortValue: d => d.paymentStatus || null, searchText: d => d.paymentStatus ?? '', filter: 'multiselect',
     },
     {
       key: 'date', label: 'Date', headerClassName: 'min-w-[130px]',
@@ -97,12 +113,16 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
   // type brings it back; the pill shows and counts only what it offers.
   const shownStatuses = statuses.filter(s => statusOptions.includes(s))
   const setShownStatuses = (next: string[]) => setStatuses([...statuses.filter(s => !statusOptions.includes(s)), ...next])
-  const narrowing = types.length > 0 || statuses.length > 0 || Object.keys(table.colFilters).length > 0
+  // The same for Payment Status, offered while vendor invoices are in view.
+  const payOptions = PAYMENT_STATUS_ORDER.filter(s => inPayPill.some(d => d.paymentStatus === s))
+  const shownPay = payStatuses.filter(s => payOptions.includes(s))
+  const setShownPay = (next: string[]) => setPayStatuses([...payStatuses.filter(s => !payOptions.includes(s)), ...next])
+  const narrowing = types.length > 0 || statuses.length > 0 || payStatuses.length > 0 || Object.keys(table.colFilters).length > 0
 
   if (docs.length === 0) {
     return (
       <div className="card flex-1 flex items-center justify-center min-h-[calc(100vh-260px)]">
-        <EmptyState icon={<Inbox size={20} />} title={`No transactions found for ${c.code}`} description="Transactions in this currency will appear here." />
+        <EmptyState icon={<Inbox size={20} />} title="No transactions found" description="Transactions in this currency will appear here." />
       </div>
     )
   }
@@ -137,6 +157,16 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
             selected={shownStatuses}
             onChange={setShownStatuses}
           />
+          {payOptions.length > 0 && (
+            <PillFilter
+              label="Payment Status"
+              icon={<Wallet size={14} />}
+              description="Filter vendor invoices by payment status."
+              options={payOptions.map(s => ({ value: s, label: s, count: inPayPill.filter(d => d.paymentStatus === s).length }))}
+              selected={shownPay}
+              onChange={setShownPay}
+            />
+          )}
         </PillRow>
       }
     >
@@ -144,7 +174,7 @@ export function LinkedTransactionsTab({ currency: c, docs }: { currency: Currenc
       <CoaDataTable
         table={table}
         windowAbove={0}
-        emptyState={<TableEmptyState noun="transactions" query={debouncedQ} filtersActive={narrowing} onClearSearch={() => setQuery('')} onClearFilters={() => { setTypes([]); setStatuses([]); table.setColFilters({}) }} where={`${c.code}'s transactions`} />}
+        emptyState={<TableEmptyState noun="transactions" query={debouncedQ} filtersActive={narrowing} onClearSearch={() => setQuery('')} onClearFilters={() => { setTypes([]); setStatuses([]); setPayStatuses([]); table.setColFilters({}) }} where={`${c.code}'s transactions`} />}
       />
       {quick && <TransactionQuickView doc={quick} currency={c} onClose={() => setQuick(null)} />}
     </CoaTableCard>

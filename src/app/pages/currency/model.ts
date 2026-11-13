@@ -1,6 +1,6 @@
 // Currency Library screens: shared, read-only views over the currency seed and
 // context (flags, regions, linked documents, audit facts). Pure helpers, no UI.
-import { countInUse, countOpenDocuments, getRegionForCountry, isActiveStatus, type Currency, type OpenTransaction } from '../../data/currencies'
+import { countInUse, countOpenDocuments, getRegionForCountry, isActiveTransaction, paymentSetOf, paymentStatusOf, type Currency, type OpenTransaction, type StatusSet } from '../../data/currencies'
 import { BASE_CURRENCY } from '../../data/exchangeRates'
 import { getCountryCode, getFlagUrlByCountry } from '../../utils/currencyFlags'
 import type { BadgeTone } from '../../coa/components/ui'
@@ -70,8 +70,12 @@ export interface LinkedDoc {
   number: string
   type: DocTypeKey
   party: string
-  /** '' for payments, which carry no status. */
+  /** Its status as its own module names it (a vendor invoice's Invoice Status). */
   status: string
+  /** Vendor invoices only: the Payment Status beside it. */
+  paymentStatus?: string
+  /** Whose statuses it reads: its type's, or for a vendor payment, payment or prepayment. */
+  statusSet: StatusSet
   date: string
   amount: number
   /** The rate it was priced at. */
@@ -90,22 +94,25 @@ export const parseAmount = (amount: string): number => {
 export function linkedDocs(c: Currency): LinkedDoc[] {
   const u = c.usage
   const out: LinkedDoc[] = []
-  const push = (type: DocTypeKey, rows: OpenTransaction[]) =>
-    rows.forEach((d, i) => out.push({ id: `${type}-${d.ref}-${i}`, number: d.ref, type, party: d.vendor, status: d.status, date: d.date, amount: parseAmount(d.amount), rateType: d.rateType ?? 'mid' }))
+  const push = (type: 'vendorInvoice' | 'customerInvoice' | 'purchaseOrder' | 'salesOrder', rows: OpenTransaction[]) =>
+    rows.forEach((d, i) => out.push({
+      id: `${type}-${d.ref}-${i}`, number: d.ref, type, party: d.vendor, status: d.status, statusSet: type,
+      paymentStatus: type === 'vendorInvoice' ? d.paymentStatus ?? (d.status === 'Cancelled' ? 'Void' : 'Unpaid') : undefined,
+      date: d.date, amount: parseAmount(d.amount), rateType: d.rateType ?? 'mid',
+    }))
   push('vendorInvoice', u.openInvoices)
   push('customerInvoice', u.openCustomerInvoices)
   push('purchaseOrder', u.openPurchaseOrders)
   push('salesOrder', u.openSalesOrders)
   ;(u.openPayments ?? []).forEach((p, i) => out.push({
     id: `pay-${p.ref}-${i}`, number: p.ref, type: p.type === 'Vendor Payment' ? 'vendorPayment' : 'customerPayment',
-    party: p.party, status: p.status ?? 'Scheduled', date: p.date, amount: parseAmount(p.amount), rateType: 'mid',
+    party: p.party, status: paymentStatusOf(p), statusSet: paymentSetOf(p), date: p.date, amount: parseAmount(p.amount), rateType: 'mid',
   }))
   return out.sort((a, b) => b.date.localeCompare(a.date))
 }
 
 /** The active transactions priced at the currency's corporate rate: while any
- *  is open, that rate can't be archived. A draft isn't active yet, and payments
- *  carry no status of their own. */
+ *  is open, that rate can't be archived. */
 export function corporateRateDocs(c: Currency): LinkedDoc[] {
   return linkedDocs(c).filter(d => d.rateType === 'corporate' && isActiveDoc(d))
 }
@@ -115,24 +122,25 @@ export function corporateRateDocs(c: Currency): LinkedDoc[] {
  *  stopped grey. */
 export function docStatusTone(status: string): BadgeTone {
   switch (status) {
-    case 'Paid': case 'Fully Received': case 'Shipped': case 'Closed': return 'success'
-    case 'Approved': case 'Unpaid': case 'Sent': case 'Confirmed': case 'Cleared': case 'Scheduled': return 'info'
-    case 'Pending Approval': case 'Pending Review': case 'On Hold':
-    case 'Partially Paid': case 'Partially Received': case 'Partially Shipped': return 'warning'
+    case 'Paid': case 'Paid in Full': case 'Settled': case 'Applied': case 'Fully Received': case 'Shipped': return 'success'
+    case 'Approved': case 'Unpaid': case 'In Payment Run': case 'Scheduled': case 'Unapplied':
+    case 'Sent': case 'Confirmed': case 'Released': return 'info'
+    case 'Pending Approval': case 'Pending Review': case 'Partially Paid': case 'Partially Applied':
+    case 'Partially Received': case 'Partially Shipped': case 'Partially Cancelled': case 'Active with Cancellation': return 'warning'
     case 'Overdue': case 'Exception': case 'Rejected': return 'danger'
-    default: return 'neutral' // Draft, Cancelled, Written Off, Reversed
+    default: return 'neutral' // Draft, Cancelled, Archived, Void, Reversed, Written Off, Closed with Cancellations
   }
 }
 
 /** The open documents that hold a currency back, per type, for a refusal's reasons box. */
 export function openDocBreakdown(c: Currency): string[] {
   const u = c.usage
-  const n = (rows: { status?: string }[]) => rows.filter(r => isActiveStatus(r.status ?? '')).length
+  const n = (set: StatusSet, rows: OpenTransaction[]) => rows.filter(r => isActiveTransaction(set, r.status, r.paymentStatus)).length
   const rows: [number, string, string][] = [
-    [n(u.openInvoices), 'open vendor invoice', 'open vendor invoices'],
-    [n(u.openCustomerInvoices), 'open customer invoice', 'open customer invoices'],
-    [n(u.openPurchaseOrders), 'open purchase order', 'open purchase orders'],
-    [n(u.openSalesOrders), 'open sales order', 'open sales orders'],
+    [n('vendorInvoice', u.openInvoices), 'open vendor invoice', 'open vendor invoices'],
+    [n('customerInvoice', u.openCustomerInvoices), 'open customer invoice', 'open customer invoices'],
+    [n('purchaseOrder', u.openPurchaseOrders), 'open purchase order', 'open purchase orders'],
+    [n('salesOrder', u.openSalesOrders), 'open sales order', 'open sales orders'],
   ]
   return rows.filter(([k]) => k > 0).map(([k, one, many]) => `${k} ${k === 1 ? one : many}`)
 }
@@ -185,10 +193,9 @@ export function formatPreview(c: Currency): { text: string; place: string } {
 
 /* ── Active transactions ───────────────────────────────────────────────── */
 
-/** Statuses a transaction is still in play with. A draft hasn't started yet,
- *  and payments carry no status of their own. */
-/** Still in play, by its module's statuses (DOC_STATUSES): not a draft, not finished. */
-export const isActiveDoc = (d: LinkedDoc) => isActiveStatus(d.status)
+/** Still in play, by its own type's statuses (DOC_STATUSES): not a draft, not
+ *  finished. An Approved vendor invoice is active while money is still owed. */
+export const isActiveDoc = (d: LinkedDoc) => isActiveTransaction(d.statusSet, d.status, d.paymentStatus)
 
 export const fmtRate =(n: number, dp = 4) => n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
 

@@ -6,6 +6,9 @@ export interface OpenTransaction {
   vendor: string;
   amount: string;
   status: string;
+  /** Vendor invoices only: the Payment Status beside the Invoice Status, as
+   *  Vendor Invoicing shows them (Unpaid, In Payment Run, Paid in Full …). */
+  paymentStatus?: string;
   date: string;
   /** The rate the transaction was priced at; left out means the mid-market rate.
    *  One priced at the corporate rate holds that rate: it can't be archived while
@@ -25,8 +28,10 @@ export interface PaymentTransaction {
   party: string;
   amount: string;
   type: "Vendor Payment" | "Customer Payment";
+  /** A vendor payment is a payment or a prepayment, and each has its own statuses. */
+  kind?: "Payment" | "Prepayment";
   date: string;
-  /** Scheduled until it goes out (Payments' lifecycle); none given reads Scheduled. */
+  /** None given reads Scheduled for a payment and Unapplied for a prepayment. */
   status?: string;
 }
 
@@ -56,46 +61,75 @@ export interface Currency {
   auditLog: AuditLogEntry[];
 }
 
-/** Each transaction type's statuses, named and ordered as its own module has them
- *  (Vendor Invoicing, Customer Invoices, Purchase Orders, Sales Orders, Payments),
- *  and which of them are still in play. A draft hasn't started; paid, received,
- *  shipped, rejected, written-off and cancelled ones are done. */
+/** Each transaction type's statuses, named and ordered as its own module has
+ *  them, and which of them are active (still in play). Drafts haven't started,
+ *  so they aren't active; finished, cancelled and archived ones aren't either. */
 export const DOC_STATUSES = {
+  purchaseOrder: {
+    all: ["Draft", "Sent", "Confirmed", "Partially Received", "Active with Cancellation", "Fully Received", "Cancelled", "Closed with Cancellations"],
+    active: ["Sent", "Confirmed", "Partially Received", "Active with Cancellation"],
+  },
+  salesOrder: {
+    all: ["Draft", "Pending Review", "Released", "Partially Shipped", "Partially Cancelled", "Shipped", "Cancelled", "Archived"],
+    active: ["Pending Review", "Released", "Partially Shipped", "Partially Cancelled"],
+  },
+  // An Approved invoice is active only while money is still owed on it: its
+  // Payment Status decides (VENDOR_INVOICE_PAYMENT_STATUSES).
   vendorInvoice: {
-    all: ["Pending Approval", "Approved", "On Hold", "Exception", "Partially Paid", "Paid", "Rejected", "Cancelled"],
-    active: ["Pending Approval", "Approved", "On Hold", "Exception", "Partially Paid"],
+    all: ["Pending Approval", "Exception", "Rejected", "Approved", "Cancelled", "Archived"],
+    active: ["Pending Approval", "Exception", "Rejected"],
+  },
+  vendorPayment: {
+    all: ["Scheduled", "Paid", "Void", "Reversed"],
+    active: ["Scheduled"],
+  },
+  vendorPrepayment: {
+    all: ["Unapplied", "Partially Applied", "Applied", "Void", "Reversed"],
+    active: ["Unapplied", "Partially Applied"],
   },
   customerInvoice: {
     all: ["Draft", "Pending Approval", "Unpaid", "Partially Paid", "Overdue", "Paid", "Written Off", "Cancelled"],
     active: ["Pending Approval", "Unpaid", "Partially Paid", "Overdue"],
   },
-  purchaseOrder: {
-    all: ["Draft", "Sent", "Confirmed", "Partially Received", "Fully Received", "Closed", "Cancelled"],
-    active: ["Sent", "Confirmed", "Partially Received"],
-  },
-  salesOrder: {
-    all: ["Draft", "Pending Review", "Cleared", "Partially Shipped", "Shipped", "Cancelled"],
-    active: ["Pending Review", "Cleared", "Partially Shipped"],
-  },
-  payment: {
+  customerPayment: {
     all: ["Scheduled", "Paid", "Reversed", "Cancelled"],
     active: ["Scheduled"],
   },
 } as const;
 
-/** No status is active for one type and done for another, so one set answers for all. */
-const ACTIVE_STATUSES = new Set<string>(Object.values(DOC_STATUSES).flatMap(t => [...t.active]));
-export const isActiveStatus = (status: string) => ACTIVE_STATUSES.has(status);
-const activeIn = (rows: { status?: string }[]) => rows.filter(r => isActiveStatus(r.status ?? "Scheduled")).length;
+/** A vendor invoice's Payment Status. An Approved invoice is active while it is
+ *  Unpaid, In Payment Run, Scheduled or Partially Paid. */
+export const VENDOR_INVOICE_PAYMENT_STATUSES = {
+  all: ["Unpaid", "In Payment Run", "Scheduled", "Partially Paid", "Paid in Full", "Settled", "Void"],
+  active: ["Unpaid", "In Payment Run", "Scheduled", "Partially Paid"],
+} as const;
+
+export type StatusSet = keyof typeof DOC_STATUSES;
+
+const isIn = (list: readonly string[], status: string | undefined) => !!status && list.includes(status);
+
+/** Whether a transaction is active, by its own type's statuses. */
+export function isActiveTransaction(set: StatusSet, status: string, paymentStatus?: string): boolean {
+  if (set === "vendorInvoice" && status === "Approved") return isIn(VENDOR_INVOICE_PAYMENT_STATUSES.active, paymentStatus ?? "Unpaid");
+  return isIn(DOC_STATUSES[set].active, status);
+}
+
+/** The status set a payment reads from: vendor payment, vendor prepayment or customer payment. */
+export const paymentSetOf = (p: PaymentTransaction): StatusSet =>
+  p.type === "Customer Payment" ? "customerPayment" : p.kind === "Prepayment" ? "vendorPrepayment" : "vendorPayment";
+/** A payment's status, with the default its kind starts at. */
+export const paymentStatusOf = (p: PaymentTransaction): string => p.status ?? (p.kind === "Prepayment" ? "Unapplied" : "Scheduled");
+
+const activeIn = (set: StatusSet, rows: OpenTransaction[]) => rows.filter((r) => isActiveTransaction(set, r.status, r.paymentStatus)).length;
 
 /** Active documents (excludes payments; the deactivation guard). The usage lists also
  *  hold finished ones (paid, received, shipped), which don't count. */
 export function countOpenDocuments(c: Currency): number {
   return (
-    activeIn(c.usage.openInvoices) +
-    activeIn(c.usage.openCustomerInvoices) +
-    activeIn(c.usage.openPurchaseOrders) +
-    activeIn(c.usage.openSalesOrders)
+    activeIn("vendorInvoice", c.usage.openInvoices) +
+    activeIn("customerInvoice", c.usage.openCustomerInvoices) +
+    activeIn("purchaseOrder", c.usage.openPurchaseOrders) +
+    activeIn("salesOrder", c.usage.openSalesOrders)
   );
 }
 
@@ -104,9 +138,9 @@ export function hasOpenDocuments(c: Currency): boolean {
   return countOpenDocuments(c) > 0;
 }
 
-/** The "N active" In Use count: active documents and scheduled payments. */
+/** The "N active" In Use count: active documents and active payments. */
 export function countInUse(c: Currency): number {
-  return countOpenDocuments(c) + activeIn(c.usage.openPayments);
+  return countOpenDocuments(c) + c.usage.openPayments.filter((p) => isActiveTransaction(paymentSetOf(p), paymentStatusOf(p))).length;
 }
 
 /* ─── Region mapping ─── */
@@ -441,7 +475,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("AED", "United Arab Emirates Dirham", "784", "د.إ", 2, "United Arab Emirates", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-000201", vendor: "Dubai Steel Industries", amount: "د.إ85,000.00", status: "Approved", date: "2025-11-18", rateType: "corporate" },
+        { ref: "INV-000201", vendor: "Dubai Steel Industries", amount: "د.إ85,000.00", status: "Approved", paymentStatus: "Unpaid", date: "2025-11-18", rateType: "corporate" },
       ],
       openCustomerInvoices: [
         { ref: "INV-000088", vendor: "Abu Dhabi Exports LLC", amount: "د.إ42,500.00", status: "Unpaid", date: "2025-12-01" },
@@ -461,14 +495,14 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("AUD", "Australian Dollar", "036", "A$", 2, "Australia", ["Christmas Island", "Cocos (Keeling) Islands", "Heard Island and McDonald Islands", "Kiribati", "Nauru", "Norfolk Island", "Tuvalu"], {
     usage: {
       openInvoices: [
-        { ref: "INV-000202", vendor: "Sydney Mining Corp.", amount: "A$32,400.00", status: "Approved", date: "2025-10-30" },
+        { ref: "INV-000202", vendor: "Sydney Mining Corp.", amount: "A$32,400.00", status: "Approved", paymentStatus: "In Payment Run", date: "2025-10-30" },
       ],
       openCustomerInvoices: [
         { ref: "INV-000089", vendor: "Melbourne Retail Group", amount: "A$18,750.00", status: "Overdue", date: "2025-09-20" },
       ],
       openPurchaseOrders: [],
       openSalesOrders: [
-        { ref: "SO-000-000-031", vendor: "Brisbane Logistics Pty.", amount: "A$24,000.00", status: "Cleared", date: "2025-11-28" },
+        { ref: "SO-000-000-031", vendor: "Brisbane Logistics Pty.", amount: "A$24,000.00", status: "Released", date: "2025-11-28" },
       ],
       bankAccounts: 1, unsettledPayments: 1, exchangeRateEntries: 2, totalLifetimeDocuments: 35,
     },
@@ -505,8 +539,8 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("CAD", "Canadian Dollar", "124", "C$", 2, "Canada", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-000203", vendor: "Toronto Manufacturing Inc.", amount: "C$28,600.00", status: "Approved", date: "2025-11-12" },
-        { ref: "INV-000204", vendor: "Vancouver Imports Ltd.", amount: "C$15,300.00", status: "Pending Approval", date: "2025-12-03" },
+        { ref: "INV-000203", vendor: "Toronto Manufacturing Inc.", amount: "C$28,600.00", status: "Approved", paymentStatus: "Scheduled", date: "2025-11-12" },
+        { ref: "INV-000204", vendor: "Vancouver Imports Ltd.", amount: "C$15,300.00", status: "Pending Approval", paymentStatus: "Unpaid", date: "2025-12-03" },
       ],
       openCustomerInvoices: [],
       openPurchaseOrders: [
@@ -520,7 +554,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("CHF", "Swiss Franc", "756", "CHF", 2, "Switzerland", ["Liechtenstein"], {
     usage: {
       openInvoices: [
-        { ref: "INV-000205", vendor: "Zurich Precision AG", amount: "CHF 52,800.00", status: "Approved", date: "2025-11-14" },
+        { ref: "INV-000205", vendor: "Zurich Precision AG", amount: "CHF 52,800.00", status: "Approved", paymentStatus: "Unpaid", date: "2025-11-14" },
       ],
       openCustomerInvoices: [
         { ref: "INV-000090", vendor: "Geneva Watches SA", amount: "CHF 34,500.00", status: "Unpaid", date: "2025-11-30" },
@@ -534,8 +568,8 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("CNY", "Renminbi", "156", "¥", 2, "China", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-000206", vendor: "Shenzhen Electronics Co.", amount: "¥245,000.00", status: "Approved", date: "2025-11-15" },
-        { ref: "INV-000207", vendor: "Beijing Industrial Ltd.", amount: "¥128,500.00", status: "Pending Approval", date: "2025-12-02" },
+        { ref: "INV-000206", vendor: "Shenzhen Electronics Co.", amount: "¥245,000.00", status: "Approved", paymentStatus: "Unpaid", date: "2025-11-15" },
+        { ref: "INV-000207", vendor: "Beijing Industrial Ltd.", amount: "¥128,500.00", status: "Pending Approval", paymentStatus: "Unpaid", date: "2025-12-02" },
       ],
       openCustomerInvoices: [
         { ref: "INV-000091", vendor: "Shanghai Exports Inc.", amount: "¥312,000.00", status: "Partially Paid", date: "2025-11-20" },
@@ -559,7 +593,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("EGP", "Egyptian Pound", "818", "£", 2, "Egypt", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-000208", vendor: "Cairo Textiles Ltd.", amount: "£125,000.00", status: "Approved", date: "2025-11-10" },
+        { ref: "INV-000208", vendor: "Cairo Textiles Ltd.", amount: "£125,000.00", status: "Approved", paymentStatus: "Unpaid", date: "2025-11-10" },
       ],
       openCustomerInvoices: [],
       openPurchaseOrders: [],
@@ -572,7 +606,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("EUR", "Euro", "978", "€", 2, "Eurozone", ["Andorra", "Kosovo", "Monaco", "Montenegro", "San Marino", "Vatican City", "Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Estonia", "Finland", "France", "Germany", "Greece", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg", "Malta", "Netherlands", "Portugal", "Slovakia", "Slovenia", "Spain", "Åland Islands", "Guadeloupe", "Martinique", "French Guiana", "Réunion", "Mayotte", "Saint Martin", "Saint Barthélemy", "Saint Pierre and Miquelon", "French Southern Territories"], {
     usage: {
       openInvoices: [
-        { ref: "INV-000209", vendor: "Deutsche Maschinenbau GmbH", amount: "€42,750.00", status: "Partially Paid", date: "2025-10-22" },
+        { ref: "INV-000209", vendor: "Deutsche Maschinenbau GmbH", amount: "€42,750.00", status: "Approved", paymentStatus: "Partially Paid", date: "2025-10-22" },
       ],
       openCustomerInvoices: [
         { ref: "INV-000092", vendor: "Paris Luxury Goods SA", amount: "€18,900.00", status: "Partially Paid", date: "2025-11-05" },
@@ -580,7 +614,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
       ],
       openPurchaseOrders: [],
       openSalesOrders: [
-        { ref: "SO-000-000-032", vendor: "Amsterdam Trading BV", amount: "€55,000.00", status: "Cleared", date: "2025-12-01", rateType: "corporate" },
+        { ref: "SO-000-000-032", vendor: "Amsterdam Trading BV", amount: "€55,000.00", status: "Released", date: "2025-12-01", rateType: "corporate" },
       ],
       bankAccounts: 2, unsettledPayments: 0, exchangeRateEntries: 8, totalLifetimeDocuments: 95,
     },
@@ -614,8 +648,8 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("INR", "Indian Rupee", "356", "₹", 2, "India", ["Bhutan"], {
     usage: {
       openInvoices: [
-        { ref: "INV-000210", vendor: "Mumbai Textiles Pvt.", amount: "₹1,850,000.00", status: "On Hold", date: "2025-11-05" },
-        { ref: "INV-000211", vendor: "Delhi Pharmaceuticals Ltd.", amount: "₹720,000.00", status: "Pending Approval", date: "2025-11-22" },
+        { ref: "INV-000210", vendor: "Mumbai Textiles Pvt.", amount: "₹1,850,000.00", status: "Exception", paymentStatus: "Unpaid", date: "2025-11-05" },
+        { ref: "INV-000211", vendor: "Delhi Pharmaceuticals Ltd.", amount: "₹720,000.00", status: "Pending Approval", paymentStatus: "Unpaid", date: "2025-11-22" },
       ],
       openCustomerInvoices: [
         { ref: "INV-000095", vendor: "Bangalore IT Services", amount: "₹2,100,000.00", status: "Unpaid", date: "2025-10-28" },
@@ -624,7 +658,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
         { ref: "395-9828", vendor: "Chennai Auto Parts", amount: "₹450,000.00", status: "Partially Received", date: "2025-12-01" },
       ],
       openSalesOrders: [
-        { ref: "SO-000-000-033", vendor: "Hyderabad Electronics", amount: "₹980,000.00", status: "Cleared", date: "2025-11-15" },
+        { ref: "SO-000-000-033", vendor: "Hyderabad Electronics", amount: "₹980,000.00", status: "Released", date: "2025-11-15" },
       ],
       bankAccounts: 2, unsettledPayments: 1, exchangeRateEntries: 3, totalLifetimeDocuments: 88,
     },
@@ -637,7 +671,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("JPY", "Japanese Yen", "392", "¥", 0, "Japan", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-000212", vendor: "Tokyo Electronics Ltd.", amount: "¥3,250,000", status: "Approved", date: "2025-11-08" },
+        { ref: "INV-000212", vendor: "Tokyo Electronics Ltd.", amount: "¥3,250,000", status: "Approved", paymentStatus: "Unpaid", date: "2025-11-08" },
       ],
       openCustomerInvoices: [
         { ref: "INV-000096", vendor: "Osaka Trading Co.", amount: "¥1,800,000", status: "Unpaid", date: "2025-11-25" },
@@ -680,7 +714,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("MXN", "Mexican Peso", "484", "$", 2, "Mexico", [], {
     usage: {
       openInvoices: [
-        { ref: "INV-000213", vendor: "Mexico City Imports SA", amount: "$320,000.00", status: "Approved", date: "2025-11-15" },
+        { ref: "INV-000213", vendor: "Mexico City Imports SA", amount: "$320,000.00", status: "Approved", paymentStatus: "Unpaid", date: "2025-11-15" },
       ],
       openCustomerInvoices: [],
       openPurchaseOrders: [],
@@ -705,7 +739,7 @@ const AUTHORED_CURRENCIES: Currency[] = [
     isBaseCurrency: true,
     usage: {
       openInvoices: [
-        { ref: "INV-000214", vendor: "Lahore Textiles Pvt.", amount: "₨1,250,000.00", status: "Partially Paid", date: "2025-11-10" },
+        { ref: "INV-000214", vendor: "Lahore Textiles Pvt.", amount: "₨1,250,000.00", status: "Approved", paymentStatus: "Partially Paid", date: "2025-11-10" },
       ],
       openCustomerInvoices: [],
       openPurchaseOrders: [],
@@ -769,11 +803,13 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("USD", "United States Dollar", "840", "$", 2, "United States", ["American Samoa", "British Indian Ocean Territory", "British Virgin Islands", "Bonaire Sint Eustatius and Saba", "Ecuador", "El Salvador", "Guam", "Marshall Islands", "Federated States of Micronesia", "Northern Mariana Islands", "Palau", "Panama", "Puerto Rico", "Timor-Leste", "Turks and Caicos Islands", "US Virgin Islands", "United States Minor Outlying Islands"], {
     usage: {
       openInvoices: [
-        { ref: "INV-000215", vendor: "Acme Corp", amount: "$18,500.00", status: "Partially Paid", date: "2025-11-01", rateType: "corporate" },
-        { ref: "INV-000216", vendor: "Global Supplies Inc.", amount: "$7,200.00", status: "Pending Approval", date: "2025-11-20" },
-        { ref: "INV-000217", vendor: "Pacific Trading LLC", amount: "$34,100.00", status: "Approved", date: "2025-12-05" },
+        { ref: "INV-000215", vendor: "Acme Corp", amount: "$18,500.00", status: "Approved", paymentStatus: "Partially Paid", date: "2025-11-01", rateType: "corporate" },
+        { ref: "INV-000216", vendor: "Global Supplies Inc.", amount: "$7,200.00", status: "Pending Approval", paymentStatus: "Unpaid", date: "2025-11-20" },
+        { ref: "INV-000217", vendor: "Pacific Trading LLC", amount: "$34,100.00", status: "Approved", paymentStatus: "In Payment Run", date: "2025-12-05" },
         // Finished documents stay on the record (they show under their statuses) but no longer count as active.
-        { ref: "INV-000218", vendor: "Acme Corp", amount: "$9,750.00", status: "Paid", date: "2025-10-14" },
+        { ref: "INV-000218", vendor: "Acme Corp", amount: "$9,750.00", status: "Approved", paymentStatus: "Paid in Full", date: "2025-10-14" },
+        { ref: "INV-000219", vendor: "Summit Materials", amount: "$4,350.00", status: "Rejected", paymentStatus: "Unpaid", date: "2025-11-27" },
+        { ref: "INV-000220", vendor: "Global Supplies Inc.", amount: "$2,900.00", status: "Cancelled", paymentStatus: "Void", date: "2025-09-18" },
       ],
       openCustomerInvoices: [
         { ref: "INV-000097", vendor: "New York Imports LLC", amount: "$22,800.00", status: "Pending Approval", date: "2025-11-08", rateType: "corporate" },
@@ -784,11 +820,19 @@ const AUTHORED_CURRENCIES: Currency[] = [
         { ref: "395-9830", vendor: "Acme Corp", amount: "$12,000.00", status: "Confirmed", date: "2025-11-10", rateType: "corporate" },
         { ref: "395-9831", vendor: "Summit Materials", amount: "$5,800.00", status: "Sent", date: "2025-12-01" },
         { ref: "395-9832", vendor: "Summit Materials", amount: "$6,400.00", status: "Fully Received", date: "2025-09-30" },
+        { ref: "395-9833", vendor: "Pacific Trading LLC", amount: "$9,300.00", status: "Active with Cancellation", date: "2025-11-18" },
       ],
       openSalesOrders: [
         { ref: "SO-000-000-035", vendor: "Midwest Distributors", amount: "$15,600.00", status: "Pending Review", date: "2025-11-25" },
         { ref: "SO-000-000-036", vendor: "Coastal Retailers Inc.", amount: "$8,400.00", status: "Draft", date: "2025-12-10" },
         { ref: "SO-000-000-037", vendor: "Midwest Distributors", amount: "$11,900.00", status: "Shipped", date: "2025-10-08" },
+        { ref: "SO-000-000-038", vendor: "Coastal Retailers Inc.", amount: "$6,750.00", status: "Partially Cancelled", date: "2025-11-19" },
+      ],
+      openPayments: [
+        { ref: "PMT-000101", party: "Acme Corp", amount: "$9,250.00", type: "Vendor Payment", kind: "Payment", status: "Scheduled", date: "2025-12-08" },
+        { ref: "PMT-000098", party: "Acme Corp", amount: "$9,750.00", type: "Vendor Payment", kind: "Payment", status: "Paid", date: "2025-10-20" },
+        { ref: "PMT-000102", party: "Pacific Trading LLC", amount: "$5,000.00", type: "Vendor Payment", kind: "Prepayment", status: "Unapplied", date: "2025-12-02" },
+        { ref: "PMT-000099", party: "Summit Materials", amount: "$3,000.00", type: "Vendor Payment", kind: "Prepayment", status: "Partially Applied", date: "2025-11-12" },
       ],
       bankAccounts: 3, unsettledPayments: 2, exchangeRateEntries: 10, totalLifetimeDocuments: 150,
     },

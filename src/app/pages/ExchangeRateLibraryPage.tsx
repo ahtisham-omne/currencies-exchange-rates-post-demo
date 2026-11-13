@@ -70,7 +70,7 @@ function QuotedStrip({ kind }: { kind: Tab }) {
       </span>
       <span>
         {kind === 'mid' ? 'Rates from ' : 'Mid-market rates from '}
-        <SourceLink className="text-primary" />, updated every 24 hours
+        <SourceLink className="text-primary" />
         {kind === 'mid' && <> · Last updated {LAST_SYNC_AT}</>}
       </span>
     </div>
@@ -165,7 +165,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
       const rows = midTable.rows
       void exportRows({
         fileBase: 'mid_market_rates', sheetName: 'Mid-Market Rates', title: 'Mid-Market Exchange Rates', noun: 'rates', one: 'rate',
-        headers: ['Base Currency', 'Source Currency', 'Currency Name', 'Mid-Market Exchange Rate', 'Inverse Rate', 'Change (24h)', 'Effective Date'],
+        headers: ['Base Currency', 'Source Currency', 'Currency Name', 'Mid-Market Exchange Rate', 'Inverse Rate', 'Change', 'Effective Date'],
         rows: rows.map(r => [BASE, r.code, r.name, fmtRate(r.rate), fmtInverse(r.rate), fmtSignedPct(r.change24h), r.effectiveDate]),
         widths: [14, 16, 28, 24, 14, 12, 14],
       }, fmt)
@@ -242,7 +242,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                 pills={<PillRow>{regionPill}</PillRow>}
                 notes={<>
                   <ExplainerBanner id="mid" title="Mid-Market Rates">
-                    The midpoint of global buy and sell rates. Synced from <SourceLink className="underline underline-offset-2" /> every 24 hours.
+                    The midpoint of global buy and sell rates. Synced from <SourceLink className="underline underline-offset-2" />.
                   </ExplainerBanner>
                   <QuotedStrip kind="mid" />
                 </>}

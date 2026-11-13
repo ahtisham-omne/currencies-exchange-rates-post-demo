@@ -11,24 +11,23 @@ import { useWidgetChartH, useWidgetSize, widgetBarSize } from '../../coa/compone
 import { AXIS_PROPS, CHART_MARGIN, CM_TT_STYLE, ChartEmpty, ChartTooltipCard, GRID_PROPS, ZERO_LINE_PROPS, areaGradient, tickInterval } from '../../coa/components/chartKit'
 import { ChartLegendDot } from '../../coa/components/ChartWidgetCard'
 import { fmtDate, fmtNumber } from '../../coa/lib/utils'
+import { RATE_TOOLTIPS } from '../../utils/rateCopy'
 import { BASE, decimalsOf, fmtPairRate, fmtRate, symbolOf } from './rateModel'
 import { money as fmtMoney } from '../currency/model'
 import { rateTick, thin, tickLabelFor, type PairPoint } from './pairData'
 
 /* ── Catalogues ─────────────────────────────────────────────────────────── */
 
-/** The KPI catalogue; descriptions name the pair's currency (`code`) against the base. */
+/** The KPI catalogue. Descriptions say "this currency" and "your base currency", never the codes. */
 export const pairKpis = (code: string, isStd = false): DetailKpiDef[] => [
-  { key: 'current_mid', label: 'Current Mid-Market Rate', category: 'Rates', description: `Current mid-market rate for 1 ${code} in ${BASE}.` },
-  { key: 'current_std', label: 'Current Corporate Rate', category: 'Rates', description: `The corporate rate set by your company for 1 ${code} in ${BASE}.` },
+  { key: 'current_mid', label: 'Current Mid-Market Rate', category: 'Rates', description: 'Current mid-market rate for 1 unit of this currency in your base currency.' },
+  { key: 'current_std', label: 'Current Corporate Rate', category: 'Rates', description: 'The corporate rate set by your company for 1 unit of this currency in your base currency.' },
   { key: 'range_change', label: 'Mid-Market Change', category: 'Performance', description: 'How much the mid-market rate moved over the selected period.' },
   { key: 'range_volatility', label: 'Mid-Market Volatility', category: 'Analytics', description: 'Average daily movement of the mid-market rate over the selected period.' },
-  { key: 'variance', label: 'Corporate Variance', category: 'Rates', description: 'How far the corporate rate is from the mid-market rate, shown in your base currency and as a percentage. Updated each time the mid-market rate syncs.\n\nExample: A corporate rate of 279.0000 PKR against a mid-market rate of 278.5200 PKR shows +0.4800 PKR (+0.17%).' },
+  { key: 'variance', label: 'Corporate Variance', category: 'Rates', description: RATE_TOOLTIPS.variance },
   { key: 'days_since_update', label: 'Days Since Rate Updated', category: 'Operational', description: 'Days since the corporate rate was last updated.' },
   // Keyed fx_exposure_30d still, so layouts readers saved keep the tile.
-  { key: 'fx_exposure_30d', label: 'FX Exposure', category: 'Operational', description: isStd
-    ? `Value of active ${code} transactions in ${BASE}. This is the amount affected if the rate changes before they’re settled.`
-    : `Value of active ${code} transactions in ${BASE}, at today’s mid-market rate.` },
+  { key: 'fx_exposure_30d', label: 'FX Exposure', category: 'Operational', description: 'The total value of transactions in this currency over the selected period, shown in your base currency.' },
 ]
 
 export const MID_KPI_KEYS = ['current_mid', 'range_change', 'range_volatility', 'fx_exposure_30d']
@@ -50,8 +49,8 @@ export function pairWidgets(isStd: boolean, code: string): DetailWidgetDef[] {
       key: 'conversion_trend', category: 'Charts', icon: Banknote, previewType: 'area',
       label: isStd ? 'Corporate Conversion Trend' : 'Conversion Trend',
       description: isStd
-        ? `What the entered amount in ${code} was worth in ${BASE} each day, at the mid-market and corporate rates.`
-        : `What the entered amount in ${code} was worth in ${BASE} each day.`,
+        ? 'What the entered amount in this currency was worth in your base currency each day, at the mid-market and corporate rates.'
+        : 'What the entered amount in this currency was worth in your base currency each day.',
     },
   ]
 }

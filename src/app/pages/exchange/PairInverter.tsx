@@ -75,7 +75,7 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
   return (
     <LayoutGroup>
       <div className={cn(stack ? 'flex flex-col items-stretch gap-2' : 'flex items-center gap-3 flex-wrap', className)} onClick={e => e.stopPropagation()}>
-        {stack && <p className="text-[11px] text-fg-subtle leading-snug">{description ?? `Type an amount in ${first.code} to see what it comes to in ${second.code} at this rate.`}</p>}
+        {stack && <p className="text-[11px] text-fg-subtle leading-snug">{description ?? 'Type an amount to see what it comes to at this rate.'}</p>}
         <motion.div layout transition={SPRING} key={first.id} className={stack ? '' : 'shrink-0'}>
           <SideCard label="From" code={first.code} name={first.name} stack={stack}>
             <input

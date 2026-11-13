@@ -135,9 +135,9 @@ const LIST_DEFAULT = ['active', 'inactive', 'in_use', 'blocking', 'base', 'count
 const RATE_KPIS: KpiDefinition[] = [
   { key: 'count', label: 'Mid-market rates', category: 'Rates', tooltip: 'Rates synced from the provider, base row included.' },
   { key: 'sync', label: 'Last sync', category: 'Freshness' },
-  { key: 'gain', label: 'Largest 24h gain', category: 'Performance' },
-  { key: 'drop', label: 'Largest 24h drop', category: 'Performance' },
-  { key: 'avg', label: 'Average 24h change', category: 'Performance' },
+  { key: 'gain', label: 'Largest gain', category: 'Performance' },
+  { key: 'drop', label: 'Largest drop', category: 'Performance' },
+  { key: 'avg', label: 'Average change', category: 'Performance' },
 ]
 const RATE_DEFAULT = ['count', 'sync', 'gain', 'drop', 'avg']
 
@@ -275,7 +275,7 @@ export function DemoList() {
       sortValue: r => 1 / r.rate, searchText: r => (1 / r.rate).toFixed(6),
     },
     {
-      key: 'change', label: 'Change (24h)', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]',
+      key: 'change', label: 'Change', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]',
       render: r => {
         const Icon = r.change24h > 0 ? TrendingUp : r.change24h < 0 ? TrendingDown : Minus
         return (
@@ -445,7 +445,7 @@ export function DemoList() {
                 <TableToolbar
                   search={{ value: query, onChange: setQuery, placeholder: 'Search rates' }}
                   count={{ shown: rateTable.rows.length, total: rates.length, noun: 'rates' }}
-                  meta="Synced every 24h · Updated Apr 10, 2026 at 14:30 PKT"
+                  meta="Updated Apr 10, 2026 at 14:30 PKT"
                   insights={{ open: shelf.panelOpen, onClick: () => shelf.setPanelOpen(true), count: activeKpiDefs(shelf.activeKpis, kpiDefs).length }}
                   density={rateTable.densityMenuProps}
                   columns={{ open: rateTable.columnsOpen, onToggle: () => rateTable.setColumnsOpen(o => !o), count: rateTable.visibleCount }}

@@ -122,13 +122,13 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
     const v = variancePct(n, midRate) ?? 0
     if (editing && scheduling) {
       scheduleStandardRate(editing.id, { standardRate: n, effectiveDate: date, notes }, { by: ACTOR, reason: notes })
-      pushToast(`Corporate rate for ${code} scheduled`, 'success', `${fmtRate(n)} ${BASE} from ${fmtDate(date)}. ${fmtRate(editing.standardRate)} stays in effect until then.`)
+      pushToast('Corporate rate scheduled', 'success', `Takes effect on ${fmtDate(date)}. The current rate stays in effect until then.`)
       onSaved?.(editing, 'update')
     } else if (editing) {
       updateStandardRate(editing.id, {
         standardRate: n, effectiveDate: date, notes, midMarketRate: midRate, variance: v,
       }, { by: ACTOR, reason: notes })
-      pushToast(`Corporate rate for ${code} updated`, 'success', date > today ? `${fmtRate(n)} ${BASE}, upcoming from ${fmtDate(date)}.` : `${fmtRate(n)} ${BASE}, effective ${fmtDate(date)}.`)
+      pushToast('Corporate rate updated', 'success', date > today ? `Upcoming from ${fmtDate(date)}.` : `Effective ${fmtDate(date)}.`)
       onSaved?.({ ...editing, standardRate: n, effectiveDate: date, notes }, 'update')
     } else {
       const created = addStandardRate({
@@ -143,7 +143,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
         notes,
         status: 'active',
       }, { by: ACTOR, reason: notes })
-      pushToast(`Corporate rate for ${code} created`, 'success', date > today ? `${fmtRate(n)} ${BASE}, upcoming from ${fmtDate(date)}.` : `${fmtRate(n)} ${BASE}, effective ${fmtDate(date)}.`)
+      pushToast('Corporate rate created', 'success', date > today ? `Upcoming from ${fmtDate(date)}.` : `Effective ${fmtDate(date)}.`)
       onSaved?.(created, 'add')
     }
     onClose()
@@ -159,7 +159,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
         icon={isUpdate ? <Pencil size={16} /> : <Plus size={16} />}
         title={isUpdate ? 'Update Corporate Rate' : 'Add Corporate Rate'}
         subtitle={isUpdate
-          ? <>Update the corporate rate for <span className="text-fg" style={{ fontWeight: 600 }}>{code} / {BASE}</span>.</>
+          ? 'Update the corporate rate for this currency pair.'
           : (
             // First thing under the title: what the new rate will be quoted against.
             <span className="inline-flex items-center gap-1.5">
@@ -241,7 +241,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
               <SectionCard icon={<TrendingUp size={16} />} title="Rate">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                   <div>
-                    <LockedField label="Mid-Market Reference" info={CONVERTER_TOGGLE_TOOLTIPS.midMarket} why={`Synced from ${API_PROVIDER} every 24 hours. It can’t be edited here.`}>
+                    <LockedField label="Mid-Market Reference" info={CONVERTER_TOGGLE_TOOLTIPS.midMarket} why={`Synced from ${API_PROVIDER}. It can’t be edited here.`}>
                       {mid
                         ? <span className="tabular-nums truncate">{fmtPairRate(code, mid.rate)}</span>
                         : <span className="text-fg-subtle truncate">Choose a currency to see its mid-market rate</span>}
@@ -266,7 +266,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                     hint={variance != null
                       // Green above mid-market, red below, grey when level.
                       ? <>Variance from mid-market: <span className={variance > 0 ? 'text-success-700' : variance < 0 ? 'text-danger-700' : undefined} style={{ fontWeight: 600 }}>{fmtVariance(n, mid!.rate) ?? fmtSignedPct(variance)}</span></>
-                      : code ? `1 ${code} in ${BASE}` : undefined}
+                      : code ? '1 unit of this currency in your base currency' : undefined}
                   />
                   <div className="space-y-1.5">
                     <label className="label flex items-center gap-1">
@@ -301,7 +301,7 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                 {date > today && rateValid && (
                   <Banner tone="info" className="mt-3" title="This rate is upcoming">
                     {scheduling
-                      ? <>{fmtRate(inEffect!.standardRate)} {BASE} stays in effect until {fmtDate(date)}. This rate shows as Upcoming until then{pending ? `, and replaces the upcoming ${fmtRate(pending.standardRate)} ${BASE}` : ''}.</>
+                      ? <>The current rate stays in effect until {fmtDate(date)}. This rate shows as Upcoming until then{pending ? ', and replaces the upcoming rate' : ''}.</>
                       : <>It takes effect on {fmtDate(date)} and shows as Upcoming until then.</>}
                   </Banner>
                 )}

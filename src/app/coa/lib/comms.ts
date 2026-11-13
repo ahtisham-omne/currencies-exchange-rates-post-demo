@@ -494,7 +494,7 @@ const MID_THREADS: ThreadTemplate[] = [
     party: TREASURY,
     messages: [
       { channel: 'Email', body: 'Which source do you use for the {pair} mid-market reference? We want our figures to agree with yours.' },
-      { channel: 'Email', body: 'Open Exchange Rates, synced every 24 hours. The rate on the pair is the last sync.', outbound: true },
+      { channel: 'Email', body: 'Open Exchange Rates. The rate on the pair is the last sync.', outbound: true },
       { channel: 'Email', body: 'Thanks, we use the same feed.' },
     ],
   },

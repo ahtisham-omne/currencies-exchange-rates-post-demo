@@ -81,7 +81,7 @@ function CountryCell({ row, q }: { row: { flag: string; country: string; region:
 function SyncFailedBadge({ row }: { row: MidRow }) {
   const f = row.syncFailed!
   return (
-    <Tooltip content={`The sync on ${fmtDateTime(f.failedAt)} didn’t return a rate for ${row.code}. This is the rate from ${fmtDateTime(f.lastSyncedAt)}, and it updates at the next successful sync.`} side="top">
+    <Tooltip content={`The sync on ${fmtDateTime(f.failedAt)} didn’t return a rate for this currency. This is the rate from ${fmtDateTime(f.lastSyncedAt)}, and it updates at the next successful sync.`} side="top">
       <Badge tone="warning" className={cn(PARTNER_CHIP_CLS, 'shrink-0 gap-1')}><AlertTriangle size={11} aria-hidden />Sync Failed</Badge>
     </Tooltip>
   )
@@ -96,7 +96,7 @@ export function midColumns(): CoaColumn<MidRow>[] {
       sortValue: r => r.code, searchText: r => [r.code, r.name, r.syncFailed ? 'Sync Failed' : ''], filter: 'text', filterValue: r => `${r.code} ${r.name}`,
     },
     {
-      key: 'rate', label: 'Mid-Market Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: `${RATE_TOOLTIPS.midMarket} Synced every 24 hours.`,
+      key: 'rate', label: 'Mid-Market Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: `${RATE_TOOLTIPS.midMarket} Synced automatically.`,
       render: (r, ctx) => <RateText from={r.code} value={fmtRate(r.rate)} to={BASE} q={ctx.q} strong />,
       sortValue: r => r.rate, searchText: r => fmtRate(r.rate), filter: 'range',
     },
@@ -107,7 +107,7 @@ export function midColumns(): CoaColumn<MidRow>[] {
       sortValue: r => 1 / r.rate, searchText: r => fmtInverse(r.rate), filter: 'range', filterValue: r => 1 / r.rate,
     },
     {
-      key: 'change', label: 'Change (24h)', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.change24h,
+      key: 'change', label: 'Change', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[140px]', info: RATE_TOOLTIPS.change24h,
       // A failed sync has no fresh rate to compare, so no change to show.
       render: r => (r.syncFailed ? <EmptyCell /> : <ChangeCell value={r.change24h} />),
       sortValue: r => (r.syncFailed ? null : r.change24h), searchText: r => (r.syncFailed ? '' : fmtSignedPct(r.change24h)), filter: 'range',

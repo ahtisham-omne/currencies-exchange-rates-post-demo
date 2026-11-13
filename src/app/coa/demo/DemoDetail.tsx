@@ -44,7 +44,7 @@ type Tab = typeof TABS[number]
 const KPIS: DetailKpiDef[] = [
   { key: 'mid', label: 'Mid-market rate', description: 'One unit in the base currency at the provider\'s mid-market rate.', category: 'Rates' },
   { key: 'corporate', label: 'Corporate rate', description: 'The rate your company set for this currency.', category: 'Rates' },
-  { key: 'change', label: 'Change (24h)', description: 'Movement of the mid-market rate over the last day.', category: 'Rates' },
+  { key: 'change', label: 'Change', description: 'Movement of the mid-market rate over the last day.', category: 'Rates' },
   { key: 'open', label: 'Open documents', description: 'Documents in this currency that are still open.', category: 'Usage' },
   { key: 'value', label: 'Total linked value', description: 'The sum of every open document in this currency.', category: 'Usage' },
   { key: 'last', label: 'Last transaction', description: 'The most recent document in this currency.', category: 'Usage' },
@@ -59,7 +59,7 @@ const RANGES = [
   { key: '1y', label: '1Y' }, { key: '5y', label: '5Y' }, { key: 'max', label: 'Max' },
 ]
 const RANGE_DAYS: Record<string, number> = { '1d': 2, '5d': 5, '1m': 30, '1y': 365, '5y': 400, max: 400 }
-const RANGE_LONG: Record<string, string> = { '1d': 'Over last 24 hours', '5d': 'Over last 5 days', '1m': 'Over last 30 days', '1y': 'Over last year', '5y': 'Over last 5 years', max: 'Over full history' }
+const RANGE_LONG: Record<string, string> = { '1d': 'Over last day', '5d': 'Over last 5 days', '1m': 'Over last 30 days', '1y': 'Over last year', '5y': 'Over last 5 years', max: 'Over full history' }
 
 export function DemoDetail({ code }: { code: string }) {
   const navigate = useNavigate()

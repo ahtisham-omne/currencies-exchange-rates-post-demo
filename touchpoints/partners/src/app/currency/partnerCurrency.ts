@@ -99,8 +99,8 @@ const SYNC = (() => {
 
 /** "Updated as of Apr 10, 2026 at 19:30 PKT" */
 export const MID_RATE_UPDATED = `Updated as of ${SYNC}`;
-/** "Synced every 24h from Open Exchange Rates · Updated as of …" */
-export const MID_RATE_SYNC_LINE = `Synced every 24h from ${RATE_PROVIDER} · ${MID_RATE_UPDATED}`;
+/** "Synced from Open Exchange Rates · Updated as of …" */
+export const MID_RATE_SYNC_LINE = `Synced from ${RATE_PROVIDER} · ${MID_RATE_UPDATED}`;
 
 /** When the corporate rates in use took effect: "Effective from Apr 1, 2026". */
 export const CORPORATE_RATE_EFFECTIVE = (() => {

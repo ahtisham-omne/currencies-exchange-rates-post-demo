@@ -261,7 +261,7 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     iconBg: "#F5F3FF",
     iconColor: "#7C3AED",
     subtitle: "Live mid-market rates",
-    tooltip: `The midpoint between global buy and sell prices, synced automatically from Open Exchange Rates every 24 hours. Partner amounts are converted to the base currency (${BASE_CURRENCY}) at this rate.`,
+    tooltip: `The midpoint between global buy and sell prices, synced automatically from Open Exchange Rates. Partner amounts are converted to the base currency (${BASE_CURRENCY}) at this rate.`,
   },
   {
     key: "corporate_rate",
@@ -503,7 +503,7 @@ function kpiSub(key: string, vendors: Vendor[], currencyOf: CurrencyOf): string 
     case "archived_partners": return pctOfPortfolio(kpiNumeric("archived_partners", vendors));
     case "purchase_orders": return `to ${kpiNumeric("total_vendors", vendors)} vendors`;
     case "sales_orders": return `from ${kpiNumeric("total_customers", vendors)} customers`;
-    case "market_rate": return "Open Exchange Rates · every 24h";
+    case "market_rate": return "Open Exchange Rates";
     case "corporate_rate": return "Set in Currency & Exchange Rates";
     default: return "";
   }

@@ -21,7 +21,7 @@ import { recordKey } from '../coa/lib/recordStore'
 import { fmtDate, fmtDateTime, todayIso } from '../coa/lib/utils'
 import { useCurrencies } from '../context/CurrencyContext'
 import { useExchangeRates } from '../context/ExchangeRateContext'
-import { API_PROVIDER, BASE_CURRENCY_NAME, LAST_SYNC, corporateRateInEffect, upcomingRateOf } from '../data/exchangeRates'
+import { API_PROVIDER, LAST_SYNC, corporateRateInEffect, upcomingRateOf } from '../data/exchangeRates'
 import type { Currency } from '../data/currencies'
 import { CURRENCY_TOOLTIPS, RATE_TOOLTIPS } from '../utils/rateCopy'
 import { auditTooltips } from './auditColumns'
@@ -54,7 +54,7 @@ export function CurrencyDetailPage() {
   const lifecycle = useCurrencyLifecycle()
   const c = getCurrency(code)
   const [tab, setTab] = useDetailTab<Tab>(TABS, code)
-  const [fullscreen, toggleFullscreen] = useDetailFullView('currencyDetail.fullView', tab, { linked: true })
+  const [fullscreen, toggleFullscreen] = useDetailFullView('currencyDetail.fullView', tab)
   const key = recordKey('currency', code)
   // What the record tabs open with, derived from the currency (CoA's lib/notes
   // and seeded attachments), read by each tab and the count on it alike.
@@ -124,7 +124,7 @@ export function CurrencyDetailPage() {
                       icon={<ArrowLeftRight size={14} />}
                       onClick={() => { close(); setCorporate() }}
                       disabled={c.isBaseCurrency}
-                      disabledReason={`${c.code} is the base currency. Corporate rates are set for other currencies against it.`}
+                      disabledReason="This is the base currency. Corporate rates are set for other currencies against it."
                     >
                       {record ? 'Update Corporate Rate' : 'Set Corporate Rate'}
                     </MenuItem>
@@ -132,7 +132,7 @@ export function CurrencyDetailPage() {
                       icon={<Download size={14} />}
                       onClick={() => { close(); exportLinkedDocs(c.code, c.decimalPlaces, docs) }}
                       disabled={docs.length === 0}
-                      disabledReason={`${c.code} is on no open transactions, so there is nothing to export.`}
+                      disabledReason="This currency is on no open transactions, so there is nothing to export."
                     >
                       Export Linked Transactions
                     </MenuItem>
@@ -217,7 +217,7 @@ function DashboardTab({ c, mid, corporate, upcoming }: {
               <div className="min-w-0"><DashInfoLabel tooltip={CURRENCY_TOOLTIPS.numericCode}>ISO Numeric Code</DashInfoLabel><InfoValue className="tabular-nums">{c.numericCode}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel align="right" tooltip={CURRENCY_TOOLTIPS.decimals}>Decimal Places</DashInfoLabel><InfoValue className="tabular-nums">{c.decimalPlaces}</InfoValue></div>
               <div className="min-w-0">
-                <DashInfoLabel tooltip={`How a large amount is written in ${c.code}: the thousand and decimal separators and where the symbol goes, as used in ${preview.place}.`}>Format Preview</DashInfoLabel>
+                <DashInfoLabel tooltip="How a large amount is written in this currency: the thousand and decimal separators and where the symbol goes.">Format Preview</DashInfoLabel>
                 <InfoValue className="tabular-nums"><span dir="ltr">{preview.text}</span></InfoValue>
               </div>
               <div className="min-w-0">
@@ -236,7 +236,7 @@ function DashboardTab({ c, mid, corporate, upcoming }: {
             </InfoAuditGrid>
           </DashInfoCard>
 
-          <DashInfoCard title="Exchange Rate" icon={ArrowLeftRight} tooltip={`Base currency: ${BASE} (${BASE_CURRENCY_NAME}).`}>
+          <DashInfoCard title="Exchange Rate" icon={ArrowLeftRight} tooltip="Rates for 1 unit of this currency in your base currency.">
             <InfoGrid>
               <div className="min-w-0">
                 <DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-Market Rate</DashInfoLabel>

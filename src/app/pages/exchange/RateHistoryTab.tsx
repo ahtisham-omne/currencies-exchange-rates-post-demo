@@ -36,7 +36,7 @@ export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: s
     },
     {
       key: 'rate', label: 'Rate Value', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]',
-      info: `One ${code} in the base currency.`,
+      info: 'One unit of this currency in your base currency.',
       render: (r, ctx) => <span className="text-sm font-medium text-slate-700 tabular-nums whitespace-nowrap"><Marked text={fmtRate(r.rate)} q={ctx.q} /></span>,
       sortValue: r => r.rate, searchText: r => fmtRate(r.rate), filter: 'range',
     },

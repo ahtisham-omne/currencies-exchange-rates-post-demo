@@ -27,7 +27,7 @@ const CORPORATE_NOTES = [
 ]
 
 const MID_NOTES = [
-  () => `Rates come from ${API_PROVIDER} every 24 hours. On market holidays the last rate carries forward.`,
+  () => `Rates come from ${API_PROVIDER}. On market holidays the last rate carries forward.`,
   () => 'Use the corporate rate on transactions. This rate is the reference the variance is measured against.',
   (pair: string) => `${pair} moved more than usual this month. Nothing to do on this side; the variance alert on the corporate rate covers it.`,
 ]

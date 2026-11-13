@@ -14,7 +14,7 @@ export const RATE_TOOLTIPS = {
   corporate:
     "Fixed rate set by your company. Applies until a new rate takes effect.",
   inverse:
-    "The value of 1 unit of your base currency in this currency.\n\nExample: If 1 AED equals 75.8400 PKR, the inverse rate is 1 PKR = 0.0132 AED.",
+    "The value of 1 unit of your base currency in this currency.\n\nExample: If 1 AED equals 75.8400 in your base currency, the inverse rate is 0.0132 AED.",
   change24h:
     "How much the rate moved since the last sync.",
   rateType:
@@ -26,11 +26,11 @@ export const RATE_TOOLTIPS = {
   upcoming:
     "A rate saved for a later date. The current rate stays in effect until then.",
   variance:
-    "How far the corporate rate is from the mid-market rate, shown in your base currency and as a percentage.\n\nExample: A corporate rate of 279.0000 PKR against a mid-market rate of 278.5200 PKR shows +0.4800 PKR (+0.17%).",
+    "The difference between the corporate rate and the mid-market rate, in your base currency and as a percentage. Positive means the corporate rate is higher; negative means it’s lower. Updated each time the mid-market rate syncs.\n\nExample: A corporate rate of 255 against a mid-market rate of 250 shows +5 (+2%). At 245, it shows −5 (−2%).",
   effectiveDate:
     "Date from which this rate is applicable.",
   totalValueAllDocs:
-    "The combined amount of this currency’s active transactions: open, pending and overdue. Drafts aren’t counted.",
+    "The combined amount of this currency’s active transactions. Drafts, and finished, cancelled or archived ones, aren’t counted.",
   documentTypeTotal:
     "Sum of all active transactions of this type, in this currency.",
 } as const;
@@ -39,7 +39,7 @@ export const RATE_TOOLTIPS = {
 // The column headers say the same in RATE_TOOLTIPS.inverse. The "Example:" line
 // renders on its own line in blue (Tooltip's TooltipText).
 export const INVERSE_BADGE_TOOLTIP =
-  "Show the inverse rate: the value of 1 unit of your base currency in this currency.\n\nExample: If 1 AED equals 75.8400 PKR, the inverse rate is 1 PKR = 0.0132 AED.";
+  "Show the inverse rate: the value of 1 unit of your base currency in this currency.\n\nExample: If 1 AED equals 75.8400 in your base currency, the inverse rate is 0.0132 AED.";
 
 
 export const CONVERTER_SUBTITLE =
@@ -47,7 +47,7 @@ export const CONVERTER_SUBTITLE =
 
 // The converter's rate toggles say what the listing's columns say.
 export const CONVERTER_TOGGLE_TOOLTIPS = {
-  midMarket: `${RATE_TOOLTIPS.midMarket} Synced every 24 hours.`,
+  midMarket: `${RATE_TOOLTIPS.midMarket} Synced automatically.`,
   corporate: RATE_TOOLTIPS.corporate,
 } as const;
 

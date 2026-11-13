@@ -97,5 +97,5 @@ export function exportLinkedDocs(code: string, decimals: number, docs: LinkedDoc
     docs.map(d => [d.number, label(d.type), d.party, d.status, d.date, fmtAmount(d.amount, decimals)]),
     `${code.toLowerCase()}_linked_transactions.csv`,
   )
-  pushToast('CSV exported', 'success', `${docs.length} linked ${docs.length === 1 ? 'transaction' : 'transactions'} in ${code}.`)
+  pushToast('CSV exported', 'success', `${docs.length} linked ${docs.length === 1 ? 'transaction' : 'transactions'}.`)
 }
