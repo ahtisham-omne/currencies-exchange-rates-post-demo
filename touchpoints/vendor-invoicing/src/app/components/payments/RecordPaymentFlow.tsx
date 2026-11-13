@@ -85,7 +85,17 @@ import { PrimaryPill } from './PrimaryPill';
 import { renderPaymentStatus, paymentStatusLabel } from '@/app/components/PaymentDataTable';
 import { vendorPaymentMethods, genericPaymentMethods, methodSummary, methodDataRows, type VendorPaymentMethod } from '@/app/data/vendorPaymentMethods';
 import type { Invoice } from '@/app/data/mockInvoices';
-import { PAY_FROM_ACCOUNTS, PAYMENT_METHODS, accountTypeForMethod, accountBalanceLabel, type Payment } from '@/app/data/mockPayments';
+import { PAY_FROM_ACCOUNTS, PAYMENT_METHODS, accountTypeForMethod, accountBalanceLabel, accountsForCurrency, vendorPaymentCurrency, type Payment } from '@/app/data/mockPayments';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { formatMoney } from '@/app/currency/money';
+import { rateOn, toBase } from '@/app/currency/rates';
+import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { exchangeDifference, stampPaymentRate, toPaymentBase } from '@/app/currency/paymentFx';
+import { useApPermissions } from '@/app/hooks/useApSettings';
+import { PaymentCurrencyField, PaymentRateField } from '@/app/components/currency/PaymentCurrencyFields';
+import { ExchangeDifferenceLine, signedBase } from '@/app/components/currency/ExchangeDifference';
+import { paidRateText } from '@/app/currency/paidRate';
 import { mockVendors, partnerVendorUrl, resolveRegistryVendor } from '@/app/data/mockVendors';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 import { Switch } from '@/app/components/ui/switch';
@@ -193,7 +203,78 @@ const fmtDeadline = (iso: string) => {
  *  the payment revives the window; the expired state stays visible and
  *  carries a one-click discounted amount for the negotiated-after-the-fact
  *  case. Shared by both invoice tables. */
+/** A table header with its ⓘ (Currency & Exchange Rates columns). */
+/** Which currency's invoices this payment settles, for a vendor with open
+ *  invoices in more than one (one payment can't mix currencies). The
+ *  partner segmented style: flag, code, open count. */
+function InvoiceCurrencySwitch({
+  counts,
+  value,
+  onChange,
+}: {
+  counts: { code: string; count: number }[];
+  value: string;
+  onChange: (code: string) => void;
+}) {
+  return (
+    <span className="ml-auto inline-flex items-center gap-2">
+      <span className="text-[11px] text-slate-500 inline-flex items-center gap-1" style={{ fontWeight: 500 }}>
+        Invoice Currency
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Info className="w-3 h-3 text-slate-300 cursor-help" />
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-[240px] p-2.5 bg-white border border-border rounded-lg shadow-md z-[300]">
+            <p className="text-[11px] text-slate-500 leading-snug">
+              This vendor has open invoices in more than one currency. One payment can’t mix currencies, so each currency is paid separately.
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </span>
+      <span role="radiogroup" aria-label="Invoice currency" className="inline-flex items-stretch h-7 rounded-md border border-slate-200 bg-white overflow-hidden text-[11px]">
+        {counts.map(({ code, count }, i) => {
+          const on = code === value;
+          return (
+            <button
+              key={code}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => { if (!on) onChange(code); }}
+              className={`inline-flex items-center gap-1.5 px-2.5 cursor-pointer transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${
+                on ? 'bg-primary/[0.06] text-primary' : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <CurrencyFlag code={code} size={14} />
+              <span style={{ fontWeight: 600 }}>{code}</span>
+              <span className={on ? 'text-primary/70' : 'text-slate-400'} style={{ fontWeight: 500 }}>{count}</span>
+            </button>
+          );
+        })}
+      </span>
+    </span>
+  );
+}
+
+function FxHeader({ children, tip }: { children: React.ReactNode; tip: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 justify-end">
+      {children}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Info className="w-3 h-3 text-slate-300 cursor-help" />
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[240px] p-2.5 bg-white border border-border rounded-lg shadow-md">
+          <p className="text-[11px] text-slate-500 leading-snug" style={{ fontWeight: 400 }}>{tip}</p>
+        </TooltipContent>
+      </Tooltip>
+    </span>
+  );
+}
+
 function DiscountCell({ inv, paymentDate, onUseDiscounted }: { inv: Invoice; paymentDate: string; onUseDiscounted: (amount: number) => void }) {
+  // In the invoice's own currency (Currency & Exchange Rates), not the module's $.
+  const fmt = (n: number) => formatMoney(n, inv.currency);
   const dTerms = discountTermsFor(inv);
   if (!dTerms) return null;
   const asOf = paymentDate || undefined;
@@ -795,12 +876,21 @@ export function RecordPaymentFlow({
   const paySeededVendors = Array.from(
     new Set(invoices.filter((i) => paySeededIds.includes(i.id)).map((i) => i.vendor)),
   );
+  // Currency & Exchange Rates: one payment can't mix currencies, so a
+  // vendor's payment settles invoices in one currency. A seed keeps the
+  // currency of its first invoice per vendor.
+  const invCurrency = (inv: Pick<Invoice, 'currency'>) => (inv.currency || BASE_CURRENCY).toUpperCase();
+  const paySeededCurrency: Record<string, string> = {};
+  paySeededIds.forEach((id) => {
+    const inv = invoices.find((i) => i.id === id);
+    if (inv && !paySeededCurrency[inv.vendor]) paySeededCurrency[inv.vendor] = invCurrency(inv);
+  });
   const paySeededLines: Record<string, LineState> = {};
   if (paySeededVendors.length > 0) {
     invoices.forEach((inv) => {
       if (paySeededVendors.includes(inv.vendor)) {
         paySeededLines[inv.id] = {
-          selected: paySeededIds.includes(inv.id),
+          selected: paySeededIds.includes(inv.id) && invCurrency(inv) === paySeededCurrency[inv.vendor],
           // Amounts start EMPTY (Eli 9/8): recording a payment is a
           // conscious action — the user types it or clicks Pay in full.
           amount: 0,
@@ -1097,6 +1187,10 @@ export function RecordPaymentFlow({
     });
     return set;
   }, [payments]);
+  // The invoice currency each vendor's payment settles (Currency & Exchange
+  // Rates: one payment can't mix currencies). Unset means the vendor's own
+  // currency, else the earliest-due open invoice's.
+  const [invoiceCurrencyByVendor, setInvoiceCurrencyByVendor] = useState<Record<string, string>>(paySeededCurrency);
   const vendorRows = useMemo(() => {
     const byVendor = new Map<string, { open: Invoice[]; closed: Invoice[]; due: number }>();
     invoices.forEach((inv) => {
@@ -1114,15 +1208,39 @@ export function RecordPaymentFlow({
       byVendor.set(inv.vendor, entry);
     });
     return Array.from(byVendor.entries())
-      .map(([vendor, v]) => ({
-        vendor,
-        open: v.open.sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-        closed: v.closed.sort((a, b) => b.dueDate.localeCompare(a.dueDate)),
-        due: Math.round(v.due * 100) / 100,
-        terms: mockVendors.find((mv) => mv.vendorName === vendor)?.paymentTerms ?? 'Net 30',
-        currency: v.open[0]?.currency ?? v.closed[0]?.currency ?? 'USD',
-      }));
-  }, [invoices, mode, committedByRun, scheduledInvoiceNumbers]);
+      .map(([vendor, v]) => {
+        const allOpen = v.open.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+        // One payment can't mix currencies (Currency & Exchange Rates): a
+        // vendor with open invoices in two currencies pays one currency's
+        // invoices per payment; the rest wait for a payment of their own.
+        const currencyCounts: { code: string; count: number }[] = [];
+        allOpen.forEach((inv) => {
+          const c = currencyCounts.find((x) => x.code === invCurrency(inv));
+          if (c) c.count += 1;
+          else currencyCounts.push({ code: invCurrency(inv), count: 1 });
+        });
+        const codes = currencyCounts.map((c) => c.code);
+        const own = vendorPaymentCurrency(vendor).toUpperCase();
+        const picked = invoiceCurrencyByVendor[vendor];
+        const currency = picked && codes.includes(picked)
+          ? picked
+          : codes.includes(own)
+            ? own
+            : codes[0] ?? (v.closed[0] ? invCurrency(v.closed[0]) : own);
+        const open = codes.length > 1 ? allOpen.filter((inv) => invCurrency(inv) === currency) : allOpen;
+        return {
+          vendor,
+          open,
+          closed: v.closed.sort((a, b) => b.dueDate.localeCompare(a.dueDate)),
+          due: Math.round(open.reduce((sum, inv) => sum + inv.outstandingBalance, 0) * 100) / 100,
+          terms: mockVendors.find((mv) => mv.vendorName === vendor)?.paymentTerms ?? 'Net 30',
+          currency,
+          /** Open invoices per currency, when the vendor has more than one. */
+          currencyCounts: codes.length > 1 ? currencyCounts : [],
+        };
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoices, mode, committedByRun, scheduledInvoiceNumbers, invoiceCurrencyByVendor]);
 
   // Invoice-level filters (due-date range + balance-due range) applied to a
   // vendor's open invoices for both inclusion and the expanded preview.
@@ -1144,7 +1262,7 @@ export function RecordPaymentFlow({
     const known = new Set(vendorRows.map((r) => r.vendor));
     const extra = mockVendors
       .filter((mv) => !known.has(mv.vendorName))
-      .map((mv) => ({ vendor: mv.vendorName, open: [] as Invoice[], closed: [] as Invoice[], due: 0, terms: mv.paymentTerms ?? 'Net 30', currency: 'USD' }));
+      .map((mv) => ({ vendor: mv.vendorName, open: [] as Invoice[], closed: [] as Invoice[], due: 0, terms: mv.paymentTerms ?? 'Net 30', currency: vendorPaymentCurrency(mv.vendorName), currencyCounts: [] as { code: string; count: number }[] }));
     return [...vendorRows, ...extra];
   }, [vendorRows, mode, includePaid]);
 
@@ -1182,15 +1300,19 @@ export function RecordPaymentFlow({
     const arr = [...filteredVendorRows];
     const today = localTodayIso();
     const overdueCount = (r: (typeof arr)[number]) => r.open.filter((inv) => inv.dueDate && inv.dueDate < today).length;
+    // Vendors settle in different currencies, so amounts compare in the base
+    // currency, each invoice at its own rate (Currency & Exchange Rates).
+    const dueBase = new Map(arr.map((r) => [r.vendor, r.open.reduce((sum, inv) => sum + toInvoiceBase(inv, inv.outstandingBalance), 0)]));
+    const due = (r: (typeof arr)[number]) => dueBase.get(r.vendor) ?? 0;
     switch (sortKey) {
-      case 'dueAsc': arr.sort((a, b) => a.due - b.due); break;
+      case 'dueAsc': arr.sort((a, b) => due(a) - due(b)); break;
       case 'dueDate': arr.sort((a, b) => (a.open[0]?.dueDate || '9999').localeCompare(b.open[0]?.dueDate || '9999')); break;
       case 'dueDateDesc': arr.sort((a, b) => (b.open[0]?.dueDate || '0000').localeCompare(a.open[0]?.dueDate || '0000')); break;
-      case 'overdueDesc': arr.sort((a, b) => overdueCount(b) - overdueCount(a) || b.due - a.due); break;
-      case 'invoicesDesc': arr.sort((a, b) => b.open.length - a.open.length || b.due - a.due); break;
+      case 'overdueDesc': arr.sort((a, b) => overdueCount(b) - overdueCount(a) || due(b) - due(a)); break;
+      case 'invoicesDesc': arr.sort((a, b) => b.open.length - a.open.length || due(b) - due(a)); break;
       case 'vendorAZ': arr.sort((a, b) => a.vendor.localeCompare(b.vendor)); break;
       case 'vendorZA': arr.sort((a, b) => b.vendor.localeCompare(a.vendor)); break;
-      default: arr.sort((a, b) => b.due - a.due);
+      default: arr.sort((a, b) => due(b) - due(a));
     }
     return arr;
   }, [filteredVendorRows, sortKey]);
@@ -1410,9 +1532,45 @@ export function RecordPaymentFlow({
   const prepayVendor = mode === 'prepay' ? selectedVendors[0] : undefined;
   // Currency is inherited from the vendor and locked for the prepayment.
   const prepayCurrency = useMemo(
-    () => (prepayVendor ? mockVendors.find((v) => v.vendorName === prepayVendor)?.currency ?? 'USD' : 'USD'),
+    () => (prepayVendor ? vendorPaymentCurrency(prepayVendor) : BASE_CURRENCY),
     [prepayVendor],
   );
+
+  // ── Currency & Exchange Rates ─────────────────────────────────────────
+  // Every amount on a vendor's card is in its invoices' currency (`fmt`
+  // shadows the module's $ formatter). The payment goes out in the vendor's
+  // currency or the base currency (Payment Currency); its rate is the
+  // invoices' currency on the payment date, which a role allowed to
+  // (Settings, Permissions) may change to the bank's. Settling each invoice
+  // at it, against the invoice's own rate, leaves the exchange difference.
+  const apPerms = useApPermissions();
+  const rowCurrency = (vendor?: string) =>
+    vendor ? (baseRows.find((r) => r.vendor === vendor)?.currency ?? vendorPaymentCurrency(vendor)) : BASE_CURRENCY;
+  const flowCurrency = mode === 'prepay' ? prepayCurrency : rowCurrency(activePayVendor);
+  const fmt = (n: number) => formatMoney(n, flowCurrency);
+  const fmtIn = (code: string) => (n: number) => formatMoney(n, code);
+  const [payCurrencyByVendor, setPayCurrencyByVendor] = useState<Record<string, string>>({});
+  const [payRateTypedByVendor, setPayRateTypedByVendor] = useState<Record<string, string | null>>({});
+  /** The currency the payment to this vendor goes out in. */
+  const payCurrencyFor = (vendor?: string) =>
+    mode === 'prepay' ? prepayCurrency : (vendor && payCurrencyByVendor[vendor]) || rowCurrency(vendor);
+  /** The invoices' currency, the one the payment's rate converts. */
+  const settledCurrencyFor = (vendor?: string) => (mode === 'prepay' ? prepayCurrency : rowCurrency(vendor));
+  const payQuoteFor = (vendor?: string) => {
+    const cur = settledCurrencyFor(vendor);
+    return isBaseCurrency(cur) ? 1 : rateOn(cur, paymentDate, 'mid').rate;
+  };
+  /** The payment's rate: the bank's when one was entered (and the role may), else the table's. */
+  const payRateFor = (vendor?: string) => {
+    const quote = payQuoteFor(vendor) ?? 1;
+    const typed = vendor ? payRateTypedByVendor[vendor] : null;
+    const n = typed != null && typed.trim() !== '' ? Number(typed) : null;
+    return apPerms.canChangePaymentRate && n != null && n > 0 ? n : quote;
+  };
+  const payRateEditedFor = (vendor?: string) => payRateFor(vendor) !== (payQuoteFor(vendor) ?? 1);
+  /** An amount in the invoices' currency, as it goes out in the payment currency. */
+  const inPayCurrency = (vendor: string | undefined, n: number) =>
+    payCurrencyFor(vendor) === settledCurrencyFor(vendor) ? n : toBase(n, payRateFor(vendor));
   // Pre-invoices belonging to the chosen vendor (proformas billed before a real
   // invoice exists). mockInvoices marks these with type 'Pre-Invoice'.
   const vendorPreInvoices = useMemo(
@@ -1835,9 +1993,13 @@ export function RecordPaymentFlow({
   // standalone advances only. Prepayments anchored to a pre-invoice are
   // consumed when the receiving invoice is created (reconciliation), so
   // they never surface at payment time.
+  // Vendor credit draws only in the currency of the invoices it pays
+  // (Currency & Exchange Rates: one payment can't mix currencies).
+  const creditInRowCurrency = (p: Payment, vendor: string) =>
+    mode !== 'pay' || (p.currency || BASE_CURRENCY).toUpperCase() === rowCurrency(vendor).toUpperCase();
   const prepayAvailableFor = (vendor: string) =>
     payments
-      .filter((p) => p.type === 'Prepayment' && p.vendor === vendor && !p.preInvoiceId && (p.unappliedAmount ?? 0) > 0)
+      .filter((p) => p.type === 'Prepayment' && p.vendor === vendor && !p.preInvoiceId && (p.unappliedAmount ?? 0) > 0 && creditInRowCurrency(p, vendor))
       .reduce((s, p) => s + (p.unappliedAmount ?? 0), 0);
 
   // ── Prepayment anchoring, retired at payment time (Eli, 8/31/26) ────
@@ -1854,7 +2016,7 @@ export function RecordPaymentFlow({
   // oldest first — the selectable list in the source picker (7/22/26).
   const onAccountPrepaymentsFor = (vendor: string) =>
     payments
-      .filter((p) => p.type === 'Prepayment' && p.vendor === vendor && !p.preInvoiceId && (p.unappliedAmount ?? 0) > 0.004)
+      .filter((p) => p.type === 'Prepayment' && p.vendor === vendor && !p.preInvoiceId && (p.unappliedAmount ?? 0) > 0.004 && creditInRowCurrency(p, vendor))
       .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
 
   const drawsFor = (vendor: string) => prepayDraws[vendor] ?? {};
@@ -2001,10 +2163,18 @@ export function RecordPaymentFlow({
 
   // Pay-from accounts eligible for the chosen method.
   const accountType = accountTypeForMethod(method);
+  // …and in the payment currency or the base currency (Currency & Exchange Rates).
+  const payCurrencyNow = payCurrencyFor(mode === 'prepay' ? prepayVendor : activePayVendor);
+  const currencyAccounts = accountsForCurrency(PAY_FROM_ACCOUNTS, payCurrencyNow);
   const availableAccounts = accountType === 'any'
-    ? PAY_FROM_ACCOUNTS
-    : PAY_FROM_ACCOUNTS.filter((a) => a.type === accountType);
-  const bank = availableAccounts.find((b) => b.id === bankAccount) ?? availableAccounts[0] ?? PAY_FROM_ACCOUNTS[0];
+    ? currencyAccounts
+    : currencyAccounts.filter((a) => a.type === accountType);
+  const bank = availableAccounts.find((b) => b.id === bankAccount) ?? availableAccounts[0] ?? currencyAccounts[0] ?? PAY_FROM_ACCOUNTS[0];
+  // A payment currency the chosen account can't pay in moves the pick to one that can.
+  useEffect(() => {
+    if (!currencyAccounts.some((a) => a.id === bankAccount) && bank) setBankAccount(bank.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payCurrencyNow]);
   // Vendor-category A/P default (pay mode) — drives the "auto-derived" indicator
   // and the modal's reset-to-default affordance, exactly like invoicing.
   const apVendorCategory = mockVendors.find((v) => v.vendorName === selectedVendors[0])?.category ?? '';
@@ -2076,19 +2246,46 @@ export function RecordPaymentFlow({
   };
   // Multi-vendor runs draw from PER-VENDOR accounts — an account reads
   // low when the sum of ITS vendors' nets exceeds its balance.
+  // Compared in the account's own currency (Currency & Exchange Rates): a
+  // base-currency account pays a foreign payment at the payment's rate.
+  const inAccountCurrency = (vendor: string, net: number, accountCurrency: string) =>
+    accountCurrency === settledCurrencyFor(vendor) ? net : toBase(net, payRateFor(vendor));
+  /** The whole run's cash as text: in its payment currency when there is one,
+   *  else in the base currency at each payment's rate (Currency & Exchange Rates). */
+  /** Recorded payments' total: in their currency when they share one, else in
+   *  the base currency at each payment's own rate. */
+  const fmtRecordsTotal = (recs: Payment[]) => {
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const curs = Array.from(new Set(recs.map((r) => r.currency)));
+    return curs.length === 1
+      ? formatMoney(r2(recs.reduce((t, r) => t + r.amount, 0)), curs[0])
+      : formatMoney(r2(recs.reduce((t, r) => t + toPaymentBase(r, r.amount), 0)), BASE_CURRENCY);
+  };
+  const grandPayText = () => {
+    if (mode !== 'pay') return grandPayText();
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const curs = Array.from(new Set(selectedRows.map((r) => payCurrencyFor(r.vendor))));
+    if (curs.length === 1) {
+      return formatMoney(r2(selectedRows.reduce((t, r) => t + inPayCurrency(r.vendor, vendorMath(r).net), 0)), curs[0]);
+    }
+    return formatMoney(r2(selectedRows.reduce((t, r) => t + toBase(vendorMath(r).net, payRateFor(r.vendor)), 0)), BASE_CURRENCY);
+  };
   const lowBalance = isMultiVendorPay
     ? (() => {
         const perAccount = new Map<string, number>();
         selectedRows.forEach((row) => {
           const acc = cfgFor(row.vendor).bankAccount;
-          perAccount.set(acc, (perAccount.get(acc) ?? 0) + vendorMath(row).net);
+          const accCur = PAY_FROM_ACCOUNTS.find((x) => x.id === acc)?.currency ?? BASE_CURRENCY;
+          perAccount.set(acc, (perAccount.get(acc) ?? 0) + inAccountCurrency(row.vendor, vendorMath(row).net, accCur));
         });
         return [...perAccount.entries()].some(([id, total]) => {
           const a = PAY_FROM_ACCOUNTS.find((x) => x.id === id);
           return !!a && a.balance < total;
         });
       })()
-    : bank && bank.balance < grand.net;
+    : bank && bank.balance < (mode === 'pay'
+        ? selectedRows.reduce((t, row) => t + inAccountCurrency(row.vendor, vendorMath(row).net, bank.currency), 0)
+        : inAccountCurrency(prepayVendor ?? '', grand.net, bank.currency));
 
   // A future-dated payment is SCHEDULED, not posted: nothing hits the GL and the
   // invoice stays outstanding until that date arrives. (Pay mode only.)
@@ -2099,6 +2296,29 @@ export function RecordPaymentFlow({
   if (!open) return null;
 
   // ── Selection helpers ──
+  // Pay a vendor's invoices in another currency instead (one payment can't
+  // mix currencies). What was picked, the payment currency, the rate and the
+  // credit drawn all belonged to the other currency, so they reset.
+  const switchInvoiceCurrency = (vendor: string, code: string) => {
+    const drop = <T,>(prev: Record<string, T>) => {
+      const next = { ...prev };
+      delete next[vendor];
+      return next;
+    };
+    setInvoiceCurrencyByVendor((prev) => ({ ...prev, [vendor]: code }));
+    setLines((prev) => {
+      const next = { ...prev };
+      invoices.forEach((inv) => {
+        if (inv.vendor === vendor && next[inv.id]?.selected) next[inv.id] = { ...next[inv.id], selected: false, amount: 0, prepayApplied: 0 };
+      });
+      return next;
+    });
+    setPayCurrencyByVendor(drop);
+    setPayRateTypedByVendor(drop);
+    setPrepayDraws(drop);
+    setPrepayApply(drop);
+  };
+
   const setVendorLines = (row: (typeof baseRows)[number], selected: boolean) => {
     setLines((prev) => {
       const next = { ...prev };
@@ -2414,6 +2634,11 @@ export function RecordPaymentFlow({
           preInvoiceId: preInvNumber,
           autoApply: preInvNumber ? true : undefined,
           currency: prepayCurrency,
+          // The rate it was paid at (Currency & Exchange Rates): what the
+          // vendor credit banner shows when it is applied later.
+          ...(isBaseCurrency(prepayCurrency)
+            ? {}
+            : { exchangeRate: payRateFor(prepayVendor), rateType: 'mid' as const, rateDate: paymentDate, rateEdited: payRateEditedFor(prepayVendor) || undefined }),
           reference: reference || '',
           memo: memo || 'Vendor prepayment',
           printMemo: printMemo.trim() || defaultPrintMemo,
@@ -2541,13 +2766,20 @@ export function RecordPaymentFlow({
         paymentMethod: rowMethod,
         bankAccount: rowBank,
         apAccount: rowAp,
-        amount: m.net,
+        // In the payment currency (Currency & Exchange Rates): the invoices'
+        // currency, or the base currency at the payment's rate. The applied
+        // invoice amounts stay in the invoices' currency.
+        amount: inPayCurrency(row.vendor, m.net),
         appliedInvoices: m.selectedInvs.map((inv) => ({ invoiceNumber: inv.invoiceNumber, amount: settledFor(inv) })),
         // Posted only when recorded for today/past; a future-dated payment is
         // Scheduled — nothing applies and the invoice stays outstanding until then.
-        appliedAmount: posted ? m.net : 0,
+        appliedAmount: posted ? inPayCurrency(row.vendor, m.net) : 0,
         unappliedAmount: 0,
-        currency: 'USD',
+        currency: payCurrencyFor(row.vendor),
+        ...(payCurrencyFor(row.vendor) !== settledCurrencyFor(row.vendor) ? { settledCurrency: settledCurrencyFor(row.vendor) } : {}),
+        ...(isBaseCurrency(settledCurrencyFor(row.vendor))
+          ? {}
+          : { exchangeRate: payRateFor(row.vendor), rateType: 'mid' as const, rateDate: today, rateEdited: payRateEditedFor(row.vendor) || undefined }),
         reference: reference || '',
         memo: [memo || `Manual payment · ${m.selectedInvs.length} invoice${m.selectedInvs.length === 1 ? '' : 's'}`, ...lateNotes].join(' · '),
         printMemo: printMemo.trim() || defaultPrintMemo,
@@ -2805,8 +3037,16 @@ export function RecordPaymentFlow({
         // C08-X4): the vendor card counts what step 2 will actually list,
         // including the run-lock and scheduled-payment exclusions — the
         // "10 on the card, 7 in the list" bridge gap is gone.
+        // One payment can't mix currencies (Currency & Exchange Rates): the
+        // card counts the invoices in the currency this payment settles.
+        const payCur = vendorRows.find((r) => r.vendor === v)?.currency;
         const openList = vinv.filter(
-          (i) => i.type !== 'Pre-Invoice' && isPayable(i) && !committedByRun.has(i.id) && !scheduledInvoiceNumbers.has(i.invoiceNumber),
+          (i) =>
+            i.type !== 'Pre-Invoice' &&
+            isPayable(i) &&
+            !committedByRun.has(i.id) &&
+            !scheduledInvoiceNumbers.has(i.invoiceNumber) &&
+            (!payCur || invCurrency(i) === payCur),
         );
         const openInvoices = openList.length;
         const openPreInvoices = vinv.filter(
@@ -2823,7 +3063,7 @@ export function RecordPaymentFlow({
           outstanding,
           overdue,
           terms: mv?.paymentTerms ?? 'Net 30',
-          currency: openList[0]?.currency ?? 'USD',
+          currency: payCur ?? openList[0]?.currency ?? vendorPaymentCurrency(v),
         };
       })
       .sort((a, b) => {
@@ -2835,7 +3075,7 @@ export function RecordPaymentFlow({
         return a.vendor.localeCompare(b.vendor);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoices, payments, committedByRun, scheduledInvoiceNumbers]);
+  }, [invoices, payments, committedByRun, scheduledInvoiceNumbers, vendorRows]);
   const chosenVendor = selectedVendors[0] ?? '';
   const chosenVendorOpt = vendorOptions.find((o) => o.vendor === chosenVendor);
   // Step 2 auto-recommend (Eli 7/24/26): if the user already ticked invoices in
@@ -3044,7 +3284,7 @@ export function RecordPaymentFlow({
             {m.applied > 0 && (
               <span className="inline-flex items-center gap-1 text-[11px] text-warning" style={{ fontWeight: 600 }}>
                 <span className="w-1.5 h-1.5 rounded-full bg-warning" />
-                {fmt(m.applied)} credit applied
+                {fmtIn(row.currency)(m.applied)} credit applied
               </span>
             )}
           </div>
@@ -3061,9 +3301,9 @@ export function RecordPaymentFlow({
                     </span>
                   </div>
                   <div className="text-right shrink-0 ml-2">
-                    <span className="text-[12px] text-slate-800 " style={{ fontWeight: 600 }}>{fmt(l.amount || 0)}</span>
+                    <span className="text-[12px] text-slate-800 " style={{ fontWeight: 600 }}>{fmtIn(row.currency)(l.amount || 0)}</span>
                     {(l.prepayApplied || 0) > 0 && (
-                      <p className="text-[10px] text-purple-600 mt-0.5 " style={{ fontWeight: 500 }}>{fmt(l.prepayApplied || 0)} prepayment</p>
+                      <p className="text-[10px] text-purple-600 mt-0.5 " style={{ fontWeight: 500 }}>{fmtIn(row.currency)(l.prepayApplied || 0)} prepayment</p>
                     )}
                   </div>
                 </div>
@@ -3077,7 +3317,7 @@ export function RecordPaymentFlow({
               </div>
               <div>
                 <p className="text-[10px] text-slate-400 leading-none" style={{ fontWeight: 500 }}>Total Payment</p>
-                <p className="text-[14px] text-slate-800 mt-0.5" style={{ fontWeight: 600 }}>{fmt(m.net)}</p>
+                <p className="text-[14px] text-slate-800 mt-0.5" style={{ fontWeight: 600 }}>{fmtIn(row.currency)(m.net)}</p>
               </div>
             </div>
             <div className="flex flex-col items-end gap-1 min-w-0">
@@ -3343,6 +3583,32 @@ export function RecordPaymentFlow({
                     <p className="text-[11px] text-slate-400 mt-1">System-generated, unique per record.</p>
                   </div>
                 </div>
+                {/* Payment Currency + Exchange Rate (Currency & Exchange
+                    Rates): after the vendor is chosen. The pay-from list
+                    follows the payment currency. */}
+                {(() => {
+                  const v = mode === 'prepay' ? prepayVendor : activePayVendor;
+                  if (!v) return null;
+                  return (
+                    <div className="grid grid-cols-2 gap-4">
+                      <PaymentCurrencyField
+                        value={payCurrencyFor(v)}
+                        vendorCurrency={settledCurrencyFor(v)}
+                        onChange={(code) => setPayCurrencyByVendor((prev) => ({ ...prev, [v]: code }))}
+                        locked={mode === 'prepay'}
+                        lockedReason="A prepayment is recorded in the vendor’s currency, the one its invoices will be in."
+                      />
+                      <PaymentRateField
+                        settledCurrency={settledCurrencyFor(v)}
+                        quoteRate={payQuoteFor(v)}
+                        paymentDate={paymentDate}
+                        typed={payRateTypedByVendor[v] ?? null}
+                        onTypedChange={(t) => setPayRateTypedByVendor((prev) => ({ ...prev, [v]: t }))}
+                        canEdit={apPerms.canChangePaymentRate}
+                      />
+                    </div>
+                  );
+                })()}
                 {/* Row 2: Reference no | (pay: Memo line · prepay: Prepayment amount).
                     Pre-invoice prepay pairs the memo line with the reference
                     like the pay flow (user 11/3); its per-pre-invoice amounts
@@ -3639,6 +3905,11 @@ export function RecordPaymentFlow({
                 // Discount column always renders (8/31/26, parity with the
                 // run tables); rows without a live window read a dash.
                 const hasLiveDiscount = true;
+                // Currency & Exchange Rates: invoices in a foreign currency show
+                // each payment in the base currency at the invoice's rate and at
+                // this payment's rate, and the difference.
+                const showFx = !isBaseCurrency(settledCurrencyFor(row.vendor));
+                const rowPayRate = payRateFor(row.vendor);
                 const appliedSum = m.selectedInvs.reduce((s, inv) => s + (lineFor(inv).prepayApplied || 0), 0);
                 const remainingCredit = Math.round((available - m.applied) * 100) / 100;
                 const creditUsedPct = available > 0 ? Math.min(100, Math.round((m.applied / available) * 100)) : 0;
@@ -3716,11 +3987,22 @@ export function RecordPaymentFlow({
                         </div>
                       );
                     })()}
+                    {/* One payment can't mix currencies (Currency & Exchange
+                        Rates): the vendor's invoices in another currency
+                        wait for a payment of their own. */}
+                    {row.currencyCounts.length > 1 && (
+                      <div className="px-4 py-2 bg-white border-b border-slate-100 flex items-center gap-2">
+                        <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <p className="text-[11.5px] text-slate-500 min-w-0" style={{ fontWeight: 500 }}>
+                          This vendor also has open invoices in another currency. One payment can’t mix currencies, so record those as a separate payment.
+                        </p>
+                      </div>
+                    )}
                     {/* Per-vendor pay controls ride WITH the vendor's card
                         (feedback 7/21/26) — no rail disconnect. */}
                     {isMultiVendorPay && renderVendorPayControls(row.vendor)}
                     {hasCredit && (
-                      <div className="px-4 py-2 bg-purple-50/60 border-b border-purple-100 flex items-center gap-3">
+                      <div className="px-4 py-2 bg-purple-50/60 border-b border-purple-100 flex flex-wrap items-center gap-x-3 gap-y-1">
                         <Wallet className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                         {/* Segmented credit breakdown — each legend carries its OWN
                             hover tooltip explaining the term (Eli 7/24/26): the
@@ -3753,6 +4035,28 @@ export function RecordPaymentFlow({
                           </div>
                           <span className="text-[10px] shrink-0 text-slate-500" style={{ fontWeight: 600 }}>{creditUsedPct}% used</span>
                         </div>
+                        {/* The credit's own currency and the rate it was paid at
+                            (Currency & Exchange Rates). One rate reads as it is;
+                            several advances at different rates say how many. */}
+                        {(() => {
+                          const credits = onAccountPrepaymentsFor(row.vendor).filter((p) => p.exchangeRate);
+                          if (credits.length === 0 || isBaseCurrency(credits[0].currency)) return null;
+                          const rates = Array.from(new Set(credits.map((p) => p.exchangeRate)));
+                          const text = rates.length === 1
+                            ? paidRateText(credits[0].currency, { rate: rates[0] })
+                            : `In ${credits[0].currency}, paid at ${rates.length} different rates`;
+                          return (
+                            <Tooltip delayDuration={300}>
+                              <TooltipTrigger asChild>
+                                <span className="basis-full order-last pl-[26px] text-[10px] text-purple-700/80 cursor-help" style={{ fontWeight: 500 }}>{text}</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[260px] p-2.5 bg-white border border-border rounded-lg shadow-md z-[300]">
+                                <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 600 }}>Paid Rate</p>
+                                <p className="text-[11px] text-slate-500 leading-snug mt-0.5">The rate each advance was paid at. The credit is in the vendor’s currency; the apply list shows each advance’s rate.</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })()}
                         {/* Per-record source picker (feedback 7/22/26):
                             choose which on-account advances to draw from;
                             the total spreads oldest-due-first below. The
@@ -3764,6 +4068,9 @@ export function RecordPaymentFlow({
                               label: p.paymentNumber,
                               date: p.paymentDate,
                               remaining: p.unappliedAmount ?? 0,
+                              currency: p.currency,
+                              rate: p.exchangeRate,
+                              rateDate: p.rateDate,
                             }))}
                             draws={drawsFor(row.vendor)}
                             // Outstanding-based headroom (user 9/9): the
@@ -3817,6 +4124,19 @@ export function RecordPaymentFlow({
                             {hasLiveDiscount && <th className="text-right px-3 py-2 text-[11px] text-slate-400" style={{ fontWeight: 600 }}>Discount</th>}
                             {hasCredit && <th className="text-right px-3 py-2 text-[11px] text-slate-400" style={{ fontWeight: 600 }}>Vendor Credit Applied</th>}
                             <th className="text-right px-3 py-2 text-[11px] text-slate-400" style={{ fontWeight: 600 }}>Payment</th>
+                            {showFx && (
+                              <>
+                                <th className="text-right px-3 py-2 text-[11px] text-slate-400 whitespace-nowrap" style={{ fontWeight: 600 }}>
+                                  <FxHeader tip="This payment in the base currency at the invoice’s own rate, the rate it was booked at.">Base at Invoice Rate</FxHeader>
+                                </th>
+                                <th className="text-right px-3 py-2 text-[11px] text-slate-400 whitespace-nowrap" style={{ fontWeight: 600 }}>
+                                  <FxHeader tip="This payment in the base currency at the payment’s rate: today’s rate unless it was changed.">Base at Today’s Rate</FxHeader>
+                                </th>
+                                <th className="text-right px-3 py-2 text-[11px] text-slate-400 whitespace-nowrap" style={{ fontWeight: 600 }}>
+                                  <FxHeader tip="Base at invoice rate minus base at today’s rate. Positive is a gain, negative a loss.">Difference</FxHeader>
+                                </th>
+                              </>
+                            )}
                             <th className="w-9 px-3 py-2" />
                           </tr>
                         </thead>
@@ -4017,6 +4337,18 @@ export function RecordPaymentFlow({
                                     )}
                                   </div>
                                 </td>
+                                {showFx && (() => {
+                                  const d = exchangeDifference(rowCash, invoiceFx(inv).rate, rowPayRate);
+                                  return (
+                                    <>
+                                      <td className="px-3 py-2 text-right tabular-nums text-slate-600 whitespace-nowrap">{rowCash > 0 ? formatMoney(d.booked, BASE_CURRENCY) : '—'}</td>
+                                      <td className="px-3 py-2 text-right tabular-nums text-slate-600 whitespace-nowrap">{rowCash > 0 ? formatMoney(d.atPayment, BASE_CURRENCY) : '—'}</td>
+                                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ fontWeight: 600, color: d.difference > 0.004 ? '#047857' : d.difference < -0.004 ? '#B91C1C' : '#64748B' }}>
+                                        {rowCash > 0 ? signedBase(d.difference) : '—'}
+                                      </td>
+                                    </>
+                                  );
+                                })()}
                                 <td className="px-3 py-2 text-center">
                                   {m.selectedInvs.length > 1 ? (
                                     /* Removal confirms through the creation
@@ -4075,7 +4407,7 @@ export function RecordPaymentFlow({
                 const sidebarTerm = allExplicit && explicitTerms.length === 1 ? explicitTerms[0] : (v?.paymentTerms ?? row?.terms ?? 'Net 30');
                 // Same vendor blurb shown in the step-1 selection list.
                 const blurb = row
-                  ? `Active vendor on ${row.terms} terms, settling in ${row.currency}.${row.open.length > 0 ? ` ${row.open.length} open invoice${row.open.length === 1 ? '' : 's'} totaling ${fmt(row.due)} outstanding.` : ` No open balance${row.closed.length ? `, ${row.closed.length} paid invoice${row.closed.length === 1 ? '' : 's'} on file.` : ' right now.'}`}`
+                  ? `Active vendor on ${row.terms} terms, settling in ${row.currency}.${row.open.length > 0 ? ` ${row.open.length} open invoice${row.open.length === 1 ? '' : 's'} totaling ${fmtIn(row.currency)(row.due)} outstanding.` : ` No open balance${row.closed.length ? `, ${row.closed.length} paid invoice${row.closed.length === 1 ? '' : 's'} on file.` : ' right now.'}`}`
                   : v
                     ? `${v.category} · ${v.type} vendor`
                     : '';
@@ -4311,6 +4643,40 @@ export function RecordPaymentFlow({
                   }, 0) * 100) / 100
                 : 0;
               const remainingToPrepay = Math.max(0, Math.round((preOutstandingTotal - prepayAmount) * 100) / 100);
+              // Currency & Exchange Rates: per vendor payment, its invoices'
+              // currency, payment currency, rate and exchange difference. One
+              // currency reads in it; several (a multi-vendor run) read in the
+              // base currency, each converted at its own payment's rate.
+              const r2 = (n: number) => Math.round(n * 100) / 100;
+              const perRow = mode === 'pay'
+                ? selectedRows.map((row) => {
+                    const m = vendorMath(row);
+                    const rate = payRateFor(row.vendor);
+                    let diff = 0;
+                    m.selectedInvs.forEach((inv) => {
+                      const l = lineFor(inv);
+                      const amt = l.amount || 0;
+                      const cash = Math.max(0, amt - Math.min(l.prepayApplied || 0, amt));
+                      diff += exchangeDifference(cash, invoiceFx(inv).rate, rate).difference;
+                    });
+                    const discount = m.selectedInvs.reduce((t, inv) => {
+                      const dt = discountTermsFor(inv);
+                      return dt && discountIsLive(dt, paymentDate || undefined) ? t + discountAmountOn(inv.outstandingBalance, dt) : t;
+                    }, 0);
+                    const outstanding = m.selectedInvs.reduce((t, inv) => t + inv.outstandingBalance, 0);
+                    return { vendor: row.vendor, cur: settledCurrencyFor(row.vendor), payCur: payCurrencyFor(row.vendor), rate, m, diff, discount, outstanding };
+                  })
+                : [];
+              const mixedCurrencies = new Set(perRow.map((r) => r.cur)).size > 1;
+              const sumIn = (pick: (r: (typeof perRow)[number]) => number) =>
+                r2(perRow.reduce((t, r) => t + (mixedCurrencies ? toBase(pick(r), r.rate) : pick(r)), 0));
+              const fmtSum = (n: number) => (mixedCurrencies ? formatMoney(n, BASE_CURRENCY) : fmt(n));
+              const payCurrencies = Array.from(new Set(perRow.map((r) => r.payCur)));
+              const payTotal = payCurrencies.length === 1 ? r2(perRow.reduce((t, r) => t + inPayCurrency(r.vendor, r.m.net), 0)) : null;
+              const baseTotal = r2(perRow.reduce((t, r) => t + toBase(r.m.net, r.rate), 0));
+              const diffTotal = r2(perRow.reduce((t, r) => t + r.diff, 0));
+              const anyForeign = perRow.some((r) => !isBaseCurrency(r.cur));
+              const paidInBase = payCurrencies.length === 1 && isBaseCurrency(payCurrencies[0]);
               return (
                 <>
                   {mode === 'pay' && (
@@ -4318,19 +4684,29 @@ export function RecordPaymentFlow({
                       {discountTotal > 0 && (
                         <div className="flex justify-between items-center">
                           <span className="text-[11px] text-emerald-700" style={{ fontWeight: 500 }}>Discount</span>
-                          <span className="text-[12px] text-emerald-700 " style={{ fontWeight: 600 }}>−{fmt(discountTotal)}</span>
+                          <span className="text-[12px] text-emerald-700 " style={{ fontWeight: 600 }}>−{fmtSum(sumIn((r) => r.discount))}</span>
                         </div>
                       )}
                       {grand.applied > 0 && (
                         <div className="flex justify-between items-center">
                           <span className="text-[11px] text-purple-700" style={{ fontWeight: 500 }}>Vendor Credit Applied</span>
-                          <span className="text-[12px] text-purple-700 " style={{ fontWeight: 600 }}>−{fmt(grand.applied)}</span>
+                          <span className="text-[12px] text-purple-700 " style={{ fontWeight: 600 }}>−{fmtSum(sumIn((r) => r.m.applied))}</span>
                         </div>
                       )}
+                      {/* The total in the payment currency (Currency & Exchange Rates). */}
                       <div className="flex justify-between items-center">
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Total Payment</span>
-                        <span className="text-[12px] text-foreground " style={{ fontWeight: 600 }}>{fmt(grand.net)}</span>
+                        <span className="text-[12px] text-foreground " style={{ fontWeight: 600 }}>
+                          {payTotal != null ? formatMoney(payTotal, payCurrencies[0]) : formatMoney(baseTotal, BASE_CURRENCY)}
+                        </span>
                       </div>
+                      {anyForeign && !paidInBase && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>In {BASE_CURRENCY} (base)</span>
+                          <span className="text-[12px] text-slate-600 tabular-nums" style={{ fontWeight: 500 }}>{formatMoney(baseTotal, BASE_CURRENCY)}</span>
+                        </div>
+                      )}
+                      {anyForeign && <ExchangeDifferenceLine difference={diffTotal} />}
                     </div>
                   )}
                   {preInvTableMode && (
@@ -4352,7 +4728,9 @@ export function RecordPaymentFlow({
                       {mode === 'pay' ? 'Remaining Balance to Pay' : preInvTableMode ? 'Remaining Expected to Prepay' : 'Net to Pay'}
                     </span>
                     <span className="text-[20px] text-foreground leading-none tracking-tight" style={{ fontWeight: 700 }}>
-                      {fmt(mode === 'pay' ? remainingToPay : preInvTableMode ? remainingToPrepay : prepayAmount)}
+                      {mode === 'pay'
+                        ? fmtSum(sumIn((r) => Math.max(0, r.outstanding - r.m.gross)))
+                        : fmt(preInvTableMode ? remainingToPrepay : prepayAmount)}
                     </span>
                   </div>
                 </>
@@ -4524,7 +4902,7 @@ export function RecordPaymentFlow({
                     to confirm, so it gets the big number; the header carries the
                     "recorded" title so it isn't repeated here. */}
                 <p className="mt-3 text-[28px] leading-none tracking-tight text-foreground " style={{ fontWeight: 700 }}>
-                  {fmt(recorded.reduce((s, r) => s + r.record.amount, 0))}
+                  {fmtRecordsTotal(recorded.map((r) => r.record))}
                 </p>
                 {/* Date and timestamp only (user 9/23): the count is
                     visible in the record list right below. */}
@@ -4562,7 +4940,7 @@ export function RecordPaymentFlow({
                             : `${rlines.length} invoice${rlines.length === 1 ? '' : 's'}`}
                         </p>
                       </div>
-                      <span className="text-[13px] text-foreground shrink-0" style={{ fontWeight: 700 }}>{fmt(record.amount)}</span>
+                      <span className="text-[13px] text-foreground shrink-0" style={{ fontWeight: 700 }}>{formatMoney(record.amount, record.currency)}</span>
                     </div>
                     {/* Every payment record offers its remittance advice
                         (feedback 7/21/26) — prepayments included, with an
@@ -4832,11 +5210,18 @@ export function RecordPaymentFlow({
                         <div className="mt-5">
                           {/* Section heading OUTSIDE the card (7/24/26) — the
                               band below keeps actions only: Select all + Create. */}
-                          <div className="flex items-center gap-2 mb-2">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
                             <span className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>Open Invoices for {chosenVendor}</span>
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] border bg-white text-slate-600 border-slate-200" style={{ fontWeight: 600 }}>
                               {selN} of {chosenVendorRow.open.length} selected
                             </span>
+                            {chosenVendorRow.currencyCounts.length > 1 && (
+                              <InvoiceCurrencySwitch
+                                counts={chosenVendorRow.currencyCounts}
+                                value={chosenVendorRow.currency}
+                                onChange={(code) => switchInvoiceCurrency(chosenVendor, code)}
+                              />
+                            )}
                           </div>
                           <div className="rounded-xl border border-border bg-white overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
                           <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center gap-2.5 flex-wrap">
@@ -5333,7 +5718,7 @@ export function RecordPaymentFlow({
                         // Any pay-mode selection tints the row — vendor-only
                         // (advance intent) included (7/24/26).
                         (mode === 'pay' && (selCount > 0 || isVendorSelected));
-                      const blurb = `Active vendor on ${row.terms} terms, settling in ${row.currency}.${hasOpen ? ` ${row.open.length} open invoice${row.open.length === 1 ? '' : 's'} totaling ${fmt(row.due)} outstanding.` : ` No open balance${row.closed.length ? `, ${row.closed.length} paid invoice${row.closed.length === 1 ? '' : 's'} on file.` : ' right now.'}`}`;
+                      const blurb = `Active vendor on ${row.terms} terms, settling in ${row.currency}.${hasOpen ? ` ${row.open.length} open invoice${row.open.length === 1 ? '' : 's'} totaling ${fmtIn(row.currency)(row.due)} outstanding.` : ` No open balance${row.closed.length ? `, ${row.closed.length} paid invoice${row.closed.length === 1 ? '' : 's'} on file.` : ' right now.'}`}`;
                       // Prepay: every vendor row carries its saved-method pill and an
                       // on-account credit KPI (always visible, not only when selected).
                       // The selected row additionally shows the pre-invoice picker.
@@ -5342,7 +5727,7 @@ export function RecordPaymentFlow({
                       // Unapplied advances on account for this vendor — drives the
                       // on-account KPI (both flows) and the pay-flow Prepayments tab.
                       const rowUnappliedList = payments.filter(
-                        (p) => p.type === 'Prepayment' && p.vendor === row.vendor && (p.unappliedAmount ?? 0) > 0,
+                        (p) => p.type === 'Prepayment' && p.vendor === row.vendor && (p.unappliedAmount ?? 0) > 0 && creditInRowCurrency(p, row.vendor),
                       );
                       // Vendor-level tab shows ON-ACCOUNT advances only
                       // (feedback 7/22/26): advances anchored to a
@@ -5507,7 +5892,7 @@ export function RecordPaymentFlow({
                                       <Wallet className="w-3.5 h-3.5" />
                                     </div>
                                     <div className="flex flex-col leading-none min-w-0">
-                                      <span className={`text-[14px] ${rowOnAccount > 0 ? 'text-foreground' : 'text-slate-400'}`} style={{ fontWeight: 600 }}>{fmt(rowOnAccount)}</span>
+                                      <span className={`text-[14px] ${rowOnAccount > 0 ? 'text-foreground' : 'text-slate-400'}`} style={{ fontWeight: 600 }}>{fmtIn(row.currency)(rowOnAccount)}</span>
                                       <span className="text-[10px] text-slate-500 mt-1 truncate" style={{ fontWeight: 500 }}>
                                         {/* Vendor credit, nothing else
                                             (user 9/23): the chip shows how
@@ -5548,7 +5933,7 @@ export function RecordPaymentFlow({
                                     </div>
                                     <div className="flex flex-col leading-none min-w-0">
                                       <span className={`text-[14px] ${hasOpen ? 'text-foreground' : 'text-slate-400'}`} style={{ fontWeight: 600 }}>
-                                        {fmt(row.due)}
+                                        {fmtIn(row.currency)(row.due)}
                                       </span>
                                       <span className="text-[10px] text-slate-500 mt-1 block truncate" style={{ fontWeight: 500 }}>
                                         {hasOpen ? `${row.open.length} invoice${row.open.length === 1 ? '' : 's'}` : 'Nothing owed'}
@@ -5577,13 +5962,13 @@ export function RecordPaymentFlow({
                                         {preInvs.length > 0 && (
                                           <p className="text-[11px] text-foreground flex justify-between gap-3" style={{ fontWeight: 500 }}>
                                             <span>{preInvs.length} pre-invoice{preInvs.length === 1 ? '' : 's'}</span>
-                                            <span className="" style={{ fontWeight: 600 }}>{fmt(sumBal(preInvs))}</span>
+                                            <span className="" style={{ fontWeight: 600 }}>{fmtIn(row.currency)(sumBal(preInvs))}</span>
                                           </p>
                                         )}
                                         {regInvs.length > 0 && (
                                           <p className="text-[11px] text-foreground flex justify-between gap-3" style={{ fontWeight: 500 }}>
                                             <span>{regInvs.length} invoice{regInvs.length === 1 ? '' : 's'}</span>
-                                            <span className="" style={{ fontWeight: 600 }}>{fmt(sumBal(regInvs))}</span>
+                                            <span className="" style={{ fontWeight: 600 }}>{fmtIn(row.currency)(sumBal(regInvs))}</span>
                                           </p>
                                         )}
                                         {overdueCount > 0 && (
@@ -5595,7 +5980,7 @@ export function RecordPaymentFlow({
                                           <p className="text-[11px] text-amber-700 flex justify-between gap-3" style={{ fontWeight: 500 }}>
                                             {/* "Vendor credit", the one name (BA 9/25). */}
                                             <span>Vendor Credit</span>
-                                            <span className="" style={{ fontWeight: 600 }}>{fmt(rowUnapplied.total)}</span>
+                                            <span className="" style={{ fontWeight: 600 }}>{fmtIn(row.currency)(rowUnapplied.total)}</span>
                                           </p>
                                         )}
                                       </div>
@@ -5646,7 +6031,7 @@ export function RecordPaymentFlow({
                                           </div>
                                         </div>
                                         <div className="flex flex-col items-end leading-none shrink-0">
-                                          <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmt(pi.amount)}</span>
+                                          <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmtIn(row.currency)(pi.amount)}</span>
                                           <span className="text-[9px] text-slate-400 mt-1" style={{ fontWeight: 600 }}>Expected Total</span>
                                         </div>
                                       </div>
@@ -5724,7 +6109,7 @@ export function RecordPaymentFlow({
                                           return (
                                             <span className="inline-flex items-center gap-1 px-2 py-px rounded-full text-[10px] border bg-violet-50 text-violet-700 border-violet-200" style={{ fontWeight: 600 }}>
                                               <Wallet className="w-2.5 h-2.5" />
-                                              {fmt(anchored)} prepayment available
+                                              {fmtIn(row.currency)(anchored)} prepayment available
                                             </span>
                                           );
                                         })()}
@@ -5782,7 +6167,7 @@ export function RecordPaymentFlow({
                                       </div>
                                     </div>
                                     <div className="flex flex-col items-end leading-none shrink-0">
-                                      <span className="text-[14px] text-slate-900 whitespace-nowrap" style={{ fontWeight: 700 }}>{fmt(inv.outstandingBalance)}</span>
+                                      <span className="text-[14px] text-slate-900 whitespace-nowrap" style={{ fontWeight: 700 }}>{fmtIn(row.currency)(inv.outstandingBalance)}</span>
                                       <span className="text-[9px] text-slate-400 mt-1 whitespace-nowrap" style={{ fontWeight: 600 }}>Balance Due</span>
                                     </div>
                                   </div>
@@ -5842,7 +6227,7 @@ export function RecordPaymentFlow({
                                       </div>
                                     </div>
                                     <div className="flex flex-col items-end leading-none shrink-0">
-                                      <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmt(pi.amount)}</span>
+                                      <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmtIn(row.currency)(pi.amount)}</span>
                                       <span className="text-[9px] text-slate-400 mt-1" style={{ fontWeight: 600 }}>Expected Total</span>
                                     </div>
                                   </div>
@@ -5867,7 +6252,7 @@ export function RecordPaymentFlow({
                                     <div className="mt-0.5 text-[10px] text-slate-400" style={{ fontWeight: 500 }}>Due {formatUsDate(inv.dueDate)} · {inv.currency}</div>
                                   </div>
                                   <div className="flex flex-col items-end leading-none shrink-0">
-                                    <span className="text-[14px] text-slate-400 line-through" style={{ fontWeight: 700 }}>{fmt(inv.amount)}</span>
+                                    <span className="text-[14px] text-slate-400 line-through" style={{ fontWeight: 700 }}>{fmtIn(invCurrency(inv))(inv.amount)}</span>
                                     <span className="text-[9px] text-slate-400 mt-1" style={{ fontWeight: 600 }}>Settled</span>
                                   </div>
                                 </div>
@@ -5994,7 +6379,7 @@ export function RecordPaymentFlow({
                               <BankMethodHoverPill vendorName={selectedVendors[0]} />
                             </div>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                              {grand.invoices} invoice{grand.invoices === 1 ? '' : 's'} selected · net to pay {fmt(grand.net)}.
+                              {grand.invoices} invoice{grand.invoices === 1 ? '' : 's'} selected · net to pay {grandPayText()}.
                             </p>
                           </div>
                         </div>
@@ -6022,7 +6407,7 @@ export function RecordPaymentFlow({
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                              {grand.invoices} invoice{grand.invoices === 1 ? '' : 's'} across {grand.records} payment{grand.records === 1 ? '' : 's'} · net to pay {fmt(grand.net)}.
+                              {grand.invoices} invoice{grand.invoices === 1 ? '' : 's'} across {grand.records} payment{grand.records === 1 ? '' : 's'} · net to pay {grandPayText()}.
                             </p>
                           </div>
                         </div>
@@ -6833,7 +7218,7 @@ export function RecordPaymentFlow({
                 <>
                   <span><span className="text-foreground" style={{ fontWeight: 600 }}>{grand.invoices}</span> invoice{grand.invoices === 1 ? '' : 's'} selected from <span className="text-foreground" style={{ fontWeight: 600 }}>{selectedVendors.length}</span> vendor{selectedVendors.length === 1 ? '' : 's'}</span>
                   <span className="text-slate-300">·</span>
-                  <span>net to pay <span className="text-foreground" style={{ fontWeight: 700 }}>{fmt(grand.net)}</span></span>
+                  <span>net to pay <span className="text-foreground" style={{ fontWeight: 700 }}>{grandPayText()}</span></span>
                 </>
               )}
             </div>
@@ -7181,12 +7566,12 @@ export function RecordPaymentFlow({
             <AlertDialogHeader className="p-0 gap-0 text-center sm:text-center">
               <AlertDialogTitle className="text-[20px] tracking-[-0.02em]" style={{ fontWeight: 600, lineHeight: 1.3 }}>
                 {isFuture
-                  ? `Schedule payment for ${fmt(grand.net)}?`
+                  ? `Schedule payment for ${grandPayText()}?`
                   : mode === 'prepay'
                     ? multiPrepay
-                      ? `Record ${grand.records} prepayments for ${fmt(grand.net)}?`
-                      : `Record ${fmt(grand.net)} advance to ${selectedVendors[0]}?`
-                    : `Record ${grand.records} payment${grand.records === 1 ? '' : 's'} for ${fmt(grand.net)}?`}
+                      ? `Record ${grand.records} prepayments for ${grandPayText()}?`
+                      : `Record ${grandPayText()} advance to ${selectedVendors[0]}?`
+                    : `Record ${grand.records} payment${grand.records === 1 ? '' : 's'} for ${grandPayText()}?`}
               </AlertDialogTitle>
             </AlertDialogHeader>
             {!isFuture && mode === 'prepay' && (
@@ -7548,8 +7933,9 @@ export function RecordPaymentFlow({
         value={bankAccount}
         // All accounts, not just the current method's pool — picking an
         // account of a different class re-derives the method instead of
-        // being impossible (derived-field model, review 7/9/26).
-        accounts={PAY_FROM_ACCOUNTS}
+        // being impossible (derived-field model, review 7/9/26). Only those
+        // in the payment currency or the base currency, though.
+        accounts={currencyAccounts}
         onApply={onAccountApply}
       />
 
@@ -7584,7 +7970,7 @@ export function RecordPaymentFlow({
         open={!!cfgAccountVendor}
         onOpenChange={(o) => { if (!o) setCfgAccountVendor(null); }}
         value={cfgAccountVendor ? cfgFor(cfgAccountVendor).bankAccount : PAY_FROM_ACCOUNTS[0].id}
-        accounts={PAY_FROM_ACCOUNTS}
+        accounts={accountsForCurrency(PAY_FROM_ACCOUNTS, payCurrencyFor(cfgAccountVendor ?? undefined))}
         onApply={(id) => {
           if (!cfgAccountVendor) return;
           // Two-way link (Eli 9/8): the account pick re-derives the
@@ -7622,7 +8008,12 @@ export function RecordPaymentFlow({
         open={bulkAccountModalOpen}
         onOpenChange={setBulkAccountModalOpen}
         value={bulkAccountId}
-        accounts={PAY_FROM_ACCOUNTS}
+        // One account for every vendor: in their shared payment currency,
+        // else only base-currency accounts fit them all.
+        accounts={(() => {
+          const curs = Array.from(new Set(selectedVendors.map((v) => payCurrencyFor(v))));
+          return curs.length === 1 ? accountsForCurrency(PAY_FROM_ACCOUNTS, curs[0]) : PAY_FROM_ACCOUNTS.filter((a) => isBaseCurrency(a.currency));
+        })()}
         onApply={(id) => {
           setBulkAccountId(id);
           // Two-way link (Eli 9/8): a bulk account of a different class
@@ -7976,8 +8367,8 @@ export function RecordPaymentFlow({
               <div className="flex flex-col items-center text-center px-6 pb-6 min-h-0 overflow-y-auto">
                 <h3 className="text-[18px] tracking-[-0.02em] text-foreground" style={{ fontWeight: 600, lineHeight: 1.3 }}>
                   {single
-                    ? `${fmt(total)} ${isScheduled ? 'scheduled' : 'paid'} to ${single.vendor}`
-                    : `${recs.length} payments recorded for ${fmt(total)}`}
+                    ? `${fmtRecordsTotal(recs)} ${isScheduled ? 'scheduled' : 'paid'} to ${single.vendor}`
+                    : `${recs.length} payments recorded for ${fmtRecordsTotal(recs)}`}
                 </h3>
                 <p className="text-[12px] text-slate-500 mt-1">{subline}</p>
                 <div className="w-full mt-4 space-y-2 text-left">
@@ -8106,7 +8497,7 @@ export function RecordPaymentFlow({
               </h3>
               <p className="text-[13px] mt-2 mx-auto" style={{ color: 'hsl(var(--muted-foreground))', lineHeight: 1.65, maxWidth: '340px' }}>
                 You are about to record {mode === 'prepay' ? 'a prepayment' : grand.records === 1 ? 'a payment' : 'payments'} of{' '}
-                <span className="text-foreground " style={{ fontWeight: 700 }}>{fmt(grand.net)}</span>, which exceeds the available cash in{' '}
+                <span className="text-foreground " style={{ fontWeight: 700 }}>{grandPayText()}</span>, which exceeds the available cash in{' '}
                 <span className="text-foreground" style={{ fontWeight: 600 }}>{isMultiVendorPay ? 'one of the pay-from accounts' : bank ? bank.label : 'the pay-from account'}</span>.
                 {' '}Proceeding can bounce payments if the account is not funded in time.
               </p>

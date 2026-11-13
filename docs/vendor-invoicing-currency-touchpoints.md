@@ -123,3 +123,56 @@ npm run touchpoints:build -- vendor-invoicing
 ```
 
 Files the currency work changed (§3) can conflict with upstream changes. Keep both sides, then rebuild the copy.
+
+## 8. Second round (14 Nov 2026): Vendor Invoicing additions and Vendor Payments
+
+Paths are under `touchpoints/vendor-invoicing/src/app/`.
+
+### Settings (module defaults and permissions)
+
+| Item | Where |
+|---|---|
+| A gear in the top bar on Vendor Invoicing and Vendor Payments, like Customer Invoices' | `components/Layout.tsx` (`TopBar` `apSettings`) |
+| The settings modal: Module Defaults (Rate Date for Vendor Invoices; Allowed Difference), Permissions (Change the Exchange Rate on an Invoice, with an optional ± limit; Change the Exchange Rate on a Payment) and the prototype's Acting Role | `components/ApSettingsModal.tsx` |
+| The store, the rate-date rule and the permission checks | `hooks/useApSettings.ts` (`rateDateFor`, `apPermissionsFor`, `differenceNeedsReview`) |
+
+### Vendor Invoicing
+
+| # | Touchpoint | Where |
+|---|---|---|
+| 1 | Rate as of: the date whose rate the invoice takes, from the module default (vendor invoice date, receiving date or PO date; standalone falls back to the vendor invoice date). Saved as `Invoice.rateBasis`; every rate hover names the date (`InvoiceFx.dateLabel`) | `components/currency/InvoiceCurrencyFields.tsx` (`InvoiceRateAsOfField`), `CreateInvoiceScreen.tsx` (search "Rate as of"), `currency/invoiceFx.ts` |
+| 1 | The rate field honours the permission: read-only for a role without it, and an error past the role's ± limit (blocks submit) | `InvoiceExchangeRateField` (`canEdit`, `limitPct`) |
+| 2 | Receiving picker: the PO Value and Receiving Value hovers show the amount on the PO date, the receiving date and today, marking the rate invoices take | `components/currency/MoneyOnDates.tsx`, `VendorSelectionModalNested.tsx` |
+| 3 | Total Due in the invoice currency with the base amount beside it, and the rate under both | `CreateInvoiceScreen.tsx` sidebar footer |
+| 4 | Vendor Billed vs We're Paying, the difference, its status against the allowed difference, and the reason | `invoice-details/InvoiceDetailSidebar.tsx` (`BilledVsPaying`); seeds: `withVendorStatedTotals` in `data/mockInvoices.ts` |
+| 5 | Listing Amount in the invoice currency with the base hover | unchanged from §3 |
+| 8 | A prepayment's paid rate wherever it is applied: the prepaid note's hover, the create form's Prepayment applied row, the detail summary, and the prepayment step (which no longer hard-codes $). Whether that rate stays locked is still to decide, so it is shown only | `currency/paidRate.ts`, `payments/PrepaidOriginNote.tsx`, `InvoiceCreationFlow.tsx`; seeds: `withPrepaidRates` |
+
+### Vendor Payments
+
+| Touchpoint | Where |
+|---|---|
+| Payments and pay-from accounts carry currencies; three foreign settlement accounts (EUR, GBP, AED) and 1040 is USD. Seeded payments are in their vendor's currency with the rate on their payment date | `data/mockPayments.ts` (`PayFromAccount.currency`, `accountsForCurrency`, `withPaymentCurrency`) |
+| The payment rate helpers: settled currency, settlement rate, exchange difference | `currency/paymentFx.ts` |
+| Record a payment: Payment Currency (the vendor's or the base) and Exchange Rate (editable with the permission); the pay-from list follows the payment currency | `components/currency/PaymentCurrencyFields.tsx`, `payments/RecordPaymentFlow.tsx`, `payments/PayFromAccountModal.tsx` |
+| Invoices table: Base at Invoice Rate, Base at Today's Rate, Difference | `RecordPaymentFlow.tsx` (`showFx` columns) |
+| Summary: total in the payment currency, the base total, and Exchange Difference with its tooltip | `RecordPaymentFlow.tsx` footer, `components/currency/ExchangeDifference.tsx` |
+| Vendor credit banner: the credit in its own currency and the rate it was paid at; each advance's rate in the apply list | `RecordPaymentFlow.tsx`, `payments/PrepaymentSourcePicker.tsx` |
+| Payment page: currency chip, Exchange Rate, base amount, Booked at Invoice Rates / Paid at This Rate / Exchange Difference; Applied To and GL in their currencies | `components/PaymentDetailScreen.tsx` |
+| Payment History: Amount in the payment currency with the base hover (sorts on base), Currency column and quick filter | `components/PaymentDataTable.tsx`, `components/PaymentsScreen.tsx` |
+| Insights in the base currency, with the "In PKR · base currency" note | `components/PaymentInsightsPanel.tsx`, `data/readyKpis.ts`, `payments/ReadyToPayTable.tsx` |
+| Payment runs: grouped by currency, a total per currency plus a base total, one payment per vendor and currency | `components/payments/run/*`, `lib/runMath.ts`, `data/paymentRuns.ts`, `data/runKpis.ts` |
+| Record a payment, one currency per payment: a vendor with open invoices in two currencies pays one currency's invoices at a time (Invoice Currency switch on the Payment Type step, a note on Invoices To Pay); vendor credit applies only in that currency | `RecordPaymentFlow.tsx` (`invoiceCurrencyByVendor`, `InvoiceCurrencySwitch`, `creditInRowCurrency`) |
+| Seed: Elite Suppliers Network (EUR) has two USD invoices, INV-000115 and INV-000126, so the split shows in a run and in Record Payment | `data/mockInvoices.ts` (`SECOND_CURRENCY_INVOICES`) |
+| Remittance advice in the invoices' currency, check stubs and the dual-signature threshold in the bank account's currency (PDFs use the ISO code where the font has no symbol: PKR, AED) | `lib/remittanceAdvice.ts`, `lib/checkPdf.ts`, `currency/money.ts` (`formatMoneyPdf`), `payments/CheckPrintFlow.tsx` |
+
+#### Payment runs in detail
+
+- A run's payment is keyed by vendor and currency (`runGroupKey`, `"<vendor>::<CUR>"`). Lines take their invoice's currency. Methods, holds and the bank-changed and first-payment checks stay per vendor.
+- Setup: Group By Currency, a Currency column and filter. Amount Due hovers the invoice rate; sorting and the amount filter work in base. The footer shows each currency's total, then ≈ base (past three currencies, base only, with the breakdown on hover).
+- Proposal: each card carries its currency chip, plus "Split by Currency" when the vendor is paid twice. A rule line appears when the run has more than one currency. Pay-from pickers offer accounts in the payment's currency or base, and credit draws only in the payment's currency.
+- Execute, the run's page and the Runs tab total in per-currency plus base. GL previews are in base. Payments created by a run are stamped with the payment-date rate.
+- Rates: Setup converts each invoice at its own rate; the proposal onward uses the payment-date rate. No exchange gain or loss line is posted from a run yet.
+- The base-currency (PKR) pay-from balances are sized in PKR (about 280× the old figures), so foreign payments converted to base no longer read as overdrawn.
+
+Rates after the last sync (10 Apr 2026) are the last synced rate, so an invoice posted after it has today's rate and pays with no exchange difference; older invoices, or a changed payment rate, show one.

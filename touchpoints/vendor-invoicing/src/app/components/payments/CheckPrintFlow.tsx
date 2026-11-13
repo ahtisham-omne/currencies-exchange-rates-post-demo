@@ -43,6 +43,9 @@ import {
 } from '@/app/lib/checkPrinting';
 import { buildAlignmentGridPdf, buildCheckRunPdf } from '@/app/lib/checkPdf';
 import { highlightText } from '@/app/components/InvoiceDataTable';
+import { PAY_FROM_ACCOUNTS } from '@/app/data/mockPayments';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { moneyPrefix } from '@/app/currency/money';
 
 const money = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -804,6 +807,10 @@ export function CheckSetupModal({
 
   const patch = (p: Partial<CheckAccountSettings>) => setDraft((d) => ({ ...d, ...p }));
   const profile = STOCK_PROFILES[draft.style];
+  // Currency & Exchange Rates: the threshold is in the bank account's currency.
+  const thresholdPrefix = moneyPrefix(PAY_FROM_ACCOUNTS.find((a) => a.id === bankAccountId)?.currency ?? BASE_CURRENCY)
+    .replace('\u200E', '')
+    .trim();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -894,11 +901,11 @@ export function CheckSetupModal({
             <div className="space-y-1.5">
               <Label className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Dual Signature Threshold</Label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">{thresholdPrefix}</span>
                 <Input
                   value={draft.dualSignatureThreshold.toLocaleString('en-US')}
                   onChange={(e) => patch({ dualSignatureThreshold: Math.max(0, parseInt(e.target.value.replace(/\D/g, ''), 10) || 0) })}
-                  className="h-9 text-[12px] bg-white pl-7"
+                  className={`h-9 text-[12px] bg-white ${thresholdPrefix.length <= 1 ? 'pl-7' : thresholdPrefix.length === 2 ? 'pl-9' : 'pl-11'}`}
                 />
               </div>
               <p className="text-[10px] text-slate-400">Payments at or above it raise a warning.</p>

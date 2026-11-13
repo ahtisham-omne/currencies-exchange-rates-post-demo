@@ -1,6 +1,9 @@
 import type { Payment } from '@/app/data/mockPayments';
 import { useState } from 'react';
 import { CalendarClock, Lock, Wallet } from 'lucide-react';
+import { formatMoney } from '@/app/currency/money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { paidRateText } from '@/app/currency/paidRate';
 import { InvoiceTypeSelectionModal } from '@/app/components/InvoiceTypeSelectionModal';
 import { VendorSelectionModalNested as VendorSelectionModal, SelectedPOData } from '@/app/components/VendorSelectionModalNested';
 import { StandaloneVendorSelectionModal, StandaloneVendorData } from '@/app/components/StandaloneVendorSelectionModal';
@@ -151,7 +154,7 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
   // resolved term / templates-picker intent through to the commit.
   const [prepayGate, setPrepayGate] = useState<{
     selection: SelectedPOData[];
-    entries: { poNumber: string; poAmount: number; preInvoiceNumber: string; amount: number }[];
+    entries: { poNumber: string; poAmount: number; preInvoiceNumber: string; amount: number; rate?: number; rateDate?: string }[];
     term: string | null;
     openTermsPicker: boolean;
     blockedKindNotice: boolean;
@@ -161,7 +164,7 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
   // against them, keyed by their linked POs. The picker flags these POs
   // and the create screen consumes the prepayment.
   const prepaidPOContext = (() => {
-    const map: Record<string, { preInvoiceNumber: string; amount: number }> = {};
+    const map: Record<string, { preInvoiceNumber: string; amount: number; rate?: number; rateDate?: string }> = {};
     invoices.forEach((inv) => {
       if (inv.type !== 'Pre-Invoice') return;
       // Already reconciled into an inventory invoice, or cancelled: nothing
@@ -196,6 +199,9 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
         map[po] = {
           preInvoiceNumber: cur ? cur.preInvoiceNumber : inv.invoiceNumber,
           amount: Math.round(((cur?.amount ?? 0) + paid) * 100) / 100,
+          // The rate the pre-invoice was paid at (it posts when paid).
+          rate: cur ? cur.rate : inv.exchangeRate,
+          rateDate: cur ? cur.rateDate : inv.rateDate,
         };
       });
     });
@@ -585,7 +591,7 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
                 {prepayGate.entries.length === 1 ? (
                   <>
                     <span className="text-violet-700" style={{ fontWeight: 600 }}>{prepayGate.entries[0].preInvoiceNumber}</span> already paid{' '}
-                    <span className="text-violet-700" style={{ fontWeight: 600 }}>${prepayGate.entries[0].amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>{' '}
+                    <span className="text-violet-700" style={{ fontWeight: 600 }}>{formatMoney(prepayGate.entries[0].amount, prepayGate.selection[0]?.currency ?? BASE_CURRENCY)}</span>{' '}
                     against PO-{prepayGate.entries[0].poNumber}. We'll deduct it from this invoice automatically.
                   </>
                 ) : (
@@ -622,7 +628,9 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
                   return sum + po.poAmount;
                 }, 0);
                 const prepayTotal = prepayGate.entries.reduce((s, e) => s + e.amount, 0);
-                const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                // In the PO's currency (Currency & Exchange Rates), not a fixed "$".
+                const gateCurrency = prepayGate.selection[0]?.currency ?? BASE_CURRENCY;
+                const fmt = (n: number) => formatMoney(n, gateCurrency);
                 return (
                   <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
                     <div className="w-full flex items-center justify-between gap-2 px-3 py-2">
@@ -630,17 +638,23 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
                         Selected Receivings
                       </span>
                       <span className="text-[12px] text-foreground" style={{ fontWeight: 600 }}>
-                        ${fmt(receivingsTotal)}
+                        {fmt(receivingsTotal)}
                       </span>
                     </div>
                     {prepayGate.entries.map((e) => (
-                      <div key={e.poNumber} className="w-full flex items-center justify-between gap-2 px-3 py-2">
-                        <span className="text-[11px] text-slate-600 min-w-0 truncate" style={{ fontWeight: 500 }}>
-                          Prepayment · {e.preInvoiceNumber} (PO-{e.poNumber})
-                        </span>
-                        <span className="text-[12px] text-violet-700 shrink-0" style={{ fontWeight: 600 }}>
-                          −${fmt(e.amount)}
-                        </span>
+                      <div key={e.poNumber} className="w-full px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-slate-600 min-w-0 truncate" style={{ fontWeight: 500 }}>
+                            Prepayment · {e.preInvoiceNumber} (PO-{e.poNumber})
+                          </span>
+                          <span className="text-[12px] text-violet-700 shrink-0" style={{ fontWeight: 600 }}>
+                            −{fmt(e.amount)}
+                          </span>
+                        </div>
+                        {/* The rate the prepayment was paid at. */}
+                        {paidRateText(gateCurrency, e) && (
+                          <p className="text-[10.5px] text-violet-500/80 mt-0.5 text-left">{paidRateText(gateCurrency, e)}</p>
+                        )}
                       </div>
                     ))}
                     <div className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-slate-50/60">
@@ -648,7 +662,7 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
                         Due on This Invoice
                       </span>
                       <span className="text-[12px] text-foreground" style={{ fontWeight: 600 }}>
-                        ${fmt(Math.max(0, receivingsTotal - prepayTotal))}
+                        {fmt(Math.max(0, receivingsTotal - prepayTotal))}
                       </span>
                     </div>
                   </div>

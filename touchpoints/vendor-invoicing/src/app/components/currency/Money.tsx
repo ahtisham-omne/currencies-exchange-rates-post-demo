@@ -14,7 +14,8 @@ import { FX_ARROW_PADDING, FX_CARD_CLASS, FX_FLAG_PX, FxAlert, FxArrow, FxHead, 
  * currency card (FxCard), so it reads the same as the Partners and Chart of
  * Accounts cards. */
 
-export type MoneyFx = Pick<InvoiceFx, 'rate' | 'rateType' | 'rateDate' | 'source' | 'provisional'>;
+export type MoneyFx = Pick<InvoiceFx, 'rate' | 'rateType' | 'rateDate' | 'source' | 'provisional'> &
+  Partial<Pick<InvoiceFx, 'dateLabel'>>;
 
 /** The hover body: the currency, the amount in it, then a grey block with the
  *  base-currency figure and the rate it was converted at. */
@@ -22,19 +23,22 @@ export function MoneyCard({
   value,
   currency,
   fx,
-  dateLabel = 'posting date',
+  dateLabel,
   role,
 }: {
   value: number;
   currency: string;
   fx: MoneyFx;
-  /** What the rate date is, e.g. "posting date". */
+  /** What the rate date is, e.g. "posting date". Defaults to the fx's own
+   *  label (the invoice's rate basis), else the posting date. */
   dateLabel?: string;
   /** "invoice currency", "PO currency", … */
   role?: string;
 }) {
   const cur = getCurrency(currency);
-  const day = fx.provisional ? `Today, ${formatRateDate(fx.rateDate)}` : `${formatRateDate(fx.rateDate)} (${dateLabel})`;
+  const day = fx.provisional
+    ? `Today, ${formatRateDate(fx.rateDate)}`
+    : `${formatRateDate(fx.rateDate)} (${dateLabel ?? fx.dateLabel ?? 'posting date'})`;
   return (
     <>
       <FxHead flag={<CurrencyFlag code={currency} size={FX_FLAG_PX} />} name={cur?.name ?? currency} code={currency} role={role} />

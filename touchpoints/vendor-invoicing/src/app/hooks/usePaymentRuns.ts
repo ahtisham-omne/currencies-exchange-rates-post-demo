@@ -3,6 +3,7 @@ import type { Invoice } from '@/app/data/mockInvoices';
 import type { Payment } from '@/app/data/mockPayments';
 import {
   SEED_RUNS,
+  groupKeyOf,
   nextRunId,
   openRunInvoiceIds,
   type PaymentRun,
@@ -75,6 +76,8 @@ export function usePaymentRuns(deps: UsePaymentRunsDeps) {
             invoiceId: inv.id,
             invoiceNumber: inv.invoiceNumber,
             vendor: inv.vendor,
+            // Its currency decides its payment (Currency & Exchange Rates).
+            currency: inv.currency,
             dueDate: inv.dueDate,
             balanceAtAdd: inv.outstandingBalance,
             payAmount: inv.outstandingBalance - discount,
@@ -112,8 +115,9 @@ export function usePaymentRuns(deps: UsePaymentRunsDeps) {
     [patchRun],
   );
 
-  /** P1 Continue: commit the ticked lines and derive the vendor groups
-   *  (one payment per vendor, defaults inherited, overrides preserved). */
+  /** P1 Continue: commit the ticked lines and derive the payment groups
+   *  (one payment per vendor and currency, defaults inherited, overrides
+   *  preserved). */
   const continueToProposal = useCallback(
     (runId: string, lines: PaymentRun['lines']) => {
       patchRun(runId, (run) => ({
@@ -425,19 +429,20 @@ export function usePaymentRuns(deps: UsePaymentRunsDeps) {
   );
 
   /** P3b Execute, THE commit: re-validates, posts one payment per
-   *  vendor, settles what settles today, locks the run. Returns the
-   *  validation result so the stage can surface what changed.
-   *  Recording in PIECES (Eli 9/25): pass `vendors` to post only those
-   *  payments now — the run reads 'Partially Executed' until the last
-   *  group records, and a later call picks up the remainder. */
+   *  vendor and currency, settles what settles today, locks the run.
+   *  Returns the validation result so the stage can surface what changed.
+   *  Recording in PIECES (Eli 9/25): pass `groupKeys` (groupKeyOf) to
+   *  post only those payments now — the run reads 'Partially Executed'
+   *  until the last group records, and a later call picks up the
+   *  remainder. `cashAmounts` is keyed the same way. */
   const executeRun = useCallback(
-    (runId: string, vendors?: string[], cashAmounts?: Record<string, number>) => {
+    (runId: string, groupKeys?: string[], cashAmounts?: Record<string, number>) => {
       const run = runs.find((r) => r.id === runId);
       if (!run || (run.status !== 'Approved' && run.status !== 'Partially Executed')) return { ok: false as const };
       const validation = revalidateRun(run, invoices);
       if (!validation.ok) return { ok: false as const, validation };
 
-      const plan = buildRunExecution(run, run.approvedBy, vendors, cashAmounts);
+      const plan = buildRunExecution(run, run.approvedBy, groupKeys, cashAmounts);
       if (plan.records.length === 0) return { ok: false as const };
       setPayments((prev) => [...plan.records, ...prev]);
       if (plan.settleNow.length > 0) settleInvoices(plan.settleNow);
@@ -455,12 +460,13 @@ export function usePaymentRuns(deps: UsePaymentRunsDeps) {
             : l,
         );
         const groups = r.groups.map((g) => {
-          const partialId = plan.partialPayments[g.vendor];
+          const key = groupKeyOf(g);
+          const partialId = plan.partialPayments[key];
           return {
             ...g,
-            paymentId: plan.groupPayments[g.vendor] ?? g.paymentId,
+            paymentId: plan.groupPayments[key] ?? g.paymentId,
             partialPaymentIds: partialId ? [...(g.partialPaymentIds ?? []), partialId] : g.partialPaymentIds,
-            creditPosted: g.creditPosted || plan.creditPostedVendors.includes(g.vendor) || undefined,
+            creditPosted: g.creditPosted || plan.creditPostedGroups.includes(key) || undefined,
             // The reference belongs to the payment just posted; the next
             // pass needs its own trace or check number.
             ...(partialId ? { reference: undefined, printedViaFlow: undefined } : {}),
@@ -491,7 +497,7 @@ export function usePaymentRuns(deps: UsePaymentRunsDeps) {
         };
         // Anything still unrecorded (live lines, no paymentId) keeps the
         // run open as Partially executed.
-        const remaining = groups.filter((g) => !g.paymentId && groupLines(next, g.vendor).length > 0);
+        const remaining = groups.filter((g) => !g.paymentId && groupLines(next, g).length > 0);
         if (remaining.length > 0) {
           next.status = 'Partially Executed';
           return next;

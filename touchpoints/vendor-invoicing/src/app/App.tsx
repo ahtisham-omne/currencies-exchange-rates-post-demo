@@ -451,7 +451,7 @@ export default function App() {
           actionHistory: wasPending && !viaCredit ? [...(inv.actionHistory ?? []), approveEntry] : inv.actionHistory,
           // A pre-invoice posts when it is first paid, so it takes its rate
           // then (Currency & Exchange Rates, spec 4.4); later payments keep it.
-          ...(isPre && !viaCredit && !inv.exchangeRate ? stampRate(inv.currency, localTodayIso()) : {}),
+          ...(isPre && !viaCredit && !inv.exchangeRate ? stampRate(inv.currency, localTodayIso(), undefined, 'paidDate') : {}),
         };
       }),
     );

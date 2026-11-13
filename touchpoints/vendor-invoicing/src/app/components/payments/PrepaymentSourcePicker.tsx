@@ -6,6 +6,8 @@ import { Checkbox } from '@/app/components/ui/checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/app/components/ui/tooltip';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/app/components/ui/hover-card';
 import { MoneyInput, MaxChip } from '@/app/components/payments/MoneyInput';
+import { paidRateText } from '@/app/currency/paidRate';
+import { moneyPrefix } from '@/app/currency/money';
 
 // Vendor-level prepayment source picker (feedback 7/22/26). When a
 // vendor holds MULTIPLE on-account prepayment records, the user picks
@@ -27,6 +29,15 @@ import { MoneyInput, MaxChip } from '@/app/components/payments/MoneyInput';
 // Cancel reverts to the state it opened with, and both Apply actions
 // close the modal.
 
+
+/** The draw input's currency prefix ($, €, ₨, AED…) and the left padding
+ *  that clears it. Literal classes so the stylesheet carries them. */
+const drawPrefix = (code?: string) => moneyPrefix(code).replace('\u200E', '').trim();
+const drawPad = (code?: string) => {
+  const n = drawPrefix(code).length;
+  return n <= 1 ? 'pl-5' : n === 2 ? 'pl-7' : 'pl-9';
+};
+
 export interface PrepaySource {
   id: string;
   /** e.g. "2024-1004" — plain number, no letter prefix (Eli 9/24). */
@@ -43,6 +54,10 @@ export interface PrepaySource {
   memo?: string;
   appliedInvoices?: { invoiceNumber: string; amount: number }[];
   recordedBy?: string;
+  /** The advance's currency and the rate it was paid at (Currency & Exchange Rates). */
+  currency?: string;
+  rate?: number;
+  rateDate?: string;
 }
 
 /** Credit quick card (Jennifer 9/1/26): hover any credit record to see
@@ -351,7 +366,11 @@ export function PrepaymentSourcePicker({
                         >
                           {s.label}
                         </a>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Recorded {formatUsDate(s.date)}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                          Recorded {formatUsDate(s.date)}
+                          {/* The rate it was paid at (Currency & Exchange Rates). */}
+                          {paidRateText(s.currency, { rate: s.rate }) ? ` · ${paidRateText(s.currency, { rate: s.rate })}` : ''}
+                        </p>
                       </div>
                       {/* Dynamic remaining (Eli 7/22/26): the "left" reflects the
                           advance's balance AFTER this run's draw. Hovering this
@@ -370,13 +389,14 @@ export function PrepaymentSourcePicker({
                         <Tooltip open={over ? undefined : false}>
                           <TooltipTrigger asChild>
                             <div className="relative w-[136px]">
-                              <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-[11px] ${over ? 'text-rose-400' : 'text-slate-400'}`}>$</span>
+                              {/* The advance's own currency (Currency & Exchange Rates). */}
+                              <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-[11px] ${over ? 'text-rose-400' : 'text-slate-400'}`}>{drawPrefix(s.currency)}</span>
                               <MoneyInput
                                 fluid
                                 value={drawn}
                                 onValueChange={(n) => setDraw(s.id, n)}
                                 placeholder="0.00"
-                                className={`flex h-8 w-full min-w-0 rounded-md border bg-white pl-5 pr-11 py-1 text-[11px] outline-none transition-[color,box-shadow] focus-visible:ring-[3px] ${
+                                className={`flex h-8 w-full min-w-0 rounded-md border bg-white ${drawPad(s.currency)} pr-11 py-1 text-[11px] outline-none transition-[color,box-shadow] focus-visible:ring-[3px] ${
                                   over
                                     ? 'border-rose-400 text-rose-600 focus-visible:border-rose-500 focus-visible:ring-rose-100'
                                     : checked

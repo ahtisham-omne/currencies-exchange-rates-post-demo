@@ -26,8 +26,13 @@ import { SavedViewsDialog, useSavedViews } from '@/app/components/SavedViewsDial
 import { toast } from 'sonner';
 import type { Payment } from '@/app/data/mockPayments';
 import type { PaymentRun } from '@/app/data/paymentRuns';
-import { liveLines, runLastUpdate } from '@/app/data/paymentRuns';
-import { runTotal } from '@/app/lib/runMath';
+import { lineCurrency, liveLines, runLastUpdate } from '@/app/data/paymentRuns';
+import { paymentRateOn, runNetByCurrency, runTotalBase, type CurrencyAmount } from '@/app/lib/runMath';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { formatMoney, moneyPrefix } from '@/app/currency/money';
+import { toBase } from '@/app/currency/rates';
+import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
+import { BaseTotal, amountsText } from './runMoney';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import {
@@ -82,7 +87,7 @@ import {
   DEFAULT_RUN_KPI_KEYS,
 } from '@/app/data/runKpis';
 import { RunInsightsPanel } from './RunInsightsPanel';
-import { RunStatusPill, money, humanDate, openInvoiceTab, runDisplayStatus, exportRunCsv, type RunDisplayStatus } from './runUi';
+import { RunStatusPill, humanDate, openInvoiceTab, runDisplayStatus, exportRunCsv, type RunDisplayStatus } from './runUi';
 import { formatUsDateTime, usDateTimeValue } from '@/app/lib/dueBucket';
 import { actionToneClass } from '@/app/lib/actionMenuTone';
 
@@ -110,6 +115,30 @@ const STATUS_ORDER: RunDisplayStatus[] = [
 const vendorCount = (run: PaymentRun) => new Set(liveLines(run).map((l) => l.vendor)).size;
 const invoiceCount = (run: PaymentRun) => liveLines(run).length;
 const vendorNames = (run: PaymentRun) => Array.from(new Set(liveLines(run).map((l) => l.vendor)));
+
+/** A run's total in the base currency (Currency & Exchange Rates): each
+ *  payment at its rate on the payment date. A run that pays only in the
+ *  base currency reads plain; any other currency reads "≈" with each
+ *  currency's total on hover. */
+function RunTotalCell({ run, className, searchQuery }: { run: PaymentRun; className: string; searchQuery?: string }) {
+  const items = runNetByCurrency(run);
+  const text = formatMoney(runTotalBase(run), BASE_CURRENCY);
+  if (items.every((i) => isBaseCurrency(i.currency))) {
+    return <span className={className} style={{ fontWeight: 600 }}>{highlightAmount(text, searchQuery)}</span>;
+  }
+  return (
+    <BaseTotal items={items} basis="payment" className={className} style={{ fontWeight: 600 }}>
+      ≈ {highlightAmount(text, searchQuery)}
+    </BaseTotal>
+  );
+}
+
+/** A set of run lines per currency, for "+N more" quick-card lines. */
+const linesByCurrency = (run: PaymentRun, lines: ReturnType<typeof liveLines>): CurrencyAmount[] =>
+  lines.map((l) => {
+    const currency = lineCurrency(l);
+    return { currency, amount: l.payAmount, base: toBase(l.payAmount, paymentRateOn(currency, run.paymentDate)) };
+  });
 
 const initialsOf = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('');
@@ -212,11 +241,11 @@ const buildRunColumns = (displayStatus: (r: PaymentRun) => RunDisplayStatus): Co
           category="Vendors"
           items={names.slice(1).map((v) => {
             const vLines = lines.filter((l) => l.vendor === v);
-            const total = vLines.reduce((s, l) => s + l.payAmount, 0);
             return {
               id: v,
               name: v,
-              subtitle: `${vLines.length} invoice${vLines.length === 1 ? '' : 's'} · ${money(total)}`,
+              // In the vendor's own currency (or currencies).
+              subtitle: `${vLines.length} invoice${vLines.length === 1 ? '' : 's'} · ${amountsText(linesByCurrency(r, vLines))}`,
               initials: initialsOf(v),
             };
           })}
@@ -260,7 +289,7 @@ const buildRunColumns = (displayStatus: (r: PaymentRun) => RunDisplayStatus): Co
           items={lines.slice(1).map((l) => ({
             id: l.invoiceId,
             name: l.invoiceNumber,
-            subtitle: `${l.vendor} · ${money(l.payAmount)}`,
+            subtitle: `${l.vendor} · ${formatMoney(l.payAmount, lineCurrency(l))}`,
             initials: 'INV',
             avatarBg: INV_PILL_STYLE.bg,
             avatarFg: INV_PILL_STYLE.fg,
@@ -273,16 +302,17 @@ const buildRunColumns = (displayStatus: (r: PaymentRun) => RunDisplayStatus): Co
   {
     key: 'total',
     label: 'Total',
-    minWidth: 110,
-    defaultWidth: 130,
+    tooltip: 'In the base currency, each payment at its rate on the payment date. Hover a total to see each currency.',
+    minWidth: 120,
+    defaultWidth: 150,
     align: 'right',
     sortable: true,
     filterType: 'range',
-    getValue: (r) => runTotal(r),
-    searchText: (r) => money(runTotal(r)),
-    render: (r, { searchQuery }) => (
-      <span className="text-[13px] " style={{ fontWeight: 600 }}>{highlightAmount(money(runTotal(r)), searchQuery)}</span>
-    ),
+    // Base currency (Currency & Exchange Rates): sorts and range-filters
+    // across runs that pay in different currencies.
+    getValue: (r) => runTotalBase(r),
+    searchText: (r) => `${formatMoney(runTotalBase(r), BASE_CURRENCY)} ${amountsText(runNetByCurrency(r))}`,
+    render: (r, { searchQuery }) => <RunTotalCell run={r} className="text-[13px]" searchQuery={searchQuery} />,
   },
   // Last Updated By / On (user 10/22/26), placed like Payment history:
   // just before Created By / On. The latest step or edit on the run.
@@ -789,6 +819,8 @@ export function RunsTab({
               onCustomChange={(from, to) => setInsightsCustom({ from, to })}
             />
             <InsightsRefresh />
+            {/* The cards' money is base currency (Currency & Exchange Rates). */}
+            <BaseCurrencyNote what="payment" />
           </div>
           <div className="flex items-center gap-2">
             <InsightsResetButton dirty={insightsDirty} onReset={handleInsightsReset} />
@@ -969,12 +1001,13 @@ export function RunsTab({
 
             {/* ── Run total range ── */}
             <div>
-              <p className="text-[13px] mb-2.5" style={{ fontWeight: 600, color: 'hsl(var(--foreground))' }}>Run Total</p>
+              <p className="text-[13px] mb-1" style={{ fontWeight: 600, color: 'hsl(var(--foreground))' }}>Run Total</p>
+              <p className="text-[11px] text-slate-500 mb-2.5">In the base currency, each payment at its rate on the payment date.</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-[11px] text-slate-500 mb-1" style={{ fontWeight: 500 }}>Min</p>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">{moneyPrefix(BASE_CURRENCY)}</span>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -988,7 +1021,7 @@ export function RunsTab({
                 <div>
                   <p className="text-[11px] text-slate-500 mb-1" style={{ fontWeight: 500 }}>Max</p>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">{moneyPrefix(BASE_CURRENCY)}</span>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -1263,8 +1296,8 @@ export function RunsTab({
                           )}
                         </div>
                         <div className="flex items-center justify-between pt-3 border-t border-border">
-                          <div className="text-lg " style={{ fontWeight: 600 }}>
-                            {money(runTotal(run))}
+                          <div className="text-lg">
+                            <RunTotalCell run={run} className="text-lg" />
                           </div>
                           <RunStatusPill status={run.status} />
                         </div>

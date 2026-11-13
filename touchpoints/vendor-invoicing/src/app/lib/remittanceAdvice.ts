@@ -1,5 +1,7 @@
 import { jsPDF } from 'jspdf';
 import type { Payment } from '@/app/data/mockPayments';
+import { formatMoneyPdf } from '@/app/currency/money';
+import { settledCurrencyOf } from '@/app/currency/paymentFx';
 
 // Remittance advice — a digital check stub the payer sends the vendor listing
 // the invoices settled by a payment. Generation is channel-agnostic: this
@@ -33,8 +35,6 @@ const PAYER = {
   ],
 };
 
-const fmt = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // TODO: real vendor email — derived placeholder until vendor records carry one.
 function placeholderVendorEmail(vendor: string): string {
@@ -62,6 +62,10 @@ export function downloadRunRemittanceAdvice(runId: string, payments: Payment[]):
 }
 
 function renderAdvicePage(doc: jsPDF, payment: Payment, opts: RemittanceOptions): void {
+  // Currency & Exchange Rates: the advice lists what each invoice was
+  // settled for, so its amounts are in the invoices' currency.
+  const currency = settledCurrencyOf(payment);
+  const fmt = (n: number) => formatMoneyPdf(n, currency);
   const lines: RemittanceLine[] =
     opts.lines ??
     payment.appliedInvoices.map((a) => ({ invoiceNumber: a.invoiceNumber, paid: a.amount }));

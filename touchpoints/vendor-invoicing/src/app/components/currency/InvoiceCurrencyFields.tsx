@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { AlertCircle, Check, ChevronDown, Info, Lock, RotateCcw, TrendingDown, TrendingUp } from 'lucide-react';
+import { AlertCircle, CalendarClock, Check, ChevronDown, Info, Lock, RotateCcw, TrendingDown, TrendingUp } from 'lucide-react';
 import { Label } from '@/app/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
@@ -7,6 +7,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/
 import { BASE_CURRENCY, CURRENCIES, getCurrency } from '@/app/currency/currencies';
 import { formatRate, formatRateDate } from '@/app/currency/money';
 import { RATE_PROVIDER, RATE_TYPE_LABEL, type RateQuote, type RateType } from '@/app/currency/rates';
+import type { InvoiceRateBasis } from '@/app/data/mockInvoices';
 import { CurrencyFlag } from './CurrencyChip';
 
 /* ── Invoice Details: Currency and Exchange Rate (spec 4.4, 3.5) ──────
@@ -235,6 +236,8 @@ export function InvoiceExchangeRateField({
   pending,
   error,
   po,
+  canEdit = true,
+  limitPct = null,
 }: {
   currency: string;
   rateType: RateType;
@@ -252,18 +255,29 @@ export function InvoiceExchangeRateField({
   error: boolean;
   /** The PO's own rate, for the comparison chip. */
   po?: { poNumber: string; rate: number; date: string } | null;
+  /** Settings › Permissions: whether the acting role may change the rate. */
+  canEdit?: boolean;
+  /** …and how far, in percent either side of the table's rate (null: no limit). */
+  limitPct?: number | null;
 }) {
   const isBase = currency === BASE_CURRENCY;
   const corporate = rateType === 'corporate';
   const day = formatRateDate(quote.date);
   const edited = corporate && typed != null && typed.trim() !== '' && Number(typed) !== quote.rate;
+  // A typed rate past the role's limit (only when there is a table rate to measure from).
+  const typedNum = typed != null && typed.trim() !== '' ? Number(typed) : null;
+  const overLimit =
+    corporate && canEdit && limitPct != null && quote.rate != null && typedNum != null && typedNum > 0 &&
+    Math.abs(((typedNum - quote.rate) / quote.rate) * 100) > limitPct + 1e-9;
+  // No corporate rate on file and the role can't type one: the field can't be filled here.
+  const blockedNoRate = corporate && !canEdit && quote.rate == null;
 
   const label = (
     <Label className={LABEL} style={{ fontWeight: 500 }}>
       Exchange Rate{!isBase && !pending && <span className="text-red-500">*</span>}
       <InfoTip>
-        {BASE_CURRENCY} per 1 {currency}, taken on the posting date. A mid-market rate comes from {RATE_PROVIDER} and
-        is read-only; a corporate rate can be changed on the invoice.
+        Base currency per 1 unit of the invoice currency, on the Rate as of date. A mid-market rate comes from the
+        rate provider and is read-only; a corporate rate can be changed on the invoice if your role allows it.
       </InfoTip>
       {!isBase && !pending && <RateTypeToggle value={rateType} onChange={onRateTypeChange} />}
     </Label>
@@ -312,10 +326,29 @@ export function InvoiceExchangeRateField({
   return (
     <div>
       {label}
-      {corporate ? (
+      {corporate && !canEdit ? (
+        // Settings › Permissions: this role uses the corporate rate as it is.
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className={LOCKED}>
+              {prefix}
+              <span className="tabular-nums text-foreground" style={{ fontWeight: 500 }}>
+                {rate != null ? formatRate(rate) : '—'}
+              </span>
+              {suffix}
+              <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0 ml-auto" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-[260px] p-2.5 bg-white border border-border rounded-lg shadow-md">
+            <p className="text-[11px] text-slate-500 leading-snug">
+              Your role can’t change the exchange rate on an invoice. Settings, Permissions sets who can.
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      ) : corporate ? (
         <div
           className={`${FIELD} bg-white border ${
-            error ? 'border-red-400 ring-2 ring-red-100' : 'border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20'
+            error || overLimit ? 'border-red-400 ring-2 ring-red-100' : 'border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20'
           }`}
         >
           {prefix}
@@ -367,7 +400,17 @@ export function InvoiceExchangeRateField({
         </Tooltip>
       )}
       <div className="text-[11px] mt-1 flex items-center gap-1.5 min-w-0">
-        {error ? (
+        {overLimit && limitPct != null ? (
+          <span className="flex items-center gap-1 text-red-500 truncate" style={{ fontWeight: 500 }}>
+            <AlertCircle className="w-3 h-3 shrink-0" />
+            More than ±{limitPct}% from the corporate rate, your limit.
+          </span>
+        ) : blockedNoRate ? (
+          <span className="flex items-center gap-1 text-red-500 truncate" style={{ fontWeight: 500 }}>
+            <AlertCircle className="w-3 h-3 shrink-0" />
+            No corporate rate on this date, and your role can’t enter one.
+          </span>
+        ) : error ? (
           <span className="flex items-center gap-1 text-red-500" style={{ fontWeight: 500 }}>
             <AlertCircle className="w-3 h-3 shrink-0" />
             {corporate && quote.rate == null
@@ -386,8 +429,75 @@ export function InvoiceExchangeRateField({
                   : `Corporate rate in effect on ${day} · ${quote.source.replace(/^Set by/, 'set by')}`}
           </span>
         )}
-        {po && rate != null && !error && <PoRateCompare currency={currency} invoiceRate={rate} invoiceDate={quote.date} po={po} />}
+        {po && rate != null && !error && !overLimit && <PoRateCompare currency={currency} invoiceRate={rate} invoiceDate={quote.date} po={po} />}
       </div>
+    </div>
+  );
+}
+
+/** The Rate as of date's name, as the helper line reads it. */
+const BASIS_HELPER: Record<InvoiceRateBasis, string> = {
+  invoiceDate: 'The vendor invoice date',
+  receivingDate: 'The receiving date',
+  poDate: 'The PO date',
+  postingDate: 'The posting date',
+  paidDate: 'The payment date',
+};
+
+/**
+ * Rate as of: which day's rate the invoice uses. Read-only; the day comes
+ * from Settings, Module defaults (vendor invoice date, receiving date or PO
+ * date). An invoice without receivings or a PO falls back to its vendor
+ * invoice date, and says so.
+ */
+export function InvoiceRateAsOfField({
+  date,
+  basis,
+  wanted,
+  pending,
+  isBase,
+}: {
+  /** The day the rate is taken on (empty until that date is known). */
+  date: string | undefined;
+  /** The basis the day came from. */
+  basis: InvoiceRateBasis;
+  /** The module default asked for, when it fell back to another date. */
+  wanted?: InvoiceRateBasis;
+  /** A pre-invoice: the rate is taken when it's paid. */
+  pending: boolean;
+  isBase: boolean;
+}) {
+  const fellBack = wanted != null && wanted !== basis;
+  const helper = pending
+    ? 'A pre-invoice takes the payment date’s rate.'
+    : isBase
+      ? 'No rate needed in the base currency.'
+      : fellBack
+        ? `${BASIS_HELPER[basis]}: there is no ${wanted === 'poDate' ? 'PO' : 'receiving'} on this invoice.`
+        : basis === 'postingDate'
+          ? 'The posting date, as this invoice was saved.'
+          : `${BASIS_HELPER[basis]}, the module default.`;
+  return (
+    <div>
+      <Label className={LABEL} style={{ fontWeight: 500 }}>
+        Rate as of
+        <InfoTip>
+          Which date’s exchange rate this invoice uses. Settings, Module defaults picks the date: the vendor invoice
+          date, the receiving date or the PO date.
+        </InfoTip>
+      </Label>
+      <div className={LOCKED}>
+        <CalendarClock className="w-4 h-4 text-slate-400 shrink-0" />
+        {pending ? (
+          <span className="text-sm text-slate-400 italic">Set when paid</span>
+        ) : date ? (
+          <span className="tabular-nums text-foreground" style={{ fontWeight: 500 }}>{formatRateDate(date)}</span>
+        ) : (
+          <span className="text-sm text-slate-400">Pick the date first</span>
+        )}
+        <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0 ml-auto" />
+      </div>
+      <p className="text-[11px] text-slate-400 mt-1 truncate" title={helper}>{helper}</p>
     </div>
   );
 }

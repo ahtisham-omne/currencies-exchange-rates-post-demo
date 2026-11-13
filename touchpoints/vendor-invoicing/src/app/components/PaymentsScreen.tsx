@@ -106,6 +106,8 @@ import {
   type InsightsRange,
 } from '@/app/components/PaymentInsightsPanel';
 import { InsightsRangeMenu, INSIGHTS_RANGE_OPTIONS } from '@/app/components/InsightsRangeMenu';
+import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
+import { formatMoney } from '@/app/currency/money';
 import { BulkActionBar, type BulkAction } from '@/app/components/BulkActionBar';
 import { getBulkActions, isBulkEligible, type PaymentActionId } from '@/app/data/paymentActions';
 import {
@@ -147,6 +149,7 @@ const PAYMENT_COLUMN_CATALOG: { key: string; label: string }[] = [
   { key: 'paymentDate', label: 'Payment Date' },
   { key: 'appliedTo', label: 'Applied To' },
   { key: 'amount', label: 'Amount' },
+  { key: 'currency', label: 'Currency' },
   { key: 'status', label: 'Status' },
   { key: 'memo', label: 'Description' },
   { key: 'updatedBy', label: 'Last Updated By' },
@@ -1259,6 +1262,8 @@ export function PaymentsScreen({
                 onCustomChange={(from, to) => setInsightsCustom({ from, to })}
               />
               <InsightsRefresh />
+              {/* The cards' money is base currency (Currency & Exchange Rates). */}
+              <BaseCurrencyNote what="payment" rateDay="its payment date" />
             </div>
             <div className="flex items-center gap-2">
               <InsightsResetButton dirty={insightsDirty} onReset={handleInsightsReset} />
@@ -1492,6 +1497,9 @@ export function PaymentsScreen({
           { label: 'Type', value: typeFilter, set: setTypeFilter, searchable: false, options: PAYMENT_TYPE_OPTIONS.map((o) => ({ id: o, label: `${o}s`, count: typeCounts[o] ?? 0 })) },
           { label: 'Account', value: accountFilter, set: setAccountFilter, searchable: true, options: accountOptions.map((o) => ({ id: o, label: o, count: accountCounts[o] ?? 0 })) },
           { label: 'Method', value: methodFilter, set: setMethodFilter, searchable: false, options: methodOptions.map((o) => ({ id: o, label: o, count: methodCounts[o] ?? 0 })) },
+          // Currency & Exchange Rates: the payment currency, beside the other
+          // history slicers; the Filters modal edits the same state.
+          { label: 'Currency', value: currencyFilter, set: setCurrencyFilter, searchable: true, options: currencyOptions.map((o) => ({ id: o, label: o, count: currencyCounts[o] ?? 0 })) },
           // Created By left the toolbar (Eli 9/8, global Billy Bob
           // standard): "you could search it, there's a filter for it" —
           // its section in the Filters modal edits the same state.
@@ -1851,7 +1859,7 @@ export function PaymentsScreen({
                   </div>
                   <div className="flex items-center justify-between pt-3 border-t border-border">
                     <div className="text-lg " style={{ fontWeight: 600 }}>
-                      ${payment.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      {formatMoney(payment.amount, payment.currency)}
                     </div>
                     <StatusBadge status={payment.status} />
                   </div>

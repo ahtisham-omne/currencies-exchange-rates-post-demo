@@ -4,6 +4,11 @@ import { formatInvoiceId } from '@/app/lib/invoiceIds';
 import { resolveRegistryVendor } from './mockVendors';
 import { currencyForVendorName, stampRate } from '@/app/currency/invoiceFx';
 import type { RateType } from '@/app/currency/rates';
+import type { RateDateBasis } from '@/app/hooks/useApSettings';
+
+/** The date an invoice's rate was taken on: a module rate-date basis, the
+ *  posting date (seeds), or the payment date (a pre-invoice). */
+export type InvoiceRateBasis = RateDateBasis | 'postingDate' | 'paidDate';
 
 // Seeded so the listing renders the same 100 invoices on every
 // reload — only state mutations (new invoice, status change, etc.)
@@ -133,6 +138,11 @@ export interface Invoice {
   rateDate?: string;
   /** A corporate rate changed on the invoice from the rate table. */
   rateEdited?: boolean;
+  /** Which date the rate was taken on (the "Rate as of" date): the module
+   *  default when the invoice was entered (vendor invoice date, receiving
+   *  date or PO date), the posting date on the seeds, or the payment date on
+   *  a pre-invoice. Absent reads as the posting date. */
+  rateBasis?: InvoiceRateBasis;
   apAccount: string;
   description: string;
   postingDate?: string;
@@ -155,7 +165,9 @@ export interface Invoice {
    *  creation ride the invoice as settlement lines reducing the
    *  payable; the pre-invoices they came from close when reconciled
    *  and the records stay linked. */
-  appliedPrepayments?: { invoiceNumber: string; amount: number }[];
+  /** Prepayments applied at creation, each with the rate its pre-invoice
+   *  was paid at (Currency & Exchange Rates). */
+  appliedPrepayments?: { invoiceNumber: string; amount: number; rate?: number; rateDate?: string }[];
   /** Pre-invoice numbers this invoice reconciles (closes on create). */
   reconcilesPreInvoiceNumbers?: string[];
   /** Set on a PRE-INVOICE when it settles: the receiving invoice its
@@ -174,6 +186,9 @@ export interface Invoice {
    *  reconciliation check (GPT QC12, 9/30 — S3 requires comparing it
    *  with the calculated total). Absent = not provided. */
   vendorStatedTotal?: number;
+  /** Why what we pay differs from vendorStatedTotal ("Vendor billed" vs
+   *  "We're paying" on the detail page). */
+  differenceReason?: string;
   /** Explicit charges as entered; absent on seeds (synthesized there). */
   charges?: InvoiceCharges;
   /** Lines exactly as entered; absent on seeds. */
@@ -948,23 +963,75 @@ function seedHoldDemo(list: Invoice[]): Invoice[] {
  * A pre-invoice posts when it is paid, so it takes its rate then: a paid one
  * carries the rate of its last update (its payment, in the seeds), an unpaid
  * one carries none yet. */
-const PAID_STATUSES = new Set(['Paid in Full', 'Partially Paid', 'Prepaid', 'Partially Prepaid']);
+// Settled pre-invoices were paid before they were reconciled, so they carry
+// their payment's rate too (the reconciliation demo's PRE-000001).
+const PAID_STATUSES = new Set(['Paid in Full', 'Partially Paid', 'Prepaid', 'Partially Prepaid', 'Settled']);
+/* A vendor billing in two currencies (Currency & Exchange Rates): Elite
+ * Suppliers Network bills in EUR, but two standalone invoices came in USD.
+ * One payment can't mix currencies, so a payment run pays the vendor once
+ * per currency and Record Payment pays one currency at a time. */
+const SECOND_CURRENCY_INVOICES: Record<string, string> = {
+  'inv-rtp-26': 'USD',
+  'inv-rtp-15': 'USD',
+};
+
 function withVendorCurrency(list: Invoice[]): Invoice[] {
   return list.map((inv) => {
-    const currency = resolveRegistryVendor(inv.vendor)?.currency ?? currencyForVendorName(inv.vendor);
-    const rateDay =
-      inv.type !== 'Pre-Invoice'
-        ? inv.postingDate ?? inv.invoiceDate
-        : PAID_STATUSES.has(inv.status)
-          ? inv.updatedDate ?? inv.postingDate ?? inv.invoiceDate
-          : undefined;
-    return { ...inv, currency, ...stampRate(currency, rateDay) };
+    const currency =
+      SECOND_CURRENCY_INVOICES[inv.id] ?? resolveRegistryVendor(inv.vendor)?.currency ?? currencyForVendorName(inv.vendor);
+    const isPre = inv.type === 'Pre-Invoice';
+    const rateDay = !isPre
+      ? inv.postingDate ?? inv.invoiceDate
+      : PAID_STATUSES.has(inv.status)
+        ? inv.updatedDate ?? inv.postingDate ?? inv.invoiceDate
+        : undefined;
+    const stamp = stampRate(currency, rateDay);
+    return { ...inv, currency, ...stamp, ...(stamp.exchangeRate ? { rateBasis: isPre ? ('paidDate' as const) : ('postingDate' as const) } : {}) };
   });
 }
 
-export const mockInvoices = withVendorCurrency(seedHoldDemo(migrateHoldStatus(arrangePayQueueDemo(backfillActionHistory(withMandatoryDates([
+/* Vendor billed vs We're paying (Currency & Exchange Rates): some invoices
+ * carry the total printed on the vendor's document where it differs from
+ * the total being paid, with the reason. Picked by invoice number, so no
+ * other seed changes. Most land inside the default 1% allowed difference;
+ * a few are over it and need review. */
+const DIFFERENCE_CASES: { pct: number; reason: string }[] = [
+  { pct: 0.0042, reason: 'Exchange rate. The PO was priced in the base currency and the vendor converted it at its bank’s rate.' },
+  { pct: -0.0018, reason: 'Rounding. The vendor rounded each line total; the invoice rounds the total once.' },
+  { pct: 0.0235, reason: 'Unit price. The vendor billed a price above the PO on one line; the invoice pays the PO price.' },
+  { pct: 0.0071, reason: 'Freight. The vendor added freight the PO did not include.' },
+  { pct: -0.0156, reason: 'Short shipment. The vendor billed units that were not received.' },
+];
+/* An applied prepayment shows the rate its pre-invoice was paid at. */
+function withPrepaidRates(list: Invoice[]): Invoice[] {
+  const byNumber = new Map(list.map((inv) => [inv.invoiceNumber, inv]));
+  return list.map((inv) =>
+    inv.appliedPrepayments?.length
+      ? {
+          ...inv,
+          appliedPrepayments: inv.appliedPrepayments.map((p) => {
+            const pre = byNumber.get(p.invoiceNumber);
+            return p.rate || !pre?.exchangeRate ? p : { ...p, rate: pre.exchangeRate, rateDate: pre.rateDate };
+          }),
+        }
+      : inv,
+  );
+}
+
+function withVendorStatedTotals(list: Invoice[]): Invoice[] {
+  return list.map((inv) => {
+    if (inv.type === 'Pre-Invoice' || inv.vendorStatedTotal != null || !(inv.amount > 0)) return inv;
+    const n = parseInt(inv.id.replace(/\D/g, ''), 10) || 0;
+    if (n % 6 !== 1) return inv;
+    const c = DIFFERENCE_CASES[Math.floor(n / 6) % DIFFERENCE_CASES.length];
+    const billed = Math.round(inv.amount * (1 + c.pct) * 100) / 100;
+    return { ...inv, vendorStatedTotal: billed, differenceReason: c.reason };
+  });
+}
+
+export const mockInvoices = withPrepaidRates(withVendorStatedTotals(withVendorCurrency(seedHoldDemo(migrateHoldStatus(arrangePayQueueDemo(backfillActionHistory(withMandatoryDates([
   ...generateInvoices(100),
   ...generateReadyToPayInvoices(100),
   ...generateAcmePreInvoices(3),
   ...generatePrepayReconciliationDemo(),
-]))))));
+]))))))));

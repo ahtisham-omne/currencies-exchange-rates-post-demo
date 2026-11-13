@@ -1444,8 +1444,11 @@ interface VendorCellProps {
   description?: string;
   density: DensityOption;
   searchQuery?: string;
+  /** Chips after the description, on its line (comfort density), so they
+   *  never squeeze the name. */
+  descriptionAddon?: ReactNode;
 }
-export function VendorCell({ vendor, description, density, searchQuery }: VendorCellProps) {
+export function VendorCell({ vendor, description, density, searchQuery, descriptionAddon }: VendorCellProps) {
   const [fullCardOpen, setFullCardOpen] = useState(false);
   const isComfort = density === 'comfort';
   // Card density (user 9/28): see CreatedByCell — 12px semibold to match
@@ -1497,7 +1500,16 @@ export function VendorCell({ vendor, description, density, searchQuery }: Vendor
           >
             {highlightText(vendor, searchQuery)}
           </span>
-          {isComfort && description && (
+          {isComfort && descriptionAddon ? (
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0 mt-0.5">
+              {description && (
+                <span className="text-[11px] text-muted-foreground truncate">
+                  {highlightText(description, searchQuery)}
+                </span>
+              )}
+              {descriptionAddon}
+            </span>
+          ) : isComfort && description && (
             <span className="text-[11px] text-muted-foreground truncate">
               {highlightText(description, searchQuery)}
             </span>

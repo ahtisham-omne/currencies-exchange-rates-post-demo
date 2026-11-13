@@ -18,7 +18,9 @@ import { Invoice } from '@/app/data/mockInvoices';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatMoney as formatInCurrency, rateSentence } from '@/app/currency/money';
 import { RATE_TYPE_LABEL } from '@/app/currency/rates';
-import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { invoiceFx, toInvoiceBase, type InvoiceFx } from '@/app/currency/invoiceFx';
+import { differenceNeedsReview, useApSettings } from '@/app/hooks/useApSettings';
+import { paidRateText } from '@/app/currency/paidRate';
 import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
 import { Money } from '@/app/components/currency/Money';
 import { ADVANCES_ACCOUNT } from '@/app/data/glAccounts';
@@ -92,6 +94,98 @@ interface SidebarSectionProps {
   children: React.ReactNode;
   /** Compact one-line value shown collapsed (e.g. "$2,580.80"). */
   collapsedSummary?: React.ReactNode;
+}
+
+/** A label with its ⓘ, as the summary's figure labels read. */
+function FigureLabel({ children, tip }: { children: React.ReactNode; tip: string }) {
+  return (
+    <p className="text-[11px] text-slate-400 flex items-center gap-1" style={{ fontWeight: 500 }}>
+      {children}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Info className="w-3 h-3 text-slate-300 cursor-help" />
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[240px] p-2.5 bg-white border border-border rounded-lg shadow-md">
+          <p className="text-[11px] text-slate-500 leading-snug">{tip}</p>
+        </TooltipContent>
+      </Tooltip>
+    </p>
+  );
+}
+
+/* ── Vendor billed vs We're paying (Currency & Exchange Rates) ──────
+ * The total printed on the vendor's invoice beside the total this invoice
+ * pays, the difference, whether it is inside the allowed difference
+ * (Settings, Module defaults) and the reason. An invoice without a stated
+ * total was entered from the vendor's document as billed, so it matches. */
+function BilledVsPaying({ invoice, total, fx }: { invoice: Invoice; total: number; fx: InvoiceFx }) {
+  const settings = useApSettings();
+  const billed = invoice.vendorStatedTotal ?? total;
+  const diff = Math.round((total - billed) * 100) / 100;
+  const none = Math.abs(diff) < 0.005;
+  const pct = billed !== 0 ? (diff / billed) * 100 : 0;
+  const review = !none && differenceNeedsReview(settings, billed, total, toInvoiceBase(invoice, diff));
+  const sign = diff > 0 ? '+' : diff < 0 ? '−' : '';
+  const pill = none
+    ? { label: 'No Difference', bg: '#F1F5F9', color: '#475569', border: '#E2E8F0' }
+    : review
+      ? { label: 'Needs Review', bg: '#FFFBEB', color: '#B45309', border: '#FDE68A' }
+      : { label: 'Within Allowed Difference', bg: '#ECFDF5', color: '#047857', border: '#A7F3D0' };
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100">
+      <div className="grid grid-cols-2 gap-x-3">
+        <div className="min-w-0">
+          <FigureLabel tip="The total printed on the vendor’s invoice.">Vendor Billed</FigureLabel>
+          <p className="text-[13px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>
+            <Money value={billed} currency={invoice.currency} fx={fx} />
+          </p>
+        </div>
+        <div className="min-w-0">
+          <FigureLabel tip="This invoice’s total after matching to the PO and receiving, before credits and prepayments.">We’re Paying</FigureLabel>
+          <p className="text-[13px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>
+            <Money value={total} currency={invoice.currency} fx={fx} />
+          </p>
+        </div>
+      </div>
+      <div className="mt-2.5 rounded-lg border px-2.5 py-2" style={{ backgroundColor: 'rgba(241,245,249,0.5)', borderColor: '#EEF2F6' }}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-slate-500 flex items-center gap-1" style={{ fontWeight: 500 }}>
+            Difference
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="w-3 h-3 text-slate-300 cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[240px] p-2.5 bg-white border border-border rounded-lg shadow-md">
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  What we’re paying minus what the vendor billed. Past the allowed difference in Settings, Module defaults, the invoice needs review.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </span>
+          <span className="text-[12px] text-foreground tabular-nums truncate" style={{ fontWeight: 600 }}>
+            {none ? formatInCurrency(0, invoice.currency) : `${sign}${formatInCurrency(Math.abs(diff), invoice.currency)} (${sign}${Math.abs(pct).toFixed(2)}%)`}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+          <span
+            className="inline-flex items-center px-1.5 py-px rounded border text-[10px]"
+            style={{ fontWeight: 600, backgroundColor: pill.bg, color: pill.color, borderColor: pill.border }}
+          >
+            {pill.label}
+          </span>
+          <span className="text-[10.5px] text-slate-400 truncate" style={{ fontWeight: 400 }}>
+            Allowed {settings.allowedDifferencePct}%{settings.allowedDifferenceBase != null ? ` · up to ${formatInCurrency(settings.allowedDifferenceBase, BASE_CURRENCY)}` : ''}
+          </span>
+        </div>
+        {!none && (
+          <p className="text-[11px] text-slate-600 mt-1.5 leading-snug">
+            <span className="text-slate-400" style={{ fontWeight: 500 }}>Reason: </span>
+            {invoice.differenceReason ?? 'No reason given.'}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function SidebarSection({ icon: Icon, title, open, onToggle, children, collapsedSummary }: SidebarSectionProps) {
@@ -440,9 +534,9 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                     </p>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-[260px] p-2.5 bg-white border border-border rounded-lg shadow-md z-[300]">
-                    <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 600 }}>Taken on the posting date</p>
+                    <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 600 }}>Taken on the Rate as of date</p>
                     <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
-                      A/P posted in {BASE_CURRENCY} at this rate. A payment is later compared against it, and the difference is an FX gain or loss.
+                      A/P posted in the base currency at this rate. A payment is later compared against it, and the difference is an exchange gain or loss.
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -456,7 +550,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                     <p className="text-[12px] text-foreground mt-0.5 tabular-nums" style={{ fontWeight: 600 }}>{rateSentence(fx.currency, fx.rate)}</p>
                     <p className="text-[11px] text-slate-500 leading-snug">
                       <span style={{ fontWeight: 600, color: fx.rateType === 'mid' ? '#6D28D9' : '#B45309' }}>{RATE_TYPE_LABEL[fx.rateType]}</span>
-                      {' · '}{fmtSidebarDate(fx.rateDate)} (posting date){invoice.rateEdited ? ' · changed on the invoice' : ''}
+                      {' · '}{fmtSidebarDate(fx.rateDate)} ({fx.dateLabel}){invoice.rateEdited ? ' · changed on the invoice' : ''}
                     </p>
                   </>
                 )}
@@ -581,6 +675,8 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
           );
         })()}
 
+        {numbers.total > 0 && invoice.type !== 'Pre-Invoice' && <BilledVsPaying invoice={invoice} total={numbers.total} fx={fx} />}
+
         <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
           {/* Breakdown folds behind the creation form's Show-breakdown
               accordion (user 10/1): same toggle copy, same grid-rows
@@ -646,6 +742,10 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               >
                 {p.invoiceNumber}
               </a>
+              {/* The rate the prepayment was paid at (Currency & Exchange Rates). */}
+              {paidRateText(invoice.currency, p) && (
+                <p className="text-[10.5px] text-violet-500/80 mt-0.5">{paidRateText(invoice.currency, p)}</p>
+              )}
             </div>
           ))}
           {(numbers.credits ?? 0) > 0 && (

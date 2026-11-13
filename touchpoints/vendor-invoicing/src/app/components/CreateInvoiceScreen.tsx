@@ -147,14 +147,16 @@ import { StandaloneVendorData } from '@/app/components/StandaloneVendorSelection
 import { mockVendors, applyInvoiceToVendorDocs, releaseInvoiceFromVendorDocs, billedLineRefsFromSaved, LineItem as MockLineItem, VendorPO } from '@/app/data/mockVendors';
 import { getVendorDefaultExpenseAccount, setVendorDefaultExpenseAccount } from '@/app/lib/vendorDefaults';
 import { toast } from 'sonner';
-import { Invoice, mockInvoices, nextSystemInvoiceNumber, type InvoiceCharges, type SavedInvoiceLineItem } from '@/app/data/mockInvoices';
+import { Invoice, mockInvoices, nextSystemInvoiceNumber, type InvoiceCharges, type InvoiceRateBasis, type SavedInvoiceLineItem } from '@/app/data/mockInvoices';
+import { apPermissionsFor, rateChangePct, rateDateFor, useApSettings } from '@/app/hooks/useApSettings';
 import { partnerVendorUrl } from '@/app/data/mockVendors';
 import { buildInvoiceGl } from '@/app/lib/glPosting';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
-import { formatMoney, formatRate, moneyPrefix, rateSentence } from '@/app/currency/money';
+import { formatMoney, formatRate, moneyPrefix, rateSentence, formatRateDate } from '@/app/currency/money';
 import { DEFAULT_RATE_TYPE, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from '@/app/currency/rates';
 import { baseGlEntries, glInBase } from '@/app/currency/glFx';
-import { InvoiceCurrencyField, InvoiceExchangeRateField } from '@/app/components/currency/InvoiceCurrencyFields';
+import { InvoiceCurrencyField, InvoiceExchangeRateField, InvoiceRateAsOfField } from '@/app/components/currency/InvoiceCurrencyFields';
+import { paidRateText } from '@/app/currency/paidRate';
 import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
 
 import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -205,7 +207,7 @@ interface CreateInvoiceScreenProps {
   /** Reconciliation context (Eli, 8/31/26): paid prepayments keyed by
    *  PO. Selected POs' prepayments apply as a totals line, reduce the
    *  payable, and close their pre-invoices on submit. */
-  prepaidPOContext?: Record<string, { preInvoiceNumber: string; amount: number }>;
+  prepaidPOContext?: Record<string, { preInvoiceNumber: string; amount: number; rate?: number; rateDate?: string }>;
   /** 'ap' = vendor invoice (Dr expense/inventory, Cr A/P); 'ar' =
    *  customer invoice (Dr A/R, Cr revenue). Flips the GL preview
    *  in the submit confirmation (7/20/26). */
@@ -1749,13 +1751,21 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   // at the TOTALS level (never per line item), reduce the payable, and
   // close their pre-invoices on submit.
   const appliedPrepayEntries = useMemo(() => {
-    if (isStandalone || !prepaidPOContext) return [] as { invoiceNumber: string; amount: number }[];
-    const seen = new Map<string, number>();
+    type Entry = { invoiceNumber: string; amount: number; rate?: number; rateDate?: string };
+    if (isStandalone || !prepaidPOContext) return [] as Entry[];
+    const seen = new Map<string, Entry>();
     uniquePONumbers.forEach((po) => {
       const ctx = prepaidPOContext[po];
-      if (ctx) seen.set(ctx.preInvoiceNumber, Math.round(((seen.get(ctx.preInvoiceNumber) ?? 0) + ctx.amount) * 100) / 100);
+      if (!ctx) return;
+      const prev = seen.get(ctx.preInvoiceNumber);
+      seen.set(ctx.preInvoiceNumber, {
+        invoiceNumber: ctx.preInvoiceNumber,
+        amount: Math.round(((prev?.amount ?? 0) + ctx.amount) * 100) / 100,
+        rate: ctx.rate,
+        rateDate: ctx.rateDate,
+      });
     });
-    return Array.from(seen.entries()).map(([invoiceNumber, amount]) => ({ invoiceNumber, amount }));
+    return Array.from(seen.values());
   }, [isStandalone, prepaidPOContext, uniquePONumbers]);
   const prepayApplied = Math.min(
     Math.round(appliedPrepayEntries.reduce((sum, e) => sum + e.amount, 0) * 100) / 100,
@@ -1783,7 +1793,27 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   const [rateError, setRateError] = useState(false);
   const invoiceIsBase = isBaseCurrency(invoiceCurrency);
   const ratePending = invoiceKind === 'pre';
-  const rateDay = ratePending || !postingDate ? localTodayIso() : postingDate;
+  // Rate as of (Settings, Module defaults): a new invoice takes the rate of
+  // the vendor invoice date, the receiving date or the PO date; one without
+  // receivings or a PO falls back to its vendor invoice date. A reopened
+  // invoice keeps the date its rate came from, so editing it never moves it.
+  const apSettings = useApSettings();
+  const apPerms = apPermissionsFor(apSettings);
+  const wantedRateBasis: InvoiceRateBasis = resubmitInvoice ? (resubmitInvoice.rateBasis ?? 'postingDate') : apSettings.rateDateBasis;
+  const receivingRateDay = linkedReceivingOptions.length
+    ? receivingDateBasis === 'latest'
+      ? linkedReceivingOptions[linkedReceivingOptions.length - 1].date
+      : linkedReceivingOptions[0].date
+    : undefined;
+  const rateAsOf: { date: string | undefined; basis: InvoiceRateBasis } =
+    wantedRateBasis === 'postingDate' || wantedRateBasis === 'paidDate'
+      ? { date: postingDate || undefined, basis: 'postingDate' }
+      : rateDateFor(wantedRateBasis, {
+          invoiceDate,
+          receivingDate: receivingRateDay,
+          poDate: !isStandalone ? currentPOsData[0]?.poDate : undefined,
+        });
+  const rateDay = ratePending || !rateAsOf.date ? localTodayIso() : rateAsOf.date;
   const tableQuote = useMemo(() => rateOn(invoiceCurrency, rateDay, rateType), [invoiceCurrency, rateDay, rateType]);
   const midQuote = useMemo(() => rateOn(invoiceCurrency, rateDay, 'mid'), [invoiceCurrency, rateDay]);
   const typedRateValue = typedRate != null && typedRate.trim() !== '' ? Number(typedRate) : null;
@@ -1797,6 +1827,11 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   const rateEdited = rateType === 'corporate' && typedRateValue != null && typedRateValue !== tableQuote.rate;
   // Nothing to post at when a foreign invoice has no usable rate (blocks submit).
   const rateMissing = !invoiceIsBase && !ratePending && invoiceRate == null;
+  // A typed rate past the role's limit (Settings, Permissions) blocks submit too.
+  const rateOverLimit =
+    !invoiceIsBase && !ratePending && rateEdited && apPerms.canChangeInvoiceRate && apPerms.invoiceRateLimitPct != null &&
+    tableQuote.rate != null && typedRateValue != null &&
+    Math.abs(rateChangePct(typedRateValue, tableQuote.rate)) > apPerms.invoiceRateLimitPct + 1e-9;
   /** An invoice-currency amount in the base currency, at the invoice rate. */
   const inBase = (n: number) => toBase(n, invoiceRate ?? midQuote.rate ?? 1);
   /** An invoice-currency amount as text: $12,400.00 · €980.50. */
@@ -1817,7 +1852,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
       currency: invoiceCurrency,
       ...(!posted || rate == null
         ? {}
-        : { exchangeRate: rate, rateType: invoiceRate != null ? rateType : 'mid', rateDate: rateDay, rateEdited: rateEdited || undefined }),
+        : { exchangeRate: rate, rateType: invoiceRate != null ? rateType : 'mid', rateDate: rateDay, rateEdited: rateEdited || undefined, rateBasis: rateAsOf.basis }),
     };
   };
   // The PO's own rate, for the "vs PO" comparison on the rate field.
@@ -2199,7 +2234,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     }
     // A foreign-currency invoice needs a rate to post A/P at (spec 4.4):
     // a corporate rate with none on file must be entered.
-    if (rateMissing) {
+    if (rateMissing || rateOverLimit) {
       setRateError(true);
       missingFieldTargets.push('invoice-exchange-rate-field');
     }
@@ -2726,7 +2761,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         outstandingBalance: consumesPrepay ? totalDueAfterPrepay : sliceAdjustedTotal,
         ...(consumesPrepay
           ? {
-              appliedPrepayments: appliedPrepayEntries.map((e) => ({ invoiceNumber: e.invoiceNumber, amount: Math.min(e.amount, sliceAdjustedTotal) })),
+              appliedPrepayments: appliedPrepayEntries.map((e) => ({ invoiceNumber: e.invoiceNumber, amount: Math.min(e.amount, sliceAdjustedTotal), rate: e.rate, rateDate: e.rateDate })),
               reconcilesPreInvoiceNumbers: appliedPrepayEntries.map((e) => e.invoiceNumber),
             }
           : {}),
@@ -3713,6 +3748,15 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       pending={ratePending}
                       error={rateError && rateMissing}
                       po={poRateRef && invoiceCurrency === currentPOsData[0]?.currency ? { ...poRateRef, poNumber: `PO-${poRateRef.poNumber}` } : null}
+                      canEdit={apPerms.canChangeInvoiceRate}
+                      limitPct={apPerms.invoiceRateLimitPct}
+                    />
+                    <InvoiceRateAsOfField
+                      date={rateAsOf.date}
+                      basis={rateAsOf.basis}
+                      wanted={wantedRateBasis === 'paidDate' ? undefined : wantedRateBasis}
+                      pending={ratePending}
+                      isBase={invoiceIsBase}
                     />
                   </div>
 
@@ -6212,9 +6256,15 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                           8/31/26), like freight: named per pre-invoice,
                           reduces the payable, never per line item. */}
                       {appliedPrepayEntries.map((e) => (
-                        <div key={e.invoiceNumber} className="flex justify-between items-center">
-                          <span className="text-[11px] text-violet-700" style={{ fontWeight: 500 }}>Prepayment applied · {e.invoiceNumber}</span>
-                          <span className="text-[12px] text-violet-700 " style={{ fontWeight: 600 }}>{money(-Math.min(e.amount, sliceAdjustedTotal))}</span>
+                        <div key={e.invoiceNumber}>
+                          <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-violet-700" style={{ fontWeight: 500 }}>Prepayment applied · {e.invoiceNumber}</span>
+                            <span className="text-[12px] text-violet-700 " style={{ fontWeight: 600 }}>{money(-Math.min(e.amount, sliceAdjustedTotal))}</span>
+                          </div>
+                          {/* The rate the prepayment was paid at (Currency & Exchange Rates). */}
+                          {paidRateText(invoiceCurrency, e) && (
+                            <p className="text-[10.5px] text-violet-500/80 mt-0.5 truncate">{paidRateText(invoiceCurrency, e)}</p>
+                          )}
                         </div>
                       ))}
                       {additionalCharges.map((charge) => charge.amount > 0 && (
@@ -6249,24 +6299,47 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                   </div>
                 </div>
 
-                <div className="pt-2.5 border-t border-slate-100 flex justify-between items-baseline">
-                  <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>Total Due</span>
-                  {/* Compact total (8/31/26): the 20px hero read louder than
-                      the whole breakdown; one step above the row values.
-                      Net of the slice adjustment AND applied prepayments. */}
-                  <span className="text-[14px] text-foreground leading-none tracking-tight" style={{ fontWeight: 600 }}>
-                    {money(totalDueAfterPrepay)}
-                  </span>
-                </div>
-                {/* The same total in the base currency (Currency & Exchange
-                    Rates, spec 4.4), at the invoice rate; the AR form's line. */}
-                {!invoiceIsBase && (
-                  <div className="flex justify-end mt-1">
-                    <span className="text-[11px] text-slate-400 text-right" style={{ fontWeight: 400 }}>
-                      ≈ {formatMoney(inBase(totalDueAfterPrepay), BASE_CURRENCY)} {BASE_CURRENCY} at{' '}
-                      {formatRate(invoiceRate ?? midQuote.rate ?? 1)}
-                      {ratePending ? ", today's rate" : invoiceRate == null ? '' : ` · ${RATE_TYPE_LABEL[rateType]}`}
+                {invoiceIsBase ? (
+                  <div className="pt-2.5 border-t border-slate-100 flex justify-between items-baseline">
+                    <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>Total Due</span>
+                    {/* Compact total (8/31/26): the 20px hero read louder than
+                        the whole breakdown; one step above the row values.
+                        Net of the slice adjustment AND applied prepayments. */}
+                    <span className="text-[14px] text-foreground leading-none tracking-tight" style={{ fontWeight: 600 }}>
+                      {money(totalDueAfterPrepay)}
                     </span>
+                  </div>
+                ) : (
+                  // Currency & Exchange Rates: the total in the invoice
+                  // currency with the base-currency amount beside it, at the
+                  // invoice rate, and the rate under both.
+                  <div className="pt-2.5 border-t border-slate-100">
+                    <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>Total Due</span>
+                    <div className="grid grid-cols-2 gap-3 mt-1.5">
+                      <div className="min-w-0">
+                        <span className="flex items-center gap-1 text-[10.5px] text-slate-400" style={{ fontWeight: 500 }}>
+                          <CurrencyFlag code={invoiceCurrency} size={12} />
+                          In {invoiceCurrency}
+                        </span>
+                        <span className="block mt-0.5 text-[14px] text-foreground leading-tight tracking-tight tabular-nums truncate" style={{ fontWeight: 600 }}>
+                          {money(totalDueAfterPrepay)}
+                        </span>
+                      </div>
+                      <div className="min-w-0 text-right">
+                        <span className="flex items-center justify-end gap-1 text-[10.5px] text-slate-400" style={{ fontWeight: 500 }}>
+                          <CurrencyFlag code={BASE_CURRENCY} size={12} />
+                          In {BASE_CURRENCY} (base)
+                        </span>
+                        <span className="block mt-0.5 text-[14px] text-slate-600 leading-tight tracking-tight tabular-nums truncate" style={{ fontWeight: 500 }}>
+                          {formatMoney(inBase(totalDueAfterPrepay), BASE_CURRENCY)}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1.5 truncate" style={{ fontWeight: 400 }}>
+                      At 1 {invoiceCurrency} = {formatRate(invoiceRate ?? midQuote.rate ?? 1)} {BASE_CURRENCY}
+                      {ratePending ? " · today's rate" : invoiceRate == null ? '' : ` · ${RATE_TYPE_LABEL[rateType]}`}
+                      {!ratePending && rateAsOf.date ? ` · ${formatRateDate(rateAsOf.date)}` : ''}
+                    </p>
                   </div>
                 )}
               </div>

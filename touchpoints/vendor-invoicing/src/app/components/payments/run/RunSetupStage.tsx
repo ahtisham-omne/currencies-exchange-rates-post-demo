@@ -11,6 +11,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Coins,
   Hourglass,
   Layers,
   Receipt,
@@ -20,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Invoice } from '@/app/data/mockInvoices';
-import type { PaymentRun, PaymentRunLine } from '@/app/data/paymentRuns';
+import { lineCurrency, type PaymentRun, type PaymentRunLine } from '@/app/data/paymentRuns';
 import type { PaymentRunsApi } from '@/app/hooks/usePaymentRuns';
 import {
   discountAmountOn,
@@ -30,6 +31,9 @@ import {
   eligibleInvoices,
   invoiceTypeLabel,
   isClosedPeriod,
+  addByCurrency,
+  paymentRateOn,
+  type CurrencyAmount,
   type EligibleRow,
 } from '@/app/lib/runMath';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/ui/hover-card';
@@ -47,57 +51,76 @@ import { DataTable } from '@/app/components/data-table/DataTable';
 import { AmountWithPrepaidNote, prepaidTotalOf } from '@/app/components/payments/PrepaidOriginNote';
 import { applyColumnFilters } from '@/app/components/data-table/applyColumnFilters';
 import type { ColumnDef, ColumnFilterState, SortConfig } from '@/app/components/data-table/types';
-import { money, humanDate, openInvoiceTab, DueDatePill, RUN_FOOTER_FLUSH, FOOTER_BTN_GHOST, FOOTER_BTN_PRIMARY } from './runUi';
+import { humanDate, openInvoiceTab, DueDatePill, RUN_FOOTER_FLUSH, FOOTER_BTN_GHOST, FOOTER_BTN_PRIMARY } from './runUi';
 import { MoneyInput } from '@/app/components/payments/MoneyInput';
+import { Money } from '@/app/components/currency/Money';
+import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { BASE_CURRENCY, currencyLabel, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
+import { formatMoney, moneyPrefix } from '@/app/currency/money';
+import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { toBase } from '@/app/currency/rates';
+import { BaseTotal, CurrencyCell, amountsText, totalText } from './runMoney';
 
 /* ── Group total (Eli 10/5) ───────────────────────────────────────────
  * The per-vendor (or per-band) total rides the RIGHT edge of the group
  * band, landing over the pinned Amount Due column so it reads as the sum
  * of the rows beneath it — not as the run-wide selected total (that one
  * lives bold + boxed in the footer). The hover restates the vendor and
- * spells out due vs. selected so the two totals can never be confused. */
+ * spells out due vs. selected so the two totals can never be confused.
+ * Currency & Exchange Rates: a band in one currency reads in it, with the
+ * base total beside a foreign one; a band mixing currencies reads as its
+ * base total, each invoice at its own rate, and the hover lists each
+ * currency. */
 function GroupAmountTotal({
   label,
   count,
-  total,
+  items,
   selCount,
-  selTotal,
+  selItems,
 }: {
   label: string;
   count: number;
-  total: number;
+  items: CurrencyAmount[];
   selCount: number;
-  selTotal: number;
+  selItems: CurrencyAmount[];
 }) {
+  const list = addByCurrency(items);
+  const oneForeign = list.length === 1 && !isBaseCurrency(list[0].currency);
   return (
     <span onClick={(e) => e.stopPropagation()}>
       <HoverCard openDelay={150} closeDelay={80}>
         <HoverCardTrigger asChild>
           <span className="inline-flex items-baseline gap-2 cursor-help whitespace-nowrap">
             <span className="text-[9.5px] text-slate-400 tracking-wide" style={{ fontWeight: 600 }}>Total Amount Due</span>
-            <span className="text-[12.5px] text-slate-700" style={{ fontWeight: 700 }}>{money(total)}</span>
+            <span className="text-[12.5px] text-slate-700" style={{ fontWeight: 700 }}>{totalText(list)}</span>
+            {oneForeign && (
+              <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>
+                ≈ {formatMoney(list[0].base, BASE_CURRENCY)}
+              </span>
+            )}
             {selCount > 0 && (
               <span className="text-[11px] text-primary border-l border-slate-300 pl-2" style={{ fontWeight: 600 }}>
-                {money(selTotal)} selected
+                {totalText(selItems)} selected
               </span>
             )}
           </span>
         </HoverCardTrigger>
-        <HoverCardContent side="left" align="center" sideOffset={8} className="w-[248px] p-3 rounded-xl border border-border shadow-lg bg-white z-[260]">
+        <HoverCardContent side="left" align="center" sideOffset={8} className="w-[272px] p-3 rounded-xl border border-border shadow-lg bg-white z-[260]">
           <p className="text-[12px] text-foreground" style={{ fontWeight: 600 }}>{label}</p>
           <p className="text-[11px] text-slate-500 mt-0.5">
             Total across the {count} invoice{count === 1 ? '' : 's'} below.
           </p>
           <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 space-y-1.5">
-            <div className="flex items-center justify-between gap-2 text-[11.5px]">
-              <span className="text-slate-500">Amount Due</span>
-              <span className="text-slate-700" style={{ fontWeight: 600 }}>{money(total)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2 text-[11.5px] pt-1.5 border-t border-slate-200/70">
-              <span className="text-slate-500">You've Selected</span>
-              <span className="text-primary" style={{ fontWeight: 600 }}>
-                {selCount > 0 ? `${money(selTotal)} · ${selCount} of ${count}` : 'Nothing yet'}
-              </span>
+            <GroupTotalRows label="Amount Due" items={items} tone="text-slate-700" />
+            <div className="pt-1.5 border-t border-slate-200/70">
+              {selCount > 0 ? (
+                <GroupTotalRows label="You've Selected" items={selItems} tone="text-primary" suffix={` · ${selCount} of ${count}`} />
+              ) : (
+                <div className="flex items-center justify-between gap-2 text-[11.5px]">
+                  <span className="text-slate-500">You've Selected</span>
+                  <span className="text-primary" style={{ fontWeight: 600 }}>Nothing yet</span>
+                </div>
+              )}
             </div>
           </div>
         </HoverCardContent>
@@ -106,27 +129,67 @@ function GroupAmountTotal({
   );
 }
 
+/** One figure of the group hover: the total, then what it's made of — the
+ *  base equivalent of a foreign total, or each currency of a mixed one. */
+function GroupTotalRows({ label, items, tone, suffix = '' }: { label: string; items: CurrencyAmount[]; tone: string; suffix?: string }) {
+  const list = addByCurrency(items).filter((i) => Math.abs(i.amount) >= 0.005);
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center justify-between gap-2 text-[11.5px]">
+        <span className="text-slate-500">{label}</span>
+        <span className={tone} style={{ fontWeight: 600 }}>{totalText(list)}{suffix}</span>
+      </div>
+      {list.length > 1 &&
+        list.map((i) => (
+          <div key={i.currency} className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+            <span className="inline-flex items-center gap-1.5">
+              <CurrencyFlag code={i.currency} size={12} />
+              {i.currency}
+            </span>
+            <span>{formatMoney(i.amount, i.currency)}</span>
+          </div>
+        ))}
+      {list.length === 1 && !isBaseCurrency(list[0].currency) && (
+        <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+          <span>In {BASE_CURRENCY} (base)</span>
+          <span>{formatMoney(list[0].base, BASE_CURRENCY)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Grouping (Eli 9/25) ──────────────────────────────────────────────
  * Cluster the pool by vendor, due-date urgency, or amount band. groupRank
  * gives a sortable key so same-group rows sit adjacent; groupMeta names
  * the band the DataTable draws above each cluster. */
-type GroupKey = 'none' | 'vendor' | 'dueDate' | 'amount' | 'discount';
+type GroupKey = 'none' | 'vendor' | 'currency' | 'dueDate' | 'amount' | 'discount';
 const GROUP_OPTIONS: { key: GroupKey; label: string }[] = [
   { key: 'none', label: 'No Grouping' },
   { key: 'vendor', label: 'Vendor' },
+  // Currency band (Currency & Exchange Rates): one band per invoice
+  // currency, each with its own total, the base currency first.
+  { key: 'currency', label: 'Currency' },
   { key: 'dueDate', label: 'Due Date' },
   { key: 'amount', label: 'Amount Due' },
   // Discount band (user 10/5): early-pay rows cluster on top so the
   // money-saving picks are one glance.
   { key: 'discount', label: 'Discount' },
 ];
+// Amount bands are base-currency figures (Currency & Exchange Rates): an
+// invoice lands in a band by its base equivalent at its own rate, so a €
+// and a ₨ balance compare like with like. Sized for the base currency.
+const baseFigure = (n: number) => `${moneyPrefix(BASE_CURRENCY)}${n.toLocaleString('en-US')}`;
 const AMOUNT_BANDS = [
-  { max: 5000, label: 'Under $5,000' },
-  { max: 25000, label: '$5,000 to $25,000' },
-  { max: 50000, label: '$25,000 to $50,000' },
-  { max: Infinity, label: '$50,000 and Up' },
+  { max: 100_000, label: `Under ${baseFigure(100_000)}` },
+  { max: 1_000_000, label: `${baseFigure(100_000)} to ${baseFigure(1_000_000)}` },
+  { max: 10_000_000, label: `${baseFigure(1_000_000)} to ${baseFigure(10_000_000)}` },
+  { max: Infinity, label: `${baseFigure(10_000_000)} and Up` },
 ];
 const amountBandIdx = (n: number) => AMOUNT_BANDS.findIndex((b) => n < b.max);
+/** A row's amount due in the base currency, at its invoice's rate. */
+const dueInBase = (r: EligibleRow) => toInvoiceBase(r.invoice, r.invoice.outstandingBalance);
+const currencyOf = (r: EligibleRow) => (r.invoice.currency || BASE_CURRENCY).toUpperCase();
 const dueBandOf = (iso: string): { idx: number; label: string } => {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const due = new Date(`${iso}T00:00:00`);
@@ -145,15 +208,17 @@ const hasLiveDiscount = (r: EligibleRow, paymentDate: string): boolean => {
 };
 const groupRank = (r: EligibleRow, key: GroupKey, paymentDate: string): string => {
   if (key === 'vendor') return r.invoice.vendor.toLowerCase();
+  if (key === 'currency') return isBaseCurrency(currencyOf(r)) ? '0' : `1${currencyOf(r)}`;
   if (key === 'dueDate') return String(dueBandOf(r.invoice.dueDate).idx);
-  if (key === 'amount') return String(amountBandIdx(r.invoice.outstandingBalance));
+  if (key === 'amount') return String(amountBandIdx(dueInBase(r)));
   if (key === 'discount') return hasLiveDiscount(r, paymentDate) ? '0' : '1';
   return '';
 };
 const groupMetaOf = (r: EligibleRow, key: GroupKey, paymentDate: string): { id: string; label: string } => {
   if (key === 'vendor') return { id: `v-${r.invoice.vendor}`, label: r.invoice.vendor };
+  if (key === 'currency') return { id: `c-${currencyOf(r)}`, label: currencyLabel(currencyOf(r)) };
   if (key === 'dueDate') { const b = dueBandOf(r.invoice.dueDate); return { id: `d-${b.idx}`, label: b.label }; }
-  if (key === 'amount') { const i = amountBandIdx(r.invoice.outstandingBalance); return { id: `a-${i}`, label: AMOUNT_BANDS[i].label }; }
+  if (key === 'amount') { const i = amountBandIdx(dueInBase(r)); return { id: `a-${i}`, label: AMOUNT_BANDS[i].label }; }
   if (key === 'discount') {
     return hasLiveDiscount(r, paymentDate)
       ? { id: 'disc-1', label: 'Early-Pay Discount Available' }
@@ -199,7 +264,9 @@ const DUE_PRESETS = [7, 14, 30, 60, 90] as const;
 // menus, resize, reorder, freeze, and column filters as every listing
 // page. Invoice stays frozen LEFT, Amount Due pinned RIGHT, everything
 // between scrolls horizontally.
-const STEP1_COLUMN_ORDER = ['invoice', 'type', 'vendor', 'invoiceDate', 'dueDate', 'discount', 'amount'];
+// Currency sits beside Amount Due (Currency & Exchange Rates): the flag
+// and code say what the figure next to it is in.
+const STEP1_COLUMN_ORDER = ['invoice', 'type', 'vendor', 'invoiceDate', 'dueDate', 'discount', 'currency', 'amount'];
 
 /** The type filter's fixed option order, the creation-flow taxonomy. */
 const TYPE_FAMILIES = ['Inventory Invoice', 'Pre-Invoice', 'Standalone Invoice'] as const;
@@ -218,7 +285,7 @@ export function RunSetupStage({
   // Segmented search (invoice / vendor), the Record Payment bar.
   const [invoiceQuery, setInvoiceQuery] = useState('');
   const [vendorQuery, setVendorQuery] = useState('');
-  const [activePopover, setActivePopover] = useState<null | 'payDate' | 'due' | 'aging' | 'type' | 'vendor' | 'amount' | 'discount' | 'group'>(null);
+  const [activePopover, setActivePopover] = useState<null | 'payDate' | 'due' | 'aging' | 'type' | 'vendor' | 'currency' | 'amount' | 'discount' | 'group'>(null);
   const [vendorFilterSearch, setVendorFilterSearch] = useState('');
   // "Due by" popover: draft range for the global DateRangePanel (the
   // listing calendar, 8/12/26). Nothing applies until Apply.
@@ -268,7 +335,10 @@ export function RunSetupStage({
       case 'invoiceDate': return r.invoice.invoiceDate;
       case 'dueDate': return r.invoice.dueDate;
       case 'discount': return liveDiscountOf(r);
-      case 'amount': return r.invoice.outstandingBalance;
+      case 'currency': return currencyOf(r);
+      // Sorted and range-filtered on the base equivalent (Currency &
+      // Exchange Rates), so a ¥ balance never outranks a $ one on its face.
+      case 'amount': return dueInBase(r);
       default: return '';
     }
   };
@@ -278,7 +348,7 @@ export function RunSetupStage({
   // carries the inline prepaid icon so "$X [icon]" stays on one line
   // (user 10/5). Left-aligned now, so the figure never clips.
   const amountWidth = useMemo(() => {
-    const maxLen = rows.reduce((m, r) => Math.max(m, money(r.invoice.outstandingBalance).length), 0);
+    const maxLen = rows.reduce((m, r) => Math.max(m, formatMoney(r.invoice.outstandingBalance, r.invoice.currency).length), 0);
     const hasPrepaid = rows.some((r) => prepaidTotalOf(r.invoice) > 0.004);
     const base = Math.round(maxLen * 7.5) + 56 + (hasPrepaid ? 28 : 0);
     return Math.min(220, Math.max(132, base));
@@ -373,7 +443,7 @@ export function RunSetupStage({
       searchText: (r) => {
         const terms = discountTermsFor(r.invoice);
         if (!terms || !discountIsLive(terms, run.paymentDate)) return '';
-        return `${terms.percent}% · −${money(discountAmountOn(r.invoice.outstandingBalance, terms))}`;
+        return `${terms.percent}% · −${formatMoney(discountAmountOn(r.invoice.outstandingBalance, terms), r.invoice.currency)}`;
       },
       // Early-pay discount, measured against the run's PAYMENT date
       // (8/28/26): what you'd actually save if the money moves that
@@ -393,7 +463,7 @@ export function RunSetupStage({
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] cursor-help whitespace-nowrap"
                   style={{ fontWeight: 600 }}
                 >
-                  {highlightText(`${terms.percent}% · −`, searchQuery)}{highlightAmount(money(discount), searchQuery)}
+                  {highlightText(`${terms.percent}% · −`, searchQuery)}{highlightAmount(formatMoney(discount, inv.currency), searchQuery)}
                 </span>
               </HoverCardTrigger>
               <HoverCardContent side="top" align="end" className="w-[280px] p-3 rounded-xl border border-border shadow-lg bg-white z-[260]">
@@ -402,8 +472,8 @@ export function RunSetupStage({
                 </p>
                 <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
                   Pay by {humanDate(terms.deadline)} and take {terms.percent}% off. On this balance that's{' '}
-                  <span className="text-emerald-700" style={{ fontWeight: 600 }}>{money(discount)}</span>, so you'd pay{' '}
-                  <span style={{ fontWeight: 600 }}>{money(inv.outstandingBalance - discount)}</span> instead of {money(inv.outstandingBalance)}.
+                  <span className="text-emerald-700" style={{ fontWeight: 600 }}>{formatMoney(discount, inv.currency)}</span>, so you'd pay{' '}
+                  <span style={{ fontWeight: 600 }}>{formatMoney(inv.outstandingBalance - discount, inv.currency)}</span> instead of {formatMoney(inv.outstandingBalance, inv.currency)}.
                 </p>
                 <p className="text-[11px] mt-1.5" style={{ fontWeight: 600, color: daysLeft <= 2 ? '#B45309' : '#047857' }}>
                   {daysLeft === 0 ? 'Payment date is the last day of the window.' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left at the current payment date.`}
@@ -415,8 +485,23 @@ export function RunSetupStage({
       },
     },
     {
+      key: 'currency',
+      label: 'Currency',
+      // Narrow: flag + code is all it holds, and the pool must still fit.
+      minWidth: 80,
+      defaultWidth: 100,
+      sortable: true,
+      filterType: 'multiselect',
+      uniqueValues: (list) => [...new Set(list.map(currencyOf))].sort(),
+      getValue: (r) => currencyOf(r),
+      // Flag + code, the invoice listing's Currency cell; the name searches too.
+      searchText: (r) => `${currencyOf(r)} ${getCurrency(currencyOf(r))?.name ?? ''}`,
+      render: (r, { searchQuery }) => <CurrencyCell code={currencyOf(r)} searchQuery={searchQuery} />,
+    },
+    {
       key: 'amount',
       label: 'Amount Due',
+      tooltip: "In each invoice's own currency. Sorting and the range filter use the base currency equivalent.",
       minWidth: 140,
       defaultWidth: amountWidth,
       locked: true,
@@ -427,13 +512,17 @@ export function RunSetupStage({
       align: 'right',
       sortable: true,
       filterType: 'range',
-      getValue: (r) => r.invoice.outstandingBalance,
-      searchText: (r) => money(r.invoice.outstandingBalance),
+      // In the invoice's currency with the rate hover; sorted and range-
+      // filtered on the base equivalent (Currency & Exchange Rates).
+      getValue: (r) => dueInBase(r),
+      searchText: (r) => `${r.invoice.outstandingBalance} ${formatMoney(r.invoice.outstandingBalance, r.invoice.currency)}`,
       // Prepaid-origin note (9/2/26): the $70 remainder of a $100
       // invoice says where the other $30 went, right in the pool.
       render: (r, { searchQuery }) => (
         <AmountWithPrepaidNote invoice={r.invoice}>
-          <span className="text-slate-600 whitespace-nowrap">{highlightAmount(money(r.invoice.outstandingBalance), searchQuery)}</span>
+          <Money value={r.invoice.outstandingBalance} currency={r.invoice.currency} fx={invoiceFx(r.invoice)} className="text-slate-600 whitespace-nowrap">
+            {highlightAmount(formatMoney(r.invoice.outstandingBalance, r.invoice.currency), searchQuery)}
+          </Money>
         </AmountWithPrepaidNote>
       ),
     },
@@ -492,6 +581,7 @@ export function RunSetupStage({
     f.agingBuckets?.length ||
     f.types?.length ||
     f.vendors?.length ||
+    f.currencies?.length ||
     f.amountMin != null ||
     f.amountMax != null ||
     f.discount
@@ -510,6 +600,7 @@ export function RunSetupStage({
     (f.agingBuckets?.length ?? 0) +
     (f.types?.length ?? 0) +
     (f.vendors?.length ?? 0) +
+    (f.currencies?.length ?? 0) +
     (f.paymentTerms?.length ?? 0) +
     (f.amountMin != null || f.amountMax != null ? 1 : 0) +
     (f.discount ? 1 : 0) +
@@ -545,6 +636,8 @@ export function RunSetupStage({
       invoiceId: inv.id,
       invoiceNumber: inv.invoiceNumber,
       vendor: inv.vendor,
+      // Its currency decides its payment (Currency & Exchange Rates).
+      currency: inv.currency,
       dueDate: inv.dueDate,
       balanceAtAdd: inv.outstandingBalance,
       payAmount: inv.outstandingBalance - discount,
@@ -587,22 +680,38 @@ export function RunSetupStage({
       .map((v) => ({ id: v, label: v, count: counts[v] }));
   }, [invoices, runsApi.runs, run.id]);
 
+  // Currency options (Currency & Exchange Rates): every invoice currency
+  // in the pool, the base currency first, counts from the whole pool.
+  const currencyOptions = useMemo(() => {
+    const counts: Record<string, number> = {};
+    eligibleInvoices(invoices, runsApi.runs, run.id, {})
+      .filter((r) => !r.noPaymentMethod)
+      .forEach((r) => {
+        counts[currencyOf(r)] = (counts[currencyOf(r)] ?? 0) + 1;
+      });
+    return Object.keys(counts)
+      .sort((a, b) => (isBaseCurrency(a) ? -1 : isBaseCurrency(b) ? 1 : a.localeCompare(b)))
+      .map((code) => ({ id: code, label: getCurrency(code)?.name ?? code, count: counts[code] }));
+  }, [invoices, runsApi.runs, run.id]);
+
   // Discount filter stats (8/28/26 review): the options carry counts and
   // the live savings on the table, measured at the run's payment date,
-  // so the filter says what taking it is worth before it's clicked.
+  // so the filter says what taking it is worth before it's clicked. The
+  // savings add up per currency, each invoice at its own rate in base.
   const discountStats = useMemo(() => {
     let withCount = 0;
-    let savings = 0;
+    const savings: CurrencyAmount[] = [];
     eligibleInvoices(invoices, runsApi.runs, run.id, {})
       .filter((r) => !r.noPaymentMethod)
       .forEach((r) => {
         const terms = discountTermsFor(r.invoice);
         if (terms && discountIsLive(terms, run.paymentDate)) {
           withCount += 1;
-          savings += discountAmountOn(r.invoice.outstandingBalance, terms);
+          const amount = discountAmountOn(r.invoice.outstandingBalance, terms);
+          savings.push({ currency: currencyOf(r), amount, base: toInvoiceBase(r.invoice, amount) });
         }
       });
-    return { withCount, savings: Math.round(savings * 100) / 100 };
+    return { withCount, savings };
   }, [invoices, runsApi.runs, run.id, run.paymentDate]);
 
   // Invoice type options (8/12/26): the three families, fixed order,
@@ -637,34 +746,53 @@ export function RunSetupStage({
   // execution step now (8/7/26).
   const canContinue = run.lines.length > 0;
 
+  // A selected line's amount in its currency with its base equivalent at
+  // its invoice's own rate (Currency & Exchange Rates); a line whose
+  // invoice is gone falls back to the rate on the payment date.
+  const invoiceById = useMemo(() => new Map(invoices.map((inv) => [inv.id, inv])), [invoices]);
+  const lineAmount = (l: PaymentRunLine, amount: number): CurrencyAmount => {
+    const inv = invoiceById.get(l.invoiceId);
+    const currency = lineCurrency(l);
+    return {
+      currency,
+      amount,
+      base: inv ? toInvoiceBase(inv, amount) : toBase(amount, paymentRateOn(currency, run.paymentDate)),
+    };
+  };
+
   // Running total of the current selection (Eli 9/25): what each selected
-  // line pays (discount already applied at add), shown in the footer.
-  const selectedTotal = useMemo(
-    () => Math.round(run.lines.reduce((s, l) => s + (l.payAmount ?? l.balanceAtAdd ?? 0), 0) * 100) / 100,
-    [run.lines],
+  // line pays (discount already applied at add), shown in the footer, per
+  // currency plus the base total — never one raw sum across currencies.
+  const selectedItems = useMemo(
+    () => run.lines.map((l) => lineAmount(l, l.payAmount ?? l.balanceAtAdd ?? 0)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [run.lines, invoiceById, run.paymentDate],
   );
+  const selectedByCurrency = useMemo(() => addByCurrency(selectedItems), [selectedItems]);
 
   // Per-group count + total (Eli 9/25): the band subtitle shows how many
   // invoices sit in the group, their combined amount due — and the
-  // SELECTED slice ("how much am I authorizing for each vendor").
+  // SELECTED slice ("how much am I authorizing for each vendor"). Totals
+  // are kept per currency with their base equivalents.
   const groupStats = useMemo(() => {
-    const m = new Map<string, { count: number; total: number; selCount: number; selTotal: number }>();
+    const m = new Map<string, { count: number; items: CurrencyAmount[]; selCount: number; selItems: CurrencyAmount[] }>();
     if (groupByKey === 'none') return m;
     const lineById = new Map(run.lines.map((l) => [l.invoiceId, l]));
     for (const r of visibleRows) {
       const id = groupMetaOf(r, groupByKey, run.paymentDate).id;
-      const cur = m.get(id) ?? { count: 0, total: 0, selCount: 0, selTotal: 0 };
+      const cur = m.get(id) ?? { count: 0, items: [], selCount: 0, selItems: [] };
       cur.count += 1;
-      cur.total = Math.round((cur.total + r.invoice.outstandingBalance) * 100) / 100;
+      cur.items.push({ currency: currencyOf(r), amount: r.invoice.outstandingBalance, base: dueInBase(r) });
       const line = lineById.get(r.invoice.id);
       if (line) {
         cur.selCount += 1;
-        cur.selTotal = Math.round((cur.selTotal + (line.payAmount ?? line.balanceAtAdd ?? 0)) * 100) / 100;
+        cur.selItems.push(lineAmount(line, line.payAmount ?? line.balanceAtAdd ?? 0));
       }
       m.set(id, cur);
     }
     return m;
-  }, [visibleRows, groupByKey, run.lines]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleRows, groupByKey, run.lines, invoiceById]);
 
   // Distinct vendors in the selection (Eli 9/25 footer stats), plus the
   // per-vendor amounts behind them (user 10/5: "amount per vendor" is a
@@ -673,13 +801,15 @@ export function RunSetupStage({
     () => new Set(run.lines.map((l) => l.vendor)).size,
     [run.lines],
   );
+  // Per vendor, in the vendor's own currency (or currencies), largest
+  // first by base.
   const perVendorSelected = useMemo(() => {
-    const m = new Map<string, number>();
-    run.lines.forEach((l) => {
-      m.set(l.vendor, Math.round(((m.get(l.vendor) ?? 0) + (l.payAmount ?? l.balanceAtAdd ?? 0)) * 100) / 100);
-    });
-    return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [run.lines]);
+    const m = new Map<string, CurrencyAmount[]>();
+    run.lines.forEach((l, i) => m.set(l.vendor, [...(m.get(l.vendor) ?? []), selectedItems[i]]));
+    return [...m.entries()]
+      .map(([vendor, items]) => ({ vendor, items, base: items.reduce((s, x) => s + x.base, 0) }))
+      .sort((a, b) => b.base - a.base);
+  }, [run.lines, selectedItems]);
 
   // Clicking a vendor in the footer hover (user 10/8): every one of that
   // vendor's rows flashes in the table and the first scrolls into view if
@@ -1110,6 +1240,56 @@ export function RunSetupStage({
               </PopoverContent>
             </Popover>
 
+            {/* Currency (Currency & Exchange Rates): the vendor chip's recipe,
+                each option wearing its flag. A run can mix currencies; each
+                one is paid separately. */}
+            <Popover open={activePopover === 'currency'} onOpenChange={(o) => setActivePopover(o ? 'currency' : null)}>
+              <PopoverTrigger asChild>
+                <button className={chipClass(!!f.currencies?.length)} style={{ fontWeight: 500 }}>
+                  {f.currencies?.length === 1 ? (
+                    <CurrencyFlag code={f.currencies[0]} size={14} />
+                  ) : (
+                    <Coins className={chipIconClass(!!f.currencies?.length)} />
+                  )}
+                  <span className="max-w-[160px] truncate">
+                    {!f.currencies?.length
+                      ? 'Currency'
+                      : f.currencies.length === 1
+                        ? f.currencies[0]
+                        : `${f.currencies.length} currencies`}
+                  </span>
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${activePopover === 'currency' ? 'rotate-180' : ''}`} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" sideOffset={6} className="w-[260px] p-0 bg-white border border-border rounded-xl overflow-hidden" style={POPOVER_SHADOW}>
+                <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+                  <p className="text-[12px] text-slate-500" style={{ fontWeight: 600 }}>Currency</p>
+                  {!!f.currencies?.length && (
+                    <button onClick={() => setFilters({ currencies: undefined })} className="text-[11px] text-primary hover:text-blue-700 transition-colors cursor-pointer" style={{ fontWeight: 600 }}>Reset</button>
+                  )}
+                </div>
+                <div className="px-2 py-2 max-h-[260px] overflow-y-auto">
+                  {currencyOptions.map((opt) => {
+                    const checked = f.currencies?.includes(opt.id) ?? false;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setFilters({ currencies: toggleIn(f.currencies, opt.id) })}
+                        className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md hover:bg-slate-50 text-left transition-colors cursor-pointer"
+                      >
+                        <Checkbox checked={checked} className="pointer-events-none" />
+                        <CurrencyFlag code={opt.id} size={16} />
+                        <span className="text-[12px] text-foreground shrink-0" style={{ fontWeight: 500 }}>{opt.id}</span>
+                        <span className="text-[11px] text-slate-400 flex-1 truncate">{opt.label}</span>
+                        <span className="text-[11px] text-slate-400 shrink-0">{opt.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+
             {/* Amount due range */}
             <Popover
               open={activePopover === 'amount'}
@@ -1126,7 +1306,7 @@ export function RunSetupStage({
                   <Receipt className={chipIconClass(f.amountMin != null || f.amountMax != null)} />
                   <span>
                     {f.amountMin != null || f.amountMax != null
-                      ? `${f.amountMin != null ? '$' + f.amountMin.toLocaleString('en-US') : '$0'} to ${f.amountMax != null ? '$' + f.amountMax.toLocaleString('en-US') : 'Any'}`
+                      ? `${baseFigure(f.amountMin ?? 0)} to ${f.amountMax != null ? baseFigure(f.amountMax) : 'Any'}`
                       : 'Amount Due'}
                   </span>
                   <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${activePopover === 'amount' ? 'rotate-180' : ''}`} />
@@ -1154,11 +1334,14 @@ export function RunSetupStage({
                     </button>
                   )}
                 </div>
+                {/* The range is a base-currency figure (Currency & Exchange
+                    Rates): each invoice compares at its own rate. */}
+                <p className="px-4 -mt-1 pb-2 text-[11px] text-slate-500">In the base currency, each invoice at its own rate.</p>
                 <div className="px-4 pb-3 grid grid-cols-2 gap-3">
                   <div>
                     <p className="text-[11px] text-slate-500 mb-1" style={{ fontWeight: 500 }}>From</p>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">$</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">{moneyPrefix(BASE_CURRENCY)}</span>
                       {/* MoneyInput (8/12/26): thousands group while
                           typing, the comma standard for amount fields. */}
                       <MoneyInput
@@ -1173,7 +1356,7 @@ export function RunSetupStage({
                   <div>
                     <p className="text-[11px] text-slate-500 mb-1" style={{ fontWeight: 500 }}>To</p>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">$</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">{moneyPrefix(BASE_CURRENCY)}</span>
                       <MoneyInput
                         fluid
                         value={amountDraft.max ?? 0}
@@ -1187,7 +1370,7 @@ export function RunSetupStage({
                 <div className="px-4 py-2.5 flex items-center justify-between border-t border-slate-100">
                   <span className="text-[11px] text-slate-400 " style={{ fontWeight: 500 }}>
                     {amountDraft.min != null || amountDraft.max != null
-                      ? `${amountDraft.min != null ? '$' + amountDraft.min.toLocaleString('en-US') : '$0'} to ${amountDraft.max != null ? '$' + amountDraft.max.toLocaleString('en-US') : 'Any'}`
+                      ? `${baseFigure(amountDraft.min ?? 0)} to ${amountDraft.max != null ? baseFigure(amountDraft.max) : 'Any'}`
                       : 'No range set'}
                   </span>
                   <Button
@@ -1231,7 +1414,7 @@ export function RunSetupStage({
                   <div className="mx-4 mt-1 mb-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-50/70 border border-emerald-100 flex items-center gap-2">
                     <BadgePercent className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <p className="text-[11px] text-emerald-800 leading-snug" style={{ fontWeight: 500 }}>
-                      <span style={{ fontWeight: 700 }}>{money(discountStats.savings)}</span> on the table across{' '}
+                      <span style={{ fontWeight: 700 }}>{totalText(discountStats.savings)}</span> on the table across{' '}
                       {discountStats.withCount} invoice{discountStats.withCount === 1 ? '' : 's'} if paid on {humanDate(run.paymentDate)}.
                     </p>
                   </div>
@@ -1312,14 +1495,16 @@ export function RunSetupStage({
                     // Left of the band: just the count (Eli 10/5 — the group
                     // total was read as the SELECTED total because they sat
                     // side by side). The amount moves right, over the column.
-                    subtitle: s ? `${s.count} invoice${s.count === 1 ? '' : 's'}` : undefined,
+                    subtitle: s
+                      ? `${s.count} invoice${s.count === 1 ? '' : 's'}${groupByKey === 'currency' && meta.id === `c-${BASE_CURRENCY}` ? ' · base currency' : ''}`
+                      : undefined,
                     // Right edge of the band, directly over the Amount Due
                     // column: the group's total amount due, framed as "the
                     // total of the rows below" via its hover, with the
                     // selected slice called out in the primary tone so it
                     // reads as distinct from this due figure.
                     right: s ? (
-                      <GroupAmountTotal label={meta.label} count={s.count} total={s.total} selCount={s.selCount} selTotal={s.selTotal} />
+                      <GroupAmountTotal label={meta.label} count={s.count} items={s.items} selCount={s.selCount} selItems={s.selItems} />
                     ) : undefined,
                   };
                 }
@@ -1345,23 +1530,36 @@ export function RunSetupStage({
           STANDARD height (user 10/8: no boxed card inflating it). The
           counts read as plain text bottom-left with the total right next
           to them; the per-vendor breakdown stays on hover, and clicking a
-          vendor there flashes its rows in the table and scrolls to them. */}
+          vendor there flashes its rows in the table and scrolls to them.
+          Currency & Exchange Rates: the total reads per currency, then
+          "≈" the base total (each invoice at its own rate) with its own
+          hover; past three currencies only the base total shows. */}
       <div className={RUN_FOOTER_FLUSH}>
-        {run.lines.length > 0 && (
+        {run.lines.length > 0 && (() => {
+          const listAmounts = selectedByCurrency.length <= 3;
+          const showBase = selectedByCurrency.length > 1 || !isBaseCurrency(selectedByCurrency[0]?.currency);
+          return (
+          <span className="inline-flex items-baseline gap-1.5 shrink-0 min-w-0 flex-wrap text-[12px] text-slate-500" style={{ fontWeight: 500 }}>
           <Tooltip delayDuration={150}>
             <TooltipTrigger asChild>
-              <span className="inline-flex items-baseline gap-1.5 cursor-help shrink-0 text-[12px] text-slate-500" style={{ fontWeight: 500 }}>
+              <span className="inline-flex items-baseline gap-1.5 cursor-help">
                 <span className="text-foreground" style={{ fontWeight: 600 }}>{run.lines.length}</span>
                 {` invoice${run.lines.length === 1 ? '' : 's'} · `}
                 <span className="text-foreground" style={{ fontWeight: 600 }}>{selectedVendorCount}</span>
-                {` vendor${selectedVendorCount === 1 ? '' : 's'} · `}
-                <span className="text-[14px] text-foreground" style={{ fontWeight: 700 }}>{money(selectedTotal)}</span>
+                {` vendor${selectedVendorCount === 1 ? '' : 's'}`}
+                {listAmounts &&
+                  selectedByCurrency.map((c) => (
+                    <span key={c.currency} className="inline-flex items-baseline gap-1.5">
+                      <span>·</span>
+                      <span className="text-[14px] text-foreground whitespace-nowrap" style={{ fontWeight: 700 }}>{formatMoney(c.amount, c.currency)}</span>
+                    </span>
+                  ))}
               </span>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-[280px] p-2.5 bg-white border border-border rounded-lg shadow-md z-[300]">
               <p className="text-[11px] text-slate-500 mb-1" style={{ fontWeight: 600 }}>Selected per Vendor</p>
               <div className="space-y-0.5 max-h-[180px] overflow-y-auto">
-                {perVendorSelected.map(([vendor, amt]) => (
+                {perVendorSelected.map(({ vendor, items }) => (
                   <button
                     key={vendor}
                     type="button"
@@ -1370,13 +1568,27 @@ export function RunSetupStage({
                     title={`Show ${vendor} in the table`}
                   >
                     <span className="truncate">{vendor}</span>
-                    <span style={{ fontWeight: 600 }}>{money(amt)}</span>
+                    <span className="shrink-0" style={{ fontWeight: 600 }}>{amountsText(items)}</span>
                   </button>
                 ))}
               </div>
             </TooltipContent>
           </Tooltip>
-        )}
+          {showBase && (
+            <>
+              <span>·</span>
+              <BaseTotal
+                items={selectedItems}
+                basis="invoice"
+                align="start"
+                className={listAmounts ? 'text-[12px] text-slate-500' : 'text-[14px] text-foreground'}
+                style={{ fontWeight: listAmounts ? 500 : 700 }}
+              />
+            </>
+          )}
+          </span>
+          );
+        })()}
         <div className="ml-auto flex items-center gap-2 sm:gap-3 shrink-0">
           <button type="button" onClick={onCancel} className={FOOTER_BTN_GHOST} style={{ fontWeight: 500 }}>
             Cancel

@@ -20,9 +20,10 @@ import {
   type RenderedBand,
   type StubLine,
 } from './checkPrinting';
+import { PAY_FROM_ACCOUNTS } from '@/app/data/mockPayments';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatMoneyPdf } from '@/app/currency/money';
 
-const money = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const fmtDate = (iso: string) => {
   const d = new Date(iso.includes('T') ? iso : `${iso}T00:00:00`);
@@ -57,6 +58,9 @@ export async function buildCheckRunPdf(
 ): Promise<string> {
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ orientation: 'portrait', unit: 'in', format: 'letter' });
+  // Currency & Exchange Rates: a check draws on one bank account, so its
+  // stub amounts are in that account's currency.
+  const currency = PAY_FROM_ACCOUNTS.find((a) => a.id === settings.accountId)?.currency ?? BASE_CURRENCY;
 
   run.sheets.forEach((sheet, si) => {
     if (si > 0) doc.addPage();
@@ -78,7 +82,7 @@ export async function buildCheckRunPdf(
         continue;
       }
       if (band.role === 'check' && band.check) drawCheckFace(doc, band, settings, opts);
-      if (band.role === 'stub' && band.stub) drawStub(doc, band, opts);
+      if (band.role === 'stub' && band.stub) drawStub(doc, band, opts, currency);
     }
   });
 
@@ -193,7 +197,8 @@ const STUB_COLUMNS: { key: keyof StubLine | 'invoiceNumber'; label: string; x: n
   { key: 'net', label: 'Net Paid', x: 7.65, w: 0.85, align: 'right' },
 ];
 
-function drawStub(doc: any, band: RenderedBand, opts: CheckPdfOptions) {
+function drawStub(doc: any, band: RenderedBand, opts: CheckPdfOptions, currency: string) {
+  const money = (n: number) => formatMoneyPdf(n, currency);
   const stub = band.stub!;
   const oy = band.band.offsetY;
   const contentH = band.band.contentHeight;

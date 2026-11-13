@@ -975,7 +975,7 @@ export function buildCommitRecords(
         // The mid-market rate on the posting date (Currency & Exchange Rates,
         // spec 4.4). The file's Exchange Rate column is checked above but
         // not used: it doesn't say which way it is quoted.
-        ...stampRate((h.currency || 'USD').toUpperCase(), config.mode === 'migration' ? periodPostingDate : h.posting_date),
+        ...stampRate((h.currency || 'USD').toUpperCase(), config.mode === 'migration' ? periodPostingDate : h.posting_date, undefined, 'postingDate'),
         apAccount: '2000 Accounts Payable',
         description,
         postingDate: config.mode === 'migration' ? periodPostingDate : h.posting_date,

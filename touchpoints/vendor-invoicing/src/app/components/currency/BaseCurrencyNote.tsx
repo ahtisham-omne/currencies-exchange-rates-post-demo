@@ -7,7 +7,7 @@ import { CurrencyFlag } from './CurrencyChip';
  * KPIs are converted to base and labelled). Each document is converted at
  * its own rate before the figures are added up.
  */
-export function BaseCurrencyNote({ what = 'invoice' }: { what?: string }) {
+export function BaseCurrencyNote({ what = 'invoice', rateDay = 'its Rate as of date' }: { what?: string; rateDay?: string }) {
   const name = getCurrency(BASE_CURRENCY)?.name ?? BASE_CURRENCY;
   return (
     <Tooltip delayDuration={200}>
@@ -24,7 +24,7 @@ export function BaseCurrencyNote({ what = 'invoice' }: { what?: string }) {
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-[280px]">
         Amounts on these cards are in {name} ({BASE_CURRENCY}), the company's base currency. Each {what} is converted at
-        its own rate, the one on its posting date, before they are added up.
+        its own rate, the one on {rateDay}, before they are added up.
       </TooltipContent>
     </Tooltip>
   );

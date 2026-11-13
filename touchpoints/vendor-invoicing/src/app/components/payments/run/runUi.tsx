@@ -1,8 +1,9 @@
 import { toast } from 'sonner';
 import { highlightText } from '@/app/components/InvoiceDataTable';
 import type { Payment } from '@/app/data/mockPayments';
-import { liveLines, type PaymentRun, type PaymentRunStatus } from '@/app/data/paymentRuns';
+import { groupKeyOf, lineCurrency, lineGroupKey, liveLines, type PaymentRun, type PaymentRunStatus } from '@/app/data/paymentRuns';
 import { overdueDaysOf, overdueLabel, overdueTone, localTodayIso } from '@/app/lib/dueBucket';
+import { currencyDecimals } from '@/app/currency/money';
 
 /* ── Small shared pieces for the payment run surfaces ─────────────── */
 
@@ -26,9 +27,6 @@ export const FOOTER_BTN_GHOST =
   'inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-white text-[13px] text-muted-foreground hover:bg-slate-50 hover:border-slate-300 transition-all shrink-0 cursor-pointer px-3 sm:px-5 h-9 disabled:opacity-50 disabled:cursor-not-allowed';
 export const FOOTER_BTN_PRIMARY =
   'inline-flex items-center justify-center gap-1.5 rounded-lg px-4 h-9 text-[13px] text-white shadow-sm transition-opacity hover:opacity-90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
-
-export const money = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** "2026-07-29" → "Jul 29, 2026". */
 export const humanDate = (isoDate: string) =>
@@ -56,16 +54,18 @@ export function runDisplayStatus(run: PaymentRun, payments: Payment[]): RunDispl
 }
 
 /** Export a run as CSV, one row per committed invoice line (shared by
- *  the detail Actions menu and the listing row menu). */
+ *  the detail Actions menu and the listing row menu). Each amount is in
+ *  its line's currency, so the Currency column rides beside it (Currency
+ *  & Exchange Rates). */
 export function exportRunCsv(run: PaymentRun) {
   const esc = (v: string | number) => `"${String(v).split('"').join('""')}"`;
   const lines = liveLines(run);
   const rows = [
-    ['Run', 'Vendor', 'Invoice', 'Due Date', 'Pay Amount', 'Method', 'Pay from Account'].join(','),
+    ['Run', 'Vendor', 'Invoice', 'Due Date', 'Pay Amount', 'Currency', 'Method', 'Pay from Account'].join(','),
     ...run.groups.flatMap((g) =>
       lines
-        .filter((l) => l.vendor === g.vendor)
-        .map((l) => [esc(run.id), esc(l.vendor), esc(l.invoiceNumber), esc(l.dueDate), l.payAmount.toFixed(2), esc(g.methodType), esc(g.payFromAccountId)].join(',')),
+        .filter((l) => lineGroupKey(l) === groupKeyOf(g))
+        .map((l) => [esc(run.id), esc(l.vendor), esc(l.invoiceNumber), esc(l.dueDate), l.payAmount.toFixed(currencyDecimals(lineCurrency(l))), esc(lineCurrency(l)), esc(g.methodType), esc(g.payFromAccountId)].join(',')),
     ),
   ];
   const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });

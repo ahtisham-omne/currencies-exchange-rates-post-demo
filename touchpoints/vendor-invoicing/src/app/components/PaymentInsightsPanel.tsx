@@ -28,6 +28,9 @@ import {
   ArrowDownRight,
 } from 'lucide-react';
 import type { Payment } from '@/app/data/mockPayments';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatCompactMoney } from '@/app/currency/money';
+import { toPaymentBase } from '@/app/currency/paymentFx';
 import { palette } from '@/styles/tokens';
 import { highlightText } from '@/app/components/InvoiceDataTable';
 
@@ -216,18 +219,14 @@ function buildDelta(
   return { text: fmtPctDelta(current, previous), tone };
 }
 
-/* Sub-$1K exact, one decimal up to $100K (so $3,120 reads $3.1K, not $3K),
-   whole K above, one-decimal M. */
-const fmtMoney = (n: number) =>
-  n >= 1_000_000
-    ? `$${(n / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`
-    : n >= 100_000
-      ? `$${(n / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })}K`
-      : n >= 1000
-        ? `$${(n / 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}K`
-        : `$${Math.round(n).toLocaleString('en-US')}`;
+/* Currency & Exchange Rates: every card is in the base currency, each
+   payment converted at its own rate before it is added up (the band's
+   "In PKR · base currency" note says so). */
+const fmtMoney = (n: number) => formatCompactMoney(n, BASE_CURRENCY);
+/** A payment amount (its own currency) in the base currency. */
+const inBase = (p: Payment, n: number) => toPaymentBase(p, n);
 
-const sum = (rows: Payment[]) => rows.reduce((s, r) => s + r.amount, 0);
+const sum = (rows: Payment[]) => rows.reduce((s, r) => s + inBase(r, r.amount), 0);
 const fmtCount = (n: number, noun = 'payments') => `${n} ${noun}`;
 const pmtCount = (n: number) => `${n} payment${n === 1 ? '' : 's'}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -287,11 +286,11 @@ export function computePaymentKpi(
           (p) => p.type === 'Prepayment' && (p.status === 'Unapplied' || p.status === 'Partially Applied')
         );
       const rows = open(paymentsInRange);
-      const cur = rows.reduce((s, r) => s + r.unappliedAmount, 0);
-      const prev = open(paymentsPrevious).reduce((s, r) => s + r.unappliedAmount, 0);
+      const cur = rows.reduce((s, r) => s + inBase(r, r.unappliedAmount), 0);
+      const prev = open(paymentsPrevious).reduce((s, r) => s + inBase(r, r.unappliedAmount), 0);
       // Breakdown (feedback 7/14/26): how much of the credit is anchored to
       // a pre-invoice vs sitting on account as free vendor credit.
-      const tied = rows.filter((r) => r.preInvoiceId).reduce((s, r) => s + r.unappliedAmount, 0);
+      const tied = rows.filter((r) => r.preInvoiceId).reduce((s, r) => s + inBase(r, r.unappliedAmount), 0);
       // Outstanding advances growing = cash parked with vendors = watch it
       return {
         value: fmtMoney(cur),
@@ -322,21 +321,21 @@ export function computePaymentKpi(
     case 'largest_payment': {
       const rows = paymentsInRange.filter((p) => p.type === 'Payment' && p.status === 'Paid');
       if (rows.length === 0) return { value: '$0', sub: 'No payments in this period' };
-      const top = rows.reduce((a, b) => (b.amount > a.amount ? b : a));
-      return { value: fmtMoney(top.amount), sub: `${top.vendor} · ${fmtShortDate(top.paymentDate)}` };
+      const top = rows.reduce((a, b) => (inBase(b, b.amount) > inBase(a, a.amount) ? b : a));
+      return { value: fmtMoney(inBase(top, top.amount)), sub: `${top.vendor} · ${fmtShortDate(top.paymentDate)}` };
     }
     case 'smallest_payment': {
       const rows = paymentsInRange.filter((p) => p.type === 'Payment' && p.status === 'Paid');
       if (rows.length === 0) return { value: '$0', sub: 'No payments in this period' };
-      const low = rows.reduce((a, b) => (b.amount < a.amount ? b : a));
-      return { value: fmtMoney(low.amount), sub: `${low.vendor} · ${fmtShortDate(low.paymentDate)}` };
+      const low = rows.reduce((a, b) => (inBase(b, b.amount) < inBase(a, a.amount) ? b : a));
+      return { value: fmtMoney(inBase(low, low.amount)), sub: `${low.vendor} · ${fmtShortDate(low.paymentDate)}` };
     }
     case 'top_vendor': {
       const outRows = cashOutRows(paymentsInRange);
       const grand = sum(outRows);
       const byVendor = new Map<string, number>();
       for (const p of outRows) {
-        byVendor.set(p.vendor, (byVendor.get(p.vendor) ?? 0) + p.amount);
+        byVendor.set(p.vendor, (byVendor.get(p.vendor) ?? 0) + inBase(p, p.amount));
       }
       let top: { name: string; total: number } | null = null;
       byVendor.forEach((total, name) => {

@@ -41,6 +41,17 @@ export function formatMoney(value: number, code: string | null | undefined): str
   return `${sign}${moneyPrefix(code)}${formatAmount(value, code)}`;
 }
 
+/** For PDFs (remittance advice, check stubs): jsPDF's built-in fonts carry
+ *  $, €, £ and ¥ but not ₨ or Arabic script, so other currencies lead with
+ *  their code instead: "$12,400.00" · "€980.50" · "PKR 21,201.00". */
+const PDF_SAFE_SYMBOLS = new Set(['$', '€', '£', '¥']);
+export function formatMoneyPdf(value: number, code: string | null | undefined): string {
+  const sign = value < 0 && Math.abs(value) >= 10 ** -currencyDecimals(code) / 2 ? '-' : '';
+  const prefix = moneyPrefix(code);
+  const cur = (code || BASE_CURRENCY).toUpperCase();
+  return `${sign}${PDF_SAFE_SYMBOLS.has(prefix) ? prefix : `${cur} `}${formatAmount(value, code)}`;
+}
+
 /** KPI-sized: ₨750.3M · $2.7M · $503K · ₨1.2B. */
 export function formatCompactMoney(value: number, code: string | null | undefined): string {
   const prefix = moneyPrefix(code);

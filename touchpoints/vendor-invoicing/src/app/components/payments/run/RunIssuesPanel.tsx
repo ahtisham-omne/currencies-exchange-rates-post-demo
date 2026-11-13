@@ -45,8 +45,10 @@ export function RunIssuesPanel({
   onReopen: (issueId: string) => void;
   onRelease: (issueId: string) => void;
   onMove: (issueId: string) => void;
-  /** Proposal variant: jump to the flagged line's vendor card. */
-  onJumpToVendor?: (vendor: string) => void;
+  /** Proposal variant: jump to the flagged line's vendor card. The
+   *  issue's invoice rides along so a vendor paid in two currencies jumps
+   *  to the payment that holds the line (Currency & Exchange Rates). */
+  onJumpToVendor?: (vendor: string, invoiceId?: string) => void;
   /** Detail variant: the Resolve and resubmit CTA. */
   onResubmit?: () => void;
   /** Open the run a line moved to. */
@@ -134,7 +136,7 @@ export function RunIssuesPanel({
                 {compact && lineScoped && lineStillHere && issue.vendor && (
                   <button
                     type="button"
-                    onClick={() => onJumpToVendor?.(issue.vendor!)}
+                    onClick={() => onJumpToVendor?.(issue.vendor!, issue.invoiceId)}
                     className="inline-flex items-center gap-1 text-[11.5px] text-primary hover:underline px-1.5 py-1 rounded-md cursor-pointer"
                     style={{ fontWeight: 500 }}
                   >

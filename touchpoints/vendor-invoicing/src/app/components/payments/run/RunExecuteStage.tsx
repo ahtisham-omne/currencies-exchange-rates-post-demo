@@ -6,10 +6,10 @@ import { ArrowDown, ArrowUp, Banknote, Building2, RotateCcw, Rows3, Calendar, Ch
 import { toast } from 'sonner';
 import type { Invoice } from '@/app/data/mockInvoices';
 import type { Payment } from '@/app/data/mockPayments';
-import { liveLines, type PaymentRun } from '@/app/data/paymentRuns';
-import { PAY_FROM_ACCOUNTS, PAYMENT_METHODS, accountTypeForMethod } from '@/app/data/mockPayments';
+import { groupCurrency, groupKeyOf, liveLines, type PaymentRun } from '@/app/data/paymentRuns';
+import { PAY_FROM_ACCOUNTS, PAYMENT_METHODS, accountTypeForMethod, accountsForCurrency } from '@/app/data/mockPayments';
 import type { PaymentRunsApi } from '@/app/hooks/usePaymentRuns';
-import { accountTotals, groupCredit, groupLines, groupNet, groupRemainingNet, isClosedPeriod, lineRemaining, planGroupPass, revalidateRun } from '@/app/lib/runMath';
+import { addByCurrency, groupAmount, groupCredit, groupLines, groupRemainingNet, isClosedPeriod, lineRemaining, planGroupPass, revalidateRun, type CurrencyAmount } from '@/app/lib/runMath';
 import { DateCalendar } from '@/app/components/ui/date-picker';
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover';
 import { paymentMethodInfo } from '@/app/data/paymentMethodCatalog';
@@ -23,7 +23,11 @@ import { DataTable } from '@/app/components/data-table/DataTable';
 import { applyColumnFilters } from '@/app/components/data-table/applyColumnFilters';
 import type { ColumnDef, ColumnFilterState, SortConfig } from '@/app/components/data-table/types';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/app/components/ui/tooltip';
-import { money, humanDate, RUN_FOOTER_FLUSH, FOOTER_BTN_PRIMARY } from './runUi';
+import { humanDate, RUN_FOOTER_FLUSH, FOOTER_BTN_PRIMARY } from './runUi';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { formatAmount, formatMoney } from '@/app/currency/money';
+import { toPaymentBase } from '@/app/currency/paymentFx';
+import { CurrencyCell, CurrencyTotals, amountsText, approxBase, inputPrefix, prefixPadClass, totalText } from './runMoney';
 import { useSystemSettings } from '@/app/hooks/useSystemSettings';
 import { STOCK_PROFILES, checkSettingsFor } from '@/app/lib/checkPrinting';
 
@@ -66,7 +70,7 @@ export type ExecutePhase = 'payments' | 'checks';
 /** Which step the record modal opens on: payments while any non-check
  *  payment is unrecorded, else checks. */
 export function initialExecutePhase(run: PaymentRun): ExecutePhase {
-  const open = run.groups.filter((g) => !g.paymentId && groupLines(run, g.vendor).length > 0);
+  const open = run.groups.filter((g) => !g.paymentId && groupLines(run, g).length > 0);
   return open.some((g) => g.methodType !== 'Check') ? 'payments' : 'checks';
 }
 
@@ -107,7 +111,7 @@ export function RunExecuteStage({
   useEffect(() => {
     if (!confirmOpen) return;
     const pendingChecks = run.groups.some(
-      (g) => g.methodType === 'Check' && !g.paymentId && groupLines(run, g.vendor).length > 0 && !(g.reference ?? '').trim(),
+      (g) => g.methodType === 'Check' && !g.paymentId && groupLines(run, g).length > 0 && !(g.reference ?? '').trim(),
     );
     toast.info(
       pendingChecks
@@ -119,7 +123,7 @@ export function RunExecuteStage({
           : 'Recording captures their references and locks the run. If anything is still in the printer or the bank queue, finish it first.',
       },
     );
-    const missing = run.groups.filter((g) => groupLines(run, g.vendor).length > 0 && (g.attachments ?? []).length === 0).length;
+    const missing = run.groups.filter((g) => groupLines(run, g).length > 0 && (g.attachments ?? []).length === 0).length;
     if (missing > 0) {
       toast.warning(`${missing} payment${missing === 1 ? ' has' : 's have'} no proof of payment attached`, {
         description: 'Wire wants its confirmation, a check its copy. Recording anyway is allowed; the attachments stay open on the run.',
@@ -132,13 +136,15 @@ export function RunExecuteStage({
   const closedPeriod = isClosedPeriod(run.paymentDate);
   const lines = liveLines(run);
   const validation = useMemo(() => revalidateRun(run, invoices), [run, invoices]);
-  const total = run.groups.reduce((s, g) => s + groupNet(run, g), 0);
   const scheduled = run.paymentDate > localTodayIso();
 
   // ── Recording in PIECES (Eli 9/25): "this is not an all or nothing" ──
   // Each payment row carries a checkbox; Record posts only the ticked
   // ones and the run reads Partially executed until the last records.
-  const activeGroups = run.groups.filter((g) => groupLines(run, g.vendor).length > 0);
+  // Rows, selection, typed amounts and references are keyed by payment
+  // (groupKeyOf: vendor and currency, Currency & Exchange Rates), so a
+  // vendor paid in two currencies records each payment on its own.
+  const activeGroups = run.groups.filter((g) => groupLines(run, g).length > 0);
   const recordedGroups = activeGroups.filter((g) => g.paymentId);
   const unrecordedGroups = activeGroups.filter((g) => !g.paymentId);
 
@@ -160,13 +166,13 @@ export function RunExecuteStage({
   }, [phase, hasNonCheckUnrecorded, hasCheckUnrecorded]);
   const phaseGroups = unrecordedGroups.filter((g) => phaseOf(g) === phase);
 
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(phaseGroups.map((g) => g.vendor)));
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(phaseGroups.map(groupKeyOf)));
   // Selection survives edits but never points at recorded/removed groups,
   // and resets to the current phase's unrecorded payments on phase change.
-  const phaseKey = `${phase}|${phaseGroups.map((g) => g.vendor).join('|')}`;
+  const phaseKey = `${phase}|${phaseGroups.map(groupKeyOf).join('|')}`;
   useEffect(() => {
     setSelected((prev) => {
-      const valid = new Set(phaseGroups.map((g) => g.vendor));
+      const valid = new Set(phaseGroups.map(groupKeyOf));
       const kept = new Set([...prev].filter((v) => valid.has(v)));
       // A recording pass just landed (or the phase changed): default the
       // NEXT pass to everything still unrecorded in this phase. Deliberate
@@ -175,11 +181,11 @@ export function RunExecuteStage({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phaseKey]);
-  const toggleVendor = (vendor: string) =>
+  const toggleVendor = (key: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(vendor)) next.delete(vendor);
-      else next.add(vendor);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   // ── Partial amounts (user 10/21/26) ──
@@ -189,7 +195,7 @@ export function RunExecuteStage({
   const [payNow, setPayNow] = useState<Record<string, string>>({});
   const openFor = (g: (typeof activeGroups)[number]) => groupRemainingNet(run, g);
   const typedAmount = (g: (typeof activeGroups)[number]) => {
-    const raw = (payNow[g.vendor] ?? '').replace(/[^0-9.]/g, '');
+    const raw = (payNow[groupKeyOf(g)] ?? '').replace(/[^0-9.]/g, '');
     if (!raw) return null;
     const n = Number(raw);
     return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
@@ -201,8 +207,8 @@ export function RunExecuteStage({
   const amountError = (g: (typeof activeGroups)[number]): string | null => {
     const t = typedAmount(g);
     if (t == null) return null;
-    if (Number.isNaN(t) || t <= 0.004) return 'Enter an amount above $0.00';
-    if (t > openFor(g) + 0.004) return `At most ${money(openFor(g))}`;
+    if (Number.isNaN(t) || t <= 0.004) return `Enter an amount above ${formatMoney(0, groupCurrency(g))}`;
+    if (t > openFor(g) + 0.004) return `At most ${formatMoney(openFor(g), groupCurrency(g))}`;
     return null;
   };
   const isPartial = (g: (typeof activeGroups)[number]) => amountFor(g) < openFor(g) - 0.004;
@@ -213,9 +219,12 @@ export function RunExecuteStage({
   // first Record attempt.
   const [refErrors, setRefErrors] = useState<Set<string>>(new Set());
 
-  const selectedGroups = phaseGroups.filter((g) => selected.has(g.vendor));
-  const selectedTotal = selectedGroups.reduce((s, g) => s + amountFor(g), 0);
-  const selectedInvoiceCount = selectedGroups.reduce((s, g) => s + groupLines(run, g.vendor).filter((l) => lineRemaining(l) > 0.004).length, 0);
+  const selectedGroups = phaseGroups.filter((g) => selected.has(groupKeyOf(g)));
+  // What this pass records, per currency with its base equivalent at the
+  // payment date's rate (Currency & Exchange Rates): never one raw sum.
+  const selectedItems: CurrencyAmount[] = selectedGroups.map((g) => groupAmount(run, g, amountFor(g)));
+  const selectedByCurrency = addByCurrency(selectedItems).filter((c) => Math.abs(c.amount) >= 0.005);
+  const selectedInvoiceCount = selectedGroups.reduce((s, g) => s + groupLines(run, g).filter((l) => lineRemaining(l) > 0.004).length, 0);
 
   // The start-run recipe (user 10/15): segmented search (vendors /
   // invoices), filter chips (payment date, group by, method, pay-from),
@@ -229,7 +238,8 @@ export function RunExecuteStage({
   const [methodFilter, setMethodFilter] = useState<string[]>([]);
   const [accountFilter, setAccountFilter] = useState<string[]>([]);
   const [activePopover, setActivePopover] = useState<string | null>(null);
-  const [columnOrder, setColumnOrder] = useState<string[]>(['vendor', 'invoices', 'method', 'account', 'reference', 'memo', 'proof', 'amount']);
+  // Currency sits beside Amount (Currency & Exchange Rates).
+  const [columnOrder, setColumnOrder] = useState<string[]>(['vendor', 'invoices', 'method', 'account', 'reference', 'memo', 'proof', 'currency', 'amount']);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [frozenColumns, setFrozenColumns] = useState<Set<string>>(() => new Set(['vendor']));
@@ -238,13 +248,16 @@ export function RunExecuteStage({
   const colValue = (g: Group, key: string): string | number => {
     switch (key) {
       case 'vendor': return g.vendor;
-      case 'invoices': return groupLines(run, g.vendor).length;
+      case 'invoices': return groupLines(run, g).length;
+      case 'currency': return groupCurrency(g);
       case 'method': return g.methodType;
       case 'account': return accountLabelOf(g.payFromAccountId);
       case 'reference': return g.reference ?? '';
       case 'memo': return g.note ?? '';
       case 'proof': return (g.attachments ?? []).length;
-      case 'amount': return openFor(g);
+      // Sorted and range-filtered on the base equivalent (Currency &
+      // Exchange Rates), so amounts in different currencies compare.
+      case 'amount': return groupAmount(run, g, openFor(g)).base;
       default: return '';
     }
   };
@@ -263,7 +276,7 @@ export function RunExecuteStage({
     const qi = invoiceQuery.trim().toLowerCase();
     let list = phaseRows.filter((g) => {
       if (qv && !g.vendor.toLowerCase().includes(qv)) return false;
-      if (qi && !groupLines(run, g.vendor).some((l) => l.invoiceNumber.toLowerCase().includes(qi))) return false;
+      if (qi && !groupLines(run, g).some((l) => l.invoiceNumber.toLowerCase().includes(qi))) return false;
       if (methodFilter.length && !methodFilter.includes(g.methodType)) return false;
       if (accountFilter.length && !accountFilter.includes(g.payFromAccountId)) return false;
       return true;
@@ -281,7 +294,7 @@ export function RunExecuteStage({
     else if (groupMode === 'account') list.sort((a, b) => accountLabelOf(a.payFromAccountId).localeCompare(accountLabelOf(b.payFromAccountId)));
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phaseRows.map((g) => g.vendor).join('|'), run, vendorQuery, invoiceQuery, methodFilter, accountFilter, columnFilters, sortConfig, groupMode]);
+  }, [phaseRows.map(groupKeyOf).join('|'), run, vendorQuery, invoiceQuery, methodFilter, accountFilter, columnFilters, sortConfig, groupMode]);
 
   // Table Empty & Error States Standard v1.0 (11/3/26). The invoice search
   // leads (it is the table's searchQuery); with both searches typed, the
@@ -323,19 +336,15 @@ export function RunExecuteStage({
     const allChecks = activeGroups.filter((g) => g.methodType === 'Check' && !g.paymentId);
     const ordered = [...displayGroups.filter((g) => allChecks.includes(g)), ...allChecks.filter((g) => !displayGroups.includes(g))];
     ordered.forEach((g) => map.set(g.payFromAccountId, [...(map.get(g.payFromAccountId) ?? []), g]));
-    return [...map.entries()].map(([accountId, groups]) => ({
-      accountId,
-      groups,
-      total: groups.reduce((sum, g) => sum + amountFor(g), 0),
-    }));
+    return [...map.entries()].map(([accountId, groups]) => ({ accountId, groups }));
   })();
-  // vendor → the check number it will print on (selected, no typed number).
+  // payment → the check number it will print on (selected, no typed number).
   const assignedCheckNo = new Map<string, number>();
   checkAccounts.forEach(({ accountId, groups }) => {
     let n = startNoFor(accountId);
     groups.forEach((g) => {
-      if (!selected.has(g.vendor) || (g.reference ?? '').trim()) return;
-      assignedCheckNo.set(g.vendor, n);
+      if (!selected.has(groupKeyOf(g)) || (g.reference ?? '').trim()) return;
+      assignedCheckNo.set(groupKeyOf(g), n);
       n += 1;
     });
   });
@@ -345,16 +354,16 @@ export function RunExecuteStage({
   // the row's account or method changes — those clear and refill.
   const autoFilledRef = useRef<Set<string>>(new Set());
   const clearStaleAutoRef = (g: (typeof run.groups)[number]) =>
-    autoFilledRef.current.has(g.vendor) ? { ...g, reference: '' } : g;
+    autoFilledRef.current.has(groupKeyOf(g)) ? { ...g, reference: '' } : g;
 
   // Pay-from account stays correctable at the doing stage (Eli 9/25):
   // approval fixed the AMOUNT, not the account it draws from. Production
   // gates this by permission; the demo allows it on unrecorded rows.
-  const setGroupAccount = (vendor: string, payFromAccountId: string) => {
+  const setGroupAccount = (key: string, payFromAccountId: string) => {
     runsApi.updateRun(run.id, (r) => ({
       ...r,
       groups: r.groups.map((g) =>
-        g.vendor === vendor ? clearStaleAutoRef({ ...g, payFromAccountId, accountOverridden: true }) : g,
+        groupKeyOf(g) === key ? clearStaleAutoRef({ ...g, payFromAccountId, accountOverridden: true }) : g,
       ),
     }));
   };
@@ -362,17 +371,19 @@ export function RunExecuteStage({
   // Method is editable per row too (user 10/5): two-way synced with the
   // pay-from account like the authoring step — switching to a method the
   // current account can't serve re-points to the first eligible account.
-  const setGroupMethod = (vendor: string, methodType: string) => {
+  const setGroupMethod = (key: string, methodType: string) => {
     runsApi.updateRun(run.id, (r) => ({
       ...r,
       groups: r.groups.map((g) => {
-        if (g.vendor !== vendor) return g;
+        if (groupKeyOf(g) !== key) return g;
         const want = accountTypeForMethod(methodType);
         const current = PAY_FROM_ACCOUNTS.find((a) => a.id === g.payFromAccountId);
         const compatible = want === 'any' || current?.type === want;
+        // The fallback stays in the payment's currency or the base
+        // currency (Currency & Exchange Rates).
         const nextAccount = compatible
           ? g.payFromAccountId
-          : (PAY_FROM_ACCOUNTS.find((a) => a.type === want)?.id ?? g.payFromAccountId);
+          : (accountsForCurrency(PAY_FROM_ACCOUNTS, groupCurrency(g)).find((a) => a.type === want)?.id ?? g.payFromAccountId);
         return clearStaleAutoRef({ ...g, methodType, payFromAccountId: nextAccount });
       }),
     }));
@@ -387,33 +398,34 @@ export function RunExecuteStage({
   const [proofDragging, setProofDragging] = useState(false);
   const PROOF_ACCEPTED = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg'];
   const missingProof = run.groups.filter(
-    (g) => groupLines(run, g.vendor).length > 0 && (g.attachments ?? []).length === 0,
+    (g) => groupLines(run, g).length > 0 && (g.attachments ?? []).length === 0,
   );
-  const proofGroup = proofVendor ? run.groups.find((g) => g.vendor === proofVendor) : null;
-  const addProof = (vendor: string, name: string, size?: number) => {
+  // proofVendor holds the payment's key (groupKeyOf).
+  const proofGroup = proofVendor ? run.groups.find((g) => groupKeyOf(g) === proofVendor) : null;
+  const addProof = (key: string, name: string, size?: number) => {
     runsApi.updateRun(run.id, (r) => ({
       ...r,
       groups: r.groups.map((g) =>
-        g.vendor === vendor ? { ...g, attachments: [...(g.attachments ?? []), { name, size }] } : g,
+        groupKeyOf(g) === key ? { ...g, attachments: [...(g.attachments ?? []), { name, size }] } : g,
       ),
     }));
   };
-  const removeProof = (vendor: string, name: string) => {
+  const removeProof = (key: string, name: string) => {
     runsApi.updateRun(run.id, (r) => ({
       ...r,
       groups: r.groups.map((g) =>
-        g.vendor === vendor ? { ...g, attachments: (g.attachments ?? []).filter((a) => a.name !== name) } : g,
+        groupKeyOf(g) === key ? { ...g, attachments: (g.attachments ?? []).filter((a) => a.name !== name) } : g,
       ),
     }));
   };
-  const takeProofFiles = (vendor: string, files: FileList | null) => {
+  const takeProofFiles = (key: string, files: FileList | null) => {
     Array.from(files ?? []).forEach((file) => {
       const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
       if (!PROOF_ACCEPTED.includes(ext)) {
         toast.error(`${file.name} is not an accepted type`, { description: 'PDF, DOC, XLS, PNG, JPG up to 10MB.' });
         return;
       }
-      addProof(vendor, file.name, file.size);
+      addProof(key, file.name, file.size);
     });
   };
 
@@ -421,13 +433,13 @@ export function RunExecuteStage({
   // Claude C11-X1): recording is where check numbers, ACH traces and wire
   // confirmations feed back in — each payment gets its own field, not
   // just a shared file upload.
-  const setGroupReference = (vendor: string, reference: string, printedViaFlow = false) => {
+  const setGroupReference = (key: string, reference: string, printedViaFlow = false) => {
     runsApi.updateRun(run.id, (r) => ({
       ...r,
       // A hand-typed number CLEARS printedViaFlow (Eli 9/25): the record
       // then reads "manual check"; only the print flow's blocking confirm
       // sets it.
-      groups: r.groups.map((g) => (g.vendor === vendor ? { ...g, reference, printedViaFlow } : g)),
+      groups: r.groups.map((g) => (groupKeyOf(g) === key ? { ...g, reference, printedViaFlow } : g)),
     }));
   };
   // Check-number cascade (Eli; user 10/8): the FIRST check number the user
@@ -435,17 +447,17 @@ export function RunExecuteStage({
   // the SAME account whose field is empty (or still carrying a previous
   // suggestion) gets the next free number in sequence. They stay editable
   // suggestions: typing in a cascaded field clears its auto flag.
-  const cascadeCheckNumbers = (sourceVendor: string, accountId: string, typed: string) => {
+  const cascadeCheckNumbers = (sourceKey: string, accountId: string, typed: string) => {
     const n = parseInt((typed ?? '').replace(/\D/g, ''), 10);
     if (!Number.isFinite(n) || n <= 0) return;
     const siblings = run.groups.filter(
       (g) =>
-        g.vendor !== sourceVendor &&
+        groupKeyOf(g) !== sourceKey &&
         g.methodType === 'Check' &&
         !g.paymentId &&
         g.payFromAccountId === accountId &&
-        groupLines(run, g.vendor).length > 0 &&
-        (!(g.reference ?? '').trim() || autoFilledRef.current.has(g.vendor)),
+        groupLines(run, g).length > 0 &&
+        (!(g.reference ?? '').trim() || autoFilledRef.current.has(groupKeyOf(g))),
     );
     if (siblings.length === 0) return;
     // Numbers already claimed by hand on other rows stay reserved.
@@ -453,19 +465,19 @@ export function RunExecuteStage({
     run.groups.forEach((g) => {
       if (g.methodType !== 'Check' || g.payFromAccountId !== accountId) return;
       const v = parseInt((g.reference ?? '').replace(/\D/g, ''), 10);
-      if (Number.isFinite(v) && !autoFilledRef.current.has(g.vendor)) used.add(v);
+      if (Number.isFinite(v) && !autoFilledRef.current.has(groupKeyOf(g))) used.add(v);
     });
     let next = n;
     const fills = new Map<string, string>();
     siblings.forEach((g) => {
       do { next += 1; } while (used.has(next));
       used.add(next);
-      fills.set(g.vendor, String(next));
-      autoFilledRef.current.add(g.vendor);
+      fills.set(groupKeyOf(g), String(next));
+      autoFilledRef.current.add(groupKeyOf(g));
     });
     runsApi.updateRun(run.id, (r) => ({
       ...r,
-      groups: r.groups.map((g) => (fills.has(g.vendor) ? { ...g, reference: fills.get(g.vendor)!, printedViaFlow: false } : g)),
+      groups: r.groups.map((g) => (fills.has(groupKeyOf(g)) ? { ...g, reference: fills.get(groupKeyOf(g))!, printedViaFlow: false } : g)),
     }));
     toast.info(`Check numbers suggested from ${n}`, {
       description: `${siblings.length} more check${siblings.length === 1 ? '' : 's'} on this account follow${siblings.length === 1 ? 's' : ''} in sequence: ${[...fills.values()].join(', ')}. Edit any of them to override.`,
@@ -474,10 +486,10 @@ export function RunExecuteStage({
 
   // Memo line per payment (BA 9/25): prints on the check / rides the
   // ACH addenda, same as the Record Payment flow's memo line.
-  const setGroupNote = (vendor: string, note: string) => {
+  const setGroupNote = (key: string, note: string) => {
     runsApi.updateRun(run.id, (r) => ({
       ...r,
-      groups: r.groups.map((g) => (g.vendor === vendor ? { ...g, note } : g)),
+      groups: r.groups.map((g) => (groupKeyOf(g) === key ? { ...g, note } : g)),
     }));
   };
 
@@ -499,7 +511,7 @@ export function RunExecuteStage({
     const next = checkSettingsFor(group.payFromAccountId).nextCheckNumber;
     // The other unrecorded check rows drawing on the same account.
     const siblings = run.groups.filter(
-      (g) => g.vendor !== group.vendor && !g.paymentId && g.methodType === 'Check' && g.payFromAccountId === group.payFromAccountId,
+      (g) => groupKeyOf(g) !== groupKeyOf(group) && !g.paymentId && g.methodType === 'Check' && g.payFromAccountId === group.payFromAccountId,
     );
     const siblingNumbers = siblings.map((g) => parseCheckNo(g.reference)).filter((x): x is number => x != null);
     if (siblingNumbers.includes(n)) return `Check ${n} is already used on another payment in this pass.`;
@@ -545,12 +557,15 @@ export function RunExecuteStage({
       setConfirmOpen(false);
       return;
     }
-    const vendors = selectedGroups.map((g) => g.vendor);
-    // Partial amounts ride along (user 10/21/26); a vendor paid in part
-    // stays open on the run with the rest.
-    const cashAmounts = Object.fromEntries(selectedGroups.map((g) => [g.vendor, amountFor(g)]));
+    const vendors = selectedGroups.map(groupKeyOf);
+    // Partial amounts ride along (user 10/21/26), keyed by payment; a
+    // payment made in part stays open on the run with the rest.
+    const cashAmounts = Object.fromEntries(selectedGroups.map((g) => [groupKeyOf(g), amountFor(g)]));
     const partialCount = selectedGroups.filter(isPartial).length;
-    const leftOpen = Math.round(selectedGroups.reduce((s, g) => s + (openFor(g) - amountFor(g)), 0) * 100) / 100;
+    // What stays open, per currency (Currency & Exchange Rates).
+    const leftOpen = selectedGroups
+      .filter(isPartial)
+      .map((g) => groupAmount(run, g, Math.round((openFor(g) - amountFor(g)) * 100) / 100));
     const remainder = unrecordedGroups.length - vendors.length + partialCount;
     const result = runsApi.executeRun(run.id, vendors, cashAmounts);
     setConfirmOpen(false);
@@ -573,7 +588,7 @@ export function RunExecuteStage({
         description: [
           paid > 0 ? `${paid} paid` : null,
           sched > 0 ? `${sched} scheduled for ${humanDate(run.paymentDate)}` : null,
-          partialCount > 0 ? `${partialCount} paid in part, ${money(leftOpen)} stays open` : null,
+          partialCount > 0 ? `${partialCount} paid in part, ${totalText(leftOpen)} stays open` : null,
           remainder > 0 ? `${remainder} payment${remainder === 1 ? '' : 's'} still to record on this run` : null,
         ]
           .filter(Boolean)
@@ -625,10 +640,10 @@ export function RunExecuteStage({
       defaultWidth: 190,
       sortable: true,
       filterType: 'range',
-      getValue: (g) => groupLines(run, g.vendor).length,
-      searchText: (g) => groupLines(run, g.vendor).map((l) => l.invoiceNumber).join(' '),
+      getValue: (g) => groupLines(run, g).length,
+      searchText: (g) => groupLines(run, g).map((l) => l.invoiceNumber).join(' '),
       render: (g) => {
-        const vl = groupLines(run, g.vendor);
+        const vl = groupLines(run, g);
         return (
           <span className="block min-w-0">
             <span className="block text-[12.5px] text-foreground">{vl.length} invoice{vl.length === 1 ? '' : 's'}</span>
@@ -653,7 +668,7 @@ export function RunExecuteStage({
             <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <select
               value={g.methodType}
-              onChange={(e) => setGroupMethod(g.vendor, e.target.value)}
+              onChange={(e) => setGroupMethod(groupKeyOf(g), e.target.value)}
               className={`${fieldCls} flex-1 min-w-0 cursor-pointer`}
               title="Change the payment method for this payment"
             >
@@ -674,19 +689,26 @@ export function RunExecuteStage({
       filterType: 'multiselect',
       getValue: (g) => accountLabelOf(g.payFromAccountId),
       uniqueValues: (rows) => [...new Set(rows.map((g) => accountLabelOf(g.payFromAccountId)))],
-      render: (g) => (
-        <select
-          value={g.payFromAccountId}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => setGroupAccount(g.vendor, e.target.value)}
-          className={`${fieldCls} w-full cursor-pointer`}
-          title="Change the pay-from account for this payment"
-        >
-          {PAY_FROM_ACCOUNTS.map((a) => (
-            <option key={a.id} value={a.id}>{a.label}</option>
-          ))}
-        </select>
-      ),
+      // Only accounts in the payment's currency or the base currency
+      // (Currency & Exchange Rates); the current one always lists.
+      render: (g) => {
+        const eligible = accountsForCurrency(PAY_FROM_ACCOUNTS, groupCurrency(g));
+        const current = PAY_FROM_ACCOUNTS.find((a) => a.id === g.payFromAccountId);
+        const options = current && !eligible.includes(current) ? [current, ...eligible] : eligible;
+        return (
+          <select
+            value={g.payFromAccountId}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => setGroupAccount(groupKeyOf(g), e.target.value)}
+            className={`${fieldCls} w-full cursor-pointer`}
+            title="Change the pay-from account for this payment"
+          >
+            {options.map((a) => (
+              <option key={a.id} value={a.id}>{a.label}</option>
+            ))}
+          </select>
+        );
+      },
     },
     {
       key: 'reference',
@@ -698,7 +720,7 @@ export function RunExecuteStage({
       getValue: (g) => g.reference ?? '',
       render: (g) => {
         const seqWarn = checkSequenceWarning(g);
-        const refMissing = refErrors.has(g.vendor) && !(g.reference ?? '').trim();
+        const refMissing = refErrors.has(groupKeyOf(g)) && !(g.reference ?? '').trim();
         return (
           <div className="min-w-0 w-full" onClick={(e) => e.stopPropagation()}>
             <input
@@ -706,17 +728,17 @@ export function RunExecuteStage({
               aria-invalid={refMissing || undefined}
               onChange={(e) => {
                 // Typing a reference SELECTS the row (Eli 9/25).
-                autoFilledRef.current.delete(g.vendor);
-                setGroupReference(g.vendor, e.target.value);
-                if (e.target.value.trim()) setSelected((prev) => new Set([...prev, g.vendor]));
+                autoFilledRef.current.delete(groupKeyOf(g));
+                setGroupReference(groupKeyOf(g), e.target.value);
+                if (e.target.value.trim()) setSelected((prev) => new Set([...prev, groupKeyOf(g)]));
               }}
               onBlur={(e) => {
                 if (g.methodType !== 'Check') return;
-                cascadeCheckNumbers(g.vendor, g.payFromAccountId, e.target.value);
+                cascadeCheckNumbers(groupKeyOf(g), g.payFromAccountId, e.target.value);
               }}
               placeholder={
                 g.methodType === 'Check'
-                  ? (assignedCheckNo.has(g.vendor) ? String(assignedCheckNo.get(g.vendor)) : 'Check No.')
+                  ? (assignedCheckNo.has(groupKeyOf(g)) ? String(assignedCheckNo.get(groupKeyOf(g))) : 'Check No.')
                   : g.methodType === 'ACH' ? 'ACH trace No.'
                     : g.methodType === 'Wire' ? 'Confirmation No.'
                       : 'Reference'
@@ -745,8 +767,8 @@ export function RunExecuteStage({
           value={g.note ?? ''}
           onClick={(e) => e.stopPropagation()}
           onChange={(e) => {
-            setGroupNote(g.vendor, e.target.value);
-            if (e.target.value.trim()) setSelected((prev) => new Set([...prev, g.vendor]));
+            setGroupNote(groupKeyOf(g), e.target.value);
+            if (e.target.value.trim()) setSelected((prev) => new Set([...prev, groupKeyOf(g)]));
           }}
           placeholder="Memo line"
           maxLength={80}
@@ -768,7 +790,7 @@ export function RunExecuteStage({
         return n > 0 ? (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); setProofVendor(g.vendor); }}
+            onClick={(e) => { e.stopPropagation(); setProofVendor(groupKeyOf(g)); }}
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border whitespace-nowrap cursor-pointer hover:brightness-95 transition-[filter]"
             style={{ fontWeight: 500, backgroundColor: '#ECFDF5', color: '#047857', borderColor: '#A7F3D0' }}
           >
@@ -778,7 +800,7 @@ export function RunExecuteStage({
         ) : (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); setProofVendor(g.vendor); }}
+            onClick={(e) => { e.stopPropagation(); setProofVendor(groupKeyOf(g)); }}
             className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-white text-[12px] text-slate-600 hover:border-primary/45 hover:bg-blue-50/60 hover:text-primary transition-colors cursor-pointer whitespace-nowrap"
             style={{ fontWeight: 500 }}
             title={`Attach the ${proofLabelFor(g.methodType)} for this payment`}
@@ -790,17 +812,34 @@ export function RunExecuteStage({
       },
     },
     {
+      key: 'currency',
+      label: 'Currency',
+      minWidth: 90,
+      defaultWidth: 110,
+      sortable: true,
+      filterType: 'multiselect',
+      uniqueValues: (rows) => [...new Set(rows.map(groupCurrency))].sort(),
+      // The payment's currency (Currency & Exchange Rates): flag + code,
+      // the invoice listing's Currency cell.
+      getValue: (g) => groupCurrency(g),
+      render: (g) => <CurrencyCell code={groupCurrency(g)} />,
+    },
+    {
       key: 'amount',
       label: 'Amount',
+      tooltip: "In each payment's own currency. Sorting and the range filter use the base currency equivalent.",
       minWidth: 150,
       defaultWidth: 170,
       align: 'right',
       sticky: 'right',
       sortable: true,
       filterType: 'range',
-      getValue: (g) => openFor(g),
+      getValue: (g) => groupAmount(run, g, openFor(g)).base,
       // Editable (user 10/21/26): pay less now, the rest stays on the run.
+      // In the payment's currency, its symbol inside the field.
       render: (g) => {
+        const key = groupKeyOf(g);
+        const cur = groupCurrency(g);
         const open = openFor(g);
         const credit = g.creditPosted ? 0 : groupCredit(g);
         const err = amountError(g);
@@ -808,49 +847,52 @@ export function RunExecuteStage({
         const recordedEarlier = payments
           .filter((p) => (g.partialPaymentIds ?? []).includes(p.id))
           .reduce((s, p) => s + p.amount, 0);
-        const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const fmt = (n: number) => formatAmount(n, cur);
         return (
           <div className="w-full text-right" onClick={(e) => e.stopPropagation()}>
-            <input
-              inputMode="decimal"
-              value={payNow[g.vendor] ?? fmt(open)}
-              aria-label={`Amount to pay ${g.vendor}`}
-              aria-invalid={!!err || undefined}
-              title="Pay less to record part of this payment now. The rest stays open on the run."
-              onChange={(e) => {
-                const value = e.target.value;
-                setPayNow((prev) => ({ ...prev, [g.vendor]: value }));
-                setSelected((prev) => new Set([...prev, g.vendor]));
-              }}
-              onBlur={() => {
-                // Tidy the typed figure; the full amount goes back to blank.
-                const t = typedAmount(g);
-                if (t == null || Number.isNaN(t)) return;
-                setPayNow((prev) => {
-                  const next = { ...prev };
-                  if (Math.abs(t - open) <= 0.004) delete next[g.vendor];
-                  else next[g.vendor] = fmt(t);
-                  return next;
-                });
-              }}
-              className={`${fieldCls} w-full text-right ${err ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-100' : partial ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-100' : ''}`}
-            />
+            <div className="relative">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 pointer-events-none">{inputPrefix(cur)}</span>
+              <input
+                inputMode="decimal"
+                value={payNow[key] ?? fmt(open)}
+                aria-label={`Amount to pay ${g.vendor}`}
+                aria-invalid={!!err || undefined}
+                title="Pay less to record part of this payment now. The rest stays open on the run."
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setPayNow((prev) => ({ ...prev, [key]: value }));
+                  setSelected((prev) => new Set([...prev, key]));
+                }}
+                onBlur={() => {
+                  // Tidy the typed figure; the full amount goes back to blank.
+                  const t = typedAmount(g);
+                  if (t == null || Number.isNaN(t)) return;
+                  setPayNow((prev) => {
+                    const next = { ...prev };
+                    if (Math.abs(t - open) <= 0.004) delete next[key];
+                    else next[key] = fmt(t);
+                    return next;
+                  });
+                }}
+                className={`${fieldCls} w-full text-right ${prefixPadClass(cur, ['pl-5', 'pl-7', 'pl-9'])} ${err ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-100' : partial ? 'border-amber-400 focus:border-amber-500 focus:ring-amber-100' : ''}`}
+              />
+            </div>
             {err ? (
               <span className="block text-[10.5px] text-rose-600 mt-0.5" style={{ fontWeight: 500 }}>{err}</span>
             ) : partial ? (
               <span className="block text-[10.5px] text-amber-700 mt-0.5" style={{ fontWeight: 500 }}>
-                {money(Math.round((open - amountFor(g)) * 100) / 100)} stays open
+                {formatMoney(Math.round((open - amountFor(g)) * 100) / 100, cur)} stays open
               </span>
             ) : null}
             {credit > 0 && (
               <span className="flex items-center justify-end gap-1 text-[10.5px] text-purple-700 mt-0.5" style={{ fontWeight: 500 }}>
                 <Wallet className="w-2.5 h-2.5" />
-                Prepayment −{money(credit)}
+                Prepayment −{formatMoney(credit, cur)}
               </span>
             )}
             {recordedEarlier > 0.004 && (
               <span className="block text-[10.5px] text-emerald-700 mt-0.5" style={{ fontWeight: 500 }}>
-                {money(recordedEarlier)} recorded earlier
+                {formatMoney(recordedEarlier, cur)} recorded earlier
               </span>
             )}
           </div>
@@ -884,21 +926,21 @@ export function RunExecuteStage({
     const badAmounts = toRecord.filter((g) => amountError(g));
     if (badAmounts.length > 0) {
       toast.error('Check the amounts', {
-        description: `${badAmounts.map((g) => g.vendor).join(', ')}: enter an amount above $0.00 and no more than what is open.`,
+        description: `${[...new Set(badAmounts.map((g) => g.vendor))].join(', ')}: enter an amount above zero and no more than what is open.`,
       });
       return;
     }
     // Reference required (user 10/21/26). Checks without a number take
     // theirs from the print flow, so only the payments step asks here.
     const missingRef = toRecord.filter((g) => g.methodType !== 'Check' && !(g.reference ?? '').trim());
-    setRefErrors(new Set(missingRef.map((g) => g.vendor)));
+    setRefErrors(new Set(missingRef.map(groupKeyOf)));
     if (missingRef.length > 0) {
       toast.error('Reference number required', {
         description: `Enter the ACH trace, wire confirmation or transfer reference for ${missingRef.length === 1 ? missingRef[0].vendor : `${missingRef.length} payments`} before recording.`,
       });
       return;
     }
-    if (all) setSelected(new Set(phaseGroups.map((g) => g.vendor)));
+    if (all) setSelected(new Set(phaseGroups.map(groupKeyOf)));
     setConfirmOpen(true);
   };
 
@@ -932,7 +974,7 @@ export function RunExecuteStage({
                 <div className="flex items-center gap-1.5 shrink-0">
                   {canReduce && (
                     <Button variant="outline" size="sm" className="h-7 rounded-md text-[11.5px]" onClick={() => fixReduce(f.invoiceId)}>
-                      Reduce to {money(inv!.outstandingBalance)}
+                      Reduce to {formatMoney(inv!.outstandingBalance, inv!.currency)}
                     </Button>
                   )}
                   <Button
@@ -1032,7 +1074,7 @@ export function RunExecuteStage({
                 <div className="px-4 pb-3 space-y-2.5">
                   {checkAccounts.map(({ accountId, groups: accGroups }) => {
                     const start = startNoFor(accountId);
-                    const count = accGroups.filter((g) => selected.has(g.vendor) && !(g.reference ?? '').trim()).length;
+                    const count = accGroups.filter((g) => selected.has(groupKeyOf(g)) && !(g.reference ?? '').trim()).length;
                     return (
                       <div key={accountId} className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
@@ -1155,10 +1197,10 @@ export function RunExecuteStage({
         rows={displayGroups}
         optionRows={phaseRows}
         columns={execColumns}
-        getRowId={(g) => g.vendor}
+        getRowId={groupKeyOf}
         selectedIds={selected}
         onSelectionChange={(next) => {
-          const valid = new Set(phaseRows.map((g) => g.vendor));
+          const valid = new Set(phaseRows.map(groupKeyOf));
           setSelected(new Set([...next].filter((v) => valid.has(v))));
         }}
         columnOrder={columnOrder}
@@ -1196,7 +1238,16 @@ export function RunExecuteStage({
                   id,
                   label: groupMode === 'method' ? g.methodType : accountLabelOf(g.payFromAccountId),
                   subtitle: `${members.length} payment${members.length === 1 ? '' : 's'}`,
-                  right: <span className="text-[12px] text-slate-600">{money(members.reduce((sum, x) => sum + amountFor(x), 0))}</span>,
+                  // Per currency, or the base total for a mix (Currency &
+                  // Exchange Rates).
+                  right: (
+                    <CurrencyTotals
+                      items={members.map((x) => groupAmount(run, x, amountFor(x)))}
+                      basis="payment"
+                      max={1}
+                      amountClassName="text-[12px] text-slate-600"
+                    />
+                  ),
                 };
               }
         }
@@ -1236,7 +1287,16 @@ export function RunExecuteStage({
           {` ${phase === 'checks' ? 'check' : 'payment'}${selectedGroups.length === 1 ? '' : 's'} · `}
           <span className="text-foreground" style={{ fontWeight: 600 }}>{selectedInvoiceCount}</span>
           {` invoice${selectedInvoiceCount === 1 ? '' : 's'} · `}
-          <span className="text-[14px] text-foreground" style={{ fontWeight: 700 }}>{money(selectedTotal)}</span>
+          {/* Per currency, then "≈" the base total (Currency & Exchange
+              Rates). */}
+          <CurrencyTotals
+            items={selectedItems}
+            basis="payment"
+            align="start"
+            amountClassName="text-[14px] text-foreground"
+            amountStyle={{ fontWeight: 700 }}
+            baseClassName="text-[12px] text-slate-500"
+          />
           {recordedGroups.length > 0 && (
             <span className="text-emerald-700 text-[11px]" style={{ fontWeight: 500 }}> · {recordedGroups.length} already recorded</span>
           )}
@@ -1306,15 +1366,16 @@ export function RunExecuteStage({
               });
             });
             // What this pass leaves open: vendors not ticked, plus the
-            // unpaid rest of any partial amount (user 10/21/26).
-            const openAfter = Math.round(
-              unrecordedGroups.reduce((s, g) => s + openFor(g), 0) * 100 - selectedTotal * 100,
-            ) / 100;
+            // unpaid rest of any partial amount (user 10/21/26), per
+            // currency (Currency & Exchange Rates).
+            const openAfter = unrecordedGroups
+              .map((g) => groupAmount(run, g, Math.round((openFor(g) - (selected.has(groupKeyOf(g)) && phaseOf(g) === phase ? amountFor(g) : 0)) * 100) / 100))
+              .filter((c) => c.amount > 0.004);
             const invoiceWord = (n: number) => `${n} invoice${n === 1 ? '' : 's'}`;
             const summaryRows = [
               fullCount > 0 ? { label: 'Paid in Full', value: invoiceWord(fullCount) } : null,
               partInvoiceCount > 0 ? { label: 'Partially Paid', value: invoiceWord(partInvoiceCount) } : null,
-              openAfter > 0.004 ? { label: 'Left on This Run', value: money(openAfter) } : null,
+              openAfter.length > 0 ? { label: 'Left on This Run', value: totalText(openAfter) } : null,
               // A future payment date posts Scheduled, not Paid: say when.
               scheduled ? { label: 'Scheduled For', value: humanDate(run.paymentDate) } : null,
             ].filter((r): r is { label: string; value: string } => r !== null);
@@ -1334,8 +1395,18 @@ export function RunExecuteStage({
                 </div>
                 <div className="flex flex-col items-center text-center px-7 pb-7">
                   <DialogTitle className="text-[20px] tracking-[-0.02em] text-foreground" style={{ fontWeight: 600, lineHeight: 1.3 }}>
-                    Record {selectedGroups.length} payment{selectedGroups.length === 1 ? '' : 's'} for {money(selectedTotal)}?
+                    Record {selectedGroups.length} payment{selectedGroups.length === 1 ? '' : 's'} for {totalText(selectedItems)}?
                   </DialogTitle>
+                  {/* What the figure is made of (Currency & Exchange Rates). */}
+                  {(selectedByCurrency.length > 1 || (selectedByCurrency.length === 1 && !isBaseCurrency(selectedByCurrency[0].currency))) && (
+                    <p className="text-[12px] text-slate-600 mt-1" style={{ fontWeight: 500 }}>
+                      {selectedByCurrency.length === 1
+                        ? approxBase(selectedByCurrency[0].base)
+                        : selectedByCurrency.length <= 3
+                          ? amountsText(selectedByCurrency)
+                          : `Across ${selectedByCurrency.length} currencies, each at its rate on the payment date.`}
+                    </p>
+                  )}
                   <DialogDescription className="text-[12px] text-slate-500 mt-1.5">
                     These post to the general ledger and can only be undone by reversal.
                   </DialogDescription>
@@ -1474,7 +1545,9 @@ export function RunExecuteStage({
 
 type GlRow = { code: string; name: string; debit: number; credit: number };
 
-/** The journal table with direction arrows (the record modal's recipe). */
+/** The journal table with direction arrows (the record modal's recipe).
+ *  In the base currency, the ledger's (Currency & Exchange Rates): a run
+ *  payment's journal posts at its rate on the payment date. */
 function GlImpactTable({ rows }: { rows: GlRow[] }) {
   return (
     <div className="w-full text-left rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] px-3.5 py-2.5">
@@ -1515,8 +1588,8 @@ function GlImpactTable({ rows }: { rows: GlRow[] }) {
                       </TooltipContent>
                     </Tooltip>
                   </td>
-                  <td className="px-3 py-1.5 text-right ">{l.debit > 0 ? <span style={{ fontWeight: 600 }}>{money(l.debit)}</span> : <span className="text-slate-300">·</span>}</td>
-                  <td className="px-3 py-1.5 text-right ">{l.credit > 0 ? <span style={{ fontWeight: 600 }}>{money(l.credit)}</span> : <span className="text-slate-300">·</span>}</td>
+                  <td className="px-3 py-1.5 text-right ">{l.debit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(l.debit, BASE_CURRENCY)}</span> : <span className="text-slate-300">·</span>}</td>
+                  <td className="px-3 py-1.5 text-right ">{l.credit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(l.credit, BASE_CURRENCY)}</span> : <span className="text-slate-300">·</span>}</td>
                 </tr>
               );
             })}
@@ -1528,8 +1601,8 @@ function GlImpactTable({ rows }: { rows: GlRow[] }) {
                   <CheckCircle2 className="w-2.5 h-2.5" /> Debit = Credit
                 </span>
               </td>
-              <td className="px-3 py-1.5 text-right " style={{ fontWeight: 700 }}>{money(rows.reduce((s, l) => s + l.debit, 0))}</td>
-              <td className="px-3 py-1.5 text-right " style={{ fontWeight: 700 }}>{money(rows.reduce((s, l) => s + l.credit, 0))}</td>
+              <td className="px-3 py-1.5 text-right " style={{ fontWeight: 700 }}>{formatMoney(rows.reduce((s, l) => s + l.debit, 0), BASE_CURRENCY)}</td>
+              <td className="px-3 py-1.5 text-right " style={{ fontWeight: 700 }}>{formatMoney(rows.reduce((s, l) => s + l.credit, 0), BASE_CURRENCY)}</td>
             </tr>
           </tfoot>
         </table>
@@ -1555,7 +1628,8 @@ export function RunGlSummaryModal({
     (p) => p.runId === run.id && p.type === 'Payment' && p.status !== 'Cancelled' && p.status !== 'Reversed',
   );
   const round = (n: number) => Math.round(n * 100) / 100;
-  const cashTotal = round(runPays.reduce((s, p) => s + p.amount, 0));
+  // Cash out per currency with its base equivalent (Currency & Exchange Rates).
+  const cashTotal: CurrencyAmount[] = runPays.map((p) => ({ currency: p.currency || BASE_CURRENCY, amount: p.amount, base: toPaymentBase(p, p.amount) }));
   const perAccount = new Map<string, number>();
   runPays.forEach((p) => perAccount.set(p.bankAccount, round((perAccount.get(p.bankAccount) ?? 0) + p.amount)));
   // What the payments actually POSTED, summed per account (user
@@ -1597,7 +1671,7 @@ export function RunGlSummaryModal({
             {run.id} is fully recorded
           </DialogTitle>
           <DialogDescription className="text-[12px] text-slate-500 mt-1.5">
-            {runPays.length} payment{runPays.length === 1 ? '' : 's'} for {money(cashTotal)} from {perAccount.size} account{perAccount.size === 1 ? '' : 's'}. This is what the run posts to the general ledger.
+            {runPays.length} payment{runPays.length === 1 ? '' : 's'} for {totalText(cashTotal)} from {perAccount.size} account{perAccount.size === 1 ? '' : 's'}. This is what the run posts to the general ledger.
           </DialogDescription>
           {showGlOnConfirmations && (
             <div className="w-full mt-4">
@@ -1643,7 +1717,8 @@ export function RunChecksRecordedModal({
   if (checks.length === 0) return null;
   const accounts = [...new Set(checks.map((p) => p.bankAccount))];
   const single = checks.length === 1 ? checks[0] : null;
-  const total = Math.round(checks.reduce((s, p) => s + p.amount, 0) * 100) / 100;
+  // Each check in its payment's currency (Currency & Exchange Rates).
+  const total: CurrencyAmount[] = checks.map((p) => ({ currency: p.currency || BASE_CURRENCY, amount: p.amount, base: toPaymentBase(p, p.amount) }));
   const firstAccount = accounts[0];
   const start = startNumbers[firstAccount] ?? checkSettingsFor(firstAccount).nextCheckNumber;
   const stock = STOCK_PROFILES[checkSettingsFor(firstAccount).style].displayName;
@@ -1670,7 +1745,7 @@ export function RunChecksRecordedModal({
         </div>
         <div className="flex flex-col items-center text-center px-6 pb-6">
           <DialogTitle className="text-[18px] tracking-[-0.02em] text-foreground" style={{ fontWeight: 600, lineHeight: 1.3 }}>
-            {single ? `${money(total)} to ${single.vendor}` : `${checks.length} checks recorded for ${money(total)}`}
+            {single ? `${formatMoney(single.amount, single.currency)} to ${single.vendor}` : `${checks.length} checks recorded for ${totalText(total)}`}
           </DialogTitle>
           <DialogDescription className="text-[12px] text-slate-500 mt-1">
             {run.id} · Check · {humanDate(checks[0].paymentDate)}

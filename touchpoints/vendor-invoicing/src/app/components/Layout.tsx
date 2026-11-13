@@ -32,6 +32,7 @@ import userPhoto from '@/assets/ahtisham-ahmad.jpg';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/app/components/ui/tooltip';
 import { SystemSettingsModal } from '@/app/components/SystemSettingsModal';
 import { ArSettingsModal } from '@/app/components/customer/ArSettingsModal';
+import { ApSettingsModal, type ApSettingsScope } from '@/app/components/ApSettingsModal';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { palette, accent } from '@/styles/tokens';
@@ -653,6 +654,7 @@ function TopBar({
   leaf,
   onSectionClick,
   customerSettings,
+  apSettings,
 }: {
   section: string;
   leaf?: string;
@@ -660,8 +662,13 @@ function TopBar({
   /** Customer Invoices pages swap the + for the module settings gear
    *  (user 10/27). Every other page keeps the + exactly as before. */
   customerSettings?: boolean;
+  /** Vendor Invoicing and Vendor Payments get their own settings gear the
+   *  same way (Currency & Exchange Rates: module defaults, rate permissions). */
+  apSettings?: ApSettingsScope;
 }) {
   const [arSettingsOpen, setArSettingsOpen] = useState(false);
+  const [apSettingsOpen, setApSettingsOpen] = useState(false);
+  const apSettingsLabel = apSettings === 'payments' ? 'Vendor payments settings' : 'Vendor invoicing settings';
   return (
     // px-3 matches the module's 12px page gutter so the breadcrumb, page
     // header text, and content cards all share one left edge.
@@ -699,6 +706,18 @@ function TopBar({
               <TooltipContent side="bottom">Customer invoicing settings</TooltipContent>
             </Tooltip>
             <ArSettingsModal open={arSettingsOpen} onOpenChange={setArSettingsOpen} />
+          </>
+        ) : apSettings ? (
+          <>
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 w-8 p-0" aria-label={apSettingsLabel} onClick={() => setApSettingsOpen(true)}>
+                  <Settings className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{apSettingsLabel}</TooltipContent>
+            </Tooltip>
+            <ApSettingsModal open={apSettingsOpen} onOpenChange={setApSettingsOpen} scope={apSettings} />
           </>
         ) : (
           <Button variant="outline" size="sm" className="h-8 w-8 p-0">
@@ -752,6 +771,7 @@ export function Layout({ children, activeView, onViewChange }: LayoutProps) {
           leaf={BREADCRUMB_LEAF[activeView]}
           onSectionClick={() => onViewChange('overview')}
           customerSettings={activeView === 'customer-invoices'}
+          apSettings={activeView === 'invoices' ? 'invoices' : activeView === 'payments-v2' ? 'payments' : undefined}
         />
         <div className="flex-1 overflow-y-auto">{children}</div>
       </main>

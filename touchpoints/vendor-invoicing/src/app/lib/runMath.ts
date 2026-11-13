@@ -1,12 +1,16 @@
 import type { Invoice } from '@/app/data/mockInvoices';
 import { PAY_FROM_ACCOUNTS, type Payment, type PayFromAccount } from '@/app/data/mockPayments';
-import { buildPaymentGlEntries } from '@/app/lib/glPosting';
+import { buildPaymentGlEntries, type GlEntryLine } from '@/app/lib/glPosting';
 import { ADVANCES_ACCOUNT, DEFAULT_PREPAYMENT_ASSET_ACCOUNT } from '@/app/data/glAccounts';
 import { localTodayIso, addDaysIso } from '@/app/lib/dueBucket';
 import {
   openRunInvoiceIds,
   liveLines,
   vendorPayDefaults,
+  groupCurrency,
+  groupKeyOf,
+  lineCurrency,
+  lineGroupKey,
   type PaymentRun,
   type PaymentRunLine,
   type RunVendorGroup,
@@ -17,6 +21,11 @@ import { agingBucketOf } from './dueBucket';
 import { presetForVendor, findPresetByLabel } from '@/app/data/paymentTermPresets';
 import { memoLimitFor } from '@/app/lib/memoLimits';
 import { claimPaymentNumber } from '@/app/lib/invoiceIds';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { formatMoney } from '@/app/currency/money';
+import { toBase } from '@/app/currency/rates';
+import { toInvoiceBase, type InvoiceFx } from '@/app/currency/invoiceFx';
+import { paymentFx, stampPaymentRate } from '@/app/currency/paymentFx';
 
 /* ── Payment run math: pure functions, no React ──────────────────────
  * Eligibility, grouping, per-account cash totals, exception checks, the
@@ -199,9 +208,14 @@ export function eligibleInvoices(
       } else if (agingActive) {
         if (!inAgingBucket) return false;
       }
-      if (filters.amountMin != null && inv.outstandingBalance < filters.amountMin) return false;
-      if (filters.amountMax != null && inv.outstandingBalance > filters.amountMax) return false;
+      // The amount range is in the base currency (Currency & Exchange
+      // Rates): each invoice compares at its own rate, so a ¥ balance
+      // never passes on its face value.
+      const dueInBase = toInvoiceBase(inv, inv.outstandingBalance);
+      if (filters.amountMin != null && dueInBase < filters.amountMin) return false;
+      if (filters.amountMax != null && dueInBase > filters.amountMax) return false;
       if (filters.vendors?.length && !filters.vendors.includes(inv.vendor)) return false;
+      if (filters.currencies?.length && !filters.currencies.includes((inv.currency || BASE_CURRENCY).toUpperCase())) return false;
       if (filters.paymentTerms?.length && !filters.paymentTerms.includes(paymentTermsFor(inv))) return false;
       if (filters.types?.length && !filters.types.includes(invoiceTypeLabel(inv.type))) return false;
       if (filters.discount) {
@@ -221,17 +235,25 @@ export function eligibleInvoices(
 
 /* ── P2 · grouping ───────────────────────────────────────────────────── */
 
-/** One payment per pay-to vendor, method and pay-from account inherited
- *  from the vendor's own defaults. User overrides on existing groups
- *  survive a regroup (lines added or removed in P1). */
+/** One payment per pay-to vendor AND currency (Currency & Exchange
+ *  Rates: one payment can't mix currencies, so a vendor with invoices in
+ *  two currencies is paid twice). Method and pay-from account are
+ *  inherited from the vendor's own defaults, the account limited to the
+ *  payment's currency or the base currency. User overrides on existing
+ *  groups survive a regroup (lines added or removed in P1). */
 export function deriveGroups(lines: PaymentRunLine[], existing: RunVendorGroup[]): RunVendorGroup[] {
-  const vendors = [...new Set(lines.filter((l) => !l.removed).map((l) => l.vendor))];
-  return vendors.map((vendor) => {
-    const prior = existing.find((g) => g.vendor === vendor);
-    if (prior) return prior;
-    const d = vendorPayDefaults(vendor);
+  const firstOfKey = new Map<string, PaymentRunLine>();
+  lines.filter((l) => !l.removed).forEach((l) => {
+    if (!firstOfKey.has(lineGroupKey(l))) firstOfKey.set(lineGroupKey(l), l);
+  });
+  return [...firstOfKey.entries()].map(([key, line]) => {
+    const prior = existing.find((g) => groupKeyOf(g) === key);
+    const currency = lineCurrency(line);
+    if (prior) return prior.currency ? prior : { ...prior, currency };
+    const d = vendorPayDefaults(line.vendor, currency);
     return {
-      vendor,
+      vendor: line.vendor,
+      currency,
       methodId: d.method?.id ?? '',
       methodType: d.method?.type ?? 'Check',
       payFromAccountId: d.payFromAccountId,
@@ -240,13 +262,20 @@ export function deriveGroups(lines: PaymentRunLine[], existing: RunVendorGroup[]
   });
 }
 
-export function groupLines(run: PaymentRun, vendor: string): PaymentRunLine[] {
-  return liveLines(run).filter((l) => l.vendor === vendor);
+/** The live lines one payment settles: its vendor's, in its currency. */
+export function groupLines(run: PaymentRun, group: RunVendorGroup): PaymentRunLine[] {
+  const key = groupKeyOf(group);
+  return liveLines(run).filter((l) => lineGroupKey(l) === key);
 }
 
-/** Gross = sum of the vendor's line amounts. */
+/** The vendor's run is split by currency: it has more than one payment here. */
+export function isSplitVendor(run: PaymentRun, vendor: string): boolean {
+  return run.groups.filter((g) => g.vendor === vendor && groupLines(run, g).length > 0).length > 1;
+}
+
+/** Gross = sum of the payment's line amounts (in its currency). */
 export function groupGross(run: PaymentRun, group: RunVendorGroup): number {
-  return round2(groupLines(run, group.vendor).reduce((s, l) => s + l.payAmount, 0));
+  return round2(groupLines(run, group).reduce((s, l) => s + l.payAmount, 0));
 }
 
 export function groupCredit(group: RunVendorGroup): number {
@@ -270,7 +299,7 @@ export function groupNet(run: PaymentRun, group: RunVendorGroup): number {
  *  and the per-invoice credit chips so the preview always matches what
  *  posts. */
 export function creditAllocation(run: PaymentRun, group: RunVendorGroup): Map<string, number> {
-  const vlines = groupLines(run, group.vendor);
+  const vlines = groupLines(run, group);
   const gross = round2(vlines.reduce((s, l) => s + l.payAmount, 0));
   const map = new Map<string, number>();
   if (gross <= 0.004) return map;
@@ -326,7 +355,7 @@ export function lineRemaining(line: PaymentRunLine): number {
  *  credit unless an earlier pass already posted it. */
 export function groupRemainingNet(run: PaymentRun, group: RunVendorGroup): number {
   if (group.paymentId) return 0;
-  const gross = round2(groupLines(run, group.vendor).reduce((s, l) => s + lineRemaining(l), 0));
+  const gross = round2(groupLines(run, group).reduce((s, l) => s + lineRemaining(l), 0));
   const credit = group.creditPosted ? 0 : groupCredit(group);
   return Math.max(0, round2(gross - credit));
 }
@@ -347,7 +376,7 @@ export function planGroupPass(
   cashAmount?: number,
 ): { slices: GroupPassSlice[]; cash: number; credit: number; full: boolean } {
   const openRun = { ...run, lines: run.lines.map((l) => ({ ...l, payAmount: lineRemaining(l) })) };
-  const vlines = groupLines(openRun, group.vendor).filter((l) => l.payAmount > 0.004);
+  const vlines = groupLines(openRun, group).filter((l) => l.payAmount > 0.004);
   const alloc = group.creditPosted ? new Map<string, number>() : creditAllocation(openRun, group);
   const open = vlines.map((line) => {
     const credit = alloc.get(line.invoiceId) ?? 0;
@@ -365,7 +394,7 @@ export function planGroupPass(
       left = round2(left - take);
     });
   // Slices keep the original line (its recordedAmount is what passes add to).
-  const original = new Map(groupLines(run, group.vendor).map((l) => [l.invoiceId, l]));
+  const original = new Map(groupLines(run, group).map((l) => [l.invoiceId, l]));
   const slices = open.map((o) => ({
     line: original.get(o.line.invoiceId) ?? o.line,
     cash: cashBy.get(o.line.invoiceId) ?? 0,
@@ -386,35 +415,152 @@ export function advanceAccountFor(group: RunVendorGroup): string {
   return group.advanceAccount ?? ADVANCES_ACCOUNT;
 }
 
-/** Debit side of a run's journal: invoices debit Accounts Payable,
- *  pre-invoices debit the vendor's advances account. One row per
- *  account, at the gross the lines pay (cash + credit). */
-export function runDebitRows(
-  run: PaymentRun,
-  groups: RunVendorGroup[] = run.groups,
-): { code: string; name: string; debit: number; credit: number }[] {
-  const byAccount = new Map<string, number>();
-  groups.forEach((g) => {
-    groupLines(run, g.vendor).forEach((l) => {
-      const account = l.isPreInvoice ? advanceAccountFor(g) : '2000 Accounts Payable';
-      byAccount.set(account, round2((byAccount.get(account) ?? 0) + l.payAmount));
-    });
-  });
-  // Payables first, then advances, so the familiar line leads.
-  return [...byAccount.entries()]
-    .sort(([a], [b]) => (a.startsWith('2') ? -1 : b.startsWith('2') ? 1 : a.localeCompare(b)))
-    .map(([account, debit]) => {
-      const code = account.split(' ')[0];
-      return { code, name: account.slice(code.length + 1), debit, credit: 0 };
-    });
+/* ── A run's money across currencies (Currency & Exchange Rates) ─────
+ * Each payment goes out in its own currency at the rate on the run's
+ * payment date, the rate its record is stamped with. Run totals are kept
+ * per currency, plus one base total that converts each payment at its
+ * own rate before adding up; a raw sum across currencies is never shown. */
+
+/** An amount in its currency, with its base-currency equivalent. */
+export interface CurrencyAmount {
+  currency: string;
+  amount: number;
+  base: number;
 }
 
-export function runTotal(run: PaymentRun): number {
-  return round2(run.groups.reduce((s, g) => s + groupNet(run, g), 0));
+/** Adds amounts up per currency, largest (in base) first. */
+export function addByCurrency(items: CurrencyAmount[]): CurrencyAmount[] {
+  const map = new Map<string, CurrencyAmount>();
+  items.forEach((i) => {
+    const code = (i.currency || BASE_CURRENCY).toUpperCase();
+    const cur = map.get(code) ?? { currency: code, amount: 0, base: 0 };
+    map.set(code, { currency: code, amount: round2(cur.amount + i.amount), base: round2(cur.base + i.base) });
+  });
+  return [...map.values()].sort((a, b) => b.base - a.base || a.currency.localeCompare(b.currency));
+}
+
+/** The base total of amounts each already converted at its own rate. */
+export const baseSum = (items: CurrencyAmount[]): number => round2(items.reduce((s, i) => s + i.base, 0));
+
+/** Base per one unit of a payment currency on a payment date: the rate a
+ *  run's payment is stamped with (stampPaymentRate). */
+export function paymentRateOn(currency: string, paymentDate: string): number {
+  if (isBaseCurrency(currency)) return 1;
+  return stampPaymentRate(currency, paymentDate).exchangeRate ?? 1;
+}
+
+/** An amount in one currency in another, through the base at the
+ *  payment-date rates (a payment drawn on an account in another currency). */
+export function convertOn(amount: number, from: string, to: string, date: string): number {
+  if ((from || BASE_CURRENCY).toUpperCase() === (to || BASE_CURRENCY).toUpperCase()) return amount;
+  const base = toBase(amount, paymentRateOn(from, date));
+  return isBaseCurrency(to) ? base : round2(base / paymentRateOn(to, date));
+}
+
+/** The payment's rate: its currency's, on the run's payment date. */
+export const groupRate = (run: PaymentRun, group: RunVendorGroup): number =>
+  paymentRateOn(groupCurrency(group), run.paymentDate);
+
+/** The rate card for a payment amount before it posts (Money's hover). */
+export function groupFx(run: PaymentRun, group: RunVendorGroup): InvoiceFx {
+  const currency = groupCurrency(group);
+  return paymentFx({ currency, paymentDate: run.paymentDate, ...stampPaymentRate(currency, run.paymentDate) });
+}
+
+/** One of the payment's amounts with its base equivalent. */
+export const groupAmount = (run: PaymentRun, group: RunVendorGroup, amount: number): CurrencyAmount => ({
+  currency: groupCurrency(group),
+  amount,
+  base: toBase(amount, groupRate(run, group)),
+});
+
+/** Net cash out per currency (and in base) across payments. */
+export const runNetByCurrency = (run: PaymentRun, groups: RunVendorGroup[] = run.groups): CurrencyAmount[] =>
+  addByCurrency(groups.map((g) => groupAmount(run, g, groupNet(run, g))));
+
+/** What the payments settle (cash + credit) per currency. */
+export const runGrossByCurrency = (run: PaymentRun, groups: RunVendorGroup[] = run.groups): CurrencyAmount[] =>
+  addByCurrency(groups.map((g) => groupAmount(run, g, groupGross(run, g))));
+
+/** Vendor credit drawn per currency. */
+export const runCreditByCurrency = (run: PaymentRun, groups: RunVendorGroup[] = run.groups): CurrencyAmount[] =>
+  addByCurrency(groups.filter((g) => groupCredit(g) > 0.004).map((g) => groupAmount(run, g, groupCredit(g))));
+
+/** The run's cash out in the base currency, each payment at its own rate. */
+export function runTotalBase(run: PaymentRun): number {
+  return baseSum(runNetByCurrency(run));
+}
+
+export interface GlPreviewRow {
+  code: string;
+  name: string;
+  debit: number;
+  credit: number;
+}
+
+const splitGl = (account: string) => {
+  const code = account.split(' ')[0];
+  return { code, name: account.slice(code.length + 1) };
+};
+
+/** The run's journal in the base currency (the ledger's): invoices debit
+ *  Accounts Payable, pre-invoices the vendor's advances account, each
+ *  pay-from account is credited its cash out and prepayments the credit
+ *  drawn. Each payment converts at its own rate; the cent rounding lands
+ *  on its largest debit so every payment still balances (the invoice
+ *  journal's rule, glFx). */
+export function runGlRows(run: PaymentRun, groups: RunVendorGroup[] = run.groups): GlPreviewRow[] {
+  const debitBy = new Map<string, number>();
+  const creditBy = new Map<string, GlPreviewRow>();
+  let prepaymentCredit = 0;
+  groups.forEach((g) => {
+    const lines = groupLines(run, g);
+    if (lines.length === 0) return;
+    const rate = groupRate(run, g);
+    const inCurrency = new Map<string, number>();
+    lines.forEach((l) => {
+      const account = l.isPreInvoice ? advanceAccountFor(g) : '2000 Accounts Payable';
+      inCurrency.set(account, round2((inCurrency.get(account) ?? 0) + l.payAmount));
+    });
+    const debits = [...inCurrency.entries()].map(([account, amount]) => ({ account, base: toBase(amount, rate) }));
+    const net = groupNet(run, g);
+    const credit = groupCredit(g);
+    const cashBase = toBase(net, rate);
+    const creditBase = toBase(credit, rate);
+    const balancedInCurrency = Math.abs(groupGross(run, g) - round2(net + credit)) < 0.005;
+    const diff = round2(cashBase + creditBase - debits.reduce((s, d) => s + d.base, 0));
+    if (balancedInCurrency && debits.length > 0 && Math.abs(diff) >= 0.005) {
+      const largest = debits.reduce((best, d, i) => (d.base > debits[best].base ? i : best), 0);
+      debits[largest] = { ...debits[largest], base: round2(debits[largest].base + diff) };
+    }
+    debits.forEach((d) => debitBy.set(d.account, round2((debitBy.get(d.account) ?? 0) + d.base)));
+    const acct = PAY_FROM_ACCOUNTS.find((a) => a.id === g.payFromAccountId);
+    const row = creditBy.get(g.payFromAccountId) ?? {
+      code: g.payFromAccountId.split('-')[0],
+      name: acct ? (acct.label.includes('·') ? acct.label.split('·')[1].trim() : acct.label) : g.payFromAccountId,
+      debit: 0,
+      credit: 0,
+    };
+    creditBy.set(g.payFromAccountId, { ...row, credit: round2(row.credit + cashBase) });
+    prepaymentCredit = round2(prepaymentCredit + creditBase);
+  });
+  // Payables first, then advances, so the familiar line leads.
+  const debitRows = [...debitBy.entries()]
+    .sort(([a], [b]) => (a.startsWith('2') ? -1 : b.startsWith('2') ? 1 : a.localeCompare(b)))
+    .map(([account, debit]) => ({ ...splitGl(account), debit, credit: 0 }));
+  const creditRows = [...creditBy.values()].filter((r) => r.credit > 0.004).sort((a, b) => b.credit - a.credit);
+  return [
+    ...debitRows,
+    ...creditRows,
+    ...(prepaymentCredit > 0.004 ? [{ ...splitGl(DEFAULT_PREPAYMENT_ASSET_ACCOUNT), debit: 0, credit: prepaymentCredit }] : []),
+  ];
 }
 
 /* ── Per-account cash readout (Available · Selected · Remaining) ─────── */
 
+/** One pay-from account's readout, all three figures in the ACCOUNT's
+ *  currency (Currency & Exchange Rates): a payment in another currency
+ *  converts through the base at the payment-date rates. */
 export interface AccountTotal {
   account: PayFromAccount;
   available: number;
@@ -422,9 +568,17 @@ export interface AccountTotal {
   remaining: number;
 }
 
-export function accountTotalsFromPairs(pairs: { accountId: string; amount: number }[]): AccountTotal[] {
+export function accountTotalsFromPairs(
+  pairs: { accountId: string; amount: number; currency?: string }[],
+  date: string = todayIso(),
+): AccountTotal[] {
   const byAccount = new Map<string, number>();
-  pairs.forEach((p) => byAccount.set(p.accountId, round2((byAccount.get(p.accountId) ?? 0) + p.amount)));
+  pairs.forEach((p) => {
+    const account = PAY_FROM_ACCOUNTS.find((a) => a.id === p.accountId);
+    const inAccount = account && p.currency ? convertOn(p.amount, p.currency, account.currency, date) : p.amount;
+    byAccount.set(p.accountId, round2((byAccount.get(p.accountId) ?? 0) + inAccount));
+  });
+  const inBase = (t: AccountTotal) => toBase(t.selected, paymentRateOn(t.account.currency, date));
   return [...byAccount.entries()]
     .map(([accountId, selected]) => {
       const account = PAY_FROM_ACCOUNTS.find((a) => a.id === accountId);
@@ -432,46 +586,58 @@ export function accountTotalsFromPairs(pairs: { accountId: string; amount: numbe
       return { account, available: account.balance, selected, remaining: round2(account.balance - selected) };
     })
     .filter((t): t is AccountTotal => t !== null)
-    .sort((a, b) => b.selected - a.selected);
+    // Largest cash out first, compared in the base currency.
+    .sort((a, b) => inBase(b) - inBase(a));
 }
 
 /** P2 rail: totals from the proposal's groups (net of credit). */
 export function accountTotals(run: PaymentRun): AccountTotal[] {
   return accountTotalsFromPairs(
-    run.groups.map((g) => ({ accountId: g.payFromAccountId, amount: groupNet(run, g) })),
+    run.groups.map((g) => ({ accountId: g.payFromAccountId, amount: groupNet(run, g), currency: groupCurrency(g) })),
+    run.paymentDate,
   );
 }
 
 /** P1 readout: no groups yet, so each ticked invoice projects onto its
- *  vendor's default account. */
+ *  vendor's default account for its currency. */
 export function projectedAccountTotals(selected: Invoice[]): AccountTotal[] {
   return accountTotalsFromPairs(
     selected.map((inv) => ({
-      accountId: vendorPayDefaults(inv.vendor).payFromAccountId,
+      accountId: vendorPayDefaults(inv.vendor, inv.currency).payFromAccountId,
       amount: inv.outstandingBalance,
+      currency: inv.currency,
     })),
   );
 }
 
 /* ── Exception checks (P2 gate + P3a review-by-exception) ────────────── */
 
-const OVER_THRESHOLD = 50_000;
+/** Review threshold, in the base currency (Currency & Exchange Rates):
+ *  each payment is compared at its rate on the payment date. */
+const OVER_THRESHOLD_BASE = 10_000_000;
 
 export function computeRunExceptions(
   run: PaymentRun,
   payments: Payment[],
 ): RunException[] {
   const out: RunException[] = [];
-  const lines = liveLines(run);
+  // Vendor facts (method, bank details, first payment) raise once per
+  // vendor; payment facts once per payment, which is per vendor AND
+  // currency (Currency & Exchange Rates).
+  const vendorSeen = new Set<string>();
 
   run.groups.forEach((group) => {
     const vendor = group.vendor;
-    const vlines = lines.filter((l) => l.vendor === vendor);
+    const key = groupKeyOf(group);
+    const currency = groupCurrency(group);
+    const vlines = groupLines(run, group);
     if (vlines.length === 0) return;
+    const firstForVendor = !vendorSeen.has(vendor);
+    vendorSeen.add(vendor);
 
     if (vendorHasNoMethod(vendor) && !group.methodOverridden) {
       out.push({
-        id: `no-method:${vendor}`,
+        id: `no-method:${key}`,
         kind: 'no-method',
         severity: 'blocking',
         vendor,
@@ -480,14 +646,16 @@ export function computeRunExceptions(
     }
 
     // Possible duplicate: an existing live payment to the same vendor for
-    // the same amount inside 30 days, or two identical line amounts for
-    // one vendor in this run. Blocking until acknowledged.
+    // the same amount in the same currency inside 30 days, or two
+    // identical line amounts on one payment in this run. Blocking until
+    // acknowledged.
     const net = groupNet(run, group);
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
     const dup = payments.find(
       (p) =>
         p.vendor === vendor &&
+        (p.currency || BASE_CURRENCY).toUpperCase() === currency &&
         p.type === 'Payment' &&
         p.status !== 'Cancelled' &&
         p.status !== 'Reversed' &&
@@ -498,7 +666,7 @@ export function computeRunExceptions(
     const twinLines = amounts.some((a, i) => amounts.findIndex((b) => Math.abs(a - b) < 0.005) !== i);
     if (dup) {
       out.push({
-        id: `possible-duplicate:${vendor}`,
+        id: `possible-duplicate:${key}`,
         kind: 'possible-duplicate',
         severity: 'blocking',
         ackable: true,
@@ -507,7 +675,7 @@ export function computeRunExceptions(
       });
     } else if (twinLines) {
       out.push({
-        id: `possible-duplicate:${vendor}`,
+        id: `possible-duplicate:${key}`,
         kind: 'possible-duplicate',
         severity: 'blocking',
         ackable: true,
@@ -516,7 +684,7 @@ export function computeRunExceptions(
       });
     }
 
-    if (vendorBankChanged(vendor)) {
+    if (firstForVendor && vendorBankChanged(vendor)) {
       out.push({
         id: `bank-changed:${vendor}`,
         kind: 'bank-changed',
@@ -526,35 +694,42 @@ export function computeRunExceptions(
       });
     }
 
-    // Unapplied credit the run is not using.
+    // Unapplied credit the payment is not using: only prepayments in its
+    // own currency can be drawn against it.
     const availableCredit = payments
-      .filter((p) => p.type === 'Prepayment' && p.vendor === vendor && p.unappliedAmount > 0)
+      .filter(
+        (p) =>
+          p.type === 'Prepayment' &&
+          p.vendor === vendor &&
+          (p.currency || BASE_CURRENCY).toUpperCase() === currency &&
+          p.unappliedAmount > 0,
+      )
       .reduce((s, p) => s + p.unappliedAmount, 0);
     const appliedHere = groupCredit(group);
     if (availableCredit - appliedHere > 0.005) {
       out.push({
-        id: `unapplied-credit:${vendor}`,
+        id: `unapplied-credit:${key}`,
         kind: 'unapplied-credit',
         severity: 'warning',
         vendor,
-        message: `$${round2(availableCredit - appliedHere).toLocaleString('en-US')} in prepayments is available and not applied in this run.`,
+        message: `${formatMoney(round2(availableCredit - appliedHere), currency)} in prepayments is available and not applied in this run.`,
       });
     }
 
-    if (net > OVER_THRESHOLD) {
+    if (toBase(net, groupRate(run, group)) > OVER_THRESHOLD_BASE) {
       out.push({
-        id: `over-threshold:${vendor}`,
+        id: `over-threshold:${key}`,
         kind: 'over-threshold',
         severity: 'warning',
         vendor,
-        message: `Payment exceeds the $${OVER_THRESHOLD.toLocaleString('en-US')} review threshold.`,
+        message: `Payment exceeds the ${formatMoney(OVER_THRESHOLD_BASE, BASE_CURRENCY)} review threshold.`,
       });
     }
 
     const priorPayment = payments.some(
       (p) => p.vendor === vendor && p.type === 'Payment' && p.status !== 'Cancelled',
     );
-    if (!priorPayment) {
+    if (firstForVendor && !priorPayment) {
       out.push({
         id: `first-payment:${vendor}`,
         kind: 'first-payment',
@@ -614,9 +789,11 @@ export function revalidateRun(run: PaymentRun, invoices: Invoice[]): Revalidatio
   // Only what is STILL to record (user 10/15): a partially executed run
   // settled its own recorded invoices, and re-checking those flagged
   // every one as "paid elsewhere".
-  const recordedVendors = new Set(run.groups.filter((g) => g.paymentId).map((g) => g.vendor));
+  // Recorded payments are keyed by vendor and currency: a split vendor's
+  // other payment still checks its own lines.
+  const recordedGroups = new Set(run.groups.filter((g) => g.paymentId).map(groupKeyOf));
   liveLines(run).forEach((line) => {
-    if (recordedVendors.has(line.vendor)) return;
+    if (recordedGroups.has(lineGroupKey(line))) return;
     // A partial pass settled part of the line already (user 10/21/26):
     // only what is still open has to be covered.
     const open = lineRemaining(line);
@@ -633,15 +810,21 @@ export function revalidateRun(run: PaymentRun, invoices: Invoice[]): Revalidatio
     if (inv.outstandingBalance < open - 0.005) {
       lineFailures.push({
         ...line,
-        reason: `Paid elsewhere since approval: only $${inv.outstandingBalance.toLocaleString('en-US')} remains due.`,
+        reason: `Paid elsewhere since approval: only ${formatMoney(inv.outstandingBalance, lineCurrency(line))} remains due.`,
       });
     }
   });
 
-  const badAccounts = run.groups.filter(
-    (g) => !g.paymentId && !PAY_FROM_ACCOUNTS.some((a) => a.id === g.payFromAccountId),
-  );
+  const open = run.groups.filter((g) => !g.paymentId && groupLines(run, g).length > 0);
+  const badAccounts = open.filter((g) => !PAY_FROM_ACCOUNTS.some((a) => a.id === g.payFromAccountId));
+  // A payment draws on an account in its own currency or the base
+  // currency (Currency & Exchange Rates), never a third one.
+  const wrongCurrency = open.filter((g) => {
+    const account = PAY_FROM_ACCOUNTS.find((a) => a.id === g.payFromAccountId);
+    return !!account && !isBaseCurrency(account.currency) && account.currency !== groupCurrency(g);
+  });
   const periodOpen = !isClosedPeriod(run.paymentDate);
+  const vendorList = (groups: RunVendorGroup[]) => [...new Set(groups.map((g) => g.vendor))].join(', ');
 
   const checks: RevalidationCheck[] = [
     {
@@ -651,8 +834,12 @@ export function revalidateRun(run: PaymentRun, invoices: Invoice[]): Revalidatio
     },
     {
       label: 'Pay-from accounts are valid',
-      ok: badAccounts.length === 0,
-      detail: badAccounts.length ? `${badAccounts.map((g) => g.vendor).join(', ')} points at a missing account.` : undefined,
+      ok: badAccounts.length === 0 && wrongCurrency.length === 0,
+      detail: badAccounts.length
+        ? `${vendorList(badAccounts)} points at a missing account.`
+        : wrongCurrency.length
+          ? `${vendorList(wrongCurrency)} draws on an account in another currency. Pick one in the payment's currency or the base currency.`
+          : undefined,
     },
     {
       label: 'Nothing was paid elsewhere since approval',
@@ -676,29 +863,34 @@ export interface RunExecutionPlan {
   settleNow: { invoiceId: string; applied: number }[];
   /** Prepayment records drawn down by applied credit. */
   creditDraws: { paymentId: string; amount: number; invoiceNumbers: string[]; invoiceDraws?: { invoiceNumber: string; amount: number }[] }[];
-  /** paymentId per vendor group, to stamp back onto the run. Only
-   *  vendors this pass records IN FULL. */
+  /** paymentId per payment group (keyed by groupKeyOf: vendor and
+   *  currency), to stamp back onto the run. Only groups this pass records
+   *  IN FULL. */
   groupPayments: Record<string, string>;
-  /** paymentId per vendor paid only in part this pass (user 10/21/26). */
+  /** paymentId per group paid only in part this pass (user 10/21/26). */
   partialPayments: Record<string, string>;
   /** invoiceId → what this pass recorded on the line (cash + credit). */
   lineRecorded: { invoiceId: string; amount: number }[];
-  /** Vendors whose prepayment credit posted with this pass. */
-  creditPostedVendors: string[];
+  /** Groups (groupKeyOf) whose prepayment credit posted with this pass. */
+  creditPostedGroups: string[];
 }
 
-/** One payment per pay-to vendor. Future payment date posts Scheduled,
+/** One payment per pay-to vendor and currency (Currency & Exchange
+ *  Rates): each goes out in its group's currency, stamped with that
+ *  currency's rate on the payment date, even from a base-currency
+ *  account. Future payment date posts Scheduled,
  *  today or past posts Paid. appliedInvoices carries the CASH slices
  *  only, so the existing Mark-as-paid path settles a scheduled payment
  *  without double-counting credit. */
 export function buildRunExecution(
   run: PaymentRun,
   approvedBy?: string,
-  /** Recording in pieces (Eli 9/25): only these vendors' payments post
-   *  now; the rest stay recordable on a later pass. Omitted = all. */
-  onlyVendors?: string[],
-  /** Partial recording (user 10/21/26): vendor → cash to pay this pass.
-   *  Less than what is open leaves the rest on the run. Omitted = all. */
+  /** Recording in pieces (Eli 9/25): only these payments (groupKeyOf)
+   *  post now; the rest stay recordable on a later pass. Omitted = all. */
+  onlyGroups?: string[],
+  /** Partial recording (user 10/21/26): group key → cash to pay this
+   *  pass, in the payment's currency. Less than what is open leaves the
+   *  rest on the run. Omitted = all. */
   cashAmounts?: Record<string, number>,
 ): RunExecutionPlan {
   const today = todayIso();
@@ -711,24 +903,27 @@ export function buildRunExecution(
   const groupPayments: Record<string, string> = {};
   const partialPayments: Record<string, string> = {};
   const lineRecorded: RunExecutionPlan['lineRecorded'] = [];
-  const creditPostedVendors: string[] = [];
-  const vendorCount = run.groups.filter((g) => groupLines(run, g.vendor).length > 0).length;
+  const creditPostedGroups: string[] = [];
+  // The run label counts vendors; a vendor split by currency is one vendor.
+  const vendorCount = new Set(run.groups.filter((g) => groupLines(run, g).length > 0).map((g) => g.vendor)).size;
 
   // Pay-from account id → its credit-side GL string for journal lines.
   const payFromGlFor = (accountId: string) =>
     PAY_FROM_ACCOUNTS.find((a) => a.id === accountId)?.creditGl ?? accountId;
 
   run.groups.forEach((group, idx) => {
-    // Partial recording (Eli 9/25): skip unselected vendors and anything
+    // Partial recording (Eli 9/25): skip unselected payments and anything
     // an earlier pass already posted (it carries its paymentId).
-    if (onlyVendors && !onlyVendors.includes(group.vendor)) return;
+    const key = groupKeyOf(group);
+    const currency = groupCurrency(group);
+    if (onlyGroups && !onlyGroups.includes(key)) return;
     if (group.paymentId) return;
 
     // Credit cascades OLDEST DUE FIRST across the vendor's lines
     // (Jennifer 9/1/26); whatever credit covers is NOT in the payment's
     // cash allocation. A partial pass (user 10/21/26) then spreads its
     // cash oldest due first and leaves the rest open on the run.
-    const pass = planGroupPass(run, group, cashAmounts?.[group.vendor]);
+    const pass = planGroupPass(run, group, cashAmounts?.[key]);
     const cashSlices = pass.slices.filter((c) => c.cash + c.credit > 0.004);
     if (cashSlices.length === 0) return;
     const vlines = cashSlices.map((c) => c.line);
@@ -739,10 +934,10 @@ export function buildRunExecution(
 
     const amount = round2(cashSlices.reduce((s, c) => s + c.cash, 0));
     const paymentId = `pmt-run-${stampBase}-${idx + 1}`;
-    if (pass.full) groupPayments[group.vendor] = paymentId;
-    else partialPayments[group.vendor] = paymentId;
+    if (pass.full) groupPayments[key] = paymentId;
+    else partialPayments[key] = paymentId;
     cashSlices.forEach((c) => lineRecorded.push({ invoiceId: c.line.invoiceId, amount: round2(c.cash + c.credit) }));
-    if (pass.credit > 0.004) creditPostedVendors.push(group.vendor);
+    if (pass.credit > 0.004) creditPostedGroups.push(key);
 
     if (pass.credit > 0.004 && group.creditApplied.length > 0) {
       // Attribute each source advance's draw to the invoices its credit
@@ -800,7 +995,11 @@ export function buildRunExecution(
         .map((c) => ({ invoiceNumber: c.line.invoiceNumber, amount: c.cash })),
       appliedAmount: scheduled ? 0 : amount,
       unappliedAmount: 0,
-      currency: 'USD',
+      // In the group's currency (Currency & Exchange Rates), with that
+      // currency's rate on the payment date; a base-currency account still
+      // pays in it, so there is no separate settled currency.
+      currency,
+      ...stampPaymentRate(currency, run.paymentDate),
       // The reference typed at recording wins (9/22/26 review response,
       // Claude C11-X1) — the generated trace is only the fallback. Checks
       // without one get their number at Print.
@@ -835,7 +1034,7 @@ export function buildRunExecution(
         ? group.creditApplied.map((d) => ({ sourcePaymentId: d.paymentId, sourcePaymentNumber: d.paymentNumber, amount: d.amount }))
         : undefined,
       perInvoiceSplit: cashSlices.map((c) => ({ invoiceNumber: c.line.invoiceNumber, cash: c.cash, credit: c.credit })),
-      glEntries: buildPaymentGlEntries({
+      glEntries: paymentGlInBase(buildPaymentGlEntries({
         type: 'Payment',
         cashAmount: amount,
         bankAccount: payFromGlFor(group.payFromAccountId),
@@ -849,7 +1048,7 @@ export function buildRunExecution(
           account: advanceAccountFor(group),
           amount: round2(cashSlices.filter((c) => c.line.isPreInvoice).reduce((s, c) => s + c.cash + c.credit, 0)),
         },
-      }),
+      }), currency, paymentRateOn(currency, run.paymentDate)),
       // Check trail (Eli 9/25): a reference issued by the print flow's
       // blocking confirm records as PRINTED; a hand-typed number means
       // the check exists outside the flow — a MANUAL check.
@@ -859,5 +1058,30 @@ export function buildRunExecution(
     });
   });
 
-  return { records, settleNow, creditDraws, groupPayments, partialPayments, lineRecorded, creditPostedVendors };
+  return { records, settleNow, creditDraws, groupPayments, partialPayments, lineRecorded, creditPostedGroups };
+}
+
+/** A payment's journal in the base currency, the ledger's (Currency &
+ *  Exchange Rates): debit and credit post at the payment's rate, each line
+ *  keeping its payment-currency amount and the rate, the snapshot the
+ *  invoice journal keeps (glFx). Cent rounding lands on the largest debit
+ *  so the entry still balances. */
+function paymentGlInBase(lines: GlEntryLine[], currency: string, rate: number): GlEntryLine[] {
+  if (isBaseCurrency(currency)) return lines;
+  const total = (side: 'debit' | 'credit', rows: GlEntryLine[]) => round2(rows.reduce((s, l) => s + (l[side] ?? 0), 0));
+  const balanced = Math.abs(total('debit', lines) - total('credit', lines)) < 0.005;
+  const out: GlEntryLine[] = lines.map((l) => ({
+    ...l,
+    ...(l.debit != null ? { debit: toBase(l.debit, rate) } : {}),
+    ...(l.credit != null ? { credit: toBase(l.credit, rate) } : {}),
+    currency,
+    foreignAmount: l.debit ?? l.credit ?? 0,
+    rate,
+  }));
+  const diff = round2(total('credit', out) - total('debit', out));
+  if (balanced && Math.abs(diff) >= 0.005) {
+    const largest = out.reduce((best, l, i) => ((l.debit ?? 0) > (out[best].debit ?? 0) ? i : best), 0);
+    if (out[largest].debit != null) out[largest] = { ...out[largest], debit: round2((out[largest].debit ?? 0) + diff) };
+  }
+  return out;
 }

@@ -1,4 +1,4 @@
-import type { Invoice } from '@/app/data/mockInvoices';
+import type { Invoice, InvoiceRateBasis } from '@/app/data/mockInvoices';
 import { localTodayIso } from '@/app/lib/dueBucket';
 import { BASE_CURRENCY, isBaseCurrency } from './currencies';
 import { DEFAULT_RATE_TYPE, RATE_PROVIDER, rateOn, toBase, type RateType } from './rates';
@@ -24,10 +24,21 @@ export interface InvoiceFx {
   /** No rate taken yet (a pre-invoice posts when paid): today's rate stands in. */
   provisional: boolean;
   isBase: boolean;
+  /** What the rate date is, for the hover: "vendor invoice date", "PO date"… */
+  dateLabel: string;
 }
 
+/** The "Rate as of" date's name, lower case for running text. */
+export const RATE_BASIS_DATE_LABEL: Record<InvoiceRateBasis, string> = {
+  invoiceDate: 'vendor invoice date',
+  receivingDate: 'receiving date',
+  poDate: 'PO date',
+  postingDate: 'posting date',
+  paidDate: 'payment date',
+};
+
 type FxFields = Pick<Invoice, 'currency' | 'postingDate' | 'invoiceDate'> &
-  Partial<Pick<Invoice, 'exchangeRate' | 'rateType' | 'rateDate' | 'rateEdited'>>;
+  Partial<Pick<Invoice, 'exchangeRate' | 'rateType' | 'rateDate' | 'rateEdited' | 'rateBasis'>>;
 
 export function rateSourceLabel(type: RateType, edited?: boolean): string {
   if (type === 'mid') return RATE_PROVIDER;
@@ -39,7 +50,7 @@ export function invoiceFx(inv: FxFields): InvoiceFx {
   const rateType = inv.rateType ?? DEFAULT_RATE_TYPE;
   const docDate = inv.postingDate || inv.invoiceDate || todayIso();
   if (isBaseCurrency(currency)) {
-    return { currency, rate: 1, rateType, rateDate: docDate, source: 'Base currency', provisional: false, isBase: true };
+    return { currency, rate: 1, rateType, rateDate: docDate, source: 'Base currency', provisional: false, isBase: true, dateLabel: RATE_BASIS_DATE_LABEL[inv.rateBasis ?? 'postingDate'] };
   }
   if (inv.exchangeRate && inv.exchangeRate > 0) {
     return {
@@ -50,6 +61,7 @@ export function invoiceFx(inv: FxFields): InvoiceFx {
       source: rateSourceLabel(rateType, inv.rateEdited),
       provisional: false,
       isBase: false,
+      dateLabel: RATE_BASIS_DATE_LABEL[inv.rateBasis ?? 'postingDate'],
     };
   }
   // Not posted yet: today's rate of the same type (mid-market if there's none).
@@ -64,22 +76,25 @@ export function invoiceFx(inv: FxFields): InvoiceFx {
     source: rateSourceLabel(usable.type),
     provisional: true,
     isBase: false,
+    dateLabel: 'today',
   };
 }
 
 /** An invoice amount (its total, balance, a line…) in the base currency. */
 export const toInvoiceBase = (inv: FxFields, amount: number) => toBase(amount, invoiceFx(inv).rate);
 
-/** The rate fields to stamp on an invoice, taken on its posting date. */
+/** The rate fields to stamp on an invoice, taken on the given day (its
+ *  posting date unless a basis says otherwise). */
 export function stampRate(
   currency: string,
-  postingDate: string | undefined,
+  day: string | undefined,
   rateType: RateType = DEFAULT_RATE_TYPE,
-): Pick<Invoice, 'exchangeRate' | 'rateType' | 'rateDate'> {
-  if (!postingDate) return {};
-  const quote = rateOn(currency, postingDate, rateType);
+  basis?: InvoiceRateBasis,
+): Pick<Invoice, 'exchangeRate' | 'rateType' | 'rateDate' | 'rateBasis'> {
+  if (!day) return {};
+  const quote = rateOn(currency, day, rateType);
   if (quote.rate == null) return {};
-  return { exchangeRate: quote.rate, rateType, rateDate: quote.date };
+  return { exchangeRate: quote.rate, rateType, rateDate: quote.date, ...(basis ? { rateBasis: basis } : {}) };
 }
 
 /** A PO's own rate: the mid-market rate on its PO date (spec 4.3), the
@@ -94,6 +109,7 @@ export function poRateFx(po: { currency?: string; exchangeRate?: number; poDate:
     source: RATE_PROVIDER,
     provisional: false,
     isBase: isBaseCurrency(po.currency),
+    dateLabel: 'PO date',
   };
 }
 

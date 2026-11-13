@@ -30,6 +30,11 @@ import {
   DropdownMenuTrigger,
 } from '@/app/components/ui/dropdown-menu';
 import type { Payment } from '@/app/data/mockPayments';
+import { getCurrency } from '@/app/currency/currencies';
+import { formatMoney } from '@/app/currency/money';
+import { paymentFx, toPaymentBase } from '@/app/currency/paymentFx';
+import { Money } from '@/app/components/currency/Money';
+import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
 import { getRowActionGroups, type PaymentActionId } from '@/app/data/paymentActions';
 import { actionToneClass, type ActionTone } from '@/app/lib/actionMenuTone';
 import {
@@ -500,18 +505,43 @@ export const PAYMENT_COLUMNS: ColumnDef<Payment>[] = [
   {
     key: 'amount',
     label: 'Amount',
+    tooltip: "In each payment's own currency. Sorting and the range filter use the base currency equivalent.",
     minWidth: 120,
     defaultWidth: 150,
     align: 'right',
     sortable: true,
     filterType: 'range',
-    getValue: (row) => row.amount,
-    getSortValue: (row) => row.amount,
+    // Currency & Exchange Rates: the amount is in the payment currency (the
+    // symbol follows the Currency column); hover for its base value at the
+    // payment's rate. Sorting and the range filter compare in the base.
+    getValue: (row) => toPaymentBase(row, row.amount),
+    getSortValue: (row) => toPaymentBase(row, row.amount),
+    searchText: (row) => formatMoney(row.amount, row.currency),
     // Same weight as every other column (partner table pattern — no
     // heavier font for money columns, design feedback 7/13/26).
     render: (row, { searchQuery }) => (
       <span className="text-foreground" style={{ fontWeight: 400 }}>
-        {highlightAmount(fmtMoney(row.amount), searchQuery)}
+        <Money value={row.amount} currency={row.currency} fx={paymentFx(row)} role="payment currency">
+          {highlightAmount(formatMoney(row.amount, row.currency), searchQuery)}
+        </Money>
+      </span>
+    ),
+  },
+  {
+    key: 'currency',
+    label: 'Currency',
+    minWidth: 90,
+    defaultWidth: 120,
+    sortable: true,
+    filterType: 'multiselect',
+    uniqueValues: (rows) => Array.from(new Set(rows.map((r) => r.currency))).sort(),
+    getValue: (row) => row.currency,
+    // Flag + code, as the invoice listing shows a currency; the name rides the search.
+    searchText: (row) => `${row.currency} ${getCurrency(row.currency)?.name ?? ''}`,
+    render: (row, { searchQuery }) => (
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+        <CurrencyFlag code={row.currency} size={16} />
+        <span>{highlightText(row.currency, searchQuery)}</span>
       </span>
     ),
   },

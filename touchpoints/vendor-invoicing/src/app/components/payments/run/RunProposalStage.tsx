@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Invoice } from '@/app/data/mockInvoices';
-import { PAY_FROM_ACCOUNTS, accountTypeForMethod, type Payment } from '@/app/data/mockPayments';
+import { PAY_FROM_ACCOUNTS, accountTypeForMethod, accountsForCurrency, type Payment } from '@/app/data/mockPayments';
 import {
   vendorPaymentMethods,
   genericPaymentMethods,
@@ -46,6 +46,10 @@ import {
 import { paymentMethodInfo } from '@/app/data/paymentMethodCatalog';
 import {
   accountForMethod,
+  groupCurrency,
+  groupKeyOf,
+  lineCurrency,
+  lineGroupKey,
   liveLines,
   openRunInvoiceIds,
   vendorPayDefaults,
@@ -66,8 +70,16 @@ import {
   discountAmountOn,
   discountDaysLeft,
   isClosedPeriod,
-  runDebitRows,
+  runGlRows,
   advanceAccountFor,
+  groupLines,
+  groupAmount,
+  groupFx,
+  isSplitVendor,
+  runNetByCurrency,
+  runGrossByCurrency,
+  runCreditByCurrency,
+  type CurrencyAmount,
 } from '@/app/lib/runMath';
 import { DateCalendar } from '@/app/components/ui/date-picker';
 import { accountBalanceLabel } from '@/app/data/mockPayments';
@@ -93,9 +105,16 @@ import { VendorAvatar } from '@/app/components/VendorAvatar';
 import { PaymentMethodModal } from '@/app/components/payments/PaymentMethodModal';
 import { PayFromAccountModal } from '@/app/components/payments/PayFromAccountModal';
 import { PrepaymentSourcePicker, CreditQuickCard, type PrepaySource } from '@/app/components/payments/PrepaymentSourcePicker';
+import { paidRateText } from '@/app/currency/paidRate';
 import { AmountWithPrepaidNote } from '@/app/components/payments/PrepaidOriginNote';
 import { MoneyInput, MaxChip } from '@/app/components/payments/MoneyInput';
-import { money, humanDate, openInvoiceTab, DueDatePill, RUN_FOOTER_SHELL, FOOTER_BTN_GHOST, FOOTER_BTN_PRIMARY } from './runUi';
+import { humanDate, openInvoiceTab, DueDatePill, RUN_FOOTER_SHELL, FOOTER_BTN_GHOST, FOOTER_BTN_PRIMARY } from './runUi';
+import { Money } from '@/app/components/currency/Money';
+import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { formatAmount, formatMoney } from '@/app/currency/money';
+import { invoiceFx } from '@/app/currency/invoiceFx';
+import { CurrencySplitNote, CurrencyTotals, amountsText, approxBase, inputPrefix, prefixPadClass, totalText } from './runMoney';
 import { useSystemSettings } from '@/app/hooks/useSystemSettings';
 import { RunIssuesPanel, MoveLineModal } from './RunIssuesPanel';
 
@@ -110,6 +129,24 @@ const METHOD_SECTION_ORDER = ['Check', 'ACH', 'Wire', 'Bank Transfer', 'Card', '
  *  ride the picker's editable draw map. */
 const anchoredAppliedOf = (group: RunVendorGroup) =>
   round2(group.creditApplied.filter((c) => c.anchoredInvoiceNumber).reduce((s, c) => s + c.amount, 0));
+
+/** The vendor's on-account prepayments a payment can draw on: only those in
+ *  the payment's own currency (Currency & Exchange Rates: one payment
+ *  can't mix currencies, its credit included). */
+const creditSourcesFor = (payments: Payment[], group: RunVendorGroup) =>
+  payments.filter(
+    (p) =>
+      p.type === 'Prepayment' &&
+      p.vendor === group.vendor &&
+      (p.currency || BASE_CURRENCY).toUpperCase() === groupCurrency(group) &&
+      p.unappliedAmount > 0 &&
+      !p.preInvoiceId,
+  );
+
+/** A vendor's name, with the payment's currency when the run pays the
+ *  vendor in more than one (the two payments read apart). */
+const paymentLabel = (run: PaymentRun, group: RunVendorGroup) =>
+  isSplitVendor(run, group.vendor) ? `${group.vendor} · ${groupCurrency(group)}` : group.vendor;
 
 /* ── P2 · Proposal (payment-run-flow.md) ─────────────────────────────
  * The system turned the ticked invoices into one payment per pay-to
@@ -150,8 +187,10 @@ export function RunProposalStage({
   runsApi: PaymentRunsApi;
   onDeleted: () => void;
 }) {
-  const [methodVendor, setMethodVendor] = useState<string | null>(null);
-  const [accountVendor, setAccountVendor] = useState<string | null>(null);
+  // Keyed by payment (groupKeyOf: vendor and currency), Currency &
+  // Exchange Rates: a vendor paid in two currencies has two cards.
+  const [methodGroupKey, setMethodGroupKey] = useState<string | null>(null);
+  const [accountGroupKey, setAccountGroupKey] = useState<string | null>(null);
   // Hover cards stay quiet while their pane scrolls (8/12/26): one lock
   // per scrollable pane, the vendor cards and the summary-rail breakdown.
   const cardsHoverLock = useScrollHoverLock();
@@ -164,6 +203,7 @@ export function RunProposalStage({
     invoiceNumber: string;
     vendor: string;
     amount: number;
+    currency: string;
   } | null>(null);
   // Submit gets the green Record-Payment confirm (8/4/26): GL-impact
   // rows per pay-from account, then the run hands off to its detail page.
@@ -184,27 +224,31 @@ export function RunProposalStage({
   // cards start COLLAPSED under their method accordion; expanding one
   // reveals its invoice table. Jumping to a vendor re-expands it.
   const [collapsedVendors, setCollapsedVendors] = useState<Set<string>>(
-    () => new Set(run.groups.map((g) => g.vendor)),
+    () => new Set(run.groups.map(groupKeyOf)),
   );
-  const toggleVendorCollapsed = (vendor: string) =>
+  const toggleVendorCollapsed = (key: string) =>
     setCollapsedVendors((prev) => {
       const next = new Set(prev);
-      if (next.has(vendor)) next.delete(vendor);
-      else next.add(vendor);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
-  const expandVendor = (vendor: string) =>
+  const expandVendor = (key: string) =>
     setCollapsedVendors((prev) => {
-      if (!prev.has(vendor)) return prev;
+      if (!prev.has(key)) return prev;
       const next = new Set(prev);
-      next.delete(vendor);
+      next.delete(key);
       return next;
     });
 
   const lines = liveLines(run);
   const totals = useMemo(() => accountTotals(run), [run]);
   const overdrawn = totals.filter((t) => t.remaining < 0);
-  const total = run.groups.reduce((s, g) => s + groupNet(run, g), 0);
+  // Cash out per currency plus the base total (Currency & Exchange
+  // Rates): never one raw sum across currencies.
+  const netItems = useMemo(() => runNetByCurrency(run), [run]);
+  const runCurrencyCount = new Set(run.groups.map(groupCurrency)).size;
+  const vendorCount = new Set(run.groups.map((g) => g.vendor)).size;
 
   // Search + method filter over the payment list (8/28/26 review): the
   // query matches the vendor name or any of its invoice numbers; the
@@ -254,9 +298,7 @@ export function RunProposalStage({
       if (methodFilter.length && !methodFilter.includes(sectionOf(g.methodType))) return false;
       if (!q) return true;
       if (g.vendor.toLowerCase().includes(q)) return true;
-      return liveLines(run).some(
-        (l) => l.vendor === g.vendor && l.invoiceNumber.toLowerCase().includes(q),
-      );
+      return groupLines(run, g).some((l) => l.invoiceNumber.toLowerCase().includes(q));
     };
     return allMethodSections
       .map((s) => ({ ...s, groups: s.groups.filter(groupMatches) }))
@@ -267,23 +309,25 @@ export function RunProposalStage({
   // Move payments between accounts: single (kebab submenu), a picked
   // selection, or a whole section. Landing back on the vendor's own
   // default clears the override flag.
+  // Payment keys (groupKeyOf), not vendor names: a vendor paid in two
+  // currencies moves each payment on its own.
   const [bulkMoveVendors, setBulkMoveVendors] = useState<string[] | null>(null);
-  const applyAccountToVendors = (vendors: string[], accountId: string) => {
+  const applyAccountToVendors = (keys: string[], accountId: string) => {
     runsApi.updateRun(run.id, (r) => ({
       ...r,
       groups: r.groups.map((g) =>
-        vendors.includes(g.vendor)
+        keys.includes(groupKeyOf(g))
           ? {
               ...g,
               payFromAccountId: accountId,
-              accountOverridden: accountId !== vendorPayDefaults(g.vendor).payFromAccountId || undefined,
+              accountOverridden: accountId !== vendorPayDefaults(g.vendor, groupCurrency(g)).payFromAccountId || undefined,
             }
           : g,
       ),
     }));
     const account = PAY_FROM_ACCOUNTS.find((a) => a.id === accountId);
     toast.success(`Moved to ${account?.label ?? accountId}`, {
-      description: `${vendors.length} payment${vendors.length === 1 ? '' : 's'} now draw${vendors.length === 1 ? 's' : ''} from it, for this run only.`,
+      description: `${keys.length} payment${keys.length === 1 ? '' : 's'} now draw${keys.length === 1 ? 's' : ''} from it, for this run only.`,
     });
     // Cards stay put (8/28/26, method grouping): the account is a chip
     // on the card, so changing it never relocates anything.
@@ -293,46 +337,49 @@ export function RunProposalStage({
       const want = accountTypeForMethod(methodType);
       return want === 'any' ? true : a.type === want;
     });
-  /** Accounts every selected payment's method can draw from. */
-  const bulkEligibleAccounts = (vendors: string[]) => {
-    const groups = run.groups.filter((g) => vendors.includes(g.vendor));
+  /** Accounts every selected payment's method can draw from, in each
+   *  payment's currency or the base currency (Currency & Exchange Rates). */
+  const bulkEligibleAccounts = (keys: string[]) => {
+    const groups = run.groups.filter((g) => keys.includes(groupKeyOf(g)));
     return PAY_FROM_ACCOUNTS.filter((a) =>
       groups.every((g) => {
         const want = accountTypeForMethod(g.methodType);
-        return want === 'any' ? true : a.type === want;
+        const typeOk = want === 'any' ? true : a.type === want;
+        return typeOk && (isBaseCurrency(a.currency) || a.currency === groupCurrency(g));
       }),
     );
   };
   // Revert to each vendor's OWN account (9/2/26 review): a bulk or
   // single move is undoable in one click — every group lands back on
   // its vendor default and the "run only" flag clears.
-  const resetAccountsToDefaults = (vendors: string[]) => {
+  const resetAccountsToDefaults = (keys: string[]) => {
     runsApi.updateRun(run.id, (r) => ({
       ...r,
       groups: r.groups.map((g) =>
-        vendors.includes(g.vendor)
-          ? { ...g, payFromAccountId: vendorPayDefaults(g.vendor).payFromAccountId, accountOverridden: undefined }
+        keys.includes(groupKeyOf(g))
+          ? { ...g, payFromAccountId: vendorPayDefaults(g.vendor, groupCurrency(g)).payFromAccountId, accountOverridden: undefined }
           : g,
       ),
     }));
+    const first = run.groups.find((g) => groupKeyOf(g) === keys[0]);
     toast.success(
-      vendors.length === 1 ? 'Account reverted' : 'Accounts reverted',
+      keys.length === 1 ? 'Account reverted' : 'Accounts reverted',
       {
         description:
-          vendors.length === 1
-            ? `${vendors[0]} pays from its own account again.`
-            : `${vendors.length} payments pay from each vendor's own account again.`,
+          keys.length === 1
+            ? `${first?.vendor ?? 'The vendor'} pays from its own account again.`
+            : `${keys.length} payments pay from each vendor's own account again.`,
       },
     );
   };
-  const openBulkMove = (vendors: string[]) => {
-    if (bulkEligibleAccounts(vendors).length === 0) {
-      toast.error("These payments use methods that can't share one account.", {
-        description: 'Move them separately, or align their payment methods first.',
+  const openBulkMove = (keys: string[]) => {
+    if (bulkEligibleAccounts(keys).length === 0) {
+      toast.error("These payments can't share one account.", {
+        description: 'Their methods or currencies need different accounts. Move them separately.',
       });
       return;
     }
-    setBulkMoveVendors(vendors);
+    setBulkMoveVendors(keys);
   };
   // Submit gates: a vendor with no payment method (fixed on their card),
   // and any open change-request issue (8/5/26, the resubmit checklist).
@@ -354,7 +401,7 @@ export function RunProposalStage({
       else if (inv.is_payment_held) map.set(l.invoiceId, { reason: 'Put on payment hold since it was added' });
       else if (otherRuns.has(l.invoiceId)) map.set(l.invoiceId, { reason: `Now in payment run ${otherRuns.get(l.invoiceId)}` });
       else if (l.payAmount > inv.outstandingBalance + 0.004) {
-        map.set(l.invoiceId, { reason: `Now owes ${money(inv.outstandingBalance)}, less than ${money(l.payAmount)} in this run`, owed: inv.outstandingBalance });
+        map.set(l.invoiceId, { reason: `Now owes ${formatMoney(inv.outstandingBalance, lineCurrency(l))}, less than ${formatMoney(l.payAmount, lineCurrency(l))} in this run`, owed: inv.outstandingBalance });
       }
     });
     return map;
@@ -364,7 +411,7 @@ export function RunProposalStage({
   const recheckForSubmit = (): boolean => {
     setSubmitChecked(true);
     if (submitBlockers.size === 0) return true;
-    const blockedVendors = new Set(lines.filter((l) => submitBlockers.has(l.invoiceId)).map((l) => l.vendor));
+    const blockedVendors = new Set(lines.filter((l) => submitBlockers.has(l.invoiceId)).map(lineGroupKey));
     setCollapsedMethods(new Set());
     setCollapsedVendors((prev) => new Set([...prev].filter((v) => !blockedVendors.has(v))));
     toast.error(`${submitBlockers.size} invoice${submitBlockers.size === 1 ? '' : 's'} changed since ${submitBlockers.size === 1 ? 'it was' : 'they were'} added`, {
@@ -386,7 +433,7 @@ export function RunProposalStage({
   const runSignature = () =>
     JSON.stringify({
       l: run.lines.map((x) => [x.invoiceId, x.payAmount, !!x.removed]),
-      g: run.groups.map((x) => [x.vendor, x.methodType, x.payFromAccountId]),
+      g: run.groups.map((x) => [groupKeyOf(x), x.methodType, x.payFromAccountId]),
       i: (run.changeRequest?.issues ?? []).map((x) => [x.id, !!x.resolution]),
     });
   useEffect(() => {
@@ -405,15 +452,17 @@ export function RunProposalStage({
   // credit the proposal isn't drawing get one modal nudge; skipping is
   // a conscious click and the per-card Apply credit control remains.
   // Anchored draws don't count against the on-account pool.
+  // Per payment (Currency & Exchange Rates): only credit in the payment's
+  // own currency counts, so a vendor paid in two currencies is two steps.
   const prepayCredit = useMemo(
     () =>
       run.groups
         .map((g) => {
-          const available = payments
-            .filter((p) => p.type === 'Prepayment' && p.vendor === g.vendor && p.unappliedAmount > 0 && !p.preInvoiceId)
-            .reduce((s, p) => s + p.unappliedAmount, 0);
+          const available = creditSourcesFor(payments, g).reduce((s, p) => s + p.unappliedAmount, 0);
           return {
-            vendor: g.vendor,
+            key: groupKeyOf(g),
+            label: paymentLabel(run, g),
+            currency: groupCurrency(g),
             unresolved: round2(available - (groupCredit(g) - anchoredAppliedOf(g))),
           };
         })
@@ -439,16 +488,16 @@ export function RunProposalStage({
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   // Bumped signal opens a vendor's prepayment picker on their card.
-  const [prepayReview, setPrepayReview] = useState<{ vendor: string; n: number }>({ vendor: '', n: 0 });
+  const [prepayReview, setPrepayReview] = useState<{ key: string; n: number }>({ key: '', n: 0 });
   // The prepayment STEPPER (8/5/26): one vendor per step, apply or skip
   // and move on. Resolving one never forces resolving the rest. Opens
   // once on entry when unused credit exists; reopens from the rail.
-  const [stepper, setStepper] = useState<{ vendors: string[]; idx: number } | null>(null);
+  const [stepper, setStepper] = useState<{ keys: string[]; idx: number } | null>(null);
   const stepperShown = useRef(false);
   useEffect(() => {
     if (!stepperShown.current && prepayCredit.length > 0) {
       stepperShown.current = true;
-      setStepper({ vendors: prepayCredit.map((c) => c.vendor), idx: 0 });
+      setStepper({ keys: prepayCredit.map((c) => c.key), idx: 0 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -456,10 +505,11 @@ export function RunProposalStage({
   // Jumping from an issue also PULSES the control that fixes it (8/5/26,
   // the invoice-creation quantity-field treatment), so the landing spot
   // says what to do, not just where to look.
-  const [attention, setAttention] = useState<{ vendor: string; field: 'method' | 'account'; n: number } | null>(null);
-  const jumpToVendor = (vendor: string, field?: 'method' | 'account') => {
+  const [attention, setAttention] = useState<{ key: string; field: 'method' | 'account'; n: number } | null>(null);
+  /** Jump to one payment's card by its key (groupKeyOf). */
+  const jumpToVendor = (key: string, field?: 'method' | 'account') => {
     // A jump must never land behind a folded method section (8/28/26).
-    const g = run.groups.find((gr) => gr.vendor === vendor);
+    const g = run.groups.find((gr) => groupKeyOf(gr) === key);
     if (g) {
       setCollapsedMethods((prev) => {
         const section = sectionOf(g.methodType);
@@ -469,20 +519,28 @@ export function RunProposalStage({
         return next;
       });
     }
-    expandVendor(vendor);
-    if (field) setAttention((prev) => ({ vendor, field, n: (prev?.n ?? 0) + 1 }));
+    expandVendor(key);
+    if (field) setAttention((prev) => ({ key, field, n: (prev?.n ?? 0) + 1 }));
     // Scroll after the expansion has re-laid-out the card list.
     requestAnimationFrame(() => {
       cardsRef.current
-        ?.querySelector(`[data-vendor="${CSS.escape(vendor)}"]`)
+        ?.querySelector(`[data-run-group="${CSS.escape(key)}"]`)
         ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   };
+  /** An issue names a vendor and maybe a line: land on the payment that
+   *  holds the line (a split vendor has two), else the vendor's first. */
+  const keyForIssue = (vendor: string, invoiceId?: string) => {
+    const line = invoiceId ? run.lines.find((l) => l.invoiceId === invoiceId) : undefined;
+    if (line) return lineGroupKey(line);
+    const g = run.groups.find((gr) => gr.vendor === vendor);
+    return g ? groupKeyOf(g) : vendor;
+  };
 
-  const patchGroup = (vendor: string, patch: Partial<RunVendorGroup>) => {
+  const patchGroup = (key: string, patch: Partial<RunVendorGroup>) => {
     runsApi.updateRun(run.id, (r) => ({
       ...r,
-      groups: r.groups.map((g) => (g.vendor === vendor ? { ...g, ...patch } : g)),
+      groups: r.groups.map((g) => (groupKeyOf(g) === key ? { ...g, ...patch } : g)),
     }));
   };
 
@@ -511,23 +569,25 @@ export function RunProposalStage({
   const methodsFor = (vendor: string): VendorPaymentMethod[] =>
     vendorHasNoMethod(vendor) ? genericPaymentMethods() : vendorPaymentMethods(vendor);
 
-  const applyMethod = (vendor: string, methodId: string) => {
-    const m = methodsFor(vendor).find((x) => x.id === methodId);
+  const applyMethod = (key: string, methodId: string) => {
+    const group = run.groups.find((g) => groupKeyOf(g) === key);
+    if (!group) return;
+    const m = methodsFor(group.vendor).find((x) => x.id === methodId);
     if (!m) return;
-    const group = run.groups.find((g) => g.vendor === vendor);
-    patchGroup(vendor, {
+    patchGroup(key, {
       methodId: m.id,
       methodType: m.type,
       methodOverridden: true,
-      // The account follows the method's bank unless the user pinned one.
-      ...(group?.accountOverridden ? {} : { payFromAccountId: accountForMethod(m) }),
+      // The account follows the method's bank unless the user pinned one,
+      // in the payment's currency or the base currency.
+      ...(group.accountOverridden ? {} : { payFromAccountId: accountForMethod(m, groupCurrency(group)) }),
     });
   };
 
   const submit = () => {
     runsApi.submitRun(run.id);
     toast.success('Proposal submitted for approval', {
-      description: `${run.groups.length} vendor payment${run.groups.length === 1 ? '' : 's'} totaling ${money(total)} await the approver.`,
+      description: `${run.groups.length} vendor payment${run.groups.length === 1 ? '' : 's'} totaling ${totalText(netItems)} await the approver.`,
     });
   };
 
@@ -540,8 +600,8 @@ export function RunProposalStage({
     onDeleted();
   };
 
-  const methodModalVendor = methodVendor ? run.groups.find((g) => g.vendor === methodVendor) : null;
-  const accountModalVendor = accountVendor ? run.groups.find((g) => g.vendor === accountVendor) : null;
+  const methodModalVendor = methodGroupKey ? run.groups.find((g) => groupKeyOf(g) === methodGroupKey) : null;
+  const accountModalVendor = accountGroupKey ? run.groups.find((g) => groupKeyOf(g) === accountGroupKey) : null;
 
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-3">
@@ -621,11 +681,11 @@ export function RunProposalStage({
                     <div className="px-2 pb-1">
                       {noMethod.map((g) => (
                         <button
-                          key={`nm-${g.vendor}`}
+                          key={`nm-${groupKeyOf(g)}`}
                           type="button"
                           onClick={() => {
                             setIssuesOpen(false);
-                            jumpToVendor(g.vendor, 'method');
+                            jumpToVendor(groupKeyOf(g), 'method');
                           }}
                           className="w-full flex items-start gap-2.5 px-2 py-2 rounded-md hover:bg-slate-50 text-left transition-colors cursor-pointer"
                         >
@@ -634,7 +694,7 @@ export function RunProposalStage({
                           </span>
                           <div className="flex-1 min-w-0">
                             <p className="text-[12px] text-slate-700 leading-snug" style={{ fontWeight: 600 }}>
-                              {g.vendor} needs a payment method
+                              {paymentLabel(run, g)} needs a payment method
                             </p>
                             <p className="text-[11px] text-slate-500 leading-snug mt-0.5 truncate">
                               Blocks submitting. Set one on the vendor's card.
@@ -652,10 +712,10 @@ export function RunProposalStage({
                             // The account sections are gone (8/28/26): the
                             // row itself opens the bulk move for every
                             // payment drawing from the short account.
-                            const vendors = run.groups
+                            const keys = run.groups
                               .filter((gr) => gr.payFromAccountId === t.account.id)
-                              .map((gr) => gr.vendor);
-                            if (vendors.length) openBulkMove(vendors);
+                              .map(groupKeyOf);
+                            if (keys.length) openBulkMove(keys);
                           }}
                           className="w-full flex items-start gap-2.5 px-2 py-2 rounded-md hover:bg-slate-50 text-left transition-colors cursor-pointer"
                         >
@@ -669,7 +729,8 @@ export function RunProposalStage({
                               {t.account.label}
                             </p>
                             <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
-                              Payment amount {money(t.selected)} exceeds the remaining balance {money(t.available)} by {money(-t.remaining)}. Move its payments to another account.
+                              {/* In the account's currency (Currency & Exchange Rates). */}
+                              Payment amount {formatMoney(t.selected, t.account.currency)} exceeds the remaining balance {formatMoney(t.available, t.account.currency)} by {formatMoney(-t.remaining, t.account.currency)}. Move its payments to another account.
                             </p>
                           </div>
                           <ChevronRight className="w-3.5 h-3.5 text-slate-300 mt-1 shrink-0" />
@@ -690,11 +751,11 @@ export function RunProposalStage({
                     <div className="px-2 pb-2">
                       {prepayCredit.map((c, ci) => (
                         <button
-                          key={`pc-${c.vendor}`}
+                          key={`pc-${c.key}`}
                           type="button"
                           onClick={() => {
                             setIssuesOpen(false);
-                            setStepper({ vendors: prepayCredit.map((p) => p.vendor), idx: ci });
+                            setStepper({ keys: prepayCredit.map((p) => p.key), idx: ci });
                           }}
                           className="w-full flex items-start gap-2.5 px-2 py-2 rounded-md hover:bg-slate-50 text-left transition-colors cursor-pointer"
                         >
@@ -703,10 +764,10 @@ export function RunProposalStage({
                           </span>
                           <div className="flex-1 min-w-0">
                             <p className="text-[12px] text-slate-700 leading-snug" style={{ fontWeight: 600 }}>
-                              {c.vendor}
+                              {c.label}
                             </p>
                             <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
-                              {money(c.unresolved)} in vendor credit available. Apply it to reduce this payment, or skip.
+                              {formatMoney(c.unresolved, c.currency)} in vendor credit available. Apply it to reduce this payment, or skip.
                             </p>
                           </div>
                           <ChevronRight className="w-3.5 h-3.5 text-slate-300 mt-1 shrink-0" />
@@ -739,7 +800,7 @@ export function RunProposalStage({
             });
           }}
           onMove={(issueId) => setMoveIssueId(issueId)}
-          onJumpToVendor={(vendor) => jumpToVendor(vendor)}
+          onJumpToVendor={(vendor, invoiceId) => jumpToVendor(keyForIssue(vendor, invoiceId))}
         />
       )}
 
@@ -807,7 +868,7 @@ export function RunProposalStage({
                 <DropdownMenuItem
                   onSelect={() => {
                     setCollapsedMethods(new Set(allMethodSections.map((x) => x.method)));
-                    setCollapsedVendors(new Set(run.groups.map((g) => g.vendor)));
+                    setCollapsedVendors(new Set(run.groups.map(groupKeyOf)));
                   }}
                   className="text-[12px]"
                 >
@@ -825,7 +886,7 @@ export function RunProposalStage({
                   Expand Vendor Rows
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onSelect={() => setCollapsedVendors(new Set(run.groups.map((g) => g.vendor)))}
+                  onSelect={() => setCollapsedVendors(new Set(run.groups.map(groupKeyOf)))}
                   className="text-[12px]"
                 >
                   <Minimize2 className="w-3.5 h-3.5 mr-2 text-slate-500" />
@@ -888,6 +949,14 @@ export function RunProposalStage({
               );
             })()}
           </div>
+          {/* The rule, said once (Currency & Exchange Rates): only when
+              the run actually pays in more than one currency. */}
+          {runCurrencyCount > 1 && (
+            <p className="flex items-center gap-1.5 text-[11px] text-slate-500" style={{ fontWeight: 500 }}>
+              <Info className="w-3 h-3 text-slate-400 shrink-0" />
+              One payment per vendor and currency. Invoices in different currencies are paid separately.
+            </p>
+          )}
         </div>
         <div
           ref={cardsRef}
@@ -914,7 +983,8 @@ export function RunProposalStage({
           )}
           {methodSections.map(({ method, groups: sectionGroups }) => {
             const MIcon = paymentMethodInfo(method).icon;
-            const sectionNet = sectionGroups.reduce((acc, g) => acc + groupNet(run, g), 0);
+            // The section's cash out per currency (Currency & Exchange Rates).
+            const sectionNet = runNetByCurrency(run, sectionGroups);
             const methodErrors = sectionGroups.filter((g) => vendorHasNoMethod(g.vendor) && !g.methodOverridden).length;
             // "Pay all from one account" only earns its place when the
             // section actually spans MORE than one pay-from account (Eli
@@ -985,13 +1055,13 @@ export function RunProposalStage({
                         tabIndex={0}
                         onClick={(e) => {
                           e.stopPropagation();
-                          openBulkMove(sectionGroups.map((g) => g.vendor));
+                          openBulkMove(sectionGroups.map(groupKeyOf));
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
                             e.stopPropagation();
-                            openBulkMove(sectionGroups.map((g) => g.vendor));
+                            openBulkMove(sectionGroups.map(groupKeyOf));
                           }
                         }}
                         className="ml-auto inline-flex items-center gap-1.5 h-6 px-2 rounded-md border border-border bg-white text-[11px] text-slate-600 hover:border-primary/45 hover:bg-blue-50/60 hover:text-primary transition-colors cursor-pointer shrink-0"
@@ -1020,13 +1090,13 @@ export function RunProposalStage({
                           tabIndex={0}
                           onClick={(e) => {
                             e.stopPropagation();
-                            resetAccountsToDefaults(sectionGroups.filter((g) => g.accountOverridden).map((g) => g.vendor));
+                            resetAccountsToDefaults(sectionGroups.filter((g) => g.accountOverridden).map(groupKeyOf));
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
                               e.stopPropagation();
-                              resetAccountsToDefaults(sectionGroups.filter((g) => g.accountOverridden).map((g) => g.vendor));
+                              resetAccountsToDefaults(sectionGroups.filter((g) => g.accountOverridden).map(groupKeyOf));
                             }
                           }}
                           aria-label="Revert this section to each vendor's own account"
@@ -1043,9 +1113,16 @@ export function RunProposalStage({
                       </TooltipContent>
                     </Tooltip>
                   )}
-                  <span className="text-[12.5px] text-foreground " style={{ fontWeight: 600 }}>
-                    {money(sectionNet)}
-                  </span>
+                  {/* One currency reads in it (with the base beside a
+                      foreign one); a mix reads as its base total, the
+                      currencies on hover. */}
+                  <CurrencyTotals
+                    items={sectionNet}
+                    basis="payment"
+                    max={1}
+                    amountClassName="text-[12.5px] text-foreground"
+                    amountStyle={{ fontWeight: 600 }}
+                  />
                 </button>
                 {/* Vendor rows, NOT cards (8/28/26 evening): the nested
                     border-in-border-in-border read badly, so vendors are
@@ -1061,20 +1138,20 @@ export function RunProposalStage({
                 <div className="divide-y divide-border/60">
                 {sectionGroups.map((group) => (
                   <VendorGroupCard
-                    key={group.vendor}
+                    key={groupKeyOf(group)}
                     flat
                     run={run}
                     group={group}
                     invoices={invoices}
                     payments={payments}
                     searchQuery={paySearch}
-                    onChangeMethod={() => setMethodVendor(group.vendor)}
-                    onChangeAccount={() => setAccountVendor(group.vendor)}
-                    onResetAccount={() => resetAccountsToDefaults([group.vendor])}
+                    onChangeMethod={() => setMethodGroupKey(groupKeyOf(group))}
+                    onChangeAccount={() => setAccountGroupKey(groupKeyOf(group))}
+                    onResetAccount={() => resetAccountsToDefaults([groupKeyOf(group)])}
                     onSetAdvanceAccount={(account) =>
                       runsApi.updateRun(run.id, (r) => ({
                         ...r,
-                        groups: r.groups.map((g) => (g.vendor === group.vendor ? { ...g, advanceAccount: account } : g)),
+                        groups: r.groups.map((g) => (groupKeyOf(g) === groupKeyOf(group) ? { ...g, advanceAccount: account } : g)),
                       }))
                     }
                     onSetLineAmount={setLineAmount}
@@ -1087,6 +1164,7 @@ export function RunProposalStage({
                         invoiceNumber: l.invoiceNumber,
                         vendor: l.vendor,
                         amount: l.payAmount ?? l.balanceAtAdd ?? 0,
+                        currency: lineCurrency(l),
                       });
                     }}
                     onSetCredit={(draws) => {
@@ -1095,7 +1173,7 @@ export function RunProposalStage({
                       runsApi.updateRun(run.id, (r) => ({
                         ...r,
                         groups: r.groups.map((g) =>
-                          g.vendor === group.vendor
+                          groupKeyOf(g) === groupKeyOf(group)
                             ? {
                                 ...g,
                                 creditApplied: [
@@ -1117,7 +1195,7 @@ export function RunProposalStage({
                       runsApi.updateRun(run.id, (r) => ({
                         ...r,
                         groups: r.groups.map((g) =>
-                          g.vendor === group.vendor
+                          groupKeyOf(g) === groupKeyOf(group)
                             ? {
                                 ...g,
                                 creditApplied:
@@ -1131,23 +1209,23 @@ export function RunProposalStage({
                         ),
                       }));
                     }}
-                    onSetNote={(note) => patchGroup(group.vendor, { note: note || undefined })}
-                    onSetReference={(reference) => patchGroup(group.vendor, { reference: reference || undefined })}
+                    onSetNote={(note) => patchGroup(groupKeyOf(group), { note: note || undefined })}
+                    onSetReference={(reference) => patchGroup(groupKeyOf(group), { reference: reference || undefined })}
                     onAddAttachment={(name, size) =>
-                      patchGroup(group.vendor, {
+                      patchGroup(groupKeyOf(group), {
                         attachments: [...(group.attachments ?? []), { name, size }],
                       })
                     }
                     onRemoveAttachment={(name) =>
-                      patchGroup(group.vendor, {
+                      patchGroup(groupKeyOf(group), {
                         attachments: (group.attachments ?? []).filter((a) => a.name !== name),
                       })
                     }
-                    prepayOpenSignal={prepayReview.vendor === group.vendor ? prepayReview.n : 0}
-                    attentionSignal={attention?.vendor === group.vendor ? { field: attention.field, n: attention.n } : undefined}
+                    prepayOpenSignal={prepayReview.key === groupKeyOf(group) ? prepayReview.n : 0}
+                    attentionSignal={attention?.key === groupKeyOf(group) ? { field: attention.field, n: attention.n } : undefined}
                     collapsible
-                    collapsed={collapsedVendors.has(group.vendor)}
-                    onToggleCollapse={() => toggleVendorCollapsed(group.vendor)}
+                    collapsed={collapsedVendors.has(groupKeyOf(group))}
+                    onToggleCollapse={() => toggleVendorCollapsed(groupKeyOf(group))}
                     blockedLines={shownBlockers}
                   />
                 ))}
@@ -1221,7 +1299,7 @@ export function RunProposalStage({
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-500">Vendors</span>
-                <span className="text-foreground " style={{ fontWeight: 600 }}>{run.groups.length}</span>
+                <span className="text-foreground " style={{ fontWeight: 600 }}>{vendorCount}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-500">Invoices</span>
@@ -1252,20 +1330,23 @@ export function RunProposalStage({
                       pass) — interleaved account headers read badly. */}
                   <div className="space-y-1.5">
                     {run.groups.map((g) => {
-                      const glines = lines.filter((l) => l.vendor === g.vendor);
+                      const glines = groupLines(run, g);
                       const acct = PAY_FROM_ACCOUNTS.find((a) => a.id === g.payFromAccountId);
                       const gcredit = groupCredit(g);
+                      // In the payment's currency (Currency & Exchange Rates).
+                      const cur = groupCurrency(g);
+                      const split = isSplitVendor(run, g.vendor);
                       const MIcon = paymentMethodInfo(g.methodType).icon;
                       // No-method error rides the rail card too (9/2/26
                       // review): now that the rail is vendor cards, the
                       // vendor with the problem wears the rose itself.
                       const gNoMethod = vendorHasNoMethod(g.vendor) && !g.methodOverridden;
                       return (
-                        <HoverCard key={g.vendor} openDelay={300} closeDelay={120}>
+                        <HoverCard key={groupKeyOf(g)} openDelay={300} closeDelay={120}>
                           <HoverCardTrigger asChild>
                             <button
                               type="button"
-                              onClick={() => jumpToVendor(g.vendor)}
+                              onClick={() => jumpToVendor(groupKeyOf(g))}
                               className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg border text-left transition-colors cursor-pointer ${
                                 gNoMethod
                                   ? 'border-rose-200 bg-rose-50/40 hover:border-rose-300'
@@ -1277,6 +1358,7 @@ export function RunProposalStage({
                                 <p className="text-[12px] text-foreground truncate" style={{ fontWeight: 600 }}>{g.vendor}</p>
                                 <p className={`text-[10.5px] truncate ${gNoMethod ? 'text-rose-500' : 'text-slate-400'}`} style={{ fontWeight: 500 }}>
                                   {glines.length} invoice{glines.length === 1 ? '' : 's'}
+                                  {split ? ` · ${cur}` : ''}
                                   {gNoMethod ? ' · needs a payment method' : ''}
                                 </p>
                               </div>
@@ -1287,13 +1369,13 @@ export function RunProposalStage({
                               {gcredit > 0.004 && (
                                 <span
                                   className="shrink-0 w-[18px] h-[18px] rounded-full bg-teal-50 border border-teal-100 text-teal-700 inline-flex items-center justify-center"
-                                  aria-label={`${money(gcredit)} vendor credit applied`}
+                                  aria-label={`${formatMoney(gcredit, cur)} vendor credit applied`}
                                 >
                                   <Wallet className="w-2.5 h-2.5" />
                                 </span>
                               )}
                               <span className="text-[12px] text-foreground shrink-0" style={{ fontWeight: 600 }}>
-                                {money(groupNet(run, g))}
+                                {formatMoney(groupNet(run, g), cur)}
                               </span>
                             </button>
                           </HoverCardTrigger>
@@ -1312,7 +1394,7 @@ export function RunProposalStage({
                                 <div className="min-w-0">
                                   <p className="text-[14px] text-white truncate" style={{ fontWeight: 600 }}>{g.vendor}</p>
                                   <p className="text-[11px] text-slate-400 truncate">
-                                    {glines.length} invoice{glines.length === 1 ? '' : 's'} · one payment
+                                    {glines.length} invoice{glines.length === 1 ? '' : 's'} · one payment in {cur}
                                   </p>
                                 </div>
                               </div>
@@ -1331,7 +1413,7 @@ export function RunProposalStage({
                                   <div key={l.invoiceId} className="flex items-center justify-between gap-2 text-[11.5px]">
                                     <span className="text-slate-600 truncate">{l.invoiceNumber}</span>
                                     <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>
-                                      {money(l.payAmount)}
+                                      {formatMoney(l.payAmount, cur)}
                                     </span>
                                   </div>
                                 ))}
@@ -1344,7 +1426,7 @@ export function RunProposalStage({
                                   <div className="flex items-center justify-between gap-2 text-[11.5px]">
                                     <span className="text-teal-700">Vendor Credit</span>
                                     <span className="text-teal-700 shrink-0" style={{ fontWeight: 500 }}>
-                                      −{money(gcredit)}
+                                      −{formatMoney(gcredit, cur)}
                                     </span>
                                   </div>
                                 )}
@@ -1352,8 +1434,15 @@ export function RunProposalStage({
                             </div>
                             <div className="bg-slate-50/60 border-t border-border/40 px-4 py-2 flex items-center justify-between">
                               <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Net Payment</span>
-                              <span className="text-[12.5px] text-foreground " style={{ fontWeight: 700 }}>
-                                {money(groupNet(run, g))}
+                              <span className="text-right leading-tight">
+                                <span className="block text-[12.5px] text-foreground " style={{ fontWeight: 700 }}>
+                                  {formatMoney(groupNet(run, g), cur)}
+                                </span>
+                                {!isBaseCurrency(cur) && (
+                                  <span className="block text-[10.5px] text-slate-400" style={{ fontWeight: 500 }}>
+                                    {approxBase(groupAmount(run, g, groupNet(run, g)).base)}
+                                  </span>
+                                )}
                               </span>
                             </div>
                           </HoverCardContent>
@@ -1396,6 +1485,11 @@ export function RunProposalStage({
                         shortfall — lives in the vendor-card-style hover. */}
                     {totals.map((t) => {
                       const over = t.remaining < 0;
+                      // Account maths in the ACCOUNT's currency (Currency &
+                      // Exchange Rates); payments in another currency
+                      // convert at the payment date's rate.
+                      const acur = t.account.currency;
+                      const converts = run.groups.some((g) => g.payFromAccountId === t.account.id && groupCurrency(g) !== acur);
                       return (
                         <HoverCard key={t.account.id} openDelay={150} closeDelay={80}>
                           <HoverCardTrigger asChild>
@@ -1407,9 +1501,9 @@ export function RunProposalStage({
                                 {t.account.label}
                               </span>
                               <span className="shrink-0 inline-flex items-center gap-1.5">
-                                {over && <AlertTriangle className="w-3 h-3 text-rose-500" aria-label={`Short ${money(-t.remaining)}`} />}
+                                {over && <AlertTriangle className="w-3 h-3 text-rose-500" aria-label={`Short ${formatMoney(-t.remaining, acur)}`} />}
                                 <span className={`text-[12px] ${over ? 'text-rose-600' : 'text-foreground'}`} style={{ fontWeight: 600 }}>
-                                  −{money(t.selected)}
+                                  −{formatMoney(t.selected, acur)}
                                 </span>
                               </span>
                             </div>
@@ -1437,18 +1531,23 @@ export function RunProposalStage({
                             <div className="bg-white px-4 py-3 space-y-1.5">
                               <div className="flex items-center justify-between gap-2 text-[11.5px]">
                                 <span className="text-slate-600">Available Balance</span>
-                                <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>{money(t.account.balance)}</span>
+                                <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>{formatMoney(t.account.balance, acur)}</span>
                               </div>
                               <div className="flex items-center justify-between gap-2 text-[11.5px]">
                                 <span className="text-slate-600">Cash Out This Run</span>
-                                <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>−{money(t.selected)}</span>
+                                <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>−{formatMoney(t.selected, acur)}</span>
                               </div>
                               <div className="flex items-center justify-between gap-2 text-[11.5px]">
                                 <span className={over ? 'text-rose-600' : 'text-slate-600'}>{over ? 'Short By' : 'Remaining After Run'}</span>
                                 <span className={`shrink-0 ${over ? 'text-rose-600' : 'text-slate-700'}`} style={{ fontWeight: 600 }}>
-                                  {over ? money(-t.remaining) : money(t.remaining)}
+                                  {over ? formatMoney(-t.remaining, acur) : formatMoney(t.remaining, acur)}
                                 </span>
                               </div>
+                              {converts && (
+                                <p className="text-[10.5px] text-slate-400 leading-snug pt-0.5">
+                                  In the account's currency. Payments in another currency convert at the payment date's rate.
+                                </p>
+                              )}
                             </div>
                             {over && (
                               <div className="bg-rose-50/70 border-t border-rose-100 px-4 py-2">
@@ -1462,31 +1561,45 @@ export function RunProposalStage({
                       );
                     })}
                     <div className="pt-1.5 mt-0.5 border-t border-slate-100 space-y-1.5">
-                      <div className="flex justify-between items-center">
+                      <div className="flex justify-between items-start gap-3">
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Subtotal ({lines.length} invoice{lines.length === 1 ? '' : 's'})</span>
-                        <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>
-                          {money(run.groups.reduce((s, g) => s + groupGross(run, g), 0))}
-                        </span>
+                        <CurrencyTotals
+                          items={runGrossByCurrency(run)}
+                          basis="payment"
+                          layout="stack"
+                          amountClassName="text-[12px] text-foreground"
+                          amountStyle={{ fontWeight: 500 }}
+                        />
                       </div>
                       {run.groups.some((g) => groupCredit(g) > 0) && (
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-start gap-3">
                           {/* "Vendor credit" in its teal identity (user
                               10/22/26), the Record Payment name and colour. */}
                           <span className="text-[11px] text-teal-700" style={{ fontWeight: 500 }}>Vendor Credit</span>
-                          <span className="text-[12px] text-teal-700 " style={{ fontWeight: 600 }}>
-                            −{money(run.groups.reduce((s, g) => s + groupCredit(g), 0))}
-                          </span>
+                          <CurrencyTotals
+                            items={runCreditByCurrency(run).map((c) => ({ ...c, amount: -c.amount, base: -c.base }))}
+                            basis="payment"
+                            layout="stack"
+                            amountClassName="text-[12px] text-teal-700"
+                            amountStyle={{ fontWeight: 600 }}
+                          />
                         </div>
                       )}
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="pt-2.5 border-t border-slate-100 flex justify-between items-baseline">
+              {/* Per currency, then the base total (Currency & Exchange
+                  Rates): each payment at its rate on the payment date. */}
+              <div className="pt-2.5 border-t border-slate-100 flex justify-between items-start gap-3">
                 <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>Total</span>
-                <span className="text-[14px] text-foreground leading-none tracking-tight" style={{ fontWeight: 600 }}>
-                  {money(total)}
-                </span>
+                <CurrencyTotals
+                  items={netItems}
+                  basis="payment"
+                  layout="stack"
+                  amountClassName="text-[14px] text-foreground leading-none tracking-tight"
+                  amountStyle={{ fontWeight: 600 }}
+                />
               </div>
             </div>
           </div>
@@ -1520,7 +1633,8 @@ export function RunProposalStage({
                 return;
               }
               if (noMethod.length > 0) {
-                toast.error('Payment method missing', { description: `Pick a payment method for ${noMethod.length} vendor${noMethod.length === 1 ? '' : 's'} first.` });
+                const missing = new Set(noMethod.map((g) => g.vendor)).size;
+                toast.error('Payment method missing', { description: `Pick a payment method for ${missing} vendor${missing === 1 ? '' : 's'} first.` });
                 return;
               }
               // Nothing changed since the run reopened (Eli 10/5): confirm
@@ -1566,14 +1680,14 @@ export function RunProposalStage({
       {methodModalVendor && (
         <PaymentMethodModal
           open
-          onOpenChange={(open) => !open && setMethodVendor(null)}
+          onOpenChange={(open) => !open && setMethodGroupKey(null)}
           value={methodModalVendor.methodId}
           methods={methodsFor(methodModalVendor.vendor)}
           vendorName={methodModalVendor.vendor}
           hidePrimary
           onApply={(id) => {
-            applyMethod(methodModalVendor.vendor, id);
-            setMethodVendor(null);
+            applyMethod(groupKeyOf(methodModalVendor), id);
+            setMethodGroupKey(null);
           }}
         />
       )}
@@ -1583,7 +1697,7 @@ export function RunProposalStage({
         <PayFromAccountModal
           open
           onOpenChange={(open) => !open && setBulkMoveVendors(null)}
-          value={run.groups.find((g) => g.vendor === bulkMoveVendors[0])?.payFromAccountId ?? ''}
+          value={run.groups.find((g) => groupKeyOf(g) === bulkMoveVendors[0])?.payFromAccountId ?? ''}
           accounts={bulkEligibleAccounts(bulkMoveVendors)}
           onApply={(id) => {
             applyAccountToVendors(bulkMoveVendors, id);
@@ -1592,21 +1706,23 @@ export function RunProposalStage({
         />
       )}
 
-      {/* Per-run pay-from override, filtered to the method's account type. */}
+      {/* Per-run pay-from override, filtered to the method's account type
+          and to accounts in the payment's currency or the base currency
+          (Currency & Exchange Rates). */}
       {accountModalVendor && (
         <PayFromAccountModal
           open
-          onOpenChange={(open) => !open && setAccountVendor(null)}
+          onOpenChange={(open) => !open && setAccountGroupKey(null)}
           value={accountModalVendor.payFromAccountId}
-          accounts={PAY_FROM_ACCOUNTS.filter((a) => {
+          accounts={accountsForCurrency(PAY_FROM_ACCOUNTS, groupCurrency(accountModalVendor)).filter((a) => {
             const want = accountTypeForMethod(accountModalVendor.methodType);
             return want === 'any' ? true : a.type === want;
           })}
           onApply={(id) => {
             // Route through the shared move so the card relocates into
             // its new accordion with the scroll + pulse (8/7/26).
-            applyAccountToVendors([accountModalVendor.vendor], id);
-            setAccountVendor(null);
+            applyAccountToVendors([groupKeyOf(accountModalVendor)], id);
+            setAccountGroupKey(null);
           }}
         />
       )}
@@ -1618,16 +1734,16 @@ export function RunProposalStage({
         <PrepaymentStepper
           run={run}
           payments={payments}
-          vendors={stepper.vendors}
+          groupKeys={stepper.keys}
           idx={stepper.idx}
           onStep={(idx) => setStepper((s) => (s ? { ...s, idx } : s))}
-          onApply={(vendor, draws) => {
+          onApply={(key, draws) => {
             // Anchored draws are system-owned; the stepper only writes
             // the on-account entries (8/28/26).
             runsApi.updateRun(run.id, (r) => ({
               ...r,
               groups: r.groups.map((g) =>
-                g.vendor === vendor
+                groupKeyOf(g) === key
                   ? {
                       ...g,
                       creditApplied: [
@@ -1651,11 +1767,11 @@ export function RunProposalStage({
             runsApi.updateRun(run.id, (r) => ({
               ...r,
               groups: r.groups.map((g) => {
-                if (!stepper.vendors.includes(g.vendor)) return g;
+                if (!stepper.keys.includes(groupKeyOf(g))) return g;
                 const cap = round2(Math.max(0, groupGross(r, g) - anchoredAppliedOf(g)));
-                const srcs = payments
-                  .filter((p) => p.type === 'Prepayment' && p.vendor === g.vendor && p.unappliedAmount > 0 && !p.preInvoiceId)
-                  .sort((a, b) => (a.paymentDate < b.paymentDate ? -1 : 1));
+                // Only credit in the payment's own currency (Currency &
+                // Exchange Rates).
+                const srcs = creditSourcesFor(payments, g).sort((a, b) => (a.paymentDate < b.paymentDate ? -1 : 1));
                 if (cap <= 0.004 || srcs.length === 0) return g;
                 let need = cap;
                 const draws: { paymentId: string; paymentNumber: string; amount: number }[] = [];
@@ -1711,7 +1827,7 @@ export function RunProposalStage({
                 Discard this payment run?
               </h3>
               <p className="text-[13px] mt-2 mx-auto" style={{ color: 'hsl(var(--muted-foreground))', lineHeight: 1.65, maxWidth: '300px' }}>
-                Nothing has posted. {lines.length} invoice{lines.length === 1 ? '' : 's'} across {run.groups.length} vendor{run.groups.length === 1 ? '' : 's'} return to the payable pool. This action cannot be undone.
+                Nothing has posted. {lines.length} invoice{lines.length === 1 ? '' : 's'} across {vendorCount} vendor{vendorCount === 1 ? '' : 's'} return to the payable pool. This action cannot be undone.
               </p>
               <div className="w-full mt-7 flex flex-col gap-2.5">
                 <button
@@ -1771,7 +1887,7 @@ export function RunProposalStage({
                 Remove {removeConfirm.invoiceNumber} from this run?
               </h3>
               <p className="text-[13px] mt-2 mx-auto" style={{ color: 'hsl(var(--muted-foreground))', lineHeight: 1.65, maxWidth: '300px' }}>
-                {removeConfirm.vendor}'s {money(removeConfirm.amount)} line leaves the run and the invoice returns to the eligible pool. Nothing has posted; totals rebalance.
+                {removeConfirm.vendor}'s {formatMoney(removeConfirm.amount, removeConfirm.currency)} line leaves the run and the invoice returns to the eligible pool. Nothing has posted; totals rebalance.
               </p>
               <div className="w-full mt-7 flex flex-col gap-2.5">
                 <button
@@ -1861,19 +1977,12 @@ export function RunProposalStage({
           style={{ zIndex: 240 }}
         >
           {(() => {
-            const gross = run.groups.reduce((s, g) => s + groupGross(run, g), 0);
-            const creditTotal = run.groups.reduce((s, g) => s + groupCredit(g), 0);
             // Pre-invoices debit their advances account (user 10/22/26).
-            const glRows = [
-              ...runDebitRows(run),
-              ...totals.map((t) => ({
-                code: t.account.id.split('-')[0],
-                name: t.account.label.includes('·') ? t.account.label.split('·')[1].trim() : t.account.label,
-                debit: 0,
-                credit: t.selected,
-              })),
-              ...(creditTotal > 0 ? [{ code: DEFAULT_PREPAYMENT_ASSET_ACCOUNT.split(' ')[0], name: DEFAULT_PREPAYMENT_ASSET_ACCOUNT.split(' ').slice(1).join(' '), debit: 0, credit: creditTotal }] : []),
-            ];
+            // The journal is in the base currency, the ledger's: each
+            // payment at its rate on the payment date (Currency & Exchange
+            // Rates).
+            const glRows = runGlRows(run);
+            const netByCurrency = netItems.filter((c) => Math.abs(c.amount) >= 0.005);
             return (
               <>
                 <div
@@ -1890,8 +1999,20 @@ export function RunProposalStage({
                 </div>
                 <div className="flex flex-col items-center text-center px-7 pb-7">
                   <AlertDialogTitle className="text-[20px] tracking-[-0.02em]" style={{ fontWeight: 600, lineHeight: 1.3 }}>
-                    Submit {run.groups.length} payment{run.groups.length === 1 ? '' : 's'} for {money(total)}?
+                    Submit {run.groups.length} payment{run.groups.length === 1 ? '' : 's'} for {totalText(netItems)}?
                   </AlertDialogTitle>
+                  {/* What the figure is made of (Currency & Exchange Rates):
+                      a foreign total's base equivalent, a short mix's
+                      currencies, or how many currencies a long one spans. */}
+                  {(netByCurrency.length > 1 || (netByCurrency.length === 1 && !isBaseCurrency(netByCurrency[0].currency))) && (
+                    <p className="text-[12px] text-slate-600 mt-1" style={{ fontWeight: 500 }}>
+                      {netByCurrency.length === 1
+                        ? approxBase(netByCurrency[0].base)
+                        : netByCurrency.length <= 3
+                          ? amountsText(netByCurrency)
+                          : `Across ${netByCurrency.length} currencies, each at its rate on the payment date.`}
+                    </p>
+                  )}
                   <p className="text-[12px] text-slate-500 mt-1.5">
                     Nothing posts yet. The approver reviews this proposal before any money moves.
                   </p>
@@ -1939,8 +2060,8 @@ export function RunProposalStage({
                                   </TooltipContent>
                                 </Tooltip>
                               </td>
-                              <td className="px-3 py-1.5 text-right ">{l.debit > 0 ? <span style={{ fontWeight: 600 }}>{money(l.debit)}</span> : <span className="text-slate-300">·</span>}</td>
-                              <td className="px-3 py-1.5 text-right ">{l.credit > 0 ? <span style={{ fontWeight: 600 }}>{money(l.credit)}</span> : <span className="text-slate-300">·</span>}</td>
+                              <td className="px-3 py-1.5 text-right ">{l.debit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(l.debit, BASE_CURRENCY)}</span> : <span className="text-slate-300">·</span>}</td>
+                              <td className="px-3 py-1.5 text-right ">{l.credit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(l.credit, BASE_CURRENCY)}</span> : <span className="text-slate-300">·</span>}</td>
                             </tr>
                             );
                           })}
@@ -1952,8 +2073,8 @@ export function RunProposalStage({
                                 <CheckCircle2 className="w-2.5 h-2.5" /> Debit = Credit
                               </span>
                             </td>
-                            <td className="px-3 py-1.5 text-right " style={{ fontWeight: 700 }}>{money(glRows.reduce((s, l) => s + l.debit, 0))}</td>
-                            <td className="px-3 py-1.5 text-right " style={{ fontWeight: 700 }}>{money(glRows.reduce((s, l) => s + l.credit, 0))}</td>
+                            <td className="px-3 py-1.5 text-right " style={{ fontWeight: 700 }}>{formatMoney(glRows.reduce((s, l) => s + l.debit, 0), BASE_CURRENCY)}</td>
+                            <td className="px-3 py-1.5 text-right " style={{ fontWeight: 700 }}>{formatMoney(glRows.reduce((s, l) => s + l.credit, 0), BASE_CURRENCY)}</td>
                           </tr>
                         </tfoot>
                       </table>
@@ -1995,11 +2116,13 @@ export function RunProposalStage({
 /* ── Prepayment stepper (8/5/26, redesigned 8/6) ─────────────────────
  * The Apply-prepayment-credit modal recipe (gradient amber hero +
  * source-row fields), walked vendor by vendor. Draws are editable per
- * advance; Apply or Skip moves to the next vendor. Never blocks. */
+ * advance; Apply or Skip moves to the next vendor. Never blocks.
+ * Currency & Exchange Rates: a step is one PAYMENT (vendor and currency),
+ * and only credit in that currency is offered. */
 function PrepaymentStepper({
   run,
   payments,
-  vendors,
+  groupKeys,
   idx,
   onStep,
   onApply,
@@ -2008,17 +2131,22 @@ function PrepaymentStepper({
 }: {
   run: PaymentRun;
   payments: Payment[];
-  vendors: string[];
+  /** Payment keys (groupKeyOf), one step each. */
+  groupKeys: string[];
   idx: number;
   onStep: (idx: number) => void;
-  onApply: (vendor: string, draws: Record<string, number>) => void;
+  onApply: (groupKey: string, draws: Record<string, number>) => void;
   /** Apply the maximum available credit to EVERY vendor at once (Eli 9/25). */
   onApplyAll: () => void;
   onClose: () => void;
 }) {
-  const vendor = vendors[idx];
-  const group = run.groups.find((g) => g.vendor === vendor);
-  const vlines = liveLines(run).filter((l) => l.vendor === vendor);
+  const vendors = groupKeys;
+  const stepKey = groupKeys[idx];
+  const group = run.groups.find((g) => groupKeyOf(g) === stepKey);
+  const vendor = group?.vendor ?? '';
+  const currency = group ? groupCurrency(group) : BASE_CURRENCY;
+  const fmt = (n: number) => formatMoney(n, currency);
+  const vlines = group ? groupLines(run, group) : [];
   const valid = !!group && vlines.length > 0;
   const next = () => (idx + 1 < vendors.length ? onStep(idx + 1) : onClose());
 
@@ -2037,7 +2165,7 @@ function PrepaymentStepper({
         ),
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendor]);
+  }, [stepKey]);
 
   // The vendor left the run mid-flow: skip the step automatically.
   useEffect(() => {
@@ -2065,9 +2193,7 @@ function PrepaymentStepper({
 
   if (!valid || !group) return null;
 
-  const sources = payments
-    .filter((p) => p.type === 'Prepayment' && p.vendor === vendor && p.unappliedAmount > 0 && !p.preInvoiceId)
-    .sort((a, b) => (a.paymentDate < b.paymentDate ? -1 : 1));
+  const sources = creditSourcesFor(payments, group).sort((a, b) => (a.paymentDate < b.paymentDate ? -1 : 1));
 
   const drawnTotal = round2(Object.values(draws).reduce((s, v) => s + (v || 0), 0));
   const active = drawnTotal > 0.004;
@@ -2116,7 +2242,7 @@ function PrepaymentStepper({
   };
 
   const apply = () => {
-    onApply(vendor, active ? draws : autoFill());
+    onApply(stepKey, active ? draws : autoFill());
     next();
   };
 
@@ -2161,7 +2287,7 @@ function PrepaymentStepper({
               the Record Payment interstitial's phrasing — who has how
               much, apply here or keep it. */}
           <p className="text-[11.5px] mt-0.5 mx-auto text-muted-foreground text-center px-8" style={{ lineHeight: 1.5, maxWidth: '440px' }}>
-            {vendor} has <span className="text-foreground" style={{ fontWeight: 600 }}>{money(sources.reduce((s, x) => s + (x.unappliedAmount ?? 0), 0))}</span> in vendor credit. Apply it here, or keep it for a later invoice.
+            {vendor} has <span className="text-foreground" style={{ fontWeight: 600 }}>{fmt(sources.reduce((s, x) => s + (x.unappliedAmount ?? 0), 0))}</span> in vendor credit. Apply it here, or keep it for a later invoice.
             {/* The anchored-advance note rides an info tip HERE, where the
                 credit is being explained (user 9/25) — not as a floating
                 line over the footer. */}
@@ -2197,6 +2323,8 @@ function PrepaymentStepper({
             <div className="w-[300px] inline-flex items-center justify-center gap-2 pl-1.5 pr-3 py-1 rounded-full bg-white border border-purple-200/80 shadow-sm">
               <VendorAvatar name={vendor} size="sm" />
               <span className="min-w-0 text-[13px] text-foreground truncate" style={{ fontWeight: 600 }}>{vendor}</span>
+              {/* Which payment, when the vendor is paid in two currencies. */}
+              {isSplitVendor(run, vendor) && <CurrencyChip code={currency} size={12} className="shrink-0 text-[11px] text-slate-500" />}
               <span className="shrink-0 text-[11px] text-slate-400 whitespace-nowrap" style={{ fontWeight: 500 }}>
                 {idx + 1} of {vendors.length}
               </span>
@@ -2217,14 +2345,14 @@ function PrepaymentStepper({
               Each dot jumps straight to its vendor. */}
           <span className="mt-2 inline-flex items-center gap-1.5">
             {vendors.map((v, i) => {
-              const g = run.groups.find((gr) => gr.vendor === v);
+              const g = run.groups.find((gr) => groupKeyOf(gr) === v);
               const applied = g ? groupCredit(g) - anchoredAppliedOf(g) > 0.004 : false;
               return (
                 <button
                   key={v}
                   type="button"
                   onClick={() => onStep(i)}
-                  aria-label={`Go to ${v}`}
+                  aria-label={`Go to ${g ? paymentLabel(run, g) : v}`}
                   className="w-2 h-2 rounded-full transition-all cursor-pointer p-0 border-0"
                   style={{
                     backgroundColor: applied ? '#10B981' : i === idx ? '#7E22CE' : '#E2E8F0',
@@ -2282,7 +2410,7 @@ function PrepaymentStepper({
                         appliedInvoices: s.appliedInvoices,
                         recordedBy: s.createdBy,
                       }}
-                      fmt={money}
+                      fmt={fmt}
                     >
                       <div className="min-w-0 flex-1 cursor-help">
                         {/* The ID is a real link now (user 9/25): black by
@@ -2299,11 +2427,15 @@ function PrepaymentStepper({
                         >
                           {s.paymentNumber}
                         </a>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Recorded {humanDate(s.paymentDate)}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                          Recorded {humanDate(s.paymentDate)}
+                          {/* The rate it was paid at (Currency & Exchange Rates). */}
+                          {paidRateText(s.currency, { rate: s.exchangeRate }) ? ` · ${paidRateText(s.currency, { rate: s.exchangeRate })}` : ''}
+                        </p>
                       </div>
                     </CreditQuickCard>
                     <span className="shrink-0 inline-flex items-center rounded-full bg-slate-100 text-slate-600 text-[10px] px-1.5 py-px " style={{ fontWeight: 600 }}>
-                      {money(round2(Math.max(0, s.unappliedAmount - drawn)))} left
+                      {fmt(round2(Math.max(0, s.unappliedAmount - drawn)))} left
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                       {/* Over-max warning (BA 8/12/26): never silently
@@ -2312,13 +2444,13 @@ function PrepaymentStepper({
                       <Tooltip open={over ? undefined : false}>
                         <TooltipTrigger asChild>
                           <div className="relative w-[136px]">
-                            <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-[11px] ${over ? 'text-rose-400' : 'text-slate-400'}`}>$</span>
+                            <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-[11px] ${over ? 'text-rose-400' : 'text-slate-400'}`}>{inputPrefix(currency)}</span>
                             <MoneyInput
                               fluid
                               value={drawn}
                               onValueChange={(n) => setDraw(s.id, n)}
                               placeholder="0.00"
-                              className={`flex h-8 w-full min-w-0 rounded-md border bg-white pl-5 pr-11 py-1 text-[11px] outline-none transition-[color,box-shadow] focus-visible:ring-[3px] ${
+                              className={`flex h-8 w-full min-w-0 rounded-md border bg-white ${prefixPadClass(currency, ['pl-5', 'pl-7', 'pl-9'])} pr-11 py-1 text-[11px] outline-none transition-[color,box-shadow] focus-visible:ring-[3px] ${
                                 over
                                   ? 'border-rose-400 text-rose-600 focus-visible:border-rose-500 focus-visible:ring-rose-100'
                                   : checked
@@ -2333,15 +2465,15 @@ function PrepaymentStepper({
                               onClick={() => setDraw(s.id, cap)}
                               atMax={drawn >= cap - 0.004}
                               over={over}
-                              title={`Fill to ${money(cap)}`}
+                              title={`Fill to ${fmt(cap)}`}
                             />
                           </div>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="z-[400] max-w-[250px] p-2.5 bg-white border border-border rounded-lg shadow-md">
                           <p className="text-[11px] text-rose-600" style={{ fontWeight: 600 }}>Exceeds the max draw</p>
                           <p className="text-[11px] text-slate-600 mt-1 leading-snug ">
-                            Left on this prepayment: {money(s.unappliedAmount)}.<br />
-                            This payment can take: {money(cap)}.
+                            Left on this prepayment: {fmt(s.unappliedAmount)}.<br />
+                            This payment can take: {fmt(cap)}.
                           </p>
                           <p className="text-[11px] text-slate-400 mt-1 leading-snug">Lower the amount, or use Max.</p>
                         </TooltipContent>
@@ -2399,7 +2531,7 @@ function PrepaymentStepper({
               style={{ fontWeight: 600 }}
             >
               <Check className="w-3.5 h-3.5" />
-              {active ? `Apply ${money(drawnTotal)}` : 'Apply to This Vendor'}
+              {active ? `Apply ${fmt(drawnTotal)}` : 'Apply to This Vendor'}
             </button>
             {vendors.length > 1 && (
               <button
@@ -2424,7 +2556,11 @@ function PrepaymentStepper({
 
 
 
-/* ── One vendor, one payment ─────────────────────────────────────────── */
+/* ── One vendor, one payment ───────────────────────────────────────────
+ * Currency & Exchange Rates: one payment per vendor AND currency, so a
+ * vendor with invoices in two currencies gets a card for each. Every
+ * amount on a card is in its payment's currency; the balance due hovers
+ * its invoice rate, the net its payment-date rate. */
 
 // File-type tones for attachment rows, the physical-inventory standard:
 // a small colored extension chip in front of name + size.
@@ -2544,12 +2680,16 @@ export function VendorGroupCard({
    *  the system-wide yellow match highlight while filtering. */
   searchQuery?: string;
 }) {
-  const vlines = liveLines(run).filter((l) => l.vendor === group.vendor);
+  const vlines = groupLines(run, group);
+  const currency = groupCurrency(group);
+  const fmt = (n: number) => formatMoney(n, currency);
+  const split = isSplitVendor(run, group.vendor);
   const hasPreInvoice = vlines.some((l) => l.isPreInvoice);
   const [advanceOpen, setAdvanceOpen] = useState(false);
   const gross = groupGross(run, group);
   const credit = groupCredit(group);
   const net = groupNet(run, group);
+  const netFx = groupFx(run, group);
   const account = PAY_FROM_ACCOUNTS.find((a) => a.id === group.payFromAccountId);
   const noMethod = vendorHasNoMethod(group.vendor) && !group.methodOverridden;
   // Overdrawn-account flag (9/2/26 review): the shortfall shows ON the
@@ -2565,8 +2705,8 @@ export function VendorGroupCard({
   // Credit sources: the vendor's on-account advances with headroom.
   // Anchored advances auto-apply to their own invoice (8/28/26) — they
   // show in the chip total and the locked info line, never as rows.
-  const sources: PrepaySource[] = payments
-    .filter((p) => p.type === 'Prepayment' && p.vendor === group.vendor && p.unappliedAmount > 0 && !p.preInvoiceId)
+  // Only credit in the payment's own currency (Currency & Exchange Rates).
+  const sources: PrepaySource[] = creditSourcesFor(payments, group)
     .map((p) => ({
       id: p.id,
       label: p.paymentNumber,
@@ -2578,6 +2718,10 @@ export function VendorGroupCard({
       memo: p.memo || undefined,
       appliedInvoices: p.appliedInvoices,
       recordedBy: p.createdBy,
+      // The advance's currency and the rate it was paid at.
+      currency: p.currency,
+      rate: p.exchangeRate,
+      rateDate: p.rateDate,
     }));
   const anchoredEntries = group.creditApplied.filter((c) => c.anchoredInvoiceNumber);
   const anchoredTotal = round2(anchoredEntries.reduce((s, c) => s + c.amount, 0));
@@ -2619,7 +2763,7 @@ export function VendorGroupCard({
     // Blue hover identity (8/5/26, the invoicing card treatment): the
     // border warms toward primary so the accordion reads interactive.
     <div
-      data-vendor={group.vendor}
+      data-run-group={groupKeyOf(group)}
       className={
         flat
           ? 'bg-card scroll-mt-2 transition-colors'
@@ -2681,8 +2825,17 @@ export function VendorGroupCard({
             <VendorCell
               vendor={group.vendor}
               density="comfort"
-              description={`${vlines.length} invoice${vlines.length === 1 ? '' : 's'} · one payment`}
+              description={`${vlines.length} invoice${vlines.length === 1 ? '' : 's'}${split ? '' : ' · one payment'}`}
               searchQuery={searchQuery}
+              descriptionAddon={
+                /* The payment's currency (Currency & Exchange Rates), and a
+                   note when the vendor is paid once per currency on this
+                   run. On the description line, so the name keeps its width. */
+                <span className="inline-flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <CurrencyChip code={currency} size={12} className="text-[10.5px] text-slate-500" />
+                  {split && <CurrencySplitNote />}
+                </span>
+              }
             />
           </span>
         </div>
@@ -2694,7 +2847,9 @@ export function VendorGroupCard({
               card footer already carries Net, so the header stays quiet. */}
           {isCollapsed && (
             <div className="flex flex-col items-end leading-none mr-0.5" onClick={(e) => e.stopPropagation()}>
-              <span className="text-[14px] text-foreground" style={{ fontWeight: 600 }}>{money(net)}</span>
+              <span className="text-[14px] text-foreground" style={{ fontWeight: 600 }}>
+                <Money value={net} currency={currency} fx={netFx} role="payment currency" />
+              </span>
               <span className="text-[10px] text-slate-500 mt-1" style={{ fontWeight: 500 }}>Net Payment</span>
             </div>
           )}
@@ -2808,11 +2963,12 @@ export function VendorGroupCard({
                 only in the rail and the issues list. */}
             {acctOverdrawn && acctTotal ? (
               <TooltipContent className="z-[300] max-w-[250px] p-2.5 bg-white border border-border rounded-lg shadow-md">
-                <p className="text-[11px] text-rose-600" style={{ fontWeight: 600 }}>Short by {money(-acctTotal.remaining)}</p>
+                {/* In the account's currency (Currency & Exchange Rates). */}
+                <p className="text-[11px] text-rose-600" style={{ fontWeight: 600 }}>Short by {formatMoney(-acctTotal.remaining, acctTotal.account.currency)}</p>
                 {/* User copy 9/23: needs vs has, and the reassurance that
                     a shortfall never blocks submission. */}
                 <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
-                  This run needs <span className="text-foreground " style={{ fontWeight: 600 }}>{money(acctTotal.selected)}</span>, but the account has <span className="text-foreground " style={{ fontWeight: 600 }}>{money(acctTotal.available)}</span>. This won't block submission.
+                  This run needs <span className="text-foreground " style={{ fontWeight: 600 }}>{formatMoney(acctTotal.selected, acctTotal.account.currency)}</span>, but the account has <span className="text-foreground " style={{ fontWeight: 600 }}>{formatMoney(acctTotal.available, acctTotal.account.currency)}</span>. This won't block submission.
                 </p>
               </TooltipContent>
             ) : (
@@ -3015,7 +3171,7 @@ export function VendorGroupCard({
                           className="h-6 px-2 rounded-md border border-red-200 bg-white text-[11px] text-red-700 hover:bg-red-50 cursor-pointer transition-colors"
                           style={{ fontWeight: 500 }}
                         >
-                          Pay {money(blocked.owed)}
+                          Pay {fmt(blocked.owed)}
                         </button>
                       )}
                       {onRemoveLine && (
@@ -3041,12 +3197,16 @@ export function VendorGroupCard({
                 {/* Prepaid-origin note (9/2/26): the balance being paid
                     carries its history — original total, the prepayment
                     that reconciled at creation, what's left. */}
+                {/* A document amount: in the invoice's currency, hovering
+                    its base equivalent at the invoice's rate. */}
                 {inv ? (
                   <AmountWithPrepaidNote invoice={inv}>
-                    <span className="text-slate-600" style={{ fontWeight: 500 }}>{money(total)}</span>
+                    <span className="text-slate-600" style={{ fontWeight: 500 }}>
+                      <Money value={total} currency={currency} fx={invoiceFx(inv)} />
+                    </span>
                   </AmountWithPrepaidNote>
                 ) : (
-                  <span className="text-slate-600" style={{ fontWeight: 500 }}>{money(total)}</span>
+                  <span className="text-slate-600" style={{ fontWeight: 500 }}>{fmt(total)}</span>
                 )}
               </td>
               <td className="px-3 py-2.5 text-right whitespace-nowrap">
@@ -3058,7 +3218,7 @@ export function VendorGroupCard({
                         style={{ fontWeight: 600 }}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        −{money(discount)}
+                        −{fmt(discount)}
                       </span>
                     </HoverCardTrigger>
                     <HoverCardContent side="top" align="end" className="w-[280px] p-3 rounded-xl border border-border shadow-lg bg-white z-[300]">
@@ -3067,8 +3227,8 @@ export function VendorGroupCard({
                       </p>
                       <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
                         Pay by {humanDate(discountTerms.deadline)} and take {discountTerms.percent}% off. On this invoice that's{' '}
-                        <span className="text-emerald-700" style={{ fontWeight: 600 }}>{money(discount)}</span>: you pay{' '}
-                        <span style={{ fontWeight: 600 }}>{money(due)}</span> instead of {money(total)}.
+                        <span className="text-emerald-700" style={{ fontWeight: 600 }}>{fmt(discount)}</span>: you pay{' '}
+                        <span style={{ fontWeight: 600 }}>{fmt(due)}</span> instead of {fmt(total)}.
                       </p>
                       {(() => {
                         const daysLeft = discountDaysLeft(discountTerms, run.paymentDate);
@@ -3091,7 +3251,7 @@ export function VendorGroupCard({
               <td className="px-3 py-2.5 text-right whitespace-nowrap">
                 {readOnly ? (
                   creditShare > 0.004 ? (
-                    <span className="text-purple-700" style={{ fontWeight: 600 }}>−{money(creditShare)}</span>
+                    <span className="text-purple-700" style={{ fontWeight: 600 }}>−{fmt(creditShare)}</span>
                   ) : null
                 ) : anchoredEntry ? (
                   (() => {
@@ -3118,14 +3278,14 @@ export function VendorGroupCard({
                             <HoverCardContent side="top" className="max-w-[260px] p-2.5 bg-white border border-border rounded-lg shadow-md z-[300]">
                               <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 600 }}>Exceeds what can be applied</p>
                               <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
-                                Applied is <span className="text-foreground " style={{ fontWeight: 600 }}>{money(anchoredEntry.amount)}</span> but only{' '}
+                                Applied is <span className="text-foreground " style={{ fontWeight: 600 }}>{fmt(anchoredEntry.amount)}</span> but only{' '}
                                 <button
                                   type="button"
                                   onClick={() => onSetAnchoredCredit?.(anchoredEntry.paymentId, prepayCap)}
                                   className="text-[11px] leading-snug text-primary underline decoration-primary/60 underline-offset-2 hover:text-blue-700 hover:decoration-primary transition-colors cursor-pointer p-0 bg-transparent border-0 align-baseline"
                                   style={{ fontWeight: 600 }}
                                 >
-                                  {money(prepayCap)}
+                                  {fmt(prepayCap)}
                                 </button>{' '}
                                 can go against this invoice. Click the amount to snap the input back.
                               </p>
@@ -3156,7 +3316,7 @@ export function VendorGroupCard({
                         style={{ fontWeight: 500 }}
                       >
                         <Wallet className="w-3 h-3 text-purple-400" />
-                        {money(creditShare)}
+                        {fmt(creditShare)}
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="z-[300] max-w-[250px]">
@@ -3167,21 +3327,22 @@ export function VendorGroupCard({
                   </Tooltip>
                 ) : (
                   <span className="inline-flex items-center justify-end h-8 w-[116px] px-2 rounded-lg border border-slate-200 bg-slate-50/60 text-[13px] text-slate-300 select-none" style={{ fontWeight: 500 }}>
-                    0.00
+                    {formatAmount(0, currency)}
                   </span>
                 )}
               </td>
               <td className="px-3 py-2.5 text-right whitespace-nowrap">
                 {readOnly ? (
-                  <span className="text-[13px] " style={{ fontWeight: 600 }}>{money(cash)}</span>
+                  <span className="text-[13px] " style={{ fontWeight: 600 }}>{fmt(cash)}</span>
                 ) : (
                   <div className="relative inline-block w-[128px]" onClick={(e) => e.stopPropagation()}>
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[12px]">$</span>
+                    {/* The payment's currency, not a fixed $ (Currency & Exchange Rates). */}
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[12px]">{inputPrefix(currency)}</span>
                     <MoneyInput
                       fluid
                       value={cash}
                       onValueChange={(v) => onSetLineAmount?.(line.invoiceId, Math.round((v + creditShare) * 100) / 100)}
-                      className={`w-full h-8 pl-6 pr-2 rounded-lg border text-[13px] text-right bg-white outline-none transition-colors ${
+                      className={`w-full h-8 ${prefixPadClass(currency, ['pl-6', 'pl-8', 'pl-10'])} pr-2 rounded-lg border text-[13px] text-right bg-white outline-none transition-colors ${
                         over
                           ? 'border-amber-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-100'
                           : 'border-border focus:border-primary focus:ring-1 focus:ring-primary/20'
@@ -3202,7 +3363,7 @@ export function VendorGroupCard({
                         }}
                         style={{ fontWeight: 600 }}
                       >
-                        Set to {money(due)}
+                        Set to {fmt(due)}
                       </button>
                     )}
                   </p>
@@ -3211,7 +3372,7 @@ export function VendorGroupCard({
                      sat in the wrong place; the discount story lives on
                      the row's Discount column. */
                   <p className="text-[10px] text-amber-700 mt-0.5 " style={{ fontWeight: 500 }}>
-                    Misses the {money(discount)} discount.{' '}
+                    Misses the {fmt(discount)} discount.{' '}
                     {!readOnly && (
                       <button
                         type="button"
@@ -3222,13 +3383,13 @@ export function VendorGroupCard({
                         }}
                         style={{ fontWeight: 600 }}
                       >
-                        Set to {money(due)}
+                        Set to {fmt(due)}
                       </button>
                     )}
                   </p>
                 ) : partial ? (
                   <p className="text-[10px] text-amber-700 mt-0.5 " style={{ fontWeight: 600 }}>
-                    Partial · of {money(due)}
+                    Partial · of {fmt(due)}
                   </p>
                 ) : null}
               </td>
@@ -3278,7 +3439,7 @@ export function VendorGroupCard({
             {readOnly ? (
               credit > 0 && (
                 <span className="text-[12px] text-purple-700" style={{ fontWeight: 500 }}>
-                  {money(credit)} vendor credit applied
+                  {fmt(credit)} vendor credit applied
                 </span>
               )
             ) : sources.length > 0 || anchoredTotal > 0.004 ? (
@@ -3292,7 +3453,7 @@ export function VendorGroupCard({
                 anchoredTotal={anchoredTotal}
                 anchoredCount={anchoredEntries.length}
                 onChange={(next) => onSetCredit?.(next)}
-                fmt={money}
+                fmt={fmt}
                 openSignal={prepayOpenSignal}
               />
             ) : null /* no credit → no line (BA 8/10/26) */}
@@ -3334,9 +3495,13 @@ export function VendorGroupCard({
           {/* Gross dropped (8/5/26): with no credit it just repeated Net. */}
           <div className="flex items-center gap-4 text-[12px] shrink-0">
             {credit > 0 && (
-              <span className="text-teal-700">Vendor Credit <span style={{ fontWeight: 600 }}>−{money(credit)}</span></span>
+              <span className="text-teal-700">Vendor Credit <span style={{ fontWeight: 600 }}>−{fmt(credit)}</span></span>
             )}
-            <span className="text-foreground text-[13px]" style={{ fontWeight: 700 }}>Net {money(net)}</span>
+            {/* A payment amount: hovers its base equivalent at the payment
+                date's rate (Currency & Exchange Rates). */}
+            <span className="text-foreground text-[13px]" style={{ fontWeight: 700 }}>
+              Net <Money value={net} currency={currency} fx={netFx} role="payment currency" />
+            </span>
           </div>
         </div>
 

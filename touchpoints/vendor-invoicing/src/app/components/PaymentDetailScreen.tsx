@@ -62,6 +62,13 @@ import type { Invoice } from '@/app/data/mockInvoices';
 import { actionToneClass, type ActionTone } from '@/app/lib/actionMenuTone';
 import { downloadRemittanceAdvice } from '@/app/lib/remittanceAdvice';
 import { localTodayIso } from '@/app/lib/dueBucket';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { formatMoney, rateSentence } from '@/app/currency/money';
+import { RATE_TYPE_LABEL } from '@/app/currency/rates';
+import { paymentExchangeDifference, paymentFx, settledCurrencyOf, settlementRateOf, toPaymentBase } from '@/app/currency/paymentFx';
+import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
+import { Money } from '@/app/components/currency/Money';
+import { ExchangeDifferenceLine } from '@/app/components/currency/ExchangeDifference';
 import { palette } from '@/styles/tokens';
 import { CollapseReveal } from '@/app/components/ui/collapse-reveal';
 import { SegmentedCountPill } from '@/app/components/SegmentedCountPill';
@@ -405,7 +412,7 @@ export function PaymentDetailScreen({
     const balanceClause = payment.status === 'Reversed'
       ? 'Reversed, the amounts returned to the invoices it covered'
       : isPrepay && payment.unappliedAmount > 0
-        ? `${fmt(payment.unappliedAmount)} still available as unapplied credit`
+        ? `${formatMoney(payment.unappliedAmount, payment.currency)} still available as unapplied credit`
         : posted ? 'Posted to the general ledger' : 'Not yet posted';
     const railAccount = isPrepay
       ? `Prepayment account ${payment.apAccount}`
@@ -789,7 +796,7 @@ export function PaymentDetailScreen({
                       This {isPrepay ? 'prepayment' : 'payment'} was reversed
                     </p>
                     <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">
-                      {fmt(payment.amount)} returned to {payment.bankAccount} via {payment.paymentMethod}
+                      {formatMoney(payment.amount, payment.currency)} returned to {payment.bankAccount} via {payment.paymentMethod}
                       {payment.reference ? ` (ref ${payment.reference})` : ''}.
                       {payment.appliedInvoices.length > 0
                         ? ` The ${payment.appliedInvoices.length === 1 ? 'invoice it settled reopened' : `${payment.appliedInvoices.length} invoices it settled reopened`} for the reversed amount: ${payment.appliedInvoices.map((a) => a.invoiceNumber).join(', ')}.`
@@ -801,7 +808,7 @@ export function PaymentDetailScreen({
               )}
               {activeTab === 'applied' && <AppliedToCard payment={payment} isPrepay={isPrepay} />}
               {activeTab === 'gl-impact' && (
-                <GLImpactCard glLines={glLines} drTotal={drTotal} crTotal={crTotal} posted={posted} failed={failed} isPrepay={isPrepay} ledger={ledger} />
+                <GLImpactCard glLines={glLines} drTotal={drTotal} crTotal={crTotal} posted={posted} failed={failed} isPrepay={isPrepay} ledger={ledger} currency={payment.currency} />
               )}
               {/* The invoice Notes tab (user 10/22/26), notes kept in App
                   state per payment like invoice notes. */}
@@ -834,6 +841,7 @@ export function PaymentDetailScreen({
             {/* ── RIGHT: sticky sidebar ── */}
             <PaymentDetailSidebar
               payment={payment}
+              invoices={invoices}
               isPrepay={isPrepay}
               status={status}
               statusPalette={statusPalette}
@@ -955,7 +963,7 @@ function AppliedToCard({ payment, isPrepay }: { payment: Payment; isPrepay: bool
         {isPrepay && payment.unappliedAmount > 0 && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] border bg-amber-50 text-amber-700 border-amber-200" style={{ fontWeight: 600 }}>
             <Wallet className="w-3 h-3" />
-            {fmt(payment.unappliedAmount)} unapplied
+            {formatMoney(payment.unappliedAmount, payment.currency)} unapplied
           </span>
         )}
       </div>
@@ -983,7 +991,7 @@ function AppliedToCard({ payment, isPrepay }: { payment: Payment; isPrepay: bool
                     {inv.invoiceNumber}
                   </a>
                 </td>
-                <td className="px-4 py-2.5 pr-5 text-right " style={{ fontWeight: 600 }}>{fmt(inv.amount)}</td>
+                <td className="px-4 py-2.5 pr-5 text-right " style={{ fontWeight: 600 }}>{formatMoney(inv.amount, settledCurrencyOf(payment))}</td>
               </tr>
             ))}
           </tbody>
@@ -1006,12 +1014,15 @@ function AppliedToCard({ payment, isPrepay }: { payment: Payment; isPrepay: bool
 // GL Impact card
 // ══════════════════════════════════════════════════════════════════
 function GLImpactCard({
-  glLines, drTotal, crTotal, posted, failed, isPrepay, ledger = 'ap',
+  glLines, drTotal, crTotal, posted, failed, isPrepay, ledger = 'ap', currency = BASE_CURRENCY,
 }: {
   glLines: Array<{ code: string; name: string; desc: string; debit: number; credit: number }>;
   drTotal: number; crTotal: number; posted: boolean; failed: boolean; isPrepay: boolean;
   ledger?: 'ap' | 'ar';
+  /** The payment's currency, the lines' (Currency & Exchange Rates). */
+  currency?: string;
 }) {
+  const fmt = (n: number) => formatMoney(n, currency);
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2.5">
@@ -1205,9 +1216,9 @@ function fmtSidebarDate(iso?: string) {
 }
 
 function PaymentDetailSidebar({
-  payment, isPrepay, status, statusPalette, onPrintCheck,
+  payment, invoices = [], isPrepay, status, statusPalette, onPrintCheck,
 }: {
-  payment: Payment; isPrepay: boolean; status: string;
+  payment: Payment; invoices?: Invoice[]; isPrepay: boolean; status: string;
   statusPalette: { bg: string; color: string; border: string };
   onPrintCheck?: () => void;
 }) {
@@ -1269,9 +1280,39 @@ function PaymentDetailSidebar({
             <GridField label="Method" value={payment.paymentMethod} />
             <GridField label="Bank Account" value={payment.bankAccount} />
             <GridField label="Payment Date" value={fmtSidebarDate(payment.paymentDate)} />
-            <GridField label="Currency" value={payment.currency} />
+            <GridField label="Currency" value={<CurrencyChip code={payment.currency} size={14} />} />
             <GridField label={isPrepay ? 'Prepayment Account' : 'A/P Account'} value={payment.apAccount} />
             {payment.linkedPO && <GridField label="Linked PO" value={`PO ${payment.linkedPO}`} />}
+            {/* The rate this payment settled at (Currency & Exchange Rates):
+                the invoices' currency on the payment date. */}
+            {!isBaseCurrency(settledCurrencyOf(payment)) && (
+              <div className="min-w-0 col-span-2">
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <p className="inline-flex items-center gap-1 text-[11px] text-slate-400 cursor-help" style={{ fontWeight: 500 }}>
+                      Exchange Rate
+                      <Info className="w-2.5 h-2.5 text-slate-300" />
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[260px] p-2.5 bg-white border border-border rounded-lg shadow-md z-[300]">
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      {isPrepay
+                        ? 'The rate this advance was paid at. It shows wherever the advance is applied to an invoice.'
+                        : 'The invoices’ currency on the payment date, the rate this payment settled at. The difference from each invoice’s own rate is the exchange difference.'}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+                <p className="text-[12px] text-foreground mt-0.5 tabular-nums" style={{ fontWeight: 600 }}>
+                  {rateSentence(settledCurrencyOf(payment), settlementRateOf(payment))}
+                </p>
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  <span style={{ fontWeight: 600, color: (payment.rateType ?? 'mid') === 'mid' ? '#6D28D9' : '#B45309' }}>
+                    {RATE_TYPE_LABEL[payment.rateType ?? 'mid']}
+                  </span>
+                  {' · '}{fmtSidebarDate(payment.rateDate || payment.paymentDate)} (payment date){payment.rateEdited ? ' · entered on the payment' : ''}
+                </p>
+              </div>
+            )}
           </div>
           {/* Check-print trail (Eli 9/25): who confirmed the print (or
               logged the hand-written check) and when; an unconfirmed
@@ -1334,10 +1375,18 @@ function PaymentDetailSidebar({
       </SidebarSection>
 
       {/* ── Summary ── */}
-      <SidebarSection icon={Wallet} title={isPrepay ? 'Prepayment Summary' : 'Payment Summary'} open={open.summary} onToggle={() => toggle('summary')} collapsedSummary={fmt(payment.amount)}>
+      <SidebarSection icon={Wallet} title={isPrepay ? 'Prepayment Summary' : 'Payment Summary'} open={open.summary} onToggle={() => toggle('summary')} collapsedSummary={formatMoney(payment.amount, payment.currency)}>
         <div>
           <p className="text-[10px] text-slate-400" style={{ fontWeight: 600 }}>{isPrepay ? 'Advance Amount' : 'Payment Amount'}</p>
-          <p className="text-[22px] text-foreground mt-0.5" style={{ fontWeight: 700, lineHeight: 1.1 }}>{fmt(payment.amount)}</p>
+          <p className="text-[22px] text-foreground mt-0.5" style={{ fontWeight: 700, lineHeight: 1.1 }}>
+            <Money value={payment.amount} currency={payment.currency} fx={paymentFx(payment)} role="payment currency" />
+          </p>
+          {/* The base amount (Currency & Exchange Rates). */}
+          {!isBaseCurrency(payment.currency) && (
+            <p className="text-[11px] text-slate-400 mt-1 tabular-nums" style={{ fontWeight: 500 }}>
+              ≈ {formatMoney(toPaymentBase(payment, payment.amount), BASE_CURRENCY)} {BASE_CURRENCY}
+            </p>
+          )}
           <p className="text-[11px] text-slate-500 mt-1">
             <span className="inline-flex items-center gap-1 px-1.5 py-px rounded border text-[10px]"
               style={{ fontWeight: 600, backgroundColor: statusPalette.bg, color: statusPalette.color, borderColor: statusPalette.border }}>
@@ -1356,14 +1405,34 @@ function PaymentDetailSidebar({
                 Unapplied breakdown carries the numbers. */}
             <div className="flex items-center justify-between text-[11px]" style={{ fontWeight: 500 }}>
               <span className="text-slate-500">
-                Applied: <span className="text-foreground " style={{ fontWeight: 600 }}>{fmt(payment.appliedAmount)}</span>
+                Applied: <span className="text-foreground " style={{ fontWeight: 600 }}>{formatMoney(payment.appliedAmount, payment.currency)}</span>
               </span>
               <span className="text-slate-500">
-                Unapplied: <span className="" style={{ fontWeight: 600, color: payment.unappliedAmount > 0 ? '#B45309' : '#047857' }}>{fmt(payment.unappliedAmount)}</span>
+                Unapplied: <span className="" style={{ fontWeight: 600, color: payment.unappliedAmount > 0 ? '#B45309' : '#047857' }}>{formatMoney(payment.unappliedAmount, payment.currency)}</span>
               </span>
             </div>
           </div>
         )}
+        {/* The exchange difference on the invoices it settled (Currency &
+            Exchange Rates): their base amounts at their own rates against
+            this payment's rate. */}
+        {!isPrepay && (() => {
+          const d = paymentExchangeDifference(payment, invoices);
+          if (!d) return null;
+          return (
+            <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-500" style={{ fontWeight: 500 }}>Booked at Invoice Rates</span>
+                <span className="text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>{formatMoney(d.booked, BASE_CURRENCY)}</span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-500" style={{ fontWeight: 500 }}>Paid at This Rate</span>
+                <span className="text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>{formatMoney(d.atPayment, BASE_CURRENCY)}</span>
+              </div>
+              <ExchangeDifferenceLine difference={d.difference} />
+            </div>
+          );
+        })()}
       </SidebarSection>
 
       {/* Timeline sidebar card removed per feedback 7/15/26 — lifecycle

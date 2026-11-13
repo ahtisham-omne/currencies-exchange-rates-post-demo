@@ -4,6 +4,8 @@ import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import type { PayFromAccount } from '@/app/data/mockPayments';
 import { highlightText } from '@/app/components/InvoiceDataTable';
+import { formatMoney } from '@/app/currency/money';
+import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
 
 // Pay-from account picker — mirrors the standalone GL Configuration modal
 // (GLAccountConfigModal) so the payment flow's account selection uses the same
@@ -27,8 +29,8 @@ const GROUP_LABEL: Record<PayFromAccount['type'], string> = {
 };
 const GROUP_ORDER: PayFromAccount['type'][] = ['bank', 'card', 'cash'];
 
-const fmt = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Each balance in its account's own currency (Currency & Exchange Rates).
+const fmtIn = (n: number, code: string) => formatMoney(n, code);
 
 export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApply }: PayFromAccountModalProps) {
   const [draft, setDraft] = useState(value);
@@ -83,7 +85,7 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
                 Pay-From Account
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5" style={{ fontWeight: 400 }}>
-                Select the account this payment draws from. All balances are book balances from your ledger.
+                Select the account this payment draws from: one in the payment currency or the base currency. All balances are book balances from your ledger.
               </p>
             </div>
           </div>
@@ -151,6 +153,8 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
                               {/* Searchable, so it highlights like every other matched cell (10/9/26). */}
                               {highlightText(acct.label, search)}
                             </span>
+                            {/* The account's currency (Currency & Exchange Rates). */}
+                            <CurrencyChip code={acct.currency} size={12} className="text-[10.5px] text-slate-500 shrink-0" />
                           </div>
                           {sub.length > 0 && (
                             <div className="mt-0.5 text-[10px] text-slate-400 truncate" style={{ fontWeight: 500 }}>
@@ -171,7 +175,7 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
                           {acct.type === 'card' && acct.creditLimit ? (
                             <div className="flex flex-col items-end leading-none">
                               <span className={`text-[12px] ${isSelected ? 'text-primary' : 'text-amber-700'}`} style={{ fontWeight: 600 }}>
-                                {fmt(acct.creditLimit - acct.balance)}
+                                {fmtIn(acct.creditLimit - acct.balance, acct.currency)}
                               </span>
                               <span className="text-[9px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>
                                 Owed · Book Balance
@@ -183,13 +187,13 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
                                 />
                               </span>
                               <span className="text-[9px] text-slate-400 mt-1 " style={{ fontWeight: 500 }}>
-                                {fmt(acct.balance)} available of {fmt(acct.creditLimit)}
+                                {fmtIn(acct.balance, acct.currency)} available of {fmtIn(acct.creditLimit, acct.currency)}
                               </span>
                             </div>
                           ) : (
                             <div className="flex flex-col items-end leading-none">
                               <span className={`text-[12px] ${isSelected ? 'text-primary' : 'text-slate-600'}`} style={{ fontWeight: 600 }}>
-                                {fmt(acct.balance)}
+                                {fmtIn(acct.balance, acct.currency)}
                               </span>
                               <span className="text-[9px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>
                                 Book Balance

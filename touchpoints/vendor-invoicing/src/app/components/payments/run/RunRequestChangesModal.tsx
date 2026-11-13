@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Check, ChevronDown, FilePen, Plus, Search as SearchIcon, X } from 'lucide-react';
-import { liveLines, type PaymentRun } from '@/app/data/paymentRuns';
+import { lineCurrency, liveLines, type PaymentRun } from '@/app/data/paymentRuns';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/app/components/ui/dropdown-menu';
 import { Label } from '@/app/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover';
@@ -8,7 +8,7 @@ import { Checkbox } from '@/app/components/ui/checkbox';
 import { NotifyToggleCard } from '@/app/components/vendors/SearchableUserPicker';
 import { SYSTEM_USERS, SYSTEM_ROLES } from '@/app/data/systemUsers';
 import { RUN_CHANGE_REASONS, RUN_LINE_CHANGE_REASONS } from './runReasonConfigs';
-import { money } from './runUi';
+import { formatMoney } from '@/app/currency/money';
 import { highlightText } from '@/app/components/InvoiceDataTable';
 
 /* ── Request changes (8/5/26, replaces blunt rejection) ──────────────
@@ -290,7 +290,7 @@ export function RunRequestChangesModal({
                                     <Checkbox checked={checked} className="shrink-0 pointer-events-none" />
                                     <span className="text-[12px] text-foreground min-w-0 truncate">
                                       {/* Searchable, so it highlights like every other matched cell (10/9/26). */}
-                                      {highlightText(l.invoiceNumber, scopeQuery)} · {highlightText(l.vendor, scopeQuery)} · {money(l.payAmount)}
+                                      {highlightText(l.invoiceNumber, scopeQuery)} · {highlightText(l.vendor, scopeQuery)} · {formatMoney(l.payAmount, lineCurrency(l))}
                                     </span>
                                   </button>
                                 );

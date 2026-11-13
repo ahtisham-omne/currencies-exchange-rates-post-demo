@@ -1,7 +1,9 @@
 import type { PaymentRun } from '@/app/data/paymentRuns';
 import { daysUntil as sharedDaysUntil } from '@/app/lib/dueBucket';
 import { liveLines, OPEN_RUN_STATUSES } from '@/app/data/paymentRuns';
-import { runTotal } from '@/app/lib/runMath';
+import { runTotalBase } from '@/app/lib/runMath';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatCompactMoney } from '@/app/currency/money';
 import type { InsightsRange, CustomRange } from '@/app/components/InvoiceInsightsPanel';
 
 // KPI catalogue for the Vendor Payments "Payment runs" tab. Mirrors the
@@ -51,8 +53,11 @@ export const DEFAULT_RUN_KPI_KEYS = [
   'total_runs',
 ];
 
-const money = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// The band is in the base currency (Currency & Exchange Rates): each run's
+// payments convert at their own rate on its payment date before they add
+// up, and the band header carries the BaseCurrencyNote. KPI-sized, the way
+// the invoice insights write money.
+const money = (n: number) => formatCompactMoney(n, BASE_CURRENCY);
 // Shared midnight-anchored day count (9/22/26 review response): the old
 // fractional Date.now() math read "in 1 day" for a date two days out.
 const daysUntil = (dateStr: string) => sharedDaysUntil(dateStr.split('T')[0]);
@@ -92,14 +97,14 @@ export function filterRunsByRange(runs: PaymentRun[], range: InsightsRange, cust
 const isOpen = (r: PaymentRun) => OPEN_RUN_STATUSES.includes(r.status);
 
 export function computeRunKpi(key: string, runs: PaymentRun[]): { value: string; sub: string } {
-  const sumTotals = (rows: PaymentRun[]) => rows.reduce((s, r) => s + runTotal(r), 0);
+  const sumTotals = (rows: PaymentRun[]) => rows.reduce((s, r) => s + runTotalBase(r), 0);
   switch (key) {
     case 'last_run': {
       const done = runs.filter((r) => r.status === 'Completed');
       if (done.length === 0) return { value: '—', sub: 'No completed runs yet' };
       const last = done.reduce((a, b) =>
         ((b.completedAt ?? b.paymentDate) > (a.completedAt ?? a.paymentDate) ? b : a));
-      return { value: money(runTotal(last)), sub: `${last.id} · ${shortDate(last.completedAt ?? last.paymentDate)}` };
+      return { value: money(runTotalBase(last)), sub: `${last.id} · ${shortDate(last.completedAt ?? last.paymentDate)}` };
     }
     case 'total_runs': {
       const done = runs.filter((r) => r.status === 'Completed');
@@ -137,8 +142,8 @@ export function computeRunKpi(key: string, runs: PaymentRun[]): { value: string;
     case 'largest_run': {
       const open = runs.filter(isOpen);
       if (open.length === 0) return { value: '—', sub: 'No open runs' };
-      const top = open.reduce((a, b) => (runTotal(b) > runTotal(a) ? b : a));
-      return { value: money(runTotal(top)), sub: top.id };
+      const top = open.reduce((a, b) => (runTotalBase(b) > runTotalBase(a) ? b : a));
+      return { value: money(runTotalBase(top)), sub: top.id };
     }
     default:
       return { value: '—', sub: '' };

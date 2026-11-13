@@ -41,6 +41,10 @@ import {
   computeReadyKpi,
   DEFAULT_READY_KPI_KEYS,
 } from '@/app/data/readyKpis';
+import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatMoney } from '@/app/currency/money';
+import { toInvoiceBase } from '@/app/currency/invoiceFx';
 
 // "Invoices to pay" shows ONLY approved invoices awaiting payment
 // (rev 7/16/26): approval already happened at invoice level, so this
@@ -90,8 +94,9 @@ const LOCKED_COLUMNS = ['invoiceNumber'];
 // of the most common ways to find something"; last-modified joined 10/30).
 const DEFAULT_HIDDEN = new Set(['apAccount', 'currency', 'description']);
 
-const money = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Currency & Exchange Rates: totals across invoices are in the base currency,
+// each invoice converted at its own rate.
+const money = (n: number) => formatMoney(n, BASE_CURRENCY);
 
 // Quick-filter axes (7/16/26): the same compact dropdowns as the other
 // listings. Type folds the receiving flavors into one option; due date
@@ -341,7 +346,7 @@ export function ReadyToPayTable({
     const dTerms = discountTermsFor(inv);
     if (discountIsLive(dTerms) && dTerms) {
       discountQuickCount += 1;
-      discountQuickSavings += discountAmountOn(inv.outstandingBalance, dTerms);
+      discountQuickSavings += toInvoiceBase(inv, discountAmountOn(inv.outstandingBalance, dTerms));
     }
   });
   const vendorQuickOptions = Object.keys(vendorQuickCounts).sort();
@@ -488,7 +493,13 @@ export function ReadyToPayTable({
 
   // Selection context feeds the "Selected" KPI + the pay-run CTA.
   const selectedInvoices = readyInvoices.filter((i) => selectedIds.includes(i.id));
-  const selectedDue = selectedInvoices.reduce((s, i) => s + i.outstandingBalance, 0);
+  const selectedDue = selectedInvoices.reduce((s, i) => s + toInvoiceBase(i, i.outstandingBalance), 0);
+  // The bulk bar names the selection's own currency when it has one, else
+  // the base currency (Currency & Exchange Rates).
+  const selectedCurrencies = Array.from(new Set(selectedInvoices.map((i) => i.currency)));
+  const selectedDueText = selectedCurrencies.length === 1
+    ? formatMoney(selectedInvoices.reduce((s, i) => s + i.outstandingBalance, 0), selectedCurrencies[0])
+    : money(selectedDue);
   const readyCtx = { selectedCount: selectedIds.length, selectedDue };
 
   // Active KPI cards for the insights grid (customizable via the drawer).
@@ -522,6 +533,8 @@ export function ReadyToPayTable({
               onCustomChange={(from, to) => setInsightsCustom({ from, to })}
             />
             <InsightsRefresh />
+            {/* The cards' money is base currency (Currency & Exchange Rates). */}
+            <BaseCurrencyNote />
           </div>
           <div className="flex items-center gap-2">
             <InsightsResetButton dirty={insightsDirty} onReset={handleInsightsReset} />
@@ -1049,7 +1062,7 @@ export function ReadyToPayTable({
             if (!multiVendor) {
               actions.push({
                 key: 'recordPayment',
-                label: `Record Payment · ${money(selectedDue)}`,
+                label: `Record Payment · ${selectedDueText}`,
                 tone: 'success',
                 onClick: () => onRecordPayment(selectedIds),
               });
@@ -1058,7 +1071,7 @@ export function ReadyToPayTable({
               actions.push({
                 key: 'startRun',
                 label: multiVendor
-                  ? `Start a Payment Run · ${money(selectedDue)} · ${runVendorCount} Vendors`
+                  ? `Start a Payment Run · ${selectedDueText} · ${runVendorCount} Vendors`
                   : 'Start a Payment Run',
                 tone: 'primary',
                 onClick: startRun,

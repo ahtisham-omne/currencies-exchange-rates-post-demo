@@ -1,5 +1,8 @@
 import type { Invoice } from '@/app/data/mockInvoices';
 import { daysUntil as dueBucketDaysUntil } from '@/app/lib/dueBucket';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatMoney } from '@/app/currency/money';
+import { toInvoiceBase } from '@/app/currency/invoiceFx';
 
 // KPI catalogue for the Vendor Payments "Invoices to pay" tab. Mirrors the
 // payment insights shape (key/label/category/icon/subtitle/tooltip) so the
@@ -68,9 +71,10 @@ export const DEFAULT_READY_KPI_KEYS = [
   'next_due_date',
 ];
 
-const money = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const due = (inv: Invoice) => inv.outstandingBalance;
+// Currency & Exchange Rates: in the base currency, each invoice converted at
+// its own rate before it is added up or compared.
+const money = (n: number) => formatMoney(n, BASE_CURRENCY);
+const due = (inv: Invoice) => toInvoiceBase(inv, inv.outstandingBalance);
 // The shared midnight-anchored day count (9/22/26 review response): the
 // old fractional Date.now() rounding read "Sep 21, due today" on Sep 20.
 const daysUntil = dueBucketDaysUntil;

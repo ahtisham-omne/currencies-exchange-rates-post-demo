@@ -55,9 +55,9 @@ import { vendorPaymentMethods, methodSummary, methodDataRows, type VendorPayment
 import { VendorAvatar } from '@/app/components/VendorAvatar';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/ui/hover-card';
 import { MultiSelectFilter } from '@/app/components/data-table/MultiSelectFilter';
-import { liveLines, type PaymentRun, type PaymentRunStatus } from '@/app/data/paymentRuns';
+import { groupCurrency, groupKeyOf, lineCurrency, liveLines, type PaymentRun, type PaymentRunLine, type PaymentRunStatus } from '@/app/data/paymentRuns';
 import type { PaymentRunsApi } from '@/app/hooks/usePaymentRuns';
-import { accountTotals, groupCredit, groupGross, groupLines, groupNet, runDebitRows } from '@/app/lib/runMath';
+import { accountTotals, addByCurrency, convertOn, groupAmount, groupCredit, groupFx, groupLines, groupNet, paymentRateOn, runGlRows, runNetByCurrency, type CurrencyAmount } from '@/app/lib/runMath';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/app/components/ui/tooltip';
 import {
   DropdownMenu,
@@ -86,7 +86,15 @@ import { ApproveRunModal, ResubmitRunModal, ReturnToPendingModal, WithdrawRunMod
 import { RunRequestChangesModal } from './RunRequestChangesModal';
 import { RunIssuesPanel, MoveLineModal } from './RunIssuesPanel';
 import { RUN_CANCEL_OVERRIDE, RUN_HOLD_OVERRIDE } from './runReasonConfigs';
-import { RunStatusPill, DueDatePill, money, humanDate, openInvoiceTab, exportRunCsv } from './runUi';
+import { RunStatusPill, DueDatePill, humanDate, openInvoiceTab, exportRunCsv } from './runUi';
+import { Money } from '@/app/components/currency/Money';
+import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatMoney } from '@/app/currency/money';
+import { toBase } from '@/app/currency/rates';
+import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { paymentFx, toPaymentBase } from '@/app/currency/paymentFx';
+import { CurrencyTotals, amountsText, totalText } from './runMoney';
 import { SegmentedCountPill } from '@/app/components/SegmentedCountPill';
 
 /* ── Payment run detail page (8/4/26 restructure) ────────────────────
@@ -396,9 +404,10 @@ export function RunDetailScreen({
 
   const lines = liveLines(run);
   const totals = useMemo(() => accountTotals(run), [run]);
-  const total = run.groups.reduce((s, g) => s + groupNet(run, g), 0);
-  const gross = run.groups.reduce((s, g) => s + groupGross(run, g), 0);
-  const creditTotal = run.groups.reduce((s, g) => s + groupCredit(g), 0);
+  // Cash out per currency plus the base total (Currency & Exchange
+  // Rates): each payment at its rate on the payment date.
+  const netItems = useMemo(() => runNetByCurrency(run), [run]);
+  const vendorCount = new Set(run.groups.map((g) => g.vendor)).size;
   const runPayments = useMemo(() => payments.filter((p) => p.runId === run.id), [payments, run.id]);
   const executed = ['Executed', 'Partially Executed', 'Completed'].includes(run.status);
 
@@ -493,17 +502,10 @@ export function RunDetailScreen({
 
   // GL impact rows — debit A/P for the invoices' gross and the advances
   // account for pre-invoices (user 10/22/26), credit each pay-from
-  // account its outgoing net, credit prepayments for drawn credit.
-  const glRows = [
-    ...runDebitRows(run),
-    ...totals.map((t) => ({
-      code: t.account.id.split('-')[0],
-      name: t.account.label.includes('·') ? t.account.label.split('·')[1].trim() : t.account.label,
-      debit: 0,
-      credit: t.selected,
-    })),
-    ...(creditTotal > 0 ? [{ code: DEFAULT_PREPAYMENT_ASSET_ACCOUNT.split(' ')[0], name: DEFAULT_PREPAYMENT_ASSET_ACCOUNT.split(' ').slice(1).join(' '), debit: 0, credit: creditTotal }] : []),
-  ];
+  // account its outgoing net, credit prepayments for drawn credit. In
+  // the base currency, the ledger's: each payment at its rate on the
+  // payment date (Currency & Exchange Rates).
+  const glRows = runGlRows(run);
 
   // Primary CTA per status — the invoice detail CTA slot. Pending
   // approval renders the Reject + Approve pair instead (below); a held
@@ -519,7 +521,7 @@ export function RunDetailScreen({
     }
     // Recording in pieces (Eli 9/25): a partially executed run keeps the
     // Record CTA for the remainder.
-    if (run.status === 'Partially Executed' && run.groups.some((g) => !g.paymentId && liveLines(run).some((l) => l.vendor === g.vendor))) {
+    if (run.status === 'Partially Executed' && run.groups.some((g) => !g.paymentId && groupLines(run, g).length > 0)) {
       return { label: 'Record Remaining Payments', icon: Banknote, bg: 'bg-emerald-600 hover:bg-emerald-700', onClick: () => setAction('execute') };
     }
     return null;
@@ -622,26 +624,29 @@ export function RunDetailScreen({
   // before execution puts them straight back in this run.
   const VENDOR_HOLD_PREFIX = 'Vendor held by approver: ';
   const [holdVendorTarget, setHoldVendorTarget] = useState<string | null>(null);
+  // Held amounts stay per currency (Currency & Exchange Rates).
   const heldVendorEntries = useMemo(() => {
-    const map = new Map<string, { reason: string; by: string; at: string; count: number; amount: number }>();
+    const map = new Map<string, { reason: string; by: string; at: string; count: number; items: CurrencyAmount[] }>();
     run.lines.forEach((l) => {
       if (!l.removed?.reason.startsWith(VENDOR_HOLD_PREFIX)) return;
+      const currency = lineCurrency(l);
+      const item = { currency, amount: l.payAmount, base: toBase(l.payAmount, paymentRateOn(currency, run.paymentDate)) };
       const cur = map.get(l.vendor);
       if (cur) {
         cur.count += 1;
-        cur.amount = Math.round((cur.amount + l.payAmount) * 100) / 100;
+        cur.items.push(item);
       } else {
         map.set(l.vendor, {
           reason: l.removed.reason.slice(VENDOR_HOLD_PREFIX.length),
           by: l.removed.by,
           at: l.removed.at,
           count: 1,
-          amount: l.payAmount,
+          items: [item],
         });
       }
     });
     return [...map.entries()].map(([vendor, meta]) => ({ vendor, ...meta }));
-  }, [run.lines]);
+  }, [run.lines, run.paymentDate]);
   const confirmVendorHold = (reason: string) => {
     if (!holdVendorTarget) return;
     const vendor = holdVendorTarget;
@@ -880,7 +885,7 @@ export function RunDetailScreen({
                            vendors segment + white invoices segment. */
                         <SegmentedCountPill
                           segments={[
-                            `${run.groups.length} vendor${run.groups.length === 1 ? '' : 's'}`,
+                            `${vendorCount} vendor${vendorCount === 1 ? '' : 's'}`,
                             `${lines.length} invoice${lines.length === 1 ? '' : 's'}`,
                           ]}
                           icon={Banknote}
@@ -1265,7 +1270,7 @@ export function RunDetailScreen({
                           <div key={h.vendor} className="flex items-center justify-between gap-3 flex-wrap">
                             <div className="min-w-0">
                               <p className="text-[12px] text-amber-900" style={{ fontWeight: 600 }}>
-                                {h.vendor} <span className="text-amber-700/80 " style={{ fontWeight: 500 }}>· {h.count} invoice{h.count === 1 ? '' : 's'} · {money(h.amount)}</span>
+                                {h.vendor} <span className="text-amber-700/80 " style={{ fontWeight: 500 }}>· {h.count} invoice{h.count === 1 ? '' : 's'} · {totalText(h.items)}</span>
                               </p>
                               <p className="text-[11px] text-amber-700/90 leading-snug">
                                 "{h.reason}" Held by {h.by}. Its invoices are back in the payable pool; the rest of the run proceeds.
@@ -1289,6 +1294,7 @@ export function RunDetailScreen({
                   )}
                   <RunPaymentsTable
                     run={run}
+                    invoices={invoices}
                     runPayments={runPayments}
                     executed={executed}
                     onViewPayment={onViewPayment}
@@ -1305,6 +1311,7 @@ export function RunDetailScreen({
               {activeTab === 'linked' && (
                 <RunLinkedRecordsTab
                   run={run}
+                  invoices={invoices}
                   lines={lines}
                   runPayments={runPayments}
                   onViewPayment={onViewPayment}
@@ -1358,7 +1365,7 @@ export function RunDetailScreen({
                   <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50/40 flex items-start gap-2">
                     <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-px" />
                     <p className="text-[11px] text-slate-500 leading-snug">
-                      Executing debits Accounts Payable for the invoices the run settles, debits the advances account for any pre-invoices it pays, and credits each pay-from account for the cash leaving it. The two sides always balance to zero.
+                      Executing debits Accounts Payable for the invoices the run settles, debits the advances account for any pre-invoices it pays, and credits each pay-from account for the cash leaving it. The two sides always balance to zero. Amounts are in the base currency, each payment at its rate on the payment date.
                     </p>
                   </div>
                   <table className="w-full text-[12px]">
@@ -1408,8 +1415,8 @@ export function RunDetailScreen({
                               </TooltipContent>
                             </Tooltip>
                           </td>
-                          <td className="px-4 py-2.5 text-right ">{l.debit > 0 ? <span style={{ fontWeight: 600 }}>{money(l.debit)}</span> : <span className="text-slate-300">·</span>}</td>
-                          <td className="px-4 py-2.5 pr-5 text-right ">{l.credit > 0 ? <span style={{ fontWeight: 600 }}>{money(l.credit)}</span> : <span className="text-slate-300">·</span>}</td>
+                          <td className="px-4 py-2.5 text-right ">{l.debit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(l.debit, BASE_CURRENCY)}</span> : <span className="text-slate-300">·</span>}</td>
+                          <td className="px-4 py-2.5 pr-5 text-right ">{l.credit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(l.credit, BASE_CURRENCY)}</span> : <span className="text-slate-300">·</span>}</td>
                         </tr>
                         );
                       })}
@@ -1421,8 +1428,8 @@ export function RunDetailScreen({
                             <CheckCircle2 className="w-2.5 h-2.5" /> Debit = Credit
                           </span>
                         </td>
-                        <td className="px-4 py-2 text-right " style={{ fontWeight: 700 }}>{money(glRows.reduce((s, l) => s + l.debit, 0))}</td>
-                        <td className="px-4 py-2 pr-5 text-right " style={{ fontWeight: 700 }}>{money(glRows.reduce((s, l) => s + l.credit, 0))}</td>
+                        <td className="px-4 py-2 text-right " style={{ fontWeight: 700 }}>{formatMoney(glRows.reduce((s, l) => s + l.debit, 0), BASE_CURRENCY)}</td>
+                        <td className="px-4 py-2 pr-5 text-right " style={{ fontWeight: 700 }}>{formatMoney(glRows.reduce((s, l) => s + l.credit, 0), BASE_CURRENCY)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -1469,7 +1476,7 @@ export function RunDetailScreen({
               run={run}
               lines={lines}
               totals={totals}
-              total={total}
+              netItems={netItems}
               statusPalette={statusPalette}
               displayStatus={displayStatus}
             />
@@ -1655,7 +1662,7 @@ export function RunDetailScreen({
           // Two steps (Eli 10/5; header recipe user 10/15): record the
           // non-check payments, then process the checks. Stepper only
           // when the run actually pays by check.
-          const live = run.groups.filter((g) => groupLines(run, g.vendor).length > 0);
+          const live = run.groups.filter((g) => groupLines(run, g).length > 0);
           const hasChecks = live.some((g) => g.methodType === 'Check');
           const paymentsDone = !live.some((g) => !g.paymentId && g.methodType !== 'Check');
           const checksDone = hasChecks && !live.some((g) => !g.paymentId && g.methodType === 'Check');
@@ -1668,7 +1675,7 @@ export function RunDetailScreen({
               flush
               subtitle={onChecks
                 ? `${run.id} · Set the starting check number for each bank account and record the checks, then print now, print later or log a manual check.`
-                : `${run.id} · ${run.groups.length} payment${run.groups.length === 1 ? '' : 's'} · ${money(total)} · ${
+                : `${run.id} · ${run.groups.length} payment${run.groups.length === 1 ? '' : 's'} · ${totalText(netItems)} · ${
                     scheduledRun
                       ? `Posts as Scheduled for ${humanDate(run.paymentDate)}. Tick the vendors to record now, or record them all.`
                       : 'Posts as Paid. Tick the vendors to record now, or record them all.'
@@ -1810,15 +1817,27 @@ function PersonFields({ label, name, date, tone }: { label: string; name: string
 // ══════════════════════════════════════════════════════════════════
 function RunLinkedRecordsTab({
   run,
+  invoices,
   lines,
   runPayments,
   onViewPayment,
 }: {
   run: PaymentRun;
+  /** For each invoice line's rate hover (Currency & Exchange Rates). */
+  invoices: Invoice[];
   lines: ReturnType<typeof liveLines>;
   runPayments: Payment[];
   onViewPayment: (payment: Payment) => void;
 }) {
+  const invoiceById = useMemo(() => new Map(invoices.map((inv) => [inv.id, inv])), [invoices]);
+  // A line or payment in its currency with its base equivalent at its own
+  // rate (Currency & Exchange Rates).
+  const lineItem = (l: PaymentRunLine): CurrencyAmount => {
+    const inv = invoiceById.get(l.invoiceId);
+    const currency = lineCurrency(l);
+    return { currency, amount: l.payAmount, base: inv ? toInvoiceBase(inv, l.payAmount) : toBase(l.payAmount, paymentRateOn(currency, run.paymentDate)) };
+  };
+  const paymentItem = (p: Payment): CurrencyAmount => ({ currency: p.currency || BASE_CURRENCY, amount: p.amount, base: toPaymentBase(p, p.amount) });
   const [activeChip, setActiveChip] = useState<'all' | 'invoices' | 'payments'>('all');
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -1863,9 +1882,10 @@ function RunLinkedRecordsTab({
     tone: { bg: string; text: string; border: string },
     title: string,
     count: number,
-    total: number,
+    totals: CurrencyAmount[],
     table: React.ReactNode,
   ) => {
+    const total = totals.reduce((s, t) => s + Math.abs(t.amount), 0);
     const Icon = icon;
     const open = collapsed[key] !== true;
     return (
@@ -1891,8 +1911,8 @@ function RunLinkedRecordsTab({
             {count}
           </span>
           {total > 0 && (
-            <span className="ml-auto text-foreground text-[13px]" style={{ fontWeight: 600 }}>
-              {money(total)}
+            <span className="ml-auto">
+              <CurrencyTotals items={totals} basis="payment" max={1} amountClassName="text-foreground text-[13px]" amountStyle={{ fontWeight: 600 }} />
             </span>
           )}
           <ChevronDown
@@ -1999,7 +2019,7 @@ function RunLinkedRecordsTab({
           { bg: '#EFF6FF', text: '#1D4ED8', border: '#BFDBFE' },
           'Invoices',
           invoiceRows.length,
-          invoiceRows.reduce((s, l) => s + l.payAmount, 0),
+          invoiceRows.map(lineItem),
           <table className="w-full table-fixed text-[12px]">
             <thead>
               <tr className="border-b border-border bg-white">
@@ -2012,7 +2032,12 @@ function RunLinkedRecordsTab({
             </thead>
             <tbody>
               {invoiceRows.map((l) => {
-                const payment = runPayments.find((p) => p.vendor === l.vendor);
+                // The payment that settled this invoice: by its applied
+                // list, else the vendor's payment in the line's currency.
+                const payment =
+                  runPayments.find((p) => p.appliedInvoices.some((a) => a.invoiceNumber === l.invoiceNumber) || (p.perInvoiceSplit ?? []).some((x) => x.invoiceNumber === l.invoiceNumber)) ??
+                  runPayments.find((p) => p.vendor === l.vendor && (p.currency || BASE_CURRENCY).toUpperCase() === lineCurrency(l));
+                const inv = invoiceById.get(l.invoiceId);
                 return (
                   <tr
                     key={l.invoiceId}
@@ -2032,7 +2057,9 @@ function RunLinkedRecordsTab({
                     </td>
                     <td className="py-2.5 px-4 text-muted-foreground whitespace-nowrap hidden md:table-cell">{humanDate(l.dueDate)}</td>
                     <td className="py-2.5 px-4 text-right">
-                      <span className="text-foreground" style={{ fontWeight: 600 }}>{money(l.payAmount)}</span>
+                      <span className="text-foreground" style={{ fontWeight: 600 }}>
+                        <Money value={l.payAmount} currency={lineCurrency(l)} fx={inv ? invoiceFx(inv) : null} />
+                      </span>
                     </td>
                   </tr>
                 );
@@ -2051,7 +2078,7 @@ function RunLinkedRecordsTab({
             { bg: '#ECFDF5', text: '#047857', border: '#A7F3D0' },
             'Payments',
             paymentRows.length,
-            paymentRows.reduce((s, p) => s + p.amount, 0),
+            paymentRows.map(paymentItem),
             <table className="w-full table-fixed text-[12px]">
               <thead>
                 <tr className="border-b border-border bg-white">
@@ -2087,7 +2114,9 @@ function RunLinkedRecordsTab({
                     <td className="py-2.5 px-4">{paymentStatusPill(p.status)}</td>
                     <td className="py-2.5 px-4 text-muted-foreground whitespace-nowrap hidden md:table-cell">{humanDate(p.paymentDate)}</td>
                     <td className="py-2.5 px-4 text-right">
-                      <span className="text-foreground" style={{ fontWeight: 600 }}>{money(p.amount)}</span>
+                      <span className="text-foreground" style={{ fontWeight: 600 }}>
+                        <Money value={p.amount} currency={p.currency} fx={paymentFx(p)} role="payment currency" />
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -2133,16 +2162,23 @@ const PAY_COLS: { key: PayTableCol; label: string; alignRight?: boolean; sortabl
 
 interface PayRow {
   group: PaymentRun['groups'][number];
+  /** groupKeyOf: one payment per vendor and currency. */
+  key: string;
+  /** The payment's currency (Currency & Exchange Rates). */
+  currency: string;
   glines: ReturnType<typeof liveLines>;
   payment?: Payment;
   accountLabel: string;
   savedMethod?: VendorPaymentMethod;
   net: number;
+  /** Net in the base currency at the payment date's rate, for sorting. */
+  netBase: number;
   credit: number;
 }
 
 function RunPaymentsTable({
   run,
+  invoices,
   runPayments,
   executed,
   onViewPayment,
@@ -2151,6 +2187,8 @@ function RunPaymentsTable({
   onRemoveVendor,
 }: {
   run: PaymentRun;
+  /** For each invoice line's rate hover (Currency & Exchange Rates). */
+  invoices: Invoice[];
   runPayments: Payment[];
   executed: boolean;
   onViewPayment: (payment: Payment) => void;
@@ -2180,11 +2218,12 @@ function RunPaymentsTable({
   const [dragOverCol, setDragOverCol] = useState<PayTableCol | null>(null);
   const visibleCols = colOrder.filter((k) => (executed ? true : k !== 'status'));
 
-  const lines = liveLines(run);
+  const invoiceById = useMemo(() => new Map(invoices.map((inv) => [inv.id, inv])), [invoices]);
   const allRows = useMemo(
     () =>
       run.groups.map((g): PayRow => {
-        const glines = lines.filter((l) => l.vendor === g.vendor);
+        const glines = groupLines(run, g);
+        const currency = groupCurrency(g);
         // A vendor paid in part (user 10/21/26) has partial payments but
         // no paymentId yet: the row links its latest one and reads
         // Partially paid until the rest records.
@@ -2192,19 +2231,23 @@ function RunPaymentsTable({
         const payment =
           (g.paymentId && runPayments.find((p) => p.id === g.paymentId)) ||
           (latestPartial && runPayments.find((p) => p.id === latestPartial)) ||
-          (g.paymentId ? runPayments.find((p) => p.vendor === g.vendor) : undefined);
+          (g.paymentId ? runPayments.find((p) => p.vendor === g.vendor && (p.currency || BASE_CURRENCY).toUpperCase() === currency) : undefined);
         const account = PAY_FROM_ACCOUNTS.find((a) => a.id === g.payFromAccountId);
+        const net = groupNet(run, g);
         return {
           group: g,
+          key: groupKeyOf(g),
+          currency,
           glines,
           payment,
           accountLabel: account?.label ?? g.payFromAccountId,
           savedMethod: vendorPaymentMethods(g.vendor).find((m) => m.id === g.methodId),
-          net: groupNet(run, g),
+          net,
+          netBase: groupAmount(run, g, net).base,
           credit: groupCredit(g),
         };
       }),
-    [run, lines, runPayments],
+    [run, runPayments],
   );
 
   // Quick-filter options with live counts.
@@ -2243,7 +2286,8 @@ function RunPaymentsTable({
       method: (r) => r.group.methodType,
       status: (r) => r.payment?.status ?? '',
       payment: (r) => r.payment?.paymentNumber ?? '',
-      net: (r) => r.net,
+      // Compared in the base currency (Currency & Exchange Rates).
+      net: (r) => r.netBase,
     };
     const mul = sort.dir === 'asc' ? 1 : -1;
     const sortRows = (a: PayRow, b: PayRow) => {
@@ -2256,15 +2300,34 @@ function RunPaymentsTable({
       // Method sections (user 10/5): one accordion per payment method.
       // No balance context — that's an account fact.
       const methods = [...new Set(filtered.map((r) => r.group.methodType))].sort();
+      // A method section's payments can be in several currencies: they add
+      // up per currency, with the base total (Currency & Exchange Rates).
       return methods.map((m) => {
         const rows = filtered.filter((r) => r.group.methodType === m).sort(sortRows);
-        return { key: `m-${m}`, label: m, account: null as (typeof PAY_FROM_ACCOUNTS)[number] | null, rows, net: rows.reduce((s, r) => s + r.net, 0) };
+        return {
+          key: `m-${m}`,
+          label: m,
+          account: null as (typeof PAY_FROM_ACCOUNTS)[number] | null,
+          rows,
+          net: 0,
+          items: addByCurrency(rows.map((r) => groupAmount(run, r.group, r.net))),
+        };
       });
     }
+    // An account section adds up in the ACCOUNT's currency, so it compares
+    // with the balance; a payment in another currency converts at the
+    // payment date's rate.
     return accountTotals(run)
       .map((t) => {
         const rows = filtered.filter((r) => r.group.payFromAccountId === t.account.id).sort(sortRows);
-        return { key: t.account.id, label: t.account.label, account: t.account, rows, net: rows.reduce((s, r) => s + r.net, 0) };
+        return {
+          key: t.account.id,
+          label: t.account.label,
+          account: t.account,
+          rows,
+          net: Math.round(rows.reduce((s, r) => s + convertOn(r.net, r.currency, t.account.currency, run.paymentDate), 0) * 100) / 100,
+          items: addByCurrency(rows.map((r) => groupAmount(run, r.group, r.net))),
+        };
       })
       .filter((s) => s.rows.length > 0);
   }, [allRows, run, query, methodFilter, accountFilter, sort, sectionGroupMode]);
@@ -2434,9 +2497,12 @@ function RunPaymentsTable({
                 <span className="block text-[13px] text-foreground truncate" style={{ fontWeight: 500 }}>
                   {highlightText(r.group.vendor, query)}
                 </span>
-                <span className="block text-[10.5px] text-slate-400" style={{ fontWeight: 400 }}>
-                  {r.glines.length} invoice{r.glines.length === 1 ? '' : 's'}
-                  {r.credit > 0.004 && <span className="text-purple-600"> · vendor credit applied</span>}
+                {/* The payment's currency rides the count (Currency &
+                    Exchange Rates): a vendor paid in two reads apart. */}
+                <span className="flex items-center gap-1 text-[10.5px] text-slate-400" style={{ fontWeight: 400 }}>
+                  {r.glines.length} invoice{r.glines.length === 1 ? '' : 's'} ·
+                  <CurrencyChip code={r.currency} size={12} />
+                  {r.credit > 0.004 && <span className="text-purple-600">· vendor credit applied</span>}
                 </span>
               </span>
             </span>
@@ -2530,7 +2596,11 @@ function RunPaymentsTable({
       case 'net':
         return (
           <td key={key} className="px-4 py-2.5 text-right">
-            <span className="text-foreground" style={{ fontWeight: 500 }}>{money(r.net)}</span>
+            {/* A payment amount: hovers its base equivalent, at the posted
+                payment's rate once recorded. */}
+            <span className="text-foreground" style={{ fontWeight: 500 }}>
+              <Money value={r.net} currency={r.currency} fx={r.payment ? paymentFx(r.payment) : groupFx(run, r.group)} role="payment currency" />
+            </span>
           </td>
         );
     }
@@ -2613,7 +2683,7 @@ function RunPaymentsTable({
                   className="cursor-pointer"
                   onClick={() => {
                     setCollapsedAccounts(new Set());
-                    setExpanded(new Set(run.groups.map((g) => g.vendor)));
+                    setExpanded(new Set(run.groups.map(groupKeyOf)));
                   }}
                 >
                   <ChevronDown className="w-3.5 h-3.5 mr-2 text-current" />
@@ -2744,22 +2814,26 @@ function RunPaymentsTable({
                     account, and goes rose when the run would overdraw it.
                     Post-execution the money has moved, so it drops. */}
                 <span className="ml-auto flex flex-col items-end leading-none">
-                  <span
-                    className={`text-[13px] ${!executed && sec.account && sec.net > sec.account.balance ? 'text-rose-600' : 'text-foreground'}`}
-                    style={{ fontWeight: 500 }}
-                  >
-                    {money(sec.net)}
-                  </span>
+                  {sec.account ? (
+                    <span
+                      className={`text-[13px] ${!executed && sec.net > sec.account.balance ? 'text-rose-600' : 'text-foreground'}`}
+                      style={{ fontWeight: 500 }}
+                    >
+                      {formatMoney(sec.net, sec.account.currency)}
+                    </span>
+                  ) : (
+                    <CurrencyTotals items={sec.items} basis="payment" max={1} amountClassName="text-[13px] text-foreground" amountStyle={{ fontWeight: 500 }} />
+                  )}
                   {/* Balance context is an ACCOUNT fact — method sections
-                      carry just their net. */}
+                      carry just their net. In the account's currency. */}
                   {!executed && sec.account && (
                     <span
                       className={`text-[10px] mt-1 ${sec.net > sec.account.balance ? 'text-rose-500' : 'text-slate-400'}`}
                       style={{ fontWeight: 500 }}
                     >
                       {sec.net > sec.account.balance
-                        ? `${money(sec.account.balance)} in the account · short ${money(sec.net - sec.account.balance)}`
-                        : `${money(sec.account.balance)} in the account · ${money(sec.account.balance - sec.net)} left after`}
+                        ? `${formatMoney(sec.account.balance, sec.account.currency)} in the account · short ${formatMoney(sec.net - sec.account.balance, sec.account.currency)}`
+                        : `${formatMoney(sec.account.balance, sec.account.currency)} in the account · ${formatMoney(sec.account.balance - sec.net, sec.account.currency)} left after`}
                     </span>
                   )}
                 </span>
@@ -2785,13 +2859,13 @@ function RunPaymentsTable({
                     </thead>
                     <tbody>
                       {sec.rows.map((r) => {
-                        const isOpen = expanded.has(r.group.vendor);
+                        const isOpen = expanded.has(r.key);
                         const colCount = visibleCols.length + 1 + (executed || onRemoveVendor ? 1 : 0);
                         const lineStatus = r.payment ? (r.payment.status === 'Scheduled' ? 'Scheduled' : 'Paid') : 'In Run';
                         return (
-                          <React.Fragment key={r.group.vendor}>
+                          <React.Fragment key={r.key}>
                             <tr
-                              onClick={() => toggleRow(r.group.vendor)}
+                              onClick={() => toggleRow(r.key)}
                               className={`border-b border-border/60 transition-colors cursor-pointer ${isOpen ? 'bg-blue-50/40' : 'hover:bg-[#F8FAFF]'}`}
                             >
                               <td className="pl-3 pr-1 py-2.5">
@@ -2891,6 +2965,7 @@ function RunPaymentsTable({
                                       <tbody>
                                         {r.glines.map((l) => {
                                           const partial = l.payAmount < l.balanceAtAdd - 0.004;
+                                          const inv = invoiceById.get(l.invoiceId);
                                           return (
                                             <tr key={l.invoiceId} className="border-b border-border/40 last:border-b-0 hover:bg-[#F8FAFF] transition-colors">
                                               <td className="pl-12 pr-3 py-2">
@@ -2926,12 +3001,16 @@ function RunPaymentsTable({
                                                   )}
                                                 </td>
                                               )}
-                                              <td className="px-2.5 py-2 text-right text-slate-600">{money(l.balanceAtAdd)}</td>
+                                              {/* A document amount: in the invoice's currency,
+                                                  hovering its base equivalent at the invoice's rate. */}
+                                              <td className="px-2.5 py-2 text-right text-slate-600">
+                                                <Money value={l.balanceAtAdd} currency={r.currency} fx={inv ? invoiceFx(inv) : null} />
+                                              </td>
                                               <td className="px-2.5 py-2 text-right text-slate-700" style={{ fontWeight: 500 }}>
-                                                {money(l.payAmount)}
+                                                {formatMoney(l.payAmount, r.currency)}
                                                 {partial && (
                                                   <span className="block text-[10px] text-amber-700" style={{ fontWeight: 500 }}>
-                                                    Partial · of {money(l.balanceAtAdd)}
+                                                    Partial · of {formatMoney(l.balanceAtAdd, r.currency)}
                                                   </span>
                                                 )}
                                               </td>
@@ -2981,7 +3060,7 @@ function RunPaymentsTable({
                                         {r.credit > 0.004 && (
                                           <p className="flex items-center gap-1.5 text-[11.5px] text-purple-700" style={{ fontWeight: 400 }}>
                                             <Wallet className="w-3 h-3 shrink-0" />
-                                            Prepayment −{money(r.credit)}
+                                            Prepayment −{formatMoney(r.credit, r.currency)}
                                           </p>
                                         )}
                                         {r.group.note && <p className="text-[11.5px] text-slate-500">Memo: {r.group.note}</p>}
@@ -3008,17 +3087,19 @@ function RunPaymentsTable({
 }
 
 function RunDetailSidebar({
-  run, lines, totals, total, statusPalette, displayStatus,
+  run, lines, totals, netItems, statusPalette, displayStatus,
 }: {
   run: PaymentRun;
   lines: ReturnType<typeof liveLines>;
   totals: ReturnType<typeof accountTotals>;
-  total: number;
+  /** Cash out per currency with base equivalents (Currency & Exchange Rates). */
+  netItems: CurrencyAmount[];
   statusPalette: { bg: string; color: string; border: string };
   /** Terminal-aware status copy (Paid/Scheduled once recorded). */
   displayStatus: string;
 }) {
   const [open, setOpen] = useState(true);
+  const byCurrency = netItems.filter((c) => Math.abs(c.amount) >= 0.005);
 
   return (
     // Not sticky (9/2/26 review): pinning at a fixed offset under the
@@ -3029,9 +3110,25 @@ function RunDetailSidebar({
       {/* ── Run Summary — ONE accordion, the partner-information data
           pattern (8/5/26): label-above-value fields in a two-column
           grid, the By/On audit pairs pinned at the bottom. ── */}
-      <SidebarSection icon={Wallet} title="Run Summary" open={open} onToggle={() => setOpen((v) => !v)} collapsedSummary={money(total)}>
+      <SidebarSection icon={Wallet} title="Run Summary" open={open} onToggle={() => setOpen((v) => !v)} collapsedSummary={totalText(netItems)}>
+        {/* One currency reads in it (the base beside a foreign one); a mix
+            reads as its base total with each currency below (Currency &
+            Exchange Rates). */}
         <div>
-          <p className="text-[22px] text-foreground " style={{ fontWeight: 700, lineHeight: 1.1 }}>{money(total)}</p>
+          <CurrencyTotals
+            items={netItems}
+            basis="payment"
+            max={1}
+            layout="stack"
+            align="start"
+            amountClassName="text-[22px] text-foreground"
+            amountStyle={{ fontWeight: 700, lineHeight: 1.1 }}
+          />
+          {byCurrency.length > 1 && (
+            <p className="text-[11px] text-slate-500 mt-1" style={{ fontWeight: 500 }}>
+              {byCurrency.length <= 3 ? amountsText(byCurrency) : `Across ${byCurrency.length} currencies`}
+            </p>
+          )}
         </div>
         {/* Status rides the data grid (BA 8/12/26), not the hero: the
             pill under the big figure repeated the header. */}
@@ -3046,7 +3143,7 @@ function RunDetailSidebar({
             </span>
           </InfoField>
           <InfoField label="Payment Date">{humanDate(run.paymentDate)}</InfoField>
-          <InfoField label="Vendors">{run.groups.length}</InfoField>
+          <InfoField label="Vendors">{new Set(run.groups.map((g) => g.vendor)).size}</InfoField>
           <InfoField label="Invoices">{lines.length}</InfoField>
         </div>
         <div className="mt-3 pt-2.5 border-t border-muted space-y-0.5">
@@ -3059,7 +3156,8 @@ function RunDetailSidebar({
               className="flex items-center justify-between gap-2 -mx-1.5 px-1.5 py-1 rounded-md hover:bg-slate-50 transition-colors"
             >
               <span className="text-[12px] text-slate-700 truncate" style={{ fontWeight: 500 }}>{t.account.label}</span>
-              <span className="text-[12px] text-slate-700 shrink-0" style={{ fontWeight: 600 }}>{money(t.selected)}</span>
+              {/* In the account's currency (Currency & Exchange Rates). */}
+              <span className="text-[12px] text-slate-700 shrink-0" style={{ fontWeight: 600 }}>{formatMoney(t.selected, t.account.currency)}</span>
             </div>
           ))}
         </div>

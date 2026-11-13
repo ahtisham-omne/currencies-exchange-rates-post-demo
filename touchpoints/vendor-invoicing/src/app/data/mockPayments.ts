@@ -2,6 +2,12 @@ import { mulberry32 } from './seededRandom';
 import { mockInvoices } from './mockInvoices';
 import { paymentMethodsForVendor } from './mockVendors';
 import { formatPaymentId } from '@/app/lib/invoiceIds';
+import { resolveRegistryVendor } from './mockVendors';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { formatMoney } from '@/app/currency/money';
+import { currencyForVendorName } from '@/app/currency/invoiceFx';
+import { stampPaymentRate } from '@/app/currency/paymentFx';
+import type { RateType } from '@/app/currency/rates';
 
 // Seeded so the listing renders the same 100 payments on every reload —
 // mirrors mockInvoices' approach. Bump the seed if a future schema change
@@ -123,7 +129,19 @@ export interface Payment {
   /** Prepayment-only: when linked to a pre-invoice, suggest this advance on the
    *  payment once that pre-invoice converts to a real invoice. Defaults to true. */
   autoApply?: boolean;
+  /** The payment currency: the cash goes out in it (Currency & Exchange
+   *  Rates). The vendor's currency, or the base currency. */
   currency: string;
+  /** The currency of the invoices it settles, when the payment goes out in
+   *  another one (the base currency). Absent: the same as `currency`. */
+  settledCurrency?: string;
+  /** Base per one unit of the settled currency on the payment date: the rate
+   *  the payment settles at, compared with each invoice's own rate. */
+  exchangeRate?: number;
+  rateType?: RateType;
+  rateDate?: string;
+  /** The rate was entered on the payment (the bank's), not the rate table's. */
+  rateEdited?: boolean;
   /** Check number / ACH trace number / wire confirmation. */
   reference: string;
   memo: string;
@@ -251,11 +269,21 @@ export interface PayFromAccount {
    *  AVAILABLE credit, so pickers show "Available $X of $Y" instead of a
    *  meaningless book balance (design review 7/9/26). */
   creditLimit?: number;
+  /** The account's currency (Currency & Exchange Rates); its balance is in it. */
+  currency: string;
+}
+
+/** Accounts a payment in this currency can draw from: in that currency, or
+ *  in the base currency (the bank converts). */
+export function accountsForCurrency<T extends Pick<PayFromAccount, 'currency'>>(accounts: T[], currency: string): T[] {
+  return accounts.filter((a) => a.currency === currency || isBaseCurrency(a.currency));
 }
 
 /** Per-type balance line for account pickers: card accounts show available
  *  credit against the limit, bank and cash accounts their actual balance. */
-export function accountBalanceLabel(acct: PayFromAccount, fmtMoney: (n: number) => string): string {
+export function accountBalanceLabel(acct: PayFromAccount, _fmtMoney?: (n: number) => string): string {
+  // In the account's own currency (Currency & Exchange Rates), whatever the caller formats in.
+  const fmtMoney = (n: number) => formatMoney(n, acct.currency);
   if (acct.type === 'card' && acct.creditLimit) {
     return `Available ${fmtMoney(acct.balance)} of ${fmtMoney(acct.creditLimit)}`;
   }
@@ -264,20 +292,31 @@ export function accountBalanceLabel(acct: PayFromAccount, fmtMoney: (n: number) 
 // Linked-bank / account-number / type fields mirror the Cash Management banking
 // page, so the Pay-from picker shows the same account identity the treasury team
 // sees there. `creditGl` is the GL account credited (debit is always A/P).
+// Balances are in each account's currency: the base-currency (PKR) accounts are
+// sized in PKR, so a foreign payment converted to base doesn't overdraw them.
 export const PAY_FROM_ACCOUNTS: PayFromAccount[] = [
-  { id: '1010-Operating', label: '1010 · JPMorgan Operating', balance: 1_240_000, type: 'bank', creditGl: '1010 Operating Bank', bankName: 'JPMorgan Chase', accountMask: '4321', accountTypeLabel: 'Checking' },
-  { id: '1020-Payroll', label: '1020 · Corporate Checking', balance: 380_000, type: 'bank', creditGl: '1020 Corporate Checking', bankName: 'Bank of America', accountMask: '8842', accountTypeLabel: 'Checking' },
-  { id: '1030-AP Disbursements', label: '1030 · AP Disbursements', balance: 615_000, type: 'bank', creditGl: '1030 AP Disbursements', bankName: 'U.S. Bank', accountMask: '2025', accountTypeLabel: 'Checking' },
-  { id: '1040-FX Settlement', label: '1040 · Global FX Settlement', balance: 92_000, type: 'bank', creditGl: '1040 FX Settlement', bankName: 'Wells Fargo', accountMask: '7741', accountTypeLabel: 'Money Market' },
+  { id: '1010-Operating', label: '1010 · JPMorgan Operating', balance: 347_200_000, type: 'bank', creditGl: '1010 Operating Bank', bankName: 'JPMorgan Chase', accountMask: '4321', accountTypeLabel: 'Checking', currency: BASE_CURRENCY },
+  { id: '1020-Payroll', label: '1020 · Corporate Checking', balance: 106_400_000, type: 'bank', creditGl: '1020 Corporate Checking', bankName: 'Bank of America', accountMask: '8842', accountTypeLabel: 'Checking', currency: BASE_CURRENCY },
+  { id: '1030-AP Disbursements', label: '1030 · AP Disbursements', balance: 172_200_000, type: 'bank', creditGl: '1030 AP Disbursements', bankName: 'U.S. Bank', accountMask: '2025', accountTypeLabel: 'Checking', currency: BASE_CURRENCY },
+  { id: '1040-FX Settlement', label: '1040 · Global FX Settlement', balance: 92_000, type: 'bank', creditGl: '1040 FX Settlement', bankName: 'Wells Fargo', accountMask: '7741', accountTypeLabel: 'Money Market', currency: 'USD' },
   // Bank-named disbursement accounts so the Pay-from default snaps to the
   // vendor's primary payment-method bank (e.g. a PNC Bank ACH method →
   // "1200 PNC Bank"). Bank names match vendorPaymentMethods' BANKS list.
-  { id: '1200-PNC Bank', label: '1200 · PNC Disbursements', balance: 540_000, type: 'bank', creditGl: '1200 PNC Bank', bankName: 'PNC Bank', accountMask: '3318', accountTypeLabel: 'Checking' },
-  { id: '1210-Citibank', label: '1210 · Citibank Operating', balance: 470_000, type: 'bank', creditGl: '1210 Citibank', bankName: 'Citibank', accountMask: '6620', accountTypeLabel: 'Checking' },
-  { id: '1220-Chase Bank', label: '1220 · Chase Disbursements', balance: 880_000, type: 'bank', creditGl: '1220 Chase Bank', bankName: 'Chase Bank', accountMask: '1174', accountTypeLabel: 'Checking' },
-  { id: '2100-Card Payable', label: '2100 · Amex Card Payable', balance: 36_000, creditLimit: 50_000, type: 'card', creditGl: '2100 Card Payable', bankName: 'American Express', accountMask: '1009', accountTypeLabel: 'Credit Card' },
-  { id: '1000-Petty Cash', label: '1000 · Petty Cash Drawer', balance: 3_500, type: 'cash', creditGl: '1000 Cash on Hand', accountTypeLabel: 'Cash on Hand' },
+  { id: '1200-PNC Bank', label: '1200 · PNC Disbursements', balance: 151_200_000, type: 'bank', creditGl: '1200 PNC Bank', bankName: 'PNC Bank', accountMask: '3318', accountTypeLabel: 'Checking', currency: BASE_CURRENCY },
+  { id: '1210-Citibank', label: '1210 · Citibank Operating', balance: 131_600_000, type: 'bank', creditGl: '1210 Citibank', bankName: 'Citibank', accountMask: '6620', accountTypeLabel: 'Checking', currency: BASE_CURRENCY },
+  { id: '1220-Chase Bank', label: '1220 · Chase Disbursements', balance: 246_400_000, type: 'bank', creditGl: '1220 Chase Bank', bankName: 'Chase Bank', accountMask: '1174', accountTypeLabel: 'Checking', currency: BASE_CURRENCY },
+  { id: '2100-Card Payable', label: '2100 · Amex Card Payable', balance: 10_080_000, creditLimit: 14_000_000, type: 'card', creditGl: '2100 Card Payable', bankName: 'American Express', accountMask: '1009', accountTypeLabel: 'Credit Card', currency: BASE_CURRENCY },
+  { id: '1000-Petty Cash', label: '1000 · Petty Cash Drawer', balance: 980_000, type: 'cash', creditGl: '1000 Cash on Hand', accountTypeLabel: 'Cash on Hand', currency: BASE_CURRENCY },
+  // Foreign-currency settlement accounts (Currency & Exchange Rates): a
+  // payment in the vendor's currency can draw from one in that currency.
+  { id: '1050-EUR Settlement', label: '1050 · EUR Settlement', balance: 210_000, type: 'bank', creditGl: '1050 EUR Settlement', bankName: 'Deutsche Bank', accountMask: '5512', accountTypeLabel: 'Checking', currency: 'EUR' },
+  { id: '1060-GBP Settlement', label: '1060 · GBP Settlement', balance: 145_000, type: 'bank', creditGl: '1060 GBP Settlement', bankName: 'Barclays', accountMask: '9034', accountTypeLabel: 'Checking', currency: 'GBP' },
+  { id: '1070-AED Settlement', label: '1070 · AED Settlement', balance: 680_000, type: 'bank', creditGl: '1070 AED Settlement', bankName: 'Emirates NBD', accountMask: '3307', accountTypeLabel: 'Checking', currency: 'AED' },
 ];
+
+/** The settlement accounts added for foreign currencies; the seed generator
+ *  keeps to the accounts it always drew from, so no seed sequence changes. */
+const FX_SETTLEMENT_IDS = new Set(['1050-EUR Settlement', '1060-GBP Settlement', '1070-AED Settlement']);
 // Bank-only subset kept for the data generator + any bank-specific consumers.
 export const BANK_ACCOUNTS = PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank');
 
@@ -358,8 +397,8 @@ function generatePayments(count: number): Payment[] {
     const method = methods[Math.floor(rand() * methods.length)];
     // Pick a pay-from account whose type matches the method (Card → Card
     // Payable, Cash → Petty Cash, bank methods → a bank account).
-    const acctPool = PAY_FROM_ACCOUNTS.filter((a) => a.type === accountTypeForMethod(method));
-    const payFromPool = acctPool.length ? acctPool : BANK_ACCOUNTS;
+    const acctPool = PAY_FROM_ACCOUNTS.filter((a) => a.type === accountTypeForMethod(method) && !FX_SETTLEMENT_IDS.has(a.id));
+    const payFromPool = acctPool.length ? acctPool : BANK_ACCOUNTS.filter((a) => !FX_SETTLEMENT_IDS.has(a.id));
     const bankAccount = payFromPool[Math.floor(rand() * payFromPool.length)].id;
     // rand() is drawn either way so the seeded stream stays identical
     // whether or not the row is pinned.
@@ -532,6 +571,8 @@ function seedFirstVendorPrepayments(payments: Payment[]): Payment[] {
   });
   const first = Object.entries(due).sort((a, b) => b[1] - a[1])[0]?.[0];
   if (!first) return payments;
+  // In the vendor's own currency (Currency & Exchange Rates), like its invoices.
+  const firstCurrency = mockInvoices.find((inv) => inv.vendor === first)?.currency ?? BASE_CURRENCY;
 
   const now = new Date();
   const ago = (n: number) => {
@@ -544,8 +585,10 @@ function seedFirstVendorPrepayments(payments: Payment[]): Payment[] {
     paymentNumber: formatPaymentId(101 + n),
     type: 'Prepayment',
     vendor: first,
-    paymentDate: ago(18 + n * 7),
-    createdDate: ago(18 + n * 7),
+    // Recorded months back, so each carries a rate of its own day (the
+    // vendor credit banner shows the rate each advance was paid at).
+    paymentDate: ago(240 + n * 21),
+    createdDate: ago(240 + n * 21),
     paymentMethod: 'Wire',
     bankAccount: '1010-Operating',
     apAccount: '1300-Vendor Prepayments',
@@ -553,7 +596,8 @@ function seedFirstVendorPrepayments(payments: Payment[]): Payment[] {
     appliedInvoices: [],
     appliedAmount: 0,
     unappliedAmount: amount,
-    currency: 'USD',
+    currency: firstCurrency,
+    ...stampPaymentRate(firstCurrency, ago(240 + n * 21)),
     reference: `WIRE-${String(760000 + n * 137)}`,
     memo: 'On-account advance, available to apply',
     status: 'Unapplied',
@@ -592,6 +636,21 @@ function seedFirstVendorPrepayments(payments: Payment[]): Payment[] {
   return [...onAccount, ...anchored, ...payments];
 }
 
-export const mockPayments = seedFirstVendorPrepayments(
+/* Currency & Exchange Rates: each payment goes out in its vendor's currency,
+ * from an account in that currency or the base currency, with the rate on
+ * its payment date. Applied last, so no seed sequence changes. */
+export function vendorPaymentCurrency(vendor: string): string {
+  return resolveRegistryVendor(vendor)?.currency ?? currencyForVendorName(vendor);
+}
+function withPaymentCurrency(list: Payment[]): Payment[] {
+  return list.map((p) => {
+    const currency = p.currency && p.currency !== 'USD' ? p.currency : vendorPaymentCurrency(p.vendor);
+    const account = PAY_FROM_ACCOUNTS.find((a) => a.id === p.bankAccount);
+    const bankAccount = account && (account.currency === currency || isBaseCurrency(account.currency)) ? p.bankAccount : '1010-Operating';
+    return { ...p, currency, bankAccount, ...(p.exchangeRate ? {} : stampPaymentRate(currency, p.paymentDate)) };
+  });
+}
+
+export const mockPayments = withPaymentCurrency(seedFirstVendorPrepayments(
   anchorPrepaymentsToPreInvoices(generatePayments(100)),
-);
+));

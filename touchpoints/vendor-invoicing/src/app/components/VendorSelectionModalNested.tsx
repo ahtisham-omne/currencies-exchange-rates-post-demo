@@ -35,10 +35,9 @@ import { Calendar as CalendarPicker } from '@/app/components/ui/calendar';
 import type { DateRange } from 'react-day-picker';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import { CollapseReveal } from '@/app/components/ui/collapse-reveal';
-import { Money } from '@/app/components/currency/Money';
+import { MoneyOnDates } from '@/app/components/currency/MoneyOnDates';
 import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { formatMoney } from '@/app/currency/money';
-import { poRateFx } from '@/app/currency/invoiceFx';
 
 // Material UI Imports
 import dayjs from 'dayjs';
@@ -3717,7 +3716,14 @@ function VendorNestedRow({
                               </div>
                             )}
                             <span className={`text-[14px] font-semibold ${isPOLocked ? 'text-slate-400' : 'text-green-600'}`}>
-                              <Money value={po.poAmount} currency={po.currency ?? vendor.currency} fx={poRateFx(po)} role="PO currency" dateLabel="PO date" />
+                              {/* The PO date, its latest receiving and today (Currency & Exchange Rates). */}
+                              <MoneyOnDates
+                                value={po.poAmount}
+                                currency={po.currency ?? vendor.currency}
+                                poDate={po.poDate}
+                                receivingDate={vendor.receivingDocuments.filter((g) => g.poNumber === po.poNumber).map((g) => g.grnDate).sort().pop()}
+                                role="PO currency"
+                              />
                             </span>
                           </div>
                           <span className="text-[8px] text-gray-400 font-bold">PO Value</span>
@@ -4203,7 +4209,7 @@ function VendorNestedRow({
                               numbers too (BA 9/7) — grey read odd inside
                               the emerald card. */}
                           <div className={`text-[14px] font-bold ${isGRNFullyInvoiced ? 'text-emerald-700' : 'text-slate-400'}`}>
-                            {formatMoney(grnTotalAmt, vendor.currency)}
+                            <MoneyOnDates value={grnTotalAmt} currency={po.currency ?? vendor.currency} poDate={po.poDate} receivingDate={grn.grnDate} />
                           </div>
                           <span className={`text-[8px] font-bold ${isGRNFullyInvoiced ? 'text-emerald-600/70' : 'text-gray-400'}`}>Receiving Value</span>
                         </div>
@@ -4304,7 +4310,8 @@ function VendorNestedRow({
 
                         <div className="flex flex-col items-end gap-0.5 px-2">
                           <div className="text-[14px] font-bold text-gray-900">
-                            {formatMoney(grnTotalAmt, vendor.currency)}
+                            {/* The PO date, the receiving date and today (Currency & Exchange Rates). */}
+                            <MoneyOnDates value={grnTotalAmt} currency={po.currency ?? vendor.currency} poDate={po.poDate} receivingDate={grn.grnDate} />
                           </div>
                           <span className="text-[8px] text-gray-400 font-bold">Receiving Value</span>
                         </div>

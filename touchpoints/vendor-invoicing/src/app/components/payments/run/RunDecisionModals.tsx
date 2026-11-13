@@ -1,8 +1,8 @@
 import { CheckCircle2, PencilLine, RotateCcw } from 'lucide-react';
 import type { PaymentRun } from '@/app/data/paymentRuns';
 import { liveLines } from '@/app/data/paymentRuns';
-import { groupNet } from '@/app/lib/runMath';
-import { money } from './runUi';
+import { runNetByCurrency } from '@/app/lib/runMath';
+import { totalText } from './runMoney';
 
 /* ── Approve run confirmation (8/4/26) ───────────────────────────────
  * The one lifecycle decision with no reason to collect: a gradient-hero
@@ -24,7 +24,10 @@ export function ApproveRunModal({
 }) {
   if (!open) return null;
   const lines = liveLines(run);
-  const total = run.groups.reduce((s, g) => s + groupNet(run, g), 0);
+  // One figure: the amount when the run pays in one currency, else the
+  // base total (Currency & Exchange Rates).
+  const total = totalText(runNetByCurrency(run));
+  const vendorCount = new Set(run.groups.map((g) => g.vendor)).size;
   return (
     <div
       className="fixed inset-0 z-[180] flex items-center justify-center bg-black/70 p-4 animate-in fade-in duration-150"
@@ -55,7 +58,7 @@ export function ApproveRunModal({
           </h3>
           {/* User copy 9/23. */}
           <p className="text-[13px] mt-2 mx-auto" style={{ color: 'hsl(var(--muted-foreground))', lineHeight: 1.65, maxWidth: '320px' }}>
-            Once approved, <span className="text-foreground" style={{ fontWeight: 600 }}>{money(total)}</span> to {run.groups.length} vendor{run.groups.length === 1 ? '' : 's'} will be ready to pay. Nothing posts until payments are recorded.
+            Once approved, <span className="text-foreground" style={{ fontWeight: 600 }}>{total}</span> to {vendorCount} vendor{vendorCount === 1 ? '' : 's'} will be ready to pay. Nothing posts until payments are recorded.
           </p>
           {/* Separation-of-duties note removed (user 9/25): the confirm
               keeps just the outcome sentence. */}

@@ -2,11 +2,14 @@ import { mockInvoices, type Invoice } from './mockInvoices';
 import {
   PAY_FROM_ACCOUNTS,
   accountTypeForMethod,
+  accountsForCurrency,
+  vendorPaymentCurrency,
   type Payment,
 } from './mockPayments';
 import { vendorPaymentMethods, type VendorPaymentMethod } from './vendorPaymentMethods';
 import { memoLimitFor } from '@/app/lib/memoLimits';
 import { formatPaymentId, formatRunId, nextRunNumber } from '@/app/lib/invoiceIds';
+import { stampPaymentRate } from '@/app/currency/paymentFx';
 
 /* ── Payment runs (payment-run-flow.md, 7/29/26) ─────────────────────────
  *
@@ -47,6 +50,11 @@ export interface PaymentRunLine {
   /** Denormalized for display + payment records (survives invoice edits). */
   invoiceNumber: string;
   vendor: string;
+  /** The invoice's currency (Currency & Exchange Rates), denormalized like
+   *  invoiceNumber. Every amount on the line is in it, and it decides
+   *  which payment the line joins: one payment can't mix currencies.
+   *  Optional so lines predating it read the vendor's currency. */
+  currency?: string;
   dueDate: string;
   /** Snapshot of the outstanding balance when the line was ticked. */
   balanceAtAdd: number;
@@ -121,6 +129,12 @@ export interface RunCreditDraw {
 
 export interface RunVendorGroup {
   vendor: string;
+  /** The payment's currency (Currency & Exchange Rates): every line in the
+   *  group is in it. A run pays one payment per vendor AND currency, so a
+   *  vendor with open invoices in two currencies gets two groups. The
+   *  payment goes out in it even from a base-currency account. Optional so
+   *  groups predating it read the vendor's currency. */
+  currency?: string;
   /** Saved-method instance id (vendorPaymentMethods). */
   methodId: string;
   /** Method type: Check / ACH / Wire / Bank Transfer / Card / Cash. */
@@ -219,10 +233,14 @@ export interface RunFilters {
   /** Overdue windows (Current, 1-30 days, ...), relabeled in
    *  overdue-days language on the filter (8/5/26). */
   agingBuckets?: string[];
+  /** Amount due range, in the base currency (Currency & Exchange Rates):
+   *  each invoice is compared at its own rate. */
   amountMin?: number;
   amountMax?: number;
   /** Vendor is an OPTIONAL filter, never the starting point. */
   vendors?: string[];
+  /** Invoice currencies (Currency & Exchange Rates). */
+  currencies?: string[];
   /** Payment terms, the partner template names (8/12/26). */
   paymentTerms?: string[];
   /** Invoice type families (8/12/26): Receiving Invoice, Pre-Invoice,
@@ -317,6 +335,31 @@ export function liveLines(run: PaymentRun): PaymentRunLine[] {
   return run.lines.filter((l) => !l.removed);
 }
 
+/* ── One payment per vendor and currency (Currency & Exchange Rates) ──
+ * A payment can't mix currencies, so a run's payment is keyed by vendor
+ * AND currency: a vendor with open invoices in two currencies is paid
+ * twice. The key is what the run surfaces select, expand and record by;
+ * the vendor name stays the display and the lookup for methods,
+ * defaults and credit. */
+
+/** A line's currency: its invoice's, else the vendor's (older lines). */
+export const lineCurrency = (line: Pick<PaymentRunLine, 'currency' | 'vendor'>): string =>
+  (line.currency || vendorPaymentCurrency(line.vendor)).toUpperCase();
+
+/** A payment group's currency: its own, else the vendor's (older groups). */
+export const groupCurrency = (group: Pick<RunVendorGroup, 'currency' | 'vendor'>): string =>
+  (group.currency || vendorPaymentCurrency(group.vendor)).toUpperCase();
+
+/** The identity of one payment on a run. */
+export const runGroupKey = (vendor: string, currency: string): string => `${vendor}::${currency.toUpperCase()}`;
+
+export const groupKeyOf = (group: Pick<RunVendorGroup, 'currency' | 'vendor'>): string =>
+  runGroupKey(group.vendor, groupCurrency(group));
+
+/** The payment a line belongs to. */
+export const lineGroupKey = (line: Pick<PaymentRunLine, 'currency' | 'vendor'>): string =>
+  runGroupKey(line.vendor, lineCurrency(line));
+
 /** invoiceId → runId for every invoice locked by an open run. */
 export function openRunInvoiceIds(runs: PaymentRun[], excludeRunId?: string): Map<string, string> {
   const map = new Map<string, string>();
@@ -366,23 +409,28 @@ const FALLBACK_ACCOUNT =
 /** The account a saved method draws from: the Cash Management account
  *  linked to the method's bank when one exists (the snap-to-bank
  *  convention from the single-payment flow), else the first account of
- *  the method's type, else the operating account. */
-export function accountForMethod(method: VendorPaymentMethod | null): string {
-  if (!method) return FALLBACK_ACCOUNT;
+ *  the method's type, else the operating account. With a payment
+ *  currency (Currency & Exchange Rates), only accounts in that currency
+ *  or the base currency qualify. */
+export function accountForMethod(method: VendorPaymentMethod | null, currency?: string): string {
+  const pool = currency ? accountsForCurrency(PAY_FROM_ACCOUNTS, currency) : PAY_FROM_ACCOUNTS;
+  const fallback = pool.find((a) => a.type === 'bank')?.id ?? FALLBACK_ACCOUNT;
+  if (!method) return fallback;
   const wantType = accountTypeForMethod(method.type);
   const byBank = method.bankName
-    ? PAY_FROM_ACCOUNTS.find((a) => a.type === wantType && a.bankName === method.bankName)
+    ? pool.find((a) => a.type === wantType && a.bankName === method.bankName)
     : undefined;
   if (byBank) return byBank.id;
-  const byType = PAY_FROM_ACCOUNTS.find((a) => (wantType === 'any' ? a.type === 'bank' : a.type === wantType));
-  return byType?.id ?? FALLBACK_ACCOUNT;
+  const byType = pool.find((a) => (wantType === 'any' ? a.type === 'bank' : a.type === wantType));
+  return byType?.id ?? fallback;
 }
 
-/** Each vendor carries its own method and pay-from account into a run. */
-export function vendorPayDefaults(vendor: string): VendorPayDefaults {
+/** Each vendor carries its own method and pay-from account into a run;
+ *  the account fits the payment's currency when one is given. */
+export function vendorPayDefaults(vendor: string, currency?: string): VendorPayDefaults {
   const methods = vendorPaymentMethods(vendor);
   const primary = methods.find((m) => m.isPrimary) ?? methods[0] ?? null;
-  return { method: primary, payFromAccountId: accountForMethod(primary) };
+  return { method: primary, payFromAccountId: accountForMethod(primary, currency) };
 }
 
 /* ── Seeded example runs ────────────────────────────────────────────────
@@ -422,6 +470,7 @@ function toLine(inv: Invoice): PaymentRunLine {
     invoiceId: inv.id,
     invoiceNumber: inv.invoiceNumber,
     vendor: inv.vendor,
+    currency: inv.currency,
     dueDate: inv.dueDate,
     balanceAtAdd: inv.outstandingBalance,
     payAmount: inv.outstandingBalance,
@@ -430,12 +479,19 @@ function toLine(inv: Invoice): PaymentRunLine {
   };
 }
 
+/** One group per vendor and currency, in line order (the runMath
+ *  deriveGroups rule, for the seeds). */
 function groupsFor(lines: PaymentRunLine[]): RunVendorGroup[] {
-  const vendors = [...new Set(lines.map((l) => l.vendor))];
-  return vendors.map((vendor) => {
-    const d = vendorPayDefaults(vendor);
+  const firstOfKey = new Map<string, PaymentRunLine>();
+  lines.forEach((l) => {
+    if (!firstOfKey.has(lineGroupKey(l))) firstOfKey.set(lineGroupKey(l), l);
+  });
+  return [...firstOfKey.values()].map((l) => {
+    const currency = lineCurrency(l);
+    const d = vendorPayDefaults(l.vendor, currency);
     return {
-      vendor,
+      vendor: l.vendor,
+      currency,
       methodId: d.method?.id ?? '',
       methodType: d.method?.type ?? 'Check',
       payFromAccountId: d.payFromAccountId,
@@ -472,6 +528,7 @@ function buildSeeds(): { runs: PaymentRun[]; payments: Payment[] } {
     invoiceId: inv.id,
     invoiceNumber: inv.invoiceNumber,
     vendor: inv.vendor,
+    currency: inv.currency,
     dueDate: inv.dueDate,
     balanceAtAdd: inv.amount,
     payAmount: inv.amount,
@@ -486,9 +543,14 @@ function buildSeeds(): { runs: PaymentRun[]; payments: Payment[] } {
     completedGroups[0].payFromAccountId = '1020-Payroll';
   }
   const completedId = formatRunId(1);
+  const completedVendorCount = new Set(completedGroups.map((g) => g.vendor)).size;
   const completedPayments: Payment[] = completedGroups.map((g, i) => {
-    const glines = completedLines.filter((l) => l.vendor === g.vendor);
+    const glines = completedLines.filter((l) => lineGroupKey(l) === groupKeyOf(g));
     const amount = glines.reduce((s, l) => s + l.payAmount, 0);
+    // In the group's currency with the rate on its payment date (Currency
+    // & Exchange Rates), like every payment a run records.
+    const currency = groupCurrency(g);
+    const paymentDate = daysFromNow(-22);
     const isCheck = g.methodType === 'Check';
     const reference = isCheck
       ? `CHK-${44900 + i}`
@@ -503,8 +565,8 @@ function buildSeeds(): { runs: PaymentRun[]; payments: Payment[] } {
       paymentNumber: formatPaymentId(201 + i),
       type: 'Payment',
       vendor: g.vendor,
-      paymentDate: daysFromNow(-22),
-      createdDate: daysFromNow(-22),
+      paymentDate,
+      createdDate: paymentDate,
       paymentMethod: g.methodType,
       bankAccount: g.payFromAccountId,
       apAccount: '2000-Accounts Payable',
@@ -512,13 +574,14 @@ function buildSeeds(): { runs: PaymentRun[]; payments: Payment[] } {
       appliedInvoices: glines.map((l) => ({ invoiceNumber: l.invoiceNumber, amount: l.payAmount })),
       appliedAmount: amount,
       unappliedAmount: 0,
-      currency: 'USD',
+      currency,
+      ...stampPaymentRate(currency, paymentDate),
       reference,
       memo: `Payment run ${completedId}`,
       printMemo: `${completedId} · ${glines.map((l) => l.invoiceNumber).join(', ')}`.slice(0, memoLimitFor(g.methodType)),
       status: 'Paid',
       runId: completedId,
-      runLabel: `${completedId} · ${completedGroups.length} vendors`,
+      runLabel: `${completedId} · ${completedVendorCount} vendors`,
       runApprovedBy: APPROVER,
       wasScheduled: false,
       createdBy: BY,

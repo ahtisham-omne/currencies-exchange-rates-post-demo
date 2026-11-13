@@ -3,6 +3,7 @@ import { Wallet } from 'lucide-react';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/app/components/ui/hover-card';
 import type { Invoice } from '@/app/data/mockInvoices';
 import { formatMoney } from '@/app/currency/money';
+import { paidRateText } from '@/app/currency/paidRate';
 
 /* ── Prepaid origin note (9/2/26) ────────────────────────────────────
  * Reconciliation was visible at creation and on the invoice detail, but
@@ -70,9 +71,15 @@ export function PrepaidOriginNote({
                 <span className="text-slate-700 " style={{ fontWeight: 500 }}>{fmt(original)}</span>
               </div>
               {entries.map((p) => (
-                <div key={p.invoiceNumber} className="flex items-center justify-between gap-2 text-[11.5px]">
-                  <span className="text-violet-700 truncate " style={{ fontWeight: 500 }}>Prepaid · {p.invoiceNumber}</span>
-                  <span className="text-violet-700 shrink-0" style={{ fontWeight: 600 }}>−{fmt(p.amount)}</span>
+                <div key={p.invoiceNumber}>
+                  <div className="flex items-center justify-between gap-2 text-[11.5px]">
+                    <span className="text-violet-700 truncate " style={{ fontWeight: 500 }}>Prepaid · {p.invoiceNumber}</span>
+                    <span className="text-violet-700 shrink-0" style={{ fontWeight: 600 }}>−{fmt(p.amount)}</span>
+                  </div>
+                  {/* The rate the prepayment was paid at (Currency & Exchange Rates). */}
+                  {paidRateText(invoice.currency, p) && (
+                    <p className="text-[10.5px] text-violet-500/80 mt-0.5">{paidRateText(invoice.currency, p)}</p>
+                  )}
                 </div>
               ))}
               <div className="flex items-center justify-between gap-2 text-[11.5px] pt-1.5 mt-0.5 border-t border-slate-200/70">
