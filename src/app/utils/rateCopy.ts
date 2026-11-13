@@ -45,6 +45,10 @@ export const INVERSE_BADGE_TOOLTIP =
 export const CONVERTER_SUBTITLE =
   "Convert amounts between this currency and other currencies, at the mid-market or corporate rate.";
 
+// The Mid-Market Rate field on the currency and rate detail pages.
+export const MID_MARKET_DETAIL_TOOLTIP =
+  "Midpoint of global buy and sell rates. Updated from your rate provider at each sync.";
+
 // The converter's rate toggles say what the listing's columns say.
 export const CONVERTER_TOGGLE_TOOLTIPS = {
   midMarket: `${RATE_TOOLTIPS.midMarket} Synced automatically.`,

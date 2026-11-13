@@ -25,7 +25,7 @@ import type { RangeValue } from '../coa/components/PeriodBar'
 import { PeriodRangePicker } from '../coa/components/DateField'
 import { recordKey } from '../coa/lib/recordStore'
 import { cn, fmtDate, fmtDateTime, fmtNumber, todayIso } from '../coa/lib/utils'
-import { CONVERTER_TOGGLE_TOOLTIPS, NOTES_TOOLTIP, RATE_TOOLTIPS } from '../utils/rateCopy'
+import { MID_MARKET_DETAIL_TOOLTIP, NOTES_TOOLTIP, RATE_TOOLTIPS } from '../utils/rateCopy'
 import { auditTooltips } from './auditColumns'
 import {
   BASE, BASE_NAME, LAST_SYNC_AT, LAST_SYNC_DAY, daysSince, decimalsOf, fmtInverse, fmtRate, fmtSignedPct,
@@ -280,7 +280,7 @@ export function CurrencyPairDetailPage() {
           <div className="min-w-0"><DashInfoLabel>Currency Pair</DashInfoLabel><InfoValue strong>{code} / {BASE}</InfoValue></div>
           <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.rateType}>Rate Type</DashInfoLabel><InfoValue>{isStd ? 'Corporate Rate' : 'Mid-Market Rate'}</InfoValue></div>
           <div className="min-w-0">
-            <DashInfoLabel tooltip={isStd ? RATE_TOOLTIPS.corporate : CONVERTER_TOGGLE_TOOLTIPS.midMarket}>{archived ? 'Rate (Archived)' : 'Rate'}</DashInfoLabel>
+            <DashInfoLabel tooltip={isStd ? RATE_TOOLTIPS.corporate : MID_MARKET_DETAIL_TOOLTIP}>{archived ? 'Rate (Archived)' : 'Rate'}</DashInfoLabel>
             {shownRate != null ? <InfoValue strong className="tabular-nums">{fmtRate(shownRate)} {BASE}</InfoValue> : <InfoValue empty>{upcoming ? 'None in effect yet' : 'Not Set'}</InfoValue>}
           </div>
           <div className="min-w-0">
@@ -291,7 +291,7 @@ export function CurrencyPairDetailPage() {
             // A corporate rate has no Source field: the team sets it, which Rate Type
             // already says. Mid-market and variance share a row; the dates close the card.
             <>
-              <div className="min-w-0"><DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-Market Rate</DashInfoLabel><InfoValue className="tabular-nums">{fmtRate(mid.rate)} {BASE}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel tooltip={MID_MARKET_DETAIL_TOOLTIP}>Mid-Market Rate</DashInfoLabel><InfoValue className="tabular-nums">{fmtRate(mid.rate)} {BASE}</InfoValue></div>
               <div className="min-w-0">
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.variance}>Variance</DashInfoLabel>
                 {variance != null && inEffect ? <InfoValue className="tabular-nums"><span style={{ color: varianceColor(variance) }}>{fmtVariance(inEffect.standardRate, mid.rate)}</span></InfoValue> : <InfoValue empty>–</InfoValue>}

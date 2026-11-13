@@ -23,7 +23,7 @@ import { useCurrencies } from '../context/CurrencyContext'
 import { useExchangeRates } from '../context/ExchangeRateContext'
 import { API_PROVIDER, LAST_SYNC, corporateRateInEffect, upcomingRateOf } from '../data/exchangeRates'
 import type { Currency } from '../data/currencies'
-import { CURRENCY_TOOLTIPS, RATE_TOOLTIPS } from '../utils/rateCopy'
+import { CURRENCY_TOOLTIPS, MID_MARKET_DETAIL_TOOLTIP, RATE_TOOLTIPS } from '../utils/rateCopy'
 import { auditTooltips } from './auditColumns'
 import { fmtVariance } from './exchange/rateModel'
 import {
@@ -239,7 +239,7 @@ function DashboardTab({ c, mid, corporate, upcoming }: {
           <DashInfoCard title="Exchange Rate" icon={ArrowLeftRight} tooltip="Rates for 1 unit of this currency in your base currency.">
             <InfoGrid>
               <div className="min-w-0">
-                <DashInfoLabel tooltip={RATE_TOOLTIPS.midMarket}>Mid-Market Rate</DashInfoLabel>
+                <DashInfoLabel tooltip={MID_MARKET_DETAIL_TOOLTIP}>Mid-Market Rate</DashInfoLabel>
                 {mid != null ? <InfoValue strong className="tabular-nums">{fmtRate(mid)}</InfoValue> : <InfoValue empty>Not available</InfoValue>}
               </div>
               <div className="min-w-0">
