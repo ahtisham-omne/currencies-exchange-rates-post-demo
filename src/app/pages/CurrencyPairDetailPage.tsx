@@ -423,7 +423,7 @@ export function CurrencyPairDetailPage() {
             rail={rail}
           />
         )}
-        {tab === 'history' && <RateHistoryTab rows={history} code={code} />}
+        {tab === 'history' && <RateHistoryTab rows={history} code={code} isStd={isStd} />}
         {tab === 'notes' && <RecordNotesTab noteKey={key} noun="exchange rate" derived={derivedNotes} />}
         {tab === 'attachments' && (
           <RecordAttachmentsTab recordKey={key} seed={seedFiles} document={{ recordLabel: `${pair} ${isStd ? 'corporate rate' : 'mid-market rate'}`, recordKind: 'exchange rate' }} />

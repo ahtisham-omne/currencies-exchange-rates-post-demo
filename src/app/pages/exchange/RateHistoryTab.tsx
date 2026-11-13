@@ -21,7 +21,14 @@ const NO_FILTERS: HistoryFilters = { from: '', to: '' }
 const countFilters = (f: HistoryFilters) => (f.from || f.to ? 1 : 0)
 const matches = (r: RateHistoryRow, f: HistoryFilters) => (!f.from || r.effectiveDate >= f.from) && (!f.to || r.effectiveDate <= f.to)
 
-export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: string }) {
+/** What the Change column means: a mid-market rate against its previous sync,
+ *  a corporate rate against the one it replaced. */
+const CHANGE_INFO = {
+  mid: 'How much the mid-market rate moved since the previous sync, as a percentage. Positive means it went up.',
+  corporate: 'How much this corporate rate differs from the last one.',
+}
+
+export function RateHistoryTab({ rows, code, isStd }: { rows: RateHistoryRow[]; code: string; isStd: boolean }) {
   const [query, setQuery] = useState('')
   const [debouncedQ, setDebouncedQ] = useState(query)
   useEffect(() => { const t = setTimeout(() => setDebouncedQ(query), 300); return () => clearTimeout(t) }, [query])
@@ -47,7 +54,7 @@ export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: s
     },
     {
       key: 'change', label: 'Change', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[110px]',
-      info: 'Against the previous sync (mid-market) or the rate it replaced (corporate).',
+      info: isStd ? CHANGE_INFO.corporate : CHANGE_INFO.mid,
       render: r => (r.changePct == null ? <EmptyCell /> : (
         <span className={cn('text-sm tabular-nums whitespace-nowrap', r.changePct > 0 ? 'text-success-700' : r.changePct < 0 ? 'text-danger-700' : 'text-fg-subtle')} style={{ fontWeight: 500 }}>
           {fmtSignedPct(r.changePct, 3)}
@@ -65,7 +72,7 @@ export function RateHistoryTab({ rows, code }: { rows: RateHistoryRow[]; code: s
       render: (r, ctx) => <span className="text-sm text-slate-700 whitespace-nowrap"><Marked text={r.source} q={ctx.q} /></span>,
       sortValue: r => r.source, searchText: r => r.source, filter: 'multiselect',
     },
-  ], [code])
+  ], [code, isStd])
 
   const table = useCoaTable<RateHistoryRow>({
     columns, rows: shown, query: debouncedQ, getRowId: r => r.id, rememberAs: 'fx.pair:history',
