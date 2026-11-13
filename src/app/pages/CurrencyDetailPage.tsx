@@ -260,8 +260,10 @@ function DashboardTab({ c, mid, corporate, upcoming }: {
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.variance}>Variance</DashInfoLabel>
                 {variance != null && corporate && mid ? <InfoValue className="tabular-nums">{fmtVariance(corporate.standardRate, mid)}</InfoValue> : <InfoValue empty>–</InfoValue>}
               </div>
-              <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{c.isBaseCurrency ? 'Base Currency' : API_PROVIDER}</InfoValue></div>
-              <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last Synced</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
+              {/* The base currency's rates come from no provider, so it has no Source;
+                  Last Synced then opens the row on the left. */}
+              {!c.isBaseCurrency && <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{API_PROVIDER}</InfoValue></div>}
+              <div className="min-w-0"><DashInfoLabel align={c.isBaseCurrency ? undefined : 'right'} tooltip={RATE_TOOLTIPS.lastSync}>Last Synced</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
             </InfoGrid>
             {(corporate || upcoming) && (
               <div className="pt-2.5 border-t border-muted text-[11px] text-slate-500 space-y-1">
