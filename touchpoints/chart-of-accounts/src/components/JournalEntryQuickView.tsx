@@ -101,12 +101,20 @@ export function JournalEntryQuickView({ jeNumber, onClose, highlightAccountId }:
                         </div>
                       </td>
                       <td className="text-muted-foreground">{l.description || '-'}</td>
-                      <td className="text-right tabular-nums text-slate-700">
-                        {l.debit ? fmtCurrencyExact(l.debit, base) : <span className="text-fg-subtle">-</span>}
-                      </td>
-                      <td className="text-right tabular-nums text-slate-700">
-                        {l.credit ? fmtCurrencyExact(l.credit, base) : <span className="text-fg-subtle">-</span>}
-                      </td>
+                      {/* A line written in another currency reads as the full
+                          page reads it: as typed, over the base figure. Each line
+                          its own, since the lines of one entry can differ. */}
+                      {([['debit', 'fxDebit'], ['credit', 'fxCredit']] as const).map(([side, typedSide]) => (
+                        <td key={side} className="text-right tabular-nums text-slate-700">
+                          {!l[side] ? <span className="text-fg-subtle">-</span>
+                            : l.currency && l[typedSide] ? (
+                              <>
+                                {fmtCurrencyExact(l[typedSide]!, l.currency)}
+                                <span className="block text-[11px] text-fg-muted">{fmtCurrencyExact(l[side], base)}</span>
+                              </>
+                            ) : fmtCurrencyExact(l[side], base)}
+                        </td>
+                      ))}
                     </tr>
                   )
                 })}

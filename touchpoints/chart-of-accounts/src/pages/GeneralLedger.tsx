@@ -11,7 +11,8 @@ import { ColumnSelector } from '../components/ColumnSelector'
 import { DensityMenu } from '../components/DensityMenu'
 import { COUNT_BADGE, TOOL_BTN, TOOL_BTN_ACTIVE, lookSections, rowNumberGutter, useCrosshair, useTableLook } from '../components/tableLook'
 import { LinkedDocLink } from '../components/LinkedDoc'
-import { HeaderMenu, filterActive, CategoryCell, ColumnFiltersBar, CurrencyCell, DimensionPills, ExpandToggle, type ColFilter, type ColFilterType } from '../components/AccountTable'
+import { HeaderMenu, filterActive, CategoryCell, ColumnFiltersBar, CurrencyCell, DimensionPills, ExpandToggle, FxPostingTooltip, type ColFilter, type ColFilterType } from '../components/AccountTable'
+import { formatRate } from '../lib/currencies'
 import { Section, FDivider, PillGrid, FilterPill as ModalFilterPill, AllPill, RangeMinMax, QuickFilterPill, DateRangeFromTo, FiltersButton, AuditFacet } from '../components/Filters'
 import { PersonCell, StampCell, PERSON_PAD, personText, stampText } from '../components/AuditCells'
 import { SearchRevealNote, orderWithRevealed, useSearchReveal } from '../components/SearchReveal'
@@ -103,7 +104,7 @@ const Z_LIST_HEAD_PIN = 12
 
 // Columns for the cross-account General Ledger. Account is the key addition
 // versus the per-account register - every posting carries its owning account.
-type GLColKey = 'date' | 'account' | 'category' | 'source' | 'entry' | 'internalId' | 'reference' | 'description' | 'lineDescription' | 'dimensions' | 'tags' | 'createdBy' | 'createdAt' | 'updatedBy' | 'updatedAt' | 'amount' | 'currency' | 'fxAmount' | 'debit' | 'credit' | 'period' | 'balance'
+type GLColKey = 'date' | 'account' | 'category' | 'source' | 'entry' | 'internalId' | 'reference' | 'description' | 'lineDescription' | 'dimensions' | 'tags' | 'createdBy' | 'createdAt' | 'updatedBy' | 'updatedAt' | 'amount' | 'currency' | 'fxAmount' | 'rate' | 'debit' | 'credit' | 'period' | 'balance'
 /* Column flags:
      required      - Account: always shown, never moved.
      alwaysShown   - always shown, but the reader may move and freeze it.
@@ -137,9 +138,10 @@ const GL_COLS: { key: GLColKey; label: string; right?: boolean; required?: boole
   /* Four columns on both tabs, Mahad, 2026-09-30: *"Additional column for
      Journal Internal ID. Column for currency. Column for Amount (Foreign
      currency) - if transaction was in a different currency. Column for tags in
-     journal entries. Column for tags in general ledger as well."* ID, currency
-     and tags are the entry's, so a General ledger row repeats its entry's; the
-     foreign amount there is the row's own line. */
+     journal entries. Column for tags in general ledger as well."* ID and tags
+     are the entry's, so a General ledger row repeats its entry's. Currency and
+     the foreign amount are the line's own since a line carries its own currency
+     (2026-11-14; see Rate below). */
   { key: 'internalId', label: JOURNAL_INTERNAL_ID_LABEL, info: 'Internal system ID for the entry.' },
   /* What kind of thing produced the posting - a manual entry, a vendor bill,
      a payroll run. Filed alongside the entry number so the pair reads together:
@@ -192,7 +194,16 @@ const GL_COLS: { key: GLColKey; label: string; right?: boolean; required?: boole
      ledger is about"*), so they cannot be hidden. They are no longer pinned to
      the right by default - Eli: *"Don't pin it here and it won't look as
      weird"* - and the reader can freeze them. */
-  { key: 'fxAmount', label: 'Amount (foreign currency)', right: true, info: "Original amount in the transaction currency, shown only when it isn't the base currency." },
+  /* Currency, Foreign currency amount and Rate, one group on both tabs and in the
+     order the entry form asks for them. Mahad, 2026-11-14: *"Journal entry form
+     and the Journal entries tab: add Currency, Foreign Currency Amount and Rate
+     columns ... General ledger: add the same three columns."* The key stays
+     `fxAmount` from when it was "Amount (foreign currency)", so a layout the
+     reader set keeps it. A line carries its own currency now, so on the Journal
+     entries tab the three are each line's, and the entry's own row states them
+     only where every line agrees. */
+  { key: 'fxAmount', label: 'Foreign currency amount', right: true, info: "Original amount in the transaction currency, shown only when it isn't the base currency." },
+  { key: 'rate', label: 'Rate', right: true, info: "Units of the line's currency per 1 unit of the base currency, the rate the line posted at." },
   { key: 'debit', label: 'Debit', right: true, alwaysShown: true, info: 'Amount debited to the account, in base currency.' },
   { key: 'credit', label: 'Credit', right: true, alwaysShown: true, info: 'Amount credited to the account, in base currency.' },
   // A running balance only means anything along one account's own postings in date
@@ -210,9 +221,10 @@ const GL_COLS: { key: GLColKey; label: string; right?: boolean; required?: boole
    far right with Amount beside the account; module review, 2026-10-06 (COA-29)
    and Outline 09. The General ledger tab keeps GL_COLS order. */
 const LIST_COLUMN_ORDER: GLColKey[] = [
-  // The foreign amount and its currency after the figures they restate; the
-  // internal ID after the entry number; tags after the text.
-  'date', 'account', 'description', 'amount', 'debit', 'credit', 'fxAmount', 'currency', 'entry', 'internalId', 'source', 'reference',
+  // The currency, the foreign amount and its rate after the figures they
+  // restate, in the entry form's order; the internal ID after the entry number;
+  // tags after the text.
+  'date', 'account', 'description', 'amount', 'debit', 'credit', 'currency', 'fxAmount', 'rate', 'entry', 'internalId', 'source', 'reference',
   'lineDescription', 'tags', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt', 'category', 'dimensions', 'period', 'balance',
 ]
 
@@ -399,7 +411,7 @@ type AuditKey = 'createdBy' | 'createdAt' | 'updatedBy' | 'updatedAt'
 const GL_FILTER_TYPE: Record<GLColKey, ColFilterType> = {
   date: 'date', account: 'text', category: 'multiselect', source: 'multiselect',
   entry: 'text', internalId: 'text', tags: 'text', currency: 'multiselect',
-  createdBy: 'multiselect', createdAt: 'date', updatedBy: 'multiselect', updatedAt: 'date', fxAmount: 'range', reference: 'text', description: 'text', lineDescription: 'text', dimensions: 'text', debit: 'range', credit: 'range', period: 'multiselect',
+  createdBy: 'multiselect', createdAt: 'date', updatedBy: 'multiselect', updatedAt: 'date', fxAmount: 'range', rate: 'range', reference: 'text', description: 'text', lineDescription: 'text', dimensions: 'text', debit: 'range', credit: 'range', period: 'multiselect',
   amount: 'range',
   // Running balance is derived from the account's full history, so filtering or
   // sorting the table by it would contradict the figure shown. Its header menu is
@@ -410,12 +422,14 @@ const blankGlFilter = (k: GLColKey): ColFilter => ({ type: GL_FILTER_TYPE[k], va
 
 /* What a column needs that a posting does not carry: the total of the entry it
    belongs to, for the Amount column; the same in the entry's own currency, for
-   Amount (foreign currency); the entry's tags, which the store keeps beside the
-   entry; the base currency; and which tab is asking, since the foreign amount is
-   the entry's on one and the line's on the other. */
+   Foreign currency amount; what the entry's lines say about currency taken
+   together, for the entry's own row; the entry's tags, which the store keeps
+   beside the entry; the base currency; and which tab is asking, since the
+   foreign amount is the entry's on one and the line's on the other. */
 interface GLRowCtx {
   entryTotal: (jeNumber: string) => number
   fxTotal: (jeNumber: string) => number | undefined
+  entryFx: (jeNumber: string) => EntryFx
   tagsOf: (jeNumber: string) => string[]
   base: string
   entries: boolean
@@ -426,9 +440,21 @@ type EntryChanges = ReturnType<typeof entryChangesOf>
 /** Who changed an entry last, and when: its reversal, or else its posting. */
 const lastChangeOf = (t: Transaction, changes: EntryChanges) =>
   changes.get(t.jeNumber) ?? { by: entryCreatedBy(t), at: entryCreatedAt(t) }
-// A posting's foreign amount - its own line, in the entry's currency - or none.
+/* What an entry's lines say about currency, taken together: the one foreign
+   currency they all share, or `multi` when they differ (one of them perhaps the
+   base); the one rate they share; and, in that shared currency, the larger side
+   of what was typed. An entry wholly in the base currency has none of these. */
+interface EntryFx { currency?: string; multi: boolean; rate?: number; total?: number }
+const NO_ENTRY_FX: EntryFx = { multi: false }
+// Said for an entry whose lines are in different currencies.
+const MULTIPLE = 'Multiple'
+// A posting's foreign amount - its own line, in its own currency - or none.
 const fxLine = (t: Transaction) => (t.entryCurrency ? (t.fxDebit || t.fxCredit || 0) : undefined)
-const fxFor = (t: Transaction, ctx: GLRowCtx) => (ctx.entries ? ctx.fxTotal(t.jeNumber) : fxLine(t))
+// The rate a posting was written at, on a line in another currency.
+const lineRate = (t: Transaction) => (t.entryCurrency ? t.entryRate : undefined)
+// On the entries tab an entry in one foreign currency is read by its total; a
+// line of an entry in several, by its own amount.
+const fxFor = (t: Transaction, ctx: GLRowCtx) => (ctx.entries ? ctx.fxTotal(t.jeNumber) ?? fxLine(t) : fxLine(t))
 
 /* ─────────────────────── What the search reads ───────────────────────
    Every column on the tab, shown or hidden, by the text its cell prints - the
@@ -498,6 +524,7 @@ const POSTING_TEXT: Record<GLColKey, (r: GLRow, c: GLTextCtx) => string> = {
   amount: () => '',
   currency: ({ t }, c) => t.entryCurrency ?? c.base,
   fxAmount: ({ t }, c) => { const fx = fxLine(t); return fx !== undefined && t.entryCurrency ? c.money(fx, t.entryCurrency) : '' },
+  rate: ({ t }) => { const r = lineRate(t); return r !== undefined ? formatRate(r) : '' },
   debit: ({ t }, c) => (t.debit ? c.money(t.debit, c.base) : ''),
   credit: ({ t }, c) => (t.credit ? c.money(t.credit, c.base) : ''),
   // Not a column of this ledger: GL_COLS draws no Period.
@@ -506,8 +533,9 @@ const POSTING_TEXT: Record<GLColKey, (r: GLRow, c: GLTextCtx) => string> = {
 }
 
 /* What a line under an entry prints: renderJeChildCell draws these and leaves
-   the entry's own columns blank. */
-const LINE_COLS: GLColKey[] = ['account', 'category', 'dimensions', 'debit', 'credit', 'lineDescription']
+   the entry's own columns blank. Currency, its amount and its rate are the
+   line's own since a line carries its own currency (2026-11-14). */
+const LINE_COLS: GLColKey[] = ['account', 'category', 'dimensions', 'currency', 'fxAmount', 'rate', 'debit', 'credit', 'lineDescription']
 
 const ENTRY_TEXT: Record<GLColKey, (head: Transaction, c: GLTextCtx) => string> = {
   date: (t, c) => c.day(t.date),
@@ -517,9 +545,10 @@ const ENTRY_TEXT: Record<GLColKey, (head: Transaction, c: GLTextCtx) => string> 
   description: t => entryMemo(t),
   amount: (t, c) => { const total = c.entryTotal(t.jeNumber); return total ? c.money(total, c.base) : '' },
   internalId: t => t.entryInternalId ?? '',
-  currency: (t, c) => t.entryCurrency ?? c.base,
+  currency: (t, c) => { const e = c.entryFx(t.jeNumber); return e.multi ? MULTIPLE : e.currency ?? c.base },
   tags: (t, c) => c.tagsOf(t.jeNumber).join('\n'),
-  fxAmount: (t, c) => { const fx = c.fxTotal(t.jeNumber); return fx !== undefined && t.entryCurrency ? c.money(fx, t.entryCurrency) : '' },
+  fxAmount: (t, c) => { const e = c.entryFx(t.jeNumber); return e.total !== undefined && e.currency ? c.money(e.total, e.currency) : '' },
+  rate: (t, c) => { const r = c.entryFx(t.jeNumber).rate; return r !== undefined ? formatRate(r) : '' },
   createdBy: t => personText(entryCreatedBy(t)),
   createdAt: t => stampText(entryCreatedAt(t)),
   updatedBy: (t, c) => personText(lastChangeOf(t, c.changes).by),
@@ -560,6 +589,12 @@ function matchesGlColFilter(row: GLRow, k: GLColKey, f: ColFilter, ctx: GLRowCtx
       const v = fxFor(t, ctx)
       // An entry in the base currency has no foreign amount, so a range leaves it out.
       if (f.min === '' && f.max === '') return true
+      return v !== undefined && withinMagnitude(v, f.min, f.max)
+    }
+    // The same for the rate: a line in the base currency has none to range over.
+    case 'rate': {
+      if (f.min === '' && f.max === '') return true
+      const v = lineRate(t)
       return v !== undefined && withinMagnitude(v, f.min, f.max)
     }
     // Memo reads the entry's note; Line description, the line's own.
@@ -611,6 +646,7 @@ function compareGlRows(a: GLRow, b: GLRow, key: GLColKey, ctx: GLRowCtx): number
     case 'tags': return ctx.tagsOf(a.t.jeNumber).join(' ').localeCompare(ctx.tagsOf(b.t.jeNumber).join(' '))
     case 'currency': return (a.t.entryCurrency ?? ctx.base).localeCompare(b.t.entryCurrency ?? ctx.base)
     case 'fxAmount': return (fxFor(a.t, ctx) ?? -1) - (fxFor(b.t, ctx) ?? -1)
+    case 'rate': return (lineRate(a.t) ?? -1) - (lineRate(b.t) ?? -1)
     case 'description': return entryMemo(a.t).localeCompare(entryMemo(b.t))
     case 'lineDescription': return a.t.description.localeCompare(b.t.description)
     case 'amount': return ctx.entryTotal(a.t.jeNumber) - ctx.entryTotal(b.t.jeNumber)
@@ -756,6 +792,31 @@ export default function GeneralLedgerPage() {
     tree: GL_COLS.map(c => c.key),
     list: [...LIST_COLUMN_ORDER],
   }))
+  /* A column added since the layout was remembered (Rate, 2026-11-14) takes its
+     defaults: shown, and in its default place after the column it follows. Left
+     out of the remembered order it would not be drawn at all, and missing from
+     the remembered visibility it would read as switched off. */
+  useEffect(() => {
+    const unseen = GL_COLS.filter(c => !(c.key in visible))
+    if (unseen.length) setVisible(v => ({ ...Object.fromEntries(unseen.map(c => [c.key, !c.defaultHidden])), ...v }))
+    const fill = (order: string[], defaults: string[]) => {
+      if (defaults.every(k => order.includes(k))) return order
+      const out = [...order]
+      defaults.forEach((k, i) => {
+        if (out.includes(k)) return
+        const after = defaults.slice(0, i).reverse().find(p => out.includes(p))
+        out.splice(after ? out.indexOf(after) + 1 : 0, 0, k)
+      })
+      return out
+    }
+    setOrderByView(o => {
+      const tree = fill(o.tree, GL_COLS.map(c => c.key))
+      const list = fill(o.list, LIST_COLUMN_ORDER)
+      return tree === o.tree && list === o.list ? o : { tree, list }
+    })
+    // Once, against whatever layout the page opened on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const columnOrder = orderByView[view]
   const setColumnOrder = useCallback((next: string[] | ((prev: string[]) => string[])) => {
     setOrderByView(o => ({ ...o, [view]: typeof next === 'function' ? next(o[view]) : next }))
@@ -975,26 +1036,40 @@ export default function GeneralLedgerPage() {
     for (const [je, s] of side) out.set(je, Math.max(s.d, s.c))
     return out
   }, [transactions])
-  /* The same for an entry written in another currency, in that currency: the
-     larger side of what was typed. Absent for a base-currency entry. */
-  const entryFxTotals = useMemo(() => {
-    const side = new Map<string, { d: number; c: number }>()
+  /* What each entry's lines say about currency, taken together (see EntryFx):
+     the total in the entry's own currency is the larger side of what was typed,
+     and exists only where every line was typed in that one currency. Lines in
+     different currencies cannot be added up, so such an entry states none and
+     its lines carry their own. */
+  const entryFx = useMemo(() => {
+    const seen = new Map<string, { codes: Set<string>; rates: Set<number | undefined>; d: number; c: number }>()
     for (const t of transactions) {
-      if (!t.entryCurrency) continue
-      const s = side.get(t.jeNumber)
-      if (s) { s.d += t.fxDebit ?? 0; s.c += t.fxCredit ?? 0 } else side.set(t.jeNumber, { d: t.fxDebit ?? 0, c: t.fxCredit ?? 0 })
+      let e = seen.get(t.jeNumber)
+      if (!e) seen.set(t.jeNumber, (e = { codes: new Set(), rates: new Set(), d: 0, c: 0 }))
+      e.codes.add(t.entryCurrency ?? '')
+      e.rates.add(t.entryRate)
+      e.d += t.fxDebit ?? 0
+      e.c += t.fxCredit ?? 0
     }
-    return new Map([...side].map(([je, s]) => [je, Math.round(Math.max(s.d, s.c) * 100) / 100]))
+    const out = new Map<string, EntryFx>()
+    for (const [je, e] of seen) {
+      const one = e.codes.size === 1 ? [...e.codes][0] : ''
+      out.set(je, one
+        ? { currency: one, multi: false, rate: e.rates.size === 1 ? [...e.rates][0] : undefined, total: Math.round(Math.max(e.d, e.c) * 100) / 100 }
+        : { multi: e.codes.size > 1 })
+    }
+    return out
   }, [transactions])
   const jeTags = useStore(s => s.jeTags)
   const rowCtx = useMemo<GLRowCtx>(() => ({
     entryTotal: je => entryTotals.get(je) ?? 0,
-    fxTotal: je => entryFxTotals.get(je),
+    fxTotal: je => entryFx.get(je)?.total,
+    entryFx: je => entryFx.get(je) ?? NO_ENTRY_FX,
     tagsOf: je => jeTags[je] ?? [],
     base,
     entries: view === 'list',
     changes: entryChanges,
-  }), [entryTotals, entryFxTotals, jeTags, base, view, entryChanges])
+  }), [entryTotals, entryFx, jeTags, base, view, entryChanges])
   // The same spread for whole entries, which is what the entries tab's range asks about.
   const entryAmountValues = useMemo(
     () => [...new Set(periodTx.map(t => t.jeNumber))].map(je => entryTotals.get(je) ?? 0),
@@ -1818,24 +1893,69 @@ export default function GeneralLedgerPage() {
   }, [view, headTop, expandMode.tree, acctExceptions, treeGroups])
 
 
-  /* The four entry columns, drawn once for both tabs. Tags are the entry's
-     chips, read-only here (they are added on the entry's page) and marked when
-     the search matches them. */
-  const entryColCell = (key: 'internalId' | 'currency' | 'fxAmount' | 'tags' | AuditKey, t: Transaction, fx: number | undefined) => {
+  /* A line's currency, its amount in it and the rate it posted at: a General
+     ledger row's, or a line's under an entry. The amount carries the posting
+     card, at the line's own rate and date, so the hover and the Rate column
+     beside it quote the same rate. */
+  const lineFxCell = (key: 'currency' | 'fxAmount' | 'rate', t: Transaction) => {
+    switch (key) {
+      // The chart's cell, flag and code chip, so a currency reads the same in
+      // every table of the module (Mahad, 2026-10-09: *"I want the same UI"*).
+      case 'currency': return <td key={key} className={cn('px-4', padY)}><CurrencyCell code={t.entryCurrency ?? base} q={query} /></td>
+      case 'fxAmount': {
+        const fx = fxLine(t)
+        return (
+          <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-800', padY)}>
+            {fx !== undefined && t.entryCurrency
+              ? <FxPostingTooltip code={t.entryCurrency} base={base} booked={t.debit || t.credit} rate={t.entryRate} on={fmtDate(t.date)}><span className="cursor-help"><Marked text={fmtCurrencyExact(fx, t.entryCurrency)} q={query} /></span></FxPostingTooltip>
+              : <span className="text-fg-subtle">-</span>}
+          </td>
+        )
+      }
+      case 'rate': {
+        const r = lineRate(t)
+        return <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-700', padY)}>{r !== undefined ? <Marked text={formatRate(r)} q={query} /> : <span className="text-fg-subtle">-</span>}</td>
+      }
+    }
+  }
+
+  /* The same three on an entry's own row, for the entry as a whole: its one
+     currency, its total in it and its one rate, where its lines agree. Lines in
+     different currencies read "Multiple" here and leave the amount and rate to
+     the lines, since amounts in different currencies cannot be added up. */
+  const entryFxCell = (key: 'currency' | 'fxAmount' | 'rate', jeNumber: string) => {
+    const e = rowCtx.entryFx(jeNumber)
+    switch (key) {
+      case 'currency': return (
+        <td key={key} className={cn('px-4', padY)}>
+          {e.multi
+            ? <span className="text-slate-700 whitespace-nowrap" title="The lines are in different currencies. Open the entry for each line's."><Marked text={MULTIPLE} q={query} /></span>
+            : <CurrencyCell code={e.currency ?? base} q={query} />}
+        </td>
+      )
+      case 'fxAmount': return (
+        <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-800', padY)}>
+          {e.total !== undefined && e.currency ? <Marked text={fmtCurrencyExact(e.total, e.currency)} q={query} /> : <span className="text-fg-subtle">-</span>}
+        </td>
+      )
+      case 'rate': return (
+        <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-700', padY)}>
+          {e.rate !== undefined ? <Marked text={formatRate(e.rate)} q={query} /> : <span className="text-fg-subtle">-</span>}
+        </td>
+      )
+    }
+  }
+
+  /* The entry columns, drawn once for both tabs. Tags are the entry's chips,
+     read-only here (they are added on the entry's page) and marked when the
+     search matches them. */
+  const entryColCell = (key: 'internalId' | 'tags' | AuditKey, t: Transaction) => {
     switch (key) {
       case 'createdBy': return <td key={key} className={cn('px-4 max-w-[220px]', PERSON_PAD)}><PersonCell name={entryCreatedBy(t)} comfort={look.density === 'comfort'} q={query} /></td>
       case 'createdAt': return <td key={key} className={cn('px-4', padY)}><StampCell at={entryCreatedAt(t)} q={query} /></td>
       case 'updatedBy': return <td key={key} className={cn('px-4 max-w-[220px]', PERSON_PAD)}><PersonCell name={lastChangeOf(t, rowCtx.changes).by} comfort={look.density === 'comfort'} q={query} /></td>
       case 'updatedAt': return <td key={key} className={cn('px-4', padY)}><StampCell at={lastChangeOf(t, rowCtx.changes).at} q={query} /></td>
       case 'internalId': return <td key={key} className={cn('px-4 whitespace-nowrap tabular-nums text-slate-700', padY)}>{t.entryInternalId ? <Marked text={t.entryInternalId} q={query} /> : <span className="text-fg-subtle">-</span>}</td>
-      // The chart's cell, flag and code chip, so a currency reads the same in
-      // every table of the module (Mahad, 2026-10-09: *"I want the same UI"*).
-      case 'currency': return <td key={key} className={cn('px-4', padY)}><CurrencyCell code={t.entryCurrency ?? base} q={query} /></td>
-      case 'fxAmount': return (
-        <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-800', padY)}>
-          {fx !== undefined && t.entryCurrency ? <Marked text={fmtCurrencyExact(fx, t.entryCurrency)} q={query} /> : <span className="text-fg-subtle">-</span>}
-        </td>
-      )
       case 'tags': {
         const tags = rowCtx.tagsOf(t.jeNumber)
         return (
@@ -1918,10 +2038,10 @@ export default function GeneralLedgerPage() {
         return <td key={key} className={cn('px-4 text-slate-800', padY)} style={{ fontWeight: 500 }}>{memo ? <div className="truncate" style={{ maxWidth: MEMO_MAX_W }} title={memo}><Marked text={memo} q={query} /></div> : <span className="text-fg-subtle">-</span>}</td>
       }
       case 'dimensions': return <td key={key} className={cn('px-4', padY)}><DimensionPills dimensionValues={t.dimensionValues} q={query} /></td>
-      // A General ledger row is one line, so its foreign amount is the line's.
-      case 'internalId': case 'currency': case 'tags':
-      case 'createdBy': case 'createdAt': case 'updatedBy': case 'updatedAt': return entryColCell(key, t, undefined)
-      case 'fxAmount': return entryColCell(key, t, fxLine(t))
+      case 'internalId': case 'tags':
+      case 'createdBy': case 'createdAt': case 'updatedBy': case 'updatedAt': return entryColCell(key, t)
+      // A General ledger row is one line, so its currency, amount and rate are the line's.
+      case 'currency': case 'fxAmount': case 'rate': return lineFxCell(key, t)
       case 'debit': return <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-800', padY, pinCls)} style={pin}>{t.debit ? <Marked text={fmtCurrencyExact(t.debit, base)} q={query} /> : <span className="text-fg-subtle">-</span>}</td>
       case 'credit': return <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-800', padY, pinCls)} style={pin}>{t.credit ? <Marked text={fmtCurrencyExact(t.credit, base)} q={query} /> : <span className="text-fg-subtle">-</span>}</td>
       // The account's balance immediately after this posting, signed the same way
@@ -2000,13 +2120,14 @@ export default function GeneralLedgerPage() {
         )
       }
       case 'period': return <td key={key} className={cn('px-4 text-slate-600 whitespace-nowrap', padY)}>{g.period ? <Marked text={g.period} q={query} /> : <span className="text-fg-subtle">-</span>}</td>
-      // The entry's own, on its row; its lines below leave them blank. The
-      // foreign amount here is the entry's total in its own currency.
-      case 'internalId': case 'currency': case 'tags': case 'fxAmount':
+      // The entry's own, on its row; its lines below leave them blank.
+      case 'internalId': case 'tags':
       case 'createdBy': case 'createdAt': case 'updatedBy': case 'updatedAt': {
         const head = g.rows[0]?.t
-        return head ? entryColCell(key, head, rowCtx.fxTotal(g.jeNumber)) : <td key={key} className={cn('px-4', padY)} />
+        return head ? entryColCell(key, head) : <td key={key} className={cn('px-4', padY)} />
       }
+      // The entry's as a whole; its lines below carry their own.
+      case 'currency': case 'fxAmount': case 'rate': return entryFxCell(key, g.jeNumber)
       // account / category / debit / credit are intentionally blank on the JE
       // parent row: the entry-level view hides sides and account breakdowns.
       // Debit / Credit still need to pin to the right - the empty cell holds
@@ -2018,7 +2139,8 @@ export default function GeneralLedgerPage() {
   // List view - JE child row: reuse the flat renderer for account/debit/credit,
   // leave the entry-level columns blank so they don't repeat the parent row.
   const renderJeChildCell = (key: GLColKey, t: Transaction, acct: Account | undefined) => {
-    if (key === 'account' || key === 'debit' || key === 'credit' || key === 'category' || key === 'dimensions') {
+    if (key === 'account' || key === 'debit' || key === 'credit' || key === 'category' || key === 'dimensions'
+      || key === 'currency' || key === 'fxAmount' || key === 'rate') {
       return renderCell(key, t, acct)
     }
     // Each line's own note, under the entry's memo.

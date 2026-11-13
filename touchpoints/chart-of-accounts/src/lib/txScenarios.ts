@@ -34,6 +34,13 @@ export interface ScenarioLeg {
   appendRef?: boolean
   /** true = contra accounts only. Omitted = contra accounts excluded. */
   contra?: boolean
+  /**
+   * The leg was written in its account's own currency - a euro receipt into the
+   * euro account - so the posting carries the amount as typed in it beside the
+   * base figure (see the seed's `typedLeg`). Only means anything on an account
+   * held in another currency; omitted, the posting is a base figure alone.
+   */
+  inAccountCurrency?: boolean
 }
 
 export interface TxScenario {
@@ -550,7 +557,7 @@ export const TX_SCENARIOS: TxScenario[] = [
     size: 'large',
     cadence: 'low',
     source: 'Cash Management',
-    debit: { group: 'Cash and Cash Equivalents', accounts: ['11160'], text: 'Transfer to reserve savings, quarterly cash reserve', alts: ['Transfer to reserve savings, capital expenditure fund', 'Top up reserve savings against covenant minimum'] },
+    debit: { group: 'Cash and Cash Equivalents', accounts: ['11160'], text: 'Transfer to reserve savings, quarterly cash reserve', alts: ['Transfer to reserve savings, capital expenditure fund', 'Top up reserve savings against covenant minimum'], inAccountCurrency: true },
     credit: { group: 'Cash and Cash Equivalents', accounts: ['11130'], text: 'Reserve transfer, Barclays savings', alts: ['Transfer out to reserve savings', 'Outbound transfer, reserve funding'], appendRef: true },
     party: 'Barclays',
     partyKind: 'bank',
@@ -560,7 +567,7 @@ export const TX_SCENARIOS: TxScenario[] = [
   {
     id: 'eur-export-receipt',
     source: 'Customer payments',
-    debit: { group: 'Cash and Cash Equivalents', accounts: ['11170'], text: 'EUR receipt, export shipment converted at spot', alts: ['EUR receipt, European export settled at spot', 'EUR receipt, customer payment on export invoice'], appendRef: true },
+    debit: { group: 'Cash and Cash Equivalents', accounts: ['11170'], text: 'EUR receipt, export shipment converted at spot', alts: ['EUR receipt, European export settled at spot', 'EUR receipt, customer payment on export invoice'], appendRef: true, inAccountCurrency: true },
     credit: { group: 'Accounts Receivable', accounts: ['11310'], text: 'Clear receivable, EUR export shipment, {qty} units', qty: [200, 900] },
     party: 'Rheinmetall Automotive',
     partyKind: 'customer',

@@ -8,7 +8,7 @@ import { Button, Badge, Tooltip, EmptyState } from '../components/ui'
 import { ReverseEntryFlow } from '../components/ReverseEntryFlow'
 import { LinkedDocTile } from '../components/LinkedDoc'
 import { TagStrip } from '../components/EntityTagChip'
-import { CategoryCell, DimensionPills } from '../components/AccountTable'
+import { CategoryCell, DimensionPills, FxPostingTooltip } from '../components/AccountTable'
 import { useStore, useAccountNumberText } from '../store'
 import { AttachmentsTab } from '../components/AttachmentsTab'
 import { CommsTab, useComms, useCommsCount } from '../components/CommsTab'
@@ -86,9 +86,14 @@ function ViewJournalEntry({ jeNumber }: { jeNumber: string }) {
 
   const tone = entry.status === 'Reversed' ? 'danger' : entry.status === 'Draft' ? 'warning' : 'default'
   /* The currency the entry was written in - base, unless it was entered in
-     another and converted as it posted. */
-  const entryCurrency = entry.entryCurrency ?? base
-  const fx = entry.entryCurrency && entry.entryRate ? { currency: entry.entryCurrency, rate: entry.entryRate } : undefined
+     another and converted as it posted. Each line carries its own now, so an
+     entry whose lines differ has no one currency, and says so. The rate is the
+     one every line in another currency posted at - one EUR line beside base
+     lines still has a single rate to state - and "Multiple" where they differ. */
+  const entryCurrency = entry.multiCurrency ? 'Multiple' : entry.entryCurrency ?? base
+  const foreignRates = new Map(entry.lines.filter(l => l.currency && l.rate).map(l => [`${l.currency}|${l.rate}`, { currency: l.currency!, rate: l.rate! }]))
+  const fx = foreignRates.size === 1 ? [...foreignRates.values()][0] : undefined
+  const mixedRates = foreignRates.size > 1
 
   return (
     <div className="pb-12">
@@ -202,7 +207,7 @@ function ViewJournalEntry({ jeNumber }: { jeNumber: string }) {
                 icon tile and line count, so the glance and the full page read as
                 one entry. The page adds the two columns a glance leaves out. */}
             <QuickViewCard title="Lines" icon={Layers} count={entry.lines.length} flush>
-              <LinesTable lines={entry.lines} base={base} totalDebit={entry.totalDebit} totalCredit={entry.totalCredit} fx={fx} flagSystemAccounts={!!entry.adjustmentReason} />
+              <LinesTable lines={entry.lines} base={base} date={entry.date} totalDebit={entry.totalDebit} totalCredit={entry.totalCredit} entryCurrency={entry.entryCurrency} flagSystemAccounts={!!entry.adjustmentReason} />
             </QuickViewCard>
           </div>
 
@@ -237,15 +242,22 @@ function ViewJournalEntry({ jeNumber }: { jeNumber: string }) {
               )}
               <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
                 <div className="min-w-0">
-                  <DashInfoLabel>Currency</DashInfoLabel>
+                  <DashInfoLabel tooltip={entry.multiCurrency ? 'The lines are in different currencies. Each line shows its own amount and the base amount under it.' : undefined}>Currency</DashInfoLabel>
                   <p className="text-[12px] text-slate-700 truncate" style={{ fontWeight: 500 }}>{entryCurrency}</p>
                 </div>
                 {/* Only on an entry written in another currency: the rate it
-                    posted to the ledger at. */}
+                    posted to the ledger at, or "Multiple" where its lines
+                    posted at different ones. */}
                 {fx && (
                   <div className="min-w-0">
-                    <DashInfoLabel tooltip={`The rate the lines were converted at when the entry posted. The ledger holds the ${base} figures.`}>Exchange rate</DashInfoLabel>
+                    <DashInfoLabel tooltip={`The rate the lines in another currency were converted at when the entry posted. The ledger holds the ${base} figures.`}>Exchange rate</DashInfoLabel>
                     <p className="text-[12px] text-slate-700 truncate tabular-nums" style={{ fontWeight: 500 }}>1 {base} = {formatRate(fx.rate)} {fx.currency}</p>
+                  </div>
+                )}
+                {mixedRates && (
+                  <div className="min-w-0">
+                    <DashInfoLabel tooltip="The lines posted at different rates. Hover a line's amount for its rate.">Exchange rate</DashInfoLabel>
+                    <p className="text-[12px] text-slate-700 truncate" style={{ fontWeight: 500 }}>Multiple</p>
                   </div>
                 )}
               </div>
@@ -375,18 +387,26 @@ function AdjustmentBanner({ entry }: { entry: ReconstructedEntry }) {
   )
 }
 
-function LinesTable({ lines, base, totalDebit, totalCredit, fx, flagSystemAccounts }: { lines: JeLine[]; base: string; totalDebit: number; totalCredit: number; fx?: { currency: string; rate: number }; flagSystemAccounts?: boolean }) {
-  const money = (baseValue: number, typed: number | undefined, strong = false) => {
+/* Each line in the currency it was written in, over the base figure it posted
+   at; a line in the base currency reads as the base figure alone. The typed
+   amount carries the posting card, at the line's own rate and date. The totals
+   add up the typed amounts only where every line was typed in one currency -
+   amounts in different currencies cannot be added - and the base totals always. */
+function LinesTable({ lines, base, date, totalDebit, totalCredit, entryCurrency, flagSystemAccounts }: { lines: JeLine[]; base: string; date: string; totalDebit: number; totalCredit: number; entryCurrency?: string; flagSystemAccounts?: boolean }) {
+  const money = (baseValue: number, typed: number | undefined, code: string | undefined, rate?: number, strong = false) => {
     if (!baseValue && !typed) return <span className="text-fg-subtle">-</span>
-    if (!fx || typed === undefined) return <>{fmtCurrencyExact(baseValue, base)}</>
+    if (!code || typed === undefined) return <>{fmtCurrencyExact(baseValue, base)}</>
+    const amount = <span className={strong ? undefined : 'text-slate-700'}>{fmtCurrencyExact(typed, code)}</span>
     return (
       <>
-        <span className={strong ? undefined : 'text-slate-700'}>{fmtCurrencyExact(typed, fx.currency)}</span>
+        {rate
+          ? <FxPostingTooltip code={code} base={base} booked={baseValue} rate={rate} on={fmtDate(date)}><span className="cursor-help">{amount}</span></FxPostingTooltip>
+          : amount}
         <span className="block text-[11px] text-fg-muted" style={{ fontWeight: 400 }}>{fmtCurrencyExact(baseValue, base)}</span>
       </>
     )
   }
-  const fxTotal = (k: 'fxDebit' | 'fxCredit') => fx ? Math.round(lines.reduce((s, l) => s + (l[k] ?? 0), 0) * 100) / 100 : undefined
+  const fxTotal = (k: 'fxDebit' | 'fxCredit') => entryCurrency ? Math.round(lines.reduce((s, l) => s + (l[k] ?? 0), 0) * 100) / 100 : undefined
   // Standard accounting order inside an entry: debits first, then credits.
   const orderedLines = useMemo(
     () => [...lines].sort((a, b) => (a.debit > 0 ? 0 : 1) - (b.debit > 0 ? 0 : 1)),
@@ -423,16 +443,16 @@ function LinesTable({ lines, base, totalDebit, totalCredit, fx, flagSystemAccoun
               <td>{l.account ? <CategoryCell meta={ACCOUNT_TYPE_META[l.account.accountType]} /> : <span className="text-fg-subtle">-</span>}</td>
               <td className="text-muted-foreground [overflow-wrap:anywhere]">{l.description || <span className="text-fg-subtle">-</span>}</td>
               <td><DimensionPills dimensionValues={l.dimensionValues} /></td>
-              <td className="text-right tabular-nums text-slate-700">{money(l.debit, l.fxDebit || undefined)}</td>
-              <td className="text-right tabular-nums text-slate-700">{money(l.credit, l.fxCredit || undefined)}</td>
+              <td className="text-right tabular-nums text-slate-700">{money(l.debit, l.fxDebit || undefined, l.currency ?? entryCurrency, l.rate)}</td>
+              <td className="text-right tabular-nums text-slate-700">{money(l.credit, l.fxCredit || undefined, l.currency ?? entryCurrency, l.rate)}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr className="border-t border-border bg-[color-mix(in_srgb,hsl(var(--muted))_30%,#fff)] text-slate-900 [&>td]:py-3 [&>td]:pl-4 [&>td]:pr-2 [&>td]:align-middle" style={{ fontWeight: 600 }}>
             <td colSpan={4}>Totals</td>
-            <td className="text-right tabular-nums">{money(totalDebit, fxTotal('fxDebit'), true)}</td>
-            <td className="text-right tabular-nums">{money(totalCredit, fxTotal('fxCredit'), true)}</td>
+            <td className="text-right tabular-nums">{money(totalDebit, fxTotal('fxDebit'), entryCurrency, undefined, true)}</td>
+            <td className="text-right tabular-nums">{money(totalCredit, fxTotal('fxCredit'), entryCurrency, undefined, true)}</td>
           </tr>
         </tfoot>
       </table>

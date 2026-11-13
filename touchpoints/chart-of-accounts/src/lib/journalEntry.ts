@@ -169,6 +169,39 @@ export function toBaseLines<L extends { debit: number; credit: number }>(lines: 
   return out.map(({ dc, cc, ...l }) => ({ ...(l as unknown as L), baseDebit: dc / 100, baseCredit: cc / 100 }))
 }
 
+/* The same, for an entry whose lines each carry their own currency and rate.
+   Mahad, 2026-11-14: *"Journal entry form ... add Currency, Foreign Currency
+   Amount and Rate columns. The base amount fills in from the rate."* `debit`
+   and `credit` are what the line says in its own currency; a base-currency line
+   carries a rate of 1 and comes back as typed.
+
+   Lines in one currency at one rate that balance in it are converted together
+   through `toBaseLines`, so they balance in base as well, to the cent. Any
+   other line is converted on its own: it cannot balance against itself, and
+   pushing a cent onto it would only move the figure the reader was shown. A
+   line with no usable rate converts to nothing rather than to Infinity. */
+export function linesInBase<L extends { debit: number; credit: number; currency: string; rate: number }>(lines: L[]): (L & { baseDebit: number; baseCredit: number })[] {
+  const out: (L & { baseDebit: number; baseCredit: number })[] = new Array(lines.length)
+  const groups = new Map<string, number[]>()
+  lines.forEach((l, i) => {
+    const key = `${l.currency}|${l.rate}`
+    const g = groups.get(key)
+    if (g) g.push(i); else groups.set(key, [i])
+  })
+  const cents = (v: number) => Math.round(v * 100)
+  for (const idx of groups.values()) {
+    const group = idx.map(i => lines[i])
+    const rate = group[0].rate
+    const converted = !(rate > 0)
+      ? group.map(l => ({ ...l, baseDebit: 0, baseCredit: 0 }))
+      : group.reduce((s, l) => s + cents(l.debit) - cents(l.credit), 0) === 0
+        ? toBaseLines(group, rate)
+        : group.map(l => ({ ...l, baseDebit: cents(l.debit / rate) / 100, baseCredit: cents(l.credit / rate) / 100 }))
+    idx.forEach((i, j) => { out[i] = converted[j] })
+  }
+  return out
+}
+
 export function nextJeNumber(issued: Iterable<string>, date: string): string {
   const prefix = `JE-${date.slice(0, 4)}-`
   let highest = 0
@@ -290,9 +323,13 @@ export interface JeLine {
   // contra line has none stored, so it reads the contra account's own defaults.
   dimensionValues: { dimensionId: string; value: string }[]
   synthetic?: boolean
-  /** The line as it was typed, on an entry written in another currency. */
+  /** The line as it was typed, on a line written in another currency. */
   fxDebit?: number
   fxCredit?: number
+  /** The currency the line was written in and the rate it posted at, when that
+   *  was not the base currency. Each line carries its own (2026-11-14). */
+  currency?: string
+  rate?: number
 }
 
 export interface ReconstructedEntry {
@@ -305,10 +342,14 @@ export interface ReconstructedEntry {
   reversalReason?: string
   /** The ID the system gave the entry (JNL-000123). */
   entryInternalId?: string
-  /** The currency it was written in and the rate it posted at, when that was
-   *  not the base currency. */
+  /** The currency the whole entry was written in and the rate it posted at,
+   *  when every line shares one that is not the base currency. A rate is given
+   *  only where every line posted at the same one. */
   entryCurrency?: string
   entryRate?: number
+  /** Its lines were written in different currencies - one of them perhaps the
+   *  base - so there is no one currency to name for the entry. */
+  multiCurrency?: boolean
   period: string
   status: 'Draft' | 'Posted' | 'Reversed'
   source: string
@@ -399,6 +440,7 @@ export function reconstructEntry(
     credit: t.credit,
     fxDebit: t.fxDebit,
     fxCredit: t.fxCredit,
+    ...(t.entryCurrency ? { currency: t.entryCurrency, rate: t.entryRate } : {}),
     description: t.description,
     entity: scenarioParty(t.scenarioId) ?? partyFor(source, hashSeed(t.id)),
     // The dimensions posted with this line. A stored posting carries its own
@@ -444,6 +486,16 @@ export function reconstructEntry(
     totalCredit = lines.reduce((s, l) => s + l.credit, 0)
   }
 
+  /* What the entry as a whole was written in. A line carries its own currency
+     now, so the entry has one only when its lines agree; a synthesised contra
+     line is a base figure, and counts as one. An entry made by the old form
+     wrote every line in the one currency, and still reads as it did. */
+  const written = new Set(lines.map(l => l.currency ?? ''))
+  const one = written.size === 1 ? [...written][0] : undefined
+  const rates = new Set(lines.map(l => l.rate))
+  const entryCurrency = one || undefined
+  const entryRate = entryCurrency && rates.size === 1 ? [...rates][0] : undefined
+
   const isReversing = head.entryType === 'Reversing'
   const reversalDate = isReversing ? nextMonthFirst(head.date) : undefined
 
@@ -474,8 +526,9 @@ export function reconstructEntry(
     balanced: Math.abs(totalDebit - totalCredit) < 0.005,
     reversalReason: head.reversalReason,
     entryInternalId: head.entryInternalId,
-    entryCurrency: head.entryCurrency,
-    entryRate: head.entryRate,
+    entryCurrency,
+    entryRate,
+    ...(written.size > 1 ? { multiCurrency: true } : {}),
     /* When it was written, which is not the date it is dated: an entry posted on
        the 29th can be dated the 1st. Stamped on every entry made here; a seeded
        one was never written by anyone in this app, so it reads its own date and
@@ -592,10 +645,13 @@ export interface ReversalLine {
    *  the same place - which, now that a line can take any of its account's
    *  values, is not always the account's default. */
   dimensionValues: { dimensionId: string; value: string }[]
-  /** The line as it was typed, flipped, on an entry written in another
+  /** The line as it was typed, flipped, on a line written in another
    *  currency - the same amounts the original was typed in, not a reconversion. */
   fxDebit?: number
   fxCredit?: number
+  /** That line's currency and the rate it posted at, which the reversal keeps. */
+  currency?: string
+  rate?: number
 }
 
 export interface ReversalPlan {
@@ -649,18 +705,23 @@ export function buildReversal(
   const offered = periodPostingBlock(ownDate, periods) ? firstPostableDate(periods) : ownDate
   const date = chosenDate ?? offered
 
-  const lines: ReversalLine[] = entry.lines.map(l => ({
-    accountId: l.accountId,
-    account: l.account,
-    description: l.description,
-    debit: l.credit,
-    credit: l.debit,
-    dimensionValues: l.dimensionValues,
-    /* The typed amounts flip with the base ones. Mahad, 2026-10-10: *"The
-       reversal should copy the EUR amounts and the original rate, not today's
-       rate."* */
-    ...(entry.entryCurrency ? { fxDebit: l.fxCredit ?? 0, fxCredit: l.fxDebit ?? 0 } : {}),
-  }))
+  const lines: ReversalLine[] = entry.lines.map(l => {
+    /* Each line in its own currency. An entry the old form wrote kept the
+       currency on the entry alone, so a line without one takes the entry's. */
+    const currency = l.currency ?? entry.entryCurrency
+    return {
+      accountId: l.accountId,
+      account: l.account,
+      description: l.description,
+      debit: l.credit,
+      credit: l.debit,
+      dimensionValues: l.dimensionValues,
+      /* The typed amounts flip with the base ones. Mahad, 2026-10-10: *"The
+         reversal should copy the EUR amounts and the original rate, not today's
+         rate."* */
+      ...(currency ? { fxDebit: l.fxCredit ?? 0, fxCredit: l.fxDebit ?? 0, currency, rate: l.rate ?? entry.entryRate } : {}),
+    }
+  })
 
   /* The locks in `manualPostingLock` apply here too. A reversal does not choose
      an account, and it asks for no adjustment reason on a control account or

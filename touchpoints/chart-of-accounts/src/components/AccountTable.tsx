@@ -957,10 +957,54 @@ function fmtMoneySigned(n: number, symbol: string) {
 
 // Card header shared by the balance and posting cards: flag, full name, and the
 // reminder that this is the account's currency rather than the company's. The
-// parts come from FxCard, the currency card every module shares.
-function FxCardHeader({ code }: { code: string }) {
+// parts come from FxCard, the currency card every module shares. A journal line
+// can be written in a currency its account is not held in, so a card about one
+// line names the currency as the line's.
+function FxCardHeader({ code, role = 'account currency' }: { code: string; role?: string }) {
   const m = currencyMeta(code)
-  return <FxHead flag={<CurrencyFlag meta={m} className="text-[15px] leading-none" />} name={m.name} code={m.code} role="account currency" />
+  return <FxHead flag={<CurrencyFlag meta={m} className="text-[15px] leading-none" />} name={m.name} code={m.code} role={role} />
+}
+
+/* What a currency badge says when hovered: which currency the account is held
+   in, and where its own amount is. Static apart from the currency's own name:
+   the balances it points at carry the figures. Shared by the chart's badge and
+   the account page's header chip. */
+export function CurrencyHeldCard({ code, base, hint = true }: { code: string; base: string; /** The pointer to the balance cards; the account page's header shows both figures itself. */ hint?: boolean }) {
+  if (code === base) {
+    return (
+      <div className="p-[12px] whitespace-nowrap">
+        <FxCardHeader code={code} role="base currency" />
+        <div className="mt-[8px]"><FxNote>Held in the base currency, so its balances need no conversion.</FxNote></div>
+      </div>
+    )
+  }
+  return (
+    <div className="p-[12px] whitespace-nowrap">
+      <FxCardHeader code={code} />
+      <div className="mt-[8px] space-y-[2px]">
+        <FxNote>Its balances show in the base currency.</FxNote>
+        {hint && <FxNote small>Hover a balance for the amount in the account&apos;s currency.</FxNote>}
+      </div>
+    </div>
+  )
+}
+
+/* The currency badge after an account's name, on an account held in anything
+   but the base currency. Mahad, 2026-11-14: *"Chart listing: show a currency
+   badge on foreign-currency accounts. The balance is in the base currency, and
+   hovering shows the foreign amount."* The Currency column's pill with the flag
+   drawn inside it, so it rides the name the way the New badge does rather than
+   reading as a column of its own. */
+export function CurrencyBadge({ code, base, q = '' }: { code: string; base: string; q?: string }) {
+  const m = currencyMeta(code)
+  return (
+    <Tooltip rich align="left" className="shrink-0" content={<CurrencyHeldCard code={code} base={base} />}>
+      <span data-currency-badge className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-info-50 text-info-700 text-2xs font-semibold leading-none border border-info-100 cursor-help">
+        <CurrencyFlag meta={m} className="text-[10px] leading-none" />
+        <Marked text={m.code} q={q} />
+      </span>
+    </Tooltip>
+  )
 }
 
 // The rate a figure was struck at, "1 USD = £0.7862 GBP".
@@ -1026,15 +1070,27 @@ export function FxBalanceTooltip({ code, base, booked, own, children }: { code: 
    Deliberately shorter than the balance card: a posting is booked once, at the
    rate in force that day, and is never revalued - only the balance it rolls
    into is. Offering it an unrealized difference would invent a revaluation that
-   does not apply to it. */
-export function FxPostingTooltip({ code, base, booked, children }: { code: string; base: string; booked: number; children: React.ReactNode }) {
+   does not apply to it.
+
+   A posting written in another currency carries the rate it was written at and
+   its date, and the card states those: the ledger's Rate column prints that
+   rate, and the card beside it cannot quote the booked one instead. */
+export function FxPostingTooltip({ code, base, booked, rate, on, children }: {
+  code: string; base: string; booked: number
+  /** The rate the posting itself was written at, where it carries one. */
+  rate?: number
+  /** The day it posted, read with `rate`. */
+  on?: string
+  children: React.ReactNode
+}) {
   const fx = fxStanding(booked, code)
+  const own = rate != null
   const card = (
     <div className="p-[12px] whitespace-nowrap">
-      <FxCardHeader code={code} />
+      <FxCardHeader code={code} role={own ? 'line currency' : undefined} />
       <FxInset>
         <FxLine strong label={`Booked in ${base}`} value={`${fmtMoney(fx.booked, symbolFor(base))} ${base}`} />
-        <FxNote>At {fxRate(base, code, fx.bookedRate)} · {REVALUED_ON}</FxNote>
+        <FxNote>At {fxRate(base, code, own ? rate : fx.bookedRate)} · {own && on ? on : REVALUED_ON}</FxNote>
         <FxNote small>The rate this posting was booked at, not today's.</FxNote>
       </FxInset>
     </div>
@@ -3154,6 +3210,9 @@ function rowCells({ a, q, order, padCls, comfort = false, base, depth, index, ce
             ) : (
               <span className="text-sm truncate" style={{ fontWeight: structural ? 600 : 400, color: '#1E293B' }}><Marked text={a.accountName} q={q} /></span>
             )}
+            {/* Straight after the name, in both views and every preview: which
+                currency the account is held in is part of reading its row. */}
+            {nonBase && <CurrencyBadge code={a.currencyCode} base={base} q={q} />}
             {!inert && <NewBadge id={a.id} />}
             {nameTrail}
           </div>

@@ -49,7 +49,7 @@ function findScrollParent(node: HTMLElement | null): HTMLElement | null {
 }
 
 export function DetailHeaderCard({
-  onBack, backTitle, avatar, avatarColor, numberLabel, title, titleBadges, typeLine, description, actions,
+  onBack, backTitle, avatar, avatarColor, numberLabel, title, titleBadges, typeLine, description, actions, figure,
   tabs, activeTab, onTabChange, tone = 'default', fullscreen = false, onToggleFullscreen,
 }: {
   onBack?: () => void
@@ -68,6 +68,10 @@ export function DetailHeaderCard({
   description?: string
   /* Right-hand controls (Actions dropdown, primary CTA, …) */
   actions?: ReactNode
+  /* A headline figure on the right, ruled off ahead of the controls - an
+     account's balance. Told when the header has shrunk on scroll, so it can
+     drop to one line the way the title and the type line do. */
+  figure?: (compact: boolean) => ReactNode
   tabs: { id: string; label: string; count?: number }[]
   activeTab: string
   onTabChange: (id: string) => void
@@ -147,6 +151,7 @@ export function DetailHeaderCard({
 
                 {/* Right: fullscreen toggle + actions */}
                 <div className="flex items-center shrink-0 transition-all duration-250" style={{ gap: isScrolled ? 6 : 8 }}>
+                  {figure && <div className="text-right pr-3 mr-1 border-r border-border">{figure(isScrolled)}</div>}
                   {onToggleFullscreen && (
                     <button
                       type="button"

@@ -8,6 +8,7 @@ import { todayIso } from './utils'
 import { lockEndedPeriods } from './periodClose'
 import type { EntryAttachment } from './journalEntry'
 import { postingDimensions } from './dimensionDefaults'
+import { currencyMeta } from './currencies'
 import { earningsOpening, isCurrentYearEarnings } from './currentYearEarnings'
 
 const todayMinus = (d: number) => {
@@ -977,6 +978,21 @@ export const seedTransactions: Transaction[] = (() => {
     return `${key}-${next}`
   }
 
+  /* A leg its scenario says was written in its account's own currency - a euro
+     receipt into the euro account - carries the amount as typed in it, so the
+     ledger's Currency, Foreign currency amount and Rate columns have real lines
+     to show (2026-11-14). Taken at the rate the account's balance is carried at
+     (`bookedRate`) and rounded to the cent: the base figures are the generator's
+     as they were, and the own-currency balance the chart reads, which counts a
+     typed amount as typed, comes out where it did to within half a cent a
+     posting. No draw is made here, so no generated figure moves. */
+  const typedLeg = (leg: ScenarioLeg | undefined, a: Account, debit: number, credit: number): Partial<Transaction> => {
+    if (!leg?.inAccountCurrency || a.currencyCode === seedCompany.baseCurrency) return {}
+    const rate = currencyMeta(a.currencyCode).bookedRate
+    const typed = (v: number) => Math.round(v * rate * 100) / 100
+    return { entryCurrency: a.currencyCode, entryRate: rate, fxDebit: typed(debit), fxCredit: typed(credit) }
+  }
+
   let id = 0
   plan.forEach(e => {
     const afford = Math.min(...e.lines.map(l => perLine(l.account) / checkFrac(l.frac)))
@@ -1009,6 +1025,8 @@ export const seedTransactions: Transaction[] = (() => {
       const value = j === 0 ? amount : amounts[j - 1]
       // A hand-written figure stays out of the generator's budget.
       if (e.amount == null) spend(l.account, l.side, value)
+      const debit = l.side === 'Debit' ? value : 0
+      const credit = l.side === 'Credit' ? value : 0
       txs.push({
         id: `tx_${id++}`,
         accountId: l.account.id,
@@ -1016,8 +1034,9 @@ export const seedTransactions: Transaction[] = (() => {
         entryType: e.entryType,
         description: l.leg ? formatLeg(l.leg, e.date, reference) : l.fallback,
         scenarioId: e.scenarioId,
-        debit: l.side === 'Debit' ? value : 0,
-        credit: l.side === 'Credit' ? value : 0,
+        debit,
+        credit,
+        ...typedLeg(l.leg, l.account, debit, credit),
         runningBalance: 0,
         dimensionValues: l.dimensionValues,
         period: e.periodLabel,

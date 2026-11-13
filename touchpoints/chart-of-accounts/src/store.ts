@@ -1239,7 +1239,11 @@ export const useStore = create<State>()(persist((set, get) => ({
      for the Dimensions list's audit columns. */
   /* 11: Current Year Earnings is an account, 35000, rather than a line the
      listing draws (2026-10-10). A save from an earlier build has no such account. */
-  version: 11,
+  /* 12: the seeded euro receipts and Barclays reserve transfers carry the amount
+     typed in their account's currency (2026-11-14). A save from an earlier build
+     holds them as base figures alone, and the ledger's Foreign currency amount
+     and Rate columns would read empty. */
+  version: 12,
   migrate: () => ({}) as State,
   // A save read back on a later day locks the months that have ended since.
   merge: (persisted, current) => {

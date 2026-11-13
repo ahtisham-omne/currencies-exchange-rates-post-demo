@@ -33,7 +33,9 @@ import { accountNotes, noteKey } from '../lib/notes'
 import { CommsTab, useCommsCount } from '../components/CommsTab'
 import { createdHere } from '../lib/comms'
 import { AttachmentsTab, type AttachmentFile } from '../components/AttachmentsTab'
-import { bookedFromBase, ownBalanceOf, currentOwnBalanceOf, ownSide, typedCorrection, typedIn } from '../lib/currencies'
+import { bookedFromBase, currencyMeta, ownBalanceOf, currentOwnBalanceOf, ownSide, typedCorrection, typedIn } from '../lib/currencies'
+import { CurrencyFlag } from '../components/CurrencyFlag'
+import { withCode } from '../components/FxCard'
 import { earningsPostings, isCurrentYearEarnings } from '../lib/currentYearEarnings'
 import { monthlyBalancesThrough, runningBalanceLedger, normalSideDelta, comparePostingOrder } from '../lib/monthlyLedger'
 import { balanceStruckLabel } from '../lib/balanceStruckCopy'
@@ -48,7 +50,7 @@ import { defaultValueOf, missingDefaults, valuesByDimension } from '../lib/dimen
 import { MoveUnderSummaryModal } from '../components/MoveUnderSummaryModal'
 import { NewJournalEntryModal } from '../components/NewJournalEntryModal'
 import { AdjustmentAccountModal } from '../components/AdjustmentAccountModal'
-import { StatusChip, StatusMenu, HeaderMenu, AccountActionItems, filterActive, ColumnFiltersBar, FxPostingTooltip, BookedBaseTooltip, BookedMarker, CurrencyCell, avatarTint, chartRowValues, ColFilter, ColFilterType, GL_TYPE_TONE, CategoryCell, DimensionPills, AccountTree, isLockedCol, DEFAULT_COLUMNS, DEFAULT_COLUMN_ORDER, useTreeExpansion, withAncestorContext, matchesColFilters, uniqueColValues, blankFilter, HEADER_DEFS, besidePrefill, RESTRICTED_HELP, type ColumnConfig, type ColKey, type ColFilters, type CreateRowPrefill } from '../components/AccountTable'
+import { StatusChip, StatusMenu, HeaderMenu, AccountActionItems, filterActive, ColumnFiltersBar, FxPostingTooltip, FxBalanceTooltip, CurrencyHeldCard, BookedBaseTooltip, BookedMarker, CurrencyCell, avatarTint, chartRowValues, ColFilter, ColFilterType, GL_TYPE_TONE, CategoryCell, DimensionPills, AccountTree, isLockedCol, DEFAULT_COLUMNS, DEFAULT_COLUMN_ORDER, useTreeExpansion, withAncestorContext, matchesColFilters, uniqueColValues, blankFilter, HEADER_DEFS, besidePrefill, RESTRICTED_HELP, type ColumnConfig, type ColKey, type ColFilters, type CreateRowPrefill } from '../components/AccountTable'
 import { describePicked } from '../components/NotifyRecipientsPicker'
 import { ACCOUNT_OWNER_ACCESS, DEFAULT_RESTRICTED_ACCESS } from '../lib/restrictedAccess'
 import { ColumnSelector } from '../components/ColumnSelector'
@@ -91,6 +93,51 @@ function ClassificationBadge({ account, index }: { account: Account; index: Char
   const trail = classificationTrail(index, account.id)
   const parent = trail[trail.length - 1]
   return <Badge tone={meta.color}>{parent ? parent.accountName : meta.label}</Badge>
+}
+
+/* A posting account's balance, on the right of the header. Mahad, 2026-11-14:
+   *"Account detail page, header: show the account's currency, and the balance
+   in both the foreign and the base currency."* As it stands today, whatever
+   period the page is scoped to - the figure the chart's Running balance and
+   Foreign balance read. An account held in another currency leads with its own
+   amount, as typed where it was typed, with the base value the ledger carries
+   under it, and hovering either opens the chart's balance card. An account in
+   the base currency has the one figure. On scroll it keeps the headline alone,
+   as the header keeps the title alone. */
+function HeaderBalance({ account, base, compact }: { account: Account; base: string; compact: boolean }) {
+  const booked = account.currentBalance ?? account.balance
+  const code = account.currencyCode
+  const nonBase = code !== base
+  const own = currentOwnBalanceOf(account)
+  const headline = (
+    <span
+      className={cn('text-foreground tabular-nums whitespace-nowrap transition-all duration-250', nonBase && 'underline decoration-dotted decoration-[#CBD5E1] underline-offset-2')}
+      style={{ fontSize: compact ? 13 : 14, fontWeight: 600, lineHeight: '18px' }}
+    >
+      {withCode(fmtCurrencyExact(nonBase ? own : booked, nonBase ? code : base), nonBase ? code : base)}
+    </span>
+  )
+  return (
+    <div data-header-balance>
+      {!compact && (
+        <div className="flex justify-end leading-[12px]">
+          <DashInfoLabel align="right" tooltip="The account's balance as it stands today, whatever period is picked on the page.">Balance</DashInfoLabel>
+        </div>
+      )}
+      {/* A flex row rather than a line of text, so the card's inline trigger
+          adds no line box and the block stays the back button's height. */}
+      <div className="flex justify-end">
+        {nonBase ? (
+          <FxBalanceTooltip code={code} base={base} booked={booked} own={own}>
+            <span className="cursor-help flex flex-col items-end">
+              {headline}
+              {!compact && <span className="text-[11px] leading-[14px] text-slate-500 tabular-nums whitespace-nowrap">{withCode(fmtCurrencyExact(booked, base), base)} · base currency</span>}
+            </span>
+          </FxBalanceTooltip>
+        ) : headline}
+      </div>
+    </div>
+  )
 }
 
 // The one account this one sits directly under, as it is written everywhere else
@@ -487,8 +534,15 @@ export default function AccountDetailPage() {
                   these pills ... but only from the 5 category accounts only."* */}
               {!isCategoryRoot(account) && <ClassificationBadge account={account} index={chartIndex} />}
               <Badge tone={GL_TYPE_TONE[account.glAccountType] ?? 'neutral'}>{account.glAccountType}</Badge>
-              {/* No currency chip: the rail's Currency field states it (Mahad,
-                  2026-10-09: *"remove currency from header in the detail pages"*). */}
+              {/* The currency the account is held in, on every account, its
+                  balance beside the actions. Back in the header since Mahad,
+                  2026-11-14: *"Account detail page, header: show the account's
+                  currency, and the balance in both the foreign and the base
+                  currency."* It came out on 2026-10-09 (*"remove currency from
+                  header in the detail pages"*); the rail's Currency field stays. */}
+              <UITooltip rich align="left" content={<CurrencyHeldCard code={account.currencyCode} base={store.company.baseCurrency} hint={false} />}>
+                <Badge tone="info" className="cursor-help"><CurrencyFlag meta={currencyMeta(account.currencyCode)} className="text-[11px] leading-none" />{account.currencyCode}</Badge>
+              </UITooltip>
               {account.defaultDimensionValues.slice(0, 3).map((tv) => {
                 const name = store.dimensions.find(t => t.id === tv.dimensionId)?.name ?? tv.dimensionId
                 return (
@@ -534,6 +588,7 @@ export default function AccountDetailPage() {
               )}
             </>
           }
+          figure={template === 'transaction' ? (compact => <HeaderBalance account={account} base={store.company.baseCurrency} compact={compact} />) : undefined}
           tabs={detailTabs(template, commsCount, attachmentCount, noteCount)}
           activeTab={tab}
           onTabChange={(v) => { setRegisterRange(null); setTab(v as any) }}

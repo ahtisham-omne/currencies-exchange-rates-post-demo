@@ -58,8 +58,8 @@ function ReverseEntryFlowFor({ jeNumber, onClose }: { jeNumber: string; onClose:
       description: l.description, memo: reversal.memo,
       reversalReason: reason, createdAt, createdBy: 'Ahtisham Ahmad (You)',
       debit: l.debit, credit: l.credit,
-      // An entry written in another currency reverses in it, at its own rate.
-      ...(reversal.entryCurrency ? { entryCurrency: reversal.entryCurrency, entryRate: reversal.entryRate, fxDebit: l.fxDebit, fxCredit: l.fxCredit } : {}),
+      // A line written in another currency reverses in it, at its own rate.
+      ...(l.currency ? { entryCurrency: l.currency, entryRate: l.rate, fxDebit: l.fxDebit, fxCredit: l.fxCredit } : {}),
       runningBalance: 0,
       // Where the original line posted, so the pair nets to nothing per value too.
       dimensionValues: l.dimensionValues,
@@ -195,8 +195,8 @@ function ReverseEntryConfirm({ open, onDismiss, onConfirm, original, plan, base,
                 {/* In the currency it was typed in, over the base figure, as the
                     entry's own lines read. */}
                 <span className="shrink-0 text-right text-[12px] tabular-nums text-slate-700">
-                  {plan.entryCurrency
-                    ? <>{fmtCurrencyExact(l.fxDebit || l.fxCredit || 0, plan.entryCurrency)}<span className="block text-[11px] text-fg-muted">{fmtCurrencyExact(l.debit || l.credit, base)}</span></>
+                  {l.currency
+                    ? <>{fmtCurrencyExact(l.fxDebit || l.fxCredit || 0, l.currency)}<span className="block text-[11px] text-fg-muted">{fmtCurrencyExact(l.debit || l.credit, base)}</span></>
                     : fmtCurrencyExact(l.debit || l.credit, base)}
                 </span>
               </li>
@@ -204,6 +204,8 @@ function ReverseEntryConfirm({ open, onDismiss, onConfirm, original, plan, base,
           </ul>
           <div className="flex items-center justify-between px-3 h-8 bg-bg-subtle border-t border-border">
             <span className="text-2xs uppercase tracking-wider text-fg-muted" style={{ fontWeight: 700 }}>Total</span>
+            {/* The typed total only where every line is in one currency;
+                amounts in different currencies cannot be added up. */}
             <span className="text-[12px] tabular-nums text-fg" style={{ fontWeight: 600 }}>
               {plan.entryCurrency
                 ? <>{fmtCurrencyExact(Math.round(plan.lines.reduce((t, l) => t + (l.fxDebit ?? 0), 0) * 100) / 100, plan.entryCurrency)} <span className="text-fg-muted" style={{ fontWeight: 400 }}>· {fmtCurrencyExact(plan.total, base)}</span></>

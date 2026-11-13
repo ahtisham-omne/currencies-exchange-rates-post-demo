@@ -251,6 +251,31 @@ identity-stable caching.
   foreign entry posts the base figures only. Stated in
   `src/lib/entryCurrency.test.ts` and `e2e/entryNumberAndCurrency.spec.ts`.
 
+- **Currency is per line, not per entry; multi-currency touchpoints (2026-11-14,
+  supersedes the entry-level Currency field above).** Mahad: *"Journal entry form
+  and the Journal entries tab: add Currency, Foreign Currency Amount and Rate
+  columns. The base amount fills in from the rate."* The form's line grid reads
+  Account | Line description | Currency | Foreign currency amount | Rate | Debit |
+  Credit. A line takes its account's currency when the account is picked and can
+  be changed. A base line is typed in Debit or Credit as before; a foreign line is
+  typed as its foreign amount with a Dr/Cr toggle beside it, its rate prefilled
+  from `CURRENCY_META[code].rate` (units per one of base, editable, tidied to
+  `formatRate` on blur), and its Debit or Credit worked out and read-only.
+  `linesInBase` (`lib/journalEntry.ts`) converts; lines in one currency at one rate
+  that balance in it go through `toBaseLines`. Totals and the balance check are in
+  base. Each posting keeps its own `entryCurrency`/`entryRate`/`fx*`;
+  `reconstructEntry` gives each line `currency`/`rate`, sets `entryCurrency` only
+  when every line agrees and `multiCurrency` when they differ (the entry page says
+  "Multiple"). Both GL tabs carry Currency, **Foreign currency amount** (the
+  `fxAmount` key, renamed from "Amount (foreign currency)") and **Rate**; on Journal
+  entries they are each line's, and the entry row states them only where its lines
+  agree. The chart's name cell carries a currency badge on a non-base account, and
+  the account page's header shows the currency chip (back after 2026-10-09) and a
+  posting account's balance in both currencies. The seed types the EUR receipts on
+  11170 and the reserve transfers on 11160 in the account's currency at its
+  `bookedRate` (`ScenarioLeg.inAccountCurrency`), so no balance moves; store
+  version 12. Stated in `src/lib/entryCurrency.test.ts`.
+
 - **The new journal entry form has no Description field (2026-09-30).** Mahad:
   *"Remove this from New journal entry modal."* An entry written there carries no
   `entryDescription`, so `entryDescriptionFor` names it "Manual journal entry" -
