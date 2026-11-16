@@ -20,7 +20,7 @@ export function RegionPill({ selected, onChange, countFor, noun }: {
     <PillFilter
       label="Region"
       icon={<Globe size={14} />}
-      description={`Show ${noun} from the regions you tick.`}
+      description={`Show ${noun} from the Regions you select`}
       options={REGIONS_AZ.map(r => ({ value: r, label: r, count: countFor(r) }))}
       selected={selected}
       onChange={onChange}

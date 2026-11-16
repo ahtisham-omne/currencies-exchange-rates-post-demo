@@ -105,9 +105,7 @@ export function CurrencyDetailPage() {
                   <span className="inline-flex cursor-default"><Badge tone="neutral">{c.symbol}</Badge></span>
                 </Tooltip>
                 {c.isBaseCurrency && (
-                  <Tooltip side="bottom" content={RATE_TOOLTIPS.baseCurrency}>
-                    <span className="inline-flex cursor-default"><Badge tone="base">Base Currency</Badge></span>
-                  </Tooltip>
+                  <span className="inline-flex cursor-default"><Badge tone="base">Base Currency</Badge></span>
                 )}
               </>
             }

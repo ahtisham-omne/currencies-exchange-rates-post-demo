@@ -77,6 +77,9 @@ export function RateHistoryTab({ rows, code, isStd }: { rows: RateHistoryRow[]; 
   const table = useCoaTable<RateHistoryRow>({
     columns, rows: shown, query: debouncedQ, getRowId: r => r.id, rememberAs: 'fx.pair:history',
     defaultSort: { key: 'effective', dir: 'desc' },
+    // Paged like the currency list: Rows per Page and the pager sit under the
+    // table; a new date range goes back to page 1.
+    pagination: { perPage: 100, options: [10, 25, 50, 100, 'all'], resetKey: JSON.stringify(filters) },
   })
   const narrowed = countFilters(filters) > 0 || Object.keys(table.colFilters).length > 0
 
@@ -96,7 +99,8 @@ export function RateHistoryTab({ rows, code, isStd }: { rows: RateHistoryRow[]; 
         <PillRow>
           <DateRangePill
             label="Effective Date"
-            description="Show entries that took effect between these dates. Leave one blank for no limit."
+            title="Effective date"
+            description="Filter by the date each rate took effect."
             from={filters.from}
             to={filters.to}
             onChange={(from, to) => setFilters({ from, to })}
@@ -104,7 +108,7 @@ export function RateHistoryTab({ rows, code, isStd }: { rows: RateHistoryRow[]; 
         </PillRow>
       }
     >
-      {/* Block-windowed at any length, like CoA's Transactions tab: fifty drawn at a time, never more than a hundred. */}
+      {/* One page at a time; on All it stays block-windowed, like CoA's Transactions tab. */}
       <CoaDataTable
         table={table}
         windowAbove={0}

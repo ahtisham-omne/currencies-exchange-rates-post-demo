@@ -9,9 +9,11 @@ import { Button, Menu } from './ui'
 import { DateRangeFromTo } from './Filters'
 import { cn, fmtDate } from '../lib/utils'
 
-export function DateRangePill({ label, description, from, to, onChange }: {
-  /** The pill and panel title, in Title Case: "Effective Date". */
+export function DateRangePill({ label, title = label, description, from, to, onChange }: {
+  /** The pill's label, in Title Case: "Effective Date". */
   label: string
+  /** The panel's heading, when it reads differently from the pill: "Effective date". */
+  title?: string
   /** One sentence on what the range matches. */
   description: string
   from: string
@@ -41,7 +43,7 @@ export function DateRangePill({ label, description, from, to, onChange }: {
       {close => (
         <div className="w-[340px] p-3.5 space-y-3">
           <div>
-            <p className="text-[13px] text-fg" style={{ fontWeight: 600 }}>{label}</p>
+            <p className="text-[13px] text-fg" style={{ fontWeight: 600 }}>{title}</p>
             <p className="text-2xs text-fg-muted leading-relaxed mt-0.5">{description}</p>
           </div>
           <DateRangeFromTo from={from} to={to} onFromChange={v => onChange(v, to)} onToChange={v => onChange(from, v)} />
