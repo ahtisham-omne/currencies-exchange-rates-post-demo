@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { AppSidebar } from "./AppSidebar";
 import { TouchpointFrames } from "./TouchpointFrames";
+import { ShellBackdropTint } from "./FrameScrims";
 import { Toaster } from "sonner";
 import { VendorProvider } from "../../context/VendorContext";
 import { matchTouchpoint } from "../../touchpoints";
@@ -19,6 +20,7 @@ export function AppLayout() {
         </main>
         <Toaster position="top-right" richColors />
         <ToastViewport />
+        <ShellBackdropTint />
       </div>
     </VendorProvider>
   );

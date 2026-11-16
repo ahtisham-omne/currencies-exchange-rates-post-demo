@@ -8,6 +8,7 @@ import {
   type Touchpoint,
   type TouchpointMatch,
 } from "../../touchpoints";
+import { FrameScrims } from "./FrameScrims";
 
 /* The shell router's navigate, while TouchpointFrames is mounted. */
 let shellNavigate: ((path: string) => void) | null = null;
@@ -115,6 +116,8 @@ export function TouchpointFrames({ match }: { match: TouchpointMatch | null }) {
 
   return (
     <>
+      {/* The active module's dialog backdrops, carried over the sidebar. */}
+      <FrameScrims frame={activeSlug && loaded[activeSlug] ? frames.current[activeSlug] ?? null : null} />
       {activeSlug && !loaded[activeSlug] && (
         <div className="absolute inset-0 flex items-center justify-center">Loading…</div>
       )}
