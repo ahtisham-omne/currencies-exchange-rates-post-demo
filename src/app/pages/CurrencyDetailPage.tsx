@@ -5,7 +5,7 @@
 // Attachments, Communications, Activity).
 import { useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeftRight, ChevronDown, CircleSlash, Coins, Download, FileText, History, MessageSquare, Power } from 'lucide-react'
+import { ArrowLeftRight, ChevronDown, CircleSlash, Coins, Download, FileText, MessageSquare, Power } from 'lucide-react'
 import { CoaPage } from '../coa/components/CoaPage'
 import { DetailHeaderCard } from '../coa/components/DetailHeaderCard'
 import { DetailPageLayout, DashboardGrid, DetailNotFound, InfoAuditGrid, InfoGrid, InfoPerson, InfoValue, useDetailFullView, useDetailTab } from '../coa/components/DetailPageLayout'
@@ -37,6 +37,7 @@ import { exportLinkedDocs } from './currency/exportCurrencies'
 import { currencyAttachments, currencyNotes } from './currency/recordSamples'
 import { RecordNotesTab } from './recordTabs/NotesTab'
 import { ComingSoonTab } from './recordTabs/ComingSoonTab'
+import { CurrencyActivityLogsTab } from './recordTabs/ActivityLogsTab'
 import { CX_TITLE } from './CurrencyExchangeHeader'
 
 const TABS = ['dashboard', 'linked', 'notes', 'attachments', 'communications', 'activity'] as const
@@ -147,7 +148,7 @@ export function CurrencyDetailPage() {
               { id: 'notes', label: 'Notes', count: noteCount },
               { id: 'attachments', label: 'Attachments', count: attachmentCount },
               { id: 'communications', label: 'Communications' },
-              { id: 'activity', label: 'Activity' },
+              { id: 'activity', label: 'Activity Logs' },
             ]}
             activeTab={tab}
             onTabChange={id => setTab(id as Tab)}
@@ -166,16 +167,13 @@ export function CurrencyDetailPage() {
         {tab === 'linked' && <LinkedTransactionsTab currency={c} docs={docs} />}
         {tab === 'notes' && <RecordNotesTab noteKey={key} noun="currency" derived={derivedNotes} />}
         {tab === 'attachments' && <RecordAttachmentsTab recordKey={key} seed={seedFiles} document={{ recordLabel: `${c.code} ${c.name}`, recordKind: 'currency' }} />}
-        {/* Communications and Activity follow Vendor Invoicing, which shows these
-            two as Coming Soon until their backends land. */}
+        {/* Communications follows Vendor Invoicing, which shows it as Coming
+            Soon until its backend lands. */}
         {tab === 'communications' && (
           <ComingSoonTab label="Communications" icon={MessageSquare}
             description="Message history for this currency, with your team and partners, will live here. The shared communication surface keeps every conversation attached to the record it is about." />
         )}
-        {tab === 'activity' && (
-          <ComingSoonTab label="Activity" icon={History}
-            description="A chronological audit trail of every action on this currency: status changes, rate updates and edits. The activity feed arrives with backend integration." />
-        )}
+        {tab === 'activity' && <CurrencyActivityLogsTab code={c.code} name={c.name} />}
       </DetailPageLayout>
     </CoaPage>
   )

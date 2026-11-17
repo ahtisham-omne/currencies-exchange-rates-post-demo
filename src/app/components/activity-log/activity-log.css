@@ -1,0 +1,255 @@
+/*
+ * The activity log's own look, scoped to the log so it renders the same in
+ * every module regardless of the host app's tokens or Tailwind version.
+ *
+ * 1. Tokens as real colours. Several modules define --border etc. as bare
+ *    numbers for Tailwind's hsl(var(…)) utilities, which makes the log's
+ *    own `var(--border)` invalid (black sticky-header line, no timeline).
+ * 2. The colour / radius / size utilities the log uses are pinned to the
+ *    reference values, because those same bare-number hosts would otherwise
+ *    resolve `text-foreground` etc. through their own config — or not at all
+ *    once the tokens above are real colours.
+ * 3. The .wh-* rules the reference keeps in its global stylesheet.
+ *
+ * .activity-log-portal marks popovers, hover cards and dialogs, which Radix
+ * renders outside the root; they need the same scope.
+ */
+
+.activity-log-root,
+.activity-log-portal {
+  --radius: 0.5rem;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --border: rgb(226 232 240);
+  --border-subtle: rgba(241, 245, 249, 1);
+  --primary: rgb(10 119 255);
+  --primary-foreground: rgb(255 255 255);
+  --primary-200: #b2d5ff;
+  --foreground: rgb(15 23 42);
+  --muted: rgb(241 245 249);
+  --muted-foreground: rgb(71 85 105);
+  --accent: rgb(235 243 255);
+  --card: rgb(255 255 255);
+  --background: rgb(246 247 249);
+  --input-background: rgba(255, 255, 255, 1);
+  --destructive: rgb(220 40 40);
+  --success: rgb(31 152 96);
+  --warning: rgba(217, 119, 6, 1);
+  --info: rgb(9 77 159);
+  --info-soft: rgb(235 243 255);
+  --ring: rgb(122 184 255);
+  --text-tertiary: #9ca3af;
+
+  --tint-ink-04: rgba(16, 24, 40, 0.04);
+  --elevation-card: 0px 1px 3px 0px rgba(16, 24, 40, 0.1), 0px 1px 2px -1px rgba(16, 24, 40, 0.1);
+  --elevation-modal: 0 24px 48px -12px rgba(0, 0, 0, 0.18);
+  --elevation-xs: 0 1px 2px 0 rgba(16, 24, 40, 0.05);
+  --highlight-bg: rgba(255, 220, 40, 0.5);
+  --page-background: rgba(245, 246, 250, 1);
+  --primary-tint-bg: rgba(237, 244, 255, 1);
+  --primary-tint-text: rgba(10, 119, 255, 1);
+  --row-hover-bg: rgba(240, 247, 255, 1);
+
+  --status-active-bg: rgba(236, 253, 245, 1);
+  --status-active-border: rgba(167, 243, 208, 1);
+  --status-active-text: rgba(6, 95, 70, 1);
+  --status-inactive-bg: rgba(255, 251, 235, 1);
+  --status-inactive-border: rgba(253, 230, 138, 1);
+  --status-inactive-text: rgba(146, 64, 14, 1);
+  --status-archived-bg: rgba(250, 232, 232, 1);
+  --status-archived-border: rgba(240, 210, 206, 1);
+  --status-archived-text: rgba(139, 76, 68, 1);
+
+  --tag-chip-bg: rgba(248, 250, 252, 1);
+  --tag-chip-border: rgba(226, 232, 240, 1);
+  --tag-chip-text: rgba(30, 41, 59, 1);
+
+  --file-pdf-bg: #fdf6f6;
+  --file-pdf: #dc2626;
+  --file-doc-bg: #f4f7fd;
+  --file-doc: #2563eb;
+  --file-image-bg: #f8f5fd;
+  --file-image: #7c3aed;
+  --file-sheet-bg: #f4faf6;
+  --file-sheet: #16a34a;
+  --file-archive-bg: #fdf9f2;
+  --file-archive: #d97706;
+  --file-other-bg: #f5f7fa;
+  --file-other: rgb(71 85 105);
+
+  color: rgb(15 23 42);
+
+  /* The log is a self-contained panel, not page text, so it pins its own
+   * typography for the same reason it pins its colours: a host must not be
+   * able to change how it reads. Every module intends Inter at a 16px base,
+   * which is what the design was drawn against — but one wraps its pages in
+   * Tailwind's default .font-sans, which re-stacked the family, and two drop
+   * the base to 12px, which shrank everything the panel derives from it. */
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+}
+
+/* ─── utilities the log uses, pinned to the reference ─── */
+
+/* Two rules that must beat the host's element defaults but never one of its
+   utility classes. In a Tailwind v4 host they live in the base layer (below
+   utilities); the stamp script unwraps the @layer for v3 hosts, where
+   utilities are unlayered and the (0,0,1) / (0,0,2) specificity does the job. */
+/* Hosts whose preflight sets the default border colour from a bare-number
+   token lose it once --border is a real colour here; restore it. */
+:where(.activity-log-root, .activity-log-portal):not(html),
+:where(.activity-log-root, .activity-log-portal) :not(html) {
+  border-color: rgb(226 232 240);
+}
+/* Some hosts style every <button> with its own size and weight; the log's
+   chips and pill triggers inherit theirs from the card, like the reference. */
+:where(.activity-log-root, .activity-log-portal) button:not(select) {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+}
+
+
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).text-foreground { color: rgb(15 23 42); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).text-foreground\/80 { color: rgb(15 23 42 / 0.8); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).text-muted-foreground { color: rgb(71 85 105); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).text-muted-foreground\/70 { color: rgb(71 85 105 / 0.7); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).text-muted-foreground\/60 { color: rgb(71 85 105 / 0.6); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).placeholder\:text-muted-foreground\/50::placeholder { color: rgb(71 85 105 / 0.5); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).text-primary { color: rgb(10 119 255); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).text-info { color: rgb(9 77 159); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).hover\:text-foreground:hover { color: rgb(15 23 42); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).hover\:text-primary:hover { color: rgb(10 119 255); }
+
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-muted { background-color: rgb(241 245 249); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-muted\/30 { background-color: rgb(241 245 249 / 0.3); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-muted-foreground { background-color: rgb(71 85 105); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-muted-foreground\/40 { background-color: rgb(71 85 105 / 0.4); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-accent { background-color: rgb(235 243 255); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-card { background-color: rgb(255 255 255); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-background { background-color: rgb(246 247 249); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-primary { background-color: rgb(10 119 255); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-info-soft { background-color: rgb(235 243 255); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-border { background-color: rgb(226 232 240); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).bg-border\/60 { background-color: rgb(226 232 240 / 0.6); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).hover\:bg-muted:hover { background-color: rgb(241 245 249); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).hover\:bg-muted\/60:hover { background-color: rgb(241 245 249 / 0.6); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).hover\:bg-muted\/50:hover { background-color: rgb(241 245 249 / 0.5); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).hover\:bg-muted\/40:hover { background-color: rgb(241 245 249 / 0.4); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).hover\:bg-primary\/90:hover { background-color: rgb(10 119 255 / 0.9); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).hover\:bg-primary\/15:hover { background-color: rgb(10 119 255 / 0.15); }
+
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).border-border { border-color: rgb(226 232 240); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).border-border\/80 { border-color: rgb(226 232 240 / 0.8); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).border-border-subtle { border-color: rgba(241, 245, 249, 1); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).border-primary { border-color: rgb(10 119 255); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).border-primary\/30 { border-color: rgb(10 119 255 / 0.3); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).border-muted-foreground { border-color: rgb(71 85 105); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).hover\:border-muted-foreground\/30:hover { border-color: rgb(71 85 105 / 0.3); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).focus\:border-primary:focus,
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).focus-visible\:border-primary:focus-visible { border-color: rgb(10 119 255); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).divide-border > :not([hidden]) ~ :not([hidden]) { border-color: rgb(226 232 240); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).focus-visible\:ring-primary\/20:focus-visible { --tw-ring-color: rgb(10 119 255 / 0.2); }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).focus-visible\:ring-ring\/50:focus-visible { --tw-ring-color: rgb(122 184 255 / 0.5); }
+
+/* radii — hosts differ in --radius (8 vs 10px) */
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).rounded-sm { border-radius: 4px; }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).rounded-md { border-radius: 6px; }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).rounded-lg { border-radius: 8px; }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).rounded-xl { border-radius: 12px; }
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).rounded-2xl { border-radius: 16px; }
+
+/* shadow-sm is the two-layer v4 shadow in the reference; v3 hosts have the flatter one */
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).shadow-sm { box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); }
+
+/* text-sm is 13px in the reference, 14px in Tailwind's default */
+:is(.activity-log-root, .activity-log-portal, :is(.activity-log-root, .activity-log-portal) *).text-sm { font-size: 13px; line-height: 1.4286; }
+
+/* ─── the reference's own global rules for the log ─── */
+
+.wh-activity-card {
+  border: 1px solid var(--border);
+  box-shadow: 0px 1px 2px 0px var(--tint-ink-04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.wh-activity-card:hover {
+  border-color: var(--primary-200);
+  box-shadow: var(--elevation-card);
+}
+
+/* A hover response, not an ambient pulse. Scoped to .wh-activity-row (the
+   whole event row), not the 9px dot itself. */
+.wh-activity-dot {
+  transition: box-shadow 200ms ease-out, transform 200ms ease-out;
+}
+.wh-activity-row:hover .wh-activity-dot {
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--primary) 15%, transparent);
+  transform: scale(1.1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .wh-activity-dot {
+    transition: background-color 150ms ease-out;
+  }
+  .wh-activity-row:hover .wh-activity-dot {
+    box-shadow: none;
+    transform: none;
+    background-color: color-mix(in srgb, var(--primary) 70%, white);
+  }
+}
+
+/* Sub-row (change) dot: same treatment scaled down, in the muted colour. */
+.wh-change-dot {
+  transition: box-shadow 200ms ease-out, transform 200ms ease-out;
+}
+.wh-change-row:hover .wh-change-dot {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted-foreground) 15%, transparent);
+  transform: scale(1.1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .wh-change-dot {
+    transition: background-color 150ms ease-out;
+  }
+  .wh-change-row:hover .wh-change-dot {
+    box-shadow: none;
+    transform: none;
+    background-color: color-mix(in srgb, var(--muted-foreground) 70%, white);
+  }
+}
+
+/* Attachment chip: base colours live here (not inline) so :hover can win. */
+.wh-attachment-chip {
+  background-color: var(--tag-chip-bg);
+  border: 1px solid var(--tag-chip-border);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.wh-attachment-chip:hover {
+  background-color: var(--muted);
+  border-color: var(--border);
+}
+.wh-attachment-chip--removed:hover {
+  background-color: var(--tag-chip-bg);
+  border-color: var(--tag-chip-border);
+}
+
+/* The log's own tooltip. Each host ships a different ui/tooltip default —
+   blue in Physical Inventory and UOM, white in Partners and Shipments,
+   card elsewhere — so the same tooltip changed colour from module to
+   module. This pins it to the card treatment everywhere the log renders.
+   Two classes (0,2,0) so it beats the host's own utility classes without
+   !important, and the host's arrow is hidden: the card style has none. */
+.activity-log-portal.wh-log-tooltip {
+  background-color: rgb(255 255 255);
+  color: rgb(15 23 42);
+  border: 1px solid rgb(226 232 240);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+/* The host renders its own arrow inside the content (blue in Physical
+   Inventory). The card style has none, and Tailwind preflight sets
+   svg { display: block } which this has to beat on every host, so the
+   override is forced rather than relying on order. */
+.activity-log-portal.wh-log-tooltip svg {
+  display: none !important;
+}

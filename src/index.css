@@ -1239,3 +1239,32 @@ input[type="number"] {
 .elevated-z [data-slot="alert-dialog-content"] {
   z-index: 240 !important;
 }
+
+/* OMNE activity log tokens: the names the shared activity log reads, with OMNE's values. */
+:root {
+  --tint-ink-04: rgba(16, 24, 40, 0.04);
+  --primary-200: #b2d5ff;
+  --elevation-card: 0px 1px 3px 0px rgba(16, 24, 40, 0.1), 0px 1px 2px -1px rgba(16, 24, 40, 0.1);
+  --tag-chip-bg: rgba(248, 250, 252, 1);
+  --tag-chip-border: rgba(226, 232, 240, 1);
+  --highlight-bg: rgba(255, 220, 40, 0.5);
+  --status-active-border: rgba(167, 243, 208, 1);
+  --status-active-bg: rgba(236, 253, 245, 1);
+  --status-active-text: rgba(6, 95, 70, 1);
+  --status-inactive-border: rgba(253, 230, 138, 1);
+  --status-inactive-bg: rgba(255, 251, 235, 1);
+  --status-inactive-text: rgba(146, 64, 14, 1);
+  --status-archived-border: rgba(240, 210, 206, 1);
+  --status-archived-bg: rgba(250, 232, 232, 1);
+  --status-archived-text: rgba(139, 76, 68, 1);
+  --tag-chip-text: rgba(30, 41, 59, 1);
+  --input-background: rgba(255, 255, 255, 1);
+  --border-subtle: rgba(241, 245, 249, 1);
+  --radius-lg: var(--radius);
+  --page-background: rgba(245, 246, 250, 1);
+  --elevation-modal: 0 24px 48px -12px rgba(0, 0, 0, 0.18);
+  --primary-tint-bg: rgba(237, 244, 255, 1);
+  --primary-tint-text: rgba(10, 119, 255, 1);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-xl: calc(var(--radius) + 4px);
+}

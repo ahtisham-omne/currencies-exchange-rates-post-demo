@@ -195,7 +195,10 @@ export const SEED_MID_MARKET_RATES: MidMarketRate[] = (() => {
 
 // ─── Standard (Corporate) Rates Seed Data ───
 const HAND_SEEDED_STANDARD_RATES: StandardRate[] = [
-  { id: "std-usd", baseCurrency: "PKR", sourceCurrency: "USD", sourceCurrencyName: "United States Dollar", standardRate: 279.0000, midMarketRate: 278.5200, variance: 0.17, effectiveDate: CORPORATE_EFFECTIVE, createdBy: "Ahtisham Ahmad", createdAt: CORPORATE_CREATED, updatedAt: CORPORATE_EFFECTIVE, notes: CORPORATE_NOTE, status: "active", isStale: false },
+  // USD to PKR is the exchange rate whose activity log carries the BA's whole
+  // story (USD_CORPORATE_HISTORY below), so its record ends where that log
+  // ends: 281.5000 from 1 May 2026, restored on 2 June, no note on it.
+  { id: "std-usd", baseCurrency: "PKR", sourceCurrency: "USD", sourceCurrencyName: "United States Dollar", standardRate: 281.5000, midMarketRate: 278.5200, variance: 1.07, effectiveDate: "2026-05-01", createdBy: "Ahtisham Ahmad", createdAt: "2026-03-02", updatedAt: "2026-06-02", notes: "", status: "active", isStale: false },
   { id: "std-eur", baseCurrency: "PKR", sourceCurrency: "EUR", sourceCurrencyName: "Euro", standardRate: 305.5000, midMarketRate: 304.8150, variance: 0.22, effectiveDate: CORPORATE_EFFECTIVE, createdBy: "Ahtisham Ahmad", createdAt: CORPORATE_CREATED, updatedAt: CORPORATE_EFFECTIVE, notes: CORPORATE_NOTE, status: "active", isStale: false },
   { id: "std-gbp", baseCurrency: "PKR", sourceCurrency: "GBP", sourceCurrencyName: "Pound Sterling", standardRate: 356.0000, midMarketRate: 355.4200, variance: 0.16, effectiveDate: CORPORATE_EFFECTIVE, createdBy: "Ahtisham Ahmad", createdAt: CORPORATE_CREATED, updatedAt: CORPORATE_EFFECTIVE, notes: CORPORATE_NOTE, status: "active", isStale: false },
   { id: "std-aed", baseCurrency: "PKR", sourceCurrency: "AED", sourceCurrencyName: "United Arab Emirates Dirham", standardRate: 76.0000, midMarketRate: 75.8400, variance: 0.21, effectiveDate: CORPORATE_EFFECTIVE, createdBy: "Ahtisham Ahmad", createdAt: CORPORATE_CREATED, updatedAt: CORPORATE_EFFECTIVE, notes: CORPORATE_NOTE, status: "active", isStale: false },
@@ -213,7 +216,25 @@ export const SEED_STANDARD_RATES: StandardRate[] = HAND_SEEDED_STANDARD_RATES.ma
 // ─── Corporate rate audit seed ───
 // One "Created" entry per seeded corporate rate: when it was set up, by whom,
 // and the rate and effective date it was set to.
-export const SEED_RATE_AUDIT: RateAuditEntry[] = SEED_STANDARD_RATES.map(r => ({
+
+/* USD to PKR's corporate rate as the BA's activity log tells it ("Activity
+   Logs: Currency & Exchange Rates", exchange rate use cases 1 to 11): added
+   on 2 March, updated on 1 April and again from 15 April, scheduled on
+   20 April for 1 May, archived on 1 June and restored the next day. Its Rate
+   history and charts read from this, so the page agrees with its log. */
+const USD_ACTOR = "Ahtisham Ahmad";
+const usdChange = (id: string, dateTime: string, action: RateAuditAction, oldValue: number | null, newValue: number | null, effectiveDate: string | null, midRate: number | null, reason = ""): RateAuditEntry =>
+  ({ id: `audit-std-usd-${id}`, dateTime, action, user: USD_ACTOR, oldValue, newValue, reason, sourceCurrency: "USD", rateId: "std-usd", effectiveDate, midRate });
+const USD_CORPORATE_HISTORY: RateAuditEntry[] = [
+  usdChange("created", "2026-03-02T10:00:00+05:00", "Created", null, 279.0, "2026-03-02", 283.6509, "Agreed with the bank for Q2 imports."),
+  usdChange("updated-0401", "2026-04-01T09:30:00+05:00", "Updated", 279.0, 280.0, "2026-04-01", 283.689),
+  usdChange("updated-0416", "2026-04-16T14:10:00+05:00", "Updated", 280.0, 280.25, "2026-04-15", null),
+  usdChange("scheduled-0420", "2026-04-20T11:00:00+05:00", "Scheduled", 280.25, 281.5, "2026-05-01", 283.623),
+  usdChange("archived-0601", "2026-06-01T15:30:00+05:00", "Archived", 281.5, null, null, null),
+  usdChange("restored-0602", "2026-06-02T10:05:00+05:00", "Restored", null, 281.5, null, null),
+];
+
+export const SEED_RATE_AUDIT: RateAuditEntry[] = SEED_STANDARD_RATES.flatMap(r => r.id === "std-usd" ? USD_CORPORATE_HISTORY : [{
   id: `audit-${r.id}-created`,
   dateTime: `${r.createdAt}T14:30:00+05:00`,
   action: "Created" as const,
@@ -225,7 +246,7 @@ export const SEED_RATE_AUDIT: RateAuditEntry[] = SEED_STANDARD_RATES.map(r => ({
   rateId: r.id,
   effectiveDate: r.effectiveDate,
   midRate: r.midMarketRate,
-}));
+}]);
 
 /** The active corporate rate record for a currency. Archived records are never current. */
 export function activeStandardRateFor(code: string, rates: StandardRate[]): StandardRate | undefined {
@@ -262,6 +283,14 @@ export function upcomingRateOf(r: StandardRate, today: string): { standardRate: 
 // current rate and the one before it matches the stored 24h change.
 export const MID_HISTORY_DAYS = 6 * 365;
 
+/* The days the BA's activity log quotes a pair's mid-market rate on ("Activity
+   Logs: Currency & Exchange Rates", the USD to PKR samples). The history
+   passes through each of them, so the pair's Rate history and charts agree
+   with its log. */
+const MID_PINS: Record<string, Record<string, number>> = {
+  USD: { "2026-03-02": 283.6509, "2026-03-03": 284.1022, "2026-04-01": 283.689, "2026-04-20": 283.623 },
+};
+
 function _mulberry32(seed: number) {
   let a = seed >>> 0;
   return () => {
@@ -296,6 +325,8 @@ export function midMarketHistory(rate: MidMarketRate, days: number = MID_HISTORY
       values[i] = values[i + 1] / (1 + drift + z * vol);
     }
   }
+  const pins = MID_PINS[rate.sourceCurrency];
+  if (pins) _pinSeries(values, end, pins);
   const out: { date: string; mid: number }[] = [];
   for (let i = 0; i < n; i++) {
     const d = new Date(end);
@@ -303,6 +334,31 @@ export function midMarketHistory(rate: MidMarketRate, days: number = MID_HISTORY
     out.push({ date: _isoDay(d), mid: +values[i].toFixed(4) });
   }
   return out;
+}
+
+/** Bends a series through its pinned days without a jump: the correction is
+ *  eased in proportion between pins, held before the first, and eased out to
+ *  nothing by yesterday, so the current rate and its 24-hour change stand. */
+function _pinSeries(values: number[], end: Date, pins: Record<string, number>) {
+  const n = values.length;
+  const anchors: [number, number][] = [];
+  for (const [day, target] of Object.entries(pins)) {
+    const i = n - 1 - Math.round((end.getTime() - Date.parse(`${day}T00:00:00Z`)) / 86_400_000);
+    if (i >= 0 && i < n - 2) anchors.push([i, Math.log(target / values[i])]);
+  }
+  if (!anchors.length) return;
+  anchors.sort((a, b) => a[0] - b[0]);
+  anchors.push([n - 2, 0]);
+  for (let i = 0, k = 0; i < n - 2; i++) {
+    let r = anchors[0][1];
+    if (i > anchors[0][0]) {
+      while (anchors[k + 1][0] < i) k++;
+      const [i0, r0] = anchors[k];
+      const [i1, r1] = anchors[k + 1];
+      r = r0 + ((r1 - r0) * (i - i0)) / (i1 - i0);
+    }
+    values[i] *= Math.exp(r);
+  }
 }
 
 // Scrambles a hash so neighbouring keys (consecutive days) land far apart.

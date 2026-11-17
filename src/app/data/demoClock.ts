@@ -1,6 +1,6 @@
 // The demo's clock. The seed data was written against fixed days; at load it is
 // moved forward so that whenever the prototype is opened it reads as current:
-// the rate provider last synced today (or yesterday, before 7:30 PM in
+// the rate provider last synced today (or yesterday, before 6:00 PM in
 // Pakistan), the corporate rates took effect at the start of a recent month,
 // and every open transaction falls in the last three months. Each timeline
 // keeps its own order, so nothing is priced at a rate before that rate existed.
@@ -19,11 +19,12 @@ export function shiftIso(iso: string, days: number): string {
   return moved + iso.slice(10)
 }
 
-/** The last daily sync from the rate provider: 14:30 UTC (7:30 PM in Pakistan)
- *  today, or yesterday's when today's is still to come. */
+/** The last daily sync from the rate provider: 13:00 UTC (6:00 PM in Pakistan,
+ *  the time the BA's activity log gives the daily sync) today, or yesterday's
+ *  when today's is still to come. */
 export const LAST_SYNC: string = (() => {
   const now = Date.now()
-  let t = dayMs(new Date(now).toISOString()) + (14 * 60 + 30) * 60_000
+  let t = dayMs(new Date(now).toISOString()) + 13 * 60 * 60_000
   if (t > now) t -= DAY
   return new Date(t).toISOString().replace('.000Z', 'Z')
 })()

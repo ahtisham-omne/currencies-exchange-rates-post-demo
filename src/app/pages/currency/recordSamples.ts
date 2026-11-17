@@ -12,6 +12,7 @@ import type { RecordNote } from '../../coa/lib/recordStore'
 import { fmtDate } from '../../coa/lib/utils'
 import type { Currency } from '../../data/currencies'
 import { BASE_CURRENCY, SEED_STANDARD_RATES } from '../../data/exchangeRates'
+import { SHOWCASE_CURRENCY } from '../../components/activity-log/activity-data'
 import { CURRENCY_SEED_SHIFT, shiftIso } from '../../data/demoClock'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -89,7 +90,8 @@ const placesOf = (dp: number) => (dp === 0 ? 'whole units, with no decimal place
 
 /** The notes a currency opens with. */
 export function currencyNotes(c: Currency | undefined, now = new Date()): RecordNote[] {
-  if (!c) return []
+  // MXN's activity log adds a note and later removes it, so it ends with none.
+  if (!c || c.code === SHOWCASE_CURRENCY) return []
   const written = WRITTEN[c.code]
   if (written) {
     return written.map(w => ({ id: w.id, text: w.text, author: w.author, at: daysAgo(w.days, w.hour, w.minute, now).toISOString() }))
@@ -137,7 +139,8 @@ type FileSpec = { name: string; type: AttachmentFile['type']; kb: [number, numbe
  *  draws differently, like CoA's seeded accounts. Every one opens: the kit's
  *  dummyAttachment builds the document from this metadata. */
 export function currencyAttachments(c: Currency | undefined, now = new Date()): AttachmentFile[] {
-  if (!c) return []
+  // MXN's activity log adds a file and later removes it, so it ends with none.
+  if (!c || c.code === SHOWCASE_CURRENCY) return []
   const h = hashSeed(`files:${c.code}`) >>> 8
   const year = now.getFullYear()
   const specs: FileSpec[] = c.isBaseCurrency

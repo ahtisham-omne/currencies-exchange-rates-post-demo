@@ -20,6 +20,7 @@ export default {
         "3xl": "1921px",
       },
       colors: {
+        "border-subtle": "var(--border-subtle)",
         /* ─── Omnesoft ERP design tokens (HSL vars in index.css) ───
            Mirrors the Partner Management — Vendors token system so the
            Chart of Accounts module lives inside the same shell. */

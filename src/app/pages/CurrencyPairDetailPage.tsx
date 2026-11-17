@@ -5,7 +5,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Activity, Archive, ArchiveRestore, ArrowLeftRight, Check, ChevronDown, FileText, History, MessageSquare, Pencil, Plus, Star,
+  Activity, Archive, ArchiveRestore, ArrowLeftRight, Check, ChevronDown, FileText, MessageSquare, Pencil, Plus, Star,
 } from 'lucide-react'
 import { useExchangeRates } from '../context/ExchangeRateContext'
 import { useCurrencies } from '../context/CurrencyContext'
@@ -46,6 +46,7 @@ import { RateHistoryTab } from './exchange/RateHistoryTab'
 import { pairAttachments, pairNotes } from './exchange/recordSamples'
 import { RecordNotesTab } from './recordTabs/NotesTab'
 import { ComingSoonTab } from './recordTabs/ComingSoonTab'
+import { ExchangeRateActivityLogsTab } from './recordTabs/ActivityLogsTab'
 import { isActiveDoc, linkedDocs, money } from './currency/model'
 import { CX_TITLE } from './CurrencyExchangeHeader'
 
@@ -382,7 +383,7 @@ export function CurrencyPairDetailPage() {
               { id: 'notes', label: 'Notes', count: noteCount },
               { id: 'attachments', label: 'Attachments', count: attachmentCount },
               { id: 'communications', label: 'Communications' },
-              { id: 'activity', label: 'Activity' },
+              { id: 'activity', label: 'Activity Logs' },
             ]}
             activeTab={tab}
             onTabChange={id => setTab(id as Tab)}
@@ -428,16 +429,13 @@ export function CurrencyPairDetailPage() {
         {tab === 'attachments' && (
           <RecordAttachmentsTab recordKey={key} seed={seedFiles} document={{ recordLabel: `${pair} ${isStd ? 'corporate rate' : 'mid-market rate'}`, recordKind: 'exchange rate' }} />
         )}
-        {/* Communications and Activity follow Vendor Invoicing, which shows these
-            two as Coming Soon until their backends land. */}
+        {/* Communications follows Vendor Invoicing, which shows it as Coming
+            Soon until its backend lands. */}
         {tab === 'communications' && (
           <ComingSoonTab label="Communications" icon={MessageSquare}
             description="Message history for this exchange rate, with your team and partners, will live here. The shared communication surface keeps every conversation attached to the record it is about." />
         )}
-        {tab === 'activity' && (
-          <ComingSoonTab label="Activity" icon={History}
-            description="A chronological audit trail of every action on this exchange rate: rate updates, archives and restores. The activity feed arrives with backend integration." />
-        )}
+        {tab === 'activity' && <ExchangeRateActivityLogsTab code={code} name={pair} />}
       </DetailPageLayout>
     </CoaPage>
   )

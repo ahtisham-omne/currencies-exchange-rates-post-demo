@@ -8,6 +8,7 @@ import type { AttachmentFile } from '../../coa/components/AttachmentsTab'
 import { hashSeed } from '../../coa/lib/hashSeed'
 import type { RecordNote } from '../../coa/lib/recordStore'
 import { API_PROVIDER, LAST_SYNC, SEED_STANDARD_RATES, type RateAuditEntry, type StandardRate } from '../../data/exchangeRates'
+import { SHOWCASE_PAIR } from '../../components/activity-log/activity-data'
 import { ACCOUNTANTS, CONTROLLER, dayMinus, daysAgo, feedOf, sizeOf, type DatedActivity } from '../currency/recordSamples'
 import { corporateActivity, type PairPoint } from './pairData'
 import { BASE, fmtRate, fmtSignedPct, fmtVariance, variancePct } from './rateModel'
@@ -40,6 +41,8 @@ export function pairNotes(code: string, kind: RateKind, record: StandardRate | u
     ? [{ id: `${record.id}-notes`, text: record.notes, author: record.createdBy, at: record.updatedAt, tag: 'Rate Notes' }]
     : []
   if (kind === 'std' && !isSeededRate(record)) return carried
+  // USD to PKR's activity log adds a note and later removes it: none is left.
+  if (code === SHOWCASE_PAIR) return carried
   const lines = kind === 'std' ? CORPORATE_NOTES : MID_NOTES
   const h = hashSeed(`pair:${code}:${kind}`) >>> 8
   const authors = [CONTROLLER, ...ACCOUNTANTS]
@@ -62,6 +65,8 @@ export function pairNotes(code: string, kind: RateKind, record: StandardRate | u
 /** The files a pair's rate opens with, across the five kinds the card grid draws. */
 export function pairAttachments(code: string, kind: RateKind, record: StandardRate | undefined, now = new Date()): AttachmentFile[] {
   if (kind === 'std' && !isSeededRate(record)) return []
+  // USD to PKR's activity log adds a file and later removes it: none is left.
+  if (code === SHOWCASE_PAIR) return []
   const stem = `${code}-${BASE}`
   const h = hashSeed(`pairfiles:${code}:${kind}`) >>> 8
   const specs: { name: string; type: AttachmentFile['type']; kb: [number, number]; days: number; time: string; by: string }[] = kind === 'std'

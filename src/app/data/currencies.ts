@@ -516,8 +516,10 @@ const AUTHORED_CURRENCIES: Currency[] = [
   cur("BGN", "Bulgarian Lev", "975", "лв", 2, "Bulgaria", [], {
     status: "inactive",
     auditLog: [
-      // Newest first, as every audit log here is.
-      { dateTime: "2026-01-01T09:00:00Z", action: "Deactivated", changedBy: "System", reason: "Bulgaria adopted the euro" },
+      // Newest first, as every audit log here is. Dated before the library's
+      // latest transaction (2025-12-10), as every seeded date here is, so the
+      // demo clock moves it into the past rather than past today.
+      { dateTime: "2025-12-01T09:00:00Z", action: "Deactivated", changedBy: "System", reason: "Bulgaria adopted the euro" },
       { dateTime: "2025-01-15T09:00:00Z", action: "Activated", changedBy: "System", reason: "System initialization" },
     ],
   }),

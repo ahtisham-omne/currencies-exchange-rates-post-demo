@@ -100,7 +100,7 @@ const SYNC = syncStamp()
 export const LAST_SYNC_DATE = SYNC.date
 export const LAST_SYNC_TIME = SYNC.time
 export const LAST_SYNC_DAY = SYNC.day
-/** The last sync as every screen writes a moment: "Apr 10, 2026, 7:30 PM". */
+/** The last sync as every screen writes a moment: "Apr 10, 2026, 6:00 PM". */
 export const LAST_SYNC_AT = fmtDateTime(LAST_SYNC)
 export const SYNC_LINE = `Synced from ${API_PROVIDER} · Updated ${LAST_SYNC_AT}`
 /** The toolbar's short form; the full line rides in its tooltip. */
