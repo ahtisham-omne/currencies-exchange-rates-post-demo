@@ -139,7 +139,7 @@ import {
   describeRateChange,
   poRateFields,
 } from "./poStore";
-import type { PurchaseOrderData, POStatus, POLineItem, POChangeRecord, POVersionEntry, POVersionSnapshot, POVersionStatus, PONoteType, POVendor } from "./poStore";
+import type { PurchaseOrderData, POStatus, POLineItem, POChangeRecord, POVersionEntry, POVersionSnapshot, POVersionStatus, PONoteType, POVendor, VersionRateChoice } from "./poStore";
 import { permissionReason, useCan } from "./poPermissions";
 import {
   SHOW_PO_PRICING_RULES,
@@ -200,9 +200,13 @@ import { SelectPOCsModal } from "./SelectPOCsModal";
 import SelectPaymentMethodModal from "./SelectPaymentMethodModal";
 import { FONT } from "./designTokens";
 import { DocCurrencyProvider, DocMoney } from "./currency/DocCurrency";
-import { useDocCurrency } from "./currency/docCurrencyContext";
+import { useDocCurrency, useDocMoney, useDocOtherText, useDocView } from "./currency/docCurrencyContext";
 import { CurrencyFlag } from "./currency/CurrencyChip";
-import { POCurrencyFields, type POCurrencyChange } from "./currency/POCurrencyFields";
+import { type POCurrencyChange } from "./currency/POCurrencyFields";
+import { POCurrencyConfigDialog, POCurrencySummary } from "./currency/POCurrencyConfig";
+import { POCurrencyHeaderControls } from "./currency/POCurrencyHeaderControls";
+import { setPOView, usePOView } from "./currency/poView";
+import { versionRateOptions } from "./currency/VersionRateChoice";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { currencyDecimals, formatMoney, moneyPrefix } from "@/app/currency/money";
 import { crossRate, fromPOCurrency, poFx, roundTo, ruleAmountFactor, vendorCurrency } from "@/app/currency/poFx";
@@ -982,7 +986,6 @@ function LineItemCard({
   }, [item.id]);
 
   const effectivePrice = item.unitPrice * (1 - item.discount / 100);
-  const { currency } = useDocCurrency();
 
   const detailCount = [
     mockStockData.belowMin,
@@ -1069,7 +1072,7 @@ function LineItemCard({
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
             <div className="flex items-baseline gap-1">
               <span className="text-foreground" style={{ fontSize: "12px", fontWeight: "var(--font-weight-semibold)", lineHeight: "18px", fontFamily: FONT }}>
-                {formatMoney(effectivePrice, currency)}
+                <DocMoney value={effectivePrice} />
               </span>
               <span className="text-muted-foreground" style={{ fontSize: "10px", fontWeight: "var(--font-weight-normal)", lineHeight: "15px", fontFamily: FONT }}>
                 per {item.defaultUOM}
@@ -1106,7 +1109,7 @@ function LineItemCard({
             className="text-foreground"
             style={{ fontSize: "15px", fontWeight: "var(--font-weight-semibold)", lineHeight: "20px", fontFamily: FONT }}
           >
-            {formatMoney(item.lineTotal, currency)}
+            <DocMoney value={item.lineTotal} />
           </span>
           {item.discount > 0 ? (
             <span
@@ -1563,22 +1566,31 @@ function LineItemsPanel({
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [editingPriceValue, setEditingPriceValue] = useState<string>("");
 
-  /* Prices are in the PO's currency (spec 4.3), typed to its minor unit.
-     Plain digits: a number input can't take "1,245.00". */
+  /* Prices are kept in the PO's currency (spec 4.3) and shown, and typed, in
+     the page's: base by default, the vendor's with the header toggle. A price
+     typed in base is converted at the PO's rate and rounded to the vendor
+     currency's minor unit. Plain digits: a number input can't take "1,245.00". */
   const { currency } = useDocCurrency();
-  const priceDecimals = currencyDecimals(currency);
-  const pricePrefix = moneyPrefix(currency).trim();
+  const { viewCurrency, toView, fromView, decimals: priceDecimals } = useDocView();
+  const docMoney = useDocMoney();
+  const otherText = useDocOtherText();
+  const pricePrefix = moneyPrefix(viewCurrency).trim();
+  const priceText = (li: POLineItem) => toView(li.unitPrice * (1 - li.discount / 100)).toFixed(priceDecimals);
   const startPriceEdit = (li: POLineItem) => {
     setEditingPriceId(li.id);
-    const effectivePrice = li.unitPrice * (1 - li.discount / 100);
-    setEditingPriceValue(effectivePrice.toFixed(priceDecimals));
+    setEditingPriceValue(priceText(li));
   };
 
   const commitPriceEdit = (li: POLineItem) => {
+    // Untouched: keep the stored price (a round trip through base would nudge it).
+    if (editingPriceValue === priceText(li)) {
+      setEditingPriceId(null);
+      return;
+    }
     // $0 (zero-priced lines) is a FIRST-CLASS valid price — never block / floor it.
     // We only fall back to the existing price when the input is unparseable.
     const parsed = parseFloat(editingPriceValue);
-    const newPrice = Number.isFinite(parsed) ? Math.max(0, parsed) : li.unitPrice;
+    const newPrice = Number.isFinite(parsed) ? Math.max(0, roundTo(currency, fromView(parsed))) : li.unitPrice;
     onUpdatePrice(li, newPrice);
     setEditingPriceId(null);
   };
@@ -1768,7 +1780,7 @@ function LineItemsPanel({
       {po.lineItems.length > 0 && (
         <div
           className="grid items-center px-4 py-2 border-b border-border"
-          style={{ gridTemplateColumns: showReceiving ? "1fr 100px 110px 110px 90px 72px" : "1fr 100px 110px 110px 72px", backgroundColor: "color-mix(in srgb, hsl(var(--muted)) 30%, transparent)" }}
+          style={{ gridTemplateColumns: showReceiving ? "1fr 100px 124px 124px 90px 72px" : "1fr 100px 124px 124px 72px", backgroundColor: "color-mix(in srgb, hsl(var(--muted)) 30%, transparent)" }}
         >
           <span style={COL_HEADER}>Line Item</span>
           <span style={{ ...COL_HEADER, textAlign: "right" }}>Qty</span>
@@ -1814,7 +1826,7 @@ function LineItemsPanel({
                   ? "group grid px-4 py-3 cursor-pointer transition-colors duration-150 hover:bg-amber-100/50"
                   : "group grid px-4 py-3 cursor-pointer transition-colors duration-150 hover:bg-muted/30"
               }
-              style={{ gridTemplateColumns: showReceiving ? "1fr 100px 110px 110px 90px 72px" : "1fr 100px 110px 110px 72px", alignItems: "start" }}
+              style={{ gridTemplateColumns: showReceiving ? "1fr 100px 124px 124px 90px 72px" : "1fr 100px 124px 124px 72px", alignItems: "start" }}
               onClick={() => {
                 const isInlineEditing = editingQtyId === li.id || editingPriceId === li.id;
                 if (isInlineEditing) return;
@@ -2038,9 +2050,9 @@ function LineItemsPanel({
                           className="max-w-[240px] text-[11px]"
                         >
                           Catalog price moved since the original PO.<br />
-                          <span className="font-semibold">{formatMoney(li.unitPrice, currency)}</span>
+                          <span className="font-semibold">{docMoney(li.unitPrice)}</span>
                           {" → "}
-                          <span className="font-semibold">{formatMoney(li.priceChangedFromCatalog, currency)}</span>
+                          <span className="font-semibold">{docMoney(li.priceChangedFromCatalog)}</span>
                           {" per unit. Edit the price to sync."}
                         </TooltipContent>
                       </Tooltip>
@@ -2262,8 +2274,9 @@ function LineItemsPanel({
                       type="number"
                       min={0}
                       step={10 ** -priceDecimals}
-                      aria-label={`Price per unit, ${currency}`}
-                      value={editingPriceId === li.id ? editingPriceValue : effectivePrice.toFixed(priceDecimals)}
+                      aria-label={`Price per unit, ${viewCurrency}`}
+                      title={otherText(effectivePrice) ? `${otherText(effectivePrice)!.replace(/^≈ /, "")} ${currency} · vendor currency` : undefined}
+                      value={editingPriceId === li.id ? editingPriceValue : toView(effectivePrice).toFixed(priceDecimals)}
                       onChange={(e) => {
                         if (!freeEdit) return;
                         if (editingPriceId !== li.id) startPriceEdit(li);
@@ -2292,7 +2305,7 @@ function LineItemsPanel({
                       /* No spinner (as on the price-book inputs), so a yen or won
                          price's extra digits fit the column. */
                       className={`h-9 pr-2 text-right rounded-md border bg-white text-foreground outline-none shadow-sm transition-all duration-150 tabular-nums focus:border-primary focus:ring-2 focus:ring-primary/20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${!freeEdit ? "cursor-pointer" : ""}`}
-                      style={{ width: Math.min(110, 96 + 8 * Math.max(0, pricePrefix.length - 1)), paddingLeft: 16 + 8 * pricePrefix.length, fontSize: 13, fontWeight: 400, lineHeight: "18px", fontFamily: FONT, borderColor: "color-mix(in srgb, hsl(var(--border)) 80%, transparent)" }}
+                      style={{ width: Math.min(122, Math.max(96, 24 + 8 * pricePrefix.length + 7.5 * (editingPriceId === li.id ? editingPriceValue : toView(effectivePrice).toFixed(priceDecimals)).length)), paddingLeft: 16 + 8 * pricePrefix.length, fontSize: 13, fontWeight: 400, lineHeight: "18px", fontFamily: FONT, borderColor: "color-mix(in srgb, hsl(var(--border)) 80%, transparent)" }}
                     />
                   </div>
                 ) : (
@@ -2300,7 +2313,7 @@ function LineItemsPanel({
                     className="text-foreground tabular-nums"
                     style={{ fontSize: 13, fontWeight: 500, lineHeight: "18px", fontFamily: FONT }}
                   >
-                    {formatMoney(effectivePrice, currency)}
+                    <DocMoney value={effectivePrice} />
                   </span>
                 )}
               </div>
@@ -2323,7 +2336,7 @@ function LineItemsPanel({
                   }}
                   breakdown={pricingBreakdowns.get(li.id) ?? null}
                   adjustment={adjustmentBreakdowns?.get(li.id) ?? null}
-                  formatCurrency={(n) => formatMoney(n, currency)}
+                  formatCurrency={docMoney}
                 >
                   <span
                     className="text-foreground tabular-nums"
@@ -2331,14 +2344,20 @@ function LineItemsPanel({
                   >
                     {/* Net line total — static %, pricing rules and item-level
                         one-times included, so it matches the hover card's
-                        Total and the Order Summary. */}
-                    {formatMoney(isEditingQty
-                      ? previewLineTotal
-                      : li.lineTotal
-                        - (pricingBreakdowns.get(li.id)?.discountAmount ?? 0)
-                        + (pricingBreakdowns.get(li.id)?.premiumAmount ?? 0)
-                        + (adjustmentBreakdowns?.get(li.id)?.net ?? 0),
-                    currency)}
+                        Total and the Order Summary. A line with no rules gets
+                        the currency hover instead of the (empty) breakdown. */}
+                    {(() => {
+                      const net = isEditingQty
+                        ? previewLineTotal
+                        : li.lineTotal
+                          - (pricingBreakdowns.get(li.id)?.discountAmount ?? 0)
+                          + (pricingBreakdowns.get(li.id)?.premiumAmount ?? 0)
+                          + (adjustmentBreakdowns?.get(li.id)?.net ?? 0);
+                      const hasBreakdown =
+                        (pricingBreakdowns.get(li.id)?.ruleImpacts?.length ?? 0) > 0 ||
+                        (adjustmentBreakdowns?.get(li.id)?.impacts ?? []).some((r) => r.dollars !== 0);
+                      return hasBreakdown ? docMoney(net) : <DocMoney value={net} />;
+                    })()}
                   </span>
                 </POPriceBreakdownHoverCard>
                 {li.discount > 0 && (
@@ -4240,6 +4259,10 @@ export default function PurchaseOrderDraft() {
      route through the SO-style confirmation modal instead of firing
      `revertPOToVersion` immediately). */
   const [dropdownRevertVersion, setDropdownRevertVersion] = useState<number | null>(null);
+  /* Base Currency | Vendor Currency (the header toggle) and the PO's
+     Currency Configuration dialog. */
+  const poView = usePOView(id);
+  const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   /* Source version for the Duplicate flow — lifted here so the
      "View details" Version History modal can update it externally
      when the buyer picks a different version there. Reset to the
@@ -4761,7 +4784,7 @@ export default function PurchaseOrderDraft() {
      comment block higher in this file for the navigation rules. */
 
   /* ── Save Version handler ── */
-  const handleSaveVersion = () => {
+  const handleSaveVersion = (rateChoice: VersionRateChoice = "locked") => {
     if (!po || !editingSession) return;
     const tags = [...editingSession.changeTags];
     const changeCount = editingSession.changeCount;
@@ -4789,6 +4812,7 @@ export default function PurchaseOrderDraft() {
       previousStatus,
       newStatus: "Draft",
       resetToDraft: !isDraft,
+      rateChoice,
     });
     setEditingSession(null);
     // Edits have been committed to a new version — the buyer no longer
@@ -4798,7 +4822,10 @@ export default function PurchaseOrderDraft() {
       const msg = isDraft
         ? `Version ${newVer} created successfully`
         : `Version ${newVer} created — PO returned to Draft`;
-      toast.success(msg, { style: { fontFamily: FONT } });
+      toast.success(msg, {
+        description: rateChoice === "current" ? "Today's exchange rate applied" : undefined,
+        style: { fontFamily: FONT },
+      });
     }
   };
 
@@ -4868,14 +4895,14 @@ export default function PurchaseOrderDraft() {
           toast.success(`PO converted to ${next.currency}`, { description: detail, style: { fontFamily: FONT } });
         }
       },
-      subject === "Currency" ? "Currency Change" : "Exchange Rate Change",
+      subject === "Exchange rate" ? "Exchange Rate Change" : "Currency Change",
       { type: "exchange-rate-changed", action: "Changed", subject, detail },
     );
   };
 
   return (
     <AppShell>
-    <DocCurrencyProvider currency={fx.currency} fx={fx} dateLabel="PO date" role="PO currency">
+    <DocCurrencyProvider currency={fx.currency} fx={fx} dateLabel="PO date" role="vendor currency" view={poView}>
     {/* Page surface: `bg-slate-50` (#F8FAFC) verbatim from Partners
         (`Partners/.../VendorDetailsPage.tsx:671,721`). Previously `bg-secondary`
         which resolved one step darker (slate-100) and made the white header
@@ -5075,6 +5102,14 @@ export default function PurchaseOrderDraft() {
                     the previous row of four standalone icon buttons + split combo CTA,
                     saving ~140px of header real estate. */}
                 <div className="flex items-center flex-shrink-0 ml-4" style={{ gap: isScrolled ? 6 : 8, transition: MORPH_TRANSITION }}>
+                  {/* Base Currency | Vendor Currency, and the PO's currency
+                      configuration (ported from the earlier touchpoint). */}
+                  <POCurrencyHeaderControls
+                    currency={fx.currency}
+                    view={poView}
+                    onViewChange={(v) => setPOView(po.id, v)}
+                    onOpenConfig={() => setCurrencyConfigOpen(true)}
+                  />
                   {(() => {
                     const openReceiving = () => {
                       const init: Record<string, number> = {};
@@ -6118,8 +6153,8 @@ export default function PurchaseOrderDraft() {
                   versions={po.versions}
                   currentVersion={po.currentVersion}
                   canRevert={!isVersionLocked && !isCancelled}
-                  onRevert={(version, reason) => {
-                    const restored = revertPOToVersion(po.id, version, reason || `Reverted to Version ${version}`);
+                  onRevert={(version, reason, rateChoice) => {
+                    const restored = revertPOToVersion(po.id, version, reason || `Reverted to Version ${version}`, rateChoice);
                     if (restored) {
                       setViewingVersion(null);
                       toast.success(`Reverted to Version ${version}`, {
@@ -6255,11 +6290,21 @@ export default function PurchaseOrderDraft() {
                       >
                         <DocMoney value={poPricing?.total ?? po.total} />
                       </p>
-                      {/* What the PO is worth in the base currency, at its rate. */}
+                      {/* The total in the currency not shown: what the vendor
+                          receives (base view), or what it's worth in base. */}
                       {!fx.isBase && (
                         <p className="text-slate-500 tabular-nums mt-0.5 truncate" style={{ fontSize: 11, fontWeight: 400 }}>
-                          ≈ {formatMoney(toBase(poPricing?.total ?? po.total, fx.rate), BASE_CURRENCY)}
-                          <span className="text-slate-400"> {BASE_CURRENCY} · base currency</span>
+                          {poView === "base" ? (
+                            <>
+                              ≈ {formatMoney(poPricing?.total ?? po.total, fx.currency)}
+                              <span className="text-slate-400"> {fx.currency} · vendor currency</span>
+                            </>
+                          ) : (
+                            <>
+                              ≈ {formatMoney(toBase(poPricing?.total ?? po.total, fx.rate), BASE_CURRENCY)}
+                              <span className="text-slate-400"> {BASE_CURRENCY} · base currency</span>
+                            </>
+                          )}
                         </p>
                       )}
                       <p
@@ -6271,8 +6316,6 @@ export default function PurchaseOrderDraft() {
                         {" "}from {po.vendor.name}
                       </p>
                     </div>
-
-                    <POCurrencyFields po={po} canEdit={canEdit} onChange={handleCurrencyChange} />
 
                     {/* Breakdown — Partners' canonical breakdown row spec
                         (`:3431-3450`): 10/500 slate-400 label + 12/500
@@ -6471,6 +6514,10 @@ export default function PurchaseOrderDraft() {
                         );
                       })()}
                     </div>
+
+                    {/* CURRENCY — Vendor receives / You pay / Rate, and the
+                        way into the PO's currency configuration. */}
+                    <POCurrencySummary po={po} total={poPricing?.total ?? po.total} onViewConfig={() => setCurrencyConfigOpen(true)} />
                   </div>
                 </CollapsibleSection>
 
@@ -7496,6 +7543,20 @@ export default function PurchaseOrderDraft() {
         nextVersion={(po.currentVersion || 1) + 1}
         changes={editingSession?.changeDetails ?? []}
         onConfirm={handleSaveVersion}
+        rate={(() => {
+          const options = versionRateOptions(po, poPricing?.total ?? po.total);
+          return options ? { fromVersion: po.currentVersion || 1, options } : undefined;
+        })()}
+      />
+
+      {/* ── The PO's Currency Configuration (header Currency button and
+           Order Summary's View configuration) ── */}
+      <POCurrencyConfigDialog
+        po={po}
+        open={currencyConfigOpen}
+        onOpenChange={setCurrencyConfigOpen}
+        canEdit={canEdit}
+        onChange={handleCurrencyChange}
       />
 
       {/* ── Vendor Selection Dialogs (Pay To / Ship To / Funded By) ──
@@ -7649,12 +7710,13 @@ export default function PurchaseOrderDraft() {
           version={dropdownRevertVersion}
           snapshot={po.versions.find((v) => v.version === dropdownRevertVersion)?.snapshot}
           onClose={() => setDropdownRevertVersion(null)}
-          onConfirm={(reason) => {
+          onConfirm={(reason, rateChoice) => {
             const target = dropdownRevertVersion;
             const restored = revertPOToVersion(
               po.id,
               target,
               reason || `Reverted to Version ${target}`,
+              rateChoice,
             );
             if (restored) {
               setViewingVersion(null);

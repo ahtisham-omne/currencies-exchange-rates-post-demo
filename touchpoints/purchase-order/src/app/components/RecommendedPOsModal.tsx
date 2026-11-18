@@ -66,6 +66,8 @@ import {
   type RecommendationConflict,
 } from "./procurementRecommendations";
 import { MODAL_SIZE_CLASS } from "./_dashboardModalKit";
+import { BaseApprox, formatPlannerUnit, plannerLine, VendorMoney } from "./currency/PlannerMoney";
+import { roundTo, vendorCurrency } from "@/app/currency/poFx";
 
 /* ─────────────────────────── PALETTE ─────────────────────────── */
 
@@ -567,16 +569,18 @@ function VendorCard({
   onLineArrivalChange: (key: string, iso: string) => void;
   onLineRemove: (key: string) => void;
 }) {
-  /* Subtotal = sum(effectivePrice * qty) for every INCLUDED line. */
+  /* Subtotal = sum(effectivePrice * qty) for every INCLUDED line, in the
+     vendor's currency: the PO this card becomes opens in it. */
+  const currency = vendorCurrency(vendor.vendorName);
   const subtotal = useMemo(() => {
     let s = 0;
     for (const l of lines) {
       if (!l.included) continue;
       const unit = effectivePrice(vendor.unitPrice, vendor.pricingRules, l.qty);
-      s += unit * l.qty;
+      s += plannerLine(unit, l.qty, vendor.vendorName).total;
     }
-    return s;
-  }, [lines, vendor]);
+    return roundTo(currency, s);
+  }, [lines, vendor, currency]);
   const includedCount = lines.filter((l) => l.included).length;
 
   return (
@@ -601,7 +605,7 @@ function VendorCard({
             className="text-[11px] truncate"
             style={{ color: "hsl(var(--muted-foreground))" }}
           >
-            {vendor.leadTimeDays}d lead · ${vendor.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/unit · {vendor.onTimeRating}% on-time
+            {vendor.leadTimeDays}d lead · {formatPlannerUnit(vendor.unitPrice, vendor.vendorName)}/unit · {vendor.onTimeRating}% on-time
           </span>
         </div>
         <div className="flex items-center gap-3 shrink-0">
@@ -615,8 +619,9 @@ function VendorCard({
             className="text-[13px] tabular-nums"
             style={{ fontWeight: 600, color: "hsl(var(--foreground))" }}
           >
-            ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <VendorMoney value={subtotal} currency={currency} />
           </span>
+          <BaseApprox value={subtotal} currency={currency} className="text-[11px]" />
         </div>
       </div>
 
@@ -690,7 +695,7 @@ function DraftLineRow({
      subtotals, surfaced inline so the buyer reads it next to the
      qty + date controls they're editing. */
   const lineTotal = useMemo(
-    () => effectivePrice(vendor.unitPrice, vendor.pricingRules, line.qty) * line.qty,
+    () => plannerLine(effectivePrice(vendor.unitPrice, vendor.pricingRules, line.qty), line.qty, vendor.vendorName),
     [vendor, line.qty],
   );
 
@@ -788,10 +793,7 @@ function DraftLineRow({
         className="text-[12.5px] tabular-nums text-right whitespace-nowrap"
         style={{ fontWeight: 600, color: "hsl(var(--foreground))" }}
       >
-        ${lineTotal.toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
+        <VendorMoney value={lineTotal.total} currency={lineTotal.currency} />
       </span>
 
       {/* Remove */}

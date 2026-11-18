@@ -17,7 +17,8 @@ import { useMemo } from "react";
 import type React from "react";
 import type { POChangeType, POVersionEntry, POVersionSnapshot } from "./poStore";
 import type { POVersionStatus } from "./poStore";
-import { isBaseCurrency } from "@/app/currency/currencies";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { toBase } from "@/app/currency/rates";
 import { formatMoney, formatRate, formatRateDate, rateSentence } from "@/app/currency/money";
 import { poFx, rateSourceLabel, type PoFx } from "@/app/currency/poFx";
 import { snapshotOneTimeNet } from "./poOrderPricing";
@@ -94,6 +95,28 @@ export const versionPalette = {
 /* An amount in a version's currency, with that currency's symbol and
    decimals: $479.99 · €980.50 · ¥15,000 · MXN 1,200.00 (spec 4.3). */
 export const formatCurrency = (n: number, code: string): string => formatMoney(n, code);
+
+/* ── Shown in base, at each version's own rate ──────────────────────
+   Like the rest of the PO, versions show their amounts in the base currency
+   unless the page is toggled to the vendor's: each at the rate that version
+   locked in, so a version saved with today's rate reads differently from one
+   that kept its old rate. Outside the PO page (the listing's history), base. */
+export function useVersionInBase(): boolean {
+  const { view } = useDocCurrency();
+  return (view ?? "base") === "base";
+}
+
+/* A version amount as shown: in base at the version's rate, or in its currency. */
+export function versionMoney(n: number, fx: PoFx, inBase: boolean): string {
+  return inBase && !fx.isBase ? formatMoney(toBase(n, fx.rate), BASE_CURRENCY) : formatMoney(n, fx.currency);
+}
+
+/* The same, signed: +₨11,140.00 · −€12.50. */
+export function versionSignedMoney(n: number, fx: PoFx, inBase: boolean): string {
+  const v = inBase && !fx.isBase ? toBase(n, fx.rate) : n;
+  const code = inBase && !fx.isBase ? BASE_CURRENCY : fx.currency;
+  return `${v > 0 ? "+" : v < 0 ? "−" : ""}${formatMoney(Math.abs(v), code)}`;
+}
 
 /* The one-time discounts/premiums net, signed: +$40.00 · −€12.50. */
 export function formatSignedCurrency(n: number, code: string): string {
@@ -179,16 +202,20 @@ export function versionCompareFields(
   v2: POVersionEntry,
   fx1: PoFx,
   fx2: PoFx,
+  /** Amounts in base, each at its version's rate (the page's default). */
+  inBase = false,
 ): VersionCompareField[] {
   const s1 = v1.snapshot;
   const s2 = v2.snapshot;
   const sameCurrency = fx1.currency === fx2.currency;
+  // In base, both sides are in one unit; in the versions' own currencies, only when they share one.
+  const n = (x: number, fx: PoFx) => (inBase && !fx.isBase ? toBase(x, fx.rate) : x);
   const money = (label: string, a: number, b: number, signed = false): VersionCompareField => ({
     label,
     kind: "money",
-    val1: signed ? formatSignedCurrency(a, fx1.currency) : formatCurrency(a, fx1.currency),
-    val2: signed ? formatSignedCurrency(b, fx2.currency) : formatCurrency(b, fx2.currency),
-    ...(sameCurrency ? { n1: a, n2: b } : {}),
+    val1: signed ? versionSignedMoney(a, fx1, inBase) : versionMoney(a, fx1, inBase),
+    val2: signed ? versionSignedMoney(b, fx2, inBase) : versionMoney(b, fx2, inBase),
+    ...(inBase || sameCurrency ? { n1: n(a, fx1), n2: n(b, fx2) } : {}),
   });
   // A rate as shown (4 decimals), so float noise never reads as a change.
   const shownRate = (fx: PoFx) => Number(formatRate(fx.rate).replace(/,/g, ""));

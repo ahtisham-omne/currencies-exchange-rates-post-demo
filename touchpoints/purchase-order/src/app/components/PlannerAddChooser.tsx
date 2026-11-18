@@ -45,6 +45,7 @@ import { effectivePrice } from "../utils/projection";
 import { VendorLogo } from "./vendorLogo";
 import PlannerPricingRuleBadge from "./PlannerPricingRuleBadge";
 import PlannerQtyInput from "./PlannerQtyInput";
+import { BaseApprox, formatPlannerUnit, plannerUnit } from "./currency/PlannerMoney";
 
 /* Flow colours mirror the gap graph's dot taxonomy: demand red · supply
    green · planned vendor blue. */
@@ -554,9 +555,13 @@ export default function PlannerAddChooser({
                         style={{ color: priceColor }}
                         title={priceTitle}
                       >
-                        ${eff.toFixed(2)}
+                        {formatPlannerUnit(eff, v.vendorName)}
                         <span className="font-normal text-slate-400"> / {item.baseUom}</span>
                       </span>
+                      {(() => {
+                        const pu = plannerUnit(eff, v.vendorName);
+                        return <BaseApprox value={pu.amount} currency={pu.currency} />;
+                      })()}
                       {v.pricingRules.map((r, i) => (
                         <PlannerPricingRuleBadge key={i} rule={r} uom={item.baseUom} />
                       ))}

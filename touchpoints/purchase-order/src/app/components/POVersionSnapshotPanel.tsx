@@ -1,4 +1,8 @@
-import { Package, CheckCircle2, Clock, Undo2 } from "lucide-react";
+import {
+  Package,
+  CheckCircle2,
+  Clock,
+  Undo2 } from "lucide-react";
 import { FONT } from "./designTokens";
 import type { POVersionEntry } from "./poStore";
 import {
@@ -8,12 +12,15 @@ import {
   rateTypeText,
   useDocFx,
   versionFx,
+  useVersionInBase,
+  versionMoney,
+  versionSignedMoney,
 } from "./poVersionDisplay";
 import { snapshotOneTimeNet } from "./poOrderPricing";
 import { getCurrency } from "@/app/currency/currencies";
 import { formatRateDate, rateSentence } from "@/app/currency/money";
 import type { PoFx } from "@/app/currency/poFx";
-import { Money } from "./currency/Money";
+import { VersionMoney } from "./currency/VersionMoney";
 import { CurrencyFlag } from "./currency/CurrencyChip";
 
 /* Price / Total columns: wide enough for ₨3,453,648.00 or MXN 12,400.00. */
@@ -105,6 +112,9 @@ export default function POVersionSnapshotPanel({
   const docFx = useDocFx();
   const fx = versionFx(ver.snapshot, fallbackFx ?? docFx);
   const code = fx.currency;
+  // Shown in base at this version's rate, unless the page shows the vendor's currency.
+  const inBase = useVersionInBase();
+  const vm = (n: number) => versionMoney(n, fx, inBase);
 
   return (
     <>
@@ -422,7 +432,7 @@ export default function POVersionSnapshotPanel({
                     textAlign: "right" as const,
                   }}
                 >
-                  {formatCurrency(li.unitPrice, code)}
+                  {vm(li.unitPrice)}
                 </span>
                 <span
                   className="tabular-nums shrink-0"
@@ -436,7 +446,7 @@ export default function POVersionSnapshotPanel({
                     textAlign: "right" as const,
                   }}
                 >
-                  {formatCurrency(li.lineTotal, code)}
+                  {vm(li.lineTotal)}
                 </span>
               </div>
             ))}
@@ -487,7 +497,7 @@ export default function POVersionSnapshotPanel({
                 fontFamily: FONT,
               }}
             >
-              {formatCurrency(lineItems.reduce((s, li) => s + li.lineTotal, 0), code)}
+              {vm(lineItems.reduce((s, li) => s + li.lineTotal, 0))}
             </span>
           </div>
         )}
@@ -515,11 +525,11 @@ export default function POVersionSnapshotPanel({
           >
             Discount:{" "}
             <span style={{ fontWeight: 500, color: C.text700 }}>
-              {formatCurrency(ver.snapshot.discountTotal, code)}
+              {vm(ver.snapshot.discountTotal)}
             </span>{" "}
             &nbsp;·&nbsp; One-Time Discounts/Premiums:{" "}
             <span style={{ fontWeight: 500, color: C.text700 }}>
-              {formatSignedCurrency(snapshotOneTimeNet(ver.snapshot), code)}
+              {versionSignedMoney(snapshotOneTimeNet(ver.snapshot), fx, inBase)}
             </span>
           </span>
           <div className="flex items-center" style={{ gap: 8 }}>
@@ -546,8 +556,8 @@ export default function POVersionSnapshotPanel({
                 fontFamily: FONT,
               }}
             >
-              {/* Hover: the total in the base currency, at this version's rate. */}
-              <Money value={ver.snapshot.total} currency={code} fx={fx} dateLabel="PO date" />
+              {/* Shown in the page's view at this version's rate; the other currency on hover. */}
+              <VersionMoney value={ver.snapshot.total} fx={fx} />
             </span>
           </div>
         </div>

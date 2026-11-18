@@ -175,6 +175,9 @@ import {
 import RecommendedPOsModal, {
   type ItemRecommendationInput,
 } from "./RecommendedPOsModal";
+import { BaseApprox, plannerLine } from "./currency/PlannerMoney";
+import { formatMoney } from "@/app/currency/money";
+import { roundTo, vendorCurrency } from "@/app/currency/poFx";
 
 /* ─────────────────────────────────────────────────────────────────
    FEATURE FLAGS
@@ -3005,7 +3008,9 @@ export default function PODemands({ stalePOs, onNavigatePO, onCreatePO, onConfir
   type POPreview = {
     key: string;
     vendor: string;
+    /** In the vendor's currency, the one its PO opens in. */
     total: number;
+    currency: string;
     itemCount: number;
     lineItems: Array<{
       id: string;
@@ -4051,11 +4056,16 @@ export default function PODemands({ stalePOs, onNavigatePO, onCreatePO, onConfir
           category: "",
         };
       });
-      const total = lineItems.reduce((s, li) => s + li.unitPrice * li.quantity, 0);
+      const currency = vendorCurrency(vendor);
+      const total = roundTo(
+        currency,
+        lineItems.reduce((s, li) => s + plannerLine(li.unitPrice, li.quantity, vendor).total, 0),
+      );
       previews.push({
         key: `preview-${vendor}`,
         vendor,
         total,
+        currency,
         itemCount: items.length,
         lineItems,
       });
@@ -5018,8 +5028,9 @@ export default function PODemands({ stalePOs, onNavigatePO, onCreatePO, onConfir
                           </div>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span style={{ fontSize: 12, fontWeight: 500, color: "#334155", fontFamily: FONT }}>
-                              ${p.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {formatMoney(p.total, p.currency)}
                             </span>
+                            <BaseApprox value={p.total} currency={p.currency} className="text-[11px]" />
                             <span className="text-muted-foreground" style={{ fontSize: 11, fontFamily: FONT }}>
                               {p.itemCount} item{p.itemCount !== 1 ? "s" : ""}
                             </span>

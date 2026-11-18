@@ -77,6 +77,7 @@ import { effectivePrice } from "../utils/projection";
 import { getCompatibleUOMs, convertQty } from "./uomRegistry";
 import { SystemDatePicker } from "./_dashboardModalKit";
 import { toast } from "sonner";
+import { formatPlannerUnit } from "./currency/PlannerMoney";
 
 /** ISO ⇄ Date helpers built from local Y/M/D so the round-trip never shifts
     a day (toISOString() would convert to UTC). Kept internal because the
@@ -1088,7 +1089,9 @@ const SupplyPlanWizard = forwardRef<SupplyPlanWizardHandle, SupplyPlanWizardProp
                             {v.leadTimeDays}d lead {fits ? "✓" : "✗"}
                           </span>
                           <span className="text-slate-300">·</span>
-                          <span className="text-slate-500">${eff.toFixed(2)}/{item.baseUom}</span>
+                          <span className="text-slate-500">
+                            {formatPlannerUnit(eff, v.vendorName)}/{item.baseUom}
+                          </span>
                           {moq > 0 && (
                             <>
                               <span className="text-slate-300">·</span>

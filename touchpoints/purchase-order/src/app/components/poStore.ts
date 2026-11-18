@@ -7,8 +7,8 @@ import { getVendorContacts, CATALOG, isItemFulfillableByVendor } from "./catalog
 import { computePOPricing, lineAdjustmentsToPO, type POAdjustment, type LineOneTimeAdjustment } from "./poOrderPricing";
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { formatMoney, formatRate, rateSentence } from "@/app/currency/money";
-import { crossRate, poFx, roundTo, stampPoRate, vendorCurrency } from "@/app/currency/poFx";
-import { midRateOn, type RateType } from "@/app/currency/rates";
+import { crossRate, localTodayIso, poFx, roundTo, stampPoRate, vendorCurrency } from "@/app/currency/poFx";
+import { midRateOn, rateOn, type RateType } from "@/app/currency/rates";
 
 export type POStatus = "Draft" | "Sent" | "Confirmed" | "Partially Received" | "Fully Received" | "Cancelled" | "Active with Cancellations" | "Fully Received with Cancellations";
 
@@ -244,6 +244,7 @@ export interface POVersionSnapshot {
   rateType?: RateType;
   rateDate?: string;
   rateEdited?: boolean;
+  settlementCurrency?: string;
 }
 
 export interface POVersionEntry {
@@ -301,6 +302,9 @@ export interface PurchaseOrderData {
   rateDate?: string;
   /** A corporate rate typed on the PO instead of finance's. */
   rateEdited?: boolean;
+  /** "You pay": the currency the PO is settled in. The base currency unless
+   *  set in the PO's currency configuration. */
+  settlementCurrency?: string;
   notes: string;
   /** Structured notes (vendor-facing + internal, PO-level + line-item-level) */
   poNotes: PONote[];
@@ -621,7 +625,7 @@ export function buildVersionSnapshot(po: PurchaseOrderData): POVersionSnapshot {
 
 /* ── The PO's currency and rate (spec 4.3) ── */
 
-type PORateFields = Pick<PurchaseOrderData, "currency" | "exchangeRate" | "rateType" | "rateDate" | "rateEdited">;
+type PORateFields = Pick<PurchaseOrderData, "currency" | "exchangeRate" | "rateType" | "rateDate" | "rateEdited" | "settlementCurrency">;
 
 /** The currency fields a PO carries, as `poFx` resolves them. */
 export function poRateFields(po: Parameters<typeof poFx>[0]): PORateFields {
@@ -632,6 +636,7 @@ export function poRateFields(po: Parameters<typeof poFx>[0]): PORateFields {
     rateType: fx.rateType,
     rateDate: fx.rateDate,
     rateEdited: !!po.rateEdited,
+    settlementCurrency: (po as Partial<PurchaseOrderData>).settlementCurrency ?? BASE_CURRENCY,
   };
 }
 
@@ -643,12 +648,54 @@ function restoreRateFields(po: PurchaseOrderData, snapshot: POVersionSnapshot): 
   po.rateType = snapshot.rateType;
   po.rateDate = snapshot.rateDate;
   po.rateEdited = snapshot.rateEdited;
+  po.settlementCurrency = snapshot.settlementCurrency ?? BASE_CURRENCY;
+}
+
+/* ── A new version's rate: the one locked in, or today's ──────────────
+ * Ported from the earlier touchpoint's "Create new version" prompt. A PO keeps
+ * the rate stamped on it (its PO date's) from version to version. Applying the
+ * current rate restamps it with today's rate of the same type (finance's
+ * corporate rate, when that's the type and one is set; otherwise mid-market).
+ * Amounts stay in the PO's currency, so what the vendor receives is unchanged;
+ * only what the PO is worth in base moves. */
+export type VersionRateChoice = "locked" | "current";
+
+/** Today's rate for a PO, of its type. */
+export function currentRateFor(po: Parameters<typeof poFx>[0]): { exchangeRate: number; rateType: RateType; rateDate: string } {
+  const fx = poFx(po);
+  const today = localTodayIso();
+  if (fx.isBase) return { exchangeRate: 1, rateType: fx.rateType, rateDate: today };
+  const corp = fx.rateType === "corporate" ? rateOn(fx.currency, today, "corporate") : null;
+  const quote = corp?.rate != null ? corp : rateOn(fx.currency, today, "mid");
+  return { exchangeRate: quote.rate ?? fx.rate, rateType: quote.type, rateDate: today };
+}
+
+/** Restamp a PO with today's rate. Returns the version-history change, or null
+ *  when the rate is already today's. */
+function applyCurrentRate(po: PurchaseOrderData): Omit<POChangeRecord, "id" | "timestamp" | "user"> | null {
+  const before = poRateFields(po);
+  const now = currentRateFor(po);
+  po.exchangeRate = now.exchangeRate;
+  po.rateType = now.rateType;
+  po.rateDate = now.rateDate;
+  po.rateEdited = false;
+  if (before.exchangeRate === now.exchangeRate && before.rateType === now.rateType) return null;
+  return {
+    type: "exchange-rate-changed",
+    action: "Changed",
+    subject: "Exchange rate",
+    detail: `${describeRateChange(before, poRateFields(po))} · today's rate applied`,
+  };
 }
 
 /** "USD → EUR · 1 EUR = 304.8150 PKR", "1 USD = 278.5200 → 279.0000 PKR". */
 export function describeRateChange(before: PORateFields, after: PORateFields): string {
   const from = (before.currency || BASE_CURRENCY).toUpperCase();
   const to = (after.currency || BASE_CURRENCY).toUpperCase();
+  const payFrom = (before.settlementCurrency || BASE_CURRENCY).toUpperCase();
+  const payTo = (after.settlementCurrency || BASE_CURRENCY).toUpperCase();
+  const pays = payFrom !== payTo ? `${payFrom} → ${payTo}` : null;
+  if (from === to && before.exchangeRate === after.exchangeRate && before.rateType === after.rateType && pays) return pays;
   if (from !== to) {
     return isBaseCurrency(to) ? `${from} → ${to}` : `${from} → ${to} · ${rateSentence(to, after.exchangeRate ?? 1)}`;
   }
@@ -669,6 +716,8 @@ export interface POCurrencyChoice {
   rateType: RateType;
   exchangeRate: number;
   rateEdited?: boolean;
+  /** "You pay"; unchanged when left out. */
+  settlementCurrency?: string;
 }
 
 /** The PO as it would be in `next` (a copy, totals recomputed): the
@@ -694,6 +743,7 @@ export function withPOCurrency(po: PurchaseOrderData, next: POCurrencyChoice): P
   out.rateType = next.rateType;
   out.rateDate = before.rateDate;
   out.rateEdited = next.rateType === "corporate" && !!next.rateEdited;
+  if (next.settlementCurrency) out.settlementCurrency = next.settlementCurrency.toUpperCase();
   return applyComputedTotals(out);
 }
 
@@ -810,10 +860,24 @@ export function recordPOVersion(
     previousStatus?: string;
     newStatus?: string;
     resetToDraft?: boolean;
+    /** Keep the PO's rate (default) or restamp it with today's. */
+    rateChoice?: VersionRateChoice;
   }
 ): number | null {
   const po = purchaseOrders.get(poId);
   if (!po) return null;
+
+  const rateChange = payload.rateChoice === "current" ? applyCurrentRate(po) : null;
+  if (rateChange) {
+    applyComputedTotals(po);
+    payload = {
+      ...payload,
+      changes: [...payload.changes, rateChange],
+      changeTags: payload.changeTags?.includes("Exchange Rate Change")
+        ? payload.changeTags
+        : [...(payload.changeTags ?? []), "Exchange Rate Change"],
+    };
+  }
 
   const newVersion = (po.currentVersion || 1) + 1;
   const user = payload.createdBy || po.createdBy;
@@ -944,7 +1008,7 @@ export function restorePOFromSnapshot(poId: string, snapshot: POVersionSnapshot)
  * again", so intermediate versions stay in history but the reverted-to
  * version is Latest/Current.
  */
-export function revertPOToVersion(poId: string, version: number, reason: string): number | null {
+export function revertPOToVersion(poId: string, version: number, reason: string, rateChoice: VersionRateChoice = "locked"): number | null {
   const po = purchaseOrders.get(poId);
   if (!po) return null;
   // Receiving has started → PO is locked to its current version.
@@ -1000,6 +1064,7 @@ export function revertPOToVersion(poId: string, version: number, reason: string)
   }));
   po.shippingFee = source.snapshot.shippingFee;
   restoreRateFields(po, source.snapshot);
+  if (rateChoice === "current") applyCurrentRate(po);
   applyComputedTotals(po);
 
   po.currentVersion = version;

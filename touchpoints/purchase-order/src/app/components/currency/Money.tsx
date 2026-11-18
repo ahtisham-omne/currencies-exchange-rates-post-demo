@@ -54,6 +54,95 @@ export function MoneyCard({
   );
 }
 
+/** The hover for an amount shown in base: the base currency on top, the
+ *  amount in the vendor's (the document's) currency, then the rate. */
+export function BaseMoneyCard({
+  value,
+  currency,
+  fx,
+  dateLabel = 'PO date',
+  role = 'Vendor currency',
+}: {
+  /** The amount in `currency`. */
+  value: number;
+  currency: string;
+  fx: MoneyFx;
+  dateLabel?: string;
+  /** What `currency` is to the record: "Vendor currency", "PO currency". */
+  role?: string;
+}) {
+  const base = getCurrency(BASE_CURRENCY);
+  const day = fx.provisional ? `Today, ${formatRateDate(fx.rateDate)}` : `${formatRateDate(fx.rateDate)} (${dateLabel})`;
+  return (
+    <>
+      <FxHead flag={<CurrencyFlag code={BASE_CURRENCY} size={FX_FLAG_PX} />} name={base?.name ?? BASE_CURRENCY} code={BASE_CURRENCY} role="base currency" />
+      <FxLines>
+        <FxLine strong label={`In ${BASE_CURRENCY}`} value={withCode(formatMoney(toBase(value, fx.rate), BASE_CURRENCY), BASE_CURRENCY)} />
+        <FxLine label={role} value={withCode(formatMoney(value, currency), currency)} />
+      </FxLines>
+      <FxInset>
+        <FxNote>At {rateSentence(currency, fx.rate)} · {day}</FxNote>
+        <FxRateType type={fx.rateType} label={RATE_TYPE_LABEL[fx.rateType]} source={fx.source} />
+        {fx.provisional && <FxAlert>Not on a PO yet; a PO takes the rate on its PO date.</FxAlert>}
+      </FxInset>
+    </>
+  );
+}
+
+/**
+ * An amount kept in `currency`, shown in the base currency. A foreign one
+ * gets the dotted underline and a hover with the vendor's amount and the
+ * rate; a base one is plain text.
+ */
+export function BaseMoney({
+  value,
+  currency,
+  fx,
+  className = '',
+  dateLabel,
+  role,
+  children,
+}: {
+  /** The amount in `currency`. */
+  value: number;
+  currency: string | null | undefined;
+  fx?: MoneyFx | null;
+  className?: string;
+  dateLabel?: string;
+  role?: string;
+  children?: React.ReactNode;
+}) {
+  const code = (currency || BASE_CURRENCY).toUpperCase();
+  if (!fx || isBaseCurrency(code)) {
+    return <span className={`tabular-nums ${className}`}>{children ?? formatMoney(value, code)}</span>;
+  }
+  const text = children ?? formatMoney(toBase(value, fx.rate), BASE_CURRENCY);
+  if (!value) return <span className={`tabular-nums ${className}`}>{text}</span>;
+  return (
+    <HoverCard openDelay={200} closeDelay={80}>
+      <HoverCardTrigger asChild>
+        <span
+          tabIndex={0}
+          onClick={(e) => e.stopPropagation()}
+          className={`tabular-nums cursor-help underline decoration-dotted decoration-slate-300 underline-offset-[3px] hover:decoration-slate-500 focus-visible:outline-none focus-visible:decoration-primary ${className}`}
+        >
+          {text}
+        </span>
+      </HoverCardTrigger>
+      <HoverCardContent
+        side="top"
+        align="start"
+        className={FX_CARD_CLASS}
+        arrowPadding={FX_ARROW_PADDING}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <BaseMoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} />
+        <FxArrow />
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
 /**
  * An amount in its currency. With `fx` and a foreign currency, it gets the
  * dotted underline and the rate hover. `children` replaces the rendered text

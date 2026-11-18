@@ -8,7 +8,9 @@ import {
   AlertDialogDescription,
 } from "./ui/alert-dialog";
 import { FONT } from "./designTokens";
-import type { POVersionSnapshot } from "./poStore";
+import type { POVersionSnapshot, VersionRateChoice } from "./poStore";
+import { VersionRateChoice as VersionRateChoiceCards, versionRateOptions } from "./currency/VersionRateChoice";
+import { useDocView } from "./currency/docCurrencyContext";
 import { formatCurrency, rateTypeText, useDocFx, versionFx } from "./poVersionDisplay";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatRate, rateSentence } from "@/app/currency/money";
@@ -36,7 +38,8 @@ import { CurrencyFlag } from "./currency/CurrencyChip";
 interface POVersionRevertModalProps {
   version: number;
   onClose: () => void;
-  onConfirm: (reason: string) => void;
+  /** With the rate the PO takes: the version's locked one, or today's. */
+  onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
   /** The version being restored. When given, its total is shown in its
       own currency, with a note when reverting changes the PO's currency
       or rate (the snapshot's are restored with it). */
@@ -91,11 +94,19 @@ export default function POVersionRevertModal({
   currentFx,
 }: POVersionRevertModalProps) {
   const [reason, setReason] = useState("");
+  const [rateChoice, setRateChoice] = useState<VersionRateChoice>("locked");
+  const view = useDocView();
   const docFx = useDocFx();
   const nowFx = currentFx ?? docFx;
   const fx = snapshot ? versionFx(snapshot, nowFx) : null;
   // Only a snapshot that recorded its currency restores one.
   const note = fx && nowFx && snapshot?.currency ? rateChangeNote(fx, nowFx) : null;
+  // A foreign version: keep its locked rate, or apply today's.
+  const rateOptions = fx && snapshot && !fx.isBase
+    ? versionRateOptions({ ...snapshot, currency: fx.currency, exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate }, snapshot.total)
+    : null;
+  // The page's view: base (vendor amount beside it) or the vendor's (base beside it).
+  const showBase = !!fx && !fx.isBase && view.inBase;
 
   return (
     <AlertDialog open onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -194,15 +205,15 @@ export default function POVersionRevertModal({
                 <span className="inline-flex items-baseline tabular-nums" style={{ gap: 6, lineHeight: 1 }}>
                   {!fx.isBase && (
                     <span style={{ fontSize: 11, fontWeight: 400, color: "#94A3B8" }}>
-                      ≈ {formatCurrency(toBase(snapshot.total, fx.rate), BASE_CURRENCY)}
+                      ≈ {showBase ? formatCurrency(snapshot.total, fx.currency) : formatCurrency(toBase(snapshot.total, fx.rate), BASE_CURRENCY)}
                     </span>
                   )}
                   <span
                     className="inline-flex items-center"
                     style={{ gap: 5, fontSize: 13, fontWeight: 600, color: "#0F172A" }}
                   >
-                    <CurrencyFlag code={fx.currency} size={11} />
-                    {formatCurrency(snapshot.total, fx.currency)}
+                    <CurrencyFlag code={showBase ? BASE_CURRENCY : fx.currency} size={11} />
+                    {showBase ? formatCurrency(toBase(snapshot.total, fx.rate), BASE_CURRENCY) : formatCurrency(snapshot.total, fx.currency)}
                   </span>
                 </span>
               </div>
@@ -211,6 +222,13 @@ export default function POVersionRevertModal({
                   {note}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* The rate the PO takes: V{version}'s locked one, or today's. */}
+          {rateOptions && (
+            <div className="w-full mt-5">
+              <VersionRateChoiceCards fromVersion={version} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
             </div>
           )}
 
@@ -266,7 +284,7 @@ export default function POVersionRevertModal({
           <div className="w-full mt-7 flex flex-col gap-2.5">
             <button
               type="button"
-              onClick={() => onConfirm(reason.trim())}
+              onClick={() => onConfirm(reason.trim(), rateOptions ? rateChoice : "locked")}
               className="w-full transition-all"
               style={{
                 height: 44,

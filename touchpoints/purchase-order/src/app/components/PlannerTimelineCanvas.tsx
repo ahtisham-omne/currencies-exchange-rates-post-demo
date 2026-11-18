@@ -57,6 +57,7 @@ import type { PlannerItem, PlannerVendor } from "./plannerData";
 import { vendorConstraints } from "./plannerData";
 import { effectivePrice, severityForAtp, type ProjectionPoint } from "../utils/projection";
 import type { GapGraphEvent } from "./PlannerGapGraph";
+import { PlannerPrice } from "./currency/PlannerMoney";
 
 /* ─────────────────────────── CONSTANTS ─────────────────────────── */
 
@@ -730,7 +731,9 @@ export default function PlannerTimelineCanvas({
                       <span className="inline-flex items-center gap-0.5">
                         <Clock className="h-2.5 w-2.5" /> {v.leadTimeDays}d
                       </span>
-                      <span className="text-slate-500">${eff.toFixed(2)}</span>
+                      <span className="text-slate-500">
+                        <PlannerPrice usd={eff} vendorName={v.vendorName} />
+                      </span>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-0.5">

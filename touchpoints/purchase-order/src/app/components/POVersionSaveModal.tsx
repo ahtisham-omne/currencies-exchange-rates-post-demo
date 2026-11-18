@@ -17,6 +17,8 @@
  *     about to be created
  */
 import React from "react";
+import { VersionRateChoice as VersionRateChoiceCards, type VersionRateOptions } from "./currency/VersionRateChoice";
+import type { VersionRateChoice } from "./poStore";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Save, X, Plus, Minus, GitBranch } from "lucide-react";
 import { FONT } from "./designTokens";
@@ -39,8 +41,11 @@ interface POVersionSaveModalProps {
   nextVersion: number;
   /** Itemised list of changes recorded during this editing session. */
   changes: POVersionSaveChange[];
-  /** Fires when the user confirms Save Version. */
-  onConfirm: () => void;
+  /** Fires when the user confirms Save Version, with the rate the new
+   *  version takes ("locked" when there's no choice to make). */
+  onConfirm: (rateChoice: VersionRateChoice) => void;
+  /** A foreign-currency PO: offer the locked rate or today's. */
+  rate?: { fromVersion: number; options: VersionRateOptions };
 }
 
 /* ─── Helpers ─── */
@@ -75,11 +80,16 @@ export default function POVersionSaveModal({
   nextVersion,
   changes,
   onConfirm,
+  rate,
 }: POVersionSaveModalProps) {
   const hasChanges = changes.length > 0;
+  const [rateChoice, setRateChoice] = React.useState<VersionRateChoice>("locked");
+  React.useEffect(() => {
+    if (open) setRateChoice("locked");
+  }, [open]);
   const handleConfirm = () => {
     if (!hasChanges) return;
-    onConfirm();
+    onConfirm(rate ? rateChoice : "locked");
     onOpenChange(false);
   };
   const handleCancel = () => onOpenChange(false);
@@ -242,6 +252,13 @@ export default function POVersionSaveModal({
               </div>
             )}
           </div>
+
+          {/* ─── The new version's rate (foreign-currency PO) ─── */}
+          {rate && hasChanges && (
+            <div className="w-full mt-5">
+              <VersionRateChoiceCards fromVersion={rate.fromVersion} options={rate.options} value={rateChoice} onChange={setRateChoice} />
+            </div>
+          )}
 
           {/* ─── Actions — Save Version (primary, full-width) + Cancel (muted) ─── */}
           <div className="w-full mt-6 flex flex-col gap-2">

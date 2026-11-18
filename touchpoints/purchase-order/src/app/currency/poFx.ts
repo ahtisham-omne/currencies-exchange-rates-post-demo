@@ -161,8 +161,11 @@ export const ruleAmountFactorToday = (code: string) => ruleAmountFactor({ curren
 /* ── A vendor's default currency (spec 4.2) ───────────────────────────
  * The partner record's default currency, carried over from the earlier
  * Purchase Orders touchpoint (catalogData's VENDOR_CURRENCIES there) so the
- * same vendor keeps the same currency. A vendor not listed (Procurement
- * Planning's suppliers) is a local one and trades in the base currency. */
+ * same vendor keeps the same currency. Procurement Planning's suppliers are
+ * listed too (audit p. 10), by where each is based, so a planned PO opens in
+ * the currency the planner shows its price in. A vendor not listed (Acme
+ * Supply Co, the planner's primary) is a local one and trades in the base
+ * currency. */
 export const VENDOR_CURRENCIES: Record<string, string> = {
   // North American OEMs
   'General Motors (GM)': 'USD',
@@ -197,6 +200,54 @@ export const VENDOR_CURRENCIES: Record<string, string> = {
   'Timken Company': 'USD',
   'SKF Group': 'EUR',
   'Flex-N-Gate': 'USD',
+  // Procurement Planning's suppliers (plannerData.ts)
+  'Globex Industrial (GI)': 'EUR',
+  'Stark Industries (SI)': 'USD',
+  'Wayne Enterprises (WE)': 'GBP',
+  '3M Personal Safety': 'USD',
+  'Akebono Brake (AB)': 'JPY',
+  'Akebono Brake Industry': 'JPY',
+  'Apple Inc.': 'USD',
+  'Applied Industrial': 'USD',
+  'Bosch': 'EUR',
+  'Bosch Mobility': 'EUR',
+  'Bosch Rexroth (BR)': 'EUR',
+  'Bossard Group (BG)': 'CHF',
+  'Brembo SpA (BS)': 'EUR',
+  'Cardone': 'USD',
+  'CDW': 'USD',
+  'Delphi': 'USD',
+  'Denso': 'JPY',
+  'Denso Corp (DN)': 'JPY',
+  'Donaldson Co (DC)': 'USD',
+  'Eibach': 'EUR',
+  'Fastenal': 'USD',
+  'Federal-Mogul (FM)': 'USD',
+  'Ferguson Supply': 'USD',
+  'Figma, Inc.': 'USD',
+  'Gates': 'USD',
+  'GKN Driveline (GK)': 'GBP',
+  'Grainger Industrial': 'USD',
+  'Honeywell': 'USD',
+  'KYB': 'JPY',
+  'MAHLE Behr': 'EUR',
+  'Mann+Hummel (MH)': 'EUR',
+  'McMaster-Carr': 'USD',
+  'Misumi USA': 'USD',
+  'Molex LLC (ML)': 'USD',
+  'Monroe': 'USD',
+  'Moog': 'USD',
+  'Motion Industries': 'USD',
+  'MSC Industrial': 'USD',
+  'Nexteer Auto (NA)': 'USD',
+  'NTN Corp (NTN)': 'JPY',
+  'Parker Hannifin (PH)': 'USD',
+  'RS Components': 'GBP',
+  'Sachs Performance (SP)': 'EUR',
+  'SKF Group (SKF)': 'EUR',
+  'TE Connectivity (TE)': 'USD',
+  'WESCO International': 'USD',
+  'Zoro': 'USD',
 };
 
 export function vendorCurrency(vendorName: string | null | undefined): string {

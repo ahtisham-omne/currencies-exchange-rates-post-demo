@@ -6,7 +6,7 @@ Purchase Orders was redesigned. The new app comes from [`ahtisham-omne/Purchase-
 2. Maps each one onto the redesign (§2).
 3. Says where everything is defined now (§3–§6).
 
-The redesign replaced the earlier touchpoint in `touchpoints/purchase-order` as a squashed git subtree. Only the Purchase Orders surfaces were in scope: the listing, PO detail, cart, catalogue, item modal, versions, print and dashboard. Procurement Planning (the audit's page 10) is out of scope, as the design repo's `CLAUDE.md` says (§7).
+The redesign replaced the earlier touchpoint in `touchpoints/purchase-order` as a squashed git subtree. Only the Purchase Orders surfaces were in scope at first: the listing, PO detail, cart, catalogue, item modal, versions, print and dashboard, as the design repo's `CLAUDE.md` says. Procurement Planning (the audit's page 10) was added afterwards, on request (§5, "Procurement Planning").
 
 Sources:
 
@@ -50,12 +50,12 @@ Paths are under `touchpoints/purchase-order/src/app/`.
 | PO currency fields | `components/poStore.ts` `PurchaseOrderData.currency / exchangeRate / rateType / rateDate / rateEdited`, read through `poFx` | One currency per PO, the rate taken on the PO date. No per-line original price: a line is in the PO's currency (spec 4.3). Settlement ("You pay") belongs to payments, not the PO |
 | Listing KPIs | Nothing to convert | The redesign's strip is five order counts; its financial widgets are parked ("Buyer 2026-07-31", `InsightsDrawer.tsx`). The listing has no amount column |
 | "POs created" modal | `PurchaseOrdersListing.tsx`, `CartPage.tsx`, `CatalogueModal.tsx` | Each PO's total in its own currency |
-| PKR vendor | Dropped | A PKR PO is reached by changing a PO's currency to PKR, or by Procurement Planning's local suppliers |
+| PKR vendor | Dropped | A PKR PO is reached by changing a PO's currency to PKR, or by Procurement Planning's local supplier (Acme Supply Co) |
 | Cart | `CartPage.tsx`, `CatalogueModal.tsx` | Per the audit (§3, items 1–3) |
 | PO detail amounts | `PurchaseOrderDraft.tsx`, `components/currency/DocCurrency.tsx` | Every amount in the PO's currency (§3, item 4) |
-| Order Summary currency card | `components/currency/POCurrencyFields.tsx` | Replaced by the audit's Currency and Exchange rate fields (§3, item 5), plus the total's base equivalent |
-| Base / Vendor toggle | Dropped | The audit has every amount in the document's currency; the base equivalent is on hover and under the total |
-| Currency config modal | Dropped | Its picker and Mid / Corporate choice moved into Order Summary; the change opens a confirmation instead |
+| Order Summary currency card | `components/currency/POCurrencyConfig.tsx` `POCurrencySummary` | Brought back (§3a): Vendor receives / You pay / Base equivalent, the rate(s), the rate type and a Locked chip, and View configuration |
+| Base / Vendor toggle | `components/currency/POCurrencyHeaderControls.tsx`, `currency/poView.ts` | Brought back (§3a): Base Currency (the default) or Vendor Currency, for the whole PO |
+| Currency config modal | `components/currency/POCurrencyConfig.tsx` `POCurrencyConfigDialog` | Brought back (§3a), from the header's Currency button and the card's View configuration. It hosts the redesign's picker, rate type and corporate rate, and its convert confirmation |
 | Versions | `poStore.ts` (`exchange-rate-changed`, snapshot currency fields), `poVersionDisplay.ts`, `POVersion*.tsx`, `POCompareFullScreen.tsx` | A currency or rate change is a version change ("USD → EUR · 1 EUR = 299.6683 PKR"). Each version is shown in its own currency with its rate; compare highlights Currency and Exchange rate; revert restores them |
 | Item modal, vendor picker | `OrderFlow.tsx`, `VendorSelector.tsx`, `MultiUnitPriceTable.tsx`, `QualifyVendorPricingModal.tsx`, `PriceConfirmationDialog.tsx` | The vendor's price book is in the vendor's currency. Offers show their currency and "≈ ₨…" so vendors rank fairly. On a PO line the modal is in the PO's currency |
 | Duplicate PO | `poStore.ts` `duplicatePO`, `PurchaseOrderDraft.tsx` `DuplicatePODialog` | Same vendor: keeps the currency. Another vendor: opens in that vendor's currency, prices converted; the dialog says so |
@@ -72,6 +72,18 @@ Paths are under `touchpoints/purchase-order/src/app/`.
 | 4 | PO: no fixed `$` | `PurchaseOrderDraft.tsx`: price inputs take the currency's symbol or code and minor unit (¥ has none); line totals, discounts, rule and one-time amounts, Order Summary, toasts and change records use `formatMoney`. Hover cards and modals read the page's `DocCurrencyProvider` |
 | 5 | PO: currency selector and exchange rate in Order Summary | `components/currency/POCurrencyFields.tsx`. Picking another currency opens a confirmation with the rate, the cross rate and the totals before and after; confirming converts every line, the shipping fee and fixed one-time amounts (`poStore.ts` `withPOCurrency` / `setPOCurrency`) and goes through the page's version prompt. Mid-market is read-only; Corporate is editable, with a reset to finance's rate. Pricing rules stay applied: their tiers are quantity bands, and each rule's impact shows its base equivalent (the price breakdown hover, the rule detail modal) |
 | 6 | PO: vendor's default currency under Vendor Information | `POSidebarSections.tsx` `VendorInfoCard`: "Default currency" with flag and name, and whether the PO opened in it or was changed |
+
+## 3a. Base currency first, the toggle, the configuration and version rates (18 Nov 2026)
+
+Asked for after the audit's changes: "In POs, the prices should always be in the base currency. And on the hover, it should show vendor currency if different. Add the toggle and currency configuration for PO. … add these for versioning." This brings back the earlier touchpoint's model (§1) on the redesign's data, which is unchanged: a PO's amounts are still kept in its currency with a rate to base, so what changes is what's shown.
+
+- **Base by default.** Every amount on the PO, in the cart and in the catalogue is shown in PKR, the vendor's amount and the rate in the hover (`BaseMoney` / `BaseMoneyCard` in `Money.tsx`: the base currency on top, "In PKR", "Vendor currency", the rate, its type and day). On a PO the rate is the PO's; in the cart and catalogue it's today's. Cart totals are always in PKR ("In PKR, base currency · … converted at today's rate").
+- **The toggle.** The PO header has Base Currency | Vendor Currency (only on a PO in a foreign currency) and a Currency button. The view sits on the document-currency context (`docCurrencyContext.ts` `view`, `useDocView`, `useDocMoney`, `useDocOtherText`), so line rows, Order Summary, hover cards, rule and adjustment modals and the item modal all follow it. It's kept per PO for the session (`poView.ts`) and is never an edit.
+- **Prices typed in the shown currency.** In base view the price input takes PKR; the price is converted at the PO's rate and rounded to the vendor currency's minor unit. An untouched input keeps the stored price.
+- **Currency Configuration** (`POCurrencyConfig.tsx`): Vendor receives (the PO's currency; changing it converts every line, through the same confirmation as before), You pay (the settlement currency, PKR unless set; `PurchaseOrderData.settlementCurrency`, kept in version snapshots), the rate type and a corporate rate that can be changed, the rate cards, and Reset to default. Saving goes through the page's edit guard, so on a Sent PO it starts a new version.
+- **Order Summary** keeps the total in the shown currency with the other one under it, and ends with the CURRENCY card.
+- **Versions.** Saving a version (`POVersionSaveModal`) and reverting to one (`POVersionRevertModal`, from the history tab, the history dialog and the version dropdown) ask, on a foreign PO: "Use locked rate from V{n}" or "Apply current rate". Applying it restamps the PO with today's rate of its type (`poStore.ts` `currentRateFor` / `applyCurrentRate`) and records an Exchange rate change; the vendor's amounts don't move, the base totals do. Version rows, snapshots and compare show base at each version's own rate (`poVersionDisplay.ts` `versionMoney`), or the version's currency when the page is toggled.
+- **Not changed:** the printed PO and its PDF stay in the PO's currency, the vendor's document. Procurement Planning keeps vendor prices in the vendor's currency with the base beside them (§5).
 
 ## 4. Shared currency code
 
@@ -92,7 +104,23 @@ Paths are under `touchpoints/purchase-order/src/app/`.
 - **Pricing-rule flat amounts** ("$15 off per unit") stay written in USD, as Partners treats them. They are converted to the PO's currency at the mid-market cross rate on its PO date (`ruleAmountFactor`; today's in the cart), not at the PO's own rate, so changing only the rate (mid-market to corporate, a typed rate) never changes the PO's total. The 100% cap check uses the same conversion.
 - **The mock shipping fee** ($12.50 a line, outside the total) and **the credit-limit gate** ($125,000) are written in USD and compared in the PO's currency.
 - **Dashboard spend** is in PKR with the base-currency pill (`PODashboard.tsx`); its mock series is restated from USD.
-- **Procurement Planning's prices are USD.** Its entry points into Purchase Orders say so (`priceCurrency: "USD"` in `PODemands.tsx` and `PlannerWorkspacePage.tsx`; `"USD"` passed by `PODemands.tsx` and `RecommendedPOsModal.tsx` to `createPOFromVendorCheckout`), and the cart or PO converts them to the vendor's currency. The item modal keeps them labelled USD: an offer built from an item's own price carries that price's currency (`ItemVendorOffer.currency`). Nothing Planning shows changed.
+- **Procurement Planning works in USD.** Its data and solver keep every vendor price in USD, and its entry points into Purchase Orders say so (`priceCurrency: "USD"` in `PODemands.tsx` and `PlannerWorkspacePage.tsx`; `"USD"` passed by `PODemands.tsx` and `RecommendedPOsModal.tsx` to `createPOFromVendorCheckout`), so the cart or PO converts them to the vendor's currency. The item modal keeps them labelled USD: an offer built from an item's own price carries that price's currency (`ItemVendorOffer.currency`). What Planning *shows* is in each vendor's currency (below).
+
+### Procurement Planning (audit p. 10)
+
+"Vendor prices in the vendor's currency with a base equivalent in the sandbox." Paths are under `touchpoints/purchase-order/src/app/`.
+
+- **Vendor currencies.** The planner's suppliers are in `currency/poFx.ts` `VENDOR_CURRENCIES`, by where each is based: Globex Industrial EUR, Stark Industries USD, Wayne Enterprises GBP, Fastenal, Grainger and McMaster-Carr USD, Bosch and Brembo EUR, Denso and NTN JPY, Bossard CHF, and so on. Acme Supply Co, the planner's primary, is left out, so it stays a local PKR supplier. These names appear only in Planning, so no existing PO changes.
+- **One conversion.** `components/currency/PlannerMoney.tsx` turns a planner price (USD) into the vendor's currency with `convertListPrice`, the conversion the cart (`cartStore.ts` `inVendorCurrency`) and PO creation use. So a planned PO shows the figure it lands in the cart and PO with. Line totals are the converted unit price × quantity, as on the PO. The solver still ranks and splits in USD; one rate applies to every vendor, so the ranking is the same as in base.
+- **Where it shows:**
+  - The Sandbox's Qualified Vendors panel: each vendor's price in its currency with the rate hover (`Money`, today's rate), and "≈ ₨…" beside it, so vendors in different currencies compare at a glance. Cheapest and dearest stay green and red.
+  - The Sandbox's add-to-cart confirmation: each planned PO's unit price and total in the vendor's currency with "≈ ₨…"; the total is in the one currency with its PKR equivalent, or in PKR ("In PKR, base currency · N currencies converted at today's rate") when the plan spans currencies, as the cart's Order Summary does. The header's Total cost and the button's hint use the same total.
+  - The Auto recommendation review: each PO's unit price and total in the vendor's currency with "≈ ₨…", and the total as above. The "context line" on a resolved card too.
+  - The vendor lists in the gap graph, the add-a-PO chooser and the supply wizard: the price in the vendor's currency (plain text, as those rows are buttons), plus "≈ ₨…" in the chooser.
+  - Snapshot compare: plan costs in PKR (compact), since plans can mix vendors.
+  - Recommended POs and the "one PO per vendor" preview on the All Demand listing: each vendor's subtotal and lines in its currency with "≈ ₨…". Neither is opened anywhere in the current design (`setRecommendModalOpen(true)` and `bulkCreatePOs` have no callers), so these are ready for when they are.
+  - The timeline variation (`PlannerTimelineCanvas.tsx`, hidden behind `SHOW_TIMELINE_VARIATION`): its vendor rows' prices, the same way.
+- **Not changed:** pricing-rule badges (their value-based bands are USD, as in §7).
 
 ## 6. Running inside the shell
 
@@ -104,7 +132,6 @@ As for Partners and Vendor Invoicing, it lives in `src/embedding.ts`:
 
 ## 7. Not in this step
 
-- **Procurement Planning** (audit p. 10: vendor prices in the vendor's currency with a base equivalent in the sandbox) is out of scope per the design repo's `CLAUDE.md`. Its prices stay `$`.
 - **Purchase Requests** and the **contacts directory** keep the design's `$`. Requests estimate in USD from each item's USD list price (`listPriceUsd`); a request turned into a PO is converted to the vendor's currency (`PurchaseRequestDetail.tsx`).
 - **Item master prices** in the item quick views (`QuickViewPanel.tsx`, `pocQuickViewPanel.tsx`, `ItemHoverCard.tsx`) are mock list prices of the Items module (audit: Items v2).
 - **Settlement currency** ("You pay" in the earlier config modal) belongs to payments and invoices, not the PO.

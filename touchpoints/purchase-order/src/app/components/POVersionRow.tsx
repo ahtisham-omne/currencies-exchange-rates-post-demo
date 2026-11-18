@@ -1,4 +1,8 @@
-import { ChevronDown, ChevronRight, RotateCcw, Check } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  RotateCcw,
+  Check } from "lucide-react";
 import { FONT } from "./designTokens";
 import type { POVersionEntry } from "./poStore";
 import UserHoverCard from "./UserHoverCard";
@@ -8,6 +12,8 @@ import {
   getUserColor,
   useDocFx,
   versionFx,
+  useVersionInBase,
+  versionMoney,
 } from "./poVersionDisplay";
 import { getCurrency } from "@/app/currency/currencies";
 import type { PoFx } from "@/app/currency/poFx";
@@ -57,7 +63,9 @@ export default function POVersionRow({
   fallbackFx,
 }: POVersionRowProps) {
   const docFx = useDocFx();
-  const code = versionFx(ver.snapshot, fallbackFx ?? docFx).currency;
+  const vfx = versionFx(ver.snapshot, fallbackFx ?? docFx);
+  const code = vfx.currency;
+  const inBase = useVersionInBase();
   return (
     <div
       onClick={onClick}
@@ -287,7 +295,7 @@ export default function POVersionRow({
             fontFamily: FONT,
           }}
         >
-          {formatCurrency(ver.snapshot.total, code)}
+          {versionMoney(ver.snapshot.total, vfx, inBase)}
         </span>
       </div>
 

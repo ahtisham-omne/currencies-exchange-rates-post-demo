@@ -139,7 +139,9 @@ import { getPO } from "./poStore";
 import { DocCurrencyProvider } from "./currency/DocCurrency";
 import { useDocCurrency } from "./currency/docCurrencyContext";
 import { currencyDecimals, formatMoney, formatRate, moneyPrefix } from "@/app/currency/money";
-import { poFx, ruleAmountFactor, ruleAmountFactorToday, toPOCurrency, todayFx, vendorCurrency } from "@/app/currency/poFx";
+import { poFx, ruleAmountFactor, ruleAmountFactorToday, toBaseToday, toPOCurrency, todayFx, vendorCurrency } from "@/app/currency/poFx";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { toBase } from "@/app/currency/rates";
 
 /* ═══════════════════════════════════════════════════════════════
    TYPES  (unchanged — preserving public interface)
@@ -1077,6 +1079,11 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
   const linkedFx = linkedPO ? poFx(linkedPO) : null;
   const flowCurrency = linkedFx ? linkedFx.currency : bookCurrency;
   const flowFx = linkedFx ?? todayFx(flowCurrency);
+  /* Shown in base, like the rest of Purchase Orders, unless the PO page it
+     was opened from is toggled to the vendor's currency. */
+  const outerView = useDocCurrency().view ?? "base";
+  const flowInBase = outerView === "base" && !isBaseCurrency(flowCurrency);
+  const flowMoney = (n: number) => (flowInBase ? formatMoney(toBase(n, flowFx.rate), BASE_CURRENCY) : formatMoney(n, flowCurrency));
   const bookToFlow = (price: number, vendorName?: string, currency?: string) =>
     linkedPO ? toPOCurrency(price, currency ?? (vendorName ? offerCurrencyOf(vendorName) : bookCurrency), linkedPO) : price;
   const [sections, setSections] = useState<Record<string, boolean>>({ warnings: false, inventory: false, vendors: false, attachments: false });
@@ -2887,7 +2894,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
   ];
 
   return (
-    <DocCurrencyProvider currency={flowCurrency} fx={flowFx} dateLabel={linkedFx ? "PO date" : "today"} role={linkedFx ? "PO currency" : "vendor currency"}>
+    <DocCurrencyProvider currency={flowCurrency} fx={flowFx} dateLabel={linkedFx ? "PO date" : "today"} role="vendor currency" view={outerView}>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         /* Sizing recipe — verbatim port of Partners' canonical
@@ -3208,7 +3215,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                               </div>
                               <div className="flex items-center gap-2 mt-0.5">
                                 {cardPriceConfirmed ? (
-                                  <span className="text-primary" style={{ ...S.small, fontWeight: "var(--font-weight-semibold)" }}>{formatMoney(cardPrice, vendorCurrency(av.vendorName))} / {item.vendorUOM}</span>
+                                  <span className="text-primary" style={{ ...S.small, fontWeight: "var(--font-weight-semibold)" }}>{formatMoney(toBaseToday(cardPrice, vendorCurrency(av.vendorName)), BASE_CURRENCY)} / {item.vendorUOM}</span>
                                 ) : (
                                   <span className="text-muted-foreground" style={S.small}>Price not set</span>
                                 )}
@@ -3409,7 +3416,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                       </div>
                     ) : (
                       <div className="flex items-baseline gap-1 flex-wrap">
-                        <span className="text-foreground" style={S.price}>{formatMoney(effectivePrice, flowCurrency)}</span>
+                        <span className="text-foreground" style={S.price}>{flowMoney(effectivePrice)}</span>
                         <span className="text-muted-foreground" style={S.small}>/ {item.vendorUOM}</span>
                         <button
                           type="button"
@@ -3528,7 +3535,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                   </div>
                 ) : (
                   <div className="flex items-baseline gap-1 flex-wrap">
-                    <span className="text-foreground" style={S.price}>{formatMoney(effectivePrice, flowCurrency)}</span>
+                    <span className="text-foreground" style={S.price}>{flowMoney(effectivePrice)}</span>
                     <span className="text-muted-foreground" style={S.small}>/ {item.vendorUOM}</span>
                   </div>
                 )}
@@ -3798,7 +3805,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                   <>
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-muted-foreground" style={S.small}>Subtotal</span>
-                      <span className="text-foreground" style={S.bodyMed}>{formatMoney(subtotal, flowCurrency)}</span>
+                      <span className="text-foreground" style={S.bodyMed}>{flowMoney(subtotal)}</span>
                     </div>
                     {/* Discount + Premium pricing rules (buyer 2026-07-22
                         "everything is pricing rules — either discount or
@@ -3811,7 +3818,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                           Discount pricing rules
                         </span>
                         <span style={{ color: "hsl(var(--success))", ...S.bodyMed }}>
-                          {formatMoney(-(discountAmount + rulesDiscountAmount), flowCurrency)}
+                          {flowMoney(-(discountAmount + rulesDiscountAmount))}
                         </span>
                       </div>
                     )}
@@ -3821,7 +3828,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                           Premium pricing rules
                         </span>
                         <span style={{ color: "#7C3AED", ...S.bodyMed }}>
-                          +{formatMoney(rulesPremiumAmount, flowCurrency)}
+                          +{flowMoney(rulesPremiumAmount)}
                         </span>
                       </div>
                     )}
@@ -3831,14 +3838,14 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
                           One-time discounts/premiums
                         </span>
                         <span style={{ color: oneTimeNet < 0 ? "hsl(var(--success))" : "#7C3AED", ...S.bodyMed }}>
-                          {oneTimeNet < 0 ? "−" : "+"}{formatMoney(Math.abs(oneTimeNet), flowCurrency)}
+                          {oneTimeNet < 0 ? "−" : "+"}{flowMoney(Math.abs(oneTimeNet))}
                         </span>
                       </div>
                     )}
                     <div className="h-px my-2" style={{ backgroundColor: "hsl(var(--border))" }} />
                     <div className="flex items-center justify-between">
                       <span className="text-foreground" style={S.bodyMed}>Total</span>
-                      <span className="text-primary" style={S.total}>{formatMoney(totalPrice, flowCurrency)}</span>
+                      <span className="text-primary" style={S.total}>{flowMoney(totalPrice)}</span>
                     </div>
                     {/* The vendor quotes in another currency than this PO's:
                         its book prices are converted at the PO's rate. */}

@@ -42,6 +42,7 @@ import { effectivePrice } from "../utils/projection";
 import { VendorLogo } from "./vendorLogo";
 import PlannerPricingRuleBadge from "./PlannerPricingRuleBadge";
 import PlannerQtyInput from "./PlannerQtyInput";
+import { BaseApprox, PlannerPrice, plannerUnit } from "./currency/PlannerMoney";
 
 const VIOLET = "#0A77FF";
 
@@ -297,9 +298,13 @@ export default function PlannerVendorPanel({
                         style={{ color: priceColor }}
                         title={priceTitle}
                       >
-                        ${eff.toFixed(2)}
+                        <PlannerPrice usd={eff} vendorName={v.vendorName} />
                         <span className="font-normal text-slate-400"> / {baseUom}</span>
                       </span>
+                      {(() => {
+                        const pu = plannerUnit(eff, v.vendorName);
+                        return <BaseApprox value={pu.amount} currency={pu.currency} />;
+                      })()}
                       {v.pricingRules.map((r, i) => (
                         <PlannerPricingRuleBadge key={i} rule={r} uom={baseUom} />
                       ))}

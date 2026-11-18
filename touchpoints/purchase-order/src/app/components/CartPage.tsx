@@ -62,11 +62,11 @@ import QuickViewPanel, { type QuickViewData } from "./QuickViewPanel";
 import QuantityStepperInput from "./QuantityStepperInput";
 import ItemStatusChip from "./ItemStatusChip";
 import { lineOneTimeNet } from "./poOrderPricing";
-import { Money } from "./currency/Money";
+import { BaseMoney, Money } from "./currency/Money";
 import { CurrencyFlag } from "./currency/CurrencyChip";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatMoney } from "@/app/currency/money";
-import { ruleAmountFactorToday, toBaseToday, todayFx, vendorCurrency } from "@/app/currency/poFx";
+import { poFx, ruleAmountFactorToday, toBaseToday, todayFx, vendorCurrency, type PoFx } from "@/app/currency/poFx";
 
 /* ═══════════════════════════════════════════════════════════════
    DESIGN CONSTANTS — Partners-aligned (mirrors PO detail page)
@@ -197,7 +197,7 @@ export default function CartPage() {
     });
   }, []);
   /* ── Multi-PO confirmation modal state ── */
-  const [multiPOModal, setMultiPOModal] = useState<{ created: Array<{ id: string; poNumber: string; vendor: string; total: number; currency: string; itemCount: number }> } | null>(null);
+  const [multiPOModal, setMultiPOModal] = useState<{ created: Array<{ id: string; poNumber: string; vendor: string; total: number; currency: string; fx: PoFx; itemCount: number }> } | null>(null);
   const [multiPOChecked, setMultiPOChecked] = useState<Set<string>>(new Set());
 
   /* ── Checkbox selection state — all checked by default ──
@@ -336,10 +336,12 @@ export default function CartPage() {
   const totalCheckedVendors = new Set(checkedCart.map((c) => c.catalogItem.partnerLocation || "Unknown Vendor")).size;
   const itemCount = checkedCart.reduce((sum, i) => sum + i.quantity, 0);
   const cartCurrencies = new Set(checkedCart.map((c) => vendorCurrency(c.catalogItem.partnerLocation)));
-  const singleCurrency = cartCurrencies.size === 1 ? [...cartCurrencies][0] : null;
-  const totalsCurrency = singleCurrency ?? BASE_CURRENCY;
-  const inTotals = (amount: number, vendor: string) =>
-    singleCurrency ? amount : toBaseToday(amount, vendorCurrency(vendor));
+  /* Purchase Orders shows prices in the base currency: the totals are in
+     base, each vendor's amounts converted at today's rate (the cart isn't a
+     PO yet), the vendor's own figure on hover. */
+  const foreignInCart = [...cartCurrencies].some((c) => c !== BASE_CURRENCY);
+  const totalsCurrency = BASE_CURRENCY;
+  const inTotals = (amount: number, vendor: string) => toBaseToday(amount, vendorCurrency(vendor));
   const subtotal = checkedCart.reduce((s, i) => s + inTotals(i.unitPrice * i.quantity, i.catalogItem.partnerLocation), 0);
   const totalDiscount = checkedCart.reduce((s, i) => s + inTotals(i.unitPrice * i.quantity * (i.discount / 100), i.catalogItem.partnerLocation), 0);
   /* Rule impact rolls up across every vendor group (buyer feedback
@@ -449,7 +451,11 @@ export default function CartPage() {
 
     const isEdit = orderFlowMode === "edit-cart";
     toast.success(isEdit ? `${catalogRef.itemNumber} updated` : `${catalogRef.itemNumber} added to cart`, {
-      description: `${result.quantity} ${catalogRef.defaultUOM} × ${formatMoney(result.unitPrice, result.currency ?? vendorCurrency(catalogRef.partnerLocation))} — ${formatMoney(result.totalPrice, result.currency ?? vendorCurrency(catalogRef.partnerLocation))}`,
+      description: (() => {
+        const cur = result.currency ?? vendorCurrency(catalogRef.partnerLocation);
+        const base = (n: number) => formatMoney(toBaseToday(n, cur), BASE_CURRENCY);
+        return `${result.quantity} ${catalogRef.defaultUOM} × ${base(result.unitPrice)} — ${base(result.totalPrice)}`;
+      })(),
       style: { fontFamily: FONT },
       duration: 3000,
     });
@@ -496,7 +502,7 @@ export default function CartPage() {
       vendorMap.get(vendor)!.push(c);
     });
 
-    const created: Array<{ id: string; poNumber: string; vendor: string; total: number; currency: string; itemCount: number }> = [];
+    const created: Array<{ id: string; poNumber: string; vendor: string; total: number; currency: string; fx: PoFx; itemCount: number }> = [];
     vendorMap.forEach((items, vendor) => {
       const poLineItems = items.map((c) => ({
         id: c.catalogItem.id, itemNumber: c.catalogItem.itemNumber, descriptiveName: c.catalogItem.descriptiveName,
@@ -511,7 +517,7 @@ export default function CartPage() {
       const po = createPOFromVendorCheckout(vendor, poLineItems);
       /* Use the created PO's computed total (rules + one-times). */
       const total = po.total;
-      created.push({ id: po.id, poNumber: po.poNumber, vendor, total, currency: po.currency ?? vendorCurrency(vendor), itemCount: items.length });
+      created.push({ id: po.id, poNumber: po.poNumber, vendor, total, currency: po.currency ?? vendorCurrency(vendor), fx: poFx(po), itemCount: items.length });
     });
 
     // Remove only checked items from cart
@@ -967,7 +973,7 @@ export default function CartPage() {
                               Subtotal:{" "}
                               {/* In the vendor's currency: this group becomes one PO in it (spec 4.2). */}
                               <span className="tabular-nums" style={{ fontWeight: 600, color: C.text900 }}>
-                                <Money value={group.checkedTotal} currency={group.currency} fx={todayFx(group.currency)} dateLabel="today" role="vendor currency" />
+                                <BaseMoney value={group.checkedTotal} currency={group.currency} fx={todayFx(group.currency)} dateLabel="today" role="Vendor currency" />
                               </span>
                               <span className="inline-flex items-center gap-1 ml-1.5 align-middle" style={{ fontSize: 10, fontWeight: 500, color: C.text500 }}>
                                 <CurrencyFlag code={group.currency} size={10} />
@@ -985,7 +991,7 @@ export default function CartPage() {
                                   lineHeight: 1.4,
                                 }}
                               >
-                                Discount {formatMoney(group.checkedDiscount, group.currency)}
+                                Discount {formatMoney(toBaseToday(group.checkedDiscount, group.currency), BASE_CURRENCY)}
                               </span>
                             )}
                           </div>
@@ -1145,7 +1151,7 @@ export default function CartPage() {
                           {/* Each vendor in its own currency (spec 4.3). */}
                           <span className="shrink-0 flex flex-col items-end">
                             <span className="tabular-nums" style={{ fontSize: 12, fontWeight: 600, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}>
-                              <Money value={g.checkedTotal} currency={g.currency} fx={todayFx(g.currency)} dateLabel="today" role="vendor currency" />
+                              <BaseMoney value={g.checkedTotal} currency={g.currency} fx={todayFx(g.currency)} dateLabel="today" role="Vendor currency" />
                             </span>
                             <span className="inline-flex items-center gap-1" style={{ fontSize: 10, fontWeight: 500, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
                               <CurrencyFlag code={g.currency} size={10} />
@@ -1265,21 +1271,15 @@ export default function CartPage() {
                           {formatMoney(grandTotal, totalsCurrency)}
                         </span>
                       </div>
-                      {/* Vendors in different currencies: the total is in base,
-                          converted at today's rate (spec 4.3). One currency:
-                          the total stays in it, with its base equivalent. */}
-                      {checkedCart.length > 0 && singleCurrency !== BASE_CURRENCY && (
+                      {/* The total is in base; vendors in other currencies are
+                          converted at today's rate (each PO takes the rate on
+                          its PO date). */}
+                      {checkedCart.length > 0 && foreignInCart && (
                         <div className="flex items-center justify-end gap-1.5 text-right" style={{ fontSize: 11, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
                           <CurrencyFlag code={BASE_CURRENCY} size={11} />
-                          {singleCurrency ? (
-                            <span className="tabular-nums">
-                              ≈ {formatMoney(toBaseToday(grandTotal, singleCurrency), BASE_CURRENCY)} {BASE_CURRENCY} at today's rate
-                            </span>
-                          ) : (
-                            <span>
-                              In {BASE_CURRENCY}, base currency · {cartCurrencies.size} currencies converted at today's rate
-                            </span>
-                          )}
+                          <span>
+                            In {BASE_CURRENCY}, base currency · {cartCurrencies.size === 1 ? [...cartCurrencies][0] : `${cartCurrencies.size} currencies`} converted at today's rate
+                          </span>
                         </div>
                       )}
                     </div>
@@ -1472,7 +1472,7 @@ export default function CartPage() {
                               className="tabular-nums"
                               style={{ fontSize: 12, fontWeight: 600, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}
                             >
-                              {formatMoney(po.total, po.currency)}
+                              <BaseMoney value={po.total} currency={po.currency} fx={po.fx} role="Vendor currency" />
                             </span>
                             <span style={{ fontSize: 11, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
                               <span className="tabular-nums">{po.itemCount}</span> item{po.itemCount !== 1 ? "s" : ""}
@@ -1737,7 +1737,7 @@ function CartLineItemCard({
             <span style={{ color: C.text400, fontSize: 10 }}>·</span>
             <div className="flex items-baseline gap-1 tabular-nums">
               <span style={{ fontSize: 13, fontWeight: 600, color: tx(C.text900), fontFamily: FONT, lineHeight: 1.4 }}>
-                <Money value={effectivePrice} currency={currency} fx={todayFx(currency)} dateLabel="today" role="vendor currency" />
+                <BaseMoney value={effectivePrice} currency={currency} fx={todayFx(currency)} dateLabel="today" role="Vendor currency" />
               </span>
               <span style={{ fontSize: 10, fontWeight: 400, color: tx(C.text500), fontFamily: FONT, lineHeight: 1.4 }}>
                 / {cat.vendorUOM}
@@ -1943,7 +1943,7 @@ function RecentlyOrderedCard({
         {/* Price + unit + discount chip */}
         <div className="flex items-baseline gap-1 mt-1.5 tabular-nums">
           <span style={{ fontSize: 13, fontWeight: 700, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}>
-            <Money value={effectivePrice} currency={currency} fx={todayFx(currency)} dateLabel="today" role="vendor currency" />
+            <BaseMoney value={effectivePrice} currency={currency} fx={todayFx(currency)} dateLabel="today" role="Vendor currency" />
           </span>
           <span style={{ fontSize: 10, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
             / {item.defaultUOM}

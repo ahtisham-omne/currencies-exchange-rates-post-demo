@@ -67,6 +67,7 @@ import { sourceDocHref } from "./plannerData";
 import type { ProjectionPoint } from "../utils/projection";
 import { VendorLogo } from "./vendorLogo";
 import PlannerPricingRuleBadge from "./PlannerPricingRuleBadge";
+import { formatPlannerUnit } from "./currency/PlannerMoney";
 
 /* ── Public event shape (effective values, overrides already applied) ── */
 export interface GapGraphEvent {
@@ -1070,7 +1071,9 @@ function DayDetailCard({
                           {v.leadTimeDays}d lead {fits ? "✓" : "✗"}
                         </span>
                         <span>·</span>
-                        <span>${eff.toFixed(2)}/{baseUom}</span>
+                        <span>
+                          {formatPlannerUnit(eff, v.vendorName)}/{baseUom}
+                        </span>
                         {(moq > 0 || maxOrderQty > 0) && (
                           <>
                             <span>·</span>

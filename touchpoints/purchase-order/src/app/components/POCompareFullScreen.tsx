@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import {
+  useMemo } from "react";
 import {
   X,
   ArrowLeftRight,
@@ -7,17 +8,19 @@ import {
   Plus,
   Minus,
   Pencil,
-} from "lucide-react";
+  } from "lucide-react";
 import { FONT } from "./designTokens";
-import type { POVersionEntry, POChangeRecord } from "./poStore";
+import type { POVersionEntry,
+  POChangeRecord } from "./poStore";
 import {
   versionStatusConfig,
   useDocFx,
   versionCompareFields,
   versionFx,
+  useVersionInBase,
 } from "./poVersionDisplay";
 import { getCurrency } from "@/app/currency/currencies";
-import { Money } from "./currency/Money";
+import { VersionMoney } from "./currency/VersionMoney";
 import { CurrencyFlag } from "./currency/CurrencyChip";
 
 /**
@@ -75,11 +78,12 @@ export default function POCompareFullScreen({
   /* Each side in its own version's currency, plus Currency and Exchange
      rate rows so a currency/rate change is highlighted like any field. */
   const docFx = useDocFx();
+  const inBase = useVersionInBase();
   const fx1 = useMemo(() => versionFx(v1.snapshot, docFx), [v1, docFx]);
   const fx2 = useMemo(() => versionFx(v2.snapshot, docFx), [v2, docFx]);
   const fields = useMemo(
-    () => versionCompareFields(v1, v2, fx1, fx2),
-    [v1, v2, fx1, fx2],
+    () => versionCompareFields(v1, v2, fx1, fx2, inBase),
+    [v1, v2, fx1, fx2, inBase],
   );
 
   const v1Cfg =
@@ -244,9 +248,9 @@ export default function POCompareFullScreen({
                     </span>
                   ) : f.label === "Total" ? (
                     // Hover: the total in the base currency, at this side's rate.
-                    <Money value={total} currency={sideFx.currency} fx={sideFx} dateLabel="PO date">
+                    <VersionMoney value={total} fx={sideFx}>
                       {val}
-                    </Money>
+                    </VersionMoney>
                   ) : (
                     val
                   )}

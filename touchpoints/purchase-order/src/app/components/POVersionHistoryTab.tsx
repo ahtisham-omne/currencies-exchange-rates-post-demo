@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Package } from "lucide-react";
 import { toast } from "sonner";
 import { FONT } from "./designTokens";
-import type { POVersionEntry } from "./poStore";
+import type { POVersionEntry, VersionRateChoice } from "./poStore";
 import {
   versionPalette as C,
   currencyShiftVersions,
@@ -43,7 +43,7 @@ interface POVersionHistoryTabProps {
   /** Which version is currently in force (drives the "Current" pill and
       hides the Revert action on the current version's row). */
   currentVersion: number;
-  onRevert: (version: number, reason: string) => void;
+  onRevert: (version: number, reason: string, rateChoice: VersionRateChoice) => void;
   /** False once receiving has started — the PO is locked to its
       current version, so Revert is hidden on every row. */
   canRevert?: boolean;
@@ -286,8 +286,8 @@ export default function POVersionHistoryTab({
           version={showRevertConfirm}
           snapshot={sorted.find((v) => v.version === showRevertConfirm)?.snapshot}
           onClose={() => setShowRevertConfirm(null)}
-          onConfirm={(reason: string) => {
-            onRevert(showRevertConfirm, reason);
+          onConfirm={(reason: string, rateChoice: VersionRateChoice) => {
+            onRevert(showRevertConfirm, reason, rateChoice);
             setShowRevertConfirm(null);
             toast.success(`Reverted to Version ${showRevertConfirm}`, {
               description: "Created as a new version in the history.",

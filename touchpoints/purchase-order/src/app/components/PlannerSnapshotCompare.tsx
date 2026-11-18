@@ -34,12 +34,16 @@ import {
   X,
 } from "lucide-react";
 import type { PlannerSnapshot } from "./plannerSnapshotStore";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatCompactMoney } from "@/app/currency/money";
+import { convertListPrice } from "./catalogData";
+import { PLANNER_PRICE_CURRENCY } from "./currency/PlannerMoney";
 
-function fmtMoney(n: number): string {
-  if (n === 0) return "$0";
-  if (Math.abs(n) < 1000) return `$${n.toFixed(0)}`;
-  if (Math.abs(n) < 1_000_000) return `$${(n / 1000).toFixed(1)}k`;
-  return `$${(n / 1_000_000).toFixed(2)}M`;
+/* A plan's cost is kept in the planner's working currency (USD). Plans can
+   span vendors in different currencies, so they compare in the base
+   currency, at the rate the cart and the PO convert planner prices at. */
+function fmtMoney(usd: number): string {
+  return formatCompactMoney(convertListPrice(usd, PLANNER_PRICE_CURRENCY, BASE_CURRENCY), BASE_CURRENCY);
 }
 
 function fmtWhen(ms: number): string {

@@ -106,6 +106,17 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dial
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 import {
+  BaseApprox,
+  formatPlannerTotal,
+  formatPlannerUnit,
+  PlannerPrice,
+  plannerLine,
+  plannerTotal,
+  PlannerTotalAmount,
+  PlannerTotalNote,
+  VendorMoney,
+} from "./currency/PlannerMoney";
+import {
   getAllPOs,
   subscribeToPOStore,
   type PurchaseOrderData,
@@ -3111,11 +3122,16 @@ export default function PlannerWorkspacePage() {
     () => proposedPOs.reduce((s, p) => s + p.qty, 0),
     [proposedPOs],
   );
-  const totalCost = useMemo(
+  /* The plan's total as the cart will show it: in the vendors' one currency,
+     or in base when the plan spans several (audit p. 10). */
+  const planTotal = useMemo(
     () =>
-      proposedPOs.reduce(
-        (s, p) => s + p.qty * effectivePrice(p.unitPrice, p.pricingRules, p.qty),
-        0,
+      plannerTotal(
+        proposedPOs.map((p) => ({
+          usdUnit: effectivePrice(p.unitPrice, p.pricingRules, p.qty),
+          qty: p.qty,
+          vendorName: p.vendorName,
+        })),
       ),
     [proposedPOs],
   );
@@ -3315,7 +3331,7 @@ export default function PlannerWorkspacePage() {
     ? createDisabledReason
     : lateCount > 0
       ? `${lateCount} PO${lateCount === 1 ? "" : "s"} arrive${lateCount === 1 ? "s" : ""} after the need-by date`
-      : `Add ${proposedPOs.length} PO${proposedPOs.length === 1 ? "" : "s"} ($${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) to your cart.`;
+      : `Add ${proposedPOs.length} PO${proposedPOs.length === 1 ? "" : "s"} (${formatPlannerTotal(planTotal)}) to your cart.`;
   const createButton = (
     <button
       onClick={() => {
@@ -3985,7 +4001,9 @@ export default function PlannerWorkspacePage() {
             const totalOrders = autoProposedPOs.length;
             const totalVendors = new Set(autoProposedPOs.map((p) => p.vendorId)).size;
             const totalQty = autoProposedPOs.reduce((s, p) => s + p.qty, 0);
-            const totalCost = autoProposedPOs.reduce((s, p) => s + p.qty * p.unitPrice, 0);
+            const autoTotal = plannerTotal(
+              autoProposedPOs.map((p) => ({ usdUnit: p.unitPrice, qty: p.qty, vendorName: p.vendorName })),
+            );
             type VendorRoll = {
               vendorId: string;
               vendorName: string;
@@ -4538,7 +4556,7 @@ export default function PlannerWorkspacePage() {
                           const arrivalRange = effArrivalMin === effArrivalMax
                             ? fmtMonthDay(arrivalMinDate)
                             : `${fmtMonthDay(arrivalMinDate)} – ${fmtMonthDay(arrivalMaxDate)}`;
-                          const rowCost = p.qty * p.unitPrice;
+                          const rowLine = plannerLine(p.unitPrice, p.qty, p.vendorName);
 
                           /* Resolution-mode compute + handlers — hoisted
                              above the render so a picker-open card can
@@ -4811,7 +4829,7 @@ export default function PlannerWorkspacePage() {
                             const tint = isAccept ? "#EFF6FF" : "#FEF7EC";
                             const pickedForForce =
                               forceForm && expandedVendors.find((v) => v.vendorId === forceForm.vendorId);
-                            const contextLine = `${p.qty.toLocaleString()} ${item.baseUom} × $${p.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${p.leadTimeDays}d lead`;
+                            const contextLine = `${p.qty.toLocaleString()} ${item.baseUom} × ${formatPlannerUnit(p.unitPrice, p.vendorName)} · ${p.leadTimeDays}d lead`;
                             /* Buyer 2026-08-03: "rather than displaying
                                this under the main vendor we can open a
                                sub smaller modal on top and then I will
@@ -5346,7 +5364,7 @@ export default function PlannerWorkspacePage() {
                                       </div>
                                       <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-slate-500 tabular-nums">
                                         <span>
-                                          {p.qty.toLocaleString()} {item.baseUom} × ${p.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/{item.baseUom}
+                                          {p.qty.toLocaleString()} {item.baseUom} × <PlannerPrice usd={p.unitPrice} vendorName={p.vendorName} />/{item.baseUom}
                                         </span>
                                         <span className="text-slate-300">·</span>
                                         <span className="inline-flex items-center gap-1">
@@ -5357,8 +5375,9 @@ export default function PlannerWorkspacePage() {
                                     </div>
                                     <div className="text-right shrink-0">
                                       <div className="text-[13.5px] font-semibold text-slate-900 tabular-nums">
-                                        ${rowCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        <VendorMoney value={rowLine.total} currency={rowLine.currency} />
                                       </div>
+                                      <BaseApprox value={rowLine.total} currency={rowLine.currency} className="block text-[11px]" />
                                       {/* Status pill IS the trace trigger.
                                           Buyer 2026-08-03: info icon
                                           belongs INSIDE the pill next to
@@ -5607,7 +5626,7 @@ export default function PlannerWorkspacePage() {
                               {phantomResolved.map(([key, summary]) => {
                                 const isAccept = summary.mode === "accept";
                                 const accent = isAccept ? "#0A77FF" : "#B45309";
-                                const contextLine = `${summary.originalQty.toLocaleString()} ${item.baseUom} × $${summary.originalUnitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${summary.originalLeadTimeDays}d lead`;
+                                const contextLine = `${summary.originalQty.toLocaleString()} ${item.baseUom} × ${formatPlannerUnit(summary.originalUnitPrice, summary.originalVendorName)} · ${summary.originalLeadTimeDays}d lead`;
                                 const shortfallLabel = fmtMonthDay(
                                   dateFromDayOffset(summary.shortfallDay),
                                 );
@@ -5747,7 +5766,7 @@ export default function PlannerWorkspacePage() {
                     <div className="flex items-center gap-3">
                       {totalOrders > 0 && (
                         <span className="text-[15px] font-semibold text-slate-900 tabular-nums">
-                          ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <PlannerTotalAmount total={autoTotal} />
                         </span>
                       )}
                       {/* CTA order flipped 2026-08-03. Add-to-cart used to
@@ -5829,7 +5848,7 @@ export default function PlannerWorkspacePage() {
                             toast.info(
                               `Plotted ${totalOrders} PO${totalOrders === 1 ? "" : "s"} on the graph`,
                               {
-                                description: `Total ${totalQty.toLocaleString()} ${item.baseUom} · $${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                description: `Total ${totalQty.toLocaleString()} ${item.baseUom} · ${formatPlannerTotal(autoTotal)}`,
                               },
                             );
                           }
@@ -6297,7 +6316,7 @@ export default function PlannerWorkspacePage() {
                       <div>
                         <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Total cost</div>
                         <div className="text-[14px] font-semibold tabular-nums text-slate-800 2xl:text-base">
-                          ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <PlannerTotalAmount total={planTotal} />
                         </div>
                       </div>
                       <div className="h-6 w-px shrink-0 bg-slate-200/80 2xl:h-7" />
@@ -6730,7 +6749,7 @@ export default function PlannerWorkspacePage() {
             {proposedPOs.map((p) => {
               const v = expandedAllVendors.find((x) => x.vendorId === p.vendorId);
               const eff = effectivePrice(p.unitPrice, p.pricingRules, p.qty);
-              const lineTotal = p.qty * eff;
+              const line = plannerLine(eff, p.qty, p.vendorName);
               const late =
                 p.shortfallDay != null
                   ? p.arrivalDay > p.shortfallDay
@@ -6757,7 +6776,7 @@ export default function PlannerWorkspacePage() {
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-slate-500">
                           <span className="tabular-nums">
-                            {p.qty} {item.baseUom} × ${eff.toFixed(2)}/{item.baseUom}
+                            {p.qty} {item.baseUom} × <PlannerPrice usd={eff} vendorName={p.vendorName} />/{item.baseUom}
                           </span>
                           <span className="text-slate-300">·</span>
                           <span className="inline-flex items-center gap-0.5">
@@ -6776,8 +6795,9 @@ export default function PlannerWorkspacePage() {
                     </div>
                     <div className="shrink-0 text-right">
                       <div className="text-sm font-semibold text-slate-900 tabular-nums">
-                        ${lineTotal.toFixed(2)}
+                        <VendorMoney value={line.total} currency={line.currency} />
                       </div>
+                      <BaseApprox value={line.total} currency={line.currency} className="block text-[11px]" />
                       <span
                         className="mt-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
                         style={{
@@ -6813,8 +6833,11 @@ export default function PlannerWorkspacePage() {
             <span className="text-sm text-slate-500">
               Total · <span className="tabular-nums">{totalUnits} {item.baseUom}</span>
             </span>
-            <span className="text-lg font-semibold text-slate-900 tabular-nums">
-              ${totalCost.toFixed(2)}
+            <span className="flex flex-col items-end gap-0.5">
+              <span className="text-lg font-semibold text-slate-900 tabular-nums">
+                <PlannerTotalAmount total={planTotal} />
+              </span>
+              <PlannerTotalNote total={planTotal} />
             </span>
           </div>
 
