@@ -105,10 +105,10 @@ import { RemoveVendorDialog } from "./RemoveVendorDialog";
 import { PrimaryPill } from "./PrimaryPill";
 import { VendorPriorityList, computeRoster, type RosterCard, type RosterInputVendor } from "./VendorPriorityList";
 import { MAX_PRIORITY } from "../../../context/PurchasingContext";
-import { pricePrefix, vendorCurrencyFor, vendorRate } from "../../../currency/vendorFx";
+import { vendorCurrencyFor, vendorRate } from "../../../currency/vendorFx";
 import { formatMoney } from "../../../currency/money";
 import { DEFAULT_RATE_TYPE } from "../../../currency/rates";
-import { VendorCurrencyChip, VendorPriceFields } from "../../currency/VendorPriceFields";
+import { VendorCurrencyChip, VendorPriceFields, VendorRateCard } from "../../currency/VendorPriceFields";
 
 /* ──────────────────────────────────────────────────────────────
    buildQualifiedVendor — kept for existing callers (ProcurementSection,
@@ -1597,17 +1597,8 @@ export function AddQualifiedVendorModal({
                           {editVendor.partnerGroup}
                         </span>
                       )}
-                      {(() => {
-                        const ecfg = configById[editVendor.id];
-                        const efx = vendorRate(editVendor.currency, { rateType: ecfg?.rateType, exchangeRate: ecfg?.exchangeRate });
-                        return (
-                          <VendorCurrencyChip
-                            fx={efx}
-                            rateType={efx.rateType}
-                            onRateTypeChange={(t) => updateVendorConfig(editVendor.id, { rateType: t, exchangeRate: undefined })}
-                          />
-                        );
-                      })()}
+                      {/* The vendor's currency; its rate is chosen in Pricing & Ordering. */}
+                      <VendorCurrencyChip fx={vendorRate(editVendor.currency)} />
                     </div>
                     <div className="flex items-center gap-2 flex-wrap mt-1">
                       <p className="text-[11.5px] sm:text-[12px] text-slate-500 truncate">
@@ -2064,8 +2055,7 @@ export function AddQualifiedVendorModal({
                                             {v.partnerGroup}
                                           </span>
                                         )}
-                                        <VendorCurrencyChip fx={vfx} rateType={vfx.rateType} onRateTypeChange={setVendorRateType} />
-                                        {renderFieldTag("rateType")}
+                                        <VendorCurrencyChip fx={vfx} />
                                         {/* Priority: view + change inline (mirrors the left rail). */}
                                         <Popover open={headerPriorityOpen} onOpenChange={setHeaderPriorityOpen}>
                                           <PopoverTrigger asChild>
@@ -2240,6 +2230,15 @@ export function AddQualifiedVendorModal({
                                       <div aria-hidden={!isOpen} className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
                                         <div className="overflow-hidden">
                                           <div className="border-t border-[#EEF2F6] p-3 sm:p-4 space-y-2.5 bg-white">
+                                                      {/* The vendor's rate, once: every selling unit converts at it. */}
+                                                      <VendorRateCard
+                                                        key={`${v.id}:rate`}
+                                                        fx={vfx}
+                                                        onRateTypeChange={setVendorRateType}
+                                                        onRateChange={setVendorRate}
+                                                        // One tag for the rate: reverting the type restores a typed rate too.
+                                                        tag={renderFieldTag("rateType") ?? renderFieldTag("exchangeRate")}
+                                                      />
                                                       {/* Primary card */}
                                                       {(() => {
                                                         // Base card is primary unless the draft pointer names one of the tier cards.
@@ -2316,32 +2315,22 @@ export function AddQualifiedVendorModal({
                                                                   <FieldInfo content="The unit price this vendor charges for this item, expressed in the chosen unit of measure. The price does NOT convert between pack sizes — each pack carries its own rate. Quantities still convert at PO time." />
                                                                   {renderFieldTag("pricePerUnit")}
                                                                 </label>
-                                                                <div className="flex items-stretch rounded-lg border border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20 overflow-hidden bg-white">
-                                                                  <span className="inline-flex items-center justify-center min-w-9 px-1.5 text-[12px] text-slate-400 bg-[#FAFBFC] border-r border-border" style={{ fontWeight: 500 }}>{pricePrefix(vfx.currency)}</span>
-                                                                  <Input
-                                                                    inputMode="decimal"
-                                                                    value={cfg.pricePerUnit}
-                                                                    onChange={(e) => updateVendorConfig(v.id, { pricePerUnit: numericInput(e.target.value, { decimal: true }) })}
-                                                                    placeholder="0.00"
-                                                                    className="h-9 text-[13px] border-0 focus-visible:ring-0 focus-visible:border-0 rounded-none flex-1 min-w-0"
-                                                                  />
-                                                                  <UomPicker
-                                                                    variant="embedded"
-                                                                    value={cfg.uom}
-                                                                    onChange={(val) => updateVendorConfig(v.id, { uom: val })}
-                                                                    disabledIds={new Set(additionalPrices.map((t) => t.uom))}
-                                                                  />
-                                                                </div>
-                                                                <div className="mt-2">
-                                                                  <VendorPriceFields
-                                                                    key={`${v.id}:p`}
-                                                                    price={cfg.pricePerUnit}
-                                                                    onPriceChange={(p) => updateVendorConfig(v.id, { pricePerUnit: p })}
-                                                                    fx={vfx}
-                                                                    onRateChange={setVendorRate}
-                                                                    rateTag={renderFieldTag("exchangeRate")}
-                                                                  />
-                                                                </div>
+                                                                {/* Base ⇆ Vendor, as the original Items file priced a vendor. */}
+                                                                <VendorPriceFields
+                                                                  key={`${v.id}:p`}
+                                                                  price={cfg.pricePerUnit}
+                                                                  onPriceChange={(p) => updateVendorConfig(v.id, { pricePerUnit: numericInput(p, { decimal: true }) })}
+                                                                  fx={vfx}
+                                                                  unit={lookupUom(cfg.uom || "Each").label}
+                                                                  uomPicker={
+                                                                    <UomPicker
+                                                                      variant="embedded"
+                                                                      value={cfg.uom}
+                                                                      onChange={(val) => updateVendorConfig(v.id, { uom: val })}
+                                                                      disabledIds={new Set(additionalPrices.map((t) => t.uom))}
+                                                                    />
+                                                                  }
+                                                                />
                                                               </div>
                                                               <div className="border-t border-dashed border-[#E2E8F0]" />
                                                               <div className="grid grid-cols-3 gap-2">
@@ -2449,31 +2438,21 @@ export function AddQualifiedVendorModal({
                                                                   Price per unit
                                                                   <FieldInfo content="The unit price this vendor charges for this item, expressed in the chosen unit of measure. The price does NOT convert between pack sizes — each pack carries its own rate. Quantities still convert at PO time." />
                                                                 </label>
-                                                                <div className="flex items-stretch rounded-lg border border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20 overflow-hidden bg-white">
-                                                                  <span className="inline-flex items-center justify-center min-w-9 px-1.5 text-[12px] text-slate-400 bg-[#FAFBFC] border-r border-border" style={{ fontWeight: 500 }}>{pricePrefix(vfx.currency)}</span>
-                                                                  <Input
-                                                                    inputMode="decimal"
-                                                                    value={tier.price}
-                                                                    onChange={(e) => patchTier({ price: numericInput(e.target.value, { decimal: true }) })}
-                                                                    placeholder="0.00"
-                                                                    className="h-9 text-[13px] border-0 focus-visible:ring-0 focus-visible:border-0 rounded-none flex-1 min-w-0"
-                                                                  />
-                                                                  <UomPicker
-                                                                    variant="embedded"
-                                                                    value={tier.uom}
-                                                                    onChange={(val) => patchTier({ uom: val })}
-                                                                    disabledIds={new Set([cfg.uom, ...additionalPrices.filter((_, j) => j !== ti).map((t) => t.uom)])}
-                                                                  />
-                                                                </div>
-                                                                <div className="mt-2">
-                                                                  <VendorPriceFields
-                                                                    key={`${v.id}:${ti}`}
-                                                                    price={tier.price}
-                                                                    onPriceChange={(p) => patchTier({ price: p })}
-                                                                    fx={vfx}
-                                                                    onRateChange={setVendorRate}
-                                                                  />
-                                                                </div>
+                                                                <VendorPriceFields
+                                                                  key={`${v.id}:${ti}`}
+                                                                  price={tier.price}
+                                                                  onPriceChange={(p) => patchTier({ price: numericInput(p, { decimal: true }) })}
+                                                                  fx={vfx}
+                                                                  unit={lookupUom(tier.uom || "Each").label}
+                                                                  uomPicker={
+                                                                    <UomPicker
+                                                                      variant="embedded"
+                                                                      value={tier.uom}
+                                                                      onChange={(val) => patchTier({ uom: val })}
+                                                                      disabledIds={new Set([cfg.uom, ...additionalPrices.filter((_, j) => j !== ti).map((t) => t.uom)])}
+                                                                    />
+                                                                  }
+                                                                />
                                                               </div>
                                                               <div className="border-t border-dashed border-[#E2E8F0]" />
                                                               <div className="grid grid-cols-3 gap-2">

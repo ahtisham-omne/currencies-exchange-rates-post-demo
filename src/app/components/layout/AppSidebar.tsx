@@ -53,7 +53,6 @@ const navItems: NavItem[] = [
     children: [
       { label: "Overview", path: "/inventory/dashboard" },
       { label: "Items Library", path: "/inventory/items" },
-      { label: "Qualified Vendors", path: "/inventory/vendors" },
       { label: "Sales Overview", path: "/inventory/sales" },
     ],
   },

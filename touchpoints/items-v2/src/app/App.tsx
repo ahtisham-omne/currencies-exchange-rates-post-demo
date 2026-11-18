@@ -9,7 +9,6 @@ const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const ItemsLibraryPage = lazy(() => import("./pages/ItemsLibraryPage"));
 const ItemCreationPage = lazy(() => import("./pages/ItemCreationPage"));
 const ItemDetailPage = lazy(() => import("./pages/ItemDetailPage"));
-const QualifiedVendorsPage = lazy(() => import("./pages/QualifiedVendorsPage"));
 const SalesOverviewPage = lazy(() => import("./pages/SalesOverviewPageRoute"));
 const ItemsV3DemoPage = lazy(() => import("./pages/ItemsV3DemoPage"));
 const ImportHistoryPage = lazy(() => import("./import-export/ImportHistoryPage"));
@@ -25,6 +24,9 @@ export default function App() {
       <Routes>
         <Route element={<AppLayout />}>
           <Route index element={<Navigate to="/items" replace />} />
+          {/* The standalone Qualified Vendors page is retired; qualified vendors
+              live on each item's Purchasing tab, so its old address opens the library. */}
+          <Route path="/vendors/*" element={<Navigate to="/items" replace />} />
           <Route
             path="/dashboard"
             element={
@@ -70,14 +72,6 @@ export default function App() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <ItemDetailPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/vendors"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <QualifiedVendorsPage />
               </Suspense>
             }
           />

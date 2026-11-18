@@ -272,8 +272,6 @@ export function AppSidebar() {
         location.pathname === "/items" ||
         location.pathname.startsWith("/items/") ||
         location.pathname === "/dashboard" ||
-        location.pathname === "/vendors" ||
-        location.pathname.startsWith("/vendors/") ||
         location.pathname === "/sales" ||
         location.pathname.startsWith("/sales/")
       );

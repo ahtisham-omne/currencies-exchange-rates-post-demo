@@ -34,12 +34,12 @@ Paths are under `touchpoints/items-v2/src/app/`.
 |---|---|---|
 | Currency data | `currency/currencies.ts`, `rates.ts`, `money.ts` | The same files as Vendor Invoicing, Partners and Purchase Orders: the module's Currency Library, its mid-market history (same seeds, last sync Apr 10, 2026) and its corporate rates |
 | Flags | `components/currency/FlagImage.tsx`, `CurrencyChip.tsx` | Flags at the Currency & Exchange Rates size (17×13) |
-| Currency picker | Dropped | A vendor's currency is inherited from the partner (spec 4.1, audit item 5). The drawer shows it as a chip |
+| Currency picker | Dropped | A vendor's currency is inherited from the partner (spec 4.1, audit item 5). The drawer shows it as a chip, and beside the Vendor price field where the original file had its picker |
 | Base symbol | `currency/itemMoney.ts` `basePrefix`, `components/currency/BaseCurrencyNote.tsx` | ₨ with a PKR label where an item price is entered, and the "In PKR · base currency" pill on the item overview |
 | Item prices | `ItemCreation.tsx` Base Price, `SellingSection.tsx` price tiers | ₨ prefix and PKR label. Item prices are entered and kept in base |
 | Qualified vendors | `components/modules/purchasing/QVTable.tsx`, `QVCardList.tsx`, `VendorDetailModal.tsx`, `QualifiedVendorsPanel.tsx` | The redesign's qualified-vendor table on the item's Purchasing tab (§3, items 1–2) |
-| Add vendor dialog | `components/modules/purchasing/AddQualifiedVendorModal.tsx`, `components/currency/VendorPriceFields.tsx` | The redesign's Edit Vendors drawer (§3, items 3–5). The vendor price is what is stored, as the design stores it; either price can be typed and fills the other |
-| Sample vendors (create-item flow) | `components/modules/QualifiedVendorsTab.tsx` | The redesign's sample vendors have no location, so they are USD. The earlier EUR and GBP samples were not carried |
+| Add vendor dialog | `components/modules/purchasing/AddQualifiedVendorModal.tsx`, `components/currency/VendorPriceFields.tsx` | The redesign's Edit Vendors drawer, opened by "Add vendor" and "Edit vendor list" on the item's Purchasing tab (§3, items 3–5). Laid out as the original file's Price per UOM: Base (PKR) ⇆ Vendor, and a "Current rate" box with the Mid-market \| Corporate switch. The vendor price is what is stored, as the design stores it; either price can be typed and fills the other |
+| Sample vendors (create-item flow) | Not shown | The create-item modal imports `QualifiedVendorsTab.tsx` but never renders it, so it and its `AddQualifiedVendorDialog.tsx` are left as upstream has them, with no currency work |
 | Embedding | `src/embedding.ts`, `src/EmbeddingBridge.tsx`, `src/main.tsx`, `components/layout/AppLayout.tsx` | As for Partners and Purchase Orders (§6) |
 
 ## 3. The audit's 5 changes (pp. 6–7) and where they are
@@ -48,9 +48,21 @@ Paths are under `touchpoints/items-v2/src/app/`.
 |---|---|---|
 | 1 | QV table: Credit Limit ($) | `QVTable.tsx` column "Credit Limit", `partnerCells.tsx` `CreditLimitCell`: each limit in the vendor's currency with its code ("¥5,793,448 JPY", "CNY 254,456"). The Browse Vendors table in the drawer does the same |
 | 2 | QV table: Units & Pricing in the vendor's currency with the base equivalent underneath | `QVTable.tsx` `UnitsPricingCell` with `components/currency/VendorPrice.tsx`: "£1,155.86 / km", then "≈ ₨410,815.76 PKR". The amount has the rate hover (`Money.tsx`). Last PO price and total are in the vendor's currency too. Sorting compares base values (`QualifiedVendorsPanel.tsx`) |
-| 3 | Edit Vendors drawer: price per unit becomes three fields | `VendorPriceFields.tsx`: the price in the vendor's currency (the design's input, with the currency's symbol or code), the exchange rate ("1 EUR = 304.8150 PKR") and the price in PKR. Typing either price fills the other (`priceInBase` / `priceFromBase`, rounded to the currency's minor unit) |
-| 4 | The same for every selling unit | Each additional UoM block in the drawer uses the same fields and the vendor's one rate |
-| 5 | Drawer header: vendor currency chip; rate read-only on Mid-market, editable on Corporate | `VendorPriceFields.tsx` `VendorCurrencyChip`: flag and code, "inherited from the partner", and a Mid-market / Corporate switch (hidden for a PKR vendor). Mid-market shows today's rate, locked, with a tooltip. Corporate shows finance's rate in an input; a typed rate is kept for the vendor, marked "Entered for this vendor", with a reset. A currency with no corporate rate shows mid-market in the field until one is typed, and a typed one can be cleared. Rate type and typed rate are stored in the vendor's config (`rateType`, `exchangeRate` in `context/purchasing/types.ts`), so they count as unsaved changes, are tagged "Modified" and can be reverted like the design's other fields. A vendor with no rate type saved is on mid-market, so switching to Corporate and back is no change |
+| 3 | Edit Vendors drawer: price per unit becomes three fields | `VendorPriceFields.tsx`, in the layout of the original Items file's Price per UOM. Each selling unit has **Base (PKR)** and **Vendor (its currency, with flag)**, linked by ⇆; the Vendor field is the design's input, with the currency's symbol or code and the unit picker. Typing either price fills the other (`priceInBase` / `priceFromBase`, rounded to the currency's minor unit). The third field, the rate, is the "Current rate" box (item 5). The two sit side by side when the column is at least 460px wide (wide screens in Full view) and stack, Base over Vendor, in the drawer's usual narrow column |
+| 4 | The same for every selling unit | Each additional UoM block uses the same Base ⇆ Vendor fields and the vendor's one rate. The rate box sits once, above the selling units: "Every selling unit below converts at this rate" |
+| 5 | Vendor currency chip; rate read-only on Mid-market, editable on Corporate | The drawer header has `VendorCurrencyChip`: flag and code, "inherited from the partner". The rate is `VendorRateCard`, at the top of Pricing & Ordering, as the original file's rate box: "Current rate: 1 GBP = 355.4200 PKR", "● Mid-market rate · Source: Open Exchange Rates", "Updated as of Apr 10, 2026, 7:30 PM"; violet for mid-market, amber for corporate. The Mid-market \| Corporate switch shows only where finance has set a corporate rate for the currency (USD, EUR, GBP, AED, SAR, CNY); otherwise an info icon says mid-market is used and where corporate rates are set. On Corporate the box shows finance's rate in an input, "Set by Ahtisham Ahmad · Q2 2026 corporate rate" and "In effect since Apr 01, 2026". A rate typed for the vendor is marked "Entered for this vendor", shows finance's rate beside it, and has a reset. Switching keeps the vendor's quote and restates the base. A PKR vendor gets one price field and a note that nothing converts. Rate type and typed rate are stored in the vendor's config (`rateType`, `exchangeRate` in `context/purchasing/types.ts`), so they count as unsaved changes, show one "Modified · Revert" tag in the box, and revert together. A vendor with no rate type saved is on mid-market, so switching to Corporate and back is no change. After Save the table converts at the vendor's rate (`qvRate`): Delphi on Corporate shows "£1,155.86 / km ≈ ₨411,486.16 PKR" |
+
+### The standalone Qualified Vendors page (retired 18 Nov 2026)
+
+Items & Inventory → Qualified Vendors (`/inventory/vendors`) was the earlier, deprecated design. Its currency touchpoints had been added there by mistake. They now live on the final design, the item's Purchasing tab:
+
+| On the retired page | On the Purchasing tab |
+|---|---|
+| Configure Vendor Details: Base (PKR) ⇆ Vendor price, current-rate box, Mid-market \| Corporate switch where a corporate rate is set | Edit Vendors drawer, Pricing & Ordering (§3, items 3–5) |
+| Vendor List: price per UOM in the vendor's currency, "≈ ₨…" underneath, at the vendor's chosen rate | QV table Units & Pricing, card list and vendor detail, at `qvRate` (§3, item 2) |
+| Currency picker on the vendor price | Not carried: the currency is the partner's (spec 4.1, audit item 5) |
+
+Removed: `pages/QualifiedVendorsPage.tsx`, `components/modules/QualifiedVendorsConfiguration.tsx`, its `/vendors` route and sidebar matching, and `components/currency/QualifiedVendorPriceFields.tsx`. `AddQualifiedVendorDialog.tsx` is back to upstream. In the shell, the sidebar link and the unused placeholder `src/app/pages/QualifiedVendorsPage.tsx` are gone. The old address redirects to the Items Library (`App.tsx`, `/vendors/*`).
 
 ## 4. Shared currency code
 
@@ -61,7 +73,7 @@ Paths are under `touchpoints/items-v2/src/app/`.
 | `currency/itemMoney.ts` | Item amounts in base: `baseMoney` (₨6,824.31), `baseWhole` (₨6,824, compact from a million), `baseCompact` (₨34.5M), `basePrefix` |
 | `components/currency/Money.tsx`, `CurrencyChip.tsx`, `FlagImage.tsx` | Money with its rate hover; flags |
 | `components/currency/VendorPrice.tsx` | A vendor price with its base equivalent underneath |
-| `components/currency/VendorPriceFields.tsx` | The drawer's three fields and the header chip |
+| `components/currency/VendorPriceFields.tsx` | The drawer's Base ⇆ Vendor fields (`VendorPriceFields`), its "Current rate" box (`VendorRateCard`) and the header chip (`VendorCurrencyChip`) |
 | `components/currency/BaseCurrencyNote.tsx` | The "In PKR · base currency" pill |
 | `components/currency/RuleAmountPreview.tsx` | `RULE_CURRENCY` (USD) and the "≈ €22.84 EUR · at today's rate" line under a pricing-rule amount |
 
@@ -79,7 +91,7 @@ As for Partners and Purchase Orders, it lives in `src/embedding.ts`:
 
 - The router basename is set in `src/main.tsx`, and `src/EmbeddingBridge.tsx` routes the shell's in-app navigation.
 - `components/layout/AppLayout.tsx` hides the app's own sidebar.
-- `touchpoints/touchpoints.json` points at the new repo. The shell's Items & Inventory links (`/inventory/items`, `/inventory/vendors`, `/inventory/sales`) are unchanged.
+- `touchpoints/touchpoints.json` points at the new repo. The shell's Items & Inventory links are Overview, Items Library and Sales Overview (`/inventory/dashboard`, `/inventory/items`, `/inventory/sales`). Qualified Vendors (`/inventory/vendors`) was retired (§3) and redirects to the Items Library.
 
 ## 7. Not in this step
 
@@ -90,6 +102,7 @@ As for Partners and Purchase Orders, it lives in `src/embedding.ts`:
 - **Gaps in the design itself:**
   - The pricing rule's create form has no currency of its own, and the rule templates' descriptions ("10% off on orders over $1,000") are USD text.
   - The "Category Reconcile DEV" button is the design's own dev harness and shows in every build.
+  - In the Edit Vendors drawer, clicking a saved vendor in the left rail marks it "Modified" (1 unsaved change) without any edit. Selecting it fills its location scope with all of the partner's locations, while its saved config has none, so Partner Locations counts as changed. It is in `nimble-palette` as delivered (`handleFocusVendor`), not part of the currency work.
   - Upstream baseline: `tsc` reports 5 errors (3 in `AddQualifiedVendorModal.tsx`, 2 in `ItemsV3DemoPage.tsx`) and 2 tests fail in `import-export/store.test.ts`. Both are the same in `nimble-palette` itself.
 
 ## 8. Updating from the design repo
