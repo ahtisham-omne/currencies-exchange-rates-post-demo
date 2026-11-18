@@ -24,6 +24,8 @@ export const GL_ACCOUNTS = [
   "5100 Direct Labor",
   "5200 Factory Overhead",
   "5205 Purchase Qty Variance",
+  "5210 Purchase Price Variance",
+  "5215 FX Variance",
   "6000 General & Admin",
   "6100 Office Supplies",
   "6150 Printing & Postage",
@@ -42,6 +44,7 @@ export const GL_ACCOUNTS = [
   "6800 Insurance Expense",
   "6900 Bank Charges",
   "7000 Interest Expense",
+  "7150 Realized FX Gain/Loss",
   "7100 Taxes & Licenses",
   "7200 Depreciation Expense",
   "7300 Amortization Expense",
@@ -83,6 +86,30 @@ export function groupGLAccounts(accounts: string[] = GL_ACCOUNTS): Record<string
  *  line so the ledger shows the over-billing instead of silently
  *  over-relieving 2100. */
 export const QTY_VARIANCE_ACCOUNT = '5205 Purchase Qty Variance';
+
+/** Where a price difference on received goods posts (Currency & Exchange
+ *  Rates): the invoice billing a unit price other than the PO price the
+ *  receiving booked at. Stock keeps its receiving value. */
+export const PRICE_VARIANCE_ACCOUNT = '5210 Purchase Price Variance';
+
+/** Where a rate difference on received goods posts (Currency & Exchange
+ *  Rates): the same goods in the base currency at the receiving day's rate
+ *  against the invoice's rate. Gain on the credit side, loss on the debit
+ *  side; stock keeps its receiving value. A payment's own rate difference is
+ *  not this one: it posts to FX Gain/Loss on the payment. */
+export const FX_VARIANCE_ACCOUNT = '5215 FX Variance';
+
+/** Where a payment's rate difference posts (Currency & Exchange Rates):
+ *  the paid part of an invoice was carried in A/P at the invoice rate, and
+ *  paying it cost more or less in the base currency (the bank's figure from
+ *  a base account, the day's rate from one in the invoice's currency).
+ *  Realized, so it stays apart from FX Variance, the invoice's own
+ *  difference against receiving. Gain on the credit side, loss on the debit. */
+export const FX_GAIN_LOSS_ACCOUNT = '7150 Realized FX Gain/Loss';
+
+/** The receiving accrual an invoice for received goods clears (received, not
+ *  invoiced). */
+export const AP_ACCRUAL_ACCOUNT = '2100 AP Accrual';
 
 // Sensible defaults for the auxiliary GL fields. Used when freight / a new
 // additional-charge row is first added.

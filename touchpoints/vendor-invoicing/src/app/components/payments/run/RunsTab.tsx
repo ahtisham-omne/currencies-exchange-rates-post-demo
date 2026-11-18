@@ -31,7 +31,6 @@ import { paymentRateOn, runNetByCurrency, runTotalBase, type CurrencyAmount } fr
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, moneyPrefix } from '@/app/currency/money';
 import { toBase } from '@/app/currency/rates';
-import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
 import { BaseTotal, amountsText } from './runMoney';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
@@ -819,8 +818,8 @@ export function RunsTab({
               onCustomChange={(from, to) => setInsightsCustom({ from, to })}
             />
             <InsightsRefresh />
-            {/* The cards' money is base currency (Currency & Exchange Rates). */}
-            <BaseCurrencyNote what="payment" />
+            {/* The cards' money is base currency (Currency & Exchange Rates),
+                like the run totals; the pill is gone. */}
           </div>
           <div className="flex items-center gap-2">
             <InsightsResetButton dirty={insightsDirty} onReset={handleInsightsReset} />

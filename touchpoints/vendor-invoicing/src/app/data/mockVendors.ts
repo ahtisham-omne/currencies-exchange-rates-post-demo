@@ -2,6 +2,7 @@ import { mulberry32 } from './seededRandom';
 import { presetForVendor } from './paymentTermPresets';
 import { currencyForVendorName } from '@/app/currency/invoiceFx';
 import { midRateOn } from '@/app/currency/rates';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
 
 // Seeded so the vendor / PO / line-item dataset is stable across
 // reloads — see mockInvoices.ts for the rationale.
@@ -38,6 +39,12 @@ export interface VendorPO {
   currency?: string;
   /** Base currency per one unit of `currency` on the PO date (mid-market). */
   exchangeRate?: number;
+  /** "You pay in" (Currency & Exchange Rates): the currency a payment for
+   *  this PO's invoices goes out from by default, the PO's own (an account
+   *  in it) or the base currency. It only picks the default pay-from
+   *  account; the vendor always receives the invoice's currency. Base
+   *  unless the PO says otherwise. */
+  youPayIn?: string;
 }
 
 export interface VendorGRN {
@@ -764,7 +771,14 @@ export const mockVendors: Vendor[] = Array.from({ length: 40 }, (_, index) => {
   // currency, which its POs are raised in. Each PO keeps the mid-market rate
   // on its PO date, the commitment an invoice's own rate is compared with.
   const currency = currencyForVendorName(vendorName);
-  pos = pos.map((po) => ({ ...po, currency, exchangeRate: midRateOn(currency, po.poDate) ?? undefined }));
+  pos = pos.map((po) => ({ ...po, currency, exchangeRate: midRateOn(currency, po.poDate) ?? undefined, youPayIn: BASE_CURRENCY }));
+  // You pay in: base on every PO, except one GBP PO that pays from a GBP
+  // account, so an invoice from it defaults to that account (Ultra Corp's
+  // first open PO).
+  if (vendorName === 'Ultra Corp') {
+    const open = pos.findIndex((po) => !['Closed', 'Cancelled', 'Fully Invoiced'].includes(po.status));
+    if (open >= 0) pos[open] = { ...pos[open], youPayIn: currency };
+  }
 
   // First rows pinned to the real team (feedback 7/16/26; Irtaza above
   // Rida 8/12/26) — the same convention as mockInvoices/mockPayments, so

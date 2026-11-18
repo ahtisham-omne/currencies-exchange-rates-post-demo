@@ -340,7 +340,12 @@ export function getLinkedProcurement(invoice: Invoice): LinkedFinancialRecord[] 
     });
   });
 
-  // Receiving documents — goods receipts booked against the PO(s).
+  // Receiving documents — goods receipts booked against the PO(s). A
+  // receiving kept on the saved lines (Currency & Exchange Rates) shows its
+  // real date, the one its rate was booked at.
+  const receiptDates = new Map(
+    (invoice.savedLineItems ?? []).flatMap((l) => l.receipts ?? []).filter((r) => r.grnNumber).map((r) => [r.grnNumber!, r.date]),
+  );
   grns.forEach((grn, k) => {
     const status: LinkedRecordStatus = terminal
       ? 'Returned'
@@ -353,7 +358,7 @@ export function getLinkedProcurement(invoice: Invoice): LinkedFinancialRecord[] 
       reference: grn,
       description: pos[0] ? `Goods received against PO-${pos[0]}` : 'Goods received',
       status,
-      date: shiftDate(invoice.invoiceDate, -(10 + k * 4)),
+      date: receiptDates.get(grn) ?? shiftDate(invoice.invoiceDate, -(10 + k * 4)),
       amount: 0, // receiving documents track quantity received, not money
       createdBy: invoice.createdBy,
       updatedBy: invoice.updatedBy ?? invoice.createdBy,

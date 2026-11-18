@@ -17,12 +17,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/too
 import { Invoice } from '@/app/data/mockInvoices';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatMoney as formatInCurrency, rateSentence } from '@/app/currency/money';
-import { RATE_TYPE_LABEL } from '@/app/currency/rates';
+import { RATE_TYPE_LABEL, toBase } from '@/app/currency/rates';
 import { invoiceFx, toInvoiceBase, type InvoiceFx } from '@/app/currency/invoiceFx';
 import { differenceNeedsReview, useApSettings } from '@/app/hooks/useApSettings';
 import { paidRateText } from '@/app/currency/paidRate';
 import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
-import { Money } from '@/app/components/currency/Money';
+import { DocMoney } from '@/app/components/currency/DocCurrency';
+import { useDocMoney, useDocOtherText, useDocView } from '@/app/components/currency/docCurrencyContext';
+import { InvoiceCurrencySummary } from '@/app/components/currency/InvoiceCurrencyConfig';
+import { invoiceFxVariance } from '@/app/currency/fxVariance';
 import { ADVANCES_ACCOUNT } from '@/app/data/glAccounts';
 import { CollapseReveal } from '@/app/components/ui/collapse-reveal';
 import { presetForVendor } from '@/app/data/paymentTermPresets';
@@ -61,8 +64,8 @@ type SectionKey =
   | 'linked'
   | 'timeline';
 
-// Each currency with its own symbol and decimals (Currency & Exchange Rates).
-const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
+// Amounts read in the page's currency through useDocMoney / DocMoney (base by
+// default, the invoice's own with the header toggle; Currency & Exchange Rates).
 
 // MMM D, YYYY (date format standard 9/3/26) — the card previously showed
 // raw ISO dates; the partner-grid rebuild (user 9/25) formats them, now
@@ -120,6 +123,8 @@ function FigureLabel({ children, tip }: { children: React.ReactNode; tip: string
  * total was entered from the vendor's document as billed, so it matches. */
 function BilledVsPaying({ invoice, total, fx }: { invoice: Invoice; total: number; fx: InvoiceFx }) {
   const settings = useApSettings();
+  // In the page's currency (base by default), the invoice's on hover.
+  const docMoney = useDocMoney();
   const billed = invoice.vendorStatedTotal ?? total;
   const diff = Math.round((total - billed) * 100) / 100;
   const none = Math.abs(diff) < 0.005;
@@ -137,13 +142,13 @@ function BilledVsPaying({ invoice, total, fx }: { invoice: Invoice; total: numbe
         <div className="min-w-0">
           <FigureLabel tip="The total printed on the vendor’s invoice.">Vendor Billed</FigureLabel>
           <p className="text-[13px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>
-            <Money value={billed} currency={invoice.currency} fx={fx} />
+            <DocMoney value={billed} />
           </p>
         </div>
         <div className="min-w-0">
           <FigureLabel tip="This invoice’s total after matching to the PO and receiving, before credits and prepayments.">We’re Paying</FigureLabel>
           <p className="text-[13px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>
-            <Money value={total} currency={invoice.currency} fx={fx} />
+            <DocMoney value={total} />
           </p>
         </div>
       </div>
@@ -163,7 +168,7 @@ function BilledVsPaying({ invoice, total, fx }: { invoice: Invoice; total: numbe
             </Tooltip>
           </span>
           <span className="text-[12px] text-foreground tabular-nums truncate" style={{ fontWeight: 600 }}>
-            {none ? formatInCurrency(0, invoice.currency) : `${sign}${formatInCurrency(Math.abs(diff), invoice.currency)} (${sign}${Math.abs(pct).toFixed(2)}%)`}
+            {none ? docMoney(0) : `${sign}${docMoney(Math.abs(diff))} (${sign}${Math.abs(pct).toFixed(2)}%)`}
           </span>
         </div>
         <div className="flex items-center justify-between gap-2 mt-1.5">
@@ -247,11 +252,20 @@ interface InvoiceDetailSidebarProps {
    *  flag is read. Undefined hides the button. */
   onResolveException?: () => void;
   onReleaseHold?: () => void;
+  /** Opens the invoice's Currency Configuration (the currency card's link). */
+  onViewCurrencyConfig?: () => void;
 }
 
-export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, records = [], onResolveException, onReleaseHold }: InvoiceDetailSidebarProps) {
+export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, records = [], onResolveException, onReleaseHold, onViewCurrencyConfig }: InvoiceDetailSidebarProps) {
   // The invoice's currency and the rate it posted at (Currency & Exchange Rates).
   const fx = invoiceFx(invoice);
+  // Every amount in the page's currency: base by default, the invoice's own
+  // with the header toggle; the other one rides the hover (DocMoney).
+  const docMoney = useDocMoney();
+  const otherText = useDocOtherText();
+  const { inBase: viewInBase } = useDocView();
+  // The rate difference on received goods (receivings on the saved lines).
+  const variance = invoiceFxVariance(invoice);
   // Payment term details modal (8/31/26).
   const [termDetailOpen, setTermDetailOpen] = useState(false);
   // Subtotal/Tax/Freight/Charges live in the creation form's breakdown
@@ -591,7 +605,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
         title="Invoice Summary"
         open={open.summary}
         onToggle={() => toggle('summary')}
-        collapsedSummary={formatMoney(amountAfterReductions, invoice.currency)}
+        collapsedSummary={docMoney(amountAfterReductions)}
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -601,17 +615,19 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                 after every reduction; the gross value reads back as
                 "Original total" right under it. */}
             <p className="text-[22px] text-foreground mt-0.5" style={{ fontWeight: 700, lineHeight: 1.1 }}>
-              <Money value={amountAfterReductions} currency={invoice.currency} fx={fx} />
+              <DocMoney value={amountAfterReductions} />
             </p>
-            {/* The base-currency equivalent at the invoice rate (spec 4.4). */}
-            {!fx.isBase && (
+            {/* The total in the currency not shown (spec 4.4): what the
+                vendor bills in base view, its base amount in the vendor's. */}
+            {otherText(amountAfterReductions) && (
               <p className="text-[11px] text-slate-400 mt-1 tabular-nums" style={{ fontWeight: 500 }}>
-                ≈ {formatInCurrency(toInvoiceBase(invoice, amountAfterReductions), BASE_CURRENCY)} {BASE_CURRENCY}
+                {otherText(amountAfterReductions)}
+                <span className="text-slate-400"> {viewInBase ? `${fx.currency} · vendor currency` : `${BASE_CURRENCY} · base currency`}</span>
               </p>
             )}
             {((numbers.credits ?? 0) > 0 || prepayTotal > 0) && (
               <p className="text-[11px] text-slate-400 mt-1" style={{ fontWeight: 500 }}>
-                Original Total {formatMoney(numbers.total, invoice.currency)}
+                Original Total {docMoney(numbers.total)}
               </p>
             )}
           </div>
@@ -654,20 +670,20 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               <div className="min-w-0">
                 <p className="text-[11px]" style={{ fontWeight: 500, color: '#059669' }}>{paidLabel}</p>
                 <p className="text-[13px] truncate mt-0.5" style={{ fontWeight: 600, color: '#047857' }}>
-                  {formatMoney(paidValue, invoice.currency)}
+                  <DocMoney value={paidValue} />
                 </p>
               </div>
               <div className="min-w-0">
                 <p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Outstanding</p>
                 <p className="text-[13px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>
-                  <Money value={numbers.outstanding} currency={invoice.currency} fx={fx} />
+                  <DocMoney value={numbers.outstanding} />
                 </p>
               </div>
               {hasCreditSplit && (
                 <div className="min-w-0">
                   <p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Credited</p>
                   <p className="text-[13px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>
-                    {formatMoney(numbers.credits ?? 0, invoice.currency)}
+                    {docMoney(numbers.credits ?? 0)}
                   </p>
                 </div>
               )}
@@ -698,19 +714,19 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               <div className="space-y-1.5 pt-1 pb-2">
                 <div className="flex justify-between items-center">
                   <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Subtotal</span>
-                  <span className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{formatMoney(numbers.subtotal, invoice.currency)}</span>
+                  <span className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{docMoney(numbers.subtotal)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Tax</span>
-                  <span className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{formatMoney(numbers.tax, invoice.currency)}</span>
+                  <span className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{docMoney(numbers.tax)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Freight</span>
-                  <span className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{formatMoney(numbers.freight, invoice.currency)}</span>
+                  <span className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{docMoney(numbers.freight)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Additional Charges</span>
-                  <span className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{formatMoney(numbers.additional, invoice.currency)}</span>
+                  <span className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{docMoney(numbers.additional)}</span>
                 </div>
               </div>
             </div>
@@ -718,7 +734,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
           <div className="flex items-center justify-between text-[13px] pt-1.5 mt-1.5 border-t border-slate-100">
             <span className="text-foreground" style={{ fontWeight: 600 }}>Invoice Total</span>
             <span className="text-foreground " style={{ fontWeight: 700 }}>
-              {formatMoney(numbers.total, invoice.currency)}
+              <DocMoney value={numbers.total} />
             </span>
           </div>
           {/* Credit memos and applied prepayments reduce the amount owed —
@@ -732,7 +748,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               <div className="flex items-center justify-between text-[12px]">
                 <span className="text-violet-700" style={{ fontWeight: 500 }}>Prepayment Applied</span>
                 <span className="text-violet-700" style={{ fontWeight: 600 }}>
-                  −{formatMoney(Math.min(p.amount, numbers.total), invoice.currency)}
+                  −{docMoney(Math.min(p.amount, numbers.total))}
                 </span>
               </div>
               <a
@@ -743,8 +759,15 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                 {p.invoiceNumber}
               </a>
               {/* The rate the prepayment was paid at (Currency & Exchange Rates). */}
+              {/* The rate the prepayment was paid at, which it stays at (Currency &
+                  Exchange Rates): it clears Advance Payments at its base value
+                  then, so it makes no FX variance. The line above reads at the
+                  invoice rate, like the rest of the summary. */}
               {paidRateText(invoice.currency, p) && (
-                <p className="text-[10.5px] text-violet-500/80 mt-0.5">{paidRateText(invoice.currency, p)}</p>
+                <p className="text-[10.5px] text-violet-500/80 mt-0.5">
+                  {paidRateText(invoice.currency, p)}
+                  {p.rate ? ` · ${formatInCurrency(toBase(Math.min(p.amount, numbers.total), p.rate), BASE_CURRENCY)} at that rate` : ''}
+                </p>
               )}
             </div>
           ))}
@@ -752,7 +775,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
             <div className="flex items-center justify-between text-[12px]">
               <span className="text-slate-500">Credit Memos</span>
               <span className="" style={{ fontWeight: 600, color: '#047857' }}>
-                −{formatMoney(numbers.credits ?? 0, invoice.currency)}
+                −{docMoney(numbers.credits ?? 0)}
               </span>
             </div>
           )}
@@ -766,13 +789,35 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                     : 'Amount Due After Credits'}
               </span>
               <span className="text-foreground " style={{ fontWeight: 700 }}>
-                {formatMoney(amountAfterReductions, invoice.currency)}
+                <DocMoney value={amountAfterReductions} />
               </span>
             </div>
           )}
           {/* Paid / Outstanding moved ABOVE the breakdown accordion as the
               two-column grid (user 10/1) — no duplicate rows down here. */}
         </div>
+
+        {/* CURRENCY: what the vendor bills, what posts to A/P in base, the
+            rate, what receiving booked and the FX Variance, and the way into
+            the invoice's Currency Configuration (as Purchase Orders' Order
+            Summary has it). */}
+        {onViewCurrencyConfig && (
+          <InvoiceCurrencySummary
+            className="mt-3 pt-3 border-t border-slate-100"
+            currency={fx.currency}
+            total={numbers.total}
+            prepaid={prepayTotal}
+            rate={fx.provisional ? null : fx.rate}
+            rateType={fx.rateType}
+            rateDate={fx.rateDate}
+            dateLabel={fx.dateLabel}
+            pending={fx.provisional}
+            rateEdited={invoice.rateEdited}
+            variance={variance}
+            locked={['Approved', 'Partially Paid', 'Paid in Full', 'Settled', 'Payment Hold'].includes(invoice.status) && invoice.type !== 'Pre-Invoice'}
+            onViewConfig={onViewCurrencyConfig}
+          />
+        )}
       </SidebarSection>
 
       {/* Applied-prepayments card removed (Nophil 9/28): the summary's
@@ -899,7 +944,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
         onToggle={() => toggle('charges')}
         collapsedSummary={
           additionalCharges.length > 0
-            ? formatMoney(additionalCharges.reduce((s, c) => s + c.amount, 0), invoice.currency)
+            ? docMoney(additionalCharges.reduce((s, c) => s + c.amount, 0))
             : 'None'
         }
       >
@@ -916,14 +961,14 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                   <p className="text-[10px] text-slate-500 mt-0.5" style={{ fontWeight: 500 }}>{charge.gl}</p>
                 </div>
                 <span className="text-[11px] text-foreground shrink-0" style={{ fontWeight: 600 }}>
-                  {formatMoney(charge.amount, invoice.currency)}
+                  {docMoney(charge.amount)}
                 </span>
               </div>
             ))}
             <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100 text-[12px]">
               <span className="text-foreground" style={{ fontWeight: 600 }}>Subtotal</span>
               <span className="text-foreground " style={{ fontWeight: 700 }}>
-                {formatMoney(additionalCharges.reduce((s, c) => s + c.amount, 0), invoice.currency)}
+                {docMoney(additionalCharges.reduce((s, c) => s + c.amount, 0))}
               </span>
             </div>
           </div>
@@ -936,7 +981,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
         title="Freight & Logistics"
         open={open.freight}
         onToggle={() => toggle('freight')}
-        collapsedSummary={freightDetails.amount > 0 ? formatMoney(freightDetails.amount, invoice.currency) : 'None'}
+        collapsedSummary={freightDetails.amount > 0 ? docMoney(freightDetails.amount) : 'None'}
       >
         {freightDetails.amount === 0 ? (
           <p className="text-[11px] text-slate-400 text-center py-2" style={{ fontWeight: 500 }}>
@@ -947,7 +992,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
             <div>
               <p className="text-[10px] text-slate-400" style={{ fontWeight: 600 }}>Freight Amount</p>
               <p className="text-[18px] text-foreground mt-0.5" style={{ fontWeight: 700, lineHeight: 1.1 }}>
-                {formatMoney(freightDetails.amount, invoice.currency)}
+                {docMoney(freightDetails.amount)}
               </p>
             </div>
 

@@ -9,7 +9,10 @@ import type { Payment } from '@/app/data/mockPayments';
 import { groupCurrency, groupKeyOf, liveLines, type PaymentRun } from '@/app/data/paymentRuns';
 import { PAY_FROM_ACCOUNTS, PAYMENT_METHODS, accountTypeForMethod, accountsForCurrency } from '@/app/data/mockPayments';
 import type { PaymentRunsApi } from '@/app/hooks/usePaymentRuns';
-import { addByCurrency, groupAmount, groupCredit, groupLines, groupRemainingNet, isClosedPeriod, lineRemaining, planGroupPass, revalidateRun, type CurrencyAmount } from '@/app/lib/runMath';
+import { addByCurrency, groupAmount, groupConverts, groupCredit, groupLines, groupRate, groupRemainingNet, isClosedPeriod, lineRemaining, planGroupPass, revalidateRun, type CurrencyAmount } from '@/app/lib/runMath';
+import { bankRateNeedsReview, derivedRate, payFromBlockReason, rateGapPct } from '@/app/currency/paymentRules';
+import { useApPermissions, useApSettings } from '@/app/hooks/useApSettings';
+import { MoneyInput } from '@/app/components/payments/MoneyInput';
 import { DateCalendar } from '@/app/components/ui/date-picker';
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover';
 import { paymentMethodInfo } from '@/app/data/paymentMethodCatalog';
@@ -25,7 +28,7 @@ import type { ColumnDef, ColumnFilterState, SortConfig } from '@/app/components/
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/app/components/ui/tooltip';
 import { humanDate, RUN_FOOTER_FLUSH, FOOTER_BTN_PRIMARY } from './runUi';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
-import { formatAmount, formatMoney } from '@/app/currency/money';
+import { formatAmount, formatMoney, rateSentence } from '@/app/currency/money';
 import { toPaymentBase } from '@/app/currency/paymentFx';
 import { CurrencyCell, CurrencyTotals, amountsText, approxBase, inputPrefix, prefixPadClass, totalText } from './runMoney';
 import { useSystemSettings } from '@/app/hooks/useSystemSettings';
@@ -359,6 +362,17 @@ export function RunExecuteStage({
   // Pay-from account stays correctable at the doing stage (Eli 9/25):
   // approval fixed the AMOUNT, not the account it draws from. Production
   // gates this by permission; the demo allows it on unrecorded rows.
+  // From a base account the bank's figure is entered here, as each payment
+  // is recorded (Currency & Exchange Rates, rule 7); clearing it goes back
+  // to the estimate at the payment date's rate.
+  const setGroupBankAmount = (key: string, bankAmount: number | undefined) => {
+    runsApi.updateRun(run.id, (r) => ({
+      ...r,
+      groups: r.groups.map((g) => (groupKeyOf(g) === key ? { ...g, bankAmount } : g)),
+    }));
+  };
+  const apSettings = useApSettings();
+  const apPerms = useApPermissions();
   const setGroupAccount = (key: string, payFromAccountId: string) => {
     runsApi.updateRun(run.id, (r) => ({
       ...r,
@@ -557,6 +571,21 @@ export function RunExecuteStage({
       setConfirmOpen(false);
       return;
     }
+    // A bank rate past the allowed difference from the day's (Currency &
+    // Exchange Rates) needs a role that may change a payment's rate.
+    const blockedBank = apPerms.canChangePaymentRate
+      ? undefined
+      : selectedGroups.find((g) => {
+          if (!groupConverts(g) || g.bankAmount == null) return false;
+          return bankRateNeedsReview(derivedRate(amountFor(g), g.bankAmount), groupRate(run, g), apSettings.allowedDifferencePct);
+        });
+    if (blockedBank) {
+      setConfirmOpen(false);
+      toast.error('The bank’s rate needs someone who can change a payment’s rate', {
+        description: `${blockedBank.vendor}: more than ${apSettings.allowedDifferencePct}% from the payment date’s mid-market rate. Check the bank’s figure, or ask someone allowed in Settings, Permissions.`,
+      });
+      return;
+    }
     const vendors = selectedGroups.map(groupKeyOf);
     // Partial amounts ride along (user 10/21/26), keyed by payment; a
     // payment made in part stays open on the run with the rest.
@@ -689,12 +718,15 @@ export function RunExecuteStage({
       filterType: 'multiselect',
       getValue: (g) => accountLabelOf(g.payFromAccountId),
       uniqueValues: (rows) => [...new Set(rows.map((g) => accountLabelOf(g.payFromAccountId)))],
-      // Only accounts in the payment's currency or the base currency
-      // (Currency & Exchange Rates); the current one always lists.
+      // Only an account in the invoices' currency or the base currency can
+      // pay (Currency & Exchange Rates, rule 3); the others are listed
+      // greyed with the reason (rule 4). The current one always lists.
       render: (g) => {
         const eligible = accountsForCurrency(PAY_FROM_ACCOUNTS, groupCurrency(g));
         const current = PAY_FROM_ACCOUNTS.find((a) => a.id === g.payFromAccountId);
         const options = current && !eligible.includes(current) ? [current, ...eligible] : eligible;
+        const seen = new Set(options.map((a) => a.currency));
+        const greyed = PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank' && !seen.has(a.currency) && (seen.add(a.currency), true));
         return (
           <select
             value={g.payFromAccountId}
@@ -704,7 +736,12 @@ export function RunExecuteStage({
             title="Change the pay-from account for this payment"
           >
             {options.map((a) => (
-              <option key={a.id} value={a.id}>{a.label}</option>
+              <option key={a.id} value={a.id}>{a.label} ({a.currency})</option>
+            ))}
+            {greyed.map((a) => (
+              <option key={a.id} value={a.id} disabled>
+                {a.label} ({a.currency}): {payFromBlockReason(a.currency, groupCurrency(g))}
+              </option>
             ))}
           </select>
         );
@@ -825,9 +862,60 @@ export function RunExecuteStage({
       render: (g) => <CurrencyCell code={groupCurrency(g)} />,
     },
     {
+      // From a base account paying foreign invoices, what the bank took
+      // (Currency & Exchange Rates, rule 7): estimated at the payment
+      // date's rate until entered; the rate is worked out from it. A bank
+      // rate past Settings' allowed difference needs review, and a role
+      // without "Change the Exchange Rate on a Payment" can't record it.
+      key: 'bank',
+      label: `Bank Took (${BASE_CURRENCY})`,
+      tooltip: `From a ${BASE_CURRENCY} account paying invoices in another currency: what the bank took, from its advice. The rate is worked out from it and the amount the vendor gets.`,
+      minWidth: 150,
+      defaultWidth: 170,
+      align: 'right',
+      sortable: false,
+      filterable: false,
+      getValue: (g) => g.bankAmount ?? 0,
+      render: (g) => {
+        const cur = groupCurrency(g);
+        if (isBaseCurrency(cur)) return <span className="text-[11px] text-slate-400">No conversion</span>;
+        if (!groupConverts(g)) return <span className="text-[11px] text-slate-400">Paid in {cur}, nothing converts</span>;
+        const cash = amountFor(g);
+        const dayRate = groupRate(run, g);
+        const value = g.bankAmount ?? Math.round(cash * dayRate * 100) / 100;
+        const rate = derivedRate(cash, value);
+        const review = g.bankAmount != null && bankRateNeedsReview(rate, dayRate, apSettings.allowedDifferencePct);
+        const blocked = review && !apPerms.canChangePaymentRate;
+        return (
+          <div className="w-full text-right" onClick={(e) => e.stopPropagation()}>
+            <div className="relative">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 pointer-events-none">{inputPrefix(BASE_CURRENCY)}</span>
+              <MoneyInput
+                value={value}
+                fluid
+                onValueChange={(n) => setGroupBankAmount(groupKeyOf(g), n > 0 ? n : undefined)}
+                className={`${fieldCls} w-full text-right pl-6 ${blocked ? 'border-rose-400' : review ? 'border-amber-400' : ''}`}
+              />
+            </div>
+            <span
+              className="block text-[10.5px] mt-0.5 tabular-nums"
+              style={{ fontWeight: 500, color: blocked ? '#E11D48' : review ? '#B45309' : '#64748B' }}
+              title={`Mid-market on ${run.paymentDate}: ${rateSentence(cur, dayRate)}`}
+            >
+              {g.bankAmount == null
+                ? 'Estimated at mid-market'
+                : rate != null
+                  ? `${rateSentence(cur, rate)}${review ? ` · ${Math.abs(rateGapPct(rate, dayRate)).toFixed(2)}% off` : ''}`
+                  : ''}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
       key: 'amount',
       label: 'Amount',
-      tooltip: "In each payment's own currency. Sorting and the range filter use the base currency equivalent.",
+      tooltip: "In the invoices' currency, what the vendor receives. Sorting and the range filter use the base currency equivalent.",
       minWidth: 150,
       defaultWidth: 170,
       align: 'right',

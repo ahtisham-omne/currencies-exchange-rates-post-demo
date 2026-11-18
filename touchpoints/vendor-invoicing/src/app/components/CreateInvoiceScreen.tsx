@@ -23,6 +23,7 @@ import {
   ReceiptText,
   Package,
   Wallet,
+  Coins,
   Plus,
   AlertTriangle,
   AlertCircle,
@@ -150,14 +151,22 @@ import { toast } from 'sonner';
 import { Invoice, mockInvoices, nextSystemInvoiceNumber, type InvoiceCharges, type InvoiceRateBasis, type SavedInvoiceLineItem } from '@/app/data/mockInvoices';
 import { apPermissionsFor, rateChangePct, rateDateFor, useApSettings } from '@/app/hooks/useApSettings';
 import { partnerVendorUrl } from '@/app/data/mockVendors';
-import { buildInvoiceGl } from '@/app/lib/glPosting';
+import { buildInvoiceGl, type InvoiceGlInput } from '@/app/lib/glPosting';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
-import { formatMoney, formatRate, moneyPrefix, rateSentence, formatRateDate } from '@/app/currency/money';
+import { currencyDecimals, formatMoney, formatRate, moneyPrefix, rateSentence, formatRateDate } from '@/app/currency/money';
 import { DEFAULT_RATE_TYPE, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from '@/app/currency/rates';
-import { baseGlEntries, glInBase } from '@/app/currency/glFx';
+import { baseGlEntries, postInvoiceGl, type BaseGl } from '@/app/currency/glFx';
+import { fxVarianceOf, receiptValuesForLine, receivingRateOn, type LockedPrepayment } from '@/app/currency/fxVariance';
+import { RATE_BASIS_DATE_LABEL, rateSourceLabel } from '@/app/currency/invoiceFx';
 import { InvoiceCurrencyField, InvoiceExchangeRateField, InvoiceRateAsOfField } from '@/app/components/currency/InvoiceCurrencyFields';
 import { paidRateText } from '@/app/currency/paidRate';
 import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { DocCurrencyProvider, DocMoney } from '@/app/components/currency/DocCurrency';
+import { docViewOf } from '@/app/components/currency/docCurrencyContext';
+import { setDocView, useDocViewOf } from '@/app/components/currency/docView';
+import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
+import { InvoiceCurrencyConfigDialog, InvoiceCurrencySummary } from '@/app/components/currency/InvoiceCurrencyConfig';
+import type { MoneyFx } from '@/app/components/currency/Money';
 
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { PaymentTermDetailsModal } from '@/app/components/PaymentTermDetailsModal';
@@ -233,6 +242,10 @@ interface LineItem {
   poNumber: string;
   grnNumbers: string[];
   grnDate?: string;
+  /** Each receiving behind the line, with the quantity it left to invoice:
+   *  receiving booked that quantity into stock at its own date's rate,
+   *  which the FX Variance is measured from (Currency & Exchange Rates). */
+  receipts?: { grnNumber: string; date: string; qty: number }[];
   isPreInvoice: boolean;
   glAccount: string;
   /** The unit price as it came off the PO, before any edit — drives the
@@ -248,13 +261,22 @@ interface LineItem {
 // capped there — quantity billed past the receipt rides varianceAmount and
 // debits 5205 Purchase Qty Variance in glPosting instead of over-relieving
 // 2100. remainingQty is the receipt balance still open to this invoice.
+//
+// A price difference (Currency & Exchange Rates): the invoice billing a unit
+// price other than the PO price receiving booked at is quantity × (invoice
+// price − PO price), priceVarianceAmount, which posts to Purchase Price
+// Variance so stock keeps its receiving value.
 const accrualSplit = (i: { isPreInvoice?: boolean; grnDate?: string; invoiceQty: number; remainingQty: number; unitPrice: number; originalUnitPrice?: number }) => {
   if (i.isPreInvoice || !i.grnDate) return { accrualAmount: 0, varianceAmount: 0 };
   const price = i.originalUnitPrice ?? i.unitPrice;
   const covered = Math.min(i.invoiceQty, Math.max(0, i.remainingQty));
+  const accrualAmount = Math.round(covered * price * 100) / 100;
+  const varianceAmount = Math.round(Math.max(0, i.invoiceQty - Math.max(0, i.remainingQty)) * price * 100) / 100;
+  const billed = Math.round(i.invoiceQty * i.unitPrice * 100) / 100;
   return {
-    accrualAmount: Math.round(covered * price * 100) / 100,
-    varianceAmount: Math.round(Math.max(0, i.invoiceQty - Math.max(0, i.remainingQty)) * price * 100) / 100,
+    accrualAmount,
+    varianceAmount,
+    priceVarianceAmount: Math.round((billed - accrualAmount - varianceAmount) * 100) / 100,
   };
 };
 
@@ -1059,6 +1081,8 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   // attention belongs on the exception/hold section, which opens instead.
   const [expandedSections, setExpandedSections] = useState([
     ...(seedHoldOn || seedExceptionOn ? [] : ['additional-details']),
+    // The Currency card opens for an invoice in a foreign currency.
+    ...(!isBaseCurrency(resubmitInvoice?.currency || selectedPOsData[0]?.currency || standaloneVendor?.currency || BASE_CURRENCY) ? ['currency'] : []),
     ...(seedHoldOn ? ['hold'] : []),
     ...(seedExceptionOn ? ['exception'] : []),
   ]);
@@ -1465,6 +1489,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
               existing.receivedQty += item.quantity;
               const remainingFromThisGrn = item.quantity - (item.invoicedQty || 0);
               existing.remainingQty += remainingFromThisGrn;
+              existing.receipts = [...(existing.receipts ?? []), { grnNumber: grn.grnNumber, date: grn.grnDate, qty: remainingFromThisGrn }];
               if (poItem.customInvoiceQty === undefined) {
                 existing.invoiceQty += remainingFromThisGrn;
               }
@@ -1498,6 +1523,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                 poNumber: poData.poNumber,
                 grnNumbers: [grn.grnNumber],
                 grnDate: grn.grnDate,
+                receipts: [{ grnNumber: grn.grnNumber, date: grn.grnDate, qty: remaining }],
                 isPreInvoice: false,
                 glAccount: poItem.glAccount || '1200 Inventory',
                 defaultGlAccount: defaultGlRef.current.get(lineId)!,
@@ -1752,7 +1778,11 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   // close their pre-invoices on submit.
   const appliedPrepayEntries = useMemo(() => {
     type Entry = { invoiceNumber: string; amount: number; rate?: number; rateDate?: string };
-    if (isStandalone || !prepaidPOContext) return [] as Entry[];
+    if (isStandalone) return [] as Entry[];
+    // Editing an invoice that already consumed prepayments keeps them, each
+    // at the rate it was paid (Currency & Exchange Rates): its journal still
+    // clears Advance Payments at that rate.
+    if (!prepaidPOContext) return (resubmitInvoice?.appliedPrepayments ?? []).map((p) => ({ ...p })) as Entry[];
     const seen = new Map<string, Entry>();
     uniquePONumbers.forEach((po) => {
       const ctx = prepaidPOContext[po];
@@ -1766,7 +1796,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
       });
     });
     return Array.from(seen.values());
-  }, [isStandalone, prepaidPOContext, uniquePONumbers]);
+  }, [isStandalone, prepaidPOContext, uniquePONumbers, resubmitInvoice]);
   const prepayApplied = Math.min(
     Math.round(appliedPrepayEntries.reduce((sum, e) => sum + e.amount, 0) * 100) / 100,
     sliceAdjustedTotal,
@@ -1834,10 +1864,40 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     Math.abs(rateChangePct(typedRateValue, tableQuote.rate)) > apPerms.invoiceRateLimitPct + 1e-9;
   /** An invoice-currency amount in the base currency, at the invoice rate. */
   const inBase = (n: number) => toBase(n, invoiceRate ?? midQuote.rate ?? 1);
-  /** An invoice-currency amount as text: $12,400.00 · €980.50. */
-  const money = (n: number) => formatMoney(n, invoiceCurrency);
+  // Which currency the form shows (Currency & Exchange Rates): base by
+  // default, the vendor's with the header's Base Currency | Vendor Currency
+  // toggle, kept for the session per invoice (docView.ts). Amounts stay in
+  // the invoice's currency; an amount typed in base is converted at the
+  // invoice rate and rounded to the invoice currency's minor unit, and an
+  // input left untouched keeps what it holds.
+  const formViewKey = `invoice-form:${resubmitInvoice?.id ?? 'new'}`;
+  const storedFormView = useDocViewOf(formViewKey);
+  // A customer invoice (ledger 'ar') keeps its own currency: the customer
+  // side's currency work is a later step.
+  const formView = ledger === 'ar' ? 'document' : storedFormView;
+  const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
+  const rateDateLabel = ratePending ? 'today' : RATE_BASIS_DATE_LABEL[rateAsOf.basis];
+  const docFx: MoneyFx | null = invoiceIsBase
+    ? null
+    : {
+        rate: invoiceRate ?? midQuote.rate ?? 1,
+        rateType: invoiceRate != null ? rateType : 'mid',
+        rateDate: rateDay,
+        source: rateEdited ? 'Entered on the invoice' : rateSourceLabel(invoiceRate != null ? rateType : 'mid'),
+        provisional: ratePending,
+        dateLabel: rateDateLabel,
+      };
+  const formDoc = { currency: invoiceCurrency, fx: docFx, dateLabel: rateDateLabel, role: 'vendor currency', view: formView };
+  const { inBase: viewInBase, viewCurrency, toView, fromView } = docViewOf(formDoc);
+  /** An amount typed in the shown currency, back in the invoice's, to its minor unit. */
+  const fromViewInput = (n: number) => {
+    const d = currencyDecimals(invoiceCurrency);
+    return Math.round(fromView(n) * 10 ** d) / 10 ** d;
+  };
+  /** An invoice-currency amount as text, in the shown currency: ₨3,441,448.00 · £10,000.00. */
+  const money = (n: number) => formatMoney(toView(n), viewCurrency);
   // Money inputs show the symbol on the left; their padding clears it (pl-5 fits "$").
-  const moneySymbol = moneyPrefix(invoiceCurrency).replace(/\u200E/g, '').trim();
+  const moneySymbol = moneyPrefix(viewCurrency).replace(/\u200E/g, '').trim();
   const symbolPad = moneySymbol.length <= 1 ? 'pl-5' : moneySymbol.length === 2 ? 'pl-7' : 'pl-9';
   const symbolPadWide = moneySymbol.length <= 1 ? 'pl-6' : moneySymbol.length === 2 ? 'pl-8' : 'pl-10';
   /** The rate fields an invoice saved from this form carries. */
@@ -1846,10 +1906,16 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
    *  pre-invoice screen), at the rate its GL is built with. */
   const invoiceFxFields = (
     posted = !ratePending,
-  ): Pick<Invoice, 'currency' | 'exchangeRate' | 'rateType' | 'rateDate' | 'rateEdited'> => {
+  ): Pick<Invoice, 'currency' | 'exchangeRate' | 'rateType' | 'rateDate' | 'rateEdited' | 'youPayIn'> => {
     const rate = invoiceRate ?? (posted ? midQuote.rate : null);
+    // The PO's "You pay in" rides the invoice, so a payment of it starts
+    // from an account in that currency (Vendor Payments, rule 5).
+    const poYouPayIn = !isStandalone
+      ? mockVendors.find((v) => v.vendorName === vendorName)?.purchaseOrders.find((p) => p.poNumber === currentPOsData[0]?.poNumber)?.youPayIn
+      : undefined;
     return {
       currency: invoiceCurrency,
+      ...(poYouPayIn && poYouPayIn === invoiceCurrency ? { youPayIn: poYouPayIn } : {}),
       ...(!posted || rate == null
         ? {}
         : { exchangeRate: rate, rateType: invoiceRate != null ? rateType : 'mid', rateDate: rateDay, rateEdited: rateEdited || undefined, rateBasis: rateAsOf.basis }),
@@ -1862,6 +1928,97 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   // The currency and rate are editable state too: an edit that only changes
   // them is still a change (the fingerprint above is built before them).
   latestResubJsonRef.current += JSON.stringify([invoiceCurrency, rateType, typedRate]);
+
+  // ── The journal this form posts (one GL rule, 9/22/26) ────────────────
+  // The sidebar preview, the confirmation and the saved snapshot all come
+  // from here. buildInvoiceGl works in the invoice's currency; postInvoiceGl
+  // posts it in base (Currency & Exchange Rates): the AP Accrual clears at
+  // what receiving booked (each receiving at its own date's rate, a prepaid
+  // part at the prepayment's locked rate), Advance Payments at the locked
+  // rate, A/P takes the unpaid rest at the invoice rate, and the rate
+  // difference on the goods posts to FX Variance. A price difference goes to
+  // Purchase Price Variance (accrualSplit).
+  const glRate = invoiceRate ?? midQuote.rate ?? 1;
+  /** The prepayments applied, each at the rate it was paid (locked). */
+  const lockedPrepayments: LockedPrepayment[] = appliedPrepayEntries.map((e) => ({
+    invoiceNumber: e.invoiceNumber,
+    amount: e.amount,
+    rate: e.rate ?? glRate,
+    rateDate: e.rateDate,
+  }));
+  /** What receiving booked for these lines' goods, by receiving. */
+  const receiptsOf = (items: LineItem[]) =>
+    items
+      .filter((i) => !i.isPreInvoice && i.grnDate && i.invoiceQty > 0)
+      .flatMap((i) =>
+        receiptValuesForLine(
+          invoiceCurrency,
+          accrualSplit(i).accrualAmount,
+          i.receipts?.length ? i.receipts : [{ grnNumber: i.grnNumbers[0], date: i.grnDate!, qty: 1 }],
+        ),
+      );
+  /** The journal's input for inventory lines (standalone builds its own). */
+  const inventoryGlInput = (
+    items: LineItem[],
+    doc: { total: number; sliceTotal: number; withCharges?: boolean; prepaid?: number },
+  ): InvoiceGlInput => {
+    const withCharges = doc.withCharges ?? true;
+    return {
+      kind: items.some((i) => !i.isPreInvoice && i.grnDate) ? 'received' : 'unreceived',
+      lines: items
+        .filter((i) => i.invoiceQty > 0)
+        .map((i) => ({ glAccount: i.glAccount, amount: i.lineTotal, ...accrualSplit(i) })),
+      freightAmount: withCharges ? freightAmount : 0,
+      freightGlAccount: freightGlAccount || DEFAULT_FREIGHT_GL_ACCOUNT,
+      // Seeded tax rides with the charges (QC14) so debits keep matching
+      // the A/P credit, which includes it via the total.
+      additionalChargesTotal: withCharges ? additionalChargesTotal + seededTax : 0,
+      additionalChargeGlAccount: DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT,
+      // Per-charge GL routing on every type (Known 1, Eli 10/5).
+      additionalChargeLines: withCharges
+        ? additionalCharges
+            .filter((c) => c.amount > 0)
+            .map((c) => ({ glAccount: c.glAccount || DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT, amount: c.amount }))
+        : [],
+      apAccount,
+      total: doc.total,
+      sliceAdjustedTotal: doc.sliceTotal,
+      sliceFraction: withCharges ? sliceFraction : 1,
+      prepaymentApplied: doc.prepaid ?? 0,
+    };
+  };
+  /** A journal in base, with receiving's values and the FX Variance. */
+  const postGl = (input: InvoiceGlInput, items: LineItem[], prepayments: LockedPrepayment[] = []): BaseGl => {
+    const variance =
+      input.kind === 'received' && !invoiceIsBase
+        ? fxVarianceOf({ currency: invoiceCurrency, invoiceRate: glRate, invoiceDate: rateDay, receipts: receiptsOf(items), prepayments })
+        : null;
+    return postInvoiceGl(buildInvoiceGl(input), { currency: invoiceCurrency, rate: glRate, variance, prepayments });
+  };
+  /** The standalone journal: each line expenses to its own account. */
+  const standaloneGlInput = (): InvoiceGlInput => ({
+    kind: 'standalone',
+    lines: standaloneItems.filter((i) => i.amount > 0 && i.glAccount).map((i) => ({ glAccount: i.glAccount, amount: i.amount })),
+    freightAmount,
+    freightGlAccount: freightGlAccount || DEFAULT_FREIGHT_GL_ACCOUNT,
+    additionalChargesTotal: additionalChargesTotal + seededTax,
+    additionalChargeGlAccount: DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT,
+    additionalChargeLines: additionalCharges
+      .filter((c) => c.amount > 0)
+      .map((c) => ({ glAccount: c.glAccount || DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT, amount: c.amount })),
+    apAccount,
+    total,
+    sliceAdjustedTotal: total,
+    sliceFraction: 1,
+  });
+  /** The form's journal as it stands: what the preview and the confirmation show. */
+  const formPrepaid = lineItems.some((i) => i.isPreInvoice) ? 0 : prepayApplied;
+  const formGl: BaseGl | null =
+    invoiceKind === 'pre'
+      ? null
+      : isStandalone
+        ? postGl(standaloneGlInput(), [])
+        : postGl(inventoryGlInput(lineItems, { total, sliceTotal: sliceAdjustedTotal, prepaid: formPrepaid }), lineItems, formPrepaid > 0 ? lockedPrepayments : []);
 
   const activePOOriginalData = useMemo(() => {
     if (!activePOTab) return null;
@@ -2481,45 +2638,29 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
           // Source quantities survive the save (Eli 9/24 R02).
           ...(i.orderedQty > 0 ? { orderedQty: i.orderedQty } : {}),
           // The PO price survives too (Mahreen 10/10): an edit re-seeds it
-          // so the price difference stays on Inventory, never folding into
-          // the accrual or variance lines.
+          // so the price difference stays on Purchase Price Variance, never
+          // folding into the accrual or variance lines.
           ...(i.originalUnitPrice !== undefined && Math.abs(i.originalUnitPrice - i.unitPrice) > 0.0001 ? { poUnitPrice: i.originalUnitPrice } : {}),
           ...(i.receivedQty > 0 ? { receivedQty: i.receivedQty } : {}),
           ...(i.poNumber ? { poNumber: i.poNumber } : {}),
           ...(i.grnNumbers?.length ? { grnNumbers: i.grnNumbers } : {}),
+          // The receivings and the rate each booked at (Currency & Exchange
+          // Rates), so the saved invoice can show its FX Variance.
+          ...(!i.isPreInvoice && i.receipts?.length
+            ? { receipts: i.receipts.map((r) => ({ ...r, rate: receivingRateOn(invoiceCurrency, r.date) })) }
+            : {}),
         }));
-    // The ledger is kept in the base currency: every snapshot posts at the
-    // invoice rate (Currency & Exchange Rates, spec 4.4).
-    const postInBase = (gl: ReturnType<typeof buildInvoiceGl>) =>
-      baseGlEntries(glInBase(gl, invoiceRate ?? midQuote.rate ?? 1, invoiceCurrency));
-    const glForInventory = (items: LineItem[], docTotal: number, docSliceTotal: number) =>
-      postInBase(
-        buildInvoiceGl({
-          kind: items.some((i) => i.grnDate) ? 'received' : 'unreceived',
-          lines: items
-            .filter((i) => i.invoiceQty > 0)
-            .map((i) => ({
-              glAccount: i.glAccount,
-              amount: i.lineTotal,
-              ...accrualSplit(i),
-            })),
-          freightAmount,
-          freightGlAccount: DEFAULT_FREIGHT_GL_ACCOUNT,
-          // Seeded tax rides with the charges (QC14) so debits keep
-          // matching the A/P credit, which includes it via `total`.
-          additionalChargesTotal: additionalChargesTotal + seededTax,
-          additionalChargeGlAccount: DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT,
-          // Per-charge GL routing on inventory too (Known 1): each charge
-          // debits its own picked account; seeded tax (no line) is the
-          // remainder that falls back to the aggregate account.
-          additionalChargeLines: additionalCharges
-            .filter((c) => c.amount > 0)
-            .map((c) => ({ glAccount: c.glAccount || DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT, amount: c.amount })),
-          apAccount,
-          total: docTotal,
-          sliceAdjustedTotal: docSliceTotal,
-          sliceFraction,
-        }),
+    // The ledger is kept in the base currency (Currency & Exchange Rates,
+    // spec 4.4): every snapshot is the journal the form previews (postGl),
+    // received goods clearing at what receiving booked, prepayments at their
+    // locked rates, the rate difference to FX Variance.
+    const glForInventory = (items: LineItem[], docTotal: number, docSliceTotal: number, prepaid = 0) =>
+      baseGlEntries(
+        postGl(
+          inventoryGlInput(items, { total: docTotal, sliceTotal: docSliceTotal, prepaid }),
+          items,
+          prepaid > 0 ? lockedPrepayments : [],
+        ),
       );
 
     // Standalone invoice submission
@@ -2575,25 +2716,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
             lineTotal: i.amount,
             glAccount: i.glAccount,
           })),
-        glEntries: postInBase(
-          buildInvoiceGl({
-            kind: 'standalone',
-            lines: standaloneItems.filter((i) => i.amount > 0 && i.glAccount).map((i) => ({ glAccount: i.glAccount, amount: i.amount })),
-            freightAmount,
-            freightGlAccount: freightGlAccount || DEFAULT_FREIGHT_GL_ACCOUNT,
-            additionalChargesTotal: additionalChargesTotal + seededTax,
-            additionalChargeGlAccount: DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT,
-            // Per-charge GL routing (Eli 10/5): each charge expenses to
-            // its own picked account on standalone.
-            additionalChargeLines: additionalCharges
-              .filter((c) => c.amount > 0)
-              .map((c) => ({ glAccount: c.glAccount || DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT, amount: c.amount })),
-            apAccount,
-            total,
-            sliceAdjustedTotal: total,
-            sliceFraction: 1,
-          }),
-        ),
+        glEntries: baseGlEntries(postGl(standaloneGlInput(), [])),
       };
       newInvoices.push(standaloneInvoice);
 
@@ -2714,25 +2837,8 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         // the child carries exactly its received lines.
         charges: { tax: 0, freight: 0, freightGlAccount: DEFAULT_FREIGHT_GL_ACCOUNT, additional: [] },
         savedLineItems: savedFromLineItems(standardInvoiceItems),
-        glEntries: postInBase(
-          buildInvoiceGl({
-            kind: standardInvoiceItems.some((i) => i.grnDate) ? 'received' : 'unreceived',
-            lines: standardInvoiceItems
-              .filter((i) => i.invoiceQty > 0)
-              .map((i) => ({
-                glAccount: i.glAccount,
-                amount: i.lineTotal,
-                ...accrualSplit(i),
-              })),
-            freightAmount: 0,
-            freightGlAccount: DEFAULT_FREIGHT_GL_ACCOUNT,
-            additionalChargesTotal: 0,
-            additionalChargeGlAccount: DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT,
-            apAccount,
-            total: standardAmount,
-            sliceAdjustedTotal: standardAmount,
-            sliceFraction: 1,
-          }),
+        glEntries: baseGlEntries(
+          postGl(inventoryGlInput(standardInvoiceItems, { total: standardAmount, sliceTotal: standardAmount, withCharges: false }), standardInvoiceItems),
         ),
       };
       newInvoices.push(childInvoice);
@@ -2797,7 +2903,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         savedLineItems: savedFromLineItems(lineItems),
         // Pre-invoices post nothing at creation or approval; posted
         // types snapshot the same journal the confirmation shows.
-        glEntries: hasPre ? [] : glForInventory(lineItems, total, sliceAdjustedTotal),
+        glEntries: hasPre ? [] : glForInventory(lineItems, total, sliceAdjustedTotal, consumesPrepay ? prepayApplied : 0),
       };
       newInvoices.push(singleInvoice);
 
@@ -2953,6 +3059,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   // inside `<main className="relative z-0">` (Layout.tsx), which would
   // otherwise pin its stacking context below the side nav (z-50).
   return createPortal(
+    <DocCurrencyProvider {...formDoc}>
     <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 sm:p-5 lg:p-6">
       <div className={`bg-white shadow-2xl w-full flex flex-col overflow-hidden transition-all duration-300 relative rounded-lg ${isFullScreen ? 'h-full max-w-full' : 'max-w-[1430px] h-[92vh]'}`}>
         
@@ -3116,6 +3223,17 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              {/* Base Currency | Vendor Currency, and the invoice's currency
+                  configuration (as Purchase Orders has them). */}
+              {ledger === 'ap' && (
+                <CurrencyHeaderControls
+                  currency={invoiceCurrency}
+                  view={formView}
+                  onViewChange={(v) => setDocView(formViewKey, v)}
+                  onOpenConfig={() => setCurrencyConfigOpen(true)}
+                  compact
+                />
+              )}
               <button
                 type="button"
                 onClick={() => setIsFullScreen(!isFullScreen)}
@@ -3962,8 +4080,10 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-500" style={{ fontWeight: 600 }}>{moneySymbol}</span>
                                 <MoneyInput
                                   fluid
-                                  value={item.amount || 0}
-                                  onValueChange={(n) => updateStandaloneItem(item.id, 'amount', n)}
+                                  // Typed in the shown currency (base by default),
+                                  // kept in the invoice's.
+                                  value={toView(item.amount || 0)}
+                                  onValueChange={(n) => updateStandaloneItem(item.id, 'amount', viewInBase ? fromViewInput(n) : n)}
                                   placeholder="0.00"
                                   className={`flex h-8 w-full min-w-0 rounded-md border bg-white ${symbolPad} pr-2 py-1 text-right font-bold text-[11px] shadow-none outline-none focus-visible:ring-1 focus-visible:ring-blue-100 ${
                                     lineContentError && (item.amount || 0) <= 0 ? 'border-red-300 ring-2 ring-red-100' : 'border-border'
@@ -4481,16 +4601,22 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                   // as a different style than the creation
                                   // form) — integers stay bare, drafts win
                                   // while typing.
+                                  // Shown, and typed, in the page's currency (base
+                                  // by default): a price typed in base converts at
+                                  // the invoice rate to the invoice currency's
+                                  // minor unit; an untouched price keeps the stored one.
                                   value={
                                     priceDrafts[item.id] ??
-                                    (item.unitPrice == null || Number.isInteger(item.unitPrice)
-                                      ? formatMoneyText(String(item.unitPrice ?? ''))
-                                      : formatMoneyText(item.unitPrice.toFixed(2)))
+                                    (item.unitPrice == null
+                                      ? ''
+                                      : Number.isInteger(toView(item.unitPrice))
+                                        ? formatMoneyText(String(toView(item.unitPrice)))
+                                        : formatMoneyText(toView(item.unitPrice).toFixed(2)))
                                   }
                                   onChange={(e) => {
                                     const raw = e.target.value.replace(/[^\d.]/g, '');
                                     setPriceDrafts((prev) => ({ ...prev, [item.id]: raw }));
-                                    updateLineItem(item.id, 'unitPrice', raw);
+                                    updateLineItem(item.id, 'unitPrice', viewInBase ? String(fromViewInput(parseFloat(raw) || 0)) : raw);
                                   }}
                                   onBlur={() => setPriceDrafts((prev) => { const next = { ...prev }; delete next[item.id]; return next; })}
                                   className={`h-7 ${symbolPad} text-right text-[11px] shadow-none rounded-md font-semibold focus-visible:ring-1 ${
@@ -4647,7 +4773,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                               </div>
                             </td>
                             <td className="px-2 py-2 text-right">
-                              <div className="text-[11px] font-semibold text-gray-900 whitespace-nowrap">{money(lineTotal)}</div>
+                              <div className="text-[11px] font-semibold text-gray-900 whitespace-nowrap"><DocMoney value={lineTotal} /></div>
                             </td>
                             {invoiceKind !== 'pre' && (
                               <td className="px-3 py-2">
@@ -4863,12 +4989,14 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                             <div className="flex items-baseline justify-between gap-2">
                               <span className="text-[10px] text-slate-500" style={{ fontWeight: 600 }}>Posts to A/P in {BASE_CURRENCY}</span>
                               <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }}>
-                                {formatMoney(inBase(sliceAdjustedTotal), BASE_CURRENCY)}
+                                {formatMoney(inBase(sliceAdjustedTotal - formPrepaid), BASE_CURRENCY)}
                               </span>
                             </div>
                             <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
-                              {money(sliceAdjustedTotal)} at {rateSentence(invoiceCurrency, invoiceRate ?? midQuote.rate ?? 1)}
+                              {formatMoney(sliceAdjustedTotal - formPrepaid, invoiceCurrency)}
+                              {formPrepaid > 0 ? ', the rest after the prepayment,' : ''} at {rateSentence(invoiceCurrency, invoiceRate ?? midQuote.rate ?? 1)}
                               {invoiceRate == null ? ' (enter a rate)' : ''}. A payment is later compared against this rate.
+                              {formPrepaid > 0 ? ' The prepayment clears Advance Payments at its locked rate.' : ''}
                             </p>
                           </div>
                         )}
@@ -5686,10 +5814,10 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]" style={{ fontWeight: 500 }}>{moneySymbol}</span>
                                   <MoneyInput
                                     fluid
-                                    value={charge.amount || 0}
+                                    value={toView(charge.amount || 0)}
                                     onValueChange={(n) => {
                                       const newCharges = [...additionalCharges];
-                                      newCharges[index].amount = n;
+                                      newCharges[index].amount = viewInBase ? fromViewInput(n) : n;
                                       setAdditionalCharges(newCharges);
                                     }}
                                     className={`flex h-9 w-full min-w-0 rounded-md border border-slate-200 bg-white ${symbolPad} pr-2 py-1 text-[11px] shadow-none text-right font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/20 focus-visible:border-primary placeholder:text-slate-300`}
@@ -5854,8 +5982,8 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]" style={{ fontWeight: 500 }}>{moneySymbol}</span>
                           <MoneyInput
                             fluid
-                            value={freightAmount || 0}
-                            onValueChange={setFreightAmount}
+                            value={toView(freightAmount || 0)}
+                            onValueChange={(n) => setFreightAmount(viewInBase ? fromViewInput(n) : n)}
                             className={`flex h-9 w-full min-w-0 rounded-md border border-slate-200 bg-white ${symbolPadWide} pr-2.5 py-1 text-[12px] shadow-none text-right font-medium outline-none focus-visible:ring-1 focus-visible:ring-primary/20 focus-visible:border-primary`}
                             placeholder="0.00"
                           />
@@ -5880,6 +6008,39 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                         on standalone. */}
                   </AccordionContent>
                 </AccordionItem>
+
+                {/* Currency (Currency & Exchange Rates): what the vendor
+                    bills, what posts to A/P in base, the rate, what
+                    receiving booked and the FX Variance, and the way into
+                    the invoice's Currency Configuration — the card Purchase
+                    Orders' Order Summary carries. */}
+                {ledger === 'ap' && (
+                <AccordionItem value="currency" className="border border-border rounded-lg bg-white px-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] overflow-hidden">
+                  <AccordionTrigger className="hover:no-underline py-2.5 group">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-md bg-emerald-50 flex items-center justify-center">
+                        <Coins className="w-3.5 h-3.5 text-emerald-600" />
+                      </div>
+                      <span className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>Currency</span>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-3.5 pt-1">
+                    <InvoiceCurrencySummary
+                      currency={invoiceCurrency}
+                      total={sliceAdjustedTotal}
+                      prepaid={formPrepaid}
+                      rate={ratePending ? null : invoiceRate}
+                      rateType={rateType}
+                      rateDate={rateDay}
+                      dateLabel={rateDateLabel}
+                      pending={ratePending}
+                      rateEdited={rateEdited}
+                      variance={formGl?.variance ?? null}
+                      onViewConfig={() => setCurrencyConfigOpen(true)}
+                    />
+                  </AccordionContent>
+                </AccordionItem>
+                )}
 
                 {/* GL impact — placed just above Attachments so the
                     journal preview sits at the tail of the sidebar
@@ -5941,46 +6102,25 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       </div>
                     ) : (() => {
                       // One GL rule (9/22/26): the sidebar preview renders
-                      // buildInvoiceGl — the same builder the confirmation
-                      // dialog shows and performSubmit persists, so the three
-                      // surfaces can never disagree (GPT F55/RR11).
-                      const gl = buildInvoiceGl({
-                        kind: isStandalone ? 'standalone' : hasReceivingDocs ? 'received' : 'unreceived',
-                        lines: isStandalone
-                          ? standaloneItems.filter((i) => i.amount > 0 && i.glAccount).map((i) => ({ glAccount: i.glAccount, amount: i.amount }))
-                          : lineItems.map((li) => ({
-                              glAccount: li.glAccount,
-                              amount: li.lineTotal,
-                              ...accrualSplit(li),
-                            })),
-                        freightAmount,
-                        freightGlAccount: freightGlAccount || DEFAULT_FREIGHT_GL_ACCOUNT,
-                        additionalChargesTotal,
-                        additionalChargeGlAccount: DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT,
-                        // Per-charge GL routing on every type (Known 1, Eli
-                        // 10/5): each charge debits its own picked account,
-                        // inventory included, so the preview matches the
-                        // account the form shows.
-                        additionalChargeLines: additionalCharges
-                          .filter((c) => c.amount > 0)
-                          .map((c) => ({ glAccount: c.glAccount || DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT, amount: c.amount })),
-                        apAccount,
-                        total,
-                        sliceAdjustedTotal,
-                        sliceFraction,
-                      });
-                      // Posted in the base currency at the invoice rate (spec
-                      // 4.4); a foreign invoice shows each line's own amount under it.
-                      const posted = glInBase(gl, invoiceRate ?? midQuote.rate ?? 1, invoiceCurrency);
+                      // the form's journal (formGl, built by postGl) — the
+                      // same one the confirmation dialog shows and
+                      // performSubmit persists, so the three surfaces can
+                      // never disagree (GPT F55/RR11). Posted in the base
+                      // currency (spec 4.4); a foreign invoice shows each
+                      // line's own amount under it, and the received-goods
+                      // lines say which rate they cleared at: the AP Accrual
+                      // at receiving's, a prepayment at its locked rate, and
+                      // the difference as FX Variance with both rates and dates.
+                      const posted = formGl!;
                       const glAmount = (amount: number, foreign?: number) => (
                         <span className="text-right">
                           <span className="block">{formatMoney(amount, BASE_CURRENCY)}</span>
                           {!invoiceIsBase && foreign != null && foreign > 0 && (
-                            <span className="block text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{money(foreign)}</span>
+                            <span className="block text-[10px] text-slate-400" style={{ fontWeight: 500 }}>{formatMoney(foreign, invoiceCurrency)}</span>
                           )}
                         </span>
                       );
-                      const drRows: { code: string; name: string; amount: number; foreignAmount?: number }[] = [...posted.debits];
+                      const drRows: { code: string; name: string; amount: number; foreignAmount?: number; role?: string; description?: string }[] = [...posted.debits];
                       // Fallback: when nothing maps to a debit yet we still
                       // show a Dr placeholder so the panel has shape. Inventory
                       // invoices default to Inventory; standalone invoices
@@ -5990,106 +6130,65 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                           ? { code: ', ', name: 'Select a GL account on each line', amount: 0 }
                           : { code: '1200', name: 'Inventory', amount: 0 });
                       }
-                      // Credits: buildInvoiceGl returns [inventory correction?, A/P].
-                      const inventoryCreditRow = posted.credits.length > 1 ? posted.credits[0] : null;
-                      const apRow = posted.credits[posted.credits.length - 1];
-                      const apCode = apRow.code;
-                      const apName = apRow.name;
-                      const isBalanced = gl.balanced;
+                      const isBalanced = posted.balanced;
+                      const showsWhy = (row: { role?: string }) =>
+                        row.role === 'fxVariance' || row.role === 'advance' || row.role === 'priceVariance' || (row.role === 'accrual' && !!posted.variance);
+                      const sideBadge = (side: 'Debit' | 'Credit') => (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              className="inline-flex items-center px-1.5 h-[18px] rounded-md text-[10px] tracking-wide cursor-help shrink-0"
+                              style={side === 'Debit'
+                                ? { fontWeight: 700, backgroundColor: '#EBF3FF', color: '#0654BC' }
+                                : { fontWeight: 700, backgroundColor: '#F1F5F9', color: '#475569' }}
+                            >
+                              {side}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[240px]">
+                            <p className="text-[11px] text-foreground" style={{ fontWeight: 600 }}>{side === 'Debit' ? 'Debit (Dr)' : 'Credit (Cr)'}</p>
+                            <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
+                              {side === 'Debit'
+                                ? 'Increases an asset or expense account, or clears a liability. Here it clears the AP accrual the receiving booked, or adds inventory or expense value.'
+                                : 'Increases a liability, equity, or revenue account. The invoice creates a payable to the vendor, so the offset lands on the credit side.'}
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                      const glRowView = (row: (typeof drRows)[number], side: 'Debit' | 'Credit', key: string) => (
+                        <div key={key}>
+                          <div className="flex items-start gap-2.5 px-3.5 py-2.5">
+                            {sideBadge(side)}
+                            <span className="text-[10px] text-slate-400 shrink-0 leading-[18px]" style={{ fontWeight: 500 }}>
+                              {row.code}
+                            </span>
+                            <span className="flex-1 min-w-0">
+                              <span className="block text-[12px] text-foreground truncate leading-[18px]" style={{ fontWeight: 500 }}>
+                                {row.name}
+                              </span>
+                              {row.description && showsWhy(row) && (
+                                <span className="block text-[10px] text-slate-400 leading-snug mt-0.5" style={{ fontWeight: 500 }}>
+                                  {row.description}
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[12px] text-foreground shrink-0" style={{ fontWeight: 600 }}>
+                              {glAmount(row.amount, row.foreignAmount)}
+                            </span>
+                          </div>
+                          <div className="h-px bg-border/60 mx-3.5" />
+                        </div>
+                      );
                       return (
                         <div className="border-t border-border bg-white">
                           {!invoiceIsBase && (
                             <div className="px-3.5 py-1.5 bg-slate-50/80 border-b border-border/60 text-[10px] text-slate-500 leading-snug" style={{ fontWeight: 500 }}>
-                              Posts in {BASE_CURRENCY} at {rateSentence(invoiceCurrency, invoiceRate ?? midQuote.rate ?? 1)}. Each
-                              line's {invoiceCurrency} amount is under it.
+                              Posts in {BASE_CURRENCY} at {rateSentence(invoiceCurrency, glRate)}. Each line's {invoiceCurrency} amount is under it.
+                              {posted.variance ? ' AP Accrual clears at what receiving booked; the difference is FX Variance.' : ''}
                             </div>
                           )}
-                          {drRows.map((row, idx) => (
-                            <div key={`dr-${row.code}-${idx}`}>
-                              <div className="flex items-center gap-2.5 px-3.5 py-2.5">
-                                {/* Every debit row uses the same "DEBIT"
-                                    badge (matching the "CREDIT" row) so the
-                                    lingo is consistent across all GL accounts. */}
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span
-                                      className="inline-flex items-center px-1.5 h-[18px] rounded-md text-[10px] tracking-wide cursor-help"
-                                      style={{ fontWeight: 700, backgroundColor: '#EBF3FF', color: '#0654BC' }}
-                                    >
-                                      Debit
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" className="max-w-[240px]">
-                                    <p className="text-[11px] text-foreground" style={{ fontWeight: 600 }}>Debit (Dr)</p>
-                                    <p className="text-[11px] text-slate-500 leading-snug mt-0.5">Increases an asset or expense account, or clears a liability. Here it clears the AP accrual the receiving booked, or adds inventory or expense value.</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                <span className="text-[10px] text-slate-400 shrink-0" style={{ fontWeight: 500 }}>
-                                  {row.code}
-                                </span>
-                                <span className="text-[12px] text-foreground flex-1 truncate" style={{ fontWeight: 500 }}>
-                                  {row.name}
-                                </span>
-                                <span className="text-[12px] text-foreground shrink-0" style={{ fontWeight: 600 }}>
-                                  {glAmount(row.amount, row.foreignAmount)}
-                                </span>
-                              </div>
-                              <div className="h-px bg-border/60 mx-3.5" />
-                            </div>
-                          ))}
-
-                          {/* Inventory correction on the credit side — only
-                              when the invoice prices received goods below
-                              the PO estimate. */}
-                          {inventoryCreditRow && (
-                            <>
-                              <div className="flex items-center gap-2.5 px-3.5 py-2.5">
-                                <span
-                                  className="inline-flex items-center px-1.5 h-[18px] rounded-md text-[10px] tracking-wide"
-                                  style={{ fontWeight: 700, backgroundColor: '#F1F5F9', color: '#475569' }}
-                                >
-                                  Credit
-                                </span>
-                                <span className="text-[10px] text-slate-400 shrink-0" style={{ fontWeight: 500 }}>
-                                  {inventoryCreditRow.code}
-                                </span>
-                                <span className="text-[12px] text-foreground flex-1 truncate" style={{ fontWeight: 500 }}>
-                                  {inventoryCreditRow.name}
-                                </span>
-                                <span className="text-[12px] text-foreground shrink-0" style={{ fontWeight: 600 }}>
-                                  {glAmount(inventoryCreditRow.amount, inventoryCreditRow.foreignAmount)}
-                                </span>
-                              </div>
-                              <div className="h-px bg-border/60 mx-3.5" />
-                            </>
-                          )}
-
-                          {/* Credit row — A/P, equal to invoice total */}
-                          <div className="flex items-center gap-2.5 px-3.5 py-2.5">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span
-                                  className="inline-flex items-center px-1.5 h-[18px] rounded-md text-[10px] tracking-wide cursor-help"
-                                  style={{ fontWeight: 700, backgroundColor: '#F1F5F9', color: '#475569' }}
-                                >
-                                  Credit
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-[240px]">
-                                <p className="text-[11px] text-foreground" style={{ fontWeight: 600 }}>Credit (Cr)</p>
-                                <p className="text-[11px] text-slate-500 leading-snug mt-0.5">Increases a liability, equity, or revenue account. The invoice creates a payable to the vendor, so the offset lands on the credit side.</p>
-                              </TooltipContent>
-                            </Tooltip>
-                            <span className="text-[10px] text-slate-400 shrink-0" style={{ fontWeight: 500 }}>
-                              {apCode}
-                            </span>
-                            <span className="text-[12px] text-foreground flex-1 truncate" style={{ fontWeight: 500 }}>
-                              {apName}
-                            </span>
-                            <span className="text-[12px] text-foreground shrink-0" style={{ fontWeight: 600 }}>
-                              {glAmount(apRow.amount, apRow.foreignAmount)}
-                            </span>
-                          </div>
+                          {drRows.map((row, idx) => glRowView(row, 'Debit', `dr-${row.code}-${idx}`))}
+                          {posted.credits.map((row, idx) => glRowView(row, 'Credit', `cr-${row.code}-${idx}`))}
 
                           {/* Balanced / unbalanced strip — flips amber when
                               Dr total drifts from invoice total so users
@@ -6237,11 +6336,11 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       )}
                       <div className="flex justify-between items-center">
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Subtotal</span>
-                        <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>{money(subtotal)}</span>
+                        <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}><DocMoney value={subtotal} /></span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Freight</span>
-                        <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}>{money(freightAmount)}</span>
+                        <span className="text-[12px] text-foreground " style={{ fontWeight: 500 }}><DocMoney value={freightAmount} /></span>
                       </div>
                       {/* Tax carried from the reopened record (QC14) — the
                           form has no tax field, so it rides read-only and
@@ -6262,8 +6361,13 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                             <span className="text-[12px] text-violet-700 " style={{ fontWeight: 600 }}>{money(-Math.min(e.amount, sliceAdjustedTotal))}</span>
                           </div>
                           {/* The rate the prepayment was paid at (Currency & Exchange Rates). */}
+                          {/* It stays at that rate: it clears Advance Payments at
+                              its base value then, so it makes no FX variance. */}
                           {paidRateText(invoiceCurrency, e) && (
-                            <p className="text-[10.5px] text-violet-500/80 mt-0.5 truncate">{paidRateText(invoiceCurrency, e)}</p>
+                            <p className="text-[10.5px] text-violet-500/80 mt-0.5 truncate">
+                              {paidRateText(invoiceCurrency, e)}
+                              {e.rate ? ` · ${formatMoney(toBase(Math.min(e.amount, sliceAdjustedTotal), e.rate), BASE_CURRENCY)} at that rate` : ''}
+                            </p>
                           )}
                         </div>
                       ))}
@@ -6310,33 +6414,39 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                     </span>
                   </div>
                 ) : (
-                  // Currency & Exchange Rates: the total in the invoice
-                  // currency with the base-currency amount beside it, at the
-                  // invoice rate, and the rate under both.
+                  // Currency & Exchange Rates: the total in both currencies,
+                  // the shown one first (base by default, the vendor's with
+                  // the header toggle), at the invoice rate, and the rate
+                  // under both.
                   <div className="pt-2.5 border-t border-slate-100">
                     <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>Total Due</span>
                     <div className="grid grid-cols-2 gap-3 mt-1.5">
-                      <div className="min-w-0">
-                        <span className="flex items-center gap-1 text-[10.5px] text-slate-400" style={{ fontWeight: 500 }}>
-                          <CurrencyFlag code={invoiceCurrency} size={12} />
-                          In {invoiceCurrency}
-                        </span>
-                        <span className="block mt-0.5 text-[14px] text-foreground leading-tight tracking-tight tabular-nums truncate" style={{ fontWeight: 600 }}>
-                          {money(totalDueAfterPrepay)}
-                        </span>
-                      </div>
-                      <div className="min-w-0 text-right">
-                        <span className="flex items-center justify-end gap-1 text-[10.5px] text-slate-400" style={{ fontWeight: 500 }}>
-                          <CurrencyFlag code={BASE_CURRENCY} size={12} />
-                          In {BASE_CURRENCY} (base)
-                        </span>
-                        <span className="block mt-0.5 text-[14px] text-slate-600 leading-tight tracking-tight tabular-nums truncate" style={{ fontWeight: 500 }}>
-                          {formatMoney(inBase(totalDueAfterPrepay), BASE_CURRENCY)}
-                        </span>
-                      </div>
+                      {(viewInBase
+                        ? [
+                            { code: BASE_CURRENCY, label: `In ${BASE_CURRENCY} (base)`, text: formatMoney(inBase(totalDueAfterPrepay), BASE_CURRENCY) },
+                            { code: invoiceCurrency, label: `In ${invoiceCurrency} (vendor)`, text: formatMoney(totalDueAfterPrepay, invoiceCurrency) },
+                          ]
+                        : [
+                            { code: invoiceCurrency, label: `In ${invoiceCurrency}`, text: formatMoney(totalDueAfterPrepay, invoiceCurrency) },
+                            { code: BASE_CURRENCY, label: `In ${BASE_CURRENCY} (base)`, text: formatMoney(inBase(totalDueAfterPrepay), BASE_CURRENCY) },
+                          ]
+                      ).map((cell, k) => (
+                        <div key={cell.code} className={`min-w-0 ${k === 1 ? 'text-right' : ''}`}>
+                          <span className={`flex items-center gap-1 text-[10.5px] text-slate-400 ${k === 1 ? 'justify-end' : ''}`} style={{ fontWeight: 500 }}>
+                            <CurrencyFlag code={cell.code} size={12} />
+                            {cell.label}
+                          </span>
+                          <span
+                            className={`block mt-0.5 text-[14px] leading-tight tracking-tight tabular-nums truncate ${k === 0 ? 'text-foreground' : 'text-slate-600'}`}
+                            style={{ fontWeight: k === 0 ? 600 : 500 }}
+                          >
+                            {cell.text}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1.5 truncate" style={{ fontWeight: 400 }}>
-                      At 1 {invoiceCurrency} = {formatRate(invoiceRate ?? midQuote.rate ?? 1)} {BASE_CURRENCY}
+                      At {rateSentence(invoiceCurrency, invoiceRate ?? midQuote.rate ?? 1)}
                       {ratePending ? " · today's rate" : invoiceRate == null ? '' : ` · ${RATE_TYPE_LABEL[rateType]}`}
                       {!ratePending && rateAsOf.date ? ` · ${formatRateDate(rateAsOf.date)}` : ''}
                     </p>
@@ -6687,48 +6797,21 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                           const code = str.split(' ')[0];
                           return { code, name: str.substring(code.length + 1) || 'Expense' };
                         };
-                        // One GL rule (9/22/26): the AP journals below come
-                        // from the same buildInvoiceGl the sidebar preview
-                        // and the persisted glEntries snapshot use, so the
-                        // confirmation can never promise a different entry
-                        // than the one that saves (GPT F55, RR11).
+                        // One GL rule (9/22/26): the AP journal below is the
+                        // form's own (formGl), the one the sidebar previews
+                        // and performSubmit persists, so the confirmation can
+                        // never promise a different entry than the one that
+                        // saves (GPT F55, RR11). Received goods clear at what
+                        // receiving booked; the rate difference is FX Variance.
                         // AR mirror (7/20/26): a customer invoice books the
                         // receivable on the debit side and revenue on the
                         // credit side — the exact inverse of the AP posting.
-                        const apGl = ledger === 'ar' || isPreInvoiceSubmit
-                          ? null
-                          : buildInvoiceGl({
-                              kind: isStandalone ? 'standalone' : hasReceivingDocs ? 'received' : 'unreceived',
-                              lines: isStandalone
-                                ? standaloneItems.filter((i) => i.amount > 0 && i.glAccount).map((i) => ({ glAccount: i.glAccount, amount: i.amount }))
-                                : lineItems
-                                    .filter((i) => i.invoiceQty > 0)
-                                    .map((i) => ({
-                                      glAccount: i.glAccount,
-                                      amount: i.lineTotal,
-                                      ...accrualSplit(i),
-                                    })),
-                              freightAmount,
-                              freightGlAccount: freightGlAccount || DEFAULT_FREIGHT_GL_ACCOUNT,
-                              additionalChargesTotal,
-                              additionalChargeGlAccount: DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT,
-                              // Per-charge GL routing on every type (Known 1,
-                              // Eli 10/5): each charge debits its own picked
-                              // account so the confirm journal matches.
-                              additionalChargeLines: additionalCharges
-                                .filter((c) => c.amount > 0)
-                                .map((c) => ({ glAccount: c.glAccount || DEFAULT_ADDITIONAL_CHARGE_GL_ACCOUNT, amount: c.amount })),
-                              apAccount,
-                              total,
-                              sliceAdjustedTotal,
-                              sliceFraction,
-                            });
-                        const glLines: { code: string; name: string; debit?: number; credit?: number }[] = ledger === 'ar'
+                        const glLines: { code: string; name: string; debit?: number; credit?: number; description?: string }[] = ledger === 'ar'
                           ? [
                               { code: '1200', name: 'Accounts Receivable', debit: total },
                               { code: '4000', name: 'Sales Revenue', credit: total },
                             ]
-                          : isPreInvoiceSubmit
+                          : isPreInvoiceSubmit || !formGl
                             ? [
                                 // Pre-invoice (BA 9/5, Option A): the first
                                 // entry is the PAYMENT — Dr Vendor Advance,
@@ -6736,21 +6819,19 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                 { code: '1205', name: 'Advance Payments', debit: inBase(sliceAdjustedTotal) },
                                 { code: '1000', name: 'Cash / Bank', credit: inBase(sliceAdjustedTotal) },
                               ]
-                            : (() => {
-                                const posted = glInBase(apGl!, invoiceRate ?? midQuote.rate ?? 1, invoiceCurrency);
-                                return [
-                                  ...posted.debits.map((r) => ({ code: r.code, name: r.name, debit: r.amount })),
-                                  ...posted.credits.map((r) => ({ code: r.code, name: r.name, credit: r.amount })),
-                                ];
-                              })();
+                            : [
+                                ...formGl.debits.map((r) => ({ code: r.code, name: r.name, debit: r.amount, description: r.role === 'fxVariance' || r.role === 'advance' ? r.description : undefined })),
+                                ...formGl.credits.map((r) => ({ code: r.code, name: r.name, credit: r.amount, description: r.role === 'fxVariance' || r.role === 'advance' ? r.description : undefined })),
+                              ];
                         const drTotal = glLines.reduce((s, l) => s + (l.debit || 0), 0);
                         const crTotal = glLines.reduce((s, l) => s + (l.credit || 0), 0);
                         return (
                           <div className="mt-1.5 rounded-lg border border-slate-200 bg-white overflow-hidden text-left">
                             {ledger !== 'ar' && !invoiceIsBase && (
                               <p className="px-3 py-1.5 bg-slate-50/70 border-b border-slate-100 text-[10px] text-slate-500" style={{ fontWeight: 500 }}>
-                                In {BASE_CURRENCY}, at {rateSentence(invoiceCurrency, invoiceRate ?? midQuote.rate ?? 1)}
+                                In {BASE_CURRENCY}, at {rateSentence(invoiceCurrency, glRate)}
                                 {isPreInvoiceSubmit ? " (today's rate; the payment date's rate applies)" : ''}.
+                                {!isPreInvoiceSubmit && formGl?.variance ? ' AP Accrual clears at what receiving booked; the difference is FX Variance.' : ''}
                               </p>
                             )}
                             <table className="w-full text-[12px]">
@@ -6763,10 +6844,13 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                               </thead>
                               <tbody>
                                 {glLines.map((line) => (
-                                  <tr key={`${line.code}-${line.debit ? 'dr' : 'cr'}`} className="border-b border-slate-100 last:border-b-0">
+                                  <tr key={`${line.code}-${line.debit ? 'dr' : 'cr'}-${line.name}`} className="border-b border-slate-100 last:border-b-0">
                                     <td className="px-3 py-1.5">
                                       <span className="text-[11px] text-slate-500 " style={{ fontWeight: 500 }}>{line.code}</span>
                                       <span className="text-slate-700 ml-1.5" style={{ fontWeight: 500 }}>{line.name}</span>
+                                      {line.description && (
+                                        <span className="block text-[10px] text-slate-400 leading-snug mt-0.5" style={{ fontWeight: 500 }}>{line.description}</span>
+                                      )}
                                     </td>
                                     <td className="px-3 py-1.5 text-center ">
                                       {line.debit ? <span className="text-foreground" style={{ fontWeight: 500 }}>{fmtGl(line.debit)}</span> : null}
@@ -8837,7 +8921,44 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
           display: none;
         }
       `}} />
-    </div>,
+
+      {/* The invoice's Currency Configuration (header Currency button and
+          the Currency card's View configuration): the same Currency,
+          Exchange Rate and Rate as of controls the Invoice Details card has,
+          in one place, with what receiving booked, the prepayments' locked
+          rates, the FX Variance and what A/P posts in base. Save writes back
+          to the form. */}
+      <InvoiceCurrencyConfigDialog
+        open={currencyConfigOpen}
+        onOpenChange={setCurrencyConfigOpen}
+        documentLabel={isResubmit ? invoiceNumber : 'this invoice'}
+        vendorName={vendorName}
+        vendorDefault={vendorDefaultCurrency}
+        total={sliceAdjustedTotal}
+        source={
+          poCurrency
+            ? { kind: 'po', ref: currentPOsData[0]?.poNumber ? `PO-${currentPOsData[0].poNumber}` : 'the PO' }
+            : { kind: 'vendor', ref: vendorDefaultCurrency }
+        }
+        value={{ currency: invoiceCurrency, rateType, typedRate }}
+        rateAsOf={{ date: rateAsOf.date, basis: rateAsOf.basis, wanted: wantedRateBasis === 'paidDate' ? undefined : wantedRateBasis }}
+        rateDay={rateDay}
+        dateLabel={rateDateLabel}
+        pending={ratePending}
+        po={poRateRef && invoiceCurrency === currentPOsData[0]?.currency ? { ...poRateRef, poNumber: `PO-${poRateRef.poNumber}` } : null}
+        receipts={!isStandalone && invoiceKind !== 'pre' ? receiptsOf(lineItems) : []}
+        prepayments={formPrepaid > 0 ? lockedPrepayments : []}
+        canEditRate={apPerms.canChangeInvoiceRate}
+        limitPct={apPerms.invoiceRateLimitPct}
+        onSave={(next) => {
+          setInvoiceCurrency(next.currency);
+          setRateType(next.rateType);
+          setTypedRate(next.typedRate);
+          setRateError(false);
+        }}
+      />
+    </div>
+    </DocCurrencyProvider>,
     document.body,
   );
 }
@@ -8937,7 +9058,7 @@ function AddItemFromPOModal({
                         <span className="text-[12px] font-semibold text-foreground">{item.quantity} {item.uom}</span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className="text-[12px] font-bold text-muted-foreground">{formatMoney(item.unitPrice, poData?.currency)}</span>
+                        <span className="text-[12px] font-bold text-muted-foreground"><DocMoney value={item.unitPrice} /></span>
                       </td>
                     </tr>
                   ))}

@@ -1,7 +1,7 @@
 import type { Invoice } from '@/app/data/mockInvoices';
 import { PAY_FROM_ACCOUNTS, type Payment, type PayFromAccount } from '@/app/data/mockPayments';
 import { buildPaymentGlEntries, type GlEntryLine } from '@/app/lib/glPosting';
-import { ADVANCES_ACCOUNT, DEFAULT_PREPAYMENT_ASSET_ACCOUNT } from '@/app/data/glAccounts';
+import { ADVANCES_ACCOUNT, DEFAULT_PREPAYMENT_ASSET_ACCOUNT, FX_GAIN_LOSS_ACCOUNT } from '@/app/data/glAccounts';
 import { localTodayIso, addDaysIso } from '@/app/lib/dueBucket';
 import {
   openRunInvoiceIds,
@@ -26,6 +26,8 @@ import { formatMoney } from '@/app/currency/money';
 import { toBase } from '@/app/currency/rates';
 import { toInvoiceBase, type InvoiceFx } from '@/app/currency/invoiceFx';
 import { paymentFx, stampPaymentRate } from '@/app/currency/paymentFx';
+import { buildPaymentGlFx, convertsAtBank, derivedRate, glAtRate, youPayInOfAll } from '@/app/currency/paymentRules';
+import { invoiceFx } from '@/app/currency/invoiceFx';
 
 /* ── Payment run math: pure functions, no React ──────────────────────
  * Eligibility, grouping, per-account cash totals, exception checks, the
@@ -250,7 +252,7 @@ export function deriveGroups(lines: PaymentRunLine[], existing: RunVendorGroup[]
     const prior = existing.find((g) => groupKeyOf(g) === key);
     const currency = lineCurrency(line);
     if (prior) return prior.currency ? prior : { ...prior, currency };
-    const d = vendorPayDefaults(line.vendor, currency);
+    const d = vendorPayDefaults(line.vendor, currency, line.youPayIn);
     return {
       vendor: line.vendor,
       currency,
@@ -461,6 +463,39 @@ export function convertOn(amount: number, from: string, to: string, date: string
 export const groupRate = (run: PaymentRun, group: RunVendorGroup): number =>
   paymentRateOn(groupCurrency(group), run.paymentDate);
 
+/* ── A run payment in another currency (Currency & Exchange Rates) ────
+ * Each payment keeps the payment rules (currency/paymentRules.ts): the
+ * vendor receives the invoices' currency, the account is one in it or in
+ * base, the PO's You pay in picks the default, and from a base account the
+ * bank's figure is entered when the payment is recorded (estimated at the
+ * payment date's rate until then), the rate worked out from it. */
+
+/** A base account pays this foreign group: the bank converts (rule 7). */
+export function groupConverts(group: RunVendorGroup): boolean {
+  const account = PAY_FROM_ACCOUNTS.find((a) => a.id === group.payFromAccountId);
+  return convertsAtBank(account?.currency ?? BASE_CURRENCY, groupCurrency(group));
+}
+
+/** What the bank took for the group's cash, in base: the figure entered,
+ *  else the estimate at the payment date's rate. */
+export function groupBankTook(run: PaymentRun, group: RunVendorGroup, cash: number = groupNet(run, group)): number {
+  return group.bankAmount != null && group.bankAmount > 0 ? round2(group.bankAmount) : toBase(cash, groupRate(run, group));
+}
+
+/** The rate the group's cash goes out at: the bank's from a base account
+ *  (once its figure is in), else the payment date's. */
+export function groupPayRate(run: PaymentRun, group: RunVendorGroup, cash: number = groupNet(run, group)): number {
+  if (!groupConverts(group) || group.bankAmount == null) return groupRate(run, group);
+  return derivedRate(cash, group.bankAmount) ?? groupRate(run, group);
+}
+
+/** Rule 5 for a group: the account currency its invoices' POs ask for. */
+export const groupYouPayIn = (run: PaymentRun, group: RunVendorGroup): string =>
+  youPayInOfAll(groupLines(run, group).map((l) => ({ currency: lineCurrency(l), youPayIn: l.youPayIn })));
+
+/** The rate A/P carried a line at: its invoice's (an advance's is what it costs now). */
+const lineRateOf = (line: PaymentRunLine, payRate: number) => (line.isPreInvoice ? payRate : line.invoiceRate ?? payRate);
+
 /** The rate card for a payment amount before it posts (Money's hover). */
 export function groupFx(run: PaymentRun, group: RunVendorGroup): InvoiceFx {
   const currency = groupCurrency(group);
@@ -504,32 +539,39 @@ const splitGl = (account: string) => {
 };
 
 /** The run's journal in the base currency (the ledger's): invoices debit
- *  Accounts Payable, pre-invoices the vendor's advances account, each
- *  pay-from account is credited its cash out and prepayments the credit
- *  drawn. Each payment converts at its own rate; the cent rounding lands
- *  on its largest debit so every payment still balances (the invoice
- *  journal's rule, glFx). */
+ *  Accounts Payable at their own rates (what A/P carried), pre-invoices the
+ *  vendor's advances account, each pay-from account is credited what its
+ *  cash cost (the bank's figure from a base account, the payment date's
+ *  rate otherwise) and prepayments the credit drawn. What is left on a
+ *  foreign payment is its realized FX Gain/Loss (Currency & Exchange
+ *  Rates); on a base one, cent rounding, which lands on its largest debit
+ *  so it still balances (the invoice journal's rule, glFx). */
 export function runGlRows(run: PaymentRun, groups: RunVendorGroup[] = run.groups): GlPreviewRow[] {
   const debitBy = new Map<string, number>();
   const creditBy = new Map<string, GlPreviewRow>();
   let prepaymentCredit = 0;
+  let fxGainLoss = 0;
   groups.forEach((g) => {
     const lines = groupLines(run, g);
     if (lines.length === 0) return;
-    const rate = groupRate(run, g);
-    const inCurrency = new Map<string, number>();
-    lines.forEach((l) => {
-      const account = l.isPreInvoice ? advanceAccountFor(g) : '2000 Accounts Payable';
-      inCurrency.set(account, round2((inCurrency.get(account) ?? 0) + l.payAmount));
-    });
-    const debits = [...inCurrency.entries()].map(([account, amount]) => ({ account, base: toBase(amount, rate) }));
+    const foreign = !isBaseCurrency(groupCurrency(g));
     const net = groupNet(run, g);
     const credit = groupCredit(g);
-    const cashBase = toBase(net, rate);
+    const rate = groupPayRate(run, g, net);
+    const inBase = new Map<string, number>();
+    lines.forEach((l) => {
+      const account = l.isPreInvoice ? advanceAccountFor(g) : '2000 Accounts Payable';
+      inBase.set(account, round2((inBase.get(account) ?? 0) + toBase(l.payAmount, foreign ? lineRateOf(l, rate) : 1)));
+    });
+    const debits = [...inBase.entries()].map(([account, base]) => ({ account, base }));
+    const cashBase = foreign && groupConverts(g) ? groupBankTook(run, g, net) : toBase(net, rate);
     const creditBase = toBase(credit, rate);
     const balancedInCurrency = Math.abs(groupGross(run, g) - round2(net + credit)) < 0.005;
     const diff = round2(cashBase + creditBase - debits.reduce((s, d) => s + d.base, 0));
-    if (balancedInCurrency && debits.length > 0 && Math.abs(diff) >= 0.005) {
+    if (foreign && balancedInCurrency) {
+      // A/P carried more than paying cost: a gain (and the other way a loss).
+      fxGainLoss = round2(fxGainLoss - diff);
+    } else if (balancedInCurrency && debits.length > 0 && Math.abs(diff) >= 0.005) {
       const largest = debits.reduce((best, d, i) => (d.base > debits[best].base ? i : best), 0);
       debits[largest] = { ...debits[largest], base: round2(debits[largest].base + diff) };
     }
@@ -551,8 +593,10 @@ export function runGlRows(run: PaymentRun, groups: RunVendorGroup[] = run.groups
   const creditRows = [...creditBy.values()].filter((r) => r.credit > 0.004).sort((a, b) => b.credit - a.credit);
   return [
     ...debitRows,
+    ...(fxGainLoss < -0.004 ? [{ ...splitGl(FX_GAIN_LOSS_ACCOUNT), debit: -fxGainLoss, credit: 0 }] : []),
     ...creditRows,
     ...(prepaymentCredit > 0.004 ? [{ ...splitGl(DEFAULT_PREPAYMENT_ASSET_ACCOUNT), debit: 0, credit: prepaymentCredit }] : []),
+    ...(fxGainLoss > 0.004 ? [{ ...splitGl(FX_GAIN_LOSS_ACCOUNT), debit: 0, credit: fxGainLoss }] : []),
   ];
 }
 
@@ -603,7 +647,7 @@ export function accountTotals(run: PaymentRun): AccountTotal[] {
 export function projectedAccountTotals(selected: Invoice[]): AccountTotal[] {
   return accountTotalsFromPairs(
     selected.map((inv) => ({
-      accountId: vendorPayDefaults(inv.vendor, inv.currency).payFromAccountId,
+      accountId: vendorPayDefaults(inv.vendor, inv.currency, inv.youPayIn).payFromAccountId,
       amount: inv.outstandingBalance,
       currency: inv.currency,
     })),
@@ -892,6 +936,9 @@ export function buildRunExecution(
    *  pass, in the payment's currency. Less than what is open leaves the
    *  rest on the run. Omitted = all. */
   cashAmounts?: Record<string, number>,
+  /** The invoices, for the rate each line was carried at when a line
+   *  predates carrying it (Currency & Exchange Rates). */
+  invoices: Invoice[] = [],
 ): RunExecutionPlan {
   const today = todayIso();
   const scheduled = run.paymentDate > today;
@@ -979,6 +1026,27 @@ export function buildRunExecution(
 
     if (amount <= 0.004) return; // fully credit-covered, no cash record
 
+    // Currency & Exchange Rates: the vendor receives the group's currency.
+    // From a base account the bank's figure (entered at Execute, else the
+    // payment date's rate) sets the rate; A/P clears at each invoice's
+    // rate and the rest is the realized FX Gain/Loss.
+    const account = PAY_FROM_ACCOUNTS.find((a) => a.id === group.payFromAccountId);
+    const accountCurrency = account?.currency ?? BASE_CURRENCY;
+    const converts = groupConverts(group);
+    const bankTook = converts ? groupBankTook(run, group, amount) : undefined;
+    const payRate = isBaseCurrency(currency)
+      ? 1
+      : converts && bankTook != null
+        ? derivedRate(amount, bankTook) ?? groupRate(run, group)
+        : groupRate(run, group);
+    const invoiceRateOf = (line: PaymentRunLine) => {
+      if (line.invoiceRate) return line.invoiceRate;
+      const inv = invoices.find((i) => i.id === line.invoiceId);
+      return inv ? invoiceFx(inv).rate : payRate;
+    };
+    const creditTotal = round2(cashSlices.reduce((s, c) => s + c.credit, 0));
+    const hasAdvance = cashSlices.some((c) => c.line.isPreInvoice);
+
     records.push({
       id: paymentId,
       paymentNumber: claimPaymentNumber(),
@@ -995,11 +1063,13 @@ export function buildRunExecution(
         .map((c) => ({ invoiceNumber: c.line.invoiceNumber, amount: c.cash })),
       appliedAmount: scheduled ? 0 : amount,
       unappliedAmount: 0,
-      // In the group's currency (Currency & Exchange Rates), with that
-      // currency's rate on the payment date; a base-currency account still
-      // pays in it, so there is no separate settled currency.
+      // In the group's currency, what the vendor receives (Currency &
+      // Exchange Rates); from a base account, what the bank took and the
+      // rate worked out from it, else the payment date's rate.
       currency,
       ...stampPaymentRate(currency, run.paymentDate),
+      ...(isBaseCurrency(currency) ? {} : { exchangeRate: payRate }),
+      ...(converts && bankTook != null ? { bankAmount: bankTook, rateEdited: group.bankAmount != null || undefined } : {}),
       // The reference typed at recording wins (9/22/26 review response,
       // Claude C11-X1) — the generated trace is only the fallback. Checks
       // without one get their number at Print.
@@ -1034,21 +1104,44 @@ export function buildRunExecution(
         ? group.creditApplied.map((d) => ({ sourcePaymentId: d.paymentId, sourcePaymentNumber: d.paymentNumber, amount: d.amount }))
         : undefined,
       perInvoiceSplit: cashSlices.map((c) => ({ invoiceNumber: c.line.invoiceNumber, cash: c.cash, credit: c.credit })),
-      glEntries: paymentGlInBase(buildPaymentGlEntries({
-        type: 'Payment',
-        cashAmount: amount,
-        bankAccount: payFromGlFor(group.payFromAccountId),
-        apAccount: groupApAccount,
-        appliedCreditTotal: round2(cashSlices.reduce((s, c) => s + c.credit, 0)),
-        creditAssetAccount: DEFAULT_PREPAYMENT_ASSET_ACCOUNT,
-        description: `Payment run ${run.id} · ${group.vendor}`,
-        // Pre-invoice slices are advances (user 10/22/26): they debit the
-        // group's advances account, invoices debit payables.
-        advanceDebit: {
-          account: advanceAccountFor(group),
-          amount: round2(cashSlices.filter((c) => c.line.isPreInvoice).reduce((s, c) => s + c.cash + c.credit, 0)),
-        },
-      }), currency, paymentRateOn(currency, run.paymentDate)),
+      // A foreign payment of invoices posts with its FX Gain/Loss
+      // (paymentRules.buildPaymentGlFx, the rule Record Payment uses); one
+      // that pays advances (pre-invoices) is booked at what it cost.
+      glEntries: !isBaseCurrency(currency) && !hasAdvance
+        ? buildPaymentGlFx({
+            currency,
+            lines: cashSlices.map((c) => ({
+              invoiceNumber: c.line.invoiceNumber,
+              amount: round2(c.cash + c.credit),
+              rate: invoiceRateOf(c.line),
+              rateDate: c.line.invoiceRateDate,
+              apAccount: c.line.apAccount ?? groupApAccount,
+            })),
+            apAccount: groupApAccount,
+            credits: creditTotal > 0.004 ? [{ amount: creditTotal, rate: payRate, account: DEFAULT_PREPAYMENT_ASSET_ACCOUNT }] : [],
+            cash: amount,
+            bankGl: payFromGlFor(group.payFromAccountId),
+            accountCurrency,
+            bankAmount: bankTook,
+            paymentRate: payRate,
+            paymentDate: run.paymentDate,
+            description: `Payment run ${run.id} · ${group.vendor}`,
+          }).entries
+        : glAtRate(buildPaymentGlEntries({
+            type: 'Payment',
+            cashAmount: amount,
+            bankAccount: payFromGlFor(group.payFromAccountId),
+            apAccount: groupApAccount,
+            appliedCreditTotal: creditTotal,
+            creditAssetAccount: DEFAULT_PREPAYMENT_ASSET_ACCOUNT,
+            description: `Payment run ${run.id} · ${group.vendor}`,
+            // Pre-invoice slices are advances (user 10/22/26): they debit the
+            // group's advances account, invoices debit payables.
+            advanceDebit: {
+              account: advanceAccountFor(group),
+              amount: round2(cashSlices.filter((c) => c.line.isPreInvoice).reduce((s, c) => s + c.cash + c.credit, 0)),
+            },
+          }), currency, payRate),
       // Check trail (Eli 9/25): a reference issued by the print flow's
       // blocking confirm records as PRINTED; a hand-typed number means
       // the check exists outside the flow — a MANUAL check.
@@ -1061,27 +1154,3 @@ export function buildRunExecution(
   return { records, settleNow, creditDraws, groupPayments, partialPayments, lineRecorded, creditPostedGroups };
 }
 
-/** A payment's journal in the base currency, the ledger's (Currency &
- *  Exchange Rates): debit and credit post at the payment's rate, each line
- *  keeping its payment-currency amount and the rate, the snapshot the
- *  invoice journal keeps (glFx). Cent rounding lands on the largest debit
- *  so the entry still balances. */
-function paymentGlInBase(lines: GlEntryLine[], currency: string, rate: number): GlEntryLine[] {
-  if (isBaseCurrency(currency)) return lines;
-  const total = (side: 'debit' | 'credit', rows: GlEntryLine[]) => round2(rows.reduce((s, l) => s + (l[side] ?? 0), 0));
-  const balanced = Math.abs(total('debit', lines) - total('credit', lines)) < 0.005;
-  const out: GlEntryLine[] = lines.map((l) => ({
-    ...l,
-    ...(l.debit != null ? { debit: toBase(l.debit, rate) } : {}),
-    ...(l.credit != null ? { credit: toBase(l.credit, rate) } : {}),
-    currency,
-    foreignAmount: l.debit ?? l.credit ?? 0,
-    rate,
-  }));
-  const diff = round2(total('credit', out) - total('debit', out));
-  if (balanced && Math.abs(diff) >= 0.005) {
-    const largest = out.reduce((best, l, i) => ((l.debit ?? 0) > (out[best].debit ?? 0) ? i : best), 0);
-    if (out[largest].debit != null) out[largest] = { ...out[largest], debit: round2((out[largest].debit ?? 0) + diff) };
-  }
-  return out;
-}

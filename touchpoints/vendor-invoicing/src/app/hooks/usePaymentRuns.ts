@@ -3,6 +3,7 @@ import type { Invoice } from '@/app/data/mockInvoices';
 import type { Payment } from '@/app/data/mockPayments';
 import {
   SEED_RUNS,
+  lineFxOf,
   groupKeyOf,
   nextRunId,
   openRunInvoiceIds,
@@ -76,8 +77,10 @@ export function usePaymentRuns(deps: UsePaymentRunsDeps) {
             invoiceId: inv.id,
             invoiceNumber: inv.invoiceNumber,
             vendor: inv.vendor,
-            // Its currency decides its payment (Currency & Exchange Rates).
+            // Its currency decides its payment (Currency & Exchange Rates);
+            // its rate and You pay in ride along.
             currency: inv.currency,
+            ...lineFxOf(inv),
             dueDate: inv.dueDate,
             balanceAtAdd: inv.outstandingBalance,
             payAmount: inv.outstandingBalance - discount,
@@ -442,7 +445,7 @@ export function usePaymentRuns(deps: UsePaymentRunsDeps) {
       const validation = revalidateRun(run, invoices);
       if (!validation.ok) return { ok: false as const, validation };
 
-      const plan = buildRunExecution(run, run.approvedBy, groupKeys, cashAmounts);
+      const plan = buildRunExecution(run, run.approvedBy, groupKeys, cashAmounts, invoices);
       if (plan.records.length === 0) return { ok: false as const };
       setPayments((prev) => [...plan.records, ...prev]);
       if (plan.settleNow.length > 0) settleInvoices(plan.settleNow);
@@ -468,8 +471,9 @@ export function usePaymentRuns(deps: UsePaymentRunsDeps) {
             partialPaymentIds: partialId ? [...(g.partialPaymentIds ?? []), partialId] : g.partialPaymentIds,
             creditPosted: g.creditPosted || plan.creditPostedGroups.includes(key) || undefined,
             // The reference belongs to the payment just posted; the next
-            // pass needs its own trace or check number.
-            ...(partialId ? { reference: undefined, printedViaFlow: undefined } : {}),
+            // pass needs its own trace or check number, and its own bank
+            // figure (Currency & Exchange Rates).
+            ...(partialId ? { reference: undefined, printedViaFlow: undefined, bankAmount: undefined } : {}),
           };
         });
         // Scaffold the print stage: wires get their instruction rows now;

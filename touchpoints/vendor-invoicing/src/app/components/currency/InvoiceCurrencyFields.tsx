@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/pop
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/ui/hover-card';
 import { BASE_CURRENCY, CURRENCIES, getCurrency } from '@/app/currency/currencies';
-import { formatRate, formatRateDate } from '@/app/currency/money';
+import { formatRate, formatRateDate, moneyPrefix, rateSentence } from '@/app/currency/money';
 import { RATE_PROVIDER, RATE_TYPE_LABEL, type RateQuote, type RateType } from '@/app/currency/rates';
 import type { InvoiceRateBasis } from '@/app/data/mockInvoices';
 import { CurrencyFlag } from './CurrencyChip';
@@ -32,8 +32,19 @@ function InfoTip({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Every active currency, searchable by code, name or country (spec 2.3). */
-function CurrencyPicker({ value, onChange }: { value: string; onChange: (code: string) => void }) {
+/** Every active currency, searchable by code, name or country (spec 2.3).
+ *  Shared with the invoice's Currency Configuration dialog. */
+export function CurrencyPicker({
+  value,
+  onChange,
+  className = '',
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  className?: string;
+  ariaLabel?: string;
+}) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
   const cur = getCurrency(value);
@@ -48,7 +59,8 @@ function CurrencyPicker({ value, onChange }: { value: string; onChange: (code: s
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={`${FIELD} bg-white border border-border hover:border-primary/45 focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none justify-between cursor-pointer transition-colors`}
+          aria-label={ariaLabel}
+          className={`${FIELD} bg-white border border-border hover:border-primary/45 focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none justify-between cursor-pointer transition-colors ${className}`}
         >
           <span className="flex items-center gap-2 min-w-0">
             <CurrencyFlag code={value} size={18} />
@@ -58,7 +70,7 @@ function CurrencyPicker({ value, onChange }: { value: string; onChange: (code: s
           <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[280px] p-0 rounded-lg">
+      <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[280px] p-0 rounded-lg z-[300]">
         <div className="p-2 border-b border-slate-100">
           <input
             autoFocus
@@ -208,9 +220,9 @@ function PoRateCompare({
         <p className="text-[12px] text-foreground" style={{ fontWeight: 600 }}>Invoice rate vs the PO's rate</p>
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 mt-2 text-[11px]">
           <dt className="text-slate-500">{po.poNumber} · {formatRateDate(po.date)}</dt>
-          <dd className="tabular-nums text-slate-700">{formatRate(po.rate)} {BASE_CURRENCY}</dd>
+          <dd className="tabular-nums text-slate-700">{moneyPrefix(BASE_CURRENCY).trim()}{formatRate(po.rate)} {BASE_CURRENCY}</dd>
           <dt className="text-slate-500">This invoice · {formatRateDate(invoiceDate)}</dt>
-          <dd className="tabular-nums text-slate-700" style={{ fontWeight: 600 }}>{formatRate(invoiceRate)} {BASE_CURRENCY}</dd>
+          <dd className="tabular-nums text-slate-700" style={{ fontWeight: 600 }}>{moneyPrefix(BASE_CURRENCY).trim()}{formatRate(invoiceRate)} {BASE_CURRENCY}</dd>
         </dl>
         <p className="text-[11px] mt-2 leading-snug" style={{ color: flat ? '#64748B' : up ? '#B45309' : '#047857' }}>
           {flat
@@ -314,13 +326,14 @@ export function InvoiceExchangeRateField({
           </TooltipContent>
         </Tooltip>
         <p className="text-[11px] text-slate-400 mt-1 truncate">
-          {midQuote.rate != null ? `Today's mid-market rate is 1 ${currency} = ${formatRate(midQuote.rate)} ${BASE_CURRENCY}.` : ''}
+          {midQuote.rate != null ? `Today's mid-market rate is ${rateSentence(currency, midQuote.rate)}.` : ''}
         </p>
       </div>
     );
   }
 
-  const prefix = <span className="text-slate-500 whitespace-nowrap shrink-0">1 {currency} =</span>;
+  // Written the Currencies way: "1 GBP = ₨ 355.4200 PKR".
+  const prefix = <span className="text-slate-500 whitespace-nowrap shrink-0">1 {currency} = {moneyPrefix(BASE_CURRENCY).trim()}</span>;
   const suffix = <span className="text-slate-500 shrink-0">{BASE_CURRENCY}</span>;
 
   return (

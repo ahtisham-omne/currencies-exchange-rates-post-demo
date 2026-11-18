@@ -38,6 +38,24 @@ import { CollapseReveal } from '@/app/components/ui/collapse-reveal';
 import { MoneyOnDates } from '@/app/components/currency/MoneyOnDates';
 import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { formatMoney } from '@/app/currency/money';
+import { BaseMoney } from '@/app/components/currency/Money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { poRateFx } from '@/app/currency/invoiceFx';
+import { toBase } from '@/app/currency/rates';
+
+/* ── PO amounts in the base currency (Currency & Exchange Rates) ───────
+ * The picker lists show amounts in base by default, as every list does: a
+ * PO's figures at the PO's own rate (its PO date), the PO's currency on
+ * hover; a receiving's value at the receiving date's rate (MoneyOnDates);
+ * a prepayment at the rate it was paid, which it keeps. */
+type PoRateRef = { currency?: string; exchangeRate?: number; poDate: string } | undefined;
+function PoMoney({ value, currency, po }: { value: number; currency: string; po: PoRateRef }) {
+  const fx = po ? poRateFx({ currency: po.currency ?? currency, exchangeRate: po.exchangeRate, poDate: po.poDate }) : null;
+  return <BaseMoney value={value} currency={po?.currency ?? currency} fx={fx} role="PO currency" dateLabel="PO date" />;
+}
+/** A prepayment in base at its locked rate (as text, for chips and tooltips). */
+const prepaidText = (ctx: { amount: number; rate?: number }, currency: string) =>
+  ctx.rate ? formatMoney(toBase(ctx.amount, ctx.rate), BASE_CURRENCY) : formatMoney(ctx.amount, currency);
 
 // Material UI Imports
 import dayjs from 'dayjs';
@@ -83,7 +101,7 @@ interface VendorSelectionModalProps {
   /** Reconciliation flags (Eli, 8/31/26): POs whose pre-invoices carry
    *  paid prepayments — the card wears a violet Prepaid chip so the
    *  user knows creating an invoice here consumes the prepayment. */
-  prepaidPOContext?: Record<string, { preInvoiceNumber: string; amount: number }>;
+  prepaidPOContext?: Record<string, { preInvoiceNumber: string; amount: number; rate?: number; rateDate?: string }>;
 }
 
 export interface SelectedPOData {
@@ -2602,7 +2620,7 @@ interface VendorNestedRowProps {
    *  scrolling through its POs / receivers (BA UX feedback). */
   stickyTop?: number;
   /** POs with paid prepayments against their pre-invoices. */
-  prepaidPOContext?: Record<string, { preInvoiceNumber: string; amount: number }>;
+  prepaidPOContext?: Record<string, { preInvoiceNumber: string; amount: number; rate?: number; rateDate?: string }>;
   /** Which creation flow opened the picker (9/4/26 split). */
   flowKind?: 'pre' | 'post';
 }
@@ -3647,7 +3665,7 @@ function VendorNestedRow({
                                 <Tooltip delayDuration={150}>
                                   <TooltipTrigger asChild>
                                     <span className="text-[9px] font-bold px-1.5 py-0.25 rounded-sm border bg-violet-50 text-violet-700 border-violet-200 cursor-help">
-                                      {`Prepaid · ${formatMoney(ctx.amount, vendor.currency)}`}
+                                      {`Prepaid · ${prepaidText(ctx, vendor.currency)}`}
                                     </span>
                                   </TooltipTrigger>
                                   {/* The full reconciliation story lives in
@@ -3658,7 +3676,7 @@ function VendorNestedRow({
                                     <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 500 }}>Prepaid on this PO</p>
                                     <p className="text-[11px] text-slate-500 leading-snug mt-0.5 ">
                                       <span className="text-violet-700" style={{ fontWeight: 600 }}>{ctx.preInvoiceNumber}</span> already paid{' '}
-                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>{formatMoney(ctx.amount, vendor.currency)}</span> against PO-{po.poNumber}. It's applied automatically when you invoice this receiving.
+                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>{prepaidText(ctx, vendor.currency)}</span> against PO-{po.poNumber}. It's applied automatically when you invoice this receiving.
                                     </p>
                                   </TooltipContent>
                                 </Tooltip>
@@ -3701,7 +3719,7 @@ function VendorNestedRow({
                                     : 'text-green-600 bg-green-50 border-green-100'
                                 } px-1.5 py-0.5 border rounded flex items-center gap-1`}>
                                   {isPreInvoiceEligible ? <Tag className="w-2.5 h-2.5" /> : <CheckCircle2 className="w-2.5 h-2.5" />}
-                                  {isPreInvoiceEligible ? 'Pre-Invoice' : 'Invoiced'}: {formatMoney(po.invoicedAmount ?? 0, vendor.currency)}
+                                  {isPreInvoiceEligible ? 'Pre-Invoice' : 'Invoiced'}: <PoMoney value={po.invoicedAmount ?? 0} currency={vendor.currency} po={po} />
                                   {isPreInvoiceEligible && (
                                     <Tooltip>
                                       <TooltipTrigger asChild>
@@ -3723,6 +3741,7 @@ function VendorNestedRow({
                                 poDate={po.poDate}
                                 receivingDate={vendor.receivingDocuments.filter((g) => g.poNumber === po.poNumber).map((g) => g.grnDate).sort().pop()}
                                 role="PO currency"
+                                baseDay="poDate"
                               />
                             </span>
                           </div>
@@ -3925,7 +3944,7 @@ function VendorNestedRow({
                                     </td>
                                     <td className="px-4 py-3 text-right">
                                       <div className="font-semibold text-gray-900">{item.quantity} {item.uom}</div>
-                                      <div className="text-[10px] font-medium text-gray-500">{formatMoney(item.quantity * item.unitPrice, vendor.currency)}</div>
+                                      <div className="text-[10px] font-medium text-gray-500"><PoMoney value={item.quantity * item.unitPrice} currency={vendor.currency} po={po} /></div>
                                     </td>
                                     {/* Received Qty — BA UX feedback. Lights up
                                         red when received exceeds ordered (over-
@@ -3952,11 +3971,11 @@ function VendorNestedRow({
                                         <span className={`font-bold ${isFullyInvoiced ? 'text-success' : isPartiallyInvoiced ? 'text-success/80' : 'text-gray-400'}`}>
                                           {item.invoicedQty || 0} {item.uom}
                                         </span>
-                                        <span className={`text-[10px] font-semibold ${prevInvoicedAmt > 0 ? 'text-success/70' : 'text-gray-300'}`}>{formatMoney(prevInvoicedAmt, vendor.currency)}</span>
+                                        <span className={`text-[10px] font-semibold ${prevInvoicedAmt > 0 ? 'text-success/70' : 'text-gray-300'}`}><PoMoney value={prevInvoicedAmt} currency={vendor.currency} po={po} /></span>
                                       </div>
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                      <div className="font-semibold text-gray-900">{formatMoney(item.unitPrice, vendor.currency)}</div>
+                                      <div className="font-semibold text-gray-900"><PoMoney value={item.unitPrice} currency={vendor.currency} po={po} /></div>
                                       <div className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>per {item.uom}</div>
                                     </td>
                                     {/* Remaining Qty — quantity only (per BA:
@@ -4172,14 +4191,14 @@ function VendorNestedRow({
                                 <Tooltip delayDuration={150}>
                                   <TooltipTrigger asChild>
                                     <span className="text-[9px] font-bold px-1.5 py-0.25 rounded-sm border bg-violet-50 text-violet-700 border-violet-200 cursor-help">
-                                      {`Prepaid · ${formatMoney(ctx.amount, vendor.currency)}`}
+                                      {`Prepaid · ${prepaidText(ctx, vendor.currency)}`}
                                     </span>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className="max-w-[290px] p-2.5 bg-white border border-border rounded-lg shadow-md">
                                     <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 500 }}>Prepaid on this PO</p>
                                     <p className="text-[11px] text-slate-500 leading-snug mt-0.5 ">
                                       <span className="text-violet-700" style={{ fontWeight: 600 }}>{ctx.preInvoiceNumber}</span> already paid{' '}
-                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>{formatMoney(ctx.amount, vendor.currency)}</span> against PO-{grn.poNumber}. It's applied automatically when you invoice this receiving.
+                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>{prepaidText(ctx, vendor.currency)}</span> against PO-{grn.poNumber}. It's applied automatically when you invoice this receiving.
                                     </p>
                                   </TooltipContent>
                                 </Tooltip>
@@ -4276,14 +4295,14 @@ function VendorNestedRow({
                                 <Tooltip delayDuration={150}>
                                   <TooltipTrigger asChild>
                                     <span className="text-[9px] font-bold px-1.5 py-0.25 rounded-sm border bg-violet-50 text-violet-700 border-violet-200 cursor-help">
-                                      {`Prepaid · ${formatMoney(ctx.amount, vendor.currency)}`}
+                                      {`Prepaid · ${prepaidText(ctx, vendor.currency)}`}
                                     </span>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className="max-w-[290px] p-2.5 bg-white border border-border rounded-lg shadow-md">
                                     <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 500 }}>Prepaid on this PO</p>
                                     <p className="text-[11px] text-slate-500 leading-snug mt-0.5 ">
                                       <span className="text-violet-700" style={{ fontWeight: 600 }}>{ctx.preInvoiceNumber}</span> already paid{' '}
-                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>{formatMoney(ctx.amount, vendor.currency)}</span> against PO-{grn.poNumber}. It's applied automatically when you invoice this receiving.
+                                      <span className="text-violet-700" style={{ fontWeight: 600 }}>{prepaidText(ctx, vendor.currency)}</span> against PO-{grn.poNumber}. It's applied automatically when you invoice this receiving.
                                     </p>
                                   </TooltipContent>
                                 </Tooltip>
@@ -4451,7 +4470,7 @@ function VendorNestedRow({
                                       </div>
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                      <div className="font-semibold text-gray-900">{formatMoney(item.unitPrice, vendor.currency)}</div>
+                                      <div className="font-semibold text-gray-900"><PoMoney value={item.unitPrice} currency={vendor.currency} po={po} /></div>
                                       <div className="text-[10px] text-slate-400" style={{ fontWeight: 500 }}>per {item.uom}</div>
                                     </td>
                                     {/* Received, quantity only (per BA). */}
@@ -4471,12 +4490,12 @@ function VendorNestedRow({
                                                 <div className="space-y-2 text-left">
                                                   <div className="flex items-center justify-between">
                                                     <span className="text-[9px] font-bold text-success tracking-widest">Linked Invoices</span>
-                                                    <span className="text-[9px] font-semibold text-gray-400">Total: {formatMoney(invoicedValue, vendor.currency)}</span>
+                                                    <span className="text-[9px] font-semibold text-gray-400">Total: <PoMoney value={invoicedValue} currency={vendor.currency} po={po} /></span>
                                                   </div>
                                                   <div className="space-y-1">
                                                     <div className="flex items-center justify-between border-b border-gray-50 pb-1">
                                                       <span className="text-[10px] font-semibold text-gray-900">PINV-001-V001</span>
-                                                      <span className="text-[10px] font-bold text-success">{formatMoney(invoicedValue, vendor.currency)}</span>
+                                                      <span className="text-[10px] font-bold text-success"><PoMoney value={invoicedValue} currency={vendor.currency} po={po} /></span>
                                                     </div>
                                                   </div>
                                                   <p className="text-[10px] text-gray-500 font-medium">This quantity has already been recorded in preceding invoices.</p>
@@ -4485,7 +4504,7 @@ function VendorNestedRow({
                                             </HoverCard>
                                           )}
                                         </div>
-                                        <div className="text-[10px] font-semibold text-success/70">{formatMoney(invoicedValue, vendor.currency)}</div>
+                                        <div className="text-[10px] font-semibold text-success/70"><PoMoney value={invoicedValue} currency={vendor.currency} po={po} /></div>
                                       </div>
                                     </td>
                                     {/* Remaining, quantity only (per BA). */}

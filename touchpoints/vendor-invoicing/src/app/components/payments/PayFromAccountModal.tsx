@@ -6,6 +6,9 @@ import type { PayFromAccount } from '@/app/data/mockPayments';
 import { highlightText } from '@/app/components/InvoiceDataTable';
 import { formatMoney } from '@/app/currency/money';
 import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
+import { payFromBlockReason, payFromCurrencies } from '@/app/currency/paymentRules';
+import { isBaseCurrency } from '@/app/currency/currencies';
 
 // Pay-from account picker — mirrors the standalone GL Configuration modal
 // (GLAccountConfigModal) so the payment flow's account selection uses the same
@@ -20,6 +23,12 @@ interface PayFromAccountModalProps {
   /** Accounts eligible for the chosen method. */
   accounts: PayFromAccount[];
   onApply: (id: string) => void;
+  /** The invoices' currency (Currency & Exchange Rates): only an account in
+   *  it or in the base currency can pay; the rest are listed greyed with the
+   *  reason ("This account is in EUR. Pick a GBP or PKR account."). */
+  invoiceCurrency?: string;
+  /** The PO's You pay in, marked on the accounts in it. */
+  youPayIn?: string;
 }
 
 const GROUP_LABEL: Record<PayFromAccount['type'], string> = {
@@ -32,7 +41,8 @@ const GROUP_ORDER: PayFromAccount['type'][] = ['bank', 'card', 'cash'];
 // Each balance in its account's own currency (Currency & Exchange Rates).
 const fmtIn = (n: number, code: string) => formatMoney(n, code);
 
-export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApply }: PayFromAccountModalProps) {
+export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApply, invoiceCurrency, youPayIn }: PayFromAccountModalProps) {
+  const reasonFor = (a: PayFromAccount) => (invoiceCurrency ? payFromBlockReason(a.currency, invoiceCurrency) : null);
   const [draft, setDraft] = useState(value);
   const [search, setSearch] = useState('');
 
@@ -57,11 +67,14 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
 
   const grouped = useMemo(() => {
     const g: Record<string, PayFromAccount[]> = {};
-    filtered.forEach((a) => {
+    // Accounts that can pay first; the greyed ones after them in each group.
+    const rank = (a: PayFromAccount) => (invoiceCurrency && payFromBlockReason(a.currency, invoiceCurrency) ? 1 : 0);
+    [...filtered].sort((a, b) => rank(a) - rank(b)).forEach((a) => {
       (g[a.type] ??= []).push(a);
     });
     return g;
-  }, [filtered]);
+  }, [filtered, invoiceCurrency]);
+  const usable = filtered.filter((a) => !reasonFor(a)).length;
 
   if (!open) return null;
 
@@ -85,7 +98,9 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
                 Pay-From Account
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5" style={{ fontWeight: 400 }}>
-                Select the account this payment draws from: one in the payment currency or the base currency. All balances are book balances from your ledger.
+                {invoiceCurrency
+                  ? `Select the account this payment draws from: ${payFromCurrencies(invoiceCurrency).length > 1 ? `one in ${payFromCurrencies(invoiceCurrency)[0]}, the invoices’ currency, or in ${payFromCurrencies(invoiceCurrency)[1]}, the base currency` : `one in ${payFromCurrencies(invoiceCurrency)[0]}`}. All balances are book balances from your ledger.`
+                  : 'Select the account this payment draws from. All balances are book balances from your ledger.'}
               </p>
             </div>
           </div>
@@ -131,16 +146,19 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
                 <div className="px-3 py-1.5">
                   {grouped[type].map((acct) => {
                     const isSelected = draft === acct.id;
+                    const reason = reasonFor(acct);
                     const sub = [
                       acct.bankName,
                       acct.accountMask ? `••••${acct.accountMask}` : null,
                       acct.accountTypeLabel,
                     ].filter(Boolean);
-                    return (
+                    const row = (
                       <button
                         key={acct.id}
-                        onClick={() => setDraft(acct.id)}
-                        className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-md text-left transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                        onClick={() => { if (!reason) setDraft(acct.id); }}
+                        disabled={!!reason}
+                        aria-disabled={!!reason}
+                        className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-md text-left transition-colors ${reason ? 'opacity-50 cursor-not-allowed' : isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -155,7 +173,17 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
                             </span>
                             {/* The account's currency (Currency & Exchange Rates). */}
                             <CurrencyChip code={acct.currency} size={12} className="text-[10.5px] text-slate-500 shrink-0" />
+                            {!reason && youPayIn && invoiceCurrency && acct.currency === youPayIn.toUpperCase() && !isBaseCurrency(youPayIn) && (
+                              <span className="text-[9.5px] px-1.5 py-px rounded-full bg-slate-100 text-slate-500 shrink-0" style={{ fontWeight: 600 }}>
+                                You pay in
+                              </span>
+                            )}
                           </div>
+                          {reason && (
+                            <div className="mt-0.5 text-[10px] text-slate-500 truncate" style={{ fontWeight: 500 }}>
+                              {reason}
+                            </div>
+                          )}
                           {sub.length > 0 && (
                             <div className="mt-0.5 text-[10px] text-slate-400 truncate" style={{ fontWeight: 500 }}>
                               {sub.map((part, i) => (
@@ -204,6 +232,18 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
                         </div>
                       </button>
                     );
+                    return reason ? (
+                      <Tooltip key={acct.id}>
+                        <TooltipTrigger asChild>
+                          <div>{row}</div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[260px] z-[300]">
+                          {reason}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      row
+                    );
                   })}
                 </div>
               </div>
@@ -214,7 +254,7 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
         {/* Footer */}
         <div className="px-5 py-3 border-t border-[#EEF2F6] bg-slate-50/40 flex items-center justify-between gap-2">
           <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>
-            {filtered.length} account{filtered.length !== 1 ? 's' : ''} available
+            {usable} account{usable !== 1 ? 's' : ''} available
           </span>
           <div className="flex items-center gap-2">
             <button

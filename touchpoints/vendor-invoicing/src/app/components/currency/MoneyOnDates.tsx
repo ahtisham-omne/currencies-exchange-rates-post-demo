@@ -75,9 +75,13 @@ export function MoneyOnDatesCard({
 }
 
 /**
- * An amount in its currency whose hover shows it on the PO date, the
- * receiving date and today. Base-currency amounts are plain text, as Money
- * does. `children` replaces the rendered text; the hover stays the same.
+ * An amount whose hover shows it on the PO date, the receiving date and
+ * today. The face is in the base currency by default (lists show base;
+ * Currency & Exchange Rates) at `baseDay`'s rate: the receiving date's for a
+ * receiving (what it booked into stock), else the PO date's. `face =
+ * "document"` keeps the vendor's currency. Base-currency amounts are plain
+ * text, as Money does. `children` replaces the rendered text; the hover
+ * stays the same.
  */
 export function MoneyOnDates({
   value,
@@ -86,6 +90,8 @@ export function MoneyOnDates({
   receivingDate,
   role = 'vendor currency',
   className = '',
+  face = 'base',
+  baseDay,
   children,
 }: {
   value: number;
@@ -94,10 +100,16 @@ export function MoneyOnDates({
   receivingDate?: string;
   role?: string;
   className?: string;
+  face?: 'base' | 'document';
+  /** Whose rate the base face uses; the receiving date's, else the PO date's. */
+  baseDay?: RateDayKind;
   children?: React.ReactNode;
 }) {
   const code = (currency || BASE_CURRENCY).toUpperCase();
-  const text = children ?? formatMoney(value, code);
+  const day = baseDay ?? (receivingDate ? 'receivingDate' : poDate ? 'poDate' : 'today');
+  const dayIso = day === 'receivingDate' ? receivingDate : day === 'poDate' ? poDate : undefined;
+  const faceRate = face === 'base' && !isBaseCurrency(code) ? midRateOn(code, dayIso ?? localTodayIso()) : null;
+  const text = children ?? (faceRate != null ? formatMoney(toBase(value, faceRate), BASE_CURRENCY) : formatMoney(value, code));
   if (isBaseCurrency(code) || !value) return <span className={`tabular-nums ${className}`}>{text}</span>;
   const days: { kind: RateDayKind; date: string }[] = [
     ...(poDate ? [{ kind: 'poDate' as const, date: poDate }] : []),

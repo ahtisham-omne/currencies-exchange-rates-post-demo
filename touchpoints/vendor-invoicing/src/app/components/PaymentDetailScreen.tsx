@@ -65,10 +65,15 @@ import { localTodayIso } from '@/app/lib/dueBucket';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, rateSentence } from '@/app/currency/money';
 import { RATE_TYPE_LABEL } from '@/app/currency/rates';
-import { paymentExchangeDifference, paymentFx, settledCurrencyOf, settlementRateOf, toPaymentBase } from '@/app/currency/paymentFx';
+import { paymentFx, settledCurrencyOf } from '@/app/currency/paymentFx';
+import { paymentLedger, configAccounts, type PaymentLedger } from '@/app/currency/paymentLedger';
 import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
-import { Money } from '@/app/components/currency/Money';
-import { ExchangeDifferenceLine } from '@/app/components/currency/ExchangeDifference';
+import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
+import { DocCurrencyProvider, DocMoney } from '@/app/components/currency/DocCurrency';
+import { useDocOtherText } from '@/app/components/currency/docCurrencyContext';
+import { setDocView, useDocViewOf } from '@/app/components/currency/docView';
+import { PaymentCurrencyConfigDialog, PaymentCurrencySummary } from '@/app/components/currency/PaymentCurrencyConfig';
+import { useApPermissions, useApSettings } from '@/app/hooks/useApSettings';
 import { palette } from '@/styles/tokens';
 import { CollapseReveal } from '@/app/components/ui/collapse-reveal';
 import { SegmentedCountPill } from '@/app/components/SegmentedCountPill';
@@ -221,6 +226,8 @@ export function PaymentDetailScreen({
   const [voidOpen, setVoidOpen] = useState(false);
   const isPrepay = payment.type === 'Prepayment';
   const bankCode = payment.bankAccount.split('-')[0];
+  // The account as people know it ("1020 · Corporate Checking"); its id can carry an older name.
+  const bankLabel = PAY_FROM_ACCOUNTS.find((a) => a.id === payment.bankAccount)?.label ?? payment.bankAccount;
 
   const [activeTab, setActiveTab] = useState<TabKey>('applied');
   const [reverseOpen, setReverseOpen] = useState(false);
@@ -260,7 +267,34 @@ export function PaymentDetailScreen({
   // GL lines for this record (PRD §7/§8 GL effects). The AR ledger runs
   // the mirror image: cash comes IN, so the bank line debits and the
   // receivable / deposit line credits (7/20/26).
+  // Currency & Exchange Rates: the payment in the base-currency ledger
+  // (currency/paymentLedger.ts): its journal, the bank's and the day's rate,
+  // what A/P carried and the realized FX Gain/Loss. The page shows amounts
+  // in base by default with the invoices' currency on hover; the header
+  // toggle flips them (the view is the session's, never an edit).
+  const ledgerFx: PaymentLedger | null = useMemo(
+    () => (ledger === 'ap' ? paymentLedger(payment, invoices) : null),
+    [payment, invoices, ledger],
+  );
+  const viewKey = `payment:${payment.id}`;
+  const view = useDocViewOf(viewKey);
+  const [currencyOpen, setCurrencyOpen] = useState(false);
+  const apSettings = useApSettings();
+  const apPerms = useApPermissions();
   const glLines = useMemo(() => {
+    // A vendor payment posts in base (Currency & Exchange Rates): A/P at
+    // the invoices' rates, the bank at what it cost, the rest to Realized
+    // FX Gain/Loss. Each line keeps its invoice-currency amount beneath.
+    if (ledgerFx && !isBaseCurrency(ledgerFx.currency)) {
+      return ledgerFx.entries.map((e) => ({
+        code: e.accountCode,
+        name: e.accountName,
+        desc: e.description ?? '',
+        debit: e.debit ?? 0,
+        credit: e.credit ?? 0,
+        foreign: e.currency && e.foreignAmount != null ? formatMoney(e.foreignAmount, e.currency) : undefined,
+      }));
+    }
     // Records created this session carry the exact journal the
     // confirmation showed (lib/glPosting.ts snapshot) — including the
     // vendor-credit line the 9/20 reviews found dropped. Render it
@@ -277,12 +311,12 @@ export function PaymentDetailScreen({
     if (ledger === 'ar') {
       if (isPrepay) {
         return [
-          { code: bankCode, name: `Bank · ${payment.bankAccount}`, desc: 'Cash in', debit: payment.amount, credit: 0 },
+          { code: bankCode, name: `Bank · ${bankLabel}`, desc: 'Cash in', debit: payment.amount, credit: 0 },
           { code: '2400', name: 'Customer Deposits', desc: `Advance from ${payment.vendor}`, debit: 0, credit: payment.amount },
         ];
       }
       return [
-        { code: bankCode, name: `Bank · ${payment.bankAccount}`, desc: 'Cash in', debit: payment.amount, credit: 0 },
+        { code: bankCode, name: `Bank · ${bankLabel}`, desc: 'Cash in', debit: payment.amount, credit: 0 },
         { code: '1200', name: 'Accounts Receivable', desc: `Settles ${payment.appliedInvoices.length} invoice${payment.appliedInvoices.length === 1 ? '' : 's'}`, debit: 0, credit: payment.amount },
       ];
     }
@@ -293,15 +327,15 @@ export function PaymentDetailScreen({
       const asset = splitAccount(payment.apAccount || DEFAULT_PREPAYMENT_ASSET_ACCOUNT);
       return [
         { code: asset.code, name: asset.name || 'Vendor Prepayments', desc: `Advance to ${payment.vendor}`, debit: payment.amount, credit: 0 },
-        { code: bankCode, name: `Bank · ${payment.bankAccount}`, desc: 'Cash out', debit: 0, credit: payment.amount },
+        { code: bankCode, name: `Bank · ${bankLabel}`, desc: 'Cash out', debit: 0, credit: payment.amount },
       ];
     }
     const ap = splitAccount(payment.apAccount || '2000 Accounts Payable');
     return [
       { code: ap.code, name: ap.name || 'Accounts Payable', desc: `Settles ${payment.appliedInvoices.length} invoice${payment.appliedInvoices.length === 1 ? '' : 's'}`, debit: payment.amount, credit: 0 },
-      { code: bankCode, name: `Bank · ${payment.bankAccount}`, desc: 'Cash out', debit: 0, credit: payment.amount },
+      { code: bankCode, name: `Bank · ${bankLabel}`, desc: 'Cash out', debit: 0, credit: payment.amount },
     ];
-  }, [payment, isPrepay, bankCode, ledger]);
+  }, [payment, isPrepay, bankCode, ledger, ledgerFx]);
   const drTotal = glLines.reduce((s, l) => s + l.debit, 0);
   const crTotal = glLines.reduce((s, l) => s + l.credit, 0);
 
@@ -419,10 +453,10 @@ export function PaymentDetailScreen({
       : `A/P account ${payment.apAccount}`;
     const refPart = payment.reference?.trim() ? ` (ref ${payment.reference.trim()})` : '';
     const movementClause = payment.status === 'Scheduled'
-      ? `Scheduled to ${ledger === 'ar' ? 'receive' : 'pay'} ${payment.paymentMethod} ${ledger === 'ar' ? 'into' : 'from'} ${payment.bankAccount}${refPart} on ${prettyDate(payment.paymentDate)}`
+      ? `Scheduled to ${ledger === 'ar' ? 'receive' : 'pay'} ${payment.paymentMethod} ${ledger === 'ar' ? 'into' : 'from'} ${bankLabel}${refPart} on ${prettyDate(payment.paymentDate)}`
       : payment.status === 'Reversed'
-        ? `Was ${ledger === 'ar' ? 'received' : 'paid'} ${payment.paymentMethod} ${ledger === 'ar' ? 'into' : 'from'} ${payment.bankAccount}${refPart} on ${prettyDate(payment.paymentDate)}, then reversed`
-        : `${ledger === 'ar' ? 'Received' : 'Paid'} ${payment.paymentMethod} ${ledger === 'ar' ? 'into' : 'from'} ${payment.bankAccount}${refPart} on ${prettyDate(payment.paymentDate)}`;
+        ? `Was ${ledger === 'ar' ? 'received' : 'paid'} ${payment.paymentMethod} ${ledger === 'ar' ? 'into' : 'from'} ${bankLabel}${refPart} on ${prettyDate(payment.paymentDate)}, then reversed`
+        : `${ledger === 'ar' ? 'Received' : 'Paid'} ${payment.paymentMethod} ${ledger === 'ar' ? 'into' : 'from'} ${bankLabel}${refPart} on ${prettyDate(payment.paymentDate)}`;
     return [railClause, movementClause, balanceClause, railAccount, `Created by ${payment.createdBy}`]
       .map(endStop)
       .join(' ');
@@ -625,6 +659,18 @@ export function PaymentDetailScreen({
 
                 {/* Right: Fullscreen + Actions + primary CTA */}
                 <div className="flex items-center shrink-0 transition-all duration-250" style={{ gap: isScrolled ? 6 : 8 }}>
+                  {/* The Base Currency | Vendor Currency toggle and the
+                      Currency button (Currency & Exchange Rates). */}
+                  {ledger === 'ap' && (
+                    <CurrencyHeaderControls
+                      currency={payment.currency}
+                      view={view}
+                      onViewChange={(v) => setDocView(viewKey, v)}
+                      onOpenConfig={() => setCurrencyOpen(true)}
+                      what="payment"
+                      compact={isScrolled}
+                    />
+                  )}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
@@ -778,6 +824,13 @@ export function PaymentDetailScreen({
       {/* ══════════════════════════════════════════════
           BODY
          ══════════════════════════════════════════════ */}
+      <DocCurrencyProvider
+        currency={payment.currency}
+        fx={ledger === 'ap' ? paymentFx(payment) : null}
+        dateLabel="payment date"
+        role="invoice currency"
+        view={view}
+      >
       <div className="flex-1">
         <div className={`mx-auto px-3 pt-3 pb-3 transition-all duration-300 ${isFullscreen ? 'max-w-full' : 'max-w-[1440px] 2xl:max-w-[1600px]'}`}>
           <div className="flex gap-4 items-start">
@@ -796,7 +849,7 @@ export function PaymentDetailScreen({
                       This {isPrepay ? 'prepayment' : 'payment'} was reversed
                     </p>
                     <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">
-                      {formatMoney(payment.amount, payment.currency)} returned to {payment.bankAccount} via {payment.paymentMethod}
+                      {formatMoney(payment.amount, payment.currency)} returned to {bankLabel} via {payment.paymentMethod}
                       {payment.reference ? ` (ref ${payment.reference})` : ''}.
                       {payment.appliedInvoices.length > 0
                         ? ` The ${payment.appliedInvoices.length === 1 ? 'invoice it settled reopened' : `${payment.appliedInvoices.length} invoices it settled reopened`} for the reversed amount: ${payment.appliedInvoices.map((a) => a.invoiceNumber).join(', ')}.`
@@ -808,7 +861,17 @@ export function PaymentDetailScreen({
               )}
               {activeTab === 'applied' && <AppliedToCard payment={payment} isPrepay={isPrepay} />}
               {activeTab === 'gl-impact' && (
-                <GLImpactCard glLines={glLines} drTotal={drTotal} crTotal={crTotal} posted={posted} failed={failed} isPrepay={isPrepay} ledger={ledger} currency={payment.currency} />
+                <GLImpactCard
+                  glLines={glLines}
+                  drTotal={drTotal}
+                  crTotal={crTotal}
+                  posted={posted}
+                  failed={failed}
+                  isPrepay={isPrepay}
+                  ledger={ledger}
+                  currency={ledgerFx && !isBaseCurrency(ledgerFx.currency) ? BASE_CURRENCY : payment.currency}
+                  foreignCurrency={ledgerFx && !isBaseCurrency(ledgerFx.currency) ? ledgerFx.currency : undefined}
+                />
               )}
               {/* The invoice Notes tab (user 10/22/26), notes kept in App
                   state per payment like invoice notes. */}
@@ -846,10 +909,35 @@ export function PaymentDetailScreen({
               status={status}
               statusPalette={statusPalette}
               onPrintCheck={payment.paymentMethod === 'Check' && !payment.checkPrint ? () => setPrintFlowOpen(true) : undefined}
+              ledgerFx={ledgerFx}
+              onViewCurrency={() => setCurrencyOpen(true)}
             />
           </div>
         </div>
       </div>
+      </DocCurrencyProvider>
+
+      {/* Currency Configuration, read-only: what this payment posted. */}
+      {ledgerFx && (
+        <PaymentCurrencyConfigDialog
+          open={currencyOpen}
+          onOpenChange={setCurrencyOpen}
+          readOnly
+          documentLabel={payment.paymentNumber}
+          vendorName={payment.vendor}
+          currency={ledgerFx.currency}
+          vendorReceives={payment.amount}
+          accounts={configAccounts(ledgerFx.currency, payment.bankAccount, ledgerFx.account?.type)}
+          value={{ accountId: payment.bankAccount, bankTook: ledgerFx.converts ? ledgerFx.cost : null }}
+          youPayIn={ledgerFx.youPayIn}
+          paymentDate={payment.paymentDate}
+          dayRate={ledgerFx.dayRate}
+          lines={ledgerFx.lines}
+          credits={ledgerFx.credits}
+          allowedPct={apSettings.allowedDifferencePct}
+          canRecordPastAllowed={apPerms.canChangePaymentRate}
+        />
+      )}
 
       {/* Void payment — the invoice Cancel dialog (user 10/22/26). */}
       <InvoiceReasonDialog
@@ -963,7 +1051,7 @@ function AppliedToCard({ payment, isPrepay }: { payment: Payment; isPrepay: bool
         {isPrepay && payment.unappliedAmount > 0 && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] border bg-amber-50 text-amber-700 border-amber-200" style={{ fontWeight: 600 }}>
             <Wallet className="w-3 h-3" />
-            {formatMoney(payment.unappliedAmount, payment.currency)} unapplied
+            <DocMoney value={payment.unappliedAmount} /> unapplied
           </span>
         )}
       </div>
@@ -991,7 +1079,8 @@ function AppliedToCard({ payment, isPrepay }: { payment: Payment; isPrepay: bool
                     {inv.invoiceNumber}
                   </a>
                 </td>
-                <td className="px-4 py-2.5 pr-5 text-right " style={{ fontWeight: 600 }}>{formatMoney(inv.amount, settledCurrencyOf(payment))}</td>
+                {/* In the page's view: base by default, the invoices' currency on hover. */}
+                <td className="px-4 py-2.5 pr-5 text-right " style={{ fontWeight: 600 }}><DocMoney value={inv.amount} /></td>
               </tr>
             ))}
           </tbody>
@@ -1014,13 +1103,16 @@ function AppliedToCard({ payment, isPrepay }: { payment: Payment; isPrepay: bool
 // GL Impact card
 // ══════════════════════════════════════════════════════════════════
 function GLImpactCard({
-  glLines, drTotal, crTotal, posted, failed, isPrepay, ledger = 'ap', currency = BASE_CURRENCY,
+  glLines, drTotal, crTotal, posted, failed, isPrepay, ledger = 'ap', currency = BASE_CURRENCY, foreignCurrency,
 }: {
-  glLines: Array<{ code: string; name: string; desc: string; debit: number; credit: number }>;
+  glLines: Array<{ code: string; name: string; desc: string; debit: number; credit: number; foreign?: string }>;
   drTotal: number; crTotal: number; posted: boolean; failed: boolean; isPrepay: boolean;
   ledger?: 'ap' | 'ar';
-  /** The payment's currency, the lines' (Currency & Exchange Rates). */
+  /** The lines' currency (Currency & Exchange Rates): the base for a vendor
+   *  payment, whose ledger is kept in it. */
   currency?: string;
+  /** The invoices' currency, when the lines carry their amount in it. */
+  foreignCurrency?: string;
 }) {
   const fmt = (n: number) => formatMoney(n, currency);
   return (
@@ -1038,7 +1130,9 @@ function GLImpactCard({
                 : 'Debit Bank / Credit Accounts Receivable.'
               : isPrepay
                 ? 'Debit Prepayment / Credit Bank on entry; Debit A/P / Credit Prepayment as it gets applied.'
-                : 'Debit Accounts Payable / Credit Bank.'}
+                : foreignCurrency
+                  ? `In ${BASE_CURRENCY}: Debit Accounts Payable at the invoice rate, Credit Bank at what paying cost, the difference to Realized FX Gain/Loss. ${foreignCurrency} amounts beneath.`
+                  : 'Debit Accounts Payable / Credit Bank.'}
           </p>
         </div>
         {posted ? (
@@ -1076,8 +1170,14 @@ function GLImpactCard({
                 </span>
               </td>
               <td className="px-4 py-2.5 text-slate-500">{l.desc}</td>
-              <td className="px-4 py-2.5 text-right ">{l.debit > 0 ? <span style={{ fontWeight: 600 }}>{fmt(l.debit)}</span> : null}</td>
-              <td className="px-4 py-2.5 pr-5 text-right ">{l.credit > 0 ? <span style={{ fontWeight: 600 }}>{fmt(l.credit)}</span> : null}</td>
+              <td className="px-4 py-2.5 text-right align-top">
+                {l.debit > 0 ? <span style={{ fontWeight: 600 }}>{fmt(l.debit)}</span> : null}
+                {l.debit > 0 && l.foreign && <span className="block text-[10.5px] text-slate-400 tabular-nums">{l.foreign}</span>}
+              </td>
+              <td className="px-4 py-2.5 pr-5 text-right align-top">
+                {l.credit > 0 ? <span style={{ fontWeight: 600 }}>{fmt(l.credit)}</span> : null}
+                {l.credit > 0 && l.foreign && <span className="block text-[10.5px] text-slate-400 tabular-nums">{l.foreign}</span>}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -1216,12 +1316,16 @@ function fmtSidebarDate(iso?: string) {
 }
 
 function PaymentDetailSidebar({
-  payment, invoices = [], isPrepay, status, statusPalette, onPrintCheck,
+  payment, invoices = [], isPrepay, status, statusPalette, onPrintCheck, ledgerFx, onViewCurrency,
 }: {
   payment: Payment; invoices?: Invoice[]; isPrepay: boolean; status: string;
   statusPalette: { bg: string; color: string; border: string };
   onPrintCheck?: () => void;
+  /** The payment in the base-currency ledger (vendor payments). */
+  ledgerFx?: PaymentLedger | null;
+  onViewCurrency?: () => void;
 }) {
+  const otherText = useDocOtherText();
   const [open, setOpen] = useState<Record<SectionKey, boolean>>({ details: true, summary: true, timeline: false });
   const toggle = (k: SectionKey) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   // The mark-manual action mutates the payment record in place (demo data
@@ -1278,13 +1382,14 @@ function PaymentDetailSidebar({
             <GridField label={isPrepay ? 'Prepayment ID' : 'Payment ID'} value={payment.paymentNumber ?? payment.reference} />
             <GridField label="Reference" value={payment.reference} />
             <GridField label="Method" value={payment.paymentMethod} />
-            <GridField label="Bank Account" value={payment.bankAccount} />
+            <GridField label="Bank Account" value={PAY_FROM_ACCOUNTS.find((a) => a.id === payment.bankAccount)?.label ?? payment.bankAccount} />
             <GridField label="Payment Date" value={fmtSidebarDate(payment.paymentDate)} />
             <GridField label="Currency" value={<CurrencyChip code={payment.currency} size={14} />} />
             <GridField label={isPrepay ? 'Prepayment Account' : 'A/P Account'} value={payment.apAccount} />
             {payment.linkedPO && <GridField label="Linked PO" value={`PO ${payment.linkedPO}`} />}
             {/* The rate this payment settled at (Currency & Exchange Rates):
-                the invoices' currency on the payment date. */}
+                worked out from the bank's figures from a base account, the
+                day's mid-market rate from one in the invoices' currency. */}
             {!isBaseCurrency(settledCurrencyOf(payment)) && (
               <div className="min-w-0 col-span-2">
                 <Tooltip delayDuration={300}>
@@ -1298,18 +1403,25 @@ function PaymentDetailSidebar({
                     <p className="text-[11px] text-slate-500 leading-snug">
                       {isPrepay
                         ? 'The rate this advance was paid at. It shows wherever the advance is applied to an invoice.'
-                        : 'The invoices’ currency on the payment date, the rate this payment settled at. The difference from each invoice’s own rate is the exchange difference.'}
+                        : ledgerFx?.converts
+                          ? 'Worked out from the bank’s figures: the rupees it took for what the vendor got. The difference from each invoice’s own rate is the realized FX Gain/Loss.'
+                          : 'Nothing converted (paid from an account in the invoices’ currency), so the payment is valued at the payment date’s mid-market rate. The difference from each invoice’s own rate is the realized FX Gain/Loss.'}
                     </p>
                   </TooltipContent>
                 </Tooltip>
                 <p className="text-[12px] text-foreground mt-0.5 tabular-nums" style={{ fontWeight: 600 }}>
-                  {rateSentence(settledCurrencyOf(payment), settlementRateOf(payment))}
+                  {rateSentence(settledCurrencyOf(payment), ledgerFx?.rate ?? paymentFx(payment).rate)}
                 </p>
                 <p className="text-[11px] text-slate-500 leading-snug">
-                  <span style={{ fontWeight: 600, color: (payment.rateType ?? 'mid') === 'mid' ? '#6D28D9' : '#B45309' }}>
-                    {RATE_TYPE_LABEL[payment.rateType ?? 'mid']}
-                  </span>
-                  {' · '}{fmtSidebarDate(payment.rateDate || payment.paymentDate)} (payment date){payment.rateEdited ? ' · entered on the payment' : ''}
+                  {ledgerFx?.converts ? (
+                    <span style={{ fontWeight: 600, color: '#0369A1' }}>Bank conversion</span>
+                  ) : (
+                    <span style={{ fontWeight: 600, color: (payment.rateType ?? 'mid') === 'mid' ? '#6D28D9' : '#B45309' }}>
+                      {RATE_TYPE_LABEL[payment.rateType ?? 'mid']}
+                    </span>
+                  )}
+                  {' · '}{fmtSidebarDate(payment.rateDate || payment.paymentDate)} (payment date)
+                  {ledgerFx?.converts ? (payment.rateEdited ? ' · from the bank’s figures' : ' · estimated at mid-market') : ''}
                 </p>
               </div>
             )}
@@ -1375,16 +1487,17 @@ function PaymentDetailSidebar({
       </SidebarSection>
 
       {/* ── Summary ── */}
-      <SidebarSection icon={Wallet} title={isPrepay ? 'Prepayment Summary' : 'Payment Summary'} open={open.summary} onToggle={() => toggle('summary')} collapsedSummary={formatMoney(payment.amount, payment.currency)}>
+      <SidebarSection icon={Wallet} title={isPrepay ? 'Prepayment Summary' : 'Payment Summary'} open={open.summary} onToggle={() => toggle('summary')} collapsedSummary={<DocMoney value={payment.amount} />}>
         <div>
           <p className="text-[10px] text-slate-400" style={{ fontWeight: 600 }}>{isPrepay ? 'Advance Amount' : 'Payment Amount'}</p>
+          {/* In the page's view (Currency & Exchange Rates): base by default,
+              the invoices' currency on hover; the other one beneath. */}
           <p className="text-[22px] text-foreground mt-0.5" style={{ fontWeight: 700, lineHeight: 1.1 }}>
-            <Money value={payment.amount} currency={payment.currency} fx={paymentFx(payment)} role="payment currency" />
+            <DocMoney value={payment.amount} />
           </p>
-          {/* The base amount (Currency & Exchange Rates). */}
-          {!isBaseCurrency(payment.currency) && (
+          {otherText(payment.amount) && (
             <p className="text-[11px] text-slate-400 mt-1 tabular-nums" style={{ fontWeight: 500 }}>
-              ≈ {formatMoney(toPaymentBase(payment, payment.amount), BASE_CURRENCY)} {BASE_CURRENCY}
+              {otherText(payment.amount)}
             </p>
           )}
           <p className="text-[11px] text-slate-500 mt-1">
@@ -1405,34 +1518,34 @@ function PaymentDetailSidebar({
                 Unapplied breakdown carries the numbers. */}
             <div className="flex items-center justify-between text-[11px]" style={{ fontWeight: 500 }}>
               <span className="text-slate-500">
-                Applied: <span className="text-foreground " style={{ fontWeight: 600 }}>{formatMoney(payment.appliedAmount, payment.currency)}</span>
+                Applied: <span className="text-foreground " style={{ fontWeight: 600 }}><DocMoney value={payment.appliedAmount} /></span>
               </span>
               <span className="text-slate-500">
-                Unapplied: <span className="" style={{ fontWeight: 600, color: payment.unappliedAmount > 0 ? '#B45309' : '#047857' }}>{formatMoney(payment.unappliedAmount, payment.currency)}</span>
+                Unapplied: <span className="" style={{ fontWeight: 600, color: payment.unappliedAmount > 0 ? '#B45309' : '#047857' }}><DocMoney value={payment.unappliedAmount} /></span>
               </span>
             </div>
           </div>
         )}
-        {/* The exchange difference on the invoices it settled (Currency &
-            Exchange Rates): their base amounts at their own rates against
-            this payment's rate. */}
-        {!isPrepay && (() => {
-          const d = paymentExchangeDifference(payment, invoices);
-          if (!d) return null;
-          return (
-            <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
-              <div className="flex justify-between items-center text-[11px]">
-                <span className="text-slate-500" style={{ fontWeight: 500 }}>Booked at Invoice Rates</span>
-                <span className="text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>{formatMoney(d.booked, BASE_CURRENCY)}</span>
-              </div>
-              <div className="flex justify-between items-center text-[11px]">
-                <span className="text-slate-500" style={{ fontWeight: 500 }}>Paid at This Rate</span>
-                <span className="text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>{formatMoney(d.atPayment, BASE_CURRENCY)}</span>
-              </div>
-              <ExchangeDifferenceLine difference={d.difference} />
-            </div>
-          );
-        })()}
+        {/* CURRENCY (Currency & Exchange Rates): what the vendor received,
+            the account it came from, the bank's conversion against the
+            day's rate, what A/P carried and the realized FX Gain/Loss. */}
+        {ledgerFx && !isBaseCurrency(ledgerFx.currency) && onViewCurrency && (
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <PaymentCurrencySummary
+              currency={ledgerFx.currency}
+              vendorReceives={payment.amount}
+              account={ledgerFx.account ?? null}
+              bankTook={ledgerFx.converts ? ledgerFx.cost : null}
+              rate={ledgerFx.rate}
+              paymentDate={payment.paymentDate}
+              dayRate={ledgerFx.dayRate}
+              carried={ledgerFx.realized != null ? ledgerFx.carried : undefined}
+              realized={ledgerFx.realized}
+              locked={['Paid', 'Unapplied', 'Partially Applied', 'Fully Applied'].includes(payment.status)}
+              onViewConfig={onViewCurrency}
+            />
+          </div>
+        )}
       </SidebarSection>
 
       {/* Timeline sidebar card removed per feedback 7/15/26 — lifecycle

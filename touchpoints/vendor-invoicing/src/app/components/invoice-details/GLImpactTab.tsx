@@ -7,6 +7,10 @@ import { formatMoney as formatInCurrency, formatRateDate, rateSentence } from '@
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { RATE_TYPE_LABEL, toBase } from '@/app/currency/rates';
 import { invoiceFx } from '@/app/currency/invoiceFx';
+import { ADVANCES_ACCOUNT, FX_VARIANCE_ACCOUNT } from '@/app/data/glAccounts';
+
+const FX_VARIANCE_CODE = FX_VARIANCE_ACCOUNT.split(' ')[0];
+const ADVANCES_CODE = ADVANCES_ACCOUNT.split(' ')[0];
 
 // Plain-language direction of a journal line: does this account go up or
 // down? Normal balances by code prefix — 1xxx = asset, 2xxx = liability,
@@ -334,6 +338,15 @@ export function GLImpactTab({
                 In {BASE_CURRENCY}, at {rateSentence(fx.currency, fx.rate)}{' '}
                 ({fx.provisional ? "today's mid-market rate; the payment date's rate applies" : `${RATE_TYPE_LABEL[fx.rateType].toLowerCase()}, ${formatRateDate(fx.rateDate)}`}).
                 Each line's {fx.currency} amount is under it.
+                {/* Received goods (Currency & Exchange Rates): the accrual
+                    clears at what receiving booked and a prepayment at its
+                    locked rate, so the rate difference on the goods shows as
+                    its own FX Variance line, both rates and dates named. */}
+                {lines.some((l) => l.accountCode === FX_VARIANCE_CODE)
+                  ? ' AP Accrual clears at what receiving booked and any prepayment at its locked rate; the rate difference on the goods is the FX Variance line.'
+                  : lines.some((l) => l.accountCode === ADVANCES_CODE && l.credit)
+                    ? ' The prepayment clears Advance Payments at its locked rate.'
+                    : ''}
               </p>
             )}
           </div>

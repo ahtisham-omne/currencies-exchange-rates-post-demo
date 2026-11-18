@@ -118,8 +118,7 @@ import {
   type InsightsRange,
 } from '@/app/components/InvoiceInsightsPanel';
 import { InsightsRangeMenu, INSIGHTS_RANGE_OPTIONS } from '@/app/components/InsightsRangeMenu';
-import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
-import { Money } from '@/app/components/currency/Money';
+import { BaseMoney } from '@/app/components/currency/Money';
 import { formatMoney, moneyPrefix } from '@/app/currency/money';
 import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
@@ -1565,8 +1564,9 @@ export function InvoiceListScreen({
                 onCustomChange={(from, to) => setInsightsCustom({ from, to })}
               />
               <InsightsRefresh />
-              {/* The cards' money is base currency (Currency & Exchange Rates, spec 4.4). */}
-              <BaseCurrencyNote />
+              {/* The cards' money is base currency (Currency & Exchange Rates,
+                  spec 4.4), like every amount on the listing now, so the
+                  "In PKR · base currency" pill is gone. */}
             </div>
             <div className="flex items-center gap-2">
               <InsightsResetButton dirty={insightsDirty} onReset={handleInsightsReset} />
@@ -2636,14 +2636,14 @@ export function InvoiceListScreen({
                           (user 10/1: the 700 read too dark against the
                           table's uniform 400 cells). */}
                       <p className={`${cardSize === 'small' ? 'text-[14px]' : 'text-[16px]'} text-foreground`} style={{ fontWeight: 500, lineHeight: 1.2 }}>
-                        {/* In the invoice's own currency, base equivalent on hover. */}
-                        <Money value={invoice.amount} currency={invoice.currency} fx={invoiceFx(invoice)} />
+                        {/* In the base currency at the invoice's rate, its own currency on hover. */}
+                        <BaseMoney value={invoice.amount} currency={invoice.currency} fx={invoiceFx(invoice)} role="Invoice currency" />
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0 min-w-0">
                       {invoice.outstandingBalance > 0.004 && invoice.outstandingBalance < invoice.amount - 0.004 && (
                         <p className="text-[11px] text-slate-500" style={{ fontWeight: 400 }}>
-                          {formatMoney(invoice.outstandingBalance, invoice.currency)} due
+                          {formatMoney(toInvoiceBase(invoice, invoice.outstandingBalance), BASE_CURRENCY)} due
                         </p>
                       )}
                       {/* The table's created-by cell on EVERY size (user

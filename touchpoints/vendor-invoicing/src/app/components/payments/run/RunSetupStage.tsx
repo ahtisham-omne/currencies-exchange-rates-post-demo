@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Invoice } from '@/app/data/mockInvoices';
-import { lineCurrency, type PaymentRun, type PaymentRunLine } from '@/app/data/paymentRuns';
+import { lineCurrency, lineFxOf, type PaymentRun, type PaymentRunLine } from '@/app/data/paymentRuns';
 import type { PaymentRunsApi } from '@/app/hooks/usePaymentRuns';
 import {
   discountAmountOn,
@@ -636,8 +636,10 @@ export function RunSetupStage({
       invoiceId: inv.id,
       invoiceNumber: inv.invoiceNumber,
       vendor: inv.vendor,
-      // Its currency decides its payment (Currency & Exchange Rates).
+      // Its currency decides its payment (Currency & Exchange Rates); its
+      // rate and its PO's You pay in ride along.
       currency: inv.currency,
+      ...lineFxOf(inv),
       dueDate: inv.dueDate,
       balanceAtAdd: inv.outstandingBalance,
       payAmount: inv.outstandingBalance - discount,

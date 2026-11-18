@@ -5,24 +5,30 @@ import { invoiceFx, rateSourceLabel, type InvoiceFx } from './invoiceFx';
 import { DEFAULT_RATE_TYPE, midRateOn, rateOn, toBase, type RateType } from './rates';
 
 /* ── A payment's currency and rate (Currency & Exchange Rates) ────────
- * A payment goes out in its payment currency: the vendor's (the invoices')
- * or the base currency. It carries the rate on its payment date for the
- * currency of the invoices it settles, mid-market unless someone allowed to
- * (Settings, Permissions) entered the bank's rate. Settling invoices booked
- * at their own rates at this rate leaves an exchange difference: a gain when
- * paying costs less in the base currency than was booked, a loss when more. */
+ * A payment is in the currency of the invoices it settles: that is what the
+ * vendor receives (currency/paymentRules.ts). It goes out from an account in
+ * that currency or in the base currency. Its rate, base per one unit:
+ *  - from a base account, worked out from the bank's two figures (the
+ *    rupees it took for the pounds the vendor got);
+ *  - from an account in the invoices' currency, nothing converts, and the
+ *    pounds are valued at the mid-market rate on the payment date.
+ * Settling invoices booked at their own rates at it leaves the realized FX
+ * Gain/Loss: a gain when paying costs less in the base currency than A/P
+ * carried, a loss when more. */
 
 type PaymentFxFields = Pick<Payment, 'currency' | 'paymentDate'> &
-  Partial<Pick<Payment, 'exchangeRate' | 'rateType' | 'rateDate' | 'rateEdited' | 'settledCurrency'>>;
+  Partial<Pick<Payment, 'exchangeRate' | 'rateType' | 'rateDate' | 'rateEdited' | 'settledCurrency' | 'amount' | 'bankAmount'>>;
 
 /** The currency of the invoices a payment settles (its own unless paid in the base currency). */
 export const settledCurrencyOf = (p: Pick<Payment, 'currency'> & Partial<Pick<Payment, 'settledCurrency'>>) =>
   (p.settledCurrency || p.currency || '').toUpperCase();
 
-/** Base per one unit of the settled currency, on the payment date. */
+/** Base per one unit of the settled currency: the bank's (its figures),
+ *  else the rate on the record, else the payment date's mid-market rate. */
 export function settlementRateOf(p: PaymentFxFields): number {
   const cur = settledCurrencyOf(p);
   if (isBaseCurrency(cur)) return 1;
+  if (p.bankAmount != null && p.bankAmount > 0 && p.amount && p.amount > 0 && !p.settledCurrency) return p.bankAmount / p.amount;
   if (p.exchangeRate && p.exchangeRate > 0) return p.exchangeRate;
   return midRateOn(cur, p.paymentDate) ?? 1;
 }
@@ -41,7 +47,7 @@ export function paymentFx(p: PaymentFxFields): InvoiceFx {
     rate,
     rateType,
     rateDate,
-    source: p.rateEdited ? 'Entered on the payment' : rateSourceLabel(rateType),
+    source: p.bankAmount != null ? (p.rateEdited ? 'Worked out from the bank’s figures' : 'Estimated at the mid-market rate') : rateSourceLabel(rateType),
     provisional: false,
     isBase: false,
     dateLabel: 'payment date',

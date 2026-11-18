@@ -96,6 +96,13 @@ import { formatMoney, moneyPrefix } from '@/app/currency/money';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { toBase } from '@/app/currency/rates';
 import { invoiceFx } from '@/app/currency/invoiceFx';
+import { invoiceFxInputs } from '@/app/currency/fxVariance';
+import { vendorCurrencyOf } from '@/app/currency/vendorCurrency';
+import { DocCurrencyProvider } from '@/app/components/currency/DocCurrency';
+import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
+import { InvoiceCurrencyConfigDialog } from '@/app/components/currency/InvoiceCurrencyConfig';
+import { setDocView, useDocViewOf } from '@/app/components/currency/docView';
+import { useApPermissions } from '@/app/hooks/useApSettings';
 
 interface InvoiceDetailScreenProps {
   invoiceId: string;
@@ -825,6 +832,12 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
   const [activeTab, setActiveTab] = useState<TabKey>('line-items');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  // Base Currency | Vendor Currency (the header toggle, base by default, kept
+  // for the session per invoice) and the invoice's Currency Configuration
+  // (Currency & Exchange Rates).
+  const currencyView = useDocViewOf(invoice ? `invoice:${invoice.id}` : undefined);
+  const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
+  const apPerms = useApPermissions();
   const [creditMemoOpen, setCreditMemoOpen] = useState(false);
   // Credit memos come from App state now (9/22/26 review response): real
   // records that persist across navigation. Mapped to linked-record shape
@@ -1534,7 +1547,12 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
   const descriptionText = invoice.description || '';
   const descNeedsTruncation = descriptionText.length > 140;
 
+  // The invoice's currency and rate, for every amount on the page: base by
+  // default with the invoice's own currency on hover, flipped by the header
+  // toggle. The GL tab stays in base either way (the ledger is kept in base).
+  const pageFx = invoiceFx(invoice);
   return (
+    <DocCurrencyProvider currency={pageFx.currency} fx={pageFx} dateLabel={pageFx.dateLabel} role="vendor currency" view={currencyView}>
     <div ref={scrollContainerRef} className="flex-1 flex flex-col bg-slate-50">
       {/* IntersectionObserver sentinel — sits just below the topbar */}
       <div ref={sentinelRef} className="shrink-0 h-px" />
@@ -1881,6 +1899,16 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                     <TooltipContent className="z-[300]">{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</TooltipContent>
                   </Tooltip>
 
+                  {/* Base Currency | Vendor Currency, and the invoice's
+                      currency configuration (as Purchase Orders has them). */}
+                  <CurrencyHeaderControls
+                    currency={pageFx.currency}
+                    view={currencyView}
+                    onViewChange={(v) => setDocView(`invoice:${invoice.id}`, v)}
+                    onOpenConfig={() => setCurrencyConfigOpen(true)}
+                    compact={isScrolled}
+                  />
+
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
@@ -2189,6 +2217,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
             {/* ── RIGHT: sticky sidebar, visible across every tab ── */}
             <InvoiceDetailSidebar
               invoice={invoice}
+              onViewCurrencyConfig={() => setCurrencyConfigOpen(true)}
               numbers={numbers}
               status={status}
               statusPalette={statusPalette}
@@ -2707,7 +2736,41 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
         duration={1200}
         onDismiss={() => setTransitionOverlay((s) => (s ? { ...s, visible: false } : null))}
       />
+
+      {/* The invoice's Currency Configuration (header Currency button and
+          the summary's View configuration). A saved invoice's currency and
+          rate change only by editing it, so this is read-only, with Edit
+          Invoice while the invoice can still be edited. */}
+      {(() => {
+        const { receipts, prepayments } = invoiceFxInputs(invoice);
+        const poRef = invoice.linkedPOs?.[0];
+        return (
+          <InvoiceCurrencyConfigDialog
+            open={currencyConfigOpen}
+            onOpenChange={setCurrencyConfigOpen}
+            documentLabel={invoice.invoiceNumber}
+            vendorName={invoice.vendor}
+            vendorDefault={vendorCurrencyOf(invoice.vendor)}
+            total={numbers.total}
+            source={poRef && invoice.type !== 'Standalone' ? { kind: 'po', ref: `PO-${poRef}` } : { kind: 'vendor', ref: vendorCurrencyOf(invoice.vendor) }}
+            value={{ currency: pageFx.currency, rateType: pageFx.rateType, typedRate: invoice.rateEdited ? String(pageFx.rate) : null }}
+            rateAsOf={{ date: pageFx.rateDate, basis: invoice.rateBasis ?? 'postingDate' }}
+            rateDay={pageFx.rateDate}
+            dateLabel={pageFx.dateLabel}
+            pending={pageFx.provisional}
+            receipts={receipts}
+            prepayments={prepayments}
+            canEditRate={apPerms.canChangeInvoiceRate}
+            limitPct={apPerms.invoiceRateLimitPct}
+            readOnly
+            savedRate={{ rate: pageFx.rate, rateType: pageFx.rateType, rateDate: pageFx.rateDate, edited: invoice.rateEdited, source: pageFx.source }}
+            posted={['Approved', 'Partially Paid', 'Paid in Full', 'Settled', 'Payment Hold'].includes(invoice.status) && invoice.type !== 'Pre-Invoice'}
+            onEdit={status === 'Pending Approval' ? () => handleAction({ key: 'edit', label: 'Edit Invoice', icon: Pencil }) : undefined}
+          />
+        );
+      })()}
     </div>
+    </DocCurrencyProvider>
   );
 }
 

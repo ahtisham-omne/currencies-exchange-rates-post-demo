@@ -4,6 +4,10 @@ import { formatInvoiceId } from '@/app/lib/invoiceIds';
 import { resolveRegistryVendor } from './mockVendors';
 import { currencyForVendorName, stampRate } from '@/app/currency/invoiceFx';
 import type { RateType } from '@/app/currency/rates';
+import { buildInvoiceGl } from '@/app/lib/glPosting';
+import { baseGlEntries, postInvoiceGl } from '@/app/currency/glFx';
+import { fxVarianceOf, receiptValuesForLine, receivingRateOn } from '@/app/currency/fxVariance';
+import { midRateOn } from '@/app/currency/rates';
 import type { RateDateBasis } from '@/app/hooks/useApSettings';
 
 /** The date an invoice's rate was taken on: a module rate-date basis, the
@@ -25,7 +29,7 @@ const auditRand = mulberry32(0x0A0D17);
  *  record's identity — it lives in vendorInvoiceNumber. Each call
  *  reserves the next number; an abandoned create leaves a gap, exactly
  *  like a real ERP sequence. */
-let systemInvoiceSeq = 217;
+let systemInvoiceSeq = 221; // INV-000217 to INV-000220 are the FX Variance and FX Gain/Loss seeds
 export function nextSystemInvoiceNumber(): string {
   return formatInvoiceId(systemInvoiceSeq++);
 }
@@ -86,6 +90,10 @@ export interface SavedInvoiceLineItem {
    *  10/10): an edit re-seeds it so the price difference stays on the
    *  Inventory line. */
   poUnitPrice?: number;
+  /** The receivings behind the line (Currency & Exchange Rates): each one
+   *  booked its quantity into stock at its own date's rate, which the FX
+   *  Variance at invoice is measured from (currency/fxVariance.ts). */
+  receipts?: { grnNumber?: string; date: string; qty: number; rate?: number }[];
 }
 
 /** GL snapshot taken at submit from the same rule the confirmation
@@ -143,6 +151,11 @@ export interface Invoice {
    *  date or PO date), the posting date on the seeds, or the payment date on
    *  a pre-invoice. Absent reads as the posting date. */
   rateBasis?: InvoiceRateBasis;
+  /** "You pay in", from the invoice's PO (Currency & Exchange Rates): the
+   *  currency of the account a payment starts from, the invoice's own or the
+   *  base. Absent reads as the base. The vendor still receives the invoice's
+   *  currency either way. */
+  youPayIn?: string;
   apAccount: string;
   description: string;
   postingDate?: string;
@@ -1029,9 +1042,248 @@ function withVendorStatedTotals(list: Invoice[]): Invoice[] {
   });
 }
 
+/* ── FX Variance at invoice: one example of each case ──────────────────
+ * (Currency & Exchange Rates.) Ultra Corp bills in GBP. Each invoice is for
+ * £10,000.00 of goods received on Oct 5 and invoiced on Oct 16; the second
+ * one had £5,000.00 prepaid on Oct 2. The dates are 2025's: the module's
+ * mid-market history ends at the last sync (Apr 10, 2026) and every later day
+ * takes that one rate, so October 2026 would show no difference. These are
+ * the module's own GBP rates for those days (currency/rates.ts):
+ *   Oct 02, 2025  1 GBP = ₨344.9548 PKR  (prepayment paid, its locked rate)
+ *   Oct 05, 2025  1 GBP = ₨344.1448 PKR  (goods received)
+ *   Oct 16, 2025  1 GBP = ₨340.6802 PKR  (vendor invoice date, the invoice rate)
+ * GBP weakened between receiving and invoice, so both owe fewer rupees than
+ * receiving booked: a gain.
+ *   INV-000217, no prepayment: receiving booked ₨3,441,448.00, the invoice is
+ *     ₨3,406,802.00. Dr AP Accrual 3,441,448.00 · Cr Accounts Payable
+ *     3,406,802.00 · Cr FX Variance 34,646.00.
+ *   INV-000218, PRE-000003 (£5,000.00 at ₨344.9548) applied: receiving booked
+ *     the prepaid half at ₨1,724,774.00 and the rest at ₨1,720,724.00, so
+ *     ₨3,445,498.00. Dr AP Accrual 3,445,498.00 · Cr Advance Payments
+ *     1,724,774.00 · Cr Accounts Payable 1,703,401.00 · Cr FX Variance
+ *     17,323.00 (the unpaid half only).
+ * Both are Approved and unpaid (overdue: they are a year old), so a payment
+ * can settle the rest and show its own payment-day FX Gain/Loss. INV-000218's
+ * PO pays in GBP ("You pay in"), so Record Payment starts it from the GBP
+ * account; INV-000217's pays in the base, so from a PKR account.
+ *   INV-000219 (£10,000.00) and INV-000220 (£6,000.00, 600 bearings) are the
+ *     same goods, paid in full: their payments are the FX Gain/Loss examples
+ *     (PAYMENT_FX_DEMO in data/mockPayments.ts), one from a PKR account (the
+ *     bank converts) and one from the GBP account (nothing converts).
+ * The journals are built by the same rule the create screen posts with. */
+const FX_DEMO = {
+  vendor: 'Ultra Corp',
+  currency: 'GBP',
+  prepaidOn: '2025-10-02',
+  receivedOn: '2025-10-05',
+  invoicedOn: '2025-10-16',
+  apAccount: '2110-AP-Trade',
+};
+
+const SPLIT_TERM = '50/50 Split: Order Confirmation, Receiving Net 15';
+
+function fxDemoInvoice(opts: {
+  id: string;
+  invoiceNumber: string;
+  vendorInvoiceNumber: string;
+  poNumber: string;
+  grnNumber: string;
+  prepayment?: { invoiceNumber: string; amount: number; rate: number; rateDate: string };
+  /** Bearings billed (1,000 at £10.00 unless given). */
+  qty?: number;
+  /** The PO's "You pay in", when it isn't the base. */
+  youPayIn?: string;
+  /** Paid in full on this day (the FX Gain/Loss examples). */
+  paidOn?: string;
+  description?: string;
+}): Invoice {
+  const { currency, receivedOn, invoicedOn } = FX_DEMO;
+  const invoiceRate = midRateOn(currency, invoicedOn) ?? 1;
+  const receivedRate = receivingRateOn(currency, receivedOn);
+  const qty = opts.qty ?? 1000;
+  const price = 10;
+  const total = qty * price;
+  const line: SavedInvoiceLineItem = {
+    sku: 'BRG-6204-2RS',
+    description: 'Deep groove ball bearings 6204-2RS, sealed, for the conveyor line',
+    quantity: qty,
+    uom: 'EA',
+    unitPrice: price,
+    lineTotal: total,
+    glAccount: '1200 Inventory',
+    poNumber: opts.poNumber,
+    grnNumbers: [opts.grnNumber],
+    orderedQty: qty,
+    receivedQty: qty,
+    receipts: [{ grnNumber: opts.grnNumber, date: receivedOn, qty, rate: receivedRate }],
+  };
+  const prepaid = opts.prepayment?.amount ?? 0;
+  const gl = buildInvoiceGl({
+    kind: 'received',
+    lines: [{ glAccount: line.glAccount, amount: total, accrualAmount: total, varianceAmount: 0, priceVarianceAmount: 0 }],
+    freightAmount: 0,
+    freightGlAccount: '5020 Freight Inbound',
+    additionalChargesTotal: 0,
+    additionalChargeGlAccount: '6000 General & Admin',
+    apAccount: FX_DEMO.apAccount,
+    total,
+    sliceAdjustedTotal: total,
+    sliceFraction: 1,
+    prepaymentApplied: prepaid,
+  });
+  const prepayments = opts.prepayment ? [opts.prepayment] : [];
+  const variance = fxVarianceOf({
+    currency,
+    invoiceRate,
+    invoiceDate: invoicedOn,
+    receipts: receiptValuesForLine(currency, total, line.receipts ?? []),
+    prepayments,
+  });
+  return {
+    id: opts.id,
+    invoiceNumber: opts.invoiceNumber,
+    type: 'Receiving-based',
+    vendor: FX_DEMO.vendor,
+    vendorInvoiceNumber: opts.vendorInvoiceNumber,
+    reference: opts.poNumber,
+    date: invoicedOn,
+    invoiceDate: invoicedOn,
+    createdDate: invoicedOn,
+    // The prepaid one is on a 50/50 split: half at order confirmation (the
+    // pre-invoice), half 15 days after receiving (this invoice).
+    dueDate: opts.prepayment ? '2025-10-20' : '2025-11-15',
+    triggerDate: opts.prepayment ? receivedOn : invoicedOn,
+    triggerEvent: opts.prepayment ? 'Receiving' : 'Invoice Date',
+    amount: total,
+    outstandingBalance: opts.paidOn ? 0 : total - prepaid,
+    currency,
+    exchangeRate: invoiceRate,
+    rateType: 'mid',
+    rateDate: invoicedOn,
+    rateBasis: 'invoiceDate',
+    ...(opts.youPayIn ? { youPayIn: opts.youPayIn } : {}),
+    apAccount: FX_DEMO.apAccount,
+    description: opts.description ?? (opts.prepayment
+      ? 'Bearings for the conveyor line, half prepaid on order. FX Variance example: the prepaid half keeps its locked rate.'
+      : 'Bearings for the conveyor line, received Oct 5 and invoiced Oct 16. FX Variance example: no prepayment.'),
+    postingDate: invoicedOn,
+    linkedPOs: [opts.poNumber],
+    linkedGRNs: [opts.grnNumber],
+    status: opts.paidOn ? 'Paid in Full' : 'Approved',
+    createdBy: 'Ahtisham Ahmad',
+    updatedBy: 'Ahtisham Ahmad',
+    updatedDate: opts.paidOn ?? invoicedOn,
+    paymentTerms: opts.prepayment ? SPLIT_TERM : 'Net 30',
+    charges: { tax: 0, freight: 0, freightGlAccount: '5020 Freight Inbound', additional: [] },
+    savedLineItems: [line],
+    glEntries: baseGlEntries(postInvoiceGl(gl, { currency, rate: invoiceRate, variance, prepayments })),
+    ...(opts.prepayment
+      ? {
+          appliedPrepayments: [opts.prepayment],
+          reconcilesPreInvoiceNumbers: [opts.prepayment.invoiceNumber],
+        }
+      : {}),
+    // Fully persisted (lines, charges, journal), so the detail page renders
+    // exactly this record and synthesizes no history around it.
+    isUserCreated: true,
+  };
+}
+
+function generateFxVarianceDemo(): Invoice[] {
+  const prepayRate = midRateOn(FX_DEMO.currency, FX_DEMO.prepaidOn) ?? 1;
+  const prepayment = { invoiceNumber: 'PRE-000003', amount: 5000, rate: prepayRate, rateDate: FX_DEMO.prepaidOn };
+  return [
+    fxDemoInvoice({
+      id: 'inv-fx-variance-receiving',
+      invoiceNumber: 'INV-000217',
+      vendorInvoiceNumber: 'ULT-UK-4471',
+      poNumber: '9101',
+      grnNumber: 'REC-2025-9101',
+    }),
+    fxDemoInvoice({
+      id: 'inv-fx-variance-prepaid',
+      invoiceNumber: 'INV-000218',
+      vendorInvoiceNumber: 'ULT-UK-4486',
+      poNumber: '9102',
+      grnNumber: 'REC-2025-9102',
+      prepayment,
+      // PO 9102 pays from a GBP account (You pay in GBP), so Record Payment
+      // starts from 1060 GBP Settlement for the rest.
+      youPayIn: FX_DEMO.currency,
+    }),
+    // FX Gain/Loss at payment (Vendor Payments): the same bearings, invoiced
+    // Oct 16 at ₨340.6802 and paid in full. data/mockPayments.ts carries the
+    // two payments (PAYMENT_FX_DEMO).
+    fxDemoInvoice({
+      id: 'inv-fx-paid-base',
+      invoiceNumber: 'INV-000219',
+      vendorInvoiceNumber: 'ULT-UK-4492',
+      poNumber: '9103',
+      grnNumber: 'REC-2025-9103',
+      paidOn: '2025-10-24',
+      description: 'Bearings for the conveyor line, paid Oct 24 from a PKR account. FX Gain/Loss example: the bank converted at its own rate.',
+    }),
+    fxDemoInvoice({
+      id: 'inv-fx-paid-gbp',
+      invoiceNumber: 'INV-000220',
+      vendorInvoiceNumber: 'ULT-UK-4497',
+      poNumber: '9104',
+      grnNumber: 'REC-2025-9104',
+      qty: 600,
+      youPayIn: FX_DEMO.currency,
+      paidOn: '2025-11-24',
+      description: 'Bearings for the conveyor line, paid Nov 24 from the GBP account. FX Gain/Loss example: nothing converted, A/P cleared at that day’s rate.',
+    }),
+    // The 50% prepayment, paid Oct 2 at that day's rate (locked), and
+    // reconciled into INV-000218 when the goods were invoiced.
+    {
+      id: 'inv-fx-variance-pre',
+      invoiceNumber: prepayment.invoiceNumber,
+      type: 'Pre-Invoice',
+      vendor: FX_DEMO.vendor,
+      vendorInvoiceNumber: 'ULT-UK-PF-4486',
+      reference: '9102',
+      date: '2025-09-26',
+      invoiceDate: '2025-09-26',
+      createdDate: '2025-09-26',
+      dueDate: FX_DEMO.prepaidOn,
+      amount: prepayment.amount,
+      outstandingBalance: 0,
+      currency: FX_DEMO.currency,
+      exchangeRate: prepayRate,
+      rateType: 'mid',
+      rateDate: FX_DEMO.prepaidOn,
+      rateBasis: 'paidDate',
+      apAccount: FX_DEMO.apAccount,
+      description: '50% prepayment on PO 9102, paid Oct 2 and reconciled into INV-000218 when the goods were invoiced.',
+      linkedPOs: ['9102'],
+      linkedGRNs: [],
+      status: 'Settled',
+      createdBy: 'Ahtisham Ahmad',
+      updatedBy: 'Ahtisham Ahmad',
+      updatedDate: FX_DEMO.invoicedOn,
+      paymentTerms: SPLIT_TERM,
+      triggerDate: '2025-09-26',
+      triggerEvent: 'Order Confirmation',
+      reconciledIntoInvoiceNumber: 'INV-000218',
+      charges: { tax: 0, freight: 0, freightGlAccount: '5020 Freight Inbound', additional: [] },
+      glEntries: [],
+      isUserCreated: true,
+      actionHistory: [
+        {
+          action: 'reconciled',
+          reason: 'Reconciled into INV-000218; the prepayment applied there',
+          by: 'Ahtisham Ahmad',
+          at: '2025-10-16T10:12:00.000Z',
+        },
+      ],
+    },
+  ];
+}
+
 export const mockInvoices = withPrepaidRates(withVendorStatedTotals(withVendorCurrency(seedHoldDemo(migrateHoldStatus(arrangePayQueueDemo(backfillActionHistory(withMandatoryDates([
   ...generateInvoices(100),
   ...generateReadyToPayInvoices(100),
   ...generateAcmePreInvoices(3),
   ...generatePrepayReconciliationDemo(),
-]))))))));
+])))))))).concat(generateFxVarianceDemo());

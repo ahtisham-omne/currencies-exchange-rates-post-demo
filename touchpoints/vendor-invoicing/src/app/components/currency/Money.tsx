@@ -12,10 +12,24 @@ import { FX_ARROW_PADDING, FX_CARD_CLASS, FX_FLAG_PX, FxAlert, FxArrow, FxHead, 
  * shows what it is in the base currency, at which rate, of which type, and for
  * which day. Base-currency amounts are plain text. The card is the shared
  * currency card (FxCard), so it reads the same as the Partners and Chart of
- * Accounts cards. */
+ * Accounts cards.
+ *
+ * Two faces of the same amount, as Purchase Orders has them:
+ *  - Money: the amount in its own (the vendor's) currency, base on hover.
+ *  - BaseMoney: the amount in the base currency, the vendor's on hover. This
+ *    is the default face on lists and documents; the header's Base Currency |
+ *    Vendor Currency toggle (CurrencyHeaderControls) switches a document to
+ *    Money. DocMoney (DocCurrency.tsx) picks the face from the page's view. */
 
 export type MoneyFx = Pick<InvoiceFx, 'rate' | 'rateType' | 'rateDate' | 'source' | 'provisional'> &
   Partial<Pick<InvoiceFx, 'dateLabel'>>;
+
+/** "Nov 04, 2026 (vendor invoice date)", or "Today, Nov 18, 2026" for a rate not fixed yet. */
+function rateDayText(fx: MoneyFx, dateLabel?: string): string {
+  return fx.provisional
+    ? `Today, ${formatRateDate(fx.rateDate)}`
+    : `${formatRateDate(fx.rateDate)} (${dateLabel ?? fx.dateLabel ?? 'posting date'})`;
+}
 
 /** The hover body: the currency, the amount in it, then a grey block with the
  *  base-currency figure and the rate it was converted at. */
@@ -36,9 +50,6 @@ export function MoneyCard({
   role?: string;
 }) {
   const cur = getCurrency(currency);
-  const day = fx.provisional
-    ? `Today, ${formatRateDate(fx.rateDate)}`
-    : `${formatRateDate(fx.rateDate)} (${dateLabel ?? fx.dateLabel ?? 'posting date'})`;
   return (
     <>
       <FxHead flag={<CurrencyFlag code={currency} size={FX_FLAG_PX} />} name={cur?.name ?? currency} code={currency} role={role} />
@@ -47,11 +58,108 @@ export function MoneyCard({
       </FxLines>
       <FxInset>
         <FxLine strong label={`In ${BASE_CURRENCY} (base)`} value={withCode(formatMoney(toBase(value, fx.rate), BASE_CURRENCY), BASE_CURRENCY)} />
-        <FxNote>At {rateSentence(currency, fx.rate)} · {day}</FxNote>
+        <FxNote>At {rateSentence(currency, fx.rate)} · {rateDayText(fx, dateLabel)}</FxNote>
         <FxRateType type={fx.rateType} label={RATE_TYPE_LABEL[fx.rateType]} source={fx.source} />
         {fx.provisional && <FxAlert>Not posted yet; the rate is set when it posts.</FxAlert>}
       </FxInset>
     </>
+  );
+}
+
+/** The hover for an amount shown in base: the base currency on top, the
+ *  amount in the vendor's (the document's) currency, then the rate. */
+export function BaseMoneyCard({
+  value,
+  currency,
+  fx,
+  dateLabel,
+  role = 'Vendor currency',
+}: {
+  /** The amount in `currency`. */
+  value: number;
+  currency: string;
+  fx: MoneyFx;
+  dateLabel?: string;
+  /** What `currency` is to the record: "Vendor currency", "Invoice currency". */
+  role?: string;
+}) {
+  const base = getCurrency(BASE_CURRENCY);
+  return (
+    <>
+      <FxHead flag={<CurrencyFlag code={BASE_CURRENCY} size={FX_FLAG_PX} />} name={base?.name ?? BASE_CURRENCY} code={BASE_CURRENCY} role="base currency" />
+      <FxLines>
+        <FxLine strong label={`In ${BASE_CURRENCY}`} value={withCode(formatMoney(toBase(value, fx.rate), BASE_CURRENCY), BASE_CURRENCY)} />
+        <FxLine label={role} value={withCode(formatMoney(value, currency), currency)} />
+      </FxLines>
+      <FxInset>
+        <FxNote>At {rateSentence(currency, fx.rate)} · {rateDayText(fx, dateLabel)}</FxNote>
+        <FxRateType type={fx.rateType} label={RATE_TYPE_LABEL[fx.rateType]} source={fx.source} />
+        {fx.provisional && <FxAlert>Not posted yet; the rate is set when it posts.</FxAlert>}
+      </FxInset>
+    </>
+  );
+}
+
+const TRIGGER_CLASS =
+  'tabular-nums cursor-help underline decoration-dotted decoration-slate-300 underline-offset-[3px] hover:decoration-slate-500 focus-visible:outline-none focus-visible:decoration-primary';
+
+/** The dotted trigger and the shared card around a hover body. */
+function FxHover({ text, className, children }: { text: React.ReactNode; className: string; children: React.ReactNode }) {
+  return (
+    <HoverCard openDelay={200} closeDelay={80}>
+      <HoverCardTrigger asChild>
+        <span tabIndex={0} onClick={(e) => e.stopPropagation()} className={`${TRIGGER_CLASS} ${className}`}>
+          {text}
+        </span>
+      </HoverCardTrigger>
+      <HoverCardContent
+        side="top"
+        align="start"
+        className={FX_CARD_CLASS}
+        arrowPadding={FX_ARROW_PADDING}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+        <FxArrow />
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
+/**
+ * An amount kept in `currency`, shown in the base currency. A foreign one
+ * gets the dotted underline and a hover with the vendor's amount and the
+ * rate; a base one is plain text. `children` replaces the rendered text
+ * (e.g. a search-highlighted or compact copy of it); the hover stays the same.
+ */
+export function BaseMoney({
+  value,
+  currency,
+  fx,
+  className = '',
+  dateLabel,
+  role,
+  children,
+}: {
+  /** The amount in `currency`. */
+  value: number;
+  currency: string | null | undefined;
+  fx?: MoneyFx | null;
+  className?: string;
+  dateLabel?: string;
+  role?: string;
+  children?: React.ReactNode;
+}) {
+  const code = (currency || BASE_CURRENCY).toUpperCase();
+  if (!fx || isBaseCurrency(code)) {
+    return <span className={`tabular-nums ${className}`}>{children ?? formatMoney(value, code)}</span>;
+  }
+  const text = children ?? formatMoney(toBase(value, fx.rate), BASE_CURRENCY);
+  if (!value) return <span className={`tabular-nums ${className}`}>{text}</span>;
+  return (
+    <FxHover text={text} className={className}>
+      <BaseMoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} />
+    </FxHover>
   );
 }
 
@@ -83,26 +191,8 @@ export function Money({
     return <span className={`tabular-nums ${className}`}>{text}</span>;
   }
   return (
-    <HoverCard openDelay={200} closeDelay={80}>
-      <HoverCardTrigger asChild>
-        <span
-          tabIndex={0}
-          onClick={(e) => e.stopPropagation()}
-          className={`tabular-nums cursor-help underline decoration-dotted decoration-slate-300 underline-offset-[3px] hover:decoration-slate-500 focus-visible:outline-none focus-visible:decoration-primary ${className}`}
-        >
-          {text}
-        </span>
-      </HoverCardTrigger>
-      <HoverCardContent
-        side="top"
-        align="start"
-        className={FX_CARD_CLASS}
-        arrowPadding={FX_ARROW_PADDING}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <MoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} />
-        <FxArrow />
-      </HoverCardContent>
-    </HoverCard>
+    <FxHover text={text} className={className}>
+      <MoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} />
+    </FxHover>
   );
 }

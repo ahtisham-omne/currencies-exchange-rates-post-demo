@@ -10,6 +10,9 @@ import { vendorPaymentMethods, type VendorPaymentMethod } from './vendorPaymentM
 import { memoLimitFor } from '@/app/lib/memoLimits';
 import { formatPaymentId, formatRunId, nextRunNumber } from '@/app/lib/invoiceIds';
 import { stampPaymentRate } from '@/app/currency/paymentFx';
+import { invoiceFx } from '@/app/currency/invoiceFx';
+import { isBaseCurrency } from '@/app/currency/currencies';
+import { defaultPayFromCurrency } from '@/app/currency/paymentRules';
 
 /* ── Payment runs (payment-run-flow.md, 7/29/26) ─────────────────────────
  *
@@ -55,6 +58,13 @@ export interface PaymentRunLine {
    *  which payment the line joins: one payment can't mix currencies.
    *  Optional so lines predating it read the vendor's currency. */
   currency?: string;
+  /** The invoice's rate and its day, and its PO's "You pay in" (Currency &
+   *  Exchange Rates), denormalized like currency: A/P carried the line at
+   *  the rate, so the payment's FX Gain/Loss is measured from it, and the
+   *  You pay in picks the payment's default account. */
+  invoiceRate?: number;
+  invoiceRateDate?: string;
+  youPayIn?: string;
   dueDate: string;
   /** Snapshot of the outstanding balance when the line was ticked. */
   balanceAtAdd: number;
@@ -143,6 +153,10 @@ export interface RunVendorGroup {
   methodOverridden?: boolean;
   payFromAccountId: string;
   accountOverridden?: boolean;
+  /** From a base-currency account paying a foreign group (Currency &
+   *  Exchange Rates, rule 7): what the bank took, in base, entered when the
+   *  payment is recorded. Absent: estimated at the payment date's rate. */
+  bankAmount?: number;
   /** Advances account the vendor's pre-invoice payments debit (user
    *  10/22/26, the Record Payment "Prepayment Account" field). Blank =
    *  1205 Advance Payments, the account a pre-invoice names. */
@@ -409,28 +423,41 @@ const FALLBACK_ACCOUNT =
 /** The account a saved method draws from: the Cash Management account
  *  linked to the method's bank when one exists (the snap-to-bank
  *  convention from the single-payment flow), else the first account of
- *  the method's type, else the operating account. With a payment
- *  currency (Currency & Exchange Rates), only accounts in that currency
- *  or the base currency qualify. */
-export function accountForMethod(method: VendorPaymentMethod | null, currency?: string): string {
-  const pool = currency ? accountsForCurrency(PAY_FROM_ACCOUNTS, currency) : PAY_FROM_ACCOUNTS;
-  const fallback = pool.find((a) => a.type === 'bank')?.id ?? FALLBACK_ACCOUNT;
-  if (!method) return fallback;
-  const wantType = accountTypeForMethod(method.type);
-  const byBank = method.bankName
-    ? pool.find((a) => a.type === wantType && a.bankName === method.bankName)
-    : undefined;
-  if (byBank) return byBank.id;
-  const byType = pool.find((a) => (wantType === 'any' ? a.type === 'bank' : a.type === wantType));
-  return byType?.id ?? fallback;
+ *  the method's type, else the operating account. With the invoices'
+ *  currency (Currency & Exchange Rates), only an account that may pay them
+ *  qualifies (rule 3): one in the currency the PO's "You pay in" asks for
+ *  (rule 5), else one in the base currency. */
+export function accountForMethod(method: VendorPaymentMethod | null, currency?: string, youPayIn?: string): string {
+  const pick = (pool: typeof PAY_FROM_ACCOUNTS) => {
+    if (!method) return pool.find((a) => a.type === 'bank');
+    const wantType = accountTypeForMethod(method.type);
+    const byBank = method.bankName ? pool.find((a) => a.type === wantType && a.bankName === method.bankName) : undefined;
+    return byBank ?? pool.find((a) => (wantType === 'any' ? a.type === 'bank' : a.type === wantType));
+  };
+  if (!currency) return pick(PAY_FROM_ACCOUNTS)?.id ?? FALLBACK_ACCOUNT;
+  const want = defaultPayFromCurrency(currency, youPayIn);
+  const inWant = PAY_FROM_ACCOUNTS.filter((a) => a.currency === want);
+  const inBase = PAY_FROM_ACCOUNTS.filter((a) => isBaseCurrency(a.currency));
+  const allowed = accountsForCurrency(PAY_FROM_ACCOUNTS, currency);
+  return (pick(inWant) ?? pick(inBase) ?? allowed.find((a) => a.type === 'bank'))?.id ?? FALLBACK_ACCOUNT;
 }
 
 /** Each vendor carries its own method and pay-from account into a run;
- *  the account fits the payment's currency when one is given. */
-export function vendorPayDefaults(vendor: string, currency?: string): VendorPayDefaults {
+ *  the account fits the invoices' currency and their POs' You pay in. */
+export function vendorPayDefaults(vendor: string, currency?: string, youPayIn?: string): VendorPayDefaults {
   const methods = vendorPaymentMethods(vendor);
   const primary = methods.find((m) => m.isPrimary) ?? methods[0] ?? null;
-  return { method: primary, payFromAccountId: accountForMethod(primary, currency) };
+  return { method: primary, payFromAccountId: accountForMethod(primary, currency, youPayIn) };
+}
+
+/** A run line's currency facts from its invoice (Currency & Exchange Rates). */
+export function lineFxOf(inv: Invoice): Pick<PaymentRunLine, 'invoiceRate' | 'invoiceRateDate' | 'youPayIn'> {
+  const fx = invoiceFx(inv);
+  return {
+    invoiceRate: fx.rate,
+    invoiceRateDate: fx.rateDate,
+    ...(inv.youPayIn ? { youPayIn: inv.youPayIn } : {}),
+  };
 }
 
 /* ── Seeded example runs ────────────────────────────────────────────────
@@ -471,6 +498,7 @@ function toLine(inv: Invoice): PaymentRunLine {
     invoiceNumber: inv.invoiceNumber,
     vendor: inv.vendor,
     currency: inv.currency,
+    ...lineFxOf(inv),
     dueDate: inv.dueDate,
     balanceAtAdd: inv.outstandingBalance,
     payAmount: inv.outstandingBalance,
@@ -488,7 +516,7 @@ function groupsFor(lines: PaymentRunLine[]): RunVendorGroup[] {
   });
   return [...firstOfKey.values()].map((l) => {
     const currency = lineCurrency(l);
-    const d = vendorPayDefaults(l.vendor, currency);
+    const d = vendorPayDefaults(l.vendor, currency, l.youPayIn);
     return {
       vendor: l.vendor,
       currency,
@@ -529,6 +557,7 @@ function buildSeeds(): { runs: PaymentRun[]; payments: Payment[] } {
     invoiceNumber: inv.invoiceNumber,
     vendor: inv.vendor,
     currency: inv.currency,
+    ...lineFxOf(inv),
     dueDate: inv.dueDate,
     balanceAtAdd: inv.amount,
     payAmount: inv.amount,

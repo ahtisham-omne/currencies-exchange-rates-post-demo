@@ -13,7 +13,8 @@ import { ReceivingDocumentModal, type ReceivingDocumentLine } from './ReceivingD
 import { ItemImageWithPreview, ItemQuickViewModal } from './ItemQuickView';
 import { highlightText, highlightAmount } from '@/app/components/InvoiceDataTable';
 import { rowMatchesColumns } from '@/app/components/data-table/tableSearch';
-import { formatMoney as formatInCurrency } from '@/app/currency/money';
+import { DocMoney } from '@/app/components/currency/DocCurrency';
+import { useDocMoney } from '@/app/components/currency/docCurrencyContext';
 
 // Read-only, short list → no row selection, no pagination. Shared empties so
 // the controlled DataTable props stay referentially stable.
@@ -577,8 +578,9 @@ function generateStandaloneLines(invoice: Invoice, subtotal: number): Standalone
   });
 }
 
-// Each currency with its own symbol and decimals (Currency & Exchange Rates).
-const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
+// Amounts are kept in the invoice's currency and shown in the page's (base by
+// default, the vendor's with the header toggle), the other on hover
+// (Currency & Exchange Rates).
 
 // Detail-page line items for a Standalone invoice — mirrors the create
 // form's GL Account · Description · Amount table instead of the inventory
@@ -586,6 +588,7 @@ const formatMoney = (amount: number, currency: string) => formatInCurrency(amoun
 function StandaloneLineItems({ invoice, subtotal, isPending }: { invoice: Invoice; subtotal: number; isPending: boolean }) {
   const lines = useMemo(() => generateStandaloneLines(invoice, subtotal), [invoice, subtotal]);
   const total = lines.reduce((s, l) => s + l.amount, 0);
+  const docMoney = useDocMoney();
 
   if (lines.length === 0) {
     return (
@@ -631,8 +634,8 @@ function StandaloneLineItems({ invoice, subtotal, isPending }: { invoice: Invoic
     {
       key: 'amount', label: 'Total', minWidth: 130, defaultWidth: 160, sortable: true,
       getValue: (r) => r.amount,
-      searchText: (r) => formatMoney(r.amount, invoice.currency),
-      render: (r, { searchQuery }) => <span className="text-foreground " style={{ fontWeight: 600 }}>{highlightAmount(formatMoney(r.amount, invoice.currency), searchQuery)}</span>,
+      searchText: (r) => docMoney(r.amount),
+      render: (r, { searchQuery }) => <span className="text-foreground " style={{ fontWeight: 600 }}><DocMoney value={r.amount}>{highlightAmount(docMoney(r.amount), searchQuery)}</DocMoney></span>,
     },
   ];
   const catalog = columns.map((c) => ({ key: c.key, label: c.label }));
@@ -750,6 +753,7 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending }: { invo
   // money subtotal ("Invoice line subtotal") — quantities can't be summed
   // across mixed units (ROLL + L + EA), so no quantity totals are shown.
   const lineAmountTotal = lines.reduce((s, l) => s + l.invoicedQty * l.unitPrice, 0);
+  const docMoney = useDocMoney();
 
   // Receiving Document modal state — opens when a user clicks a GRN
   // chip in the Linked Documents column. The modal sources its line
@@ -878,10 +882,10 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending }: { invo
     {
       key: 'unitPrice', label: 'Price per Unit', minWidth: 100, defaultWidth: 120, sortable: true,
       getValue: (l) => l.unitPrice,
-      searchText: (l) => `${formatMoney(l.unitPrice, invoice.currency)} per ${l.uom}`,
+      searchText: (l) => `${docMoney(l.unitPrice)} per ${l.uom}`,
       render: (line, { searchQuery }) => (
         <div>
-          <div className="text-[13px] text-foreground" style={{ fontWeight: 500 }}>{highlightAmount(formatMoney(line.unitPrice, invoice.currency), searchQuery)}</div>
+          <div className="text-[13px] text-foreground" style={{ fontWeight: 500 }}><DocMoney value={line.unitPrice}>{highlightAmount(docMoney(line.unitPrice), searchQuery)}</DocMoney></div>
           <div className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>{highlightText(`per ${line.uom}`, searchQuery)}</div>
         </div>
       ),
@@ -889,9 +893,9 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending }: { invo
     {
       key: 'amount', label: 'Total', minWidth: 120, defaultWidth: 130, sortable: true,
       getValue: (l) => l.invoicedQty * l.unitPrice,
-      searchText: (l) => formatMoney(l.invoicedQty * l.unitPrice, invoice.currency),
+      searchText: (l) => docMoney(l.invoicedQty * l.unitPrice),
       render: (line, { searchQuery }) => (
-        <span className="text-foreground text-[13px]" style={{ fontWeight: 500 }}>{highlightAmount(formatMoney(line.invoicedQty * line.unitPrice, invoice.currency), searchQuery)}</span>
+        <span className="text-foreground text-[13px]" style={{ fontWeight: 500 }}><DocMoney value={line.invoicedQty * line.unitPrice}>{highlightAmount(docMoney(line.invoicedQty * line.unitPrice), searchQuery)}</DocMoney></span>
       ),
     },
     {

@@ -41,9 +41,8 @@ import {
   computeReadyKpi,
   DEFAULT_READY_KPI_KEYS,
 } from '@/app/data/readyKpis';
-import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
-import { formatMoney } from '@/app/currency/money';
+import { formatMoney, moneyPrefix } from '@/app/currency/money';
 import { toInvoiceBase } from '@/app/currency/invoiceFx';
 
 // "Invoices to pay" shows ONLY approved invoices awaiting payment
@@ -494,12 +493,9 @@ export function ReadyToPayTable({
   // Selection context feeds the "Selected" KPI + the pay-run CTA.
   const selectedInvoices = readyInvoices.filter((i) => selectedIds.includes(i.id));
   const selectedDue = selectedInvoices.reduce((s, i) => s + toInvoiceBase(i, i.outstandingBalance), 0);
-  // The bulk bar names the selection's own currency when it has one, else
-  // the base currency (Currency & Exchange Rates).
-  const selectedCurrencies = Array.from(new Set(selectedInvoices.map((i) => i.currency)));
-  const selectedDueText = selectedCurrencies.length === 1
-    ? formatMoney(selectedInvoices.reduce((s, i) => s + i.outstandingBalance, 0), selectedCurrencies[0])
-    : money(selectedDue);
+  // The bulk bar reads in the base currency, each invoice at its own rate,
+  // like the rest of the list (Currency & Exchange Rates).
+  const selectedDueText = money(selectedDue);
   const readyCtx = { selectedCount: selectedIds.length, selectedDue };
 
   // Active KPI cards for the insights grid (customizable via the drawer).
@@ -533,8 +529,8 @@ export function ReadyToPayTable({
               onCustomChange={(from, to) => setInsightsCustom({ from, to })}
             />
             <InsightsRefresh />
-            {/* The cards' money is base currency (Currency & Exchange Rates). */}
-            <BaseCurrencyNote />
+            {/* The cards' money is base currency (Currency & Exchange Rates),
+                like the table's; the pill is gone. */}
           </div>
           <div className="flex items-center gap-2">
             <InsightsResetButton dirty={insightsDirty} onReset={handleInsightsReset} />
@@ -725,7 +721,7 @@ export function ReadyToPayTable({
                 <div>
                   <p className="text-[11px] text-slate-500 mb-1" style={{ fontWeight: 500 }}>Min</p>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">{moneyPrefix(BASE_CURRENCY).trim()}</span>
                     <Input
                       type="text"
                       inputMode="decimal"
@@ -739,7 +735,7 @@ export function ReadyToPayTable({
                 <div>
                   <p className="text-[11px] text-slate-500 mb-1" style={{ fontWeight: 500 }}>Max</p>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 ">{moneyPrefix(BASE_CURRENCY).trim()}</span>
                     <Input
                       type="text"
                       inputMode="decimal"

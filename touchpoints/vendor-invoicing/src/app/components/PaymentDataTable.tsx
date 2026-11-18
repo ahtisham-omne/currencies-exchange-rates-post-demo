@@ -30,10 +30,10 @@ import {
   DropdownMenuTrigger,
 } from '@/app/components/ui/dropdown-menu';
 import type { Payment } from '@/app/data/mockPayments';
-import { getCurrency } from '@/app/currency/currencies';
+import { BASE_CURRENCY, getCurrency } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
 import { paymentFx, toPaymentBase } from '@/app/currency/paymentFx';
-import { Money } from '@/app/components/currency/Money';
+import { BaseMoney } from '@/app/components/currency/Money';
 import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
 import { getRowActionGroups, type PaymentActionId } from '@/app/data/paymentActions';
 import { actionToneClass, type ActionTone } from '@/app/lib/actionMenuTone';
@@ -505,25 +505,28 @@ export const PAYMENT_COLUMNS: ColumnDef<Payment>[] = [
   {
     key: 'amount',
     label: 'Amount',
-    tooltip: "In each payment's own currency. Sorting and the range filter use the base currency equivalent.",
+    tooltip: `In ${BASE_CURRENCY}, the base currency, at each payment's rate (from a base account, the bank's). Hover for the amount in the invoices' currency.`,
     minWidth: 120,
     defaultWidth: 150,
     align: 'right',
     sortable: true,
     filterType: 'range',
-    // Currency & Exchange Rates: the amount is in the payment currency (the
-    // symbol follows the Currency column); hover for its base value at the
-    // payment's rate. Sorting and the range filter compare in the base.
+    // Currency & Exchange Rates: every amount on the listing is in the base
+    // currency, at the payment's rate (worked out from the bank's figures
+    // from a base account, the day's from one in the invoices' currency),
+    // with what the vendor received (the Currency column) on hover. Sorting,
+    // the range filter and search use that base amount; search also matches
+    // the invoice-currency figure.
     getValue: (row) => toPaymentBase(row, row.amount),
     getSortValue: (row) => toPaymentBase(row, row.amount),
-    searchText: (row) => formatMoney(row.amount, row.currency),
+    searchText: (row) => `${formatMoney(row.amount, row.currency)} ${formatMoney(toPaymentBase(row, row.amount), BASE_CURRENCY)}`,
     // Same weight as every other column (partner table pattern — no
     // heavier font for money columns, design feedback 7/13/26).
     render: (row, { searchQuery }) => (
       <span className="text-foreground" style={{ fontWeight: 400 }}>
-        <Money value={row.amount} currency={row.currency} fx={paymentFx(row)} role="payment currency">
-          {highlightAmount(formatMoney(row.amount, row.currency), searchQuery)}
-        </Money>
+        <BaseMoney value={row.amount} currency={row.currency} fx={paymentFx(row)} role="Invoice currency" dateLabel="payment date">
+          {highlightAmount(formatMoney(toPaymentBase(row, row.amount), BASE_CURRENCY), searchQuery)}
+        </BaseMoney>
       </span>
     ),
   },

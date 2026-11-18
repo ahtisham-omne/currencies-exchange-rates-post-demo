@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '@/app/components/ui/select';
 import { formatMoney as formatInCurrency } from '@/app/currency/money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
 
 /** Resolve a payment's funding account (a PAY_FROM id like
  *  "1210-Citibank" or a GL string) into a code + name for the reversal
@@ -71,7 +72,9 @@ export interface PaymentRecord {
   apAccount?: string;
   /** The payment's saved journal (Eli 9/24 R04): when present, the
    *  reversal preview is exactly these legs inverted. */
-  glEntries?: { accountCode: string; accountName: string; debit?: number; credit?: number }[];
+  /** A foreign payment's snapshot is kept in base and its lines carry their
+   *  currency (Currency & Exchange Rates); the reversal reads it in base. */
+  glEntries?: { accountCode: string; accountName: string; debit?: number; credit?: number; currency?: string }[];
 }
 
 export interface ReversePaymentSubmitPayload {
@@ -252,6 +255,8 @@ export function ReversePaymentModal({
     const name = t.slice(code.length).replace(/^[\s·-]+/, '') || defName;
     return { code, name };
   };
+  // A snapshot in base (a foreign payment's) reverses in base.
+  const glCurrency = selectedPayment?.glEntries?.some((e) => e.currency) ? BASE_CURRENCY : currency;
   const reversalRows = (() => {
     const saved = selectedPayment?.glEntries;
     if (saved && saved.length > 0) {
@@ -850,8 +855,8 @@ export function ReversePaymentModal({
                               {up ? <ArrowUp className="w-2.5 h-2.5" /> : <ArrowDown className="w-2.5 h-2.5" />}
                             </span>
                           </td>
-                          <td className="px-3 py-1.5 text-right ">{row.debit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(row.debit, currency)}</span> : null}</td>
-                          <td className="px-3 py-1.5 text-right ">{row.credit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(row.credit, currency)}</span> : null}</td>
+                          <td className="px-3 py-1.5 text-right ">{row.debit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(row.debit, glCurrency)}</span> : null}</td>
+                          <td className="px-3 py-1.5 text-right ">{row.credit > 0 ? <span style={{ fontWeight: 600 }}>{formatMoney(row.credit, glCurrency)}</span> : null}</td>
                         </tr>
                         );
                       })}

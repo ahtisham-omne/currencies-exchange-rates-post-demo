@@ -106,8 +106,10 @@ import {
   type InsightsRange,
 } from '@/app/components/PaymentInsightsPanel';
 import { InsightsRangeMenu, INSIGHTS_RANGE_OPTIONS } from '@/app/components/InsightsRangeMenu';
-import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
 import { formatMoney } from '@/app/currency/money';
+import { BaseMoney } from '@/app/components/currency/Money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { paymentFx, toPaymentBase } from '@/app/currency/paymentFx';
 import { BulkActionBar, type BulkAction } from '@/app/components/BulkActionBar';
 import { getBulkActions, isBulkEligible, type PaymentActionId } from '@/app/data/paymentActions';
 import {
@@ -696,8 +698,9 @@ export function PaymentsScreen({
     if (createdByQuickFilter.length > 0 && !createdByQuickFilter.includes(payment.createdBy)) return false;
     if (vendorFilter.length > 0 && !vendorFilter.includes(payment.vendor)) return false;
     if (currencyFilter.length > 0 && !currencyFilter.includes(payment.currency)) return false;
-    if (amountMin && payment.amount < parseFloat(amountMin)) return false;
-    if (amountMax && payment.amount > parseFloat(amountMax)) return false;
+    // In the base currency, like the Amount column (Currency & Exchange Rates).
+    if (amountMin && toPaymentBase(payment, payment.amount) < parseFloat(amountMin)) return false;
+    if (amountMax && toPaymentBase(payment, payment.amount) > parseFloat(amountMax)) return false;
     if (periodFilter === 'custom') {
       if (periodCustom.from && new Date(payment.createdDate) < new Date(periodCustom.from)) return false;
       if (periodCustom.to && new Date(payment.createdDate) > new Date(periodCustom.to)) return false;
@@ -1262,8 +1265,8 @@ export function PaymentsScreen({
                 onCustomChange={(from, to) => setInsightsCustom({ from, to })}
               />
               <InsightsRefresh />
-              {/* The cards' money is base currency (Currency & Exchange Rates). */}
-              <BaseCurrencyNote what="payment" rateDay="its payment date" />
+              {/* The cards' money is base currency (Currency & Exchange Rates),
+                  like every amount on the page; the pill is gone. */}
             </div>
             <div className="flex items-center gap-2">
               <InsightsResetButton dirty={insightsDirty} onReset={handleInsightsReset} />
@@ -1858,8 +1861,9 @@ export function PaymentsScreen({
                     )}
                   </div>
                   <div className="flex items-center justify-between pt-3 border-t border-border">
+                    {/* In base, the invoices' currency on hover (Currency & Exchange Rates). */}
                     <div className="text-lg " style={{ fontWeight: 600 }}>
-                      {formatMoney(payment.amount, payment.currency)}
+                      <BaseMoney value={payment.amount} currency={payment.currency} fx={paymentFx(payment)} role="Invoice currency" dateLabel="payment date" />
                     </div>
                     <StatusBadge status={payment.status} />
                   </div>

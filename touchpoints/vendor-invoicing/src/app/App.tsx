@@ -1488,7 +1488,13 @@ export default function App() {
                         // showed today + invoice date instead of the
                         // saved Feb receiving), so the trigger dropdown
                         // reopens on it.
-                        grnDate: resubmitInvoice.triggerDate || resubmitInvoice.invoiceDate,
+                        // A record that kept its receivings (Currency &
+                        // Exchange Rates) reopens on the real receiving
+                        // date, so its FX Variance is measured the same.
+                        grnDate:
+                          (resubmitInvoice.savedLineItems ?? []).flatMap((l) => l.receipts ?? [])[0]?.date ||
+                          resubmitInvoice.triggerDate ||
+                          resubmitInvoice.invoiceDate,
                         receivedQty: grnItems.reduce((sq, i) => sq + i.quantity, 0),
                         poNumber,
                         status: 'Received',
@@ -1617,6 +1623,7 @@ export default function App() {
                         rateType: edited.rateType,
                         rateDate: edited.rateDate,
                         rateEdited: edited.rateEdited,
+                        rateBasis: edited.rateBasis ?? inv.rateBasis,
                         // A cleared description stays cleared (Mahreen 10/10).
                         description: edited.description ?? inv.description,
                         amount: edited.amount,

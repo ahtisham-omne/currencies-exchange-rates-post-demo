@@ -1,3 +1,6 @@
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { formatMoney } from '@/app/currency/money';
+import { toInvoiceBase } from '@/app/currency/invoiceFx';
 import { useEffect, useState, useRef } from 'react';
 import { formatUsDateTime } from '@/app/lib/dueBucket';
 import {
@@ -100,8 +103,9 @@ export function InvoiceQuickViewPanel({
   if (!mounted || !invoice) return null;
 
   const tone = STATUS_TONE[invoice.status] ?? STATUS_TONE.Draft;
-  const fmtMoney = (n: number) =>
-    `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // In the base currency at the invoice's rate, as the listing shows it
+  // (Currency & Exchange Rates); the Currency tile names the invoice's own.
+  const fmtMoney = (n: number) => formatMoney(toInvoiceBase(invoice, n), BASE_CURRENCY);
 
   return (
     <>

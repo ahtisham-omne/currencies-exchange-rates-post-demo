@@ -6,12 +6,13 @@ import { differenceKind } from '@/app/currency/paymentFx';
 
 /* ── Exchange difference (Currency & Exchange Rates) ──────────────────
  * Settling invoices booked at their own rates at a payment's rate leaves a
- * difference in the base currency: a gain when paying costs less than was
- * booked, a loss when it costs more. Shown as one labelled line with the
- * sum, in the payment summary and on the payment's page. */
+ * difference in the base currency, the realized FX Gain/Loss: a gain when
+ * paying costs less than A/P carried, a loss when it costs more. Shown as
+ * one labelled line with the sum, in the payment summary and on the
+ * payment's page (currency/paymentRules.ts works it out). */
 
 export const EXCHANGE_DIFFERENCE_TIP =
-  'What these invoices come to in the base currency at their own rates, against this payment’s rate. Paying less than was booked is a gain, paying more is a loss. It posts to exchange gain or loss.';
+  'What A/P carried for these invoices in the base currency, at their own rates, against what paying them cost: the bank’s figure from a base account, the day’s rate from one in the invoices’ currency. Costing less is a gain, more is a loss. It posts to Realized FX Gain/Loss.';
 
 /** "+₨17.54" / "−₨17.54" / "₨0.00". */
 export function signedBase(d: number): string {

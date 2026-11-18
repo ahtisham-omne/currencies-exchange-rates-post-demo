@@ -1,0 +1,161 @@
+import type { Invoice } from '@/app/data/mockInvoices';
+import { PAY_FROM_ACCOUNTS, type PayFromAccount, type Payment } from '@/app/data/mockPayments';
+import { DEFAULT_PREPAYMENT_ASSET_ACCOUNT } from '@/app/data/glAccounts';
+import { buildPaymentGlEntries, type GlEntryLine } from '@/app/lib/glPosting';
+import { BASE_CURRENCY, isBaseCurrency } from './currencies';
+import { invoiceFx } from './invoiceFx';
+import { bookedRateOf, settledCurrencyOf } from './paymentFx';
+import {
+  buildPaymentGlFx,
+  convertsAtBank,
+  costInBase,
+  dayRateOn,
+  glAtRate,
+  paymentRateOf,
+  realizedFxFromGl,
+  youPayInOfAll,
+  type CreditUsed,
+  type SettledLine,
+} from './paymentRules';
+import { toBase } from './rates';
+
+/* ── A saved payment in the base-currency ledger (Currency & Exchange Rates) ──
+ * What a payment's page reads: its journal in base (the saved snapshot, or,
+ * for a seed that has none, one built by the rule Record Payment posts with),
+ * the account it came from, the bank's rate and the day's, what it cost, what
+ * A/P carried and the realized FX Gain/Loss (read off the journal, so the
+ * summary and the GL Impact tab always agree). */
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export interface PaymentLedger {
+  /** The journal, in base. */
+  entries: GlEntryLine[];
+  account?: PayFromAccount;
+  /** The invoices' currency, what the vendor received. */
+  currency: string;
+  /** A base account paid foreign invoices: the bank converted. */
+  converts: boolean;
+  /** The payment's rate (the bank's, or the day's). */
+  rate: number;
+  /** Mid-market on the payment date. */
+  dayRate: number;
+  /** What the cash cost in base. */
+  cost: number;
+  /** Vendor credit drawn, in base. */
+  credit: number;
+  /** What A/P carried for the part settled, in base. */
+  carried: number;
+  /** Realized FX Gain/Loss (above zero a gain); null with nothing to compare. */
+  realized: number | null;
+  lines: SettledLine[];
+  credits: CreditUsed[];
+  /** The account currency the invoices' POs asked for. */
+  youPayIn: string;
+}
+
+export function paymentLedger(p: Payment, invoices: Invoice[], payments: Payment[] = []): PaymentLedger {
+  const currency = settledCurrencyOf(p);
+  const base = isBaseCurrency(currency);
+  const account = PAY_FROM_ACCOUNTS.find((a) => a.id === p.bankAccount);
+  const accountCurrency = account?.currency ?? BASE_CURRENCY;
+  const rate = paymentRateOf(p);
+  const dayRate = dayRateOn(currency, p.paymentDate);
+  const isPrepay = p.type === 'Prepayment';
+  const byNumber = new Map(invoices.map((inv) => [inv.invoiceNumber, inv]));
+  // Gross per invoice (cash and credit) when the split was kept, else the cash.
+  const settled = p.perInvoiceSplit?.length
+    ? p.perInvoiceSplit.map((s) => ({ invoiceNumber: s.invoiceNumber, amount: round2(s.cash + s.credit) }))
+    : p.appliedInvoices.map((a) => ({ invoiceNumber: a.invoiceNumber, amount: a.amount }));
+  const lines: SettledLine[] = isPrepay
+    ? []
+    : settled.map((s) => {
+        const inv = byNumber.get(s.invoiceNumber);
+        return {
+          invoiceNumber: s.invoiceNumber,
+          amount: s.amount,
+          rate: base ? 1 : bookedRateOf(inv, currency, rate),
+          rateDate: inv ? invoiceFx(inv).rateDate : undefined,
+          apAccount: p.apAccount,
+        };
+      });
+  const credits: CreditUsed[] = (p.appliedCredits ?? []).map((c) => ({
+    amount: c.amount,
+    rate: base ? 1 : payments.find((x) => x.id === c.sourcePaymentId)?.exchangeRate ?? rate,
+    account: DEFAULT_PREPAYMENT_ASSET_ACCOUNT,
+  }));
+  const creditTotal = round2(credits.reduce((s, c) => s + (base ? c.amount : toBase(c.amount, c.rate)), 0));
+
+  let entries: GlEntryLine[];
+  if (p.glEntries?.length) {
+    // A snapshot in base carries its currency; an older one kept in the
+    // invoices' currency posts at the payment's rate.
+    const inBase = base || p.glEntries.some((e) => e.currency);
+    entries = inBase ? p.glEntries : glAtRate(p.glEntries, currency, rate);
+  } else if (isPrepay || lines.length === 0) {
+    entries = glAtRate(
+      buildPaymentGlEntries({
+        type: isPrepay ? 'Prepayment' : 'Payment',
+        cashAmount: p.amount,
+        bankAccount: account?.creditGl ?? p.bankAccount,
+        apAccount: p.apAccount || DEFAULT_PREPAYMENT_ASSET_ACCOUNT,
+        description: isPrepay ? `Advance to ${p.vendor}` : undefined,
+      }),
+      currency,
+      rate,
+    );
+  } else {
+    entries = buildPaymentGlFx({
+      currency,
+      lines,
+      apAccount: p.apAccount,
+      credits,
+      cash: p.amount,
+      bankGl: account?.creditGl ?? p.bankAccount,
+      accountCurrency,
+      bankAmount: p.bankAmount,
+      paymentRate: rate,
+      paymentDate: p.paymentDate,
+      description: `Settle ${lines.map((l) => l.invoiceNumber).join(', ')}`,
+    }).entries;
+  }
+
+  const cost = costInBase(p);
+  const realized = base || isPrepay ? null : realizedFxFromGl(entries) ?? 0;
+  const youPayIn = youPayInOfAll(
+    settled.map((s) => byNumber.get(s.invoiceNumber)).filter((i): i is Invoice => !!i),
+  );
+  return {
+    entries,
+    account,
+    currency,
+    converts: convertsAtBank(accountCurrency, currency),
+    rate,
+    dayRate,
+    cost,
+    credit: creditTotal,
+    carried: realized != null ? round2(realized + cost + creditTotal) : cost,
+    realized,
+    lines,
+    credits,
+    youPayIn: settled.length ? youPayIn : BASE_CURRENCY,
+  };
+}
+
+/** The accounts a payment's Currency Configuration lists: the one paying (or
+ *  the first of its type) in each currency that may pay, then one greyed per
+ *  other currency (rule 4). */
+export function configAccounts(invoiceCurrency: string, currentId: string | undefined, type?: PayFromAccount['type'] | 'any'): PayFromAccount[] {
+  const cur = invoiceCurrency.toUpperCase();
+  const current = PAY_FROM_ACCOUNTS.find((a) => a.id === currentId);
+  const typeOk = (a: PayFromAccount) => !type || type === 'any' || a.type === type;
+  const pickIn = (c: string) =>
+    (current && current.currency === c ? current : undefined) ??
+    PAY_FROM_ACCOUNTS.find((a) => a.currency === c && typeOk(a)) ??
+    PAY_FROM_ACCOUNTS.find((a) => a.currency === c);
+  const wanted = isBaseCurrency(cur) ? [BASE_CURRENCY] : [cur, BASE_CURRENCY];
+  const allowed = wanted.map(pickIn).filter((a): a is PayFromAccount => !!a);
+  const seen = new Set<string>(wanted);
+  const greyed = PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank' && !seen.has(a.currency) && (seen.add(a.currency), true));
+  return [...allowed, ...greyed];
+}

@@ -75,6 +75,9 @@ import {
   groupLines,
   groupAmount,
   groupFx,
+  groupConverts,
+  groupBankTook,
+  groupYouPayIn,
   isSplitVendor,
   runNetByCurrency,
   runGrossByCurrency,
@@ -110,6 +113,7 @@ import { AmountWithPrepaidNote } from '@/app/components/payments/PrepaidOriginNo
 import { MoneyInput, MaxChip } from '@/app/components/payments/MoneyInput';
 import { humanDate, openInvoiceTab, DueDatePill, RUN_FOOTER_SHELL, FOOTER_BTN_GHOST, FOOTER_BTN_PRIMARY } from './runUi';
 import { Money } from '@/app/components/currency/Money';
+import { BankConversionLine } from '@/app/components/currency/PaymentCurrencyFields';
 import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { formatAmount, formatMoney } from '@/app/currency/money';
@@ -320,7 +324,7 @@ export function RunProposalStage({
           ? {
               ...g,
               payFromAccountId: accountId,
-              accountOverridden: accountId !== vendorPayDefaults(g.vendor, groupCurrency(g)).payFromAccountId || undefined,
+              accountOverridden: accountId !== vendorPayDefaults(g.vendor, groupCurrency(g), groupYouPayIn(r, g)).payFromAccountId || undefined,
             }
           : g,
       ),
@@ -357,7 +361,7 @@ export function RunProposalStage({
       ...r,
       groups: r.groups.map((g) =>
         keys.includes(groupKeyOf(g))
-          ? { ...g, payFromAccountId: vendorPayDefaults(g.vendor, groupCurrency(g)).payFromAccountId, accountOverridden: undefined }
+          ? { ...g, payFromAccountId: vendorPayDefaults(g.vendor, groupCurrency(g), groupYouPayIn(r, g)).payFromAccountId, accountOverridden: undefined }
           : g,
       ),
     }));
@@ -579,8 +583,9 @@ export function RunProposalStage({
       methodType: m.type,
       methodOverridden: true,
       // The account follows the method's bank unless the user pinned one,
-      // in the payment's currency or the base currency.
-      ...(group.accountOverridden ? {} : { payFromAccountId: accountForMethod(m, groupCurrency(group)) }),
+      // in the invoices' currency or the base currency (the PO's You pay in
+      // picks which).
+      ...(group.accountOverridden ? {} : { payFromAccountId: accountForMethod(m, groupCurrency(group), groupYouPayIn(run, group)) }),
     });
   };
 
@@ -1706,15 +1711,18 @@ export function RunProposalStage({
         />
       )}
 
-      {/* Per-run pay-from override, filtered to the method's account type
-          and to accounts in the payment's currency or the base currency
-          (Currency & Exchange Rates). */}
+      {/* Per-run pay-from override, filtered to the method's account type.
+          Only an account in the invoices' currency or the base currency can
+          pay; the rest are listed greyed with the reason (Currency &
+          Exchange Rates, rules 3 and 4). */}
       {accountModalVendor && (
         <PayFromAccountModal
           open
           onOpenChange={(open) => !open && setAccountGroupKey(null)}
           value={accountModalVendor.payFromAccountId}
-          accounts={accountsForCurrency(PAY_FROM_ACCOUNTS, groupCurrency(accountModalVendor)).filter((a) => {
+          invoiceCurrency={groupCurrency(accountModalVendor)}
+          youPayIn={groupYouPayIn(run, accountModalVendor)}
+          accounts={PAY_FROM_ACCOUNTS.filter((a) => {
             const want = accountTypeForMethod(accountModalVendor.methodType);
             return want === 'any' ? true : a.type === want;
           })}
@@ -2848,7 +2856,7 @@ export function VendorGroupCard({
           {isCollapsed && (
             <div className="flex flex-col items-end leading-none mr-0.5" onClick={(e) => e.stopPropagation()}>
               <span className="text-[14px] text-foreground" style={{ fontWeight: 600 }}>
-                <Money value={net} currency={currency} fx={netFx} role="payment currency" />
+                <Money value={net} currency={currency} fx={netFx} role="invoice currency" />
               </span>
               <span className="text-[10px] text-slate-500 mt-1" style={{ fontWeight: 500 }}>Net Payment</span>
             </div>
@@ -3500,10 +3508,24 @@ export function VendorGroupCard({
             {/* A payment amount: hovers its base equivalent at the payment
                 date's rate (Currency & Exchange Rates). */}
             <span className="text-foreground text-[13px]" style={{ fontWeight: 700 }}>
-              Net <Money value={net} currency={currency} fx={netFx} role="payment currency" />
+              Net <Money value={net} currency={currency} fx={netFx} role="invoice currency" />
             </span>
           </div>
         </div>
+        {/* The vendor receives the invoices' currency (Currency & Exchange
+            Rates): from a base account the bank converts, estimated at the
+            payment date's rate until its figure is entered at recording. */}
+        {!isBaseCurrency(currency) && net > 0.004 && (
+          <BankConversionLine
+            className="mt-2 justify-end"
+            currency={currency}
+            vendorReceives={net}
+            accountCurrency={account?.currency ?? BASE_CURRENCY}
+            bankTook={groupConverts(group) ? groupBankTook(run, group, net) : null}
+            paymentDate={run.paymentDate}
+            accountLabel={account?.label}
+          />
+        )}
 
         {readOnly ? (
           <>

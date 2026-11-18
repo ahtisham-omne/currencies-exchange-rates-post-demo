@@ -62,8 +62,9 @@ export function downloadRunRemittanceAdvice(runId: string, payments: Payment[]):
 }
 
 function renderAdvicePage(doc: jsPDF, payment: Payment, opts: RemittanceOptions): void {
-  // Currency & Exchange Rates: the advice lists what each invoice was
-  // settled for, so its amounts are in the invoices' currency.
+  // Currency & Exchange Rates (rule 10): the advice tells the vendor what
+  // they receive, so every amount is in the invoices' currency, whichever
+  // account paid. The bank's conversion and the base amounts stay ours.
   const currency = settledCurrencyOf(payment);
   const fmt = (n: number) => formatMoneyPdf(n, currency);
   const lines: RemittanceLine[] =
@@ -130,6 +131,7 @@ function renderAdvicePage(doc: jsPDF, payment: Payment, opts: RemittanceOptions)
     ['Payment Date', payment.paymentDate],
     ['Method', payment.paymentMethod],
     ['Reference No.', payment.reference || ', '],
+    ['Currency', `${currency}, as invoiced`],
   ];
   doc.setFontSize(9);
   meta.forEach(([k, v], i) => {
@@ -188,6 +190,10 @@ function renderAdvicePage(doc: jsPDF, payment: Payment, opts: RemittanceOptions)
   doc.text('Total Paid', cInvoice, y);
   doc.text(fmt(total), cPaid, y, { align: 'right' });
   doc.setFont('helvetica', 'normal');
+  y += 16;
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(`All amounts are in ${currency}, the currency of your invoices and what you receive.`, cInvoice, y);
 
   // ── Footer ──
   doc.setFontSize(8);

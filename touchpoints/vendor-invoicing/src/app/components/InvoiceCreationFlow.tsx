@@ -651,9 +651,15 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
                             −{fmt(e.amount)}
                           </span>
                         </div>
-                        {/* The rate the prepayment was paid at. */}
+                        {/* The rate the prepayment was paid at, which it keeps
+                            when applied (no FX variance on the part it covers),
+                            and what that is in base. This step stays in the
+                            vendor's currency: the invoice has no rate yet. */}
                         {paidRateText(gateCurrency, e) && (
-                          <p className="text-[10.5px] text-violet-500/80 mt-0.5 text-left">{paidRateText(gateCurrency, e)}</p>
+                          <p className="text-[10.5px] text-violet-500/80 mt-0.5 text-left">
+                            {paidRateText(gateCurrency, e)}
+                            {e.rate ? ` · ${formatMoney(Math.round(e.amount * e.rate * 100) / 100, BASE_CURRENCY)} at that rate` : ''}
+                          </p>
                         )}
                       </div>
                     ))}

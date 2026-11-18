@@ -7,6 +7,8 @@ import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
 import { currencyForVendorName } from '@/app/currency/invoiceFx';
 import { stampPaymentRate } from '@/app/currency/paymentFx';
+import { buildPaymentGlFx, canPayFrom, defaultPayFromCurrency, paymentRateOf } from '@/app/currency/paymentRules';
+import { toBase } from '@/app/currency/rates';
 import type { RateType } from '@/app/currency/rates';
 
 // Seeded so the listing renders the same 100 payments on every reload —
@@ -100,6 +102,11 @@ export interface PaymentGlEntry {
   description?: string;
   debit?: number;
   credit?: number;
+  /** A foreign payment's line (Currency & Exchange Rates): debit / credit
+   *  are base; this is the line in the invoices' currency, at `rate`. */
+  currency?: string;
+  foreignAmount?: number;
+  rate?: number;
 }
 
 export interface Payment {
@@ -129,18 +136,25 @@ export interface Payment {
   /** Prepayment-only: when linked to a pre-invoice, suggest this advance on the
    *  payment once that pre-invoice converts to a real invoice. Defaults to true. */
   autoApply?: boolean;
-  /** The payment currency: the cash goes out in it (Currency & Exchange
-   *  Rates). The vendor's currency, or the base currency. */
+  /** What the vendor receives (Currency & Exchange Rates): always the
+   *  currency of the invoices it settles, and `amount` is in it. The
+   *  pay-from account is in this currency or the base currency. */
   currency: string;
-  /** The currency of the invoices it settles, when the payment goes out in
-   *  another one (the base currency). Absent: the same as `currency`. */
+  /** Retired: a payment that went out in the base currency carried the
+   *  invoices' currency here. Payments are always in the invoices' currency
+   *  now; older records still read through settledCurrencyOf. */
   settledCurrency?: string;
-  /** Base per one unit of the settled currency on the payment date: the rate
-   *  the payment settles at, compared with each invoice's own rate. */
+  /** From a base-currency account paying foreign invoices: what the bank
+   *  took, in base. The rate is worked out from it and `amount`. */
+  bankAmount?: number;
+  /** Base per one unit of `currency`: worked out from the bank's figures
+   *  from a base account, the mid-market rate on the payment date from an
+   *  account in the invoices' currency. Compared with each invoice's rate,
+   *  it makes the realized FX Gain/Loss. */
   exchangeRate?: number;
   rateType?: RateType;
   rateDate?: string;
-  /** The rate was entered on the payment (the bank's), not the rate table's. */
+  /** The bank's figure was entered on the payment, not estimated at the day's rate. */
   rateEdited?: boolean;
   /** Check number / ACH trace number / wire confirmation. */
   reference: string;
@@ -273,10 +287,26 @@ export interface PayFromAccount {
   currency: string;
 }
 
-/** Accounts a payment in this currency can draw from: in that currency, or
- *  in the base currency (the bank converts). */
+/** Accounts that can pay invoices in this currency (Currency & Exchange
+ *  Rates, rule 3): in that currency, or in the base currency (the bank
+ *  converts). Pickers list the rest greyed, with payFromBlockReason. */
 export function accountsForCurrency<T extends Pick<PayFromAccount, 'currency'>>(accounts: T[], currency: string): T[] {
-  return accounts.filter((a) => a.currency === currency || isBaseCurrency(a.currency));
+  return accounts.filter((a) => canPayFrom(a.currency, currency));
+}
+
+/** The default account for a payment (rule 5): the first of the method's
+ *  type in the PO's "You pay in" currency, else in base. */
+export function defaultPayFromAccount(
+  invoiceCurrency: string,
+  youPayIn: string | undefined,
+  type?: PayFromType,
+  bankName?: string,
+): PayFromAccount {
+  const want = defaultPayFromCurrency(invoiceCurrency, youPayIn);
+  const ofType = (cur: string) =>
+    PAY_FROM_ACCOUNTS.filter((a) => a.currency === cur && (!type || type === 'any' || a.type === type));
+  const pool = ofType(want).length ? ofType(want) : ofType(BASE_CURRENCY);
+  return (bankName ? pool.find((a) => a.bankName === bankName) : undefined) ?? pool[0] ?? PAY_FROM_ACCOUNTS[0];
 }
 
 /** Per-type balance line for account pickers: card accounts show available
@@ -372,7 +402,9 @@ const PAID_INVOICE_POOL = mockInvoices
   .filter(
     (i) =>
       (i.status === 'Partially Paid' || i.status === 'Paid in Full') &&
-      i.type !== 'Pre-Invoice',
+      i.type !== 'Pre-Invoice' &&
+      // The FX Gain/Loss examples have payments of their own (PAYMENT_FX_DEMO).
+      !i.id.startsWith('inv-fx-'),
   )
   .map((i) => i.invoiceNumber);
 const paidPoolPick = (n: number) => PAID_INVOICE_POOL[n % PAID_INVOICE_POOL.length];
@@ -636,9 +668,11 @@ function seedFirstVendorPrepayments(payments: Payment[]): Payment[] {
   return [...onAccount, ...anchored, ...payments];
 }
 
-/* Currency & Exchange Rates: each payment goes out in its vendor's currency,
- * from an account in that currency or the base currency, with the rate on
- * its payment date. Applied last, so no seed sequence changes. */
+/* Currency & Exchange Rates: each payment is in its vendor's currency (what
+ * the vendor receives), from an account in that currency or the base
+ * currency. One from a base account records what the bank took; the seeds
+ * have no bank statement, so that is the amount at the payment date's
+ * mid-market rate. Applied last, so no seed sequence changes. */
 export function vendorPaymentCurrency(vendor: string): string {
   return resolveRegistryVendor(vendor)?.currency ?? currencyForVendorName(vendor);
 }
@@ -646,11 +680,99 @@ function withPaymentCurrency(list: Payment[]): Payment[] {
   return list.map((p) => {
     const currency = p.currency && p.currency !== 'USD' ? p.currency : vendorPaymentCurrency(p.vendor);
     const account = PAY_FROM_ACCOUNTS.find((a) => a.id === p.bankAccount);
-    const bankAccount = account && (account.currency === currency || isBaseCurrency(account.currency)) ? p.bankAccount : '1010-Operating';
-    return { ...p, currency, bankAccount, ...(p.exchangeRate ? {} : stampPaymentRate(currency, p.paymentDate)) };
+    const bankAccount = account && canPayFrom(account.currency, currency) ? p.bankAccount : '1010-Operating';
+    const rated = { ...p, currency, bankAccount, ...(p.exchangeRate ? {} : stampPaymentRate(currency, p.paymentDate)) };
+    const fromBase = isBaseCurrency(PAY_FROM_ACCOUNTS.find((a) => a.id === bankAccount)?.currency ?? BASE_CURRENCY);
+    return fromBase && !isBaseCurrency(currency) && rated.bankAmount == null
+      ? { ...rated, bankAmount: toBase(rated.amount, rated.exchangeRate ?? 1) }
+      : rated;
   });
 }
 
-export const mockPayments = withPaymentCurrency(seedFirstVendorPrepayments(
-  anchorPrepaymentsToPreInvoices(generatePayments(100)),
-));
+/* ── FX Gain/Loss at payment: one example of each account ────────────
+ * (Currency & Exchange Rates.) Ultra Corp's INV-000219 and INV-000220
+ * (data/mockInvoices.ts) were invoiced Oct 16, 2025 at 1 GBP = ₨340.6802 PKR,
+ * so A/P carried them at that rate. Each is paid in full:
+ *   PMT-000121 pays INV-000219, £10,000.00, from 1020 Corporate Checking
+ *     (PKR) on Oct 24, 2025. The bank took ₨3,503,000.00, so it converted
+ *     at ₨350.3000 (the day's mid-market rate was ₨349.2371). A/P carried
+ *     ₨3,406,802.00: a loss of ₨96,198.00.
+ *   PMT-000122 pays INV-000220, £6,000.00, from 1060 GBP Settlement on
+ *     Nov 24, 2025. Nothing converts; the pounds are valued at that day's
+ *     mid-market rate, ₨337.9177, so they cost ₨2,027,506.20 against
+ *     ₨2,044,081.20 carried: a gain of ₨16,575.00.
+ * The journals are built by the rule Record Payment posts with. */
+function paymentFxDemo(opts: {
+  n: number;
+  invoiceNumber: string;
+  paymentDate: string;
+  bankAccount: string;
+  bankAmount?: number;
+  method: string;
+  reference: string;
+}): Payment | null {
+  const inv = mockInvoices.find((i) => i.invoiceNumber === opts.invoiceNumber);
+  const account = PAY_FROM_ACCOUNTS.find((a) => a.id === opts.bankAccount);
+  if (!inv || !account) return null;
+  const amount = inv.amount;
+  const base = {
+    currency: inv.currency,
+    amount,
+    paymentDate: opts.paymentDate,
+    bankAmount: opts.bankAmount,
+    exchangeRate: stampPaymentRate(inv.currency, opts.paymentDate).exchangeRate,
+  };
+  const rate = paymentRateOf(base);
+  const gl = buildPaymentGlFx({
+    currency: inv.currency,
+    lines: [{ invoiceNumber: inv.invoiceNumber, amount, rate: inv.exchangeRate ?? 1, rateDate: inv.rateDate, apAccount: inv.apAccount }],
+    apAccount: inv.apAccount,
+    cash: amount,
+    bankGl: account.creditGl,
+    accountCurrency: account.currency,
+    bankAmount: opts.bankAmount,
+    paymentRate: rate,
+    paymentDate: opts.paymentDate,
+    description: `Settle ${inv.invoiceNumber} · ${inv.vendor}`,
+  });
+  return {
+    id: `pmt-fx-demo-${opts.n}`,
+    paymentNumber: formatPaymentId(opts.n),
+    type: 'Payment',
+    vendor: inv.vendor,
+    paymentDate: opts.paymentDate,
+    createdDate: opts.paymentDate,
+    paymentMethod: opts.method,
+    bankAccount: account.id,
+    apAccount: inv.apAccount,
+    amount,
+    appliedInvoices: [{ invoiceNumber: inv.invoiceNumber, amount }],
+    appliedAmount: amount,
+    unappliedAmount: 0,
+    currency: inv.currency,
+    ...(opts.bankAmount != null ? { bankAmount: opts.bankAmount, rateEdited: true } : {}),
+    exchangeRate: rate,
+    rateType: 'mid',
+    rateDate: opts.paymentDate,
+    reference: opts.reference,
+    memo: `Payment for ${inv.invoiceNumber}`,
+    printMemo: inv.invoiceNumber,
+    status: 'Paid',
+    wasScheduled: false,
+    createdBy: 'Ahtisham Ahmad',
+    updatedDate: opts.paymentDate,
+    updatedBy: 'Ahtisham Ahmad',
+    perInvoiceSplit: [{ invoiceNumber: inv.invoiceNumber, cash: amount, credit: 0 }],
+    glEntries: gl.entries,
+  };
+}
+
+export const PAYMENT_FX_DEMO: Payment[] = [
+  paymentFxDemo({ n: 121, invoiceNumber: 'INV-000219', paymentDate: '2025-10-24', bankAccount: '1020-Payroll', bankAmount: 3_503_000, method: 'Wire', reference: 'WIRE-771219' }),
+  paymentFxDemo({ n: 122, invoiceNumber: 'INV-000220', paymentDate: '2025-11-24', bankAccount: '1060-GBP Settlement', method: 'Wire', reference: 'WIRE-771220' }),
+].filter((p): p is Payment => p !== null);
+
+export const mockPayments = [
+  ...withPaymentCurrency(seedFirstVendorPrepayments(anchorPrepaymentsToPreInvoices(generatePayments(100)))),
+  ...PAYMENT_FX_DEMO,
+];

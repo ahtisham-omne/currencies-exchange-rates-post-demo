@@ -157,7 +157,7 @@ export function ApSettingsModal({ open, onOpenChange, scope }: { open: boolean; 
               <p className="text-[11px] text-slate-500 mt-0.5" style={{ fontWeight: 400 }}>
                 {isInvoices
                   ? 'Module defaults for vendor invoices, and who can change an invoice’s exchange rate.'
-                  : 'Who can change a payment’s exchange rate.'}
+                  : 'Who can record a bank rate far from the payment date’s rate.'}
               </p>
             </div>
           </div>
@@ -299,7 +299,7 @@ export function ApSettingsModal({ open, onOpenChange, scope }: { open: boolean; 
               <div className="rounded-xl border border-slate-200 px-4 py-3">
                 <p className="text-[12.5px] text-foreground" style={{ fontWeight: 500 }}>Change the Exchange Rate on a Payment</p>
                 <p className="text-[11px] text-slate-500 mt-1 leading-relaxed" style={{ fontWeight: 400 }}>
-                  Lets these roles enter the rate the bank actually used, instead of the rate on the payment date.
+                  The vendor is paid in the invoice’s currency. From a base-currency account the rate is worked out from the bank’s figures (what it took for what the vendor got). These roles can record a bank rate more than the Allowed Difference ({settings.allowedDifferencePct}%) from the payment date’s mid-market rate; it is flagged for review. Others can’t record it.
                 </p>
                 <div className="mt-2.5">
                   <RoleChips
@@ -345,8 +345,8 @@ export function ApSettingsModal({ open, onOpenChange, scope }: { open: boolean; 
                       : 'change an invoice’s exchange rate, with no limit.'
                     : 'use the rate in the rate table only. The rate field is read-only.'
                   : perms.canChangePaymentRate
-                    ? 'change a payment’s exchange rate.'
-                    : 'use the rate on the payment date only. The rate field is read-only.'}
+                    ? `record any bank rate. One more than ${settings.allowedDifferencePct}% from the payment date’s mid-market rate is flagged for review.`
+                    : `record a bank rate within ${settings.allowedDifferencePct}% of the payment date’s mid-market rate.`}
               </p>
             </div>
             <p className="text-[10.5px] text-slate-400 mt-2" style={{ fontWeight: 400 }}>

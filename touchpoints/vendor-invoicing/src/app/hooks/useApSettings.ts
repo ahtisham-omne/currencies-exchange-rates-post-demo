@@ -27,7 +27,9 @@ export interface ApSettings {
   /** Optional limit on that change, as a percentage either side of the
    *  rate table's rate; null for no limit. */
   invoiceRateLimitPct: number | null;
-  /** Permission: roles that may change the exchange rate on a payment. */
+  /** Permission: roles that may record a payment whose bank rate (worked
+   *  out from the bank's figures, from a base-currency account) is more
+   *  than the allowed difference from the payment date's mid-market rate. */
   paymentRateRoles: ApRole[];
 }
 

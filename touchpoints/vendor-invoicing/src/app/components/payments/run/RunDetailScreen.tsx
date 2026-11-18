@@ -87,7 +87,7 @@ import { RunRequestChangesModal } from './RunRequestChangesModal';
 import { RunIssuesPanel, MoveLineModal } from './RunIssuesPanel';
 import { RUN_CANCEL_OVERRIDE, RUN_HOLD_OVERRIDE } from './runReasonConfigs';
 import { RunStatusPill, DueDatePill, humanDate, openInvoiceTab, exportRunCsv } from './runUi';
-import { Money } from '@/app/components/currency/Money';
+import { BaseMoney, Money } from '@/app/components/currency/Money';
 import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
@@ -2115,7 +2115,8 @@ function RunLinkedRecordsTab({
                     <td className="py-2.5 px-4 text-muted-foreground whitespace-nowrap hidden md:table-cell">{humanDate(p.paymentDate)}</td>
                     <td className="py-2.5 px-4 text-right">
                       <span className="text-foreground" style={{ fontWeight: 600 }}>
-                        <Money value={p.amount} currency={p.currency} fx={paymentFx(p)} role="payment currency" />
+                        {/* In base, what the vendor received on hover (Currency & Exchange Rates). */}
+                        <BaseMoney value={p.amount} currency={p.currency} fx={paymentFx(p)} role="Vendor received" dateLabel="payment date" />
                       </span>
                     </td>
                   </tr>
@@ -2596,10 +2597,11 @@ function RunPaymentsTable({
       case 'net':
         return (
           <td key={key} className="px-4 py-2.5 text-right">
-            {/* A payment amount: hovers its base equivalent, at the posted
-                payment's rate once recorded. */}
+            {/* A payment amount in base, what the vendor receives on hover,
+                at the posted payment's rate once recorded (Currency &
+                Exchange Rates). */}
             <span className="text-foreground" style={{ fontWeight: 500 }}>
-              <Money value={r.net} currency={r.currency} fx={r.payment ? paymentFx(r.payment) : groupFx(run, r.group)} role="payment currency" />
+              <BaseMoney value={r.net} currency={r.currency} fx={r.payment ? paymentFx(r.payment) : groupFx(run, r.group)} role="Vendor receives" dateLabel="payment date" />
             </span>
           </td>
         );

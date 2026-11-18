@@ -12,12 +12,29 @@
  * accounts for standalone).
  */
 
-import { QTY_VARIANCE_ACCOUNT } from '@/app/data/glAccounts';
+import { ADVANCES_ACCOUNT, AP_ACCRUAL_ACCOUNT, PRICE_VARIANCE_ACCOUNT, QTY_VARIANCE_ACCOUNT } from '@/app/data/glAccounts';
+
+/** What a journal row is to the invoice, so a currency step can value it at
+ *  the right rate (currency/glFx.ts): the accrual at what receiving booked,
+ *  an applied prepayment at its locked rate, the rest at the invoice rate. */
+export type GlRole =
+  | 'accrual'
+  | 'advance'
+  | 'payable'
+  | 'priceVariance'
+  | 'qtyVariance'
+  | 'fxVariance'
+  | 'inventory'
+  | 'charge'
+  | 'expense';
 
 export interface GlRow {
   code: string;
   name: string;
   amount: number;
+  role?: GlRole;
+  /** What the line is for, when it needs saying (a rate, a prepayment). */
+  description?: string;
 }
 
 export interface GlEntryLine {
@@ -46,7 +63,11 @@ export interface InvoiceGlInput {
    *  capped at the received quantity (BA 9/28): billing past the receipt
    *  carries the excess in varianceAmount, which debits the Purchase Qty
    *  Variance account instead of over-relieving the accrual. */
-  lines: { glAccount: string; amount: number; accrualAmount?: number; varianceAmount?: number }[];
+  lines: { glAccount: string; amount: number; accrualAmount?: number; varianceAmount?: number; priceVarianceAmount?: number }[];
+  /** Prepayments applied to this invoice, in its currency (Eli 8/31/26):
+   *  they credit the advances account instead of A/P, so A/P carries only
+   *  the unpaid rest (Currency & Exchange Rates). */
+  prepaymentApplied?: number;
   freightAmount: number;
   freightGlAccount: string;
   additionalChargesTotal: number;
@@ -88,11 +109,20 @@ export function buildInvoiceGl(input: InvoiceGlInput): InvoiceGlResult {
     additionalChargesTotal, additionalChargeGlAccount, additionalChargeLines,
     apAccount, total, sliceAdjustedTotal, sliceFraction,
   } = input;
+  const prepaid = Math.min(Math.max(0, round2(input.prepaymentApplied ?? 0)), sliceAdjustedTotal);
 
   const drMap = new Map<string, number>();
   // Extra credit line beside A/P — used when the invoice prices received
   // goods BELOW the PO estimate, so the correction lands credit-side.
   let inventoryCredit = 0;
+  // Price difference on received goods (Currency & Exchange Rates): a
+  // debit when the invoice prices above the PO, a credit below it.
+  let priceVariance = 0;
+  const roles = new Map<string, GlRole>();
+  const debit = (account: string, amount: number, role: GlRole) => {
+    drMap.set(account, round2((drMap.get(account) || 0) + amount));
+    if (!roles.has(account)) roles.set(account, role);
+  };
   const inventoryAccount = lines[0]?.glAccount || '1200 Inventory';
 
   // Freight and each additional charge debit the account picked for them
@@ -103,21 +133,19 @@ export function buildInvoiceGl(input: InvoiceGlInput): InvoiceGlResult {
   // aggregate account. The goods math below works on the goods-only total,
   // so the books stay balanced however the charges route.
   const applyFreightAndCharges = (fraction: number) => {
-    if (freightAmount > 0) {
-      drMap.set(freightGlAccount, round2((drMap.get(freightGlAccount) || 0) + freightAmount * fraction));
-    }
+    if (freightAmount > 0) debit(freightGlAccount, freightAmount * fraction, 'charge');
     if (additionalChargeLines && additionalChargeLines.length > 0) {
       let linesSum = 0;
       additionalChargeLines.forEach((c) => {
         if (c.amount > 0) {
-          drMap.set(c.glAccount, round2((drMap.get(c.glAccount) || 0) + c.amount * fraction));
+          debit(c.glAccount, c.amount * fraction, 'charge');
           linesSum = round2(linesSum + c.amount);
         }
       });
       const remainder = round2(additionalChargesTotal - linesSum);
-      if (remainder > 0.004) drMap.set(additionalChargeGlAccount, round2((drMap.get(additionalChargeGlAccount) || 0) + remainder * fraction));
+      if (remainder > 0.004) debit(additionalChargeGlAccount, remainder * fraction, 'charge');
     } else if (additionalChargesTotal > 0) {
-      drMap.set(additionalChargeGlAccount, round2((drMap.get(additionalChargeGlAccount) || 0) + additionalChargesTotal * fraction));
+      debit(additionalChargeGlAccount, additionalChargesTotal * fraction, 'charge');
     }
   };
 
@@ -128,27 +156,31 @@ export function buildInvoiceGl(input: InvoiceGlInput): InvoiceGlResult {
   if (kind === 'standalone') {
     // Each line expenses to the GL account picked at the line level.
     lines.forEach((li) => {
-      if (li.amount > 0 && li.glAccount) {
-        drMap.set(li.glAccount, round2((drMap.get(li.glAccount) || 0) + li.amount));
-      }
+      if (li.amount > 0 && li.glAccount) debit(li.glAccount, li.amount, 'expense');
     });
     applyFreightAndCharges(1);
   } else if (kind === 'received') {
     // Accrual model (8/25/26): receiving booked Dr Inventory / Cr AP
     // Accrual at PO price. This entry transfers the liability: Dr AP
     // Accrual at received PO value, Cr Accounts Payable at the invoice
-    // total, price variance correcting Inventory on whichever side the
-    // difference falls. Quantity billed past the receipt (BA 9/28) debits
-    // the variance account: only what was received can leave the accrual.
+    // total. Quantity billed past the receipt (BA 9/28) debits the
+    // variance account: only what was received can leave the accrual. A
+    // price difference on a received line (the invoice billing another unit
+    // price than the PO) posts to Purchase Price Variance, on whichever side
+    // it falls, so stock keeps the value receiving booked (Currency &
+    // Exchange Rates; it used to correct Inventory).
     const accrualValue = round2(lines.reduce((s, li) => s + (li.accrualAmount ?? 0), 0));
     const varianceValue = round2(lines.reduce((s, li) => s + (li.varianceAmount ?? 0), 0));
-    if (accrualValue > 0) drMap.set('2100 AP Accrual', accrualValue);
-    if (varianceValue > 0.004) drMap.set(QTY_VARIANCE_ACCOUNT, varianceValue);
-    // Goods-only correction: only the goods price variance touches
-    // Inventory; freight + charges debit their own accounts below.
-    const inventoryCorrection = round2(goodsTotal - accrualValue - varianceValue);
+    priceVariance = round2(lines.reduce((s, li) => s + (li.priceVarianceAmount ?? 0), 0));
+    if (accrualValue > 0) debit(AP_ACCRUAL_ACCOUNT, accrualValue, 'accrual');
+    if (varianceValue > 0.004) debit(QTY_VARIANCE_ACCOUNT, varianceValue, 'qtyVariance');
+    if (priceVariance > 0.004) debit(PRICE_VARIANCE_ACCOUNT, priceVariance, 'priceVariance');
+    // What is left of the goods total corrects Inventory: lines with no
+    // receiving yet, or tax carried on a reopened record. Freight +
+    // charges debit their own accounts below.
+    const inventoryCorrection = round2(goodsTotal - accrualValue - varianceValue - priceVariance);
     if (inventoryCorrection > 0.004) {
-      drMap.set(inventoryAccount, round2((drMap.get(inventoryAccount) || 0) + inventoryCorrection));
+      debit(inventoryAccount, inventoryCorrection, 'inventory');
     } else if (inventoryCorrection < -0.004) {
       inventoryCredit = -inventoryCorrection;
     }
@@ -157,25 +189,37 @@ export function buildInvoiceGl(input: InvoiceGlInput): InvoiceGlResult {
     // Nothing received: classic Dr Inventory / Cr AP, posting at
     // receiving. Slice-adjusted (9/2/26): a split-term pre-invoice books
     // only its slice.
-    lines.forEach((li) => {
-      drMap.set(li.glAccount, round2((drMap.get(li.glAccount) || 0) + li.amount * sliceFraction));
-    });
+    lines.forEach((li) => debit(li.glAccount, li.amount * sliceFraction, 'inventory'));
     applyFreightAndCharges(sliceFraction);
   }
 
   const debits: GlRow[] = Array.from(drMap.entries()).map(([account, amount]) => ({
     ...splitAccount(account),
     amount,
+    role: roles.get(account),
   }));
 
   const credits: GlRow[] = [];
   if (inventoryCredit > 0) {
-    credits.push({ ...splitAccount(inventoryAccount), amount: round2(inventoryCredit) });
+    credits.push({ ...splitAccount(inventoryAccount), amount: round2(inventoryCredit), role: 'inventory' });
   }
-  credits.push({ ...splitAccount(apAccount), amount: sliceAdjustedTotal });
+  if (priceVariance < -0.004) {
+    credits.push({ ...splitAccount(PRICE_VARIANCE_ACCOUNT), amount: round2(-priceVariance), role: 'priceVariance' });
+  }
+  // An applied prepayment clears the advance it was paid into; A/P is
+  // credited with the unpaid rest only, the balance a payment later settles.
+  if (prepaid > 0.004) {
+    credits.push({ ...splitAccount(ADVANCES_ACCOUNT), amount: prepaid, role: 'advance' });
+  }
+  // (A prepayment covering the whole invoice leaves nothing on A/P.)
+  const payable = round2(sliceAdjustedTotal - prepaid);
+  if (payable > 0.004 || prepaid <= 0.004) {
+    credits.push({ ...splitAccount(apAccount), amount: payable, role: 'payable' });
+  }
 
   const drTotal = debits.reduce((s, r) => s + r.amount, 0);
-  const balanced = Math.abs(drTotal - (sliceAdjustedTotal + inventoryCredit)) < 0.01;
+  const crTotal = credits.reduce((s, r) => s + r.amount, 0);
+  const balanced = Math.abs(drTotal - crTotal) < 0.01;
 
   return { debits, credits, balanced };
 }
@@ -183,8 +227,8 @@ export function buildInvoiceGl(input: InvoiceGlInput): InvoiceGlResult {
 /** Flatten an InvoiceGlResult into persistable snapshot lines. */
 export function toGlEntries(result: InvoiceGlResult, description?: string): GlEntryLine[] {
   return [
-    ...result.debits.map((r) => ({ accountCode: r.code, accountName: r.name, description, debit: r.amount })),
-    ...result.credits.map((r) => ({ accountCode: r.code, accountName: r.name, description, credit: r.amount })),
+    ...result.debits.map((r) => ({ accountCode: r.code, accountName: r.name, description: r.description ?? description, debit: r.amount })),
+    ...result.credits.map((r) => ({ accountCode: r.code, accountName: r.name, description: r.description ?? description, credit: r.amount })),
   ];
 }
 

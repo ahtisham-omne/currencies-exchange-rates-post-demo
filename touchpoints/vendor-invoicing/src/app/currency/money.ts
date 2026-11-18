@@ -73,9 +73,10 @@ export function formatRate(rate: number): string {
   return rate.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
-/** "1 USD = 278.52 PKR" */
+/** "1 GBP = ₨354.2500 PKR": base per one unit, written the way the Currencies
+ *  module writes a rate (the base's symbol, 4 decimals, then its code). */
 export const rateSentence = (code: string, rate: number, base = BASE_CURRENCY) =>
-  `1 ${code.toUpperCase()} = ${formatRate(rate)} ${base}`;
+  `1 ${code.toUpperCase()} = ${moneyPrefix(base).trim()}${formatRate(rate)} ${base}`;
 
 /** "Nov 04, 2026" from an ISO day, the way the module writes dates. */
 export function formatRateDate(iso: string | null | undefined): string {
