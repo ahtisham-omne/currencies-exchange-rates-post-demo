@@ -1,0 +1,402 @@
+/**
+ * Omne Design System v2.0 — CSS Custom Properties
+ *
+ * Hand-mirrored from src/styles/tokens.ts. Loaded via index.css. The shadcn
+ * layer in index.css maps `--primary`, `--success`, etc. to these tokens so
+ * existing utility classes (`bg-primary`, `text-success`) continue to work.
+ *
+ * Two namespaces coexist here on purpose:
+ *
+ *   `--color-*-NNN`  — the raw palette (e.g. --color-blue-500). Hex values.
+ *                       Read these when you want a specific shade in JS or
+ *                       inline style; they never change with theme.
+ *
+ *   `--space-N`, `--radius-X`, `--shadow-X`, `--font-size-X`, `--font-weight-X`
+ *                       — scale tokens. Use these in component-level CSS to
+ *                       stay aligned with the design system.
+ *
+ * The legacy `--primary` / `--success` etc. variables stay in index.css for
+ * shadcn compatibility but resolve to the same hues defined here.
+ */
+
+:root {
+  /* ─── Palette — Blue (brand) — tonally derived from #0A77FF ─── */
+  --color-blue-50:  #EBF3FF;  /* partner --accent */
+  --color-blue-100: #D6E8FF;  /* partner pill hover */
+  --color-blue-200: #ADD1FF;  /* partner pill active */
+  --color-blue-300: #80B5FF;
+  --color-blue-400: #4998FF;
+  --color-blue-500: #0A77FF;  /* primary CTA */
+  --color-blue-600: #0866E0;
+  --color-blue-700: #0654BC;
+  --color-blue-800: #044394;
+  --color-blue-900: #02326F;
+
+  /* ─── Palette — Slate (neutral) ─── */
+  --color-slate-50:  #F8FAFC;
+  --color-slate-100: #F1F5F9;
+  --color-slate-200: #E2E8F0;
+  --color-slate-300: #CBD5E1;
+  --color-slate-400: #94A3B8;
+  --color-slate-500: #64748B;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1E293B;
+  --color-slate-900: #0F172A;
+
+  /* ─── Palette — Green / Emerald (success) ─── */
+  --color-green-50:  #F0FDF4;
+  --color-green-100: #DCFCE7;
+  --color-green-200: #BBF7D0;
+  --color-green-300: #86EFAC;
+  --color-green-400: #4ADE80;
+  --color-green-500: #22C55E;
+  --color-green-600: #16A34A;
+  --color-green-700: #15803D;
+  --color-green-800: #166534;
+  --color-green-900: #14532D;
+  --color-emerald-50:  #ECFDF5;
+  --color-emerald-100: #D1FAE5;
+  --color-emerald-200: #A7F3D0;
+  --color-emerald-300: #6EE7B7;
+  --color-emerald-400: #34D399;
+  --color-emerald-500: #10B981;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  --color-emerald-800: #065F46;
+  --color-emerald-900: #064E3B;
+
+  /* ─── Palette — Amber (pending) / Yellow (hold) ─── */
+  --color-amber-50:  #FFFBEB;
+  --color-amber-100: #FEF3C7;
+  --color-amber-200: #FDE68A;
+  --color-amber-300: #FCD34D;
+  --color-amber-400: #FBBF24;
+  --color-amber-500: #F59E0B;
+  --color-amber-600: #D97706;
+  --color-amber-700: #B45309;
+  --color-amber-800: #92400E;
+  --color-amber-900: #78350F;
+  --color-yellow-50:  #FEFCE8;
+  --color-yellow-100: #FEF9C3;
+  --color-yellow-200: #FEF08A;
+  --color-yellow-300: #FDE047;
+  --color-yellow-400: #FACC15;
+  --color-yellow-500: #EAB308;
+  --color-yellow-600: #CA8A04;
+  --color-yellow-700: #A16207;
+  --color-yellow-800: #854D0E;
+  --color-yellow-900: #713F12;
+
+  /* ─── Palette — Orange (exception) ─── */
+  --color-orange-50:  #FFF7ED;
+  --color-orange-100: #FFEDD5;
+  --color-orange-200: #FED7AA;
+  --color-orange-300: #FDBA74;
+  --color-orange-400: #FB923C;
+  --color-orange-500: #F97316;
+  --color-orange-600: #EA580C;
+  --color-orange-700: #C2410C;
+  --color-orange-800: #9A3412;
+  --color-orange-900: #7C2D12;
+
+  /* ─── Palette — Red (destructive) ─── */
+  --color-red-50:  #FEF2F2;
+  --color-red-100: #FEE2E2;
+  --color-red-200: #FECACA;
+  --color-red-300: #FCA5A5;
+  --color-red-400: #F87171;
+  --color-red-500: #EF4444;
+  --color-red-600: #DC2626;
+  --color-red-700: #B91C1C;
+  --color-red-800: #991B1B;
+  --color-red-900: #7F1D1D;
+
+  /* ─── Palette — Violet / Purple / Fuchsia / Pink ─── */
+  --color-violet-50:  #F5F3FF;
+  --color-violet-100: #EDE9FE;
+  --color-violet-200: #DDD6FE;
+  --color-violet-300: #C4B5FD;
+  --color-violet-400: #A78BFA;
+  --color-violet-500: #8B5CF6;
+  --color-violet-600: #7C3AED;
+  --color-violet-700: #6D28D9;
+  --color-violet-800: #5B21B6;
+  --color-violet-900: #4C1D95;
+  --color-purple-50:  #FAF5FF;
+  --color-purple-100: #F3E8FF;
+  --color-purple-200: #E9D5FF;
+  --color-purple-300: #D8B4FE;
+  --color-purple-400: #C084FC;
+  --color-purple-500: #A855F7;
+  --color-purple-600: #9333EA;
+  --color-purple-700: #7E22CE;
+  --color-purple-800: #6B21A8;
+  --color-purple-900: #581C87;
+  --color-fuchsia-50:  #FDF4FF;
+  --color-fuchsia-100: #FAE8FF;
+  --color-fuchsia-200: #F5D0FE;
+  --color-fuchsia-300: #F0ABFC;
+  --color-fuchsia-400: #E879F9;
+  --color-fuchsia-500: #D946EF;
+  --color-fuchsia-600: #C026D3;
+  --color-fuchsia-700: #A21CAF;
+  --color-fuchsia-800: #86198F;
+  --color-fuchsia-900: #701A75;
+  --color-pink-50:  #FDF2F8;
+  --color-pink-100: #FCE7F3;
+  --color-pink-200: #FBCFE8;
+  --color-pink-300: #F9A8D4;
+  --color-pink-400: #F472B6;
+  --color-pink-500: #EC4899;
+  --color-pink-600: #DB2777;
+  --color-pink-700: #BE185D;
+  --color-pink-800: #9D174D;
+  --color-pink-900: #831843;
+
+  /* ─── Palette — Cyan / Sky / Teal / Indigo (extended hues) ─── */
+  --color-cyan-50:  #ECFEFF;
+  --color-cyan-100: #CFFAFE;
+  --color-cyan-200: #A5F3FC;
+  --color-cyan-300: #67E8F9;
+  --color-cyan-400: #22D3EE;
+  --color-cyan-500: #06B6D4;
+  --color-cyan-600: #0891B2;
+  --color-cyan-700: #0E7490;
+  --color-cyan-800: #155E75;
+  --color-cyan-900: #164E63;
+  --color-sky-50:  #F0F9FF;
+  --color-sky-100: #E0F2FE;
+  --color-sky-200: #BAE6FD;
+  --color-sky-300: #7DD3FC;
+  --color-sky-400: #38BDF8;
+  --color-sky-500: #0EA5E9;
+  --color-sky-600: #0284C7;
+  --color-sky-700: #0369A1;
+  --color-sky-800: #075985;
+  --color-sky-900: #0C4A6E;
+  --color-teal-50:  #F0FDFA;
+  --color-teal-100: #CCFBF1;
+  --color-teal-200: #99F6E4;
+  --color-teal-300: #5EEAD4;
+  --color-teal-400: #2DD4BF;
+  --color-teal-500: #14B8A6;
+  --color-teal-600: #0D9488;
+  --color-teal-700: #0F766E;
+  --color-teal-800: #115E59;
+  --color-teal-900: #134E4A;
+  --color-indigo-50:  #EEF2FF;
+  --color-indigo-100: #E0E7FF;
+  --color-indigo-200: #C7D2FE;
+  --color-indigo-300: #A5B4FC;
+  --color-indigo-400: #818CF8;
+  --color-indigo-500: #6366F1;
+  --color-indigo-600: #4F46E5;
+  --color-indigo-700: #4338CA;
+  --color-indigo-800: #3730A3;
+  --color-indigo-900: #312E81;
+
+  /* ─── Absolutes ─── */
+  --color-white: #FFFFFF;
+  --color-black: #000000;
+
+  /* ─── Theme semantics — Omne DS v2.0 Theme.tokens.json (Figma variables) ───
+   * colors/primary   = #0A77FF (already blue-500 above)
+   * colors/success   = #1F9860
+   * colors/error     = #DC2828
+   * colors/warning   = #DB7706
+   * index.css maps shadcn's --success / --destructive / --warning here so the
+   * semantic layer tracks the published theme file, not raw Tailwind stops. */
+  --color-theme-success: #1F9860;
+  --color-theme-error:   #DC2828;
+  --color-theme-warning: #DB7706;
+  --color-theme-success-hsl: 152 66% 36%;
+  --color-theme-error-hsl:   0 72% 51%;
+  --color-theme-warning-hsl: 32 95% 44%;
+
+  /* ─── HSL channel form ───
+   * shadcn's `hsl(var(--primary))` pattern requires the variable to hold an
+   * HSL channel triplet (no `hsl()` wrapper). The mirrored values below
+   * let index.css map shadcn's --primary, --secondary, --success etc.
+   * onto our palette without losing the design-system source of truth. */
+  /* Blue HSL channel form — recomputed so every stop derives from the
+     same hue family (212-214°) as primary #0A77FF. */
+  --color-blue-50-hsl:  214 100% 96%;  /* #EBF3FF — partner --accent */
+  --color-blue-100-hsl: 213 100% 92%;  /* #D6E8FF — partner pill hover */
+  --color-blue-200-hsl: 213 100% 84%;  /* #ADD1FF — partner pill active */
+  --color-blue-300-hsl: 213 100% 75%;  /* #80B5FF */
+  --color-blue-400-hsl: 213 100% 64%;  /* #4998FF */
+  --color-blue-500-hsl: 212 100% 52%;  /* #0A77FF — primary */
+  --color-blue-600-hsl: 213 93% 45%;   /* #0866E0 */
+  --color-blue-700-hsl: 213 93% 38%;   /* #0654BC */
+  --color-blue-800-hsl: 213 93% 30%;   /* #044394 */
+  --color-blue-900-hsl: 213 96% 22%;   /* #02326F */
+
+  --color-slate-50-hsl:  210 40% 98%;
+  --color-slate-100-hsl: 210 40% 96%;
+  --color-slate-200-hsl: 214 32% 91%;
+  --color-slate-300-hsl: 213 27% 84%;
+  --color-slate-400-hsl: 215 20% 65%;
+  --color-slate-500-hsl: 215 16% 47%;
+  --color-slate-600-hsl: 215 19% 35%;
+  --color-slate-700-hsl: 215 25% 27%;
+  --color-slate-800-hsl: 217 33% 17%;
+  --color-slate-900-hsl: 222 47% 11%;
+
+  --color-emerald-50-hsl:  152 81% 96%;
+  --color-emerald-100-hsl: 149 80% 90%;
+  --color-emerald-200-hsl: 152 76% 80%;
+  --color-emerald-300-hsl: 156 72% 67%;
+  --color-emerald-400-hsl: 158 64% 52%;
+  --color-emerald-500-hsl: 160 84% 39%;
+  --color-emerald-600-hsl: 161 94% 30%;
+  --color-emerald-700-hsl: 163 94% 24%;
+  --color-emerald-800-hsl: 163 88% 20%;
+  --color-emerald-900-hsl: 164 86% 16%;
+
+  --color-green-50-hsl:  138 76% 97%;
+  --color-green-100-hsl: 141 84% 93%;
+  --color-green-200-hsl: 141 79% 85%;
+  --color-green-500-hsl: 142 71% 45%;
+  --color-green-600-hsl: 142 76% 36%;
+  --color-green-700-hsl: 142 72% 29%;
+  --color-green-800-hsl: 143 64% 24%;
+
+  --color-amber-50-hsl:  48 100% 96%;
+  --color-amber-100-hsl: 48 96% 89%;
+  --color-amber-200-hsl: 48 97% 77%;
+  --color-amber-500-hsl: 38 92% 50%;
+  --color-amber-600-hsl: 32 95% 44%;
+  --color-amber-700-hsl: 26 90% 37%;
+  --color-amber-800-hsl: 23 83% 31%;
+
+  --color-yellow-50-hsl:  55 92% 95%;
+  --color-yellow-100-hsl: 55 97% 88%;
+  --color-yellow-200-hsl: 53 98% 77%;
+  --color-yellow-500-hsl: 48 96% 53%;
+  --color-yellow-700-hsl: 35 92% 33%;
+  --color-yellow-800-hsl: 32 81% 29%;
+
+  --color-orange-50-hsl:  33 100% 96%;
+  --color-orange-100-hsl: 34 100% 92%;
+  --color-orange-200-hsl: 32 98% 83%;
+  --color-orange-500-hsl: 25 95% 53%;
+  --color-orange-600-hsl: 21 90% 48%;
+  --color-orange-700-hsl: 17 88% 40%;
+  --color-orange-800-hsl: 15 79% 34%;
+
+  --color-red-50-hsl:  0 86% 97%;
+  --color-red-100-hsl: 0 93% 94%;
+  --color-red-200-hsl: 0 96% 89%;
+  --color-red-300-hsl: 0 94% 82%;
+  --color-red-500-hsl: 0 84% 60%;
+  --color-red-600-hsl: 0 72% 51%;
+  --color-red-700-hsl: 0 74% 42%;
+  --color-red-800-hsl: 0 70% 35%;
+  --color-red-900-hsl: 0 63% 31%;
+
+  --color-violet-50-hsl:  250 100% 98%;
+  --color-violet-100-hsl: 251 91% 95%;
+  --color-violet-200-hsl: 251 95% 92%;
+  --color-violet-500-hsl: 258 90% 66%;
+  --color-violet-600-hsl: 262 83% 58%;
+  --color-violet-700-hsl: 263 70% 50%;
+
+  --color-indigo-50-hsl:  226 100% 97%;
+  --color-indigo-100-hsl: 226 100% 94%;
+  --color-indigo-200-hsl: 228 96% 89%;
+  --color-indigo-500-hsl: 239 84% 67%;
+  --color-indigo-700-hsl: 244 58% 51%;
+
+  --color-cyan-50-hsl:  183 100% 96%;
+  --color-cyan-500-hsl: 189 94% 43%;
+  --color-cyan-600-hsl: 192 91% 36%;
+
+  --color-teal-50-hsl:  166 76% 97%;
+  --color-teal-500-hsl: 173 80% 40%;
+  --color-teal-700-hsl: 175 77% 26%;
+
+  --color-pink-50-hsl:  327 73% 97%;
+  --color-pink-500-hsl: 330 81% 60%;
+  --color-pink-700-hsl: 335 78% 42%;
+
+  --color-purple-50-hsl:  270 100% 98%;
+  --color-purple-500-hsl: 271 91% 65%;
+  --color-purple-600-hsl: 271 76% 53%;
+
+  /* ─── Spacing scale (4px base) ─── */
+  --space-0:   0;
+  --space-px:  1px;
+  --space-0\.5: 0.125rem;
+  --space-1:   0.25rem;
+  --space-1\.5: 0.375rem;
+  --space-2:   0.5rem;
+  --space-2\.5: 0.625rem;
+  --space-3:   0.75rem;
+  --space-3\.5: 0.875rem;
+  --space-4:   1rem;
+  --space-5:   1.25rem;
+  --space-6:   1.5rem;
+  --space-7:   1.75rem;
+  --space-8:   2rem;
+  --space-10:  2.5rem;
+  --space-12:  3rem;
+  --space-14:  3.5rem;
+  --space-16:  4rem;
+  --space-20:  5rem;
+  --space-24:  6rem;
+  --space-32:  8rem;
+
+  /* ─── Corner radius ─── */
+  --radius-none:    0;
+  --radius-xs:      0.125rem;
+  --radius-sm:      0.25rem;
+  --radius-md:      0.375rem;
+  --radius-default: 0.5rem;
+  --radius-lg:      0.75rem;
+  --radius-xl:      1rem;
+  --radius-2xl:     1.5rem;
+  --radius-full:    9999px;
+
+  /* ─── Shadows / elevation ─── */
+  --shadow-none: none;
+  --shadow-xs:   0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm:   0 1px 2px rgba(0,0,0,0.04), 0 1px 4px rgba(0,0,0,0.04);
+  --shadow-md:   0 2px 6px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  --shadow-lg:   0 4px 12px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08);
+  --shadow-xl:   0 8px 20px rgba(0,0,0,0.08), 0 24px 48px rgba(0,0,0,0.12);
+  --shadow-modal: 0 0 0 1px rgba(0,0,0,0.03), 0 8px 20px rgba(0,0,0,0.08), 0 24px 56px rgba(0,0,0,0.14);
+  --shadow-sticky-left: inset -1px 0 0 0 rgba(0,0,0,0.08), 3px 0 6px -2px rgba(0,0,0,0.06);
+  --shadow-sticky-right: inset 1px 0 0 0 rgba(0,0,0,0.08);
+
+  /* ─── Typography ─── */
+  --font-family-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --font-feature: "cv01", "cv02", "cv03", "cv04", "cv11", "ss01", "ss03";
+
+  --font-weight-normal:   400;
+  --font-weight-medium:   500;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;
+
+  --font-size-2xs:  0.625rem;
+  --font-size-xs:   0.6875rem;
+  --font-size-sm:   0.8125rem;
+  --font-size-base: 0.875rem;
+  --font-size-md:   0.9375rem;
+  --font-size-lg:   1.0625rem;
+  --font-size-xl:   1.1875rem;
+  --font-size-2xl:  1.5rem;
+  --font-size-3xl:  1.875rem;
+
+  /* ─── Motion ─── */
+  --duration-instant: 100ms;
+  --duration-fast:    150ms;
+  --duration-base:    200ms;
+  --duration-slow:    300ms;
+
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out:      cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:       cubic-bezier(0.4, 0, 1, 1);
+  --ease-bounce:   cubic-bezier(0.34, 1.56, 0.64, 1);
+}
