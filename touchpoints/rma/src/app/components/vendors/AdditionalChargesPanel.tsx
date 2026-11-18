@@ -14,6 +14,7 @@
  * return calls them Vendor charges.
  */
 
+import { formatMoney as moneyIn, moneyPrefix } from '@/app/currency/money';
 import { CheckCircle2, DollarSign, Plus, Trash2 } from 'lucide-react';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
@@ -67,8 +68,12 @@ export function AdditionalChargesPanel({
   types = DEFAULT_CHARGE_TYPES,
   descriptionError = false,
   onDescriptionErrorClear,
+  currency = 'USD',
 }: {
   charges: AdditionalCharge[];
+  /** The document's currency, which the amounts are in. A return is in its
+   *  PO's currency (app/currency/returnCurrency.ts). */
+  currency?: string | undefined;
   onChange: (next: AdditionalCharge[]) => void;
   /** What happens to these amounts in the ledger, in this document's terms. */
   glNote: string;
@@ -165,7 +170,7 @@ export function AdditionalChargesPanel({
           <div className="space-y-1">
             <Label className="text-[10px] text-slate-500" style={{ fontWeight: 500 }}>Amount</Label>
             <div className="relative">
-              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]" style={{ fontWeight: 500 }}>$</span>
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]" style={{ fontWeight: 500 }}>{moneyPrefix(currency).trim()}</span>
               <Input
                 type="number"
                 value={charge.amount || ''}
@@ -239,7 +244,7 @@ export function AdditionalChargesPanel({
   <div className="flex items-center justify-between pt-3 mt-1 border-t border-slate-100">
     <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>{totalLabel}</span>
     <span className="text-[13px] text-foreground tabular-nums" style={{ fontWeight: 600 }}>
-      ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      {moneyIn(total, currency)}
     </span>
   </div>
 

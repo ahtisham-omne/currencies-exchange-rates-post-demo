@@ -1,3 +1,6 @@
+import { formatMoney as moneyIn } from '@/app/currency/money';
+import { returnFx, rmaCurrency, rmaCurrencyPO } from '@/app/currency/returnCurrency';
+import { Money } from '@/app/components/currency/Money';
 import React, { useEffect, useState } from 'react';
 import {
   Banknote,
@@ -93,9 +96,9 @@ type SectionKey =
   | 'linked'
   | 'timeline';
 
+/** In the return's (the PO's) currency, with its symbol: £30.23 (app/currency/money.ts). */
 function formatMoney(amount: number, currency: string) {
-  const symbol = currency === 'USD' ? '$' : `${currency} `;
-  return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return moneyIn(amount, currency);
 }
 
 function daysBetween(later: Date, earlier: Date) {
@@ -727,6 +730,8 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               // history, where it has a date against it.
               { label: 'Vendor RMA #', value: rma.vendorRMANumber, editable: vendorRefEditable },
               { label: 'Source PO', value: rma.sourcePO ? poLabel(rma.sourcePO) : undefined },
+              // The return is in its PO's currency, and says which PO set it.
+              { label: 'Currency', value: `${rmaCurrency(rma)} (from PO ${rmaCurrencyPO(rma)})` },
               // No refund promise here. When the money is due, and by what
               // instrument, now reads on the Return Summary beside the figure
               // it is a promise about.
@@ -1096,6 +1101,9 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               0,
             )
           : 0;
+        // Every figure on the summary is in the return's (the PO's) currency,
+        // with dollars on hover at the receiving-day rate.
+        const summaryFx = isRma && rma ? returnFx(rma) : null;
         return (
       <SidebarSection
         icon={Wallet}
@@ -1201,7 +1209,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                   <div className="min-w-0">
                     <p className="text-[10px] uppercase tracking-wider text-slate-400" style={{ fontWeight: 600 }}>Return value</p>
                     <p className="text-[22px] text-foreground tabular-nums mt-0.5" style={{ fontWeight: 700, lineHeight: 1.1 }}>
-                      {formatMoney(Math.round(rmaReturnValue * 100) / 100, invoice.currency)}
+                      <Money value={Math.round(rmaReturnValue * 100) / 100} currency={invoice.currency} fx={summaryFx} />
                     </p>
                     <p className="text-[11px] text-slate-400 tabular-nums mt-1" style={{ fontWeight: 500 }}>
                       Sum of authorized qty × unit price
@@ -1241,7 +1249,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                           className={`shrink-0 text-[12px] tabular-nums ${r.strong ? 'text-primary' : 'text-foreground'}`}
                           style={{ fontWeight: r.strong ? 700 : 600 }}
                         >
-                          {formatMoney(Math.round(r.value * 100) / 100, invoice.currency)}
+                          <Money value={Math.round(r.value * 100) / 100} currency={invoice.currency} fx={summaryFx} />
                         </span>
                       </div>
                     ))}
@@ -1278,7 +1286,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                           className="shrink-0 text-[12px] tabular-nums text-rose-600"
                           style={{ fontWeight: 600 }}
                         >
-                          −{formatMoney(Math.round(charge.amount * 100) / 100, invoice.currency)}
+                          −<Money value={Math.round(charge.amount * 100) / 100} currency={invoice.currency} fx={summaryFx} />
                         </span>
                       </div>
                     ))}
@@ -1291,7 +1299,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                           className="shrink-0 text-[12px] tabular-nums text-rose-600"
                           style={{ fontWeight: 700 }}
                         >
-                          −{formatMoney(charges, invoice.currency)}
+                          −<Money value={charges} currency={invoice.currency} fx={summaryFx} />
                         </span>
                       </div>
                     )}
@@ -1648,6 +1656,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                   the versions started watching charges, "53.18" would have
                   cut five of them on the way to being typed. */}
               <AdditionalChargesPanel
+                currency={invoice.currency}
                 charges={chargeDraft}
                 onChange={setChargeDraft}
                 types={VENDOR_CHARGE_TYPES}

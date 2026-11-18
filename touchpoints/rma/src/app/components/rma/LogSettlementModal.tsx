@@ -18,6 +18,7 @@
  * with the vendor rather than something to refuse in a dialog.
  */
 
+import { formatMoney as moneyIn, moneyPrefix } from '@/app/currency/money';
 import { localISODate } from '@/app/data/mockRMAs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Banknote, ChevronRight, FileText, Plus, Upload, X } from 'lucide-react';
@@ -90,11 +91,9 @@ function todayIso() {
   return localISODate(new Date());
 }
 
+/** In the return's (the PO's) currency, with its symbol: £30.23 (app/currency/money.ts). */
 function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return moneyIn(amount, currency);
 }
 
 /** The bank the return nominated, said as a journal line. Mirrors
@@ -394,7 +393,7 @@ export function LogSettlementModal({
               </div>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 tabular-nums">
-                  {currency === 'USD' ? '$' : currency}
+                  {moneyPrefix(currency).trim()}
                 </span>
                 <Input
                   id="rma-settle-amount"
@@ -541,6 +540,7 @@ export function LogSettlementModal({
             {chargesOpen && (
               <div className="px-3.5 pb-3.5 pt-2 border-t border-slate-100">
                 <AdditionalChargesPanel
+                  currency={currency}
                   charges={newCharges}
                   onChange={setNewCharges}
                   types={VENDOR_CHARGE_TYPES}

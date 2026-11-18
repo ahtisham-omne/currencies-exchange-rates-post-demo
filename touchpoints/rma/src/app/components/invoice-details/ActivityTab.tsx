@@ -1,3 +1,4 @@
+import { formatMoney as moneyIn } from '@/app/currency/money';
 import { useMemo, useState } from 'react';
 import {
   FilePlus,
@@ -228,8 +229,7 @@ export function ActivityTab({
       return rmaEvents.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
     }
     const list: ActivityEvent[] = [];
-    const money = (n: number) =>
-      `${invoice.currency === 'USD' ? '$' : invoice.currency + ' '}${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+    const money = (n: number) => moneyIn(n, invoice.currency);
 
     list.push({
       id: 'ev-created',

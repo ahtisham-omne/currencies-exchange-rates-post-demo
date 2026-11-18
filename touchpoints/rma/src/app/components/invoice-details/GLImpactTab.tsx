@@ -1,5 +1,10 @@
+import { formatMoney as moneyIn, formatRateDate, rateSentence } from '@/app/currency/money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { RATE_PROVIDER, toBase } from '@/app/currency/rates';
+import { returnFx, returnReceipts } from '@/app/currency/returnCurrency';
 import { useMemo, useState } from 'react';
 import {
+  ArrowLeftRight,
   CheckCircle2,
   AlertTriangle,
   CircleDashed,
@@ -62,8 +67,46 @@ interface JournalLine {
 
 type PostingStatus = 'not_posted' | 'posted' | 'exception' | 'deferred' | 'reversed';
 
+/** In the return's (the PO's) currency, with its symbol: £30.23 (app/currency/money.ts). */
 function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return moneyIn(amount, currency);
+}
+
+/* A return in another currency books in it and shows dollars under each
+   amount, at the receiving-day rate: sending goods back reverses their
+   receipt, and a receipt reverses at the rate it was booked at. */
+
+/** One side of a step in dollars: each amount converted, the cents split so
+ *  the side still adds up to its total in dollars and the step stays
+ *  balanced (Debit = Credit) in both currencies. */
+function baseSplit(values: (number | undefined)[], rate: number): (number | undefined)[] {
+  const amounts = values.map((v) => v ?? 0);
+  const totalCents = Math.round(amounts.reduce((sum, v) => sum + v, 0) * rate * 100);
+  const raw = amounts.map((v) => v * rate * 100);
+  const cents = raw.map((r) => Math.floor(r));
+  let left = totalCents - cents.reduce((sum, c) => sum + c, 0);
+  const order = raw.map((r, i) => [r - Math.floor(r), i] as const).sort((a, b) => b[0] - a[0]);
+  for (const [, i] of order) {
+    if (left <= 0) break;
+    if (amounts[i]) {
+      cents[i] = (cents[i] ?? 0) + 1;
+      left--;
+    }
+  }
+  return values.map((v, i) => (v ? (cents[i] ?? 0) / 100 : undefined));
+}
+
+/** An amount in the return's currency, and its dollars under it. */
+function InBoth({ value, currency, base }: { value: number; currency: string; base?: number | undefined }) {
+  if (base === undefined) return <>{formatMoney(value, currency)}</>;
+  return (
+    <>
+      <span className="block">{formatMoney(value, currency)}</span>
+      <span className="block text-[10.5px] text-slate-400 tabular-nums" style={{ fontWeight: 500 }}>
+        {formatMoney(base, BASE_CURRENCY)}
+      </span>
+    </>
+  );
 }
 
 // One color per account, shared between the journal table legend and the
@@ -454,6 +497,10 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const entries = useMemo<GLEntry[]>(() => buildRMAGLEntries(rma), [rma]);
   const clearing = returnsPendingBalance(entries);
+  // A return in another currency: dollars at the receiving-day rate.
+  const fx = useMemo(() => returnFx(rma), [rma]);
+  const receipts = useMemo(() => (fx ? returnReceipts(rma) : []), [fx, rma]);
+  const usd = (n: number) => (fx ? toBase(n, fx.rate) : undefined);
 
   if (entries.length === 0) {
     return (
@@ -743,6 +790,26 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
             Every return starts the same way: the goods move out of on-hand stock into a clearing account when the shipment leaves. What clears that account depends on what the vendor owes back, so the later steps stay projected until the event actually happens. Postings are automatic, finance verifies them rather than keying them.
           </p>
         </div>
+        {fx && (
+          <div className="px-4 py-2.5 border-b border-slate-100 flex items-start gap-2" style={{ backgroundColor: '#F5F3FF66' }}>
+            <ArrowLeftRight className="w-3.5 h-3.5 shrink-0 mt-px" style={{ color: '#7C3AED' }} />
+            <div className="text-[11px] text-slate-600 leading-snug">
+              <p>
+                In <span style={{ fontWeight: 600 }}>{currency}</span>, the PO's currency, with dollars under each amount at the
+                receiving-day rate. Sending goods back reverses their receipt, and a receipt reverses at the rate it was booked at.
+              </p>
+              {receipts.map((r) => (
+                <p key={r.grnNumber} className="tabular-nums mt-0.5 text-slate-500">
+                  <span style={{ fontWeight: 600 }} className="text-slate-700">{r.grnNumber}</span> received {formatRateDate(r.date)} ·{' '}
+                  <span style={{ fontWeight: 600 }} className="text-slate-700">{rateSentence(currency, r.rate)}</span> · Mid-market, {RATE_PROVIDER}
+                </p>
+              ))}
+              {receipts.length > 1 && fx.breakdown && (
+                <p className="mt-0.5 text-slate-500">Each receipt's share converts at its own rate, {rateSentence(currency, fx.rate)} across them.</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* What the goods were worth against what came back for them. The
             journal says it in postings; this says it in one line, because
@@ -755,7 +822,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                 Return value
               </p>
               <p className="text-[13px] tabular-nums text-foreground mt-0.5" style={{ fontWeight: 700 }}>
-                {formatMoney(settlement.value, currency)}
+                <InBoth value={settlement.value} currency={currency} base={usd(settlement.value)} />
               </p>
               <p className="text-[10px] text-slate-400 mt-px">At the original PO price</p>
             </div>
@@ -769,7 +836,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
               >
                 {settlement.received === null
                   ? 'Not recorded'
-                  : formatMoney(settlement.received, currency)}
+                  : <InBoth value={settlement.received} currency={currency} base={usd(settlement.received)} />}
               </p>
               <p className="text-[10px] text-slate-400 mt-px">
                 {settlement.kind === 'refused'
@@ -791,7 +858,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                     settlement.loss + settlement.writtenOff > 0.004 ? '#BE123C' : '#047857',
                 }}
               >
-                {formatMoney(round2(settlement.loss + settlement.writtenOff), currency)}
+                <InBoth value={round2(settlement.loss + settlement.writtenOff)} currency={currency} base={usd(round2(settlement.loss + settlement.writtenOff))} />
               </p>
               <p className="text-[10px] text-slate-400 mt-px">
                 {settlement.loss > 0.004 && settlement.writtenOff > 0.004
@@ -810,6 +877,8 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
           {shown.map((entry, idx) => {
           const open = closed[entry.id] !== true;
           const entryDebits = round2(entry.postings.reduce((n, p) => n + (p.debit ?? 0), 0));
+          const debitsUsd = fx ? baseSplit(entry.postings.map((p) => p.debit), fx.rate) : null;
+          const creditsUsd = fx ? baseSplit(entry.postings.map((p) => p.credit), fx.rate) : null;
           const entryCredits = round2(entry.postings.reduce((n, p) => n + (p.credit ?? 0), 0));
           return (
             <div
@@ -861,10 +930,10 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                     folded sequence still reads as a sequence of amounts. */}
                 <span className="flex shrink-0 items-center gap-2 pt-0.5">
                   <span
-                    className="text-[12px] tabular-nums text-foreground"
+                    className="text-[12px] tabular-nums text-foreground text-right"
                     style={{ fontWeight: 600 }}
                   >
-                    {formatMoney(entryDebits, currency)}
+                    <InBoth value={entryDebits} currency={currency} base={usd(entryDebits)} />
                   </span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`}
@@ -935,14 +1004,14 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums">
                           {posting.debit ? (
-                            <span className="text-foreground" style={{ fontWeight: 600 }}>{formatMoney(posting.debit, currency)}</span>
+                            <span className="text-foreground" style={{ fontWeight: 600 }}><InBoth value={posting.debit} currency={currency} base={debitsUsd?.[pIdx]} /></span>
                           ) : (
                             <span className="text-slate-200">-</span>
                           )}
                         </td>
                         <td className="px-4 py-2 pr-3.5 text-right tabular-nums">
                           {posting.credit ? (
-                            <span className="text-foreground" style={{ fontWeight: 600 }}>{formatMoney(posting.credit, currency)}</span>
+                            <span className="text-foreground" style={{ fontWeight: 600 }}><InBoth value={posting.credit} currency={currency} base={creditsUsd?.[pIdx]} /></span>
                           ) : (
                             <span className="text-slate-200">-</span>
                           )}
@@ -969,10 +1038,10 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                       </span>
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums text-foreground" style={{ fontWeight: 700 }}>
-                      {formatMoney(entry.postings.reduce((s, p) => s + (p.debit ?? 0), 0), currency)}
+                      <InBoth value={entry.postings.reduce((s, p) => s + (p.debit ?? 0), 0)} currency={currency} base={usd(entry.postings.reduce((s, p) => s + (p.debit ?? 0), 0))} />
                     </td>
                     <td className="px-4 py-2 pr-3.5 text-right tabular-nums text-foreground" style={{ fontWeight: 700 }}>
-                      {formatMoney(entry.postings.reduce((s, p) => s + (p.credit ?? 0), 0), currency)}
+                      <InBoth value={entry.postings.reduce((s, p) => s + (p.credit ?? 0), 0)} currency={currency} base={usd(entry.postings.reduce((s, p) => s + (p.credit ?? 0), 0))} />
                     </td>
                   </tr>
                 </tfoot>
@@ -1074,7 +1143,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                         <td className="px-4 py-2 text-right tabular-nums">
                           {row.debit > 0.004 ? (
                             <span className="text-foreground" style={{ fontWeight: 600 }}>
-                              {formatMoney(row.debit, currency)}
+                              <InBoth value={row.debit} currency={currency} base={usd(row.debit)} />
                             </span>
                           ) : (
                             <span className="text-slate-200">-</span>
@@ -1083,7 +1152,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                         <td className="px-4 py-2 text-right tabular-nums">
                           {row.credit > 0.004 ? (
                             <span className="text-foreground" style={{ fontWeight: 600 }}>
-                              {formatMoney(row.credit, currency)}
+                              <InBoth value={row.credit} currency={currency} base={usd(row.credit)} />
                             </span>
                           ) : (
                             <span className="text-slate-200">-</span>
@@ -1100,7 +1169,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                               style={{ fontWeight: 700, color: up ? '#047857' : '#E11D48' }}
                             >
                               <Arrow className="w-3 h-3" />
-                              {formatMoney(Math.abs(net), currency)}
+                              <span className="text-right"><InBoth value={Math.abs(net)} currency={currency} base={usd(Math.abs(net))} /></span>
                             </span>
                           )}
                         </td>
@@ -1181,7 +1250,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
             </span>
           ) : (
             <span className="text-[13px] tabular-nums text-foreground shrink-0" style={{ fontWeight: 700 }}>
-              {formatMoney(clearing, currency)}
+              <InBoth value={clearing} currency={currency} base={usd(clearing)} />
             </span>
           )}
         </div>

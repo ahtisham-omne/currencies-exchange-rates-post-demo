@@ -256,6 +256,7 @@ import { SerialQtyCell } from '@/app/components/SerialQtyCell';
 import { partnerForItem, type PartnerLocationItem } from '@/app/data/partnerLocations';
 import { getVendorDefaultExpenseAccount, setVendorDefaultExpenseAccount } from '@/app/lib/vendorDefaults';
 import { toast } from 'sonner';
+import { otherCurrencyReason, poCurrency, receiptCurrency } from '@/app/currency/returnCurrency';
 import { Invoice, mockInvoices } from '@/app/data/mockInvoices';
 
 import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -3860,6 +3861,24 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     [paidByVendor, lineItems],
   );
 
+  /** The currency a vendor's return is already in: the PO currency of any
+   *  receipt picked for that vendor, on any line (counted ties and serialized
+   *  units both land in itemTies). One return, one currency: a receipt from a PO
+   *  in another currency goes on a separate return (step 4 greys it out). */
+  const currencyLockFor = (vendorCode: string): string | null => {
+    for (const byVendor of Object.values(itemTies)) {
+      const entry = byVendor[vendorCode];
+      if (!entry) continue;
+      for (const [grn, q] of Object.entries(entry.ties)) {
+        if (q > 0) {
+          const c = receiptCurrency(vendorCode, grn);
+          if (c) return c;
+        }
+      }
+    }
+    return null;
+  };
+
   const resolutionTargets = useMemo(
     () =>
       vendorDrafts.map((draft) => {
@@ -3881,6 +3900,13 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
           paidQty: paidByVendor.get(draft.vendorCode)?.qty ?? 0,
           paidValue: paidByVendor.get(draft.vendorCode)?.value ?? 0,
           uom: uoms.length === 1 ? uoms[0]! : 'units',
+          // The return's currency: its picked receipts' PO currency, else (a
+          // line going back untied) the PO its line item came on, which is the
+          // PO the saved return names. Paid, Total and Total Charges read in it
+          // on the Credit or refund step.
+          currency:
+            currencyLockFor(draft.vendorCode) ??
+            poCurrency(lineItems.find((li) => draft.lines.some((l) => l.sku === li.sku) && li.poNumber)?.poNumber),
           // What is actually going back to them, so the card can show the
           // parts rather than a count of them, and say on hover what the
           // steps before it settled for each one.
@@ -3946,7 +3972,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [vendorDrafts, lineLots, currentPOItems, paidByVendor, paidByVendorItem],
+    [vendorDrafts, lineLots, currentPOItems, paidByVendor, paidByVendorItem, itemTies, lineItems],
   );
 
   /** Every vendor this part was received from, with what they delivered: the
@@ -4431,6 +4457,13 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
       allDeliveries(sku, uom).find((d) => d.grnNumber === grnNumber)?.vendorCode ??
       countedVendorFor(sku, uom);
     if (!vendorCode) return;
+    // A receipt from a PO in another currency can't join this return.
+    const lock = currencyLockFor(vendorCode);
+    const docCurrency = receiptCurrency(vendorCode, grnNumber);
+    if (qty > 0 && lock && docCurrency && docCurrency !== lock) {
+      toast.error(otherCurrencyReason(docCurrency));
+      return;
+    }
     const key = lineKey(sku, uom);
     setItemTies((prev) => {
       const forSku = prev[key] ?? {};
@@ -4445,8 +4478,12 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   const setAllTies = (sku: string, uom: string, on: boolean) => {
     const vendorCode = countedVendorFor(sku, uom);
     if (!vendorCode) return;
+    // Every receipt in the return's currency: the one already picked, else
+    // the first receipt's. The rest stay greyed out for a separate return.
+    const rows = receiversInUom(sku, vendorCode, uom);
+    const currency = currencyLockFor(vendorCode) ?? (rows[0] ? poCurrency(rows[0].poNumber) : null);
     const ties = on
-      ? Object.fromEntries(receiversInUom(sku, vendorCode, uom).map((r) => [r.grnNumber, r.qty]))
+      ? Object.fromEntries(rows.filter((r) => !currency || poCurrency(r.poNumber) === currency).map((r) => [r.grnNumber, r.qty]))
       : {};
     setItemTies((prev) => ({
       ...prev,
@@ -8980,6 +9017,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       // A purchase order belongs to the ordering module, the
                       // same way a new vendor belongs to partner creation.
                       onOpenPO={() => window.open('', '_blank')}
+                      currencyLock={currencyLockFor}
                       onAllRows={(on) => {
                         if (!focusLine) return;
                         if (trackingModeFor(focusLine.sku) !== 'serialized') {

@@ -1,3 +1,4 @@
+import { formatMoney as moneyIn } from '@/app/currency/money';
 import { useMemo } from 'react';
 import { Banknote, CircleDashed, Copy, ExternalLink, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
@@ -61,7 +62,7 @@ const STATUS_PILL: Record<string, { bg: string; color: string; border: string }>
 const STATUS_FALLBACK = { bg: '#F1F5F9', color: '#475569', border: '#E2E8F0' };
 
 function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return moneyIn(amount, currency);
 }
 
 const PAYMENT_COLUMN_CATALOG = [

@@ -1,3 +1,4 @@
+import { formatMoney as moneyIn } from '@/app/currency/money';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate as useTanstackNavigate } from '@tanstack/react-router';
 
@@ -1610,7 +1611,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
       ? `submitted by ${invoice.vendor} (${vendorData.category}, ${vendorData.type} operations)`
       : `submitted by ${invoice.vendor}`;
     const balanceClause = numbers.outstanding > 0
-      ? `Outstanding balance ${invoice.currency === 'USD' ? '$' : invoice.currency + ' '}${formatCurrency(numbers.outstanding)} due ${invoice.dueDate}`
+      ? `Outstanding balance ${moneyIn(numbers.outstanding, invoice.currency)} due ${invoice.dueDate}`
       : `Paid in full on ${invoice.postingDate || invoice.invoiceDate}`;
     const typeClause = `${invoice.type} invoice ${matchPhrase}`;
     const apClause = invoice.apAccount
@@ -2635,7 +2636,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
             });
           } else {
             toast.success(`${payload.creditMemoNumber} created`, {
-              description: [`${payload.reason} · ${invoice.currency === 'USD' ? '$' : invoice.currency + ' '}${payload.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, payload.notify ? notifyLine(payload.notifiedRecipientIds) : undefined].filter(Boolean).join(' · '),
+              description: [`${payload.reason} · ${moneyIn(payload.amount, invoice.currency)}`, payload.notify ? notifyLine(payload.notifiedRecipientIds) : undefined].filter(Boolean).join(' · '),
             });
           }
         }}
@@ -2664,7 +2665,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
           onReversePayment?.(invoice.id, payload.paymentReference, payload.reversalAmount);
           setStatusOverride(null);
           toast.success(`${isPre ? 'Prepayment' : 'Payment'} ${payload.paymentReference} reversed`, {
-            description: [`${payload.reason} · ${invoice.currency === 'USD' ? '$' : invoice.currency + ' '}${payload.reversalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, payload.notify ? notifyLine(payload.notifiedRecipientIds) : undefined].filter(Boolean).join(' · '),
+            description: [`${payload.reason} · ${moneyIn(payload.reversalAmount, invoice.currency)}`, payload.notify ? notifyLine(payload.notifiedRecipientIds) : undefined].filter(Boolean).join(' · '),
           });
         }}
       />
@@ -3308,8 +3309,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
               setRmaSettleOpen(false);
               const added = (payload.addedCharges ?? []).reduce((n, c) => n + c.amount, 0);
               const short = Math.round((rmaSettlementRemaining - added - payload.amount) * 100) / 100;
-              const money = (n: number) =>
-                `${invoice.currency === 'USD' ? '$' : invoice.currency + ' '}${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+              const money = (n: number) => moneyIn(n, invoice.currency);
               toast.success(
                 payload.amount <= 0
                   ? 'Loss recorded'
@@ -3393,9 +3393,7 @@ function RmaRefusalModal({
   onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState('');
-  const sym = currency === 'USD' ? '$' : `${currency} `;
-  const money = (n: number) =>
-    `${sym}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const money = (n: number) => moneyIn(n, currency);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent

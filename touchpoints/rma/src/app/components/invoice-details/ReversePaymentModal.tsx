@@ -1,3 +1,4 @@
+import { formatMoney as moneyIn } from '@/app/currency/money';
 import { useEffect, useMemo, useState } from 'react';
 import { Undo2, AlertTriangle, FileText, Lock, X } from 'lucide-react';
 import {
@@ -74,7 +75,7 @@ function todayIso() {
 }
 
 function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return moneyIn(amount, currency);
 }
 
 export function ReversePaymentModal({

@@ -17,6 +17,7 @@ import { useRMAContext } from "@/app/rma-context";
 import { Layout, type AppView } from "@/app/components/Layout";
 import type { Invoice, InvoiceActionHistoryEntry } from "@/app/data/mockInvoices";
 import { authorizedQty, receivingsForRMA, type RMA } from "@/app/data/mockRMAs";
+import { rmaCurrency } from "@/app/currency/returnCurrency";
 
 export const Route = createFileRoute("/rma_/$rmaNumber")({
   ssr: false,
@@ -87,7 +88,9 @@ function rmaToInvoice(rma: RMA): Invoice {
     dueDate,
     amount: roundedAmount,
     outstandingBalance: roundedAmount,
-    currency: "USD",
+    // The return's PO's currency (app/currency/returnCurrency.ts): every amount
+    // on the page reads in it, dollars on hover.
+    currency: rmaCurrency(rma),
     apAccount: "2100-AP",
     description: rma.notes ?? `Return authorization against PO-${rma.sourcePO}`,
     postingDate: invoiceDate,

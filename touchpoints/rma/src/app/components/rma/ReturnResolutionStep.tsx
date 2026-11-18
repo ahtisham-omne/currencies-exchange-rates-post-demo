@@ -51,6 +51,7 @@
  * (brief 8.8).
  */
 
+import { formatMoney as moneyIn } from '@/app/currency/money';
 import {
   Banknote,
   Building2,
@@ -107,9 +108,8 @@ import {
 } from '@/app/components/rma/CreateLineAttachments';
 import { type TrackingMode } from '@/app/data/mockRMAs';
 
-/** Money, as the rest of the flow writes it. */
-const formatMoney = (n: number) =>
-  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** Money in the return's currency, its PO's: £30.23 (app/currency/money.ts). */
+const formatMoney = (n: number, currency: string = 'USD') => moneyIn(n, currency);
 
 /** One part on this vendor's return, and what the steps before settled for
  *  it. Shown as a thumbnail and a part number, with the rest on hover. */
@@ -153,6 +153,9 @@ export interface ResolutionTarget {
    *  happen on their own. */
   paidQty?: number | undefined;
   paidValue?: number | undefined;
+  /** The return's currency: the PO currency of the receipts picked for this
+   *  vendor. Paid, Total and Total Charges read in it. */
+  currency?: string | undefined;
 }
 
 export interface ResolutionAnswer {
@@ -529,6 +532,7 @@ export function ReturnResolutionStep({
     items: ResolutionItem[];
     covered: number;
     paidTotal: number;
+    currency?: string | undefined;
   } | null>(null);
   return (
     <div style={{ padding: '0 0 20px' }}>
@@ -733,7 +737,7 @@ export function ReturnResolutionStep({
                                 className="block text-[13px] text-foreground tabular-nums"
                                 style={{ fontWeight: 500 }}
                               >
-                                {formatMoney(item.paidValue ?? 0)}
+                                {formatMoney(item.paidValue ?? 0, target.currency)}
                               </span>
                               {!item.fullyPaid && (
                                 <span className="block text-[10px] text-slate-400" style={{ fontWeight: 500 }}>
@@ -791,7 +795,7 @@ export function ReturnResolutionStep({
                           }`}
                           style={{ fontWeight: 700 }}
                         >
-                          {formatMoney(paidTotal)}
+                          {formatMoney(paidTotal, target.currency)}
                         </span>
                       </div>
                     </div>
@@ -844,7 +848,7 @@ export function ReturnResolutionStep({
                             className="text-slate-900 tabular-nums"
                             style={{ fontSize: 12, fontWeight: 700 }}
                           >
-                            {formatMoney(paidTotal)}
+                            {formatMoney(paidTotal, target.currency)}
                           </span>
                         </div>
                         <p className="m-0 mt-1 text-slate-500" style={{ fontSize: 11 }}>
@@ -902,6 +906,7 @@ export function ReturnResolutionStep({
                                     items: notInvoiced,
                                     covered: coveredCount,
                                     paidTotal,
+                                    currency: target.currency,
                                   });
                                   return;
                                 }
@@ -935,7 +940,7 @@ export function ReturnResolutionStep({
                                     className={`text-[12px] tabular-nums ${on ? 'text-primary' : 'text-slate-500'}`}
                                     style={{ fontWeight: 700 }}
                                   >
-                                    {formatMoney(paidTotal)}
+                                    {formatMoney(paidTotal, target.currency)}
                                   </span>
                                 </span>
                                 <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">
@@ -981,6 +986,7 @@ export function ReturnResolutionStep({
                               (n, c) => n + (c.amount || 0),
                               0,
                             ),
+                            target.currency,
                           )}
                         </span>
                       ) : undefined
@@ -992,6 +998,7 @@ export function ReturnResolutionStep({
                       money reaches you.
                     </p>
                     <AdditionalChargesPanel
+                      currency={target.currency}
                       charges={charges[target.vendorCode] ?? []}
                       onChange={(next) => onCharges(target.vendorCode, next)}
                       types={VENDOR_CHARGE_TYPES}
@@ -1227,7 +1234,7 @@ export function ReturnResolutionStep({
                 {partial.paidTotal > 0.004
                   ? `The ${partial.choice.toLowerCase()} covers the ${partial.covered} ${
                       partial.covered === 1 ? 'item that was' : 'items that were'
-                    } paid for, ${formatMoney(partial.paidTotal)} in all.`
+                    } paid for, ${formatMoney(partial.paidTotal, partial.currency)} in all.`
                   : `The ${partial.choice.toLowerCase()} covers the ${partial.covered} ${
                       partial.covered === 1 ? 'item' : 'items'
                     } with no invoice on file to check against.`}

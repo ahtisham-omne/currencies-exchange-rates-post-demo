@@ -1,3 +1,5 @@
+import { rmaCurrency } from '@/app/currency/returnCurrency';
+import { getCurrency } from '@/app/currency/currencies';
 import { useCallback, useMemo, useState } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -151,6 +153,8 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
   // carries any of the selected values" rather than on a single header field.
   const [itemQuick, setItemQuick] = useState<string[]>([]);
   const [poQuick, setPoQuick] = useState<string[]>([]);
+  /** A return's currency is its PO's (app/currency/returnCurrency.ts). */
+  const [currencyQuick, setCurrencyQuick] = useState<string[]>([]);
   const [receivingQuick, setReceivingQuick] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -258,6 +262,7 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
       if (pointOfContactQuick.length > 0 && !pointOfContactQuick.includes(rma.pointOfContact ?? '')) return false;
       if (itemQuick.length > 0 && !rma.items.some((li) => itemQuick.includes(li.sku))) return false;
       if (poQuick.length > 0 && !sourcePOsForRMA(rma).some((p) => poQuick.includes(p))) return false;
+      if (currencyQuick.length > 0 && !currencyQuick.includes(rmaCurrency(rma))) return false;
       if (receivingQuick.length > 0 && !receivingsForRMA(rma).some((g) => receivingQuick.includes(g)))
         return false;
       if (dateFrom && rma.createdDate < dateFrom) return false;
@@ -274,6 +279,7 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
     pointOfContactQuick,
     itemQuick,
     poQuick,
+    currencyQuick,
     receivingQuick,
     dateFrom,
     dateTo,
@@ -318,6 +324,7 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
     pointOfContactQuick.length +
     itemQuick.length +
     poQuick.length +
+    currencyQuick.length +
     receivingQuick.length +
     (dateFrom ? 1 : 0) +
     (dateTo ? 1 : 0);
@@ -384,6 +391,7 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
         tooltip: def.tooltip,
         value: def.compute(rmasInRange),
         sub: def.computeSubtitle ? def.computeSubtitle(rmasInRange) : def.subtitle,
+        hover: def.computeHover?.(rmasInRange),
       })),
     [rmasInRange],
   );
@@ -455,6 +463,7 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
     setPointOfContactQuick([]);
     setItemQuick([]);
     setPoQuick([]);
+    setCurrencyQuick([]);
     setReceivingQuick([]);
     setDateFrom('');
     setDateTo('');
@@ -546,6 +555,14 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
   const itemCounts = useMemo(() => countsForMany((r) => r.items.map((li) => li.sku)), [rmas]);
   const poOptions = useMemo(() => optionsForMany(sourcePOsForRMA), [rmas]);
   const poCounts = useMemo(() => countsForMany(sourcePOsForRMA), [rmas]);
+  // Dollars first, then the others A to Z.
+  const currencyOptions = useMemo(
+    () => Array.from(new Set(rmas.map(rmaCurrency))).sort((a, b) => Number(b === 'USD') - Number(a === 'USD') || a.localeCompare(b)),
+    [rmas],
+  );
+  const currencyCounts = useMemo(() => countsFor(rmaCurrency), [rmas]);
+  /** "GBP, British Pound", as the currency dropdowns write a currency. */
+  const currencyOptionLabel = (code: string) => `${code}, ${getCurrency(code)?.name ?? code}`;
   const receivingOptions = useMemo(() => optionsForMany(receivingsForRMA), [rmas]);
   const receivingCounts = useMemo(() => countsForMany(receivingsForRMA), [rmas]);
 
@@ -641,6 +658,7 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
                     iconBg={kpi.iconBg}
                     iconColor={kpi.iconColor}
                     tooltip={kpi.tooltip}
+                    hover={kpi.hover}
                     moveCard={moveKpi}
                     onRemove={() => handleRemoveKpi(kpi.key)}
                   />
@@ -815,6 +833,12 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
                 options={poOptions.map((v) => ({ id: v, label: v, count: poCounts[v] ?? 0 }))}
                 selected={poQuick}
                 onChange={(next) => { setPoQuick(next); setCurrentPage(1); }}
+              />
+              <MultiSelectFilter
+                label="Currency"
+                options={currencyOptions.map((v) => ({ id: v, label: currencyOptionLabel(v), count: currencyCounts[v] ?? 0 }))}
+                selected={currencyQuick}
+                onChange={(next) => { setCurrencyQuick(next); setCurrentPage(1); }}
               />
               <MultiSelectFilter
                 label="Receiving document"
@@ -1102,6 +1126,20 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
                 selected: tagQuick.includes(t),
                 onToggle: () =>
                   setTagQuick(tagQuick.includes(t) ? tagQuick.filter((v) => v !== t) : [...tagQuick, t]),
+              }))}
+            />
+            {/* A return is in its PO's currency. Few of them, so pills. */}
+            <PillGroup
+              label="Currency"
+              anySelected={currencyQuick.length === 0}
+              onAny={() => setCurrencyQuick([])}
+              options={currencyOptions.map((c) => ({
+                id: c,
+                label: currencyOptionLabel(c),
+                count: currencyCounts[c] ?? 0,
+                selected: currencyQuick.includes(c),
+                onToggle: () =>
+                  setCurrencyQuick(currencyQuick.includes(c) ? currencyQuick.filter((v) => v !== c) : [...currencyQuick, c]),
               }))}
             />
             {/* Vendor / people / site facets are long lists, so they use the

@@ -6,6 +6,8 @@
  * issued, so the document leads with what is being returned, why, where it is
  * going and what credit is expected, rather than with pricing and delivery.
  */
+import { formatMoney as moneyIn } from '@/app/currency/money';
+import { getCurrency } from '@/app/currency/currencies';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Paperclip, Printer, Send, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/app/components/ui/dialog';
@@ -220,9 +222,8 @@ export function SendToVendorModal({
     return () => window.cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, autoPrint]);
-  const sym = currency === 'USD' ? '$' : `${currency} `;
-  const money = (n: number) =>
-    `${sym}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // The vendor's document: amounts in the return's (the PO's) currency, £30.23.
+  const money = (n: number) => moneyIn(n, currency);
 
   const lines = rma.items;
   // Units are counted per unit of measure and never added across them:
@@ -418,6 +419,8 @@ export function SendToVendorModal({
                 longer summarizes either. Each line states its own below. */}
             {metaCell('RMA Date:', formatDate(rma.createdDate))}
             {metaCell(sourcePOs.length > 1 ? 'Source PO #s:' : 'Source PO #:', sourcePOList)}
+            {/* The vendor reads every amount below in the PO's currency. */}
+            {metaCell('Currency:', `${currency} (${getCurrency(currency)?.name ?? currency})`)}
             {/* No receiving documents here. They are our numbers for our
                 own goods-in, and the vendor has no way to look one up:
                 what they match the return against is their own PO and

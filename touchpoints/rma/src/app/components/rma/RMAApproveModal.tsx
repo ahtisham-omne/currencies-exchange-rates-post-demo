@@ -19,6 +19,7 @@
  * pick one of a few things and says what each one means.
  */
 
+import { formatMoney as moneyIn } from '@/app/currency/money';
 import { useEffect, useState } from 'react';
 import { Banknote, CalendarClock, CalendarDays, CheckCheck, HelpCircle, Mail, PackageCheck, Ship, Sun } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -333,11 +334,7 @@ export function RMAApproveModal({
     Math.round((creditBack - (totalCharges - chargesOnPaid)) * 100) / 100,
   );
   const totalBack = Math.round((netBack + creditNote) * 100) / 100;
-  const money = (n: number) =>
-    `${currency === 'USD' ? '$' : `${currency} `}${n.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
+  const money = (n: number) => moneyIn(n, currency);
 
   /** The three answers said back as the one fact they add up to. Two of the
    *  three starting points have not happened yet, so this is a date only when

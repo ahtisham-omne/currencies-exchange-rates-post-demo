@@ -1,3 +1,4 @@
+import { rmaCurrency, sumInBase } from '@/app/currency/returnCurrency';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
@@ -42,6 +43,29 @@ export interface RMAKpiDefinition {
    *  duration over 3 of 40 returns means something different to one over 38.
    *  Falls back to `subtitle` when the sample never varies. */
   computeSubtitle?: (rmas: RMA[]) => string;
+  /** The currencies behind a money figure, shown on hover over the value or
+   *  the subtitle (whichever carries the money). Returns are in their PO's
+   *  currency, so they are converted to dollars before they are added up. */
+  computeHover?: (rmas: RMA[]) => KpiHover | undefined;
+}
+
+export interface KpiHover {
+  on: 'value' | 'subtitle';
+  /** "£1,200.00 + $5,900.00" */
+  split: string;
+  note: string;
+}
+
+/** A money figure across returns in several currencies: each return's amount
+ *  in its PO's currency, converted to dollars at today's rate, then added. */
+function inDollars(rmas: RMA[], amountOf: (r: RMA) => number) {
+  return sumInBase(rmas.map((r) => ({ amount: amountOf(r), currency: rmaCurrency(r) })));
+}
+
+/** The hover for a figure added up in dollars, when anything in it wasn't. */
+function splitHover(on: KpiHover['on'], sum: ReturnType<typeof inDollars>): KpiHover | undefined {
+  if (!sum.byCurrency.some((p) => p.currency !== 'USD')) return undefined;
+  return { on, split: sum.split, note: `${money(sum.base)} in dollars, each currency converted at today's rate before adding up.` };
 }
 
 // Days between two ISO date strings (positive integer).
@@ -174,8 +198,10 @@ export const ALL_RMA_KPI_DEFINITIONS: RMAKpiDefinition[] = [
     iconColor: palette.emerald[700],
     subtitle: 'Authorized value still owed',
     tooltip:
-      'What the vendors owe you across the open returns created in this period: the goods that were paid for, plus the goods sitting on an invoice still open. Goods never billed owe nothing, and a draft is not a claim yet, so neither is counted.',
-    compute: (rmas) => money(owedRMAs(rmas).reduce((s, r) => s + rmaOwedValue(r), 0)),
+      'What the vendors owe you across the open returns created in this period: the goods that were paid for, plus the goods sitting on an invoice still open. Goods never billed owe nothing, and a draft is not a claim yet, so neither is counted. Each return is in its PO\'s currency, converted to dollars at today\'s rate before adding up.',
+    // In dollars: each return's amount converted from its PO's currency first.
+    compute: (rmas) => money(inDollars(owedRMAs(rmas), rmaOwedValue).base),
+    computeHover: (rmas) => splitHover('value', inDollars(owedRMAs(rmas), rmaOwedValue)),
     computeSubtitle: (rmas) => {
       const owed = owedRMAs(rmas);
       if (owed.length === 0) return 'Nothing outstanding';
@@ -217,9 +243,10 @@ export const ALL_RMA_KPI_DEFINITIONS: RMAKpiDefinition[] = [
     computeSubtitle: (rmas) => {
       const shipping = rmas.filter((r) => r.status === 'Shipped to Vendor');
       if (shipping.length === 0) return 'Nothing is in transit';
-      const value = shipping.reduce((s, r) => s + rmaValue(r), 0);
-      return `${money(value)} in transit to vendors`;
+      return `${money(inDollars(shipping, rmaValue).base)} in transit to vendors`;
     },
+    computeHover: (rmas) =>
+      splitHover('subtitle', inDollars(rmas.filter((r) => r.status === 'Shipped to Vendor'), rmaValue)),
   },
   {
     key: 'most_common_reason',

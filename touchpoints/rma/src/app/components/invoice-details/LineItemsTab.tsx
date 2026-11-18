@@ -1,3 +1,6 @@
+import { formatMoney as moneyIn } from '@/app/currency/money';
+import { returnFx } from '@/app/currency/returnCurrency';
+import { Money } from '@/app/components/currency/Money';
 import { useMemo, useState, type ReactNode } from 'react';
 import { shipmentForShippedLine } from '@/app/data/rmaShipments';
 import { createPortal } from 'react-dom';
@@ -64,7 +67,8 @@ export function LineItemsTable<T>({
   storageKey: string;
   getRowId: (row: T) => string;
   subtotalLabel: string;
-  subtotalValue: string;
+  /** A return's value carries its dollars hover, so this takes a node. */
+  subtotalValue: ReactNode;
   headerExtra?: ReactNode;
   /** Approx px per row — used to size the scroll area to content (capped at
    *  64vh). The DataTable's scroll container needs a definite height or it
@@ -551,8 +555,9 @@ function generateStandaloneLines(invoice: Invoice, subtotal: number): Standalone
   });
 }
 
+/** In the return's (the PO's) currency, with its symbol: £30.23 (app/currency/money.ts). */
 function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return moneyIn(amount, currency);
 }
 
 // Nested detail — how one return line settles, stated per invoice state.
@@ -850,6 +855,9 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, rea
     () => (rma ? rmaLinesToInvoiceLines(rma) : generateLines(invoice, subtotal)),
     [invoice, subtotal, rma],
   );
+  // A return's amounts are in its PO's currency; the hover gives dollars at
+  // the receiving-day rate, the rate the receipt reverses at (GL Impact).
+  const returnRate = useMemo(() => (rma ? returnFx(rma) : null), [rma]);
   // Per-line amount = qty invoiced × unit price. For an invoice this is the
   // billable subtotal; for an RMA this is the total return value (footer
   // label swaps to "Return value" below). Quantities can't be summed across
@@ -1176,7 +1184,9 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, rea
       getValue: (l) => l.unitPrice,
       render: (line) => (
         <div>
-          <div className="tabular-nums text-[13px] text-foreground" style={{ fontWeight: 500 }}>{formatMoney(line.unitPrice, invoice.currency)}</div>
+          <div className="tabular-nums text-[13px] text-foreground" style={{ fontWeight: 500 }}>
+            <Money value={line.unitPrice} currency={invoice.currency} fx={returnRate} />
+          </div>
           <div className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>per {line.uom}</div>
         </div>
       ),
@@ -1211,7 +1221,7 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, rea
               className={`tabular-nums text-[13px] ${back > 0.004 ? 'text-foreground' : 'text-slate-400'}`}
               style={{ fontWeight: back > 0.004 ? 600 : 500 }}
             >
-              {formatMoney(back, invoice.currency)}
+              <Money value={back} currency={invoice.currency} fx={returnRate} />
             </span>
             {back > 0.004 && back < whole - 0.004 && (
               <div className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>
@@ -1294,7 +1304,7 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, rea
               className="tabular-nums text-[13px] text-foreground"
               style={{ fontWeight: 500 }}
             >
-              {formatMoney(qty * line.unitPrice, invoice.currency)}
+              <Money value={qty * line.unitPrice} currency={invoice.currency} fx={returnRate} />
             </span>
           </div>
         );
@@ -1379,7 +1389,7 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, rea
         storageKey={rma ? 'omnesoft:rma-lines-v1' : 'omnesoft:invoice-lines-v3'}
         getRowId={(l) => l.id}
         subtotalLabel={rma ? 'Return value' : 'Invoice line subtotal'}
-        subtotalValue={formatMoney(lineAmountTotal, invoice.currency)}
+        subtotalValue={<Money value={lineAmountTotal} currency={invoice.currency} fx={returnRate} />}
         rowHeight={62}
         title={rma ? 'Return Items' : 'Line Items'}
         searchAccessor={(l) => rma

@@ -1,4 +1,5 @@
 import { mulberry32 } from './seededRandom';
+import { VENDOR_CURRENCY } from '@/app/currency/poCurrencySeed';
 
 // Seeded so the vendor / PO / line-item dataset is stable across
 // reloads — see mockInvoices.ts for the rationale.
@@ -1070,7 +1071,9 @@ export const mockVendors: Vendor[] = Array.from({ length: EXTRA_FROM + EXTRA_VEN
     vendorCode,
     vendorName,
     category,
-    currency: 'USD',
+    // A vendor trading wholly in another currency says so; the rest default
+    // to dollars, with any PO in its own (app/currency/poCurrencySeed.ts).
+    currency: VENDOR_CURRENCY[vendorCode] ?? 'USD',
     paymentTerms: ['Net 30', 'Net 45', 'Net 60', '2/10 Net 30'][index % 4],
     purchaseOrders: pos,
     receivingDocuments: grns,

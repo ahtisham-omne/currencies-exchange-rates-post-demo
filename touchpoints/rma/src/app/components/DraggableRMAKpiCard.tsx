@@ -23,6 +23,9 @@ export interface DraggableRMAKpiCardProps {
   iconBg?: string;
   iconColor?: string;
   tooltip?: string;
+  /** The currencies behind a money figure, on hover over the value or the
+   *  subtitle: "£1,200.00 + $5,900.00" and how they were added up. */
+  hover?: { on: 'value' | 'subtitle'; split: string; note: string } | undefined;
   moveCard: (from: number, to: number) => void;
   onRemove: () => void;
 }
@@ -36,10 +39,24 @@ export function DraggableRMAKpiCard({
   iconBg,
   iconColor,
   tooltip,
+  hover,
   moveCard,
   onRemove,
 }: DraggableRMAKpiCardProps) {
   const ref = useRef<HTMLDivElement>(null);
+  /** The value or subtitle, with the currency split on hover when it carries one. */
+  const withSplit = (on: 'value' | 'subtitle', node: React.ReactElement) =>
+    hover?.on === on ? (
+      <Tooltip>
+        <TooltipTrigger asChild>{node}</TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-[260px]">
+          <p className="text-[12px] tabular-nums" style={{ fontWeight: 600 }}>{hover.split}</p>
+          <p className="text-[11px] opacity-80 mt-0.5">{hover.note}</p>
+        </TooltipContent>
+      </Tooltip>
+    ) : (
+      node
+    );
 
   const [{ isDragging }, drag, preview] = useDrag({
     type: DND_KPI_CARD,
@@ -125,20 +142,28 @@ export function DraggableRMAKpiCard({
         </div>
 
         <div className="flex items-baseline gap-1 min-w-0">
-          <p
-            className="text-[15px] text-slate-700 tracking-tight truncate min-w-0"
-            style={{ fontWeight: 600, lineHeight: 1.2 }}
-            title={value}
-          >
-            {value}
-          </p>
+          {withSplit(
+            'value',
+            <p
+              className={`text-[15px] text-slate-700 tracking-tight truncate min-w-0 ${hover?.on === 'value' ? 'cursor-help underline decoration-dotted decoration-slate-300 underline-offset-[3px]' : ''}`}
+              style={{ fontWeight: 600, lineHeight: 1.2 }}
+              title={hover?.on === 'value' ? undefined : value}
+            >
+              {value}
+            </p>,
+          )}
         </div>
 
-        {sub && (
-          <div className="text-[10px] text-slate-400/80 truncate mt-0.5" title={sub}>
-            {sub}
-          </div>
-        )}
+        {sub &&
+          withSplit(
+            'subtitle',
+            <div
+              className={`text-[10px] text-slate-400/80 truncate mt-0.5 ${hover?.on === 'subtitle' ? 'cursor-help underline decoration-dotted decoration-slate-300 underline-offset-2' : ''}`}
+              title={hover?.on === 'subtitle' ? undefined : sub}
+            >
+              {sub}
+            </div>,
+          )}
       </div>
 
       <div

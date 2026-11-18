@@ -125,7 +125,7 @@ Vendor Returns is the RMA app from [`rma-web-builder`](https://github.com/ahtish
   - Its "Supply Chain Management" crumb opens the shell's Supply Chain overview, standing in for the app's own overview.
   - A return opened in a new tab gets the shell's page.
 - A refund payment opened from a return's Linked Records goes to the app's own `/payments-v2` path. The shell sends that, and `/prepayments`, to Vendor Payments.
-- Its currency and exchange-rate touchpoints aren't added yet. Its sample data is in USD.
+- **Currency:** a return is in its PO's currency, with dollars on hover at the receiving-day rate. [docs/rma-currency-touchpoints.md](docs/rma-currency-touchpoints.md) records the touchpoints (create flow steps 4 and 5, the return page, GL Impact, the printed RMA, the listing's insights and Currency filter), where each is defined, the seed, and what is left for later.
 
 To pull later design changes:
 

@@ -22,6 +22,7 @@
  * RMA context, so an answer given on one stops the other two asking.
  */
 
+import { formatMoney as moneyIn } from '@/app/currency/money';
 import { ScopeWarningDialog } from '@/app/components/rma/ScopeWarningDialog';
 
 export function RestockingFeeScopeModal({
@@ -47,11 +48,7 @@ export function RestockingFeeScopeModal({
   currency?: string;
   onChoose: (scope: 'return' | 'vendor') => void;
 }) {
-  const money = (n: number) =>
-    `${currency === 'USD' ? '$' : `${currency} `}${n.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
+  const money = (n: number) => moneyIn(n, currency);
   const bold = { fontWeight: 600 };
 
   return (

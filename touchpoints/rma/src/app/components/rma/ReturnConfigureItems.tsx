@@ -33,6 +33,8 @@
  * up to, so it is never asked for twice.
  */
 
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
+import { otherCurrencyReason, poCurrency } from '@/app/currency/returnCurrency';
 import { isLotMode,
   hasSerials,
   trackingModeFor,
@@ -299,6 +301,7 @@ export function ReturnConfigureItems({
   rowStatus,
   conflict,
   onOpenPO,
+  currencyLock,
 }: {
   /** Which of the stepper's questions this render is answering. The component
    *  holds all three panels; the step decides which one is on screen. Splitting
@@ -429,6 +432,10 @@ export function ReturnConfigureItems({
   conflict?: (line: RailLine) => LineVendorNote | null;
   /** Open a purchase order in the ordering module. */
   onOpenPO?: ((poNumber: string) => void) | undefined;
+  /** The currency a vendor's return is already in: the PO currency of a
+   *  receipt picked for it. A receipt from a PO in another currency can't
+   *  join; it goes on a separate return (app/currency/returnCurrency.ts). */
+  currencyLock?: ((vendorCode: string) => string | null) | undefined;
 }) {
   // The first step is the rail on its own: search into it, add, type the
   // figure. From the second the rail narrows and the panel beside it answers
@@ -1669,6 +1676,7 @@ export function ReturnConfigureItems({
                   onRowQty={onRowQty}
                   onAllRows={onAllRows}
                   onOpenPO={onOpenPO}
+                  currencyLock={currencyLock}
                   onUntied={onUntied}
                   onMerge={onMerge}
                 />
@@ -2963,6 +2971,7 @@ function CountedStages({
   onUntied,
   onMerge,
   onOpenPO,
+  currencyLock,
 }: {
   line: RailLine;
   cap: number;
@@ -2993,6 +3002,10 @@ function CountedStages({
   onAllRows: (on: boolean) => void;
   /** Open a purchase order in the ordering module. */
   onOpenPO?: ((poNumber: string) => void) | undefined;
+  /** The currency a vendor's return is already in: the PO currency of a
+   *  receipt picked for it. A receipt from a PO in another currency can't
+   *  join; it goes on a separate return (app/currency/returnCurrency.ts). */
+  currencyLock?: ((vendorCode: string) => string | null) | undefined;
   onUntied: (next: boolean) => void;
   onMerge: (next: boolean) => void;
   /** Which question this render is answering. A counted line's two panels used
@@ -3196,12 +3209,18 @@ function CountedStages({
    *  flat or under a head per vendor without the row being written twice. */
   const renderDocRow = (r: DeliveryRow) => {
                   const used = r.coming > 0;
-                  return (
+                  // One return, one currency: once a receipt is picked, one from
+                  // a PO in another currency goes on a separate return.
+                  const docCurrency = poCurrency(r.poNumber);
+                  const lock = currencyLock?.(r.vendorCode) ?? null;
+                  const blocked = !used && !!lock && lock !== docCurrency;
+                  const row = (
                     <div
                       key={r.grnNumber}
+                      aria-disabled={blocked || undefined}
                       className={`border-b border-border last:border-b-0 transition-colors ${
                         used ? 'bg-blue-50/40' : 'bg-white'
-                      }`}
+                      } ${blocked ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <div
                         className={`flex min-h-[56px] items-center gap-2 pl-4 pr-4 ${
@@ -3215,6 +3234,7 @@ function CountedStages({
                         <div className="flex min-w-0 flex-1 items-center gap-2.5">
                           <Checkbox
                             checked={used}
+                            disabled={blocked}
                             onCheckedChange={(next) => {
                               onRowQty(r.grnNumber, next === true ? r.received : 0);
                               // The tick is a finished answer, so the list
@@ -3270,6 +3290,11 @@ function CountedStages({
                                   PO {highlight(r.poNumber, docQuery.trim())}
                                 </span>
                               )}
+                              {/* The PO's currency: "PO 11151 · GBP". */}
+                              <span className="shrink-0 text-slate-300">·</span>
+                              <span className="shrink-0 tabular-nums text-slate-600" style={{ fontWeight: 600 }}>
+                                {docCurrency}
+                              </span>
                               {r.date && (
                                 <>
                                   <span className="shrink-0 text-slate-300">·</span>
@@ -3288,7 +3313,7 @@ function CountedStages({
                           {formatQty(r.received)}{' '}
                           <span className="text-[11px] text-slate-400">{line.uom}</span>
                         </span>
-                        <div className="ml-6 flex w-[110px] shrink-0 items-center">
+                        <div className={`ml-6 flex w-[110px] shrink-0 items-center ${blocked ? 'pointer-events-none' : ''}`}>
                           {/* No tie may claim more than its delivery carried. */}
                           <TieQtyInput
                             value={r.coming}
@@ -3302,6 +3327,15 @@ function CountedStages({
                       </div>
 
                     </div>
+                  );
+                  if (!blocked) return row;
+                  return (
+                    <Tooltip key={r.grnNumber}>
+                      <TooltipTrigger asChild>{row}</TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[260px] text-[11px]">
+                        {otherCurrencyReason(docCurrency)}
+                      </TooltipContent>
+                    </Tooltip>
                   );
   };
 

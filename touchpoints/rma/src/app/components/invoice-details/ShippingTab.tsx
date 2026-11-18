@@ -1,3 +1,4 @@
+import { formatMoney as moneyIn } from '@/app/currency/money';
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Truck } from 'lucide-react';
 import { LineItemsTable } from './LineItemsTab';
@@ -162,8 +163,9 @@ function formatDate(iso?: string) {
   });
 }
 
+/** In the return's (the PO's) currency, with its symbol: £30.23 (app/currency/money.ts). */
 function formatMoney(amount: number, currency: string) {
-  return `${currency === 'USD' ? '$' : currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return moneyIn(amount, currency);
 }
 
 export function ShippingTab({ invoice, rma }: { invoice: Invoice; rma: RMA }) {
