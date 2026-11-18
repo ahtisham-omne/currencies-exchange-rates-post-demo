@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { DimensionPills } from './AccountTable'
 import { useNavigate } from 'react-router-dom'
-import { FileText, Plus, Trash2, Scale, Check, AlertTriangle, Lock, Info } from 'lucide-react'
+import { FileText, Plus, Trash2, Scale, Check, AlertTriangle, Lock, Info, RotateCcw } from 'lucide-react'
 import { FormModal, ConfirmModal, Button, Select, AmountInput, Badge, Banner, Textarea, HowItWorksButton, Tooltip, useMediaQuery } from './ui'
 import { AttachmentDropzone, type AttachmentFile } from './AttachmentsTab'
 import { DateField } from './DateField'
@@ -11,64 +11,66 @@ import { buildChartIndex } from '../lib/chartTree'
 import { useStore } from '../store'
 import { isRetainedEarningsAdjustments } from '../lib/accountLifecycle'
 import { ACCOUNT_TYPE_META, type Account, type Transaction } from '../types'
-import { adjustmentAccountNote, adjustmentKind, unpostableReason, dimensionsOfAccount, firstPostableDate, isPartialJeLine, journalEntryProblems, linesInBase, manualPostingLock, nextJeNumber, periodForDate, periodPostingBlock, type AdjustmentKind } from '../lib/journalEntry'
+import { adjustmentAccountNote, adjustmentKind, unpostableReason, dimensionsOfAccount, firstPostableDate, isPartialJeLine, journalEntryProblems, manualPostingLock, nextJeNumber, periodForDate, periodPostingBlock, type AdjustmentKind } from '../lib/journalEntry'
 import { defaultValueOf, valuesByDimension } from '../lib/dimensionDefaults'
-import { CURRENCY_META, currencyMeta, formatRate } from '../lib/currencies'
+import { CURRENCY_META, currencyMeta } from '../lib/currencies'
+import { MID_SOURCE, RATE_KIND_LABEL, canTypeRate, corporateRateOn, defaultRateKind, fmtUnitRate, rateQuote, unitsPerBase, type RateKind } from '../lib/fxRates'
+import { FX_ROUNDING_NUMBER } from '../lib/fxExamples'
 import { ReadingRoom } from './walkthrough/ReadingRoom'
 import { MANUAL_ENTRIES_GUIDE, RETAINED_EARNINGS_GUIDE, SYSTEM_ACCOUNTS_GUIDE } from '../lib/journalGuides'
 import { jumpToError } from '../lib/formErrors'
-import { cn, currencySymbol, fmtCurrency, fmtCurrencyExact, fmtDate, uid } from '../lib/utils'
+import { cn, currencySymbol, fmtCurrencyExact, fmtDate, todayIso, uid } from '../lib/utils'
 import { CurrencyFlag } from './CurrencyFlag'
 
-/* A line as it is being typed. `debit` and `credit` are typed on a line in the
-   base currency. A line in another currency is typed as `fx`, on the side
-   `fxSide` names, and converts at `rate` - units of its currency per one of
-   base - so its debit or credit is worked out rather than typed. Mahad,
-   2026-11-14: *"add Currency, Foreign Currency Amount and Rate columns. The base
-   amount fills in from the rate."* It replaces the one currency the whole entry
-   used to be typed in (2026-09-30). */
+/* A line as it is being typed: a debit or a credit, in the entry's currency.
+
+   Mahad, 2026-11-18, the rules for a journal entry in another currency:
+   1. One currency per entry, picked once at the top, not on each line.
+   2. The rate comes from the entry date: a back-dated entry uses that day's.
+   3. The rate type follows the company setting. A mid-market rate can't be
+      edited; only a company on corporate or manual rates can type its own.
+   4. The rate reads the Currencies way, "1 GBP = $1.2636 USD", four decimals.
+   5. Amounts are typed in pounds, with the dollars next to them, on each line
+      and in the totals.
+   6. The entry balances in both currencies; the cent the line-by-line
+      conversion leaves goes to a rounding line automatically.
+   7. A pound account only takes a pound entry.
+   8. A dollar account goes in any entry, its line converted.
+   9. Never two foreign currencies in one entry.
+   10. The entry keeps its rate; later rate changes show as the difference in
+       the hover.
+   11. Mid-market and corporate can be switched where a corporate rate exists.
+   This replaces the per-line Currency, Foreign currency amount and Rate
+   columns of 2026-11-14. */
 interface DraftLine {
   key: string; accountId: string; debit: string; credit: string; description: string; dimensionValues: { dimensionId: string; value: string }[]
-  currency: string
-  fx: string
-  fxSide: 'debit' | 'credit'
-  rate: string
 }
-const blankLine = (currency: string): DraftLine => ({ key: uid('ln'), accountId: '', debit: '', credit: '', description: '', dimensionValues: [], currency, fx: '', fxSide: 'debit', rate: '' })
+const blankLine = (): DraftLine => ({ key: uid('ln'), accountId: '', debit: '', credit: '', description: '', dimensionValues: [] })
 
 const amt = (s: string) => Number(s) || 0
-/* What a line says in its own currency, as a debit and a credit: what was typed
-   in Debit or Credit on a base-currency line, the foreign amount on its side on
-   any other. */
-const typedOf = (l: DraftLine, base: string) => l.currency === base
-  ? { debit: amt(l.debit), credit: amt(l.credit) }
-  : { debit: l.fxSide === 'debit' ? amt(l.fx) : 0, credit: l.fxSide === 'credit' ? amt(l.fx) : 0 }
+const typedOf = (l: DraftLine) => ({ debit: amt(l.debit), credit: amt(l.credit) })
 /* Which side a line sits on. Null while it's still blank, which is why an
    untouched line renders flush rather than guessing at an indent. */
-const sideOf = (l: DraftLine, base: string): 'debit' | 'credit' | null => {
-  const t = typedOf(l, base)
+const sideOf = (l: DraftLine): 'debit' | 'credit' | null => {
+  const t = typedOf(l)
   return t.debit > 0 ? 'debit' : t.credit > 0 ? 'credit' : null
 }
-/* Today's rate for a currency, as every rate in the module is quoted: units of
-   it per one of base. The module carries one spot rate per currency, as of
-   RATE_AS_OF, and has no rate history to read a dated one from. */
-const spotRate = (code: string, base: string) => currencyMeta(code).rate / currencyMeta(base).rate
-// The rate as its field holds it: formatRate's digits, without the grouping.
-const rateText = (rate: number) => formatRate(rate).replace(/,/g, '')
-/* Digits and one point, as the amount fields take them, but up to six places:
-   a rate is quoted finer than money (see formatRate). */
+/* Digits and one point, up to four places: a rate is quoted to four. */
 const sanitizeRate = (raw: string) => {
   const cleaned = raw.replace(/[^\d.]/g, '')
   const dot = cleaned.indexOf('.')
   const int = (dot === -1 ? cleaned : cleaned.slice(0, dot)).replace(/^0+(?=\d)/, '')
-  return dot === -1 ? int : `${int}.${cleaned.slice(dot + 1).replace(/\./g, '').slice(0, 6)}`
+  return dot === -1 ? int : `${int}.${cleaned.slice(dot + 1).replace(/\./g, '').slice(0, 4)}`
 }
 /* A symbol inside an amount field only where it is one character. The field
-   leaves room for one, and the line's Currency beside it already names the
-   currency; "HK$" or "CHF" would run into the digits. */
+   leaves room for one, and the entry's Currency above already names it; "HK$"
+   or "CHF" would run into the digits. */
 const fieldSymbol = (code: string) => { const s = currencySymbol(code); return s.length === 1 ? s : undefined }
+const cents = (v: number) => Math.round(v * 100) / 100
 
 const AMOUNT_CLS = 'w-full h-8 pr-2 rounded-md border text-[13px] text-right tabular-nums outline-none transition-colors'
+const LABEL_CLS = 'text-[10.5px] uppercase tracking-wide text-fg-muted block mb-1.5'
+const LABEL_STYLE = { fontWeight: 700, letterSpacing: '0.06em' } as const
 
 const reducedMotion = () =>
   typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -102,6 +104,8 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
     a && { ...a, defaultDimensionValues: a.defaultDimensionValues.filter(v => activeDimensionIds.has(v.dimensionId)) }
   const periods = useStore(s => s.periods)
   const base = useStore(s => s.company.baseCurrency)
+  // How the company takes rates (rule 3): the Currencies module's setting.
+  const rateSetting = useStore(s => s.company.rateSetting)
   const pushToast = useStore(s => s.pushToast)
   const addJournalEntry = useStore(s => s.addJournalEntry)
   const addCommThread = useStore(s => s.addCommThread)
@@ -115,6 +119,8 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
     [journalEntries, transactions])
 
   const accountById = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts])
+  // Where the cent a conversion leaves goes (rule 6).
+  const roundingAccount = useMemo(() => accounts.find(a => a.accountNumber === FX_ROUNDING_NUMBER && a.status === 'Active'), [accounts])
   const [reason, setReason] = useState('')
   /* Which guide is open, if any: journal entries in general from the header,
      or the one the adjustment flow's Learn more names. */
@@ -140,10 +146,12 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
 
      Of what is listed, only a summary is unselectable (Mahad, 2026-10-09: *"Only
      make summary accounts unselectable. all the others can be select, do not
-     add any other validation here"*). Retained earnings' system account used to
-     be listed locked to the year-end close; it is picked like any other now, and
-     opens the adjustment flow as retained earnings always has. A summary's
-     option says in its hover why it cannot be picked.
+     add any other validation here"*) - and, since 2026-11-18, an account held
+     in a currency the entry can't take (rules 7 and 9), which says why in its
+     hover. Retained earnings' system account used to be listed locked to the
+     year-end close; it is picked like any other now, and opens the adjustment
+     flow as retained earnings always has. A summary's option says in its hover
+     why it cannot be picked.
 
      Retained earnings and the control accounts are offered like any other, marked
      so they read apart. Picking one is what brings up the adjustment flow below
@@ -166,7 +174,7 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
         // only, so a picked line reads as the account and nothing more.
         // Why a summary greys out, for the option's hover; see `unpostableReason`.
         const why = isGroup ? unpostableReason(a) : undefined
-        return { id: a.id, label, note, why, depth: index.depthOf(a.id), group: isGroup }
+        return { id: a.id, label, note, why, depth: index.depthOf(a.id), group: isGroup, code: a.currencyCode, name: a.accountName }
       })
   }, [accounts])
 
@@ -176,33 +184,35 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
      which has the same problem and no field to raise it in. */
   const defaultDate = useMemo(() => firstPostableDate(periods), [periods])
 
+  /* The account the caller named, if it can open the entry: in service and
+     postable. Its currency is the entry's to start with (rule 7). */
+  const prefill = (() => {
+    const a = prefillAccountId ? accounts.find(x => x.id === prefillAccountId) : undefined
+    return a && a.isPosting && !manualPostingLock(a) ? a : undefined
+  })()
+  const startCurrency = prefill?.currencyCode ?? base
+
   const [date, setDate] = useState(defaultDate)
   const [memo, setMemo] = useState('')
   const [tags, setTags] = useState<string[]>([])
-  /* A line moved into another currency. The number typed stays as typed, on its
-     side - it moves to wherever this currency takes it, Debit or Credit for the
-     base currency and the foreign amount for any other - and the rate starts
-     again at today's for the new currency. The ledger holds base figures only, so
-     a line in another currency converts as it posts and keeps its currency, its
-     rate and its typed amount on its posting. */
-  const inCurrency = (l: DraftLine, currency: string): DraftLine => {
-    if (l.currency === currency) return l
-    const side = sideOf(l, base)
-    const typed = l.currency === base ? (l.debit || l.credit) : l.fx
-    if (currency === base) return { ...l, currency, fx: '', rate: '', debit: side === 'debit' ? typed : '', credit: side === 'credit' ? typed : '' }
-    return { ...l, currency, fx: side ? typed : '', fxSide: side ?? l.fxSide, rate: rateText(spotRate(currency, base)), debit: '', credit: '' }
-  }
-  /* Two lines, the first of them on the account the caller named, in its
-     currency. An account taken out of service is not prefilled: the picker does
-     not offer it, and starting the entry already on it would open on a line that
-     cannot post. The reader picks their way out from a blank one instead.
-     Retained earnings is prefilled like any account, and opens on the adjustment
-     flow. */
+  /* The entry's one currency (rule 1), the kind of rate it takes and, where the
+     company may type its own (rule 3), the rate typed - base per one unit, as
+     the field shows it. Null until typed: the rate is the date's. */
+  const [currency, setCurrency] = useState(startCurrency)
+  const [rateKind, setRateKind] = useState<RateKind>(() => defaultRateKind(rateSetting, startCurrency, defaultDate))
+  const [rateInput, setRateInput] = useState<string | null>(null)
+  /* Said under the currency when picking an account moved the entry into its
+     currency, so the change doesn't happen unannounced. */
+  const [switchedFor, setSwitchedFor] = useState<string | null>(null)
+  /* Two lines, the first of them on the account the caller named. An account
+     taken out of service is not prefilled: the picker does not offer it, and
+     starting the entry already on it would open on a line that cannot post.
+     Retained earnings is prefilled like any account, and opens on the
+     adjustment flow. */
   const startingLines = (): DraftLine[] => {
-    const first = blankLine(base)
-    const a = prefillAccountId ? accounts.find(x => x.id === prefillAccountId) : undefined
-    if (!a || !a.isPosting || manualPostingLock(a)) return [first, blankLine(base)]
-    return [inCurrency({ ...first, accountId: a.id, dimensionValues: lineDimensionsOf(a) }, a.currencyCode), blankLine(base)]
+    const first = blankLine()
+    if (!prefill) return [first, blankLine()]
+    return [{ ...first, accountId: prefill.id, dimensionValues: lineDimensionsOf(prefill) }, blankLine()]
   }
   const [lines, setLines] = useState<DraftLine[]>(startingLines)
   /* Lines the user has left, so a half-filled row isn't scolded while it's
@@ -220,7 +230,10 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
      paper trail already attached. */
   const [attachments, setAttachments] = useState<AttachmentFile[]>([])
 
-  const reset = () => { setDate(defaultDate); setMemo(''); setTags([]); setLines(startingLines()); setTouched(new Set()); setAttempted(false); setAttachments([]); setReason(''); setRecipients(new Set()) }
+  const reset = () => {
+    setDate(defaultDate); setMemo(''); setTags([]); setLines(startingLines()); setTouched(new Set()); setAttempted(false); setAttachments([]); setReason(''); setRecipients(new Set())
+    setCurrency(startCurrency); setRateKind(defaultRateKind(rateSetting, startCurrency, defaultDate)); setRateInput(null); setSwitchedFor(null)
+  }
   const close = () => { reset(); onClose() }
   /* Leaving an entry with anything typed into it asks first, as Create GL
      account does. Module review, 2026-10-06 (COA-27): one stray click on Cancel
@@ -230,24 +243,65 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
   const opened = startingLines()
   const entryDirty = date !== defaultDate || memo.trim() !== '' || tags.length > 0
     || attachments.length > 0 || reason.trim() !== '' || recipients.size > 0
+    || currency !== startCurrency || rateInput !== null
     || lines.length !== opened.length
-    || lines.some((l, i) => l.accountId !== opened[i].accountId || l.debit !== '' || l.credit !== '' || l.fx !== ''
-      || l.currency !== opened[i].currency || l.rate !== opened[i].rate || l.description.trim() !== '')
+    || lines.some((l, i) => l.accountId !== opened[i].accountId || l.debit !== '' || l.credit !== '' || l.description.trim() !== '')
   const requestClose = () => { if (entryDirty) { setDiscardOpen(true); return } close() }
+
+  /* ── The entry's currency and rate ── */
+  const foreign = currency !== base
+  /* The foreign currencies the lines' accounts are held in, other than on one
+     line (the one being picked for). A pound account fixes the entry in pounds
+     (rule 7); two different ones can't meet (rule 9). */
+  const heldIn = (exceptKey?: string) => {
+    const out = new Map<string, string>()
+    for (const l of lines) {
+      if (l.key === exceptKey) continue
+      const a = accountById.get(l.accountId)
+      if (a && a.currencyCode !== base && !out.has(a.currencyCode)) out.set(a.currencyCode, a.accountName)
+    }
+    return out
+  }
+  const held = heldIn()
+  const corporateAvailable = foreign && !!corporateRateOn(currency, date)
+  const kind: RateKind = rateKind === 'corporate' && !corporateAvailable ? 'mid' : rateKind
+  const quote = rateQuote(currency, date, kind, base)
+  const editable = foreign && canTypeRate(rateSetting, kind)
+  const typedRate = editable && rateInput !== null ? Number(rateInput) : NaN
+  // Base per one unit of the entry's currency: what every line converts at.
+  const unit = !foreign ? 1 : editable && rateInput !== null ? (typedRate > 0 ? typedRate : 0) : quote.rate
+  const rateEdited = editable && rateInput !== null && typedRate > 0 && Math.abs(typedRate - quote.rate) > 1e-9
+  const baseSymbol = currencySymbol(base)
+  const rateLabel = (r: number) => fmtUnitRate(currency, r, base, baseSymbol)
+
+  const switchCurrency = (code: string) => {
+    if (code === currency) return
+    setCurrency(code)
+    setRateKind(defaultRateKind(rateSetting, code, date))
+    setRateInput(null)
+    setSwitchedFor(null)
+  }
+  // A new date is a new rate (rule 2): anything typed for the old one goes.
+  const changeDate = (iso: string) => {
+    setDate(iso)
+    setRateInput(null)
+    if (rateKind === 'corporate' && !corporateRateOn(currency, iso)) setRateKind(defaultRateKind(rateSetting, currency, iso))
+  }
 
   const setLine = (key: string, patch: Partial<DraftLine>) => setLines(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l))
   /* Pick a posting account and its dimensions come with it. There is nothing to
      merge and nothing to preserve: the values belong to the account, so
      re-picking replaces them outright rather than leaving the previous account's
-     behind. Its currency comes with it too, as the line's starting point: the
-     reader can still write the line in another. */
-  const setLineAccount = (key: string, accountId: string) => setLines(prev => prev.map(l => {
-    if (l.key !== key) return l
+     behind. An account held in another currency moves an entry still in the
+     base currency into it (rule 7); the picker only offers it where it can. */
+  const setLineAccount = (key: string, accountId: string) => {
     const a = accounts.find(x => x.id === accountId)
-    const picked = { ...l, accountId, dimensionValues: lineDimensionsOf(a) }
-    return a ? inCurrency(picked, a.currencyCode) : picked
-  }))
-  const setLineCurrency = (key: string, currency: string) => setLines(prev => prev.map(l => (l.key === key ? inCurrency(l, currency) : l)))
+    setLines(prev => prev.map(l => (l.key !== key ? l : { ...l, accountId, dimensionValues: lineDimensionsOf(a) })))
+    if (a && a.currencyCode !== base && a.currencyCode !== currency && heldIn(key).size === 0) {
+      switchCurrency(a.currencyCode)
+      setSwitchedFor(a.accountName)
+    }
+  }
   /* Another of the account's values for one dimension, on this line only. The
      account keeps its default; the next line on it starts there again. */
   const setLineDimension = (key: string, dimensionId: string, value: string) => setLines(prev => prev.map(l => {
@@ -255,9 +309,25 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
     const rest = l.dimensionValues.filter(d => d.dimensionId !== dimensionId)
     return { ...l, dimensionValues: value ? [...rest, { dimensionId, value }] : rest }
   }))
-  const addLine = () => setLines(prev => [...prev, blankLine(base)])
+  const addLine = () => setLines(prev => [...prev, blankLine()])
   const removeLine = (key: string) => setLines(prev => prev.length > 2 ? prev.filter(l => l.key !== key) : prev)
   const touch = (key: string) => setTouched(prev => prev.has(key) ? prev : new Set(prev).add(key))
+
+  /* Why an account can't go on a line of this entry, or nothing when it can.
+     Rules 7 and 9: a foreign account only in an entry in its own currency, and
+     never beside an account in another foreign currency. */
+  const accountBlock = (code: string, lineKey: string): string | undefined => {
+    if (code === base) return undefined
+    const others = heldIn(lineKey)
+    const other = [...others.keys()].find(c => c !== code)
+    if (other) {
+      return `Held in ${code}, and this entry already has a ${other} account. A ${other} and a ${code} account can't be in the same entry: use two entries through a ${base} clearing account, or a transfer.`
+    }
+    if (others.size === 0 && foreign && currency !== code) {
+      return `Held in ${code}, and this entry is in ${currency}. A ${code} account only takes a ${code} entry: change the entry's currency to use it.`
+    }
+    return undefined
+  }
 
   const period = periodForDate(date, periods)
   const periodBlock = periodPostingBlock(date, periods)
@@ -281,36 +351,38 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
     if (adjusting) adjustmentRef.current?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' })
   }, [adjusting])
 
-  /* Every line in base, which is what the ledger holds and what the entry has to
-     balance in. A line in the base currency is what was typed; any other is its
-     foreign amount over its rate, to the cent. Worked out once here, so the
-     figure a line shows in Debit or Credit is the figure that posts. */
-  const foreignLine = (l: DraftLine) => l.currency !== base
-  const lineRate = (l: DraftLine) => (foreignLine(l) ? Number(l.rate) || 0 : 1)
-  const inBase = useMemo(
-    () => new Map(linesInBase(lines.map(l => ({ key: l.key, ...typedOf(l, base), currency: l.currency, rate: foreignLine(l) ? Number(l.rate) || 0 : 1 }))).map(b => [b.key, b])),
-    [lines, base]) // eslint-disable-line react-hooks/exhaustive-deps
-  const baseOf = (l: DraftLine) => inBase.get(l.key) ?? { baseDebit: 0, baseCredit: 0 }
-  const cents = (v: number) => Math.round(v * 100) / 100
-  const totalDebit = cents(lines.reduce((s, l) => s + baseOf(l).baseDebit, 0))
-  const totalCredit = cents(lines.reduce((s, l) => s + baseOf(l).baseCredit, 0))
-  const difference = Number((totalDebit - totalCredit).toFixed(2))
-  const balanced = Math.abs(difference) < 0.005 && totalDebit > 0
+  /* Every line in both currencies (rule 5): as typed, in the entry's currency,
+     and in base, which is what the ledger holds - each line converted at the
+     entry's one rate and rounded to the cent on its own. */
+  const baseOf = (l: DraftLine) => ({ baseDebit: cents(amt(l.debit) * unit), baseCredit: cents(amt(l.credit) * unit) })
+  const typedDebit = cents(lines.reduce((s, l) => s + amt(l.debit), 0))
+  const typedCredit = cents(lines.reduce((s, l) => s + amt(l.credit), 0))
+  const difference = Number((typedDebit - typedCredit).toFixed(2))
+  const typedBalanced = Math.abs(difference) < 0.005 && typedDebit > 0
+  const lineBaseDebit = cents(lines.reduce((s, l) => s + baseOf(l).baseDebit, 0))
+  const lineBaseCredit = cents(lines.reduce((s, l) => s + baseOf(l).baseCredit, 0))
+  /* Rule 6: balanced in the entry's currency, the base figures can still sit a
+     cent or two apart from rounding each line. That gap goes to a rounding line
+     on Foreign Exchange Gain/Loss, on the short side, so the entry balances in
+     both. Only once the typed amounts balance: before that the gap is just the
+     imbalance. */
+  const roundingGap = foreign && typedBalanced ? cents(lineBaseDebit - lineBaseCredit) : 0
+  const rounding = roundingGap
+    ? { side: (roundingGap > 0 ? 'credit' : 'debit') as 'debit' | 'credit', amount: Math.abs(roundingGap) }
+    : null
+  const totalDebit = cents(lineBaseDebit + (rounding?.side === 'debit' ? rounding.amount : 0))
+  const totalCredit = cents(lineBaseCredit + (rounding?.side === 'credit' ? rounding.amount : 0))
+  const balanced = typedBalanced && Math.abs(totalDebit - totalCredit) < 0.005
   // No amounts yet, so there's nothing to be out of balance about: the strip
   // stays neutral and silent until the first amount is typed.
-  const untouchedTotals = totalDebit === 0 && totalCredit === 0
-  const typed = (l: DraftLine) => typedOf(l, base)
-  const hasAmount = (l: DraftLine) => typed(l).debit > 0 || typed(l).credit > 0
+  const untouchedTotals = typedDebit === 0 && typedCredit === 0
+  const hasAmount = (l: DraftLine) => amt(l.debit) > 0 || amt(l.credit) > 0
   const filledLines = lines.filter(l => l.accountId && hasAmount(l))
-  // A line in another currency with an amount but no rate to convert it at.
-  const rateMissing = (l: DraftLine) => foreignLine(l) && amt(l.fx) > 0 && !(lineRate(l) > 0)
-  const anyForeign = lines.some(foreignLine)
 
   // A row the user started but didn't finish. Shares its rule with the submit
   // check (isPartialJeLine) so a line's own red state and the submit banner can
-  // never disagree about which lines are unfinished. Read on what was typed, in
-  // the line's own currency.
-  const isPartialLine = (l: DraftLine) => isPartialJeLine({ accountId: l.accountId, ...typed(l) })
+  // never disagree about which lines are unfinished.
+  const isPartialLine = (l: DraftLine) => isPartialJeLine({ accountId: l.accountId, ...typedOf(l) })
 
   /* What each line still owes: its account, its amount, or both. A started line
      owes whichever half is missing. An entry short of two complete lines with
@@ -326,7 +398,6 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
   const lineIssue = (l: DraftLine): 'account' | 'amount' | 'both' | null =>
     isPartialLine(l) ? (l.accountId ? 'amount' : 'account') : blanksOwed.has(l.key) ? 'both' : null
 
-
   /* Everything standing between this entry and the ledger, in the order the
      reader would work down the form, each naming the fix rather than the rule.
      Computed by the shared helper so the banner, the field states and the Post
@@ -337,14 +408,23 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
   const problems = journalEntryProblems({
     date,
     periodBlock: periodBlock || undefined,
-    lines: lines.map(l => ({ accountId: l.accountId, ...typed(l) })),
+    lines: lines.map(l => ({ accountId: l.accountId, ...typedOf(l) })),
     adjustment: adjusting,
     reason,
   })
-  /* A line in another currency cannot reach Debit or Credit without a rate, so
-     one left without it is named on its own, ahead of the totals it throws out. */
-  const rateOwed = lines.find(rateMissing)
-  const rateProblem = rateOwed ? [{ field: 'rate' as const, message: 'Enter the rate for every line in another currency.' }] : []
+  /* The entry's own currency rules, named ahead of the totals they throw out:
+     a typed rate left empty (rule 3), an account the entry's currency can't
+     take (rules 7 and 9), and nowhere for the rounding to go (rule 6). */
+  const rateProblem = foreign && !(unit > 0) ? [{ field: 'rate' as const, message: 'Enter the exchange rate.' }] : []
+  const misfit = lines.map(l => accountById.get(l.accountId)).find(a => a && a.currencyCode !== base && a.currencyCode !== currency)
+  const currencyProblem = misfit
+    ? [{ field: 'currency' as const, message: held.size > 1
+        ? `${[...held.keys()].join(' and ')} accounts can't be in the same entry. Use two entries through a ${base} clearing account, or a transfer.`
+        : `${misfit.accountName} is held in ${misfit.currencyCode}, so this entry has to be in ${misfit.currencyCode}.` }]
+    : []
+  const roundingProblem = rounding && !roundingAccount
+    ? [{ field: 'balance' as const, message: `Add a Foreign Exchange Gain/Loss account (${FX_ROUNDING_NUMBER}) to take the ${fmtCurrencyExact(rounding.amount, base)} rounding.` }]
+    : []
 
   /* Out of balance is one more thing to fix, not a reason to grey Post out: a
      dead button says nothing. Design review, 2026-09-30 - Eli: *"I shouldn't end
@@ -354,13 +434,14 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
      In page order - the date, the lines, the totals under them, then the reason
      below - because Post takes the reader to the first of these, and the banner
      reads as the same list worked down the same page. */
-  const imbalance = balanced || untouchedTotals
+  const imbalance = typedBalanced || untouchedTotals
     ? []
-    : [{ field: 'balance' as const, message: `Debits and credits must match. They are ${fmtCurrencyExact(Math.abs(difference), base)} apart.` }]
-  const blockers = [...problems.filter(p => p.field !== 'reason'), ...rateProblem, ...imbalance, ...problems.filter(p => p.field === 'reason')]
+    : [{ field: 'balance' as const, message: `Debits and credits must match. They are ${fmtCurrencyExact(Math.abs(difference), currency)} apart.` }]
+  const blockers = [...currencyProblem, ...rateProblem, ...problems.filter(p => p.field !== 'reason'), ...imbalance, ...roundingProblem, ...problems.filter(p => p.field === 'reason')]
 
   const shown = attempted ? blockers : []
   const dateFlagged = shown.some(p => p.field === 'date')
+  const rateFlagged = shown.some(p => p.field === 'rate')
   const reasonError = shown.find(p => p.field === 'reason')?.message
 
   /* A refused Post takes the reader to the first thing left to fix, in page
@@ -377,7 +458,6 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
     const owing = lines.find(l => lineIssue(l))
     const target = first === 'lines' && owing
       ? `line-${owing.key}-${lineIssue(owing) === 'amount' ? 'amount' : 'account'}`
-      : first === 'rate' && rateOwed ? `line-${rateOwed.key}-rate`
       : first
     // After the render that turns the fields red, so the ring lands on them. A
     // timer rather than an animation frame, which a hidden tab never runs.
@@ -386,48 +466,71 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
 
   /* Drop the difference onto the side that's short. Reuses the last line when
      it's still blank, otherwise appends - so it's always a legal move, unlike
-     filling in place when that side is already greyed out. In the base currency,
-     which is what the difference is in. */
+     filling in place when that side is already greyed out. In the entry's
+     currency, which is what the difference is in. */
   const balancingSide: 'debit' | 'credit' = difference > 0 ? 'credit' : 'debit'
   const addBalancingLine = () => {
     const value = Math.abs(difference).toFixed(2)
-    const balancing = { currency: base, fx: '', rate: '', debit: '', credit: '', [balancingSide]: value }
+    const balancing = { debit: '', credit: '', [balancingSide]: value }
     setLines(prev => {
       const last = prev[prev.length - 1]
-      const lastIsBlank = last && !last.accountId && !last.debit && !last.credit && !last.fx && !last.description
+      const lastIsBlank = last && !last.accountId && !last.debit && !last.credit && !last.description
       if (lastIsBlank) return prev.map(l => l.key === last.key ? { ...l, ...balancing } : l)
-      return [...prev, { ...blankLine(base), ...balancing }]
+      return [...prev, { ...blankLine(), ...balancing }]
     })
   }
 
+  // "£ 2,249.76" or, on an entry in base, "$ 2,249.76".
+  const typedMoney = (v: number) => fmtCurrencyExact(v, currency)
+
   const doPost = () => {
     const periodLabel = period?.label ?? ''
-    const entryType = filledLines.length > 2 ? 'Compound' : 'Simple'
+    const entryType = filledLines.length + (rounding ? 1 : 0) > 2 ? 'Compound' : 'Simple'
     /* The reason travels on every posting, like the memo, so it is there
        wherever the entry is read - the entry page, its activity, a notification. */
     const adjustmentReason = adjusting ? reason.trim() : undefined
     const fullMemo = memo.trim()
     // The lines as typed, and the base figures they post at - the ones each
-    // line showed in Debit or Credit.
-    const posted = filledLines.map(l => ({ line: l, ...typed(l), ...baseOf(l) }))
-    const lineDefs = posted.map(p => ({ accountId: p.line.accountId, debit: p.baseDebit, credit: p.baseCredit }))
+    // line showed beside its amount.
+    const posted = filledLines.map(l => ({ line: l, ...typedOf(l), ...baseOf(l) }))
     // When it was written, apart from the date it is dated.
     const createdAt = new Date().toISOString()
+    /* An entry in another currency keeps its currency, its rate and the kind of
+       rate on every posting (rule 10): later rate changes never move it. A rate
+       typed over Treasury's posts as typed on the entry. */
+    const fxFields = (fxDebit: number, fxCredit: number): Partial<Transaction> => foreign
+      ? { entryCurrency: currency, entryRate: unitsPerBase(unit), entryRateType: rateEdited ? 'manual' : kind, fxDebit, fxCredit }
+      : {}
+    const common = {
+      createdAt, createdBy: 'Ahtisham Ahmad (You)', date, source: 'Manual JE', jeNumber, reference: '', entryType,
+      memo: fullMemo, adjustmentReason, runningBalance: 0, period: periodLabel,
+    } as const
     const entryTxns: Transaction[] = posted.map(({ line: l, debit, credit, baseDebit, baseCredit }) => ({
-      createdAt, createdBy: 'Ahtisham Ahmad (You)',
-      id: uid('txn'), accountId: l.accountId, date, source: 'Manual JE', jeNumber, reference: '', entryType,
+      ...common,
+      id: uid('txn'), accountId: l.accountId,
       // The memo describes the entry and the description describes the line, so
       // a line the user left blank stays blank rather than parroting the memo.
       // Kept even when blank: a written entry's empty memo is not a seeded one's
       // missing memo, which borrows its narration (see `entryMemo`).
       // No entry title: the form stopped asking for one (see the fields below), so
       // the entry is named the way every untitled manual entry is.
-      description: l.description, memo: fullMemo, adjustmentReason,
+      description: l.description,
       debit: baseDebit, credit: baseCredit,
-      // Each line in another currency keeps its own currency, rate and amount.
-      ...(foreignLine(l) ? { entryCurrency: l.currency, entryRate: lineRate(l), fxDebit: debit, fxCredit: credit } : {}),
-      runningBalance: 0, dimensionValues: l.dimensionValues, period: periodLabel,
+      ...fxFields(debit, credit),
+      dimensionValues: l.dimensionValues,
     }))
+    if (rounding && roundingAccount) {
+      entryTxns.push({
+        ...common,
+        id: uid('txn'), accountId: roundingAccount.id,
+        description: `Rounding, ${currency} converted line by line`,
+        debit: rounding.side === 'debit' ? rounding.amount : 0,
+        credit: rounding.side === 'credit' ? rounding.amount : 0,
+        ...fxFields(0, 0),
+        dimensionValues: [],
+      })
+    }
+    const lineDefs = entryTxns.map(t => ({ accountId: t.accountId, debit: t.debit, credit: t.credit }))
     addJournalEntry(
       { id: uid('je'), date, reference: jeNumber, description: 'Manual journal entry', status: 'Posted', lines: lineDefs },
       entryTxns,
@@ -441,20 +544,21 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
        and what they were told - not only in the recipients' inboxes. */
     const told = notifyRecipients(recipients)
     if (told.names.length) {
-      // Each line in base, as it posted, with what was typed where it was typed
+      // Each line in base, as it posted, with what was typed where the entry is
       // in another currency.
       const lineText = posted.map(({ line: l, debit, credit, baseDebit, baseCredit }) => {
         const a = accountById.get(l.accountId)
         const onDebit = baseDebit > 0
-        const typedNote = foreignLine(l)
-          ? ` (${fmtCurrencyExact(onDebit ? debit : credit, l.currency)} at 1 ${base} = ${formatRate(lineRate(l))} ${l.currency})`
-          : ''
+        const typedNote = foreign ? ` (${typedMoney(onDebit ? debit : credit)})` : ''
         return `- ${a ? `${a.accountNumber} ${a.accountName}` : 'Account'}: ${onDebit ? 'debit' : 'credit'} ${fmtCurrencyExact(onDebit ? baseDebit : baseCredit, base)}${typedNote}`
       })
+      if (rounding && roundingAccount) lineText.push(`- ${roundingAccount.accountNumber} ${roundingAccount.accountName}: ${rounding.side} ${fmtCurrencyExact(rounding.amount, base)} (rounding)`)
       const body = [
         `A manual journal entry was posted to ${periodLabel || 'the ledger'}, dated ${fmtDate(date)}.`,
         '',
-        `${fmtCurrencyExact(totalDebit, base)} across ${filledLines.length} lines:`,
+        foreign
+          ? `${typedMoney(typedDebit)} (${fmtCurrencyExact(totalDebit, base)} at ${rateLabel(unit)}) across ${entryTxns.length} lines:`
+          : `${fmtCurrencyExact(totalDebit, base)} across ${filledLines.length} lines:`,
         ...lineText,
         ...(memo.trim() ? ['', `Memo: ${memo.trim()}`] : []),
         ...(adjustmentReason ? ['', `It adjusts ${adjustedAccounts.map(a => `${a.accountNumber} ${a.accountName}`).join(' and ')}. Reason: ${adjustmentReason}`] : []),
@@ -473,10 +577,21 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
     }
     const fileNote = attachments.length ? ` · ${attachments.length} ${attachments.length === 1 ? 'file' : 'files'}` : ''
     const toldNote = told.names.length ? ` · notified ${told.names.length === 1 ? told.names[0] : `${told.names.length} recipients`}` : ''
-    pushToast(`Posted ${jeNumber}`, 'success', `${filledLines.length} lines · ${fmtCurrencyExact(totalDebit, base)}${fileNote}${toldNote}`)
+    const amountNote = foreign ? `${typedMoney(typedDebit)} · ${fmtCurrencyExact(totalDebit, base)}` : fmtCurrencyExact(totalDebit, base)
+    pushToast(`Posted ${jeNumber}`, 'success', `${entryTxns.length} lines · ${amountNote}${fileNote}${toldNote}`)
     close()
     navigate(`/general-ledger/entry/${encodeURIComponent(jeNumber)}`)
   }
+
+  /* The rate field's line under it: where the rate comes from (rules 2, 3, 11). */
+  const today = todayIso()
+  const rateCaption = !foreign ? null
+    : rateEdited ? `Typed on this entry · ${RATE_KIND_LABEL.corporate.toLowerCase()} rate was ${rateLabel(quote.rate).replace(/^1 \w+ = /, '')}`
+    : kind === 'corporate' ? `Corporate · set by Treasury, from ${fmtDate(quote.date)}${editable ? ' · you can change it' : ''}`
+    : `Mid-market · ${MID_SOURCE} · ${date >= today ? `today, ${fmtDate(today)}` : fmtDate(date)}`
+  const rateLockWhy = kind === 'mid'
+    ? `A mid-market rate can't be edited. It is the rate for the entry date${corporateAvailable ? ', or switch to Treasury\'s corporate rate' : ''}.`
+    : 'Your company takes mid-market rates, so a corporate rate can be used here but not typed.'
 
   return (
     <>
@@ -484,8 +599,6 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
       open={open}
       onClose={requestClose}
       hideFullView
-      /* Wide enough for the lines' Currency, Foreign currency amount and Rate
-         beside Debit and Credit without squeezing the account picker. */
       widthClass="max-w-[1200px]"
       /* Edge to edge on a laptop-sized screen, where the windowed form leaves the
          lines table squeezed. Design review, 2026-09-30 - Eli: *"on a smaller
@@ -516,22 +629,22 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
       }
     >
       <div className="px-5 py-5 space-y-4">
-        {/* Date and number, then memo and tags. The period isn't a field - it
-            follows from the date. There is no Description: an entry's text is its
-            memo and its lines' descriptions (Mahad, 2026-09-30). Memo keeps the
-            full width: narrower, its hint wraps and the box opens two lines tall.
-            No Currency here since 2026-11-14: each line carries its own (see
-            DraftLine). Four columns, so Date and number keep the width they had
-            beside it on the narrower form. */}
+        {/* Date and number, the entry's currency and its rate, then memo and
+            tags. The period isn't a field - it follows from the date. There is
+            no Description: an entry's text is its memo and its lines'
+            descriptions (Mahad, 2026-09-30). Memo keeps the full width:
+            narrower, its hint wraps and the box opens two lines tall. Currency
+            is back at the top since 2026-11-18, one for the whole entry
+            (rule 1). */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div data-je-field="date">
-            <label className="text-[10.5px] uppercase tracking-wide text-fg-muted block mb-1.5" style={{ fontWeight: 700, letterSpacing: '0.06em' }}>
+            <label className={LABEL_CLS} style={LABEL_STYLE}>
               Date <span className="text-danger-600">*</span>
             </label>
             {/* The label above is not tied to the trigger - the trigger is a
                 button, not an input - so it carries the name itself. */}
             <div data-je-target="date" className="rounded-lg">
-              <DateField ariaLabel="Date" value={date || null} onChange={iso => setDate(iso)} placeholder="Select date"
+              <DateField ariaLabel="Date" value={date || null} onChange={iso => changeDate(iso)} placeholder="Select date"
                 triggerClassName={cn('w-full h-9 px-3 rounded-lg border text-sm text-fg text-left transition-colors',
                   periodBlock || dateFlagged ? 'border-danger-500' : 'border-border hover:border-primary/50')} />
             </div>
@@ -543,7 +656,7 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
             {periodBlock && <p className="mt-1.5 text-2xs leading-snug text-danger-600">{periodBlock}</p>}
           </div>
           <div>
-            <label className="text-[10.5px] uppercase tracking-wide text-fg-muted block mb-1.5" style={{ fontWeight: 700, letterSpacing: '0.06em' }}>
+            <label className={LABEL_CLS} style={LABEL_STYLE}>
               Journal entry number
             </label>
             {/* Stated, not typed: the module's locked-field look, the padlock
@@ -555,8 +668,80 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
               </Tooltip>
             </div>
           </div>
+          {/* The entry's one currency (rule 1). A foreign account on a line
+              fixes it to that account's currency (rule 7); the others are
+              offered greyed, with the reason in their hover. */}
+          <div data-je-field="currency">
+            <label className={LABEL_CLS} style={LABEL_STYLE}>Currency</label>
+            <div data-je-target="currency" className="rounded-lg">
+              <Select
+                searchable
+                ariaLabel="Entry currency"
+                menuMinWidth={240}
+                searchPlaceholder="Search currency"
+                className={cn('!h-9 !text-sm !rounded-lg', shown.some(p => p.field === 'currency') && '!border-danger-500')}
+                value={currency}
+                onChange={e => switchCurrency(e.target.value)}
+              >
+                {/* The flag is a picture (CurrencyFlag), never the emoji, which
+                    Windows draws as two letters. */}
+                {Object.values(CURRENCY_META).map(c => {
+                  const fixed = held.size === 1 && !held.has(c.code) ? [...held][0] : null
+                  const tip = fixed ? `${fixed[1]} is held in ${fixed[0]}, so this entry is in ${fixed[0]}. Remove that line to change the currency.` : undefined
+                  return <option key={c.code} value={c.code} data-icon={<CurrencyFlag meta={c} />} data-desc={c.code === base ? `${c.name} · base currency` : c.name} disabled={!!fixed} data-tip={tip}>{c.code}</option>
+                })}
+              </Select>
+            </div>
+            <p className="mt-1.5 text-2xs leading-snug text-fg-muted">
+              {switchedFor && foreign
+                ? <>Set to {currency} for {switchedFor}, held in {currencyMeta(currency).name.toLowerCase().replace(/^\w/, ch => ch.toUpperCase())}s.</>
+                : foreign ? `Every line is typed in ${currency}.` : 'The base currency. No conversion.'}
+            </p>
+          </div>
+          {/* The rate every line converts at: the entry date's (rule 2), of the
+              kind the company takes (rule 3), switchable to Treasury's where it
+              sets one (rule 11), read the Currencies way (rule 4). */}
+          {foreign && (
+            <div data-je-field="rate">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label className={cn(LABEL_CLS, '!mb-0')} style={LABEL_STYLE}>Exchange rate</label>
+                {corporateAvailable && (
+                  <RateKindToggle value={kind} onChange={k => { setRateKind(k); setRateInput(null) }} />
+                )}
+              </div>
+              {editable ? (
+                <div data-je-target="rate" className={cn('input rounded-lg flex items-center gap-1.5 tabular-nums bg-white', rateFlagged && '!border-danger-500')}>
+                  <span className="text-fg-muted shrink-0 whitespace-nowrap">1 {currency} = {baseSymbol}</span>
+                  <input
+                    value={rateInput ?? quote.rate.toFixed(4)}
+                    inputMode="decimal"
+                    aria-label={`Exchange rate, ${base} per 1 ${currency}`}
+                    onChange={e => setRateInput(sanitizeRate(e.target.value))}
+                    onBlur={() => { if (rateInput !== null && Number(rateInput) > 0) setRateInput(Number(rateInput).toFixed(4)) }}
+                    className="flex-1 min-w-0 bg-transparent outline-none text-fg"
+                  />
+                  <span className="text-fg-muted shrink-0">{base}</span>
+                  {rateEdited && (
+                    <Tooltip content={`Back to Treasury's rate, ${rateLabel(quote.rate)}`} side="top" align="right">
+                      <button type="button" onClick={() => setRateInput(null)} aria-label="Reset to Treasury's rate" className="inline-flex shrink-0 text-fg-subtle hover:text-primary">
+                        <RotateCcw size={12} />
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+              ) : (
+                <div data-je-target="rate" aria-label="Exchange rate" className="input rounded-lg flex items-center justify-between gap-2 bg-bg-subtle/60 text-fg cursor-default select-none tabular-nums">
+                  <span className="truncate">{rateLabel(unit)}</span>
+                  <Tooltip content={rateLockWhy} side="top" align="right">
+                    <span className="inline-flex shrink-0 cursor-help text-fg-subtle/60 hover:text-fg-subtle"><Lock size={13} /></span>
+                  </Tooltip>
+                </div>
+              )}
+              <p className="mt-1.5 text-2xs leading-snug text-fg-muted">{rateCaption}</p>
+            </div>
+          )}
           <div className="md:col-span-4">
-            <label className="text-[10.5px] uppercase tracking-wide text-fg-muted flex items-baseline gap-1.5 mb-1.5" style={{ fontWeight: 700, letterSpacing: '0.06em' }}>
+            <label className={cn(LABEL_CLS, 'flex items-baseline gap-1.5')} style={LABEL_STYLE}>
               Memo
               <span className="normal-case text-[10.5px] text-fg-subtle" style={{ fontWeight: 500, letterSpacing: 0 }}>optional</span>
             </label>
@@ -568,7 +753,7 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
               className="rounded-lg focus:border-primary" />
           </div>
           <div className="md:col-span-4">
-            <label className="text-[10.5px] uppercase tracking-wide text-fg-muted flex items-baseline gap-1.5 mb-1.5" style={{ fontWeight: 700, letterSpacing: '0.06em' }}>
+            <label className={cn(LABEL_CLS, 'flex items-baseline gap-1.5')} style={LABEL_STYLE}>
               Tags
               <span className="normal-case text-[10.5px] text-fg-subtle" style={{ fontWeight: 500, letterSpacing: 0 }}>optional</span>
             </label>
@@ -584,13 +769,17 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
             </span>
             <div className="min-w-0">
               <h3 className="text-[12px] text-fg leading-tight" style={{ fontWeight: 600 }}>Journal lines</h3>
-              <p className="text-[11px] text-fg-subtle mt-0.5 leading-snug">Each line can contain either a debit or a credit, in the base currency.</p>
+              <p className="text-[11px] text-fg-subtle mt-0.5 leading-snug">
+                {foreign
+                  ? `Each line can contain either a debit or a credit, in ${currency}. The ${base} beside it is what posts, at ${rateLabel(unit)}.`
+                  : 'Each line can contain either a debit or a credit, in the base currency.'}
+              </p>
             </div>
             {/* Live reconciliation chip, echoing Cash Management's header
                 accessory - the running verdict rides at the top of the card so
                 it's visible before scrolling down to the totals. Keyed on the
                 verdict so it pops when it flips to balanced. */}
-            {(totalDebit > 0 || totalCredit > 0) && (
+            {(typedDebit > 0 || typedCredit > 0) && (
               <span
                 key={balanced ? 'balanced' : 'off'}
                 className={cn('ml-auto shrink-0 inline-flex items-center gap-1.5 h-6 pl-2 pr-2.5 rounded-full border text-[11px] tabular-nums transition-colors',
@@ -598,8 +787,8 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                   balanced ? 'border-success-200 bg-success-50 text-success-700' : 'border-danger-200 bg-danger-50 text-danger-700')}
                 style={{ fontWeight: 600 }}>
                 {balanced
-                  ? <><Check className="w-3 h-3" /> Balanced</>
-                  : <>Out of balance by {fmtCurrencyExact(Math.abs(difference), base)} · add a {balancingSide}</>}
+                  ? <><Check className="w-3 h-3" /> {foreign ? `Balanced in ${currency} and ${base}` : 'Balanced'}</>
+                  : <>Out of balance by {typedMoney(Math.abs(difference))} · add a {balancingSide}</>}
               </span>
             )}
           </div>
@@ -609,32 +798,25 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                 modal (Mahad, 2026-10-02). */}
             <table className="w-full table-fixed text-[13px]">
               <thead>
-                {/* Bottom-aligned, so the one header long enough to take two
-                    lines (Foreign currency amount) leaves the rest on its last. */}
-                <tr className="text-left text-[10.5px] uppercase text-fg-muted border-b border-border [&>th]:align-bottom" style={{ fontWeight: 700, letterSpacing: '0.06em' }}>
-                  <th className="px-4 py-2 w-[30%]">Account</th>
+                <tr className="text-left text-[10.5px] uppercase text-fg-muted border-b border-border [&>th]:align-bottom" style={LABEL_STYLE}>
+                  <th className="px-4 py-2 w-[34%]">Account</th>
                   <th className="px-3 py-2">Line description</th>
-                  <th className="px-2 py-2 w-[108px]">Currency</th>
-                  <th className="px-2 py-2 text-right w-[184px] leading-tight">
-                    Foreign currency amount
-                    <HeadInfo text="The line's amount in its own currency, as a debit or a credit. Only for a line that isn't in the base currency." />
-                  </th>
-                  <th className="px-2 py-2 text-right w-[100px]">
-                    Rate
-                    <HeadInfo text="Units of the line's currency per 1 unit of the base currency. Prefilled with today's mid-market rate; you can change it." />
-                  </th>
                   {/* The two amount columns are padded towards each other so
                       they read as one money pair rather than two lone columns
                       stranded at the right edge. */}
-                  <th className="pl-3 pr-1.5 py-2 text-right w-[112px]">Debit</th>
-                  <th className="pl-1.5 pr-3 py-2 text-right w-[112px]">Credit</th>
+                  <th className="pl-3 pr-1.5 py-2 text-right w-[150px]">
+                    Debit{foreign && <span className="normal-case text-fg-subtle" style={{ fontWeight: 500, letterSpacing: 0 }}> ({currency})</span>}
+                    {foreign && <HeadInfo text={`Typed in ${currency}. The ${base} under it is the line converted at the entry's rate, which is what posts.`} />}
+                  </th>
+                  <th className="pl-1.5 pr-3 py-2 text-right w-[150px]">
+                    Credit{foreign && <span className="normal-case text-fg-subtle" style={{ fontWeight: 500, letterSpacing: 0 }}> ({currency})</span>}
+                  </th>
                   <th className="px-2 py-2 w-9" />
                 </tr>
               </thead>
               <tbody>
                 {lines.map((l, i) => {
-                  const side = sideOf(l, base)
-                  const foreign = foreignLine(l)
+                  const side = sideOf(l)
                   const { baseDebit, baseCredit } = baseOf(l)
                   /* Red once the reader has left a started line, or once Post
                      has been pressed - then on every line that owes something. */
@@ -644,8 +826,9 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                   const amountFlag = flagged && issue !== 'account'
                   /* This line's options: the shared tree, with any summary label
                      left with nothing under it dropped so no empty branch is
-                     shown. An account already on another line is offered too:
-                     nothing but a summary is held back (Mahad, 2026-10-09). */
+                     shown. An account already on another line is offered too;
+                     one held in a currency this entry can't take is offered
+                     greyed, with why (rules 7 and 9). */
                   const avail = accountTree
                   const accountRows = avail.filter((r, idx) => {
                     if (!r.group) return true
@@ -678,7 +861,10 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                             value={l.accountId}
                             onChange={e => setLineAccount(l.key, e.target.value)}
                           >
-                            {accountRows.map(r => <option key={r.id} value={r.id} data-depth={r.depth} data-desc={r.note} data-tip={r.why} disabled={r.group}>{r.label}</option>)}
+                            {accountRows.map(r => {
+                              const block = r.group ? undefined : accountBlock(r.code, l.key)
+                              return <option key={r.id} value={r.id} data-depth={r.depth} data-desc={r.note ?? (!r.group && r.code !== base ? `Held in ${r.code}` : undefined)} data-tip={r.why ?? block} disabled={r.group || (!!block && r.id !== l.accountId)}>{r.label}</option>
+                            })}
                           </Select>
                           </div>
                           {/* The amount is on the line but the account it posts to
@@ -688,7 +874,7 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                           {flagged && (
                             <p className="mt-1 text-[11px] text-danger-600 leading-snug">
                               {issue === 'account' ? 'Pick the account this line posts to.'
-                                : issue === 'amount' ? (foreign ? 'Enter the amount for this line.' : 'Enter a debit or a credit for this line.')
+                                : issue === 'amount' ? 'Enter a debit or a credit for this line.'
                                 : 'Pick an account and enter an amount for this line.'}
                             </p>
                           )}
@@ -707,81 +893,12 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                         <input value={l.description} onChange={e => setLine(l.key, { description: e.target.value })} placeholder="Optional, this line only"
                           className="w-full min-w-[120px] h-8 px-2 rounded-md border border-border text-[13px] outline-none focus:border-primary" />
                       </td>
-                      {/* The line's own currency: the account's when it is picked,
-                          and any other the reader writes the line in. Flag and
-                          code on the trigger, the name under the code in the list. */}
-                      <td className="px-2 py-2 align-top">
-                        <Select
-                          searchable
-                          ariaLabel="Line currency"
-                          menuMinWidth={220}
-                          searchPlaceholder="Search currency"
-                          className="!h-8 !text-[13px] !pl-2 !pr-7 !rounded-md"
-                          value={l.currency}
-                          onChange={e => setLineCurrency(l.key, e.target.value)}
-                        >
-                          {/* The flag is a picture (CurrencyFlag), never the emoji,
-                              which Windows draws as two letters. */}
-                          {Object.values(CURRENCY_META).map(c => <option key={c.code} value={c.code} data-icon={<CurrencyFlag meta={c} />} data-desc={c.name}>{c.code}</option>)}
-                        </Select>
-                      </td>
-                      {/* What the line says in its own currency, and its side.
-                          A base-currency line has none: it is typed in Debit or
-                          Credit, as it always was. */}
-                      <td className="px-2 py-2 align-top">
-                        {foreign ? (
-                          <div className="flex items-center gap-1">
-                            <SideToggle value={l.fxSide} onChange={s => setLine(l.key, { fxSide: s })} />
-                            <div className="flex-1 min-w-0">
-                              <AmountInput
-                                value={l.fx}
-                                symbol={fieldSymbol(l.currency)}
-                                placeholder="0.00"
-                                aria-label="Foreign currency amount"
-                                data-je-target={`line-${l.key}-amount`}
-                                onBlur={() => touch(l.key)}
-                                onChange={v => setLine(l.key, { fx: v })}
-                                className={cn(AMOUNT_CLS, !fieldSymbol(l.currency) && 'pl-2', 'bg-white focus:border-primary', amountFlag && !l.fx ? 'border-danger-500' : 'border-border')}
-                              />
-                            </div>
-                          </div>
-                        ) : <NotApplicable />}
-                      </td>
-                      {/* Today's rate to start with, and the reader's to change.
-                          Tidied to the module's four-to-six places on leaving the
-                          field, so a typed 0.92 reads back as the rate it is. */}
-                      <td className="px-2 py-2 align-top">
-                        {foreign ? (
-                          <input
-                            value={l.rate}
-                            inputMode="decimal"
-                            aria-label="Rate"
-                            data-je-target={`line-${l.key}-rate`}
-                            onChange={e => setLine(l.key, { rate: sanitizeRate(e.target.value) })}
-                            onBlur={() => { const r = Number(l.rate); if (r > 0) setLine(l.key, { rate: rateText(r) }) }}
-                            className={cn(AMOUNT_CLS, 'pl-2 bg-white focus:border-primary', attempted && rateMissing(l) ? 'border-danger-500' : 'border-border')}
-                          />
-                        ) : <NotApplicable />}
-                      </td>
                       {(['debit', 'credit'] as const).map(col => {
-                        /* On a line in another currency the base amount is worked
-                           out, not typed: the figure the line posts, written as
-                           a figure rather than in a field that looks open. */
-                        if (foreign) {
-                          const value = col === 'debit' ? baseDebit : baseCredit
-                          return (
-                            <td key={col} className={cn('py-2 align-top', col === 'debit' ? 'pl-3 pr-1.5' : 'pl-1.5 pr-3')}
-                              title={value ? 'Worked out from the foreign currency amount and the rate.' : undefined}>
-                              <div className={cn('h-8 pr-2 flex items-center justify-end text-[13px] tabular-nums', value ? 'text-fg' : 'text-fg-subtle/40')}>
-                                {value ? fmtCurrencyExact(value, base) : '-'}
-                              </div>
-                            </td>
-                          )
-                        }
                         // Greyed rather than removed: the column still reads as a
                         // column, and clearing the other side re-enables it.
                         const off = !!side && side !== col
                         const other = col === 'debit' ? 'credit' : 'debit'
+                        const converted = col === 'debit' ? baseDebit : baseCredit
                         return (
                           // title sits on the cell, not the input - disabled
                           // inputs don't reliably surface their own tooltip.
@@ -791,18 +908,24 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                               value={l[col]}
                               // Dropped on the disabled side: a currency symbol
                               // there would invite typing into a dead field.
-                              symbol={off ? undefined : fieldSymbol(base)}
+                              symbol={off ? undefined : fieldSymbol(currency)}
                               placeholder={off ? '-' : '0.00'}
                               disabled={off}
-                              aria-label={col}
+                              aria-label={foreign ? `${col} in ${currency}` : col}
                               data-je-target={col === 'debit' ? `line-${l.key}-amount` : undefined}
                               onBlur={() => touch(l.key)}
                               onChange={v => setLine(l.key, { [col]: v, [other]: v ? '' : l[other] })}
                               className={cn(AMOUNT_CLS,
                                 off
                                   ? 'pl-2 border-border-subtle bg-bg-subtle text-fg-subtle/40 cursor-not-allowed'
-                                  : cn('bg-white focus:border-primary', amountFlag && !l[col] && !l[other] ? 'border-danger-500' : 'border-border'))}
+                                  : cn('bg-white focus:border-primary', !fieldSymbol(currency) && 'pl-2', amountFlag && !l[col] && !l[other] ? 'border-danger-500' : 'border-border'))}
                             />
+                            {/* Rule 5: the dollars next to the pounds. */}
+                            {foreign && converted > 0 && (
+                              <div className="mt-1 pr-2 text-right text-[11px] text-fg-muted tabular-nums" title={`At ${rateLabel(unit)}`}>
+                                {fmtCurrencyExact(converted, base)}
+                              </div>
+                            )}
                           </td>
                         )
                       })}
@@ -817,8 +940,40 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                     </Fragment>
                   )
                 })}
+                {/* Rule 6: the rounding line, added and removed by the form.
+                    The pounds balance; converting each line to the cent can
+                    leave the dollars a cent or two apart, and this takes it, in
+                    dollars only. */}
+                {rounding && (
+                  <tr className="border-b border-border-subtle bg-bg-subtle/40" data-je-rounding>
+                    <td className="px-4 py-2 align-top">
+                      <div className={cn('min-w-0 flex items-center gap-2 h-8', rounding.side === 'credit' && 'pl-5')}>
+                        <span className="truncate text-fg">
+                          {roundingAccount ? `${roundingAccount.accountNumber} · ${roundingAccount.accountName}` : 'Foreign Exchange Gain/Loss'}
+                        </span>
+                        <Badge tone="neutral">Rounding</Badge>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <div className="h-8 flex items-center text-[12px] text-fg-muted truncate" title={`Added automatically. The ${currency} balances; converting each line to the cent leaves the ${base} ${fmtCurrencyExact(rounding.amount, base)} apart.`}>
+                        Added automatically, {currency} to {base}
+                      </div>
+                    </td>
+                    {(['debit', 'credit'] as const).map(col => (
+                      <td key={col} className={cn('py-2 align-top', col === 'debit' ? 'pl-3 pr-1.5' : 'pl-1.5 pr-3')}>
+                        <div className={cn('h-8 pr-2 flex items-center justify-end text-[13px] tabular-nums', rounding.side === col ? 'text-fg-muted' : 'text-fg-subtle/40')}>
+                          {rounding.side === col ? typedMoney(0) : '-'}
+                        </div>
+                        {rounding.side === col && (
+                          <div className="mt-1 pr-2 text-right text-[11px] text-fg-muted tabular-nums">{fmtCurrencyExact(rounding.amount, base)}</div>
+                        )}
+                      </td>
+                    ))}
+                    <td />
+                  </tr>
+                )}
                 <tr>
-                  <td colSpan={8} className="px-4 pt-2.5 pb-3">
+                  <td colSpan={5} className="px-4 pt-2.5 pb-3">
                     <button onClick={addLine} className="w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-lg border border-dashed border-border bg-white text-13 text-primary hover:bg-primary/5 hover:border-primary/40 transition-colors" style={{ fontWeight: 500 }}>
                       <Plus className="w-3.5 h-3.5" /> Add another line
                     </button>
@@ -833,19 +988,20 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                 <tr className={cn('border-t transition-colors duration-300',
                   untouchedTotals ? 'border-border bg-bg-subtle'
                     : balanced ? 'border-success-100 bg-success-50' : 'border-danger-100 bg-danger-50')}>
-                  <td colSpan={5} className="px-4 py-2.5">
+                  <td colSpan={2} className="px-4 py-2.5">
                     <div data-je-target="balance" className="flex items-center gap-2.5 flex-wrap rounded-md">
                       {balanced ? (
                         <span className="inline-flex items-center gap-1.5 text-[12px] text-success-700" style={{ fontWeight: 600 }}>
-                          <span key="chk" className={cn('inline-flex', !reducedMotion() && 'animate-[pop_260ms_ease-out]')}><Check className="w-3.5 h-3.5" /></span> Balanced
+                          <span key="chk" className={cn('inline-flex', !reducedMotion() && 'animate-[pop_260ms_ease-out]')}><Check className="w-3.5 h-3.5" /></span>
+                          {foreign ? `Balanced in ${currency} and ${base}` : 'Balanced'}
                         </span>
                       ) : !untouchedTotals && (
                         /* Two lines: the shortfall, then the move that closes it,
                            so the fix never has to be worked out from the number. */
                         <span className="text-[12px] text-danger-700" style={{ fontWeight: 600 }}>
-                          Out of balance by {fmtCurrencyExact(Math.abs(difference), base)}
+                          Out of balance by {typedMoney(Math.abs(difference))}
                           <span className="block text-[11px]" style={{ fontWeight: 500 }}>
-                            Add a {balancingSide} of {fmtCurrencyExact(Math.abs(difference), base)} to balance this journal entry.
+                            Add a {balancingSide} of {typedMoney(Math.abs(difference))} to balance this journal entry.
                           </span>
                         </span>
                       )}
@@ -855,12 +1011,10 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                           <Plus className="w-3 h-3" /> Add balancing line
                         </button>
                       )}
-                      {/* Said once any line is in another currency: the totals
-                          beside it add the base amounts, which is what the entry
-                          balances in, and lines in different currencies could
-                          not be added up any other way. */}
-                      {anyForeign && !untouchedTotals && (
-                        <span className="text-[11px] text-fg-muted">Totals are in the base currency.</span>
+                      {/* Said once a rounding line is in: why the dollar totals
+                          include a line that has no pounds. */}
+                      {balanced && rounding && (
+                        <span className="text-[11px] text-fg-muted">{fmtCurrencyExact(rounding.amount, base)} rounding added to balance the {base}.</span>
                       )}
                     </div>
                   </td>
@@ -869,15 +1023,19 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                       wrong total. Stated to the cent, because these two are the
                       pair the reader compares: rounded, 12.34 and 12.33 are the
                       same number, and the form is then refusing an entry whose
-                      own totals say it balances. */}
-                  {([totalDebit, totalCredit] as const).map((total, i) => (
-                    <td key={i} className={cn('py-2.5 text-right', i === 0 ? 'pl-3 pr-1.5' : 'pl-1.5 pr-3')}>
+                      own totals say it balances. In both currencies on an entry
+                      in another one (rule 5). */}
+                  {([[typedDebit, totalDebit], [typedCredit, totalCredit]] as const).map(([typedTotal, baseTotal], i) => (
+                    <td key={i} className={cn('py-2.5 text-right align-top', i === 0 ? 'pl-3 pr-1.5' : 'pl-1.5 pr-3')}>
                       <div className="text-[10px] text-fg-muted leading-none mb-1" style={{ fontWeight: 600 }}>
                         {i === 0 ? 'Total debits' : 'Total credits'}
                       </div>
                       <span className="text-[13px] tabular-nums text-fg" style={{ fontWeight: 600 }}>
-                        {fmtCurrencyExact(total, base)}
+                        {typedMoney(typedTotal)}
                       </span>
+                      {foreign && (
+                        <span className="block mt-0.5 text-[11px] tabular-nums text-fg-muted">{fmtCurrencyExact(baseTotal, base)}</span>
+                      )}
                     </td>
                   ))}
                   <td />
@@ -954,8 +1112,7 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
   )
 }
 
-/* ───────────────── A line in another currency ─────────────────
-   The pieces of the line grid's three currency columns. */
+/* ───────────────── The entry's currency ───────────────── */
 
 /* The (i) after a column header, as the module's table headers carry it: one
    plain sentence on what the column holds. Inline in the label's text, so on a
@@ -968,37 +1125,28 @@ function HeadInfo({ text }: { text: string }) {
   )
 }
 
-/* Which side a line in another currency posts to. Its base amount is worked out
-   rather than typed, so there is no Debit or Credit field to type it into; the
-   side is picked here, beside the amount it belongs to. Dr and Cr, as the
-   reversal's GL impact table writes them. */
-function SideToggle({ value, onChange }: { value: 'debit' | 'credit'; onChange: (side: 'debit' | 'credit') => void }) {
+/* Mid-market or Treasury's corporate rate, where Treasury sets one for the
+   entry's currency (rule 11). The Currencies module's two names, purple and
+   amber as its rate chips colour them. */
+function RateKindToggle({ value, onChange }: { value: RateKind; onChange: (kind: RateKind) => void }) {
   return (
-    <div role="radiogroup" aria-label="Debit or credit" className="inline-flex shrink-0 h-8 rounded-md border border-border bg-white overflow-hidden">
-      {(['debit', 'credit'] as const).map(s => (
+    <div role="radiogroup" aria-label="Rate type" className="inline-flex shrink-0 h-6 rounded-md border border-border bg-white overflow-hidden">
+      {(['mid', 'corporate'] as const).map(k => (
         <button
-          key={s}
+          key={k}
           type="button"
           role="radio"
-          aria-checked={value === s}
-          title={s === 'debit' ? 'Debit' : 'Credit'}
-          onClick={() => onChange(s)}
-          className={cn('w-7 text-[10.5px] uppercase transition-colors', s === 'credit' && 'border-l border-border',
-            value === s ? 'bg-primary/10 text-primary' : 'text-fg-muted hover:bg-bg-subtle')}
-          style={{ fontWeight: value === s ? 700 : 500, letterSpacing: '0.04em' }}
+          aria-checked={value === k}
+          onClick={() => onChange(k)}
+          className={cn('px-2 text-[10.5px] transition-colors', k === 'corporate' && 'border-l border-border',
+            value === k ? (k === 'mid' ? 'bg-[#7C3AED]/10 text-[#6D28D9]' : 'bg-[#B45309]/10 text-[#B45309]') : 'text-fg-muted hover:bg-bg-subtle')}
+          style={{ fontWeight: value === k ? 700 : 500 }}
         >
-          {s === 'debit' ? 'Dr' : 'Cr'}
+          {RATE_KIND_LABEL[k]}
         </button>
       ))}
     </div>
   )
-}
-
-/* A currency column on a line in the base currency, which has no foreign amount
-   and no rate: the muted dash a dead amount field shows, at the field's height
-   so the row does not shift when the line changes currency. */
-function NotApplicable() {
-  return <div className="h-8 pr-2 flex items-center justify-end text-[13px] text-fg-subtle/40" aria-hidden>-</div>
 }
 
 /* ───────────────── A line's dimension values ─────────────────

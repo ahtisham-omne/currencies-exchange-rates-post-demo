@@ -12,7 +12,7 @@ import { DensityMenu } from '../components/DensityMenu'
 import { COUNT_BADGE, TOOL_BTN, TOOL_BTN_ACTIVE, lookSections, rowNumberGutter, useCrosshair, useTableLook } from '../components/tableLook'
 import { LinkedDocLink } from '../components/LinkedDoc'
 import { HeaderMenu, filterActive, CategoryCell, ColumnFiltersBar, CurrencyCell, DimensionPills, ExpandToggle, FxPostingTooltip, type ColFilter, type ColFilterType } from '../components/AccountTable'
-import { formatRate } from '../lib/currencies'
+import { fmtPostingRate } from '../lib/fxRates'
 import { Section, FDivider, PillGrid, FilterPill as ModalFilterPill, AllPill, RangeMinMax, QuickFilterPill, DateRangeFromTo, FiltersButton, AuditFacet } from '../components/Filters'
 import { PersonCell, StampCell, PERSON_PAD, personText, stampText } from '../components/AuditCells'
 import { SearchRevealNote, orderWithRevealed, useSearchReveal } from '../components/SearchReveal'
@@ -36,7 +36,7 @@ import { TagChip } from '../components/EntityTagChip'
 import { useColumnDragReorder, DragGhost, draggedHeaderStyle, DragBar } from '../components/tableColumns'
 import { runningBalanceLedger, comparePostingOrder } from '../lib/monthlyLedger'
 import { isInSelection, scopeAccountsToPeriod } from '../lib/periodSelection'
-import { cn, fmtCurrency, fmtCurrencyExact, fmtDate, fmtNumber, localDayOf, withinMagnitude } from '../lib/utils'
+import { cn, currencySymbol, fmtCurrency, fmtCurrencyExact, fmtDate, fmtNumber, localDayOf, withinMagnitude } from '../lib/utils'
 
 /* The ledger is read by scanning many rows at once, so it opens condensed - and
    that is now the density control's default rather than the only setting. */
@@ -524,7 +524,7 @@ const POSTING_TEXT: Record<GLColKey, (r: GLRow, c: GLTextCtx) => string> = {
   amount: () => '',
   currency: ({ t }, c) => t.entryCurrency ?? c.base,
   fxAmount: ({ t }, c) => { const fx = fxLine(t); return fx !== undefined && t.entryCurrency ? c.money(fx, t.entryCurrency) : '' },
-  rate: ({ t }) => { const r = lineRate(t); return r !== undefined ? formatRate(r) : '' },
+  rate: ({ t }) => { const r = lineRate(t); return r !== undefined && t.entryCurrency ? fmtPostingRate(t.entryCurrency, r) : '' },
   debit: ({ t }, c) => (t.debit ? c.money(t.debit, c.base) : ''),
   credit: ({ t }, c) => (t.credit ? c.money(t.credit, c.base) : ''),
   // Not a column of this ledger: GL_COLS draws no Period.
@@ -548,7 +548,7 @@ const ENTRY_TEXT: Record<GLColKey, (head: Transaction, c: GLTextCtx) => string> 
   currency: (t, c) => { const e = c.entryFx(t.jeNumber); return e.multi ? MULTIPLE : e.currency ?? c.base },
   tags: (t, c) => c.tagsOf(t.jeNumber).join('\n'),
   fxAmount: (t, c) => { const e = c.entryFx(t.jeNumber); return e.total !== undefined && e.currency ? c.money(e.total, e.currency) : '' },
-  rate: (t, c) => { const r = c.entryFx(t.jeNumber).rate; return r !== undefined ? formatRate(r) : '' },
+  rate: (t, c) => { const e = c.entryFx(t.jeNumber); return e.rate !== undefined && e.currency ? fmtPostingRate(e.currency, e.rate) : '' },
   createdBy: t => personText(entryCreatedBy(t)),
   createdAt: t => stampText(entryCreatedAt(t)),
   updatedBy: (t, c) => personText(lastChangeOf(t, c.changes).by),
@@ -1907,14 +1907,14 @@ export default function GeneralLedgerPage() {
         return (
           <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-800', padY)}>
             {fx !== undefined && t.entryCurrency
-              ? <FxPostingTooltip code={t.entryCurrency} base={base} booked={t.debit || t.credit} rate={t.entryRate} on={fmtDate(t.date)}><span className="cursor-help"><Marked text={fmtCurrencyExact(fx, t.entryCurrency)} q={query} /></span></FxPostingTooltip>
+              ? <FxPostingTooltip code={t.entryCurrency} base={base} booked={t.debit || t.credit} rate={t.entryRate} on={fmtDate(t.date)} typed={fx} rateType={t.entryRateType}><span className="cursor-help"><Marked text={fmtCurrencyExact(fx, t.entryCurrency)} q={query} /></span></FxPostingTooltip>
               : <span className="text-fg-subtle">-</span>}
           </td>
         )
       }
       case 'rate': {
         const r = lineRate(t)
-        return <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-700', padY)}>{r !== undefined ? <Marked text={formatRate(r)} q={query} /> : <span className="text-fg-subtle">-</span>}</td>
+        return <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-700', padY)}>{r !== undefined && t.entryCurrency ? <Marked text={fmtPostingRate(t.entryCurrency, r, base, currencySymbol(base))} q={query} /> : <span className="text-fg-subtle">-</span>}</td>
       }
     }
   }
@@ -1940,7 +1940,7 @@ export default function GeneralLedgerPage() {
       )
       case 'rate': return (
         <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-700', padY)}>
-          {e.rate !== undefined ? <Marked text={formatRate(e.rate)} q={query} /> : <span className="text-fg-subtle">-</span>}
+          {e.rate !== undefined && e.currency ? <Marked text={fmtPostingRate(e.currency, e.rate, base, currencySymbol(base))} q={query} /> : <span className="text-fg-subtle">-</span>}
         </td>
       )
     }

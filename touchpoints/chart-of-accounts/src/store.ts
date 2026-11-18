@@ -4,6 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 import type { Account, AccountDraft, AccountCategory, AccountType, StatementClassification, AuditEntry, CompanyConfig, FiscalYearNaming, JournalEntry, NumberingScheme, Period, PeriodBalanceSnapshot, QuarterId, RecurringTemplate, Dimension, TaxCode, Transaction } from './types'
 import { CLASSIFICATIONS_BY_CATEGORY, DEFAULT_CLASSIFICATION_BY_CATEGORY, CATEGORY_OF_CLASSIFICATION, DEFAULT_NUMBER_WIDTH, categoryFirstNumber, accountSegmentValue, accountSegmentIndex, formatInScheme, displayAccountNumber, isNumericAccountNumber, numberProtectionOn } from './types'
 import { seedAccounts, seedAuditLog, seedCompany, seedJournalEntries, seedNumberingScheme, seedPeriods, seedQ1Openings, seedRecurring, seedDimensions, seedTaxCodes, seedTransactions, seedAccountAttachments } from './lib/seed'
+import { withFxExamples } from './lib/fxExamples'
 import type { RecordNote } from './lib/notes'
 import { STATE_KEY, savedStateStorage } from './lib/persistence'
 import {
@@ -585,15 +586,24 @@ const PERSISTED_KEYS = [
   'firstTimePreview', 'fullView', 'glView', 'periodSelection',
 ] as const satisfies readonly (keyof State)[]
 
+/* The seed with the two entries written in another currency on top (a GBP one
+   at the mid-market rate, a EUR one at Treasury's corporate rate). See
+   lib/fxExamples. */
+const seeded = withFxExamples(
+  { accounts: seedAccounts, transactions: seedTransactions, journalEntries: seedJournalEntries },
+  seedPeriods,
+  seedCompany.baseCurrency,
+)
+
 export const useStore = create<State>()(persist((set, get) => ({
   company: seedCompany,
-  accounts: seedAccounts,
+  accounts: seeded.accounts,
   dimensions: seedDimensions,
   taxCodes: seedTaxCodes,
   numberingScheme: seedNumberingScheme,
   periods: seedPeriods,
-  transactions: seedTransactions,
-  journalEntries: seedJournalEntries,
+  transactions: seeded.transactions,
+  journalEntries: seeded.journalEntries,
   jeAttachments: {},
   jeTags: {},
   accountAttachments: seedAccountAttachments,
@@ -606,7 +616,7 @@ export const useStore = create<State>()(persist((set, get) => ({
   commsUnread: {},
   commsTransferred: [],
   recurringTemplates: seedRecurring,
-  auditLog: seedAuditLog,
+  auditLog: [...seedAuditLog, ...seeded.audit],
   periodSnapshots: [],
   seedQ1Openings,
   toasts: [],
@@ -694,17 +704,17 @@ export const useStore = create<State>()(persist((set, get) => ({
   // DEV ONLY, see interface note. Restores the seeded demo data and marks the
   // tenant as fully set up, so the app returns to its normal state.
   exitFirstTimeUser: () => set({
-    accounts: seedAccounts,
+    accounts: seeded.accounts,
     newAccountIds: [],
-    transactions: seedTransactions,
-    journalEntries: seedJournalEntries,
+    transactions: seeded.transactions,
+    journalEntries: seeded.journalEntries,
     jeAttachments: {},
     jeTags: {},
     accountAttachments: seedAccountAttachments,
   recordNotes: {},
   removedNotes: [],
     recurringTemplates: seedRecurring,
-    auditLog: seedAuditLog,
+    auditLog: [...seedAuditLog, ...seeded.audit],
     periodSnapshots: [],
     // The demo postings carry dimension ids, so the demo's dimensions have to
     // come back with them or those postings read as raw ids.
@@ -1243,7 +1253,7 @@ export const useStore = create<State>()(persist((set, get) => ({
      typed in their account's currency (2026-11-14). A save from an earlier build
      holds them as base figures alone, and the ledger's Foreign currency amount
      and Rate columns would read empty. */
-  version: 12,
+  version: 14,
   migrate: () => ({}) as State,
   // A save read back on a later day locks the months that have ended since.
   merge: (persisted, current) => {

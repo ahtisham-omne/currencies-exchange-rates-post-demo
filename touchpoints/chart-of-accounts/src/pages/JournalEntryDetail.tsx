@@ -20,8 +20,8 @@ import { sourceDocLabel } from '../lib/seed'
 import { adjustmentKind, attachmentsForEntry, reconstructEntry, type AdjustmentKind, type JeLine, type ReconstructedEntry, type EntryAttachment } from '../lib/journalEntry'
 import { createdHere, type CommThread } from '../lib/comms'
 import { ACCOUNT_TYPE_META, type Account, type Transaction } from '../types'
-import { cn, fmtCurrencyExact, fmtDate } from '../lib/utils'
-import { formatRate } from '../lib/currencies'
+import { cn, currencySymbol, fmtCurrencyExact, fmtDate } from '../lib/utils'
+import { fmtPostingRate } from '../lib/fxRates'
 import { JOURNAL_INTERNAL_ID_HELP, JOURNAL_INTERNAL_ID_LABEL } from '../lib/internalId'
 import { InternalIdField } from '../components/InternalIdField'
 import { cleanName } from '../components/Avatar'
@@ -251,7 +251,7 @@ function ViewJournalEntry({ jeNumber }: { jeNumber: string }) {
                 {fx && (
                   <div className="min-w-0">
                     <DashInfoLabel tooltip={`The rate the lines in another currency were converted at when the entry posted. The ledger holds the ${base} figures.`}>Exchange rate</DashInfoLabel>
-                    <p className="text-[12px] text-slate-700 truncate tabular-nums" style={{ fontWeight: 500 }}>1 {base} = {formatRate(fx.rate)} {fx.currency}</p>
+                    <p className="text-[12px] text-slate-700 truncate tabular-nums" style={{ fontWeight: 500 }}>{fmtPostingRate(fx.currency, fx.rate, base, currencySymbol(base))}</p>
                   </div>
                 )}
                 {mixedRates && (
@@ -393,16 +393,16 @@ function AdjustmentBanner({ entry }: { entry: ReconstructedEntry }) {
    add up the typed amounts only where every line was typed in one currency -
    amounts in different currencies cannot be added - and the base totals always. */
 function LinesTable({ lines, base, date, totalDebit, totalCredit, entryCurrency, flagSystemAccounts }: { lines: JeLine[]; base: string; date: string; totalDebit: number; totalCredit: number; entryCurrency?: string; flagSystemAccounts?: boolean }) {
-  const money = (baseValue: number, typed: number | undefined, code: string | undefined, rate?: number, strong = false) => {
+  const money = (baseValue: number, typed: number | undefined, code: string | undefined, rate?: number, strong = false, rateType?: 'mid' | 'corporate' | 'manual') => {
     if (!baseValue && !typed) return <span className="text-fg-subtle">-</span>
-    if (!code || typed === undefined) return <>{fmtCurrencyExact(baseValue, base)}</>
-    const amount = <span className={strong ? undefined : 'text-slate-700'}>{fmtCurrencyExact(typed, code)}</span>
+    if (!code || typed === undefined) return <span className="whitespace-nowrap">{fmtCurrencyExact(baseValue, base)}</span>
+    const amount = <span className={cn('whitespace-nowrap', !strong && 'text-slate-700')}>{fmtCurrencyExact(typed, code)}</span>
     return (
       <>
         {rate
-          ? <FxPostingTooltip code={code} base={base} booked={baseValue} rate={rate} on={fmtDate(date)}><span className="cursor-help">{amount}</span></FxPostingTooltip>
+          ? <FxPostingTooltip code={code} base={base} booked={baseValue} rate={rate} on={fmtDate(date)} typed={typed} rateType={rateType}><span className="cursor-help">{amount}</span></FxPostingTooltip>
           : amount}
-        <span className="block text-[11px] text-fg-muted" style={{ fontWeight: 400 }}>{fmtCurrencyExact(baseValue, base)}</span>
+        <span className="block text-[11px] text-fg-muted whitespace-nowrap" style={{ fontWeight: 400 }}>{fmtCurrencyExact(baseValue, base)}</span>
       </>
     )
   }
@@ -443,8 +443,8 @@ function LinesTable({ lines, base, date, totalDebit, totalCredit, entryCurrency,
               <td>{l.account ? <CategoryCell meta={ACCOUNT_TYPE_META[l.account.accountType]} /> : <span className="text-fg-subtle">-</span>}</td>
               <td className="text-muted-foreground [overflow-wrap:anywhere]">{l.description || <span className="text-fg-subtle">-</span>}</td>
               <td><DimensionPills dimensionValues={l.dimensionValues} /></td>
-              <td className="text-right tabular-nums text-slate-700">{money(l.debit, l.fxDebit || undefined, l.currency ?? entryCurrency, l.rate)}</td>
-              <td className="text-right tabular-nums text-slate-700">{money(l.credit, l.fxCredit || undefined, l.currency ?? entryCurrency, l.rate)}</td>
+              <td className="text-right tabular-nums text-slate-700">{money(l.debit, l.fxDebit || undefined, l.currency ?? entryCurrency, l.rate, false, l.rateType)}</td>
+              <td className="text-right tabular-nums text-slate-700">{money(l.credit, l.fxCredit || undefined, l.currency ?? entryCurrency, l.rate, false, l.rateType)}</td>
             </tr>
           ))}
         </tbody>

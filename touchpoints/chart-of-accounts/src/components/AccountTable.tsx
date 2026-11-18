@@ -10,11 +10,11 @@ import { Account, AccountStatus, AccountType, StatementClassification, ACCOUNT_T
 const NO_ROLE_LABEL = 'No role'
 import { Badge, Marked, Menu, MenuItem, Tooltip, Select } from './ui'
 import { DateField } from './DateField'
-import { cn, fmtCurrency, invertedDates, invertedRange, localDayOf } from '../lib/utils'
+import { cn, fmtCurrency, fmtDate, invertedDates, invertedRange, localDayOf } from '../lib/utils'
 import { AUDIT_HELP, GridComfort, PersonCell, StampCell, peopleIn, PERSON_PAD, personText } from './AuditCells'
 import { ME_MODE } from '../lib/features'
-import { currencyMeta, bookedFromBase, currentOwnBalanceOf, fxStanding, formatRate, PEGGED_TO_BASE, RATE_SOURCE, RATE_AS_OF, REVALUED_ON } from '../lib/currencies'
-import { useStore, usePeriodScopedAccounts, lifecycleCtx, useAccountNumberText } from '../store'
+import { currencyMeta, bookedFromBase, currentOwnBalanceOf, fxStanding, formatRate, PEGGED_TO_BASE, RATE_SOURCE, RATE_AS_OF_TIME, REVALUED_ON } from '../lib/currencies'
+import { useStore, usePeriodScopedAccounts, useSelectedPeriod, lifecycleCtx, useAccountNumberText } from '../store'
 import { actionToward, canDeleteAccount, planLifecycle, showsSummaryTotal, statusesFor, statusMeaningLines } from '../lib/accountLifecycle'
 import type { LifecycleAction } from '../lib/accountLifecycle'
 import { manualPostingLock } from '../lib/journalEntry'
@@ -24,7 +24,7 @@ import { accountRange, formatRange, numberBeside } from '../lib/numberRange'
 import { INTERNAL_ID_HELP, INTERNAL_ID_LABEL, internalIdSeq } from '../lib/internalId'
 import { rowNumberGutter, type ColumnSizing, type TreeStyle } from './tableLook'
 import { CurrencyFlag } from './CurrencyFlag'
-import { FxAlert, FxHead, FxInset, FxLine, FxLines, FxNote, FxRateType } from './FxCard'
+import { FxHead, FxInset, FxLine, FxLines, FxNote, FxRateType } from './FxCard'
 import { useColumnDragReorder, DragGhost, draggedHeaderStyle, DragBar } from './tableColumns'
 
 // Frozen columns (Partner vendors pattern): Number + Name stay pinned to the
@@ -989,26 +989,42 @@ export function CurrencyHeldCard({ code, base, hint = true }: { code: string; ba
   )
 }
 
-/* The currency badge after an account's name, on an account held in anything
-   but the base currency. Mahad, 2026-11-14: *"Chart listing: show a currency
-   badge on foreign-currency accounts. The balance is in the base currency, and
-   hovering shows the foreign amount."* The Currency column's pill with the flag
-   drawn inside it, so it rides the name the way the New badge does rather than
-   reading as a column of its own. */
-export function CurrencyBadge({ code, base, q = '' }: { code: string; base: string; q?: string }) {
-  const m = currencyMeta(code)
-  return (
-    <Tooltip rich align="left" className="shrink-0" content={<CurrencyHeldCard code={code} base={base} />}>
-      <span data-currency-badge className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-info-50 text-info-700 text-2xs font-semibold leading-none border border-info-100 cursor-help">
-        <CurrencyFlag meta={m} className="text-[10px] leading-none" />
-        <Marked text={m.code} q={q} />
-      </span>
-    </Tooltip>
-  )
-}
-
 // The rate a figure was struck at, "1 USD = £0.7862 GBP".
 const fxRate = (base: string, code: string, rate: number) => `1 ${base} = ${symbolFor(code)}${formatRate(rate)} ${code}`
+
+// Today's rate as a unit of the account's currency, "1 GBP = $1.2636 USD":
+// the balance cards read from the account's currency into base.
+const unitRate = (code: string, base: string, rate: number) =>
+  `1 ${code} = ${symbolFor(base)}${(1 / rate).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} ${base}`
+
+/* "Last booked on Oct 28, 2026": the day of the last posting behind a balance -
+   the account's own, or for a summary the accounts under it - and, for an
+   opening balance, only those before the selected period starts. Read from the
+   store when the card opens, so the cells don't each scan the ledger. */
+function LastBooked({ accountId, opening }: { accountId?: string; opening?: boolean }) {
+  const transactions = useStore(s => s.transactions)
+  const accounts = useStore(s => s.accounts)
+  const period = useSelectedPeriod()
+  const before = opening ? period.startDate.slice(0, 10) : undefined
+  if (!accountId) return null
+  const ids = new Set([accountId])
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const x of accounts) if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) { ids.add(x.id); grew = true }
+  }
+  let last = ''
+  for (const t of transactions) {
+    if (!ids.has(t.accountId)) continue
+    const d = t.date.slice(0, 10)
+    if (before && d >= before) continue
+    if (d > last) last = d
+  }
+  return (
+    <FxNote>
+      {last ? `Last booked on ${fmtDate(last)}` : before ? `Nothing booked before ${fmtDate(before)}` : 'Nothing booked yet'}
+    </FxNote>
+  )
+}
 
 /* Hover card for the converted Running balance on a foreign-currency account.
 
@@ -1027,18 +1043,24 @@ const fxRate = (base: string, code: string, rate: number) => `1 ${base} = ${symb
    and says outright that the difference has not reached FX Gain/Loss: an
    unrealized movement shown beside a booked figure is otherwise read as money
    that has already been posted. */
-export function FxBalanceTooltip({ code, base, booked, own, children }: { code: string; base: string; booked: number; /** The balance in its own currency, where it differs from the restatement. */ own?: number; children: React.ReactNode }) {
+export function FxBalanceTooltip({ code, base, booked, own, accountId, children }: {
+  code: string; base: string; booked: number
+  /** The balance in its own currency, where it differs from the restatement. */
+  own?: number
+  /** For "Last booked on": the account whose postings make up the balance. */
+  accountId?: string
+  children: React.ReactNode
+}) {
   const fx = fxStanding(booked, code, own)
   const card = (
     <div className="p-[12px] whitespace-nowrap">
       <FxCardHeader code={code} />
       <FxLines>
-        <FxLine label={`Balance in ${code}`} value={`${fmtMoney(fx.own, symbolFor(code))} ${code}`} />
+        <FxLine label={`Balance in ${code}`} value={fmtMoney(fx.own, symbolFor(code))} />
       </FxLines>
       <FxInset>
-        <FxLine strong label={`Booked in ${base}`} value={`${fmtMoney(fx.booked, symbolFor(base))} ${base}`} />
-        <FxNote>Revalued at {fxRate(base, code, fx.bookedRate)} · {REVALUED_ON}</FxNote>
-        <FxNote small>Carried in the ledger. Column totals add this figure.</FxNote>
+        <FxLine strong label={`Booked in ${base}`} value={fmtMoney(fx.booked, symbolFor(base))} />
+        <LastBooked accountId={accountId} />
       </FxInset>
       {PEGGED_TO_BASE.has(code) ? (
         /* A peg has no unrealized movement to report, and an "Unrealized $ 0.00"
@@ -1049,15 +1071,14 @@ export function FxBalanceTooltip({ code, base, booked, own, children }: { code: 
         </div>
       ) : (
         <FxInset tone="amber">
-          <FxLine label="At today's rate" value={`${fmtMoney(fx.indicative, symbolFor(base))} ${base}`} />
+          <FxLine label="At today's rate" value={fmtMoney(fx.indicative, symbolFor(base))} />
           {/* Deliberately not coloured as a gain or a loss. Whether a rise in the
               base value is one or the other depends on which side of the balance
               sheet the account sits, and the cell does not know. */}
-          <FxLine label="Unrealized difference" value={`${fmtMoneySigned(fx.difference, symbolFor(base))} ${base}`} />
-          <FxAlert>Not yet posted to FX Gain/Loss</FxAlert>
-          <FxNote>{fxRate(base, code, fx.rate)}</FxNote>
+          <FxLine label="Unrealized difference" value={fmtMoneySigned(fx.difference, symbolFor(base))} />
+          <FxNote>{unitRate(code, base, fx.rate)}</FxNote>
           <FxRateType type="mid" label="Mid-market" source={RATE_SOURCE} />
-          <FxNote small>Indicative only, as of {RATE_AS_OF}</FxNote>
+          <FxNote small>As of {RATE_AS_OF_TIME}</FxNote>
         </FxInset>
       )}
     </div>
@@ -1065,34 +1086,55 @@ export function FxBalanceTooltip({ code, base, booked, own, children }: { code: 
   return <Tooltip rich align="right" side="top" content={card}>{children}</Tooltip>
 }
 
-/* Hover card for a single posting on a foreign-currency account.
+/* Hover card for a single posting written in another currency.
 
-   Deliberately shorter than the balance card: a posting is booked once, at the
-   rate in force that day, and is never revalued - only the balance it rolls
-   into is. Offering it an unrealized difference would invent a revaluation that
-   does not apply to it.
-
-   A posting written in another currency carries the rate it was written at and
-   its date, and the card states those: the ledger's Rate column prints that
-   rate, and the card beside it cannot quote the booked one instead. */
-export function FxPostingTooltip({ code, base, booked, rate, on, children }: {
+   A posting is booked once, at the rate its entry took, and keeps it: a later
+   rate change never moves what was booked. Mahad, 2026-11-18: *"The entry
+   keeps its rate. Later rate changes never change it. They show up as the
+   difference in the hover."* So under the booked figure - the line as typed and
+   the base it posted at, with the rate, its kind and its date - sits what the
+   same amount is worth at today's rate and the difference, in the amber block
+   the balance card uses for the same reading. A posting typed in base (no
+   rate of its own) states its booked figure only. */
+export function FxPostingTooltip({ code, base, booked, rate, on, typed, rateType, children }: {
   code: string; base: string; booked: number
-  /** The rate the posting itself was written at, where it carries one. */
+  /** The rate the posting itself was written at (units per one of base), where it carries one. */
   rate?: number
   /** The day it posted, read with `rate`. */
   on?: string
+  /** The line as typed in `code`, where it was. */
+  typed?: number
+  /** The kind of rate the entry took. */
+  rateType?: 'mid' | 'corporate' | 'manual'
   children: React.ReactNode
 }) {
   const fx = fxStanding(booked, code)
-  const own = rate != null
+  const own = rate != null && rate > 0
+  const amount = own && typed != null ? typed : fx.own
+  const kind = rateType ?? 'mid'
+  const kindLabel = kind === 'corporate' ? 'Corporate' : kind === 'manual' ? 'Typed on the entry' : 'Mid-market'
+  const kindSource = kind === 'corporate' ? 'Set by Treasury' : kind === 'manual' ? undefined : RATE_SOURCE
+  const today = amount / fx.rate
   const card = (
     <div className="p-[12px] whitespace-nowrap">
       <FxCardHeader code={code} role={own ? 'line currency' : undefined} />
+      <FxLines>
+        <FxLine label={`Amount in ${code}`} value={fmtMoney(amount, symbolFor(code))} />
+      </FxLines>
       <FxInset>
-        <FxLine strong label={`Booked in ${base}`} value={`${fmtMoney(fx.booked, symbolFor(base))} ${base}`} />
-        <FxNote>At {fxRate(base, code, own ? rate : fx.bookedRate)} · {own && on ? on : REVALUED_ON}</FxNote>
-        <FxNote small>The rate this posting was booked at, not today's.</FxNote>
+        <FxLine strong label={`Booked in ${base}`} value={fmtMoney(booked, symbolFor(base))} />
+        <FxNote>At {own ? unitRate(code, base, rate) : fxRate(base, code, fx.bookedRate)} · {own && on ? on : REVALUED_ON}</FxNote>
+        {own && <FxRateType type={kind === 'corporate' ? 'corporate' : 'mid'} label={kindLabel} source={kindSource} />}
       </FxInset>
+      {own && !PEGGED_TO_BASE.has(code) && (
+        <FxInset tone="amber">
+          <FxLine label="At today's rate" value={fmtMoney(today, symbolFor(base))} />
+          <FxLine label="Unrealized difference" value={fmtMoneySigned(today - booked, symbolFor(base))} />
+          <FxNote>{unitRate(code, base, fx.rate)}</FxNote>
+          <FxRateType type="mid" label="Mid-market" source={RATE_SOURCE} />
+          <FxNote small>As of {RATE_AS_OF_TIME}</FxNote>
+        </FxInset>
+      )}
     </div>
   )
   return <Tooltip rich align="right" side="top" content={card}>{children}</Tooltip>
@@ -1107,17 +1149,17 @@ export function FxPostingTooltip({ code, base, booked, rate, on, children }: {
    The figure is the booked base value; the account's own currency is the second
    reading of that same entry, at the rate it was struck at. Both legs come from
    fxStanding, so the two cards cannot quote different numbers for one row. */
-function bookedBaseCard(code: string, base: string, booked: number) {
+function bookedBaseCard(code: string, base: string, booked: number, accountId?: string, opening?: boolean) {
   const fx = fxStanding(booked, code)
   return (
     <div className="p-[12px] whitespace-nowrap">
       <FxCardHeader code={code} />
       <FxLines>
-        <FxLine label={`In ${code}`} value={`${fmtMoney(fx.own, symbolFor(code))} ${code}`} />
+        <FxLine label={`Balance in ${code}`} value={fmtMoney(fx.own, symbolFor(code))} />
       </FxLines>
       <FxInset>
-        <FxLine strong label={`Booked in ${base}`} value={`${fmtMoney(fx.booked, symbolFor(base))} ${base}`} />
-        <FxNote>Revalued at {fxRate(base, code, fx.bookedRate)} · {REVALUED_ON}</FxNote>
+        <FxLine strong label={`Booked in ${base}`} value={fmtMoney(fx.booked, symbolFor(base))} />
+        <LastBooked accountId={accountId} opening={opening} />
       </FxInset>
     </div>
   )
@@ -1132,8 +1174,15 @@ export function BookedMarker({ code }: { code: string }) {
 
 // Wraps an amount (marker + number) so hovering anywhere on it shows the booked
 // card.
-export function BookedBaseTooltip({ code, base, booked, children }: { code: string; base: string; booked: number; children: ReactNode }) {
-  return <Tooltip rich align="right" side="top" content={bookedBaseCard(code, base, booked)}>{children}</Tooltip>
+export function BookedBaseTooltip({ code, base, booked, accountId, opening, children }: {
+  code: string; base: string; booked: number
+  /** For "Last booked on": the account whose postings make up the balance. */
+  accountId?: string
+  /** An opening balance: only postings before the selected period count. */
+  opening?: boolean
+  children: ReactNode
+}) {
+  return <Tooltip rich align="right" side="top" content={bookedBaseCard(code, base, booked, accountId, opening)}>{children}</Tooltip>
 }
 
 // Currency cell, flag + code chip. The full name lives in the title tooltip
@@ -2819,7 +2868,7 @@ function RunningBalanceCell({ k, a, base, v, structural, padCls, style, q = '' }
           it is the only one on the row that a rate produced. The account's own
           balance is simply what the account holds. */}
       {nonBase
-        ? <FxBalanceTooltip code={a.currencyCode} base={base} booked={v} own={a.isPosting ? currentOwnBalanceOf(a) : undefined}><span className="cursor-help inline-flex items-center justify-end gap-1"><BookedMarker code={a.currencyCode} /><Marked text={fmtBalance(a, v, base)} q={q} /></span></FxBalanceTooltip>
+        ? <FxBalanceTooltip code={a.currencyCode} base={base} booked={v} own={a.isPosting ? currentOwnBalanceOf(a) : undefined} accountId={a.id}><span className="cursor-help inline-flex items-center justify-end gap-1"><BookedMarker code={a.currencyCode} /><Marked text={fmtBalance(a, v, base)} q={q} /></span></FxBalanceTooltip>
         : <Marked text={fmtBalance(a, v, base)} q={q} />}
     </td>
   )
@@ -3212,7 +3261,6 @@ function rowCells({ a, q, order, padCls, comfort = false, base, depth, index, ce
             )}
             {/* Straight after the name, in both views and every preview: which
                 currency the account is held in is part of reading its row. */}
-            {nonBase && <CurrencyBadge code={a.currencyCode} base={base} q={q} />}
             {!inert && <NewBadge id={a.id} />}
             {nameTrail}
           </div>
@@ -3257,7 +3305,7 @@ function rowCells({ a, q, order, padCls, comfort = false, base, depth, index, ce
         if (!vals) return <td key={k} className={cn('pl-4 pr-4', padCls)} style={st(k)} />
         const ob = vals.balance - vals.netChange
         const obText = <Marked text={chartFigureText('openingBalance', a, index, base)} q={q} />
-        return <td key={k} className={cn('pl-4 pr-4 text-right text-sm font-medium whitespace-nowrap', nonBase ? 'text-slate-500' : 'text-slate-700', structural && 'font-semibold', padCls)} style={st(k)}>{nonBase ? <BookedBaseTooltip code={a.currencyCode} base={base} booked={ob}><span className="cursor-help inline-flex items-center justify-end gap-1"><BookedMarker code={a.currencyCode} />{obText}</span></BookedBaseTooltip> : obText}</td>
+        return <td key={k} className={cn('pl-4 pr-4 text-right text-sm font-medium whitespace-nowrap', nonBase ? 'text-slate-500' : 'text-slate-700', structural && 'font-semibold', padCls)} style={st(k)}>{nonBase ? <BookedBaseTooltip code={a.currencyCode} base={base} booked={ob} accountId={a.id} opening><span className="cursor-help inline-flex items-center justify-end gap-1"><BookedMarker code={a.currencyCode} />{obText}</span></BookedBaseTooltip> : obText}</td>
       }
       case 'runningBalance': return <RunningBalanceCell key={k} k={k} a={a} base={base} v={vals ? vals.current : null} structural={structural} padCls={padCls} style={st(k)} q={q} />
       case 'fxBalance': return (

@@ -256,6 +256,9 @@ export const seedCompany: CompanyConfig = {
   // button (AppShell → store.resetToFirstTimeUser), which flips this to false
   // at runtime and clears all accounts to zero for a true blank-slate first run.
   setupComplete: true,
+  // On Treasury's corporate rates where it sets one (EUR, CAD), mid-market for
+  // every other currency. See lib/fxRates.
+  rateSetting: 'corporate',
   // The first year of books, not the current one: the tenant carries FY2024 and
   // FY2025 behind it (see seedPeriods), and this is the field `addEarlierYears`
   // moves when a reader reaches the books further back.

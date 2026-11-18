@@ -325,7 +325,7 @@ function LensRow({ a, padY, base, balance, onOpen }: { a: Account; padY: string;
       </td>
       <td className={cn('px-4 text-right tabular-nums whitespace-nowrap', padY, balance < 0 ? 'text-slate-900' : 'text-success-700')} style={{ fontWeight: 500 }}>
         {!summary && nonBase
-          ? <FxBalanceTooltip code={a.currencyCode} base={base} booked={balance} own={ownBalanceOf({ ...a, balance })}><span className="cursor-help">{fmtCurrency(ownBalanceOf({ ...a, balance }), a.currencyCode)}</span></FxBalanceTooltip>
+          ? <FxBalanceTooltip code={a.currencyCode} base={base} booked={balance} own={ownBalanceOf({ ...a, balance })} accountId={a.id}><span className="cursor-help">{fmtCurrency(ownBalanceOf({ ...a, balance }), a.currencyCode)}</span></FxBalanceTooltip>
           : <span className="text-fg-subtle">-</span>}
       </td>
       <td className={cn('px-4', padY)}><StatusChip status={a.status} /></td>

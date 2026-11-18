@@ -330,6 +330,8 @@ export interface JeLine {
    *  was not the base currency. Each line carries its own (2026-11-14). */
   currency?: string
   rate?: number
+  /** The kind of rate it posted at (mid-market, corporate, typed). */
+  rateType?: 'mid' | 'corporate' | 'manual'
 }
 
 export interface ReconstructedEntry {
@@ -440,7 +442,7 @@ export function reconstructEntry(
     credit: t.credit,
     fxDebit: t.fxDebit,
     fxCredit: t.fxCredit,
-    ...(t.entryCurrency ? { currency: t.entryCurrency, rate: t.entryRate } : {}),
+    ...(t.entryCurrency ? { currency: t.entryCurrency, rate: t.entryRate, rateType: t.entryRateType } : {}),
     description: t.description,
     entity: scenarioParty(t.scenarioId) ?? partyFor(source, hashSeed(t.id)),
     // The dimensions posted with this line. A stored posting carries its own

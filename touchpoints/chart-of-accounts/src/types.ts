@@ -855,6 +855,11 @@ export interface Transaction {
      every posting, like the memo. Absent on a base-currency entry. */
   entryCurrency?: string
   entryRate?: number
+  /* Which rate it posted at: the mid-market rate on its date, Treasury's
+     corporate rate in effect then, or one typed on the entry. Kept with the
+     entry: a later rate change never moves it (Mahad, 2026-11-18). Absent on
+     the postings written before entries recorded it. */
+  entryRateType?: 'mid' | 'corporate' | 'manual'
   fxDebit?: number
   fxCredit?: number
   debit: number
@@ -1053,6 +1058,11 @@ export interface CompanyConfig {
   // by the permissions module; lib/restrictedAccess has the fallback.
   restrictedAccessDefault?: string[]
   baseCurrency: string
+  /* How the company takes exchange rates, as set in the Currencies module: the
+     mid-market rate (read-only), Treasury's corporate rates, or rates typed by
+     hand. Decides the rate a journal entry in another currency starts on and
+     whether it can be typed (Mahad, 2026-11-18). Mid-market when unset. */
+  rateSetting?: 'mid-market' | 'corporate' | 'manual'
   // ISO-2 country of registration. The anchor for anything localised; today it
   // decides the local name for the tax added to a sale.
   country?: string

@@ -128,7 +128,7 @@ function HeaderBalance({ account, base, compact }: { account: Account; base: str
           adds no line box and the block stays the back button's height. */}
       <div className="flex justify-end">
         {nonBase ? (
-          <FxBalanceTooltip code={code} base={base} booked={booked} own={own}>
+          <FxBalanceTooltip code={code} base={base} booked={booked} own={own} accountId={account.id}>
             <span className="cursor-help flex flex-col items-end">
               {headline}
               {!compact && <span className="text-[11px] leading-[14px] text-slate-500 tabular-nums whitespace-nowrap">{withCode(fmtCurrencyExact(booked, base), base)} · base currency</span>}
@@ -874,7 +874,7 @@ function OverviewTab({ account, transactions }: { account: Account; transactions
   // On a non-base account the base-currency figures are converted - prefix the
   // conversion marker whose hover explains the rate (Account Listing parity).
   const withConv = (usdValue: number, node: ReactNode): ReactNode => nonBase
-    ? <BookedBaseTooltip code={account.currencyCode} base={base} booked={usdValue}><span className="cursor-help inline-flex items-center gap-1"><BookedMarker code={account.currencyCode} />{node}</span></BookedBaseTooltip>
+    ? <BookedBaseTooltip code={account.currencyCode} base={base} booked={usdValue} accountId={account.id} opening><span className="cursor-help inline-flex items-center gap-1"><BookedMarker code={account.currencyCode} />{node}</span></BookedBaseTooltip>
     : node
 
   const kpiValue = (key: string): { value: ReactNode; subDetail?: ReactNode } => {
