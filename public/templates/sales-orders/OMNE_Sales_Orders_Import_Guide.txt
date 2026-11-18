@@ -1,0 +1,126 @@
+==================================================================
+OMNE SALES ORDERS IMPORT GUIDE
+Omne Pioneer  ·  Data Imports
+==================================================================
+
+This guide explains how to fill in the Sales Orders import
+template and bring sales orders into Omne. Use the CSV or the
+Excel template, keep the column headers exactly as they are, and
+put one line item on each row.
+
+
+------------------------------------------------------------------
+HOW THE SHEET IS SHAPED
+------------------------------------------------------------------
+
+One sales order can hold several line items, so a sales order spans
+several rows. Fill in the sales order's own columns on its first
+row only, then leave SO Number blank on the rows that follow and
+fill in just the Line columns. A blank SO Number means "another
+line for the sales order above".
+
+Columns marked * are required on every row they apply to. Columns
+marked † are required only in the case named in this guide and in
+the review screen.
+
+
+------------------------------------------------------------------
+QUICK START
+------------------------------------------------------------------
+
+Step 1   Open the template, either the CSV or the Data Entry sheet
+         of the Excel file.
+
+Step 2   Delete the example rows. They show the expected format,
+         and two of them are there on purpose to show what a
+         warning and an error look like.
+
+Step 3   Enter your sales orders. One line item per row, the
+         sales order's own columns on the first row of each group.
+
+Step 4   To put several values in one cell, separate them with a
+         pipe character ( | ). The pipe is above the backslash key
+         on most keyboards, typed with Shift. Example:
+         [ Engine Components | Hydraulics ]
+
+Step 5   Save the file, then upload it in Omne under Company
+         Setup, Data Imports, Sales Orders.
+
+
+------------------------------------------------------------------
+ORDER STATUS
+------------------------------------------------------------------
+
+Order Status accepts exactly the values the module shows:
+
+   Draft
+   Pending Review
+   Released
+   Partially Shipped
+   Shipped
+   Cancelled
+   Partially Cancelled
+
+A legacy word Omne can place is imported as its Omne value and
+flagged as a warning, so the row still imports and you can see
+what changed. A word Omne cannot place is an error on that cell,
+and the review screen lists the values it will accept.
+
+CONDITIONAL COLUMNS
+
+Currency Code is required only when your company trades in more
+than one currency.
+
+Ship By is required on Released and Shipped.
+
+Line / Price Per Unit may be left blank to take the customer price
+list. Blank with no price-list entry drops that line.
+
+Source Quote No is optional. When it is filled in, it must name a
+quote that already exists in Omne.
+
+------------------------------------------------------------------
+ERRORS AND WARNINGS
+------------------------------------------------------------------
+
+After you upload, Omne checks every row and shows you the sheet
+before anything is saved.
+
+A warning never blocks an import. It says the row will import with
+a value that differs from what the file said, for example a legacy
+status word Omne maps onto its own.
+
+An error blocks its own row and nothing else. Fix the cell in the
+review screen, or drop the row and import the rest. Every flagged
+cell explains itself when you hover it, and tells you what to
+enter instead.
+
+
+------------------------------------------------------------------
+FIXING AN IMPORT AFTERWARDS
+------------------------------------------------------------------
+
+Every import is kept. Open Company Setup, Data Imports,
+Sales Orders, then open the import you want. The rows are listed
+with what happened to each one, and the rows that still need a fix
+are filtered by "Needs a fix".
+
+Download those rows, correct them in the file, then use "Fix and
+re-import" on the same page. The rows that pass this time fold
+into that same import, so the history stays one entry per file
+rather than growing a new entry per attempt.
+
+
+------------------------------------------------------------------
+WHAT THIS TEMPLATE DOES NOT DO
+------------------------------------------------------------------
+
+It does not price a sales order for you beyond the pricing rules and
+the discounts you name in the sheet, and it does not send anything
+to a customer. A sales order brought in here lands in the status the
+file gave it, and everything else is done in the Sales Order module
+in Omne.
+
+==================================================================
+End of guide  ·  OMNE_Sales_Orders_Import_Template
+==================================================================

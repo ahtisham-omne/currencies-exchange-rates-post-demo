@@ -1,0 +1,3 @@
+Role Name *,Description,Role Owner,Assigned Users
+Warehouse Auditor,"Reviews inventory, receiving, and cycle count records for audits.",alex.johnson@acme.com,priya.sharma@acme.com|marcus.lee@acme.com
+Field Service Technician,Handles assigned field jobs and captures proof of delivery.,,dana.wu@acme.com

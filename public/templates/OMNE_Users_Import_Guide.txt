@@ -1,0 +1,299 @@
+==================================================================
+OMNE USERS IMPORT GUIDE
+Omne Pioneer  ·  User Access Control
+==================================================================
+
+This guide explains how to fill in the Users import CSV. It covers
+the steps, every column, and what the import does for a new user,
+an existing user, and an archived user.
+
+The CSV has 3 required columns and 26 optional ones.
+
+
+------------------------------------------------------------------
+QUICK START
+------------------------------------------------------------------
+
+Step 1   Open the CSV. The first row is the column headers. Each
+         row below it is one user.
+
+Step 2   Two example rows are included to show the expected
+         format.
+         Delete both before you import.
+
+Step 3   Fill in your users. The three required columns are marked
+         with an asterisk and cannot be left blank:
+         First Name, Last Name, Email.
+
+Step 4   License, Status, and Invite are optional. What a blank
+         value means depends on whether the user is new or already
+         exists. See How Users Are Matched below.
+
+Step 5   For columns that can hold a list, such as Assigned Roles,
+         Languages, and Citizenships, separate each value with a
+         pipe
+         character ( | ). The pipe is on most keyboards above the
+         backslash key, typed with Shift. Example:
+         [ Administrator | Warehouse Manager ]
+
+Step 6   Save the file, then upload it in Omne under Company
+         Setup,
+         Data Imports, Users.
+
+
+------------------------------------------------------------------
+HOW USERS ARE MATCHED
+------------------------------------------------------------------
+
+Omne matches each row by email, then decides whether to create a
+new user or update an existing one. The email itself is the
+matching key and is never changed by an import. A few columns
+behave
+differently depending on the case, so each case is spelled out
+below.
+
+For a new user (email not in Omne)
+----------------------------------
+A new user is created in the Draft state.
+
+  License   Blank means No License. Enter Full Access or Field
+            User to give one.
+  Status    New users always start as Draft, so a value here is
+            not applied.
+  Invite    Enter Yes to mark the user to be invited. No or blank
+            leaves them in Draft.
+  Roles     Attached, but they take effect only once the user has
+            a license that covers them.
+
+After the import, you review your new drafts and confirm who to
+invite. You can invite everyone, or leave some in Draft.
+
+For an existing user (email already in Omne)
+--------------------------------------------
+The matching user is updated with the values you provide. A blank
+cell leaves the existing value unchanged.
+
+  License   Blank keeps their current license. Enter a value only
+            to change it.
+  Status    Left as it is now. The import never changes a user's
+            status.
+  Invite    Not applied, since the user already exists.
+
+For an archived user
+--------------------
+The email belongs to an archived user. The row is flagged, and
+Omne asks whether you want to restore that user into the Draft
+state. If you restore them, they join your other new drafts, and
+after import you choose whether to send an invitation.
+
+
+------------------------------------------------------------------
+COPYING FROM ANOTHER SYSTEM
+------------------------------------------------------------------
+
+This template is plain text, so you can copy and paste from an
+export of your old system. Line your old columns up with these
+columns, fill in any that your old system did not have, and paste.
+Enter phone numbers as you already have them, including any plus
+sign or country code. You do not need to reformat or split them.
+
+
+------------------------------------------------------------------
+MORE THAN THE COLUMNS ALLOW
+------------------------------------------------------------------
+
+These columns cover the details most people bring in: up to three
+phone numbers, one personal email, a home and a work address, and
+one emergency contact. If a user has more than that, import what
+fits here, then add the rest in the user profile afterwards.
+
+
+------------------------------------------------------------------
+FILE LIMITS
+------------------------------------------------------------------
+
+Upload an Excel or CSV file up to 10 MB. Omne reads a single
+sheet.
+If you are using the Excel template, keep only the data sheet
+before
+you upload.
+
+
+------------------------------------------------------------------
+FIELD REFERENCE
+------------------------------------------------------------------
+
+Required columns
+----------------
+
+First Name  The user's given name.
+
+Last Name  The user's family name. Joins with the first name to
+           form the full name shown across Omne.
+
+Email  The sign-in address and the matching key. A new email
+       creates a user, a matching email updates that user, and the
+       email is never changed by an import.
+
+Access and state
+-----------------
+
+License  What the user can do and which roles they can hold. New
+         user: blank means No License. Existing user: blank keeps
+         their current license. Values: Full Access, Field User,
+         or No License.
+
+Status  Managed by Omne, not set from the file. New user: always
+        starts as Draft. Existing user: kept as it is. The column
+        is included so files exported from Omne re-import cleanly,
+        and blank is always safe.
+
+Invite  New users only. Enter Yes to mark the user to be invited,
+        or No or blank to leave them in Draft. Invitations are
+        sent in the review step after import, where you can still
+        change your choice.
+
+Assigned Roles  Roles the user should hold. Each name must match a
+                role that already exists in Omne. Not case
+                sensitive. Separate multiple roles with a pipe
+                character ( | ). Example:
+                [ Administrator | Warehouse Manager ]
+
+Identity
+--------
+
+Middle Name  The user's middle name.
+
+Username  A short sign-in handle. Must be unique if provided. The
+          user can set one later if left blank.
+
+Preferred Name  The name the user goes by. Used in system
+                messages.
+
+Nickname  An informal name shown on the profile.
+
+Gender  The user's gender. Free text.
+
+Date of Birth  Enter the date in year-month-day order: YYYY-MM-DD.
+               For example 1992-03-15. This one order is read the
+               same everywhere, so the day and the month are never
+               confused. Omne also exports dates this way, so a
+               file
+               exported from Omne, edited, and imported back needs
+               no change.
+
+Pronouns  The user's pronouns. Free text. Example: He/Him
+
+About  A short bio shown on the profile.
+
+Work
+----
+
+
+Job Title  The user's job title. Free text.
+
+Notes  Internal notes about the user. Free text.
+
+Contact
+-------
+
+Mobile  The user's mobile number, entered as you have it,
+        including
+        any plus sign or country code. Kept as text.
+
+Work Phone  The user's work number, same format as Mobile.
+
+Home Phone  The user's home number, same format as Mobile.
+
+Personal Email  A non-sign-in email on file. Not used to log in.
+
+Home Address  The user's home address on a single line. No need to
+              split the street, city, or postcode into columns.
+
+Work Address  The user's work address on a single line.
+
+Emergency contact
+-----------------
+
+Emergency Contact Name  Full name of the emergency contact.
+
+Emergency Contact Relationship  How they are related to the user.
+
+Emergency Contact Phone  Their phone number, entered as you have
+                         it.
+                         Kept as text.
+
+Other
+-----
+
+Languages  Languages the user speaks. One value, or several
+           separated with a pipe character ( | ).
+           Example: [ English | Hindi ]
+
+Citizenships  Countries the user holds citizenship in. One value,
+              or
+              several separated with a pipe character ( | ).
+              Example: [ United States | Canada ]
+
+
+------------------------------------------------------------------
+VALID VALUES
+------------------------------------------------------------------
+
+License
+-------
+Full Access  Full working access, and the ability to hold any
+             role.
+             Uses one license seat.
+
+Field User  A lighter license for field work. Uses one license
+            seat. Can hold field user roles, but not roles that
+            require Full Access.
+
+No License  Creates the user but does not let them act in Omne,
+            and
+            uses no seat. Cannot hold a role until given a
+            license.
+
+(blank)  New user: treated as No License. Existing user: keeps
+         their current license.
+
+Status
+------
+Active  A current, active user.
+
+Deactivated  A user who cannot sign in and has no access. Their
+             license is removed and they are not billed. Roles and
+             settings are kept.
+
+(blank)  Safe on every row. New users start as Draft; existing
+         users keep their current status.
+
+Status is managed by Omne. Draft, Invite Sent, Invite Expired, and
+Archived are all set by Omne through the invitation and user
+lifecycle, not from this file.
+
+Invite
+------
+Yes  Marks a new user to be invited. The invitation is sent in the
+     review step after import.
+
+No  Leaves a new user in Draft.
+
+(blank)  Same as No. You decide in the review step after import.
+
+Invite applies to new users only. An existing user is not
+affected.
+
+Lists (Assigned Roles, Languages, Citizenships)
+-----------------------------------------------
+These columns can hold more than one value. Separate each value
+with
+a pipe character ( | ), found above the backslash key using Shift.
+Example: [ Administrator | Warehouse Manager ]. For Assigned
+Roles,
+each name must match a role that already exists in your Omne
+instance, and matching is not case sensitive. The list of
+available
+roles for your instance will be provided separately.
+

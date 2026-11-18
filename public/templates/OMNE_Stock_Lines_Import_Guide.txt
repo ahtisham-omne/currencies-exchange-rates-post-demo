@@ -1,0 +1,88 @@
+==================================================================
+OMNE STOCK LINES IMPORT GUIDE
+Omne Pioneer  ·  Data Imports  ·  Physical Inventory
+==================================================================
+
+This guide explains how to fill in the Stock Lines import file for
+Non-Serialized items. It covers the steps, every column, and how
+rows are added.
+
+The file has 4 required columns and 2 optional ones.
+
+
+------------------------------------------------------------------
+QUICK START
+------------------------------------------------------------------
+
+Step 1   Enter one row per stock line on the Data Entry sheet,
+         starting under the two example rows.
+
+Step 2   Fill every column that ends in *. Use the exact values on
+         the Valid Values sheet.
+
+Step 3   Save the file, then in Data Imports open Physical
+         Inventory, choose the Non-Serialized tab and Import.
+
+Step 4   Choose Review Data, fix any errors in the review, then
+         Start Import to add the stock.
+
+
+------------------------------------------------------------------
+HOW ROWS ARE ADDED
+------------------------------------------------------------------
+
+Items      Every row names its item by Part Number. Only
+           Non-Serialized items can be imported on this tab.
+
+Location   Stock is added to the location on the row. It must
+           already exist in Omne.
+
+
+------------------------------------------------------------------
+IMPORTANT NOTES
+------------------------------------------------------------------
+
+Errors     Rows with errors are not added until you fix them in
+           the review.
+
+Warnings   Rows with warnings are added as the message says, for
+           example without a reason.
+
+Headers    Do not rename, reorder or remove the header row.
+           Required columns end in *.
+
+
+------------------------------------------------------------------
+COLUMNS
+------------------------------------------------------------------
+
+Part Number (required)
+   The item the stock is added to. Must be a Non-Serialized item in
+   Item Library.
+   Valid values: See Items on the Valid Values sheet
+   Example: P-00988
+
+Qty (required)
+   Quantity to add, in the row's unit of measure. Must be more than
+   zero.
+   Example: 100
+
+UoM (required)
+   Unit of measure for the quantity.
+   Valid values: EA, Boxes, Carton
+   Example: EA
+
+Price
+   Unit price, zero or more. Optional.
+   Example: 24.50
+
+Location (required)
+   The location the stock is added to. Must be a location Omne holds.
+   Valid values: See Location on the Valid Values sheet
+   Example: Zone A-01
+
+Reason
+   Why stock is being added. Optional; an unrecognised reason is left
+   blank.
+   Valid values: System Startup, Found Item
+   Example: System Startup
