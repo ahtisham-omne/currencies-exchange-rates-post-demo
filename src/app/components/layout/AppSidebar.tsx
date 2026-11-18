@@ -80,6 +80,8 @@ const navItems: NavItem[] = [
     children: [
       { label: "Overview", path: "/supply-chain" },
       { label: "Purchase Orders", path: "/supply-chain/purchase-orders" },
+      // The RMA app (touchpoints/rma): its returns list and each return's page.
+      { label: "Vendor Returns", path: "/supply-chain/rma" },
       { label: "Receiving Docs", path: "/supply-chain/receiving-documents" },
       { label: "Emails", path: "/supply-chain/emails" },
     ],

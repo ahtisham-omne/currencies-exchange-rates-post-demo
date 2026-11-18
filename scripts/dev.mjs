@@ -15,7 +15,7 @@ for (const t of touchpoints) {
   if (builtHash(t) !== sourceHash(t)) {
     console.warn(`[${t.slug}] built copy is out of date: run \`npm run touchpoints:build\` and commit public/touchpoint-apps/${t.slug}`);
   }
-  children.push(run(t.slug, viteBin(t.dir), ["--base", t.base, "--port", String(t.port), "--strictPort"], t.dir));
+  children.push(run(t.slug, viteBin(t.dir), [...t.configArgs, "--base", t.base, "--port", String(t.port), "--strictPort"], t.dir));
   live.push(t.slug);
 }
 

@@ -110,3 +110,26 @@ To pull later design changes:
 git subtree pull --prefix=touchpoints/user-access-control https://github.com/ahtisham-omne/User-Access-Control.git main --squash
 npm run touchpoints:build -- user-access-control
 ```
+
+### Vendor Returns (RMA)
+
+Vendor Returns is the RMA app from [`rma-web-builder`](https://github.com/ahtisham-omne/rma-web-builder), added as a squashed subtree in `touchpoints/rma/`. It sits under Supply Chain Management, after Purchase Orders, as the Omne navigation places it:
+
+- Shell paths are `/supply-chain` plus the app's own path: `/supply-chain/rma` (the returns list) and `/supply-chain/rma/<RMA number>` (a return's page).
+- **It is a TanStack Start app**, unlike the other touchpoints. Its `vite.config.ts` (left as the design repo ships it, so Lovable keeps running it) builds a server, while the shell serves every module as static files. So the shell runs and builds it as a single-page app instead:
+  - `vite.touchpoint.config.ts`, named by `"viteConfig"` in `touchpoints.json`, which `npm run dev` and `npm run touchpoints:build` pass to Vite.
+  - `index.html` and `src/touchpoint.tsx`, which render the same routes under the shell's base path.
+  - Upstream's own `vite dev` and build don't use them.
+- `src/embedding.ts` holds everything it needs to run inside the shell:
+  - Its own sidebar is hidden.
+  - Its "Supply Chain Management" crumb opens the shell's Supply Chain overview, standing in for the app's own overview.
+  - A return opened in a new tab gets the shell's page.
+- A refund payment opened from a return's Linked Records goes to the app's own `/payments-v2` path. The shell sends that, and `/prepayments`, to Vendor Payments.
+- Its currency and exchange-rate touchpoints aren't added yet. Its sample data is in USD.
+
+To pull later design changes:
+
+```sh
+git subtree pull --prefix=touchpoints/rma https://github.com/ahtisham-omne/rma-web-builder.git main --squash
+npm run touchpoints:build -- rma
+```

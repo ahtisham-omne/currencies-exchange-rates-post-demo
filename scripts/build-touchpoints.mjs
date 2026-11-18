@@ -19,7 +19,7 @@ for (const t of touchpoints.filter((t) => only.length === 0 || only.includes(t.s
     console.error(`[${t.slug}] dependencies not installed (run \`npm run touchpoints:install\`)`);
     process.exit(1);
   }
-  const code = await run(t.slug, viteBin(t.dir), ["build", "--base", t.base, "--outDir", t.builtDir, "--emptyOutDir"], t.dir).done;
+  const code = await run(t.slug, viteBin(t.dir), ["build", ...t.configArgs, "--base", t.base, "--outDir", t.builtDir, "--emptyOutDir"], t.dir).done;
   if (code !== 0) process.exit(code);
   writeFileSync(path.join(t.builtDir, HASH_FILE), sourceHash(t) + "\n");
 }

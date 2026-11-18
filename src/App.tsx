@@ -36,6 +36,10 @@ const App = () => (
                   {touchpointPrefixes.map((prefix) => (
                     <Route key={prefix} path={`${prefix}/*`} element={null} />
                   ))}
+                  {/* Vendor Returns (RMA) opens a return's refund payment at the
+                      Vendor Invoicing app's own paths; these are its pages here. */}
+                  <Route path="/payments-v2" element={<Navigate to="/accounting/vendor-invoicing/payments-v2" replace />} />
+                  <Route path="/prepayments" element={<Navigate to="/accounting/vendor-invoicing/prepayments" replace />} />
                   <Route path="*" element={<Navigate to="/accounting" replace />} />
                 </Route>
               </Routes>

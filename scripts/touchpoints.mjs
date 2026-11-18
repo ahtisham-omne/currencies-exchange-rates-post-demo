@@ -1,5 +1,5 @@
 // Shared helpers for running the touchpoint apps that live under /touchpoints.
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -16,6 +16,9 @@ export const touchpoints = JSON.parse(
   dir: path.join(root, "touchpoints", t.slug),
   base: `/touchpoint-apps/${t.slug}/`,
   builtDir: path.join(root, "public", "touchpoint-apps", t.slug),
+  // A touchpoint whose own Vite config doesn't build a static app (RMA is a
+  // TanStack Start app) names the one the shell runs and builds it with.
+  configArgs: t.viteConfig ? ["--config", t.viteConfig] : [],
 }));
 
 export const viteBin = (dir) => path.join(dir, "node_modules", ".bin", "vite");
@@ -25,13 +28,32 @@ export const isInstalled = (t) => existsSync(viteBin(t.dir));
 /** Written beside a built copy: the fingerprint of the source it was built from. */
 export const HASH_FILE = ".source-hash";
 
-/** A fingerprint of a touchpoint's source (everything but installs and build output). */
+/* What git ignores in a touchpoint is not its source: installs, build output, a
+   lockfile its repo doesn't keep (RMA's package-lock.json), a framework's
+   generated folders (TanStack Start's .tanstack/ and .output/). Ignored folders
+   come back whole ("node_modules/"), so this stays quick. */
+function gitIgnored(dir) {
+  try {
+    const out = execFileSync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z", "--", "."], {
+      cwd: dir,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return new Set(out.split("\0").filter(Boolean).map((p) => path.join(dir, p)));
+  } catch {
+    return new Set();
+  }
+}
+
+/** A fingerprint of a touchpoint's source (everything but installs, build output and what git ignores). */
 export function sourceHash(t) {
   const hash = createHash("sha1");
+  const ignored = gitIgnored(t.dir);
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (["node_modules", "dist", ".git"].includes(entry.name)) continue;
       const full = path.join(dir, entry.name);
+      if (ignored.has(full)) continue;
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile()) hash.update(path.relative(t.dir, full)).update(readFileSync(full));
     }

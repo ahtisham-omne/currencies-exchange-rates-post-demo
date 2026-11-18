@@ -34,6 +34,7 @@ import { SystemSettingsModal } from "@/app/components/SystemSettingsModal";
 import { Input } from "@/app/components/ui/input";
 import { Button } from "@/app/components/ui/button";
 import { palette, accent } from "@/styles/tokens";
+import { embedded } from "@/embedding";
 
 export type AppView =
   | "overview"
@@ -754,7 +755,8 @@ const BREADCRUMB_SECTION: Record<AppView, string> = {
 export function Layout({ children, activeView, onViewChange, record }: LayoutProps) {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      <Sidebar activeView={activeView} onViewChange={onViewChange} />
+      {/* Inside the shell, its sidebar stands in for this one. */}
+      {!embedded && <Sidebar activeView={activeView} onViewChange={onViewChange} />}
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col relative z-0">
         <TopBar
           section={BREADCRUMB_SECTION[activeView]}
