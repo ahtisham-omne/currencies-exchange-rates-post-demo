@@ -145,7 +145,8 @@ import {
   findUomById,
   multiplierWithinSet,
 } from '../../data/uomSets';
-import { useDocCurrency, useDocMoney } from "@/app/components/currency/docCurrencyContext";
+import { useDocCurrency, useDocMoney, useDocOtherText } from "@/app/components/currency/docCurrencyContext";
+import { DocMoney } from "@/app/components/currency/DocCurrency";
 import { localTodayIso } from "@/app/currency/soFx";
 import { restateDesign } from "./soMoney";
 const UNITS_OF_MEASURE = UOM_SETS.discrete;
@@ -321,9 +322,11 @@ function QtyUomCapsule({
 export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Step2Props) {
   const { inventory } = useSOStore();
   /* The order will be in the customer's currency (CreateSOModal provides
-     it): catalog list prices, written in USD, are shown and added in it at
-     today's mid-market rate, the rate the new order takes. */
+     it): catalog list prices, written in USD, are added in it at today's
+     mid-market rate, the rate the new order takes, and shown in base with
+     the customer's amount on hover. */
   const formatCurrency = useDocMoney();
+  const otherText = useDocOtherText();
   const { currency } = useDocCurrency();
   const listPrice = useCallback((usd: number) => restateDesign(usd, currency, localTodayIso()), [currency]);
 
@@ -871,9 +874,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                           )}
                         </div>
                         <div className="text-right shrink-0">
-                          <span style={{ fontSize: 'var(--text-caption)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }}>
-                            {formatCurrency(listPrice(product.unitPrice))}
-                          </span>
+                          <DocMoney value={listPrice(product.unitPrice)} style={{ fontSize: 'var(--text-caption)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }} />
                           <span style={{ fontSize: 'var(--text-micro)', color: 'var(--foreground)', opacity: 0.4, marginLeft: 4 }}>/ {findUomById(getPrimaryUomForProduct(product))?.name || 'EA'}</span>
                         </div>
                       </div>
@@ -1258,7 +1259,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                               />
                               <div className="flex-1 text-right min-w-0">
                                 <div className={`truncate`} style={{ fontSize: sidebarWidth === 'narrow' ? 'var(--text-caption)' : 'var(--text-label)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }}>
-                                  {formatCurrency(item.total)}
+                                  <DocMoney value={item.total} />
                                 </div>
                                 <div className="truncate" style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted-foreground)' }}>
                                   {itemUomLabel}
@@ -1332,9 +1333,15 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                 Subtotal
               </span>
               <span style={{ fontSize: 20, fontWeight: 600, color: 'var(--primary)' }}>
-                {formatCurrency(subtotal)}
+                <DocMoney value={subtotal} />
               </span>
             </div>
+            {/* The order's own figure, in the customer's currency at today's rate. */}
+            {otherText(subtotal) && (
+              <div className="text-right tabular-nums" style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 2 }}>
+                {otherText(subtotal)} {currency} · customer currency, at today's rate
+              </div>
+            )}
           </div>
         )}
       </div>

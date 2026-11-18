@@ -154,6 +154,16 @@ export interface SOVersion {
    *  shipped, or a version on a Cancelled/Archived order. Unset (or
    *  true) means the version is duplicable. */
   canDuplicate?: boolean;
+  /** The currency and rate this version took (see store.tsx
+   *  `stampVersionRate`): kept when a version is started or reverted to, so
+   *  "Use locked rate from V{n}" knows V{n}'s rate. Seeded versions have
+   *  none and read the order's. */
+  currency?: string;
+  exchangeRate?: number;
+  rateType?: RateType;
+  rateDate?: string;
+  rateEdited?: boolean;
+  settlementCurrency?: string;
 }
 
 /* Point of contact captured on creation + when changing customer.
@@ -196,6 +206,9 @@ export interface SalesOrder {
   rateDate?: string;
   /** A corporate rate typed on this order instead of finance's. */
   rateEdited?: boolean;
+  /** "You receive": the currency the order is settled in. The base currency
+   *  unless set in the order's currency configuration. */
+  settlementCurrency?: string;
   paymentTerms: string;
   shippingAddress: string;
   /** Bill-to address captured at creation. Optional because older

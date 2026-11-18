@@ -19,8 +19,10 @@ import { EmptyPlaceholder } from "@/app/components/shared/EmptyPlaceholder";
 import type { SalesOrder, SOLine } from "./types";
 import { Button } from "./ui/Button";
 import { itemListPrice } from "./soMoney";
-import { useDocCurrency, useDocMoney } from "@/app/components/currency/docCurrencyContext";
+import { useDocCurrency, useDocMoney, useDocOtherText, useDocView } from "@/app/components/currency/docCurrencyContext";
+import { DocMoney } from "@/app/components/currency/DocCurrency";
 import { formatAmount, moneyPrefix } from "@/app/currency/money";
+import { roundTo } from "@/app/currency/soFx";
 import { getLineItemImage } from "./lineItemImage";
 import "./line-table-responsive.css";
 
@@ -119,52 +121,65 @@ function PriceCapsule({
   requiresVersionFirst?: boolean;
   onRequestVersionConfirm?: (newPrice: number, applyCallback: () => void) => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(String(price));
-  /* In the order's currency (spec 4.3): its symbol or code, and its minor unit. */
+  /* Prices are kept in the order's currency (spec 4.3) and shown, and typed,
+     in the page's: base by default, the customer's with the header toggle.
+     A price typed in base is converted at the order's rate and rounded to the
+     customer currency's minor unit; an untouched input keeps the stored
+     price (a round trip through base would nudge it). */
   const { currency } = useDocCurrency();
+  const { inBase, viewCurrency, toView, fromView, decimals } = useDocView();
   const money = useDocMoney();
-  const prefix = moneyPrefix(currency).trim();
+  const otherText = useDocOtherText();
+  const prefix = moneyPrefix(viewCurrency).trim();
+  const priceText = inBase ? toView(price).toFixed(decimals) : String(price);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(priceText);
   const [showPriceConfirm, setShowPriceConfirm] = useState(false);
   const [pendingPrice, setPendingPrice] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (!editing) setDraft(String(price)); }, [price, editing]);
+  useEffect(() => { if (!editing) setDraft(priceText); }, [priceText, editing]);
   useEffect(() => { if (editing && inputRef.current) inputRef.current.select(); }, [editing]);
   const openScopeModal = (parsed: number) => {
     setPendingPrice(parsed);
     setShowPriceConfirm(true);
   };
   const commit = () => {
-    const parsed = parseFloat(draft);
-    if (!isNaN(parsed) && parsed >= 0 && parsed !== price && onChangePrice) {
+    const parsed = draft === priceText ? price : parseFloat(draft);
+    const next = draft === priceText || !inBase ? parsed : roundTo(currency, fromView(parsed));
+    if (!isNaN(next) && next >= 0 && next !== price && onChangePrice) {
       if (requiresVersionFirst && onRequestVersionConfirm) {
         // Defer the scope modal until the user has consented to the
         // version bump. Parent opens AutoVersionConfirm; the apply
         // callback below runs only on confirm.
-        onRequestVersionConfirm(parsed, () => openScopeModal(parsed));
+        onRequestVersionConfirm(next, () => openScopeModal(next));
       } else {
-        openScopeModal(parsed);
+        openScopeModal(next);
       }
     } else {
-      setDraft(String(price));
+      setDraft(priceText);
     }
     setEditing(false);
   };
   const formatted = money(price);
+  const other = otherText(price);
+  const shownAmount = formatAmount(toView(price), viewCurrency);
   const isCan = !!cancelled;
   const uomLabel = UOM_OPTIONS.find(u => u.code === unit)?.label || unit;
 
   return (
-    <div className={`${isCan ? "opacity-50" : ""}`} style={{ position: "relative", display: "inline-block", width: editable || editing ? 110 : "auto" }}>
+    <div className={`${isCan ? "opacity-50" : ""}`} style={{ position: "relative", display: "inline-block", width: editable || editing ? 124 : "auto" }}>
       {/* Read-only state — Shipment-style inline display: bold black price +
           small slimmer gray UOM label on the same baseline. Capsule chrome
           and absolutely-positioned UOM stay in editable mode. */}
       {!editing && !editable ? (
         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 4, fontFamily: "Inter, system-ui, sans-serif" }}>
-          <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1 }}>{prefix}</span>
-          <span className={isCan ? "line-through" : ""} style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", lineHeight: 1, whiteSpace: "nowrap" }}>
-            {formatAmount(price, currency)}
-          </span>
+          {/* The other currency on hover. */}
+          <DocMoney value={price}>
+            <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1, marginRight: 4 }}>{prefix}</span>
+            <span className={isCan ? "line-through" : ""} style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", lineHeight: 1, whiteSpace: "nowrap" }}>
+              {shownAmount}
+            </span>
+          </DocMoney>
           <span style={{ fontSize: 11, fontWeight: 500, color: "var(--muted-foreground)", lineHeight: 1, whiteSpace: "nowrap" }}>
             {uomLabel}
           </span>
@@ -182,7 +197,7 @@ function PriceCapsule({
           <input ref={inputRef} type="text" inputMode="decimal" value={draft}
             onChange={e => { const v = e.target.value; if (/^[0-9]*\.?[0-9]*$/.test(v) || v === '') setDraft(v); }}
             onBlur={commit}
-            onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(String(price)); setEditing(false); } }}
+            onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(priceText); setEditing(false); } }}
             className="bg-transparent text-foreground outline-none"
             /* `flex: 1, minWidth: 0` lets the input shrink and grow inside
                the capsule so a long value scrolls within the field instead
@@ -191,7 +206,7 @@ function PriceCapsule({
         </div>
       ) : (
         <button
-          onClick={editable ? () => { setDraft(String(price)); setEditing(true); } : undefined}
+          onClick={editable ? () => { setDraft(priceText); setEditing(true); } : undefined}
           style={{
             display: "inline-flex", alignItems: "center", gap: 1,
             width: "100%", height: editable ? 30 : "auto",
@@ -201,7 +216,7 @@ function PriceCapsule({
             cursor: editable ? "text" : "default", transition: "all 100ms",
           }}
           tabIndex={editable ? 0 : -1}
-          title={money(price)}
+          title={other ? `${formatted} · ${other.replace(/^≈ /, "")} ${inBase ? "customer currency" : "base currency"}` : formatted}
         >
           <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>{prefix}</span>
           {/* Long values truncate with an ellipsis inside the capsule
@@ -209,7 +224,7 @@ function PriceCapsule({
              attribute on the parent button surfaces the full value on
              hover. */}
           <span className={isCan ? "line-through" : ""} style={{ fontSize: 13, fontWeight: 600, color: "#1F2937", lineHeight: 1, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>
-            {formatAmount(price, currency)}
+            {shownAmount}
           </span>
         </button>
       )}
@@ -243,7 +258,7 @@ function PriceCapsule({
               toast.success("Price updated for this order only");
             }
           }}
-          onCancel={() => { setShowPriceConfirm(false); setPendingPrice(null); setDraft(String(price)); }}
+          onCancel={() => { setShowPriceConfirm(false); setPendingPrice(null); setDraft(priceText); }}
         />
       )}
     </div>
@@ -860,13 +875,14 @@ export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDel
   const isPendingConfirm = so.status === "Pending Review";
   // QTY/UOM first, then PPU
   // Wider PPU + TOTAL columns so full numbers fit ("$1,400,000.00" needs
-  // ~140px). At 100s of billions the cell still truncates with `…` and
-  // shows the full number on hover via the `title` attribute.
+  // ~140px; amounts in base, the default view, run longer:
+  // "₨13,424,700.00"). At 100s of billions the cell still truncates with
+  // `…` and shows the full number on hover via the `title` attribute.
   /* QTY / UOM was 100px which clipped the dropdown the moment the user
      picked a longer-label unit (Pallet, Bundle, Carton). Bumped to 140px
      so the capsule sits with breathing room. The description column
      soaks up the difference. */
-  const cols = [{ label: "LINE ITEMS", align: "text-left", width: "" }, { label: "QTY / UOM", align: "text-left", width: "w-[132px]" }, { label: "PRICE PER UNIT", align: "text-left", width: "w-[132px]" }, { label: "TOTAL", align: "text-right", width: "w-[124px]" }, { label: "ALLOCATED", align: "text-right", width: "w-[90px]" }, { label: "SHIPPED", align: "text-right", width: "w-[90px]" }];
+  const cols = [{ label: "LINE ITEMS", align: "text-left", width: "" }, { label: "QTY / UOM", align: "text-left", width: "w-[132px]" }, { label: "PRICE PER UNIT", align: "text-left", width: "w-[148px]" }, { label: "TOTAL", align: "text-right", width: "w-[140px]" }, { label: "ALLOCATED", align: "text-right", width: "w-[90px]" }, { label: "SHIPPED", align: "text-right", width: "w-[90px]" }];
   const firstMap = new Map<string, number>();
   const dupMap = new Map<number, number>();
   so.lines.forEach((l, i) => { if (firstMap.has(l.itemCode)) dupMap.set(i, firstMap.get(l.itemCode)!); else firstMap.set(l.itemCode, i + 1); });

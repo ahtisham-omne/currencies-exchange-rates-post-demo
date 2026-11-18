@@ -1213,8 +1213,10 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
              mode actually fills the screen instead of leaving slate
              gutters on either side. */
           <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column" }}>
-            {/* The new order is in the customer's currency (spec 4.3), at today's rate. */}
-            <DocCurrencyProvider currency={orderCurrency} fx={isBaseCurrency(orderCurrency) ? null : todayFx(orderCurrency)} rateDate={localTodayIso()} dateLabel="today" role="customer currency">
+            {/* The new order is in the customer's currency (spec 4.3), at today's
+                rate. Shown in base, as the rest of Sales Orders is, with the
+                customer's amount on hover. */}
+            <DocCurrencyProvider currency={orderCurrency} fx={isBaseCurrency(orderCurrency) ? null : todayFx(orderCurrency)} rateDate={localTodayIso()} dateLabel="today" role="customer currency" view="base">
               <CreateSOStep2
                 lineItems={selectedItems}
                 onLineItemsChange={setSelectedItems}

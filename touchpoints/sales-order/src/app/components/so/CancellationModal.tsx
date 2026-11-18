@@ -15,7 +15,7 @@ import { Button } from "./ui/Button";
 import { DisabledCTATooltip } from "./DisabledCTATooltip";
 import { CancellationConfirmDialog, useDiscardGuard } from "./ui/DiscardChangesDialog";
 import type { SalesOrder, SOLine, CancellationReason, LineCancelAction } from "./types";
-import { formatMoney } from "@/app/currency/money";
+import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
 
 /* ═══════════════════════════════════════════════════════
    Constants & Helpers
@@ -89,6 +89,8 @@ interface LineSelection {
    ═══════════════════════════════════════════════════════ */
 
 export function CancellationModal({ so, mode: initialMode, preselectedLineIds, onConfirmFull, onConfirmPartial, onClose }: Props) {
+  /* In the shown currency: base, or the customer's on a toggled SO page. */
+  const money = useDocMoney();
   /* Track whether any active line has partially shipped units (informational) */
   const hasShippedItems = useMemo(() => so.lines.some(l => !l.cancelled && l.shippedQty > 0), [so.lines]);
 
@@ -397,7 +399,7 @@ export function CancellationModal({ so, mode: initialMode, preselectedLineIds, o
                 </button>
                 <span className="text-foreground/50 ml-1" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" }}>of {sel.maxCancelQty} EA</span>
                 <span className="text-foreground/50 ml-auto" style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)" }}>
-                  {formatMoney(sel.cancelQty * line.unitPrice, so.currency)}
+                  {money(sel.cancelQty * line.unitPrice)}
                 </span>
               </div>
             </div>
@@ -810,7 +812,7 @@ export function CancellationModal({ so, mode: initialMode, preselectedLineIds, o
                       <div className="flex items-center justify-between" style={captionNormal}>
                         <span className="text-foreground/50">Cancellation value</span>
                         <span className="text-destructive" style={{ fontWeight: "var(--font-weight-semibold)" }}>
-                          -{formatMoney(totalCancelValue, so.currency)}
+                          -{money(totalCancelValue)}
                         </span>
                       </div>
                     </div>
@@ -854,7 +856,7 @@ export function CancellationModal({ so, mode: initialMode, preselectedLineIds, o
           {/* ══ Footer ══ */}
           <div className="flex items-center justify-between shrink-0 border-t border-border bg-secondary" style={{ padding: "12px 20px" }}>
             <div className="text-foreground/50" style={captionNormal}>
-              {selectedCount} of {cancellableLines.length} lines · {formatMoney(totalCancelValue, so.currency)}
+              {selectedCount} of {cancellableLines.length} lines · {money(totalCancelValue)}
             </div>
             <div className="flex items-center gap-2">
               <Button variant="secondary" size="sm" onClick={guardedClose} icon={<X className="w-3.5 h-3.5" />}>

@@ -121,6 +121,7 @@ import {
   multiplierWithinSet,
 } from '../../data/uomSets';
 import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
+import { DocMoney } from "@/app/components/currency/DocCurrency";
 import { soFx } from "@/app/currency/soFx";
 import { restateDesign } from "./soMoney";
 const PENDING_UOM_OPTIONS = UOM_SETS.discrete;
@@ -297,7 +298,8 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
   const so = store.salesOrders.find(s => s.id === soId);
   const [search, setSearch] = useState("");
   /* The catalog's list prices are the design's USD; on this order they are
-     in its currency, at the mid-market rate on its order date (spec 4.3). */
+     in its currency, at the mid-market rate on its order date (spec 4.3),
+     and shown in the page's (base by default, the other one on hover). */
   const formatCurrency = useDocMoney();
   const fx = so ? soFx(so) : null;
   const CATALOG = useMemo(
@@ -876,9 +878,7 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
                               {sidebarWidth === "narrow" && <ItemTypeBadge type={item.type} />}
                             </div>
                             <div className="text-right shrink-0">
-                              <span style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)", color: "var(--foreground)" }}>
-                                {formatCurrency(item.unitPrice)}
-                              </span>
+                              <DocMoney value={item.unitPrice} style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)", color: "var(--foreground)" }} />
                               <span style={{ fontSize: 11, color: "var(--muted-foreground)", marginLeft: 4 }}>/ {findUomById(getPrimaryUomForProduct(item))?.name || 'EA'}</span>
                             </div>
                           </div>
@@ -1231,7 +1231,7 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
                                   />
                                   <div className="flex-1 text-right min-w-0">
                                     <div className="truncate" style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
-                                      {formatCurrency(p.qty * p.item.unitPrice)}
+                                      <DocMoney value={p.qty * p.item.unitPrice} />
                                     </div>
                                     <div className="truncate" style={{ fontSize: 11, fontWeight: 400, color: "var(--muted-foreground)" }}>
                                       {itemUomLabel}
@@ -1292,7 +1292,7 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
                     Subtotal ({pending.length} item{pending.length !== 1 ? "s" : ""})
                   </span>
                   <span className="shrink-0" style={{ fontSize: "var(--text-base)", fontWeight: "var(--font-weight-semibold)", color: "var(--primary)", whiteSpace: "nowrap" }}>
-                    {formatCurrency(subtotal)}
+                    <DocMoney value={subtotal} />
                   </span>
                 </div>
               </div>

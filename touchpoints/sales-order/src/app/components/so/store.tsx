@@ -10,6 +10,7 @@ import type {
 import { ARCHIVABLE_STATES } from "./types";
 import { DESIGN_CURRENCY, convertOn, customerCurrency, stampSoRate } from "@/app/currency/soFx";
 import { formatWhole } from "./soMoney";
+import { describeRateChange, soRateFields, stampVersionRate, versionRateFields, withCurrentRate, type VersionRateChoice } from "./soCurrency";
 import { seedLineItemAttachments } from "./lineItemAttachmentsStore";
 import { getCustomerDefaults, SAMPLE_EMPTY_CUSTOMER } from "@/app/components/shared/customerDefaults";
 import { getMissingFields, type FieldRule } from "@/app/components/shared/fieldRequirements";
@@ -1758,8 +1759,12 @@ interface SOStore {
   archiveSO: (id: string) => void;
   unarchiveSO: (id: string) => void;
   reactivateSO: (id: string) => void;
-  createVersionDraft: (id: string) => void;
-  revertToVersion: (id: string, fromVersion: number) => void;
+  /** `rateChoice`: keep the order's locked rate (default) or restamp it
+   *  with today's (soCurrency.ts `withCurrentRate`). */
+  createVersionDraft: (id: string, rateChoice?: VersionRateChoice) => void;
+  /** `rateChoice`: restore the rate V[fromVersion] locked in (default) or
+   *  apply today's. */
+  revertToVersion: (id: string, fromVersion: number, rateChoice?: VersionRateChoice) => void;
   addSOLine: (soId: string, line: Partial<SOLine>) => void;
   updateSOLine: (soId: string, lineId: string, updates: Partial<SOLine>) => void;
   deleteSOLine: (soId: string, lineId: string) => boolean;
@@ -1937,6 +1942,8 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
       ...(partial.currency && partial.exchangeRate
         ? { currency: partial.currency, exchangeRate: partial.exchangeRate, rateType: partial.rateType, rateDate: partial.rateDate, rateEdited: partial.rateEdited }
         : stampSoRate(partial.currency || customerCurrency(partial.customer), partial.orderDate || new Date().toISOString().split("T")[0], partial.rateType)),
+      /* "You receive": base unless the copy or quote carries one. */
+      ...(partial.settlementCurrency && { settlementCurrency: partial.settlementCurrency }),
       /* `??` not `||`: an explicit "" means "not set" (e.g. a name-only
          customer) and must stay empty instead of becoming Net 30. */
       paymentTerms: partial.paymentTerms ?? "Net 30",
@@ -2163,7 +2170,7 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
         date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
       };
       const updatedVersions = (s.versions || []).map(v =>
-        v.number === s.version?.number ? { ...v, label: "Last Approved" as const } : v
+        v.number === s.version?.number ? stampVersionRate({ ...v, label: "Last Approved" as const }, s) : v
       );
       /* Release any non-locked allocations (same as `rejectSO`) so
          the new draft starts with a clean stock picture. */
@@ -2175,8 +2182,8 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
         ...s,
         status: "Draft" as SOStatus,
         previousStatus: undefined,
-        version: newVersion,
-        versions: [...updatedVersions, newVersion],
+        version: stampVersionRate(newVersion, s),
+        versions: [...updatedVersions, stampVersionRate(newVersion, s)],
         lines: releasedLines,
         rejectionReason: undefined,
         rejectionReasonText: undefined,
@@ -2392,23 +2399,31 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Create a new version draft from a non-Draft SO (used by auto-versioning)
-  const createVersionDraft = useCallback((id: string) => {
+  const createVersionDraft = useCallback((id: string, rateChoice: VersionRateChoice = "locked") => {
     setSalesOrders(prev => prev.map(so => {
       if (so.id !== id) return so;
       if (so.status === "Draft") return so; // Already draft, no-op
       const newVersionNum = (so.version?.number ?? 1) + 1;
-      const newVersion: SOVersion = { number: newVersionNum, label: "Latest", date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) };
-      // Mark the current version as "Last Approved" before creating new draft
+      // Mark the current version as "Last Approved" before creating new draft,
+      // keeping the rate it locked in.
       const updatedVersions = (so.versions || []).map(v =>
-        v.number === so.version?.number ? { ...v, label: "Last Approved" as const } : v
+        v.number === so.version?.number ? stampVersionRate({ ...v, label: "Last Approved" as const }, so) : v
       );
+      /* The new version keeps the locked rate, or takes today's. */
+      const today = rateChoice === "current" ? withCurrentRate(so) : null;
+      const next = today ? { ...so, ...today.updates } : so;
+      const newVersion: SOVersion = stampVersionRate({ number: newVersionNum, label: "Latest", date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) }, next, true);
       return {
-        ...so,
+        ...next,
         status: "Draft" as SOStatus,
         previousStatus: so.status,
         version: newVersion,
         versions: [...updatedVersions, newVersion],
-        activityLog: [...so.activityLog, addActivity(so, "Version Created", `Started V${newVersionNum} draft from ${so.status} after a material change.`)],
+        activityLog: [
+          ...so.activityLog,
+          addActivity(so, "Version Created", `Started V${newVersionNum} draft from ${so.status} after a material change.`),
+          ...(today?.detail ? [addActivity(so, "Exchange rate Changed", `${today.detail} (V${newVersionNum})`)] : []),
+        ],
       };
     }));
   }, []);
@@ -2418,27 +2433,46 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
   // whatever V[fromVersion] historically had. A subsequent material
   // change will trigger the normal auto-version flow which creates
   // V[max+1] via createVersionDraft.
-  const revertToVersion = useCallback((id: string, fromVersion: number) => {
+  const revertToVersion = useCallback((id: string, fromVersion: number, rateChoice: VersionRateChoice = "locked") => {
     setSalesOrders(prev => prev.map(so => {
       if (so.id !== id) return so;
       const allVersions = so.versions || [];
       const targetEntry = allVersions.find(v => v.number === fromVersion);
       if (!targetEntry) return so;
+      /* The rate V[fromVersion] locked in comes back with it, or today's
+         is applied. The version being left keeps the rate it had. */
+      const before = soRateFields(so);
+      const locked = versionRateFields(so, fromVersion);
+      const restored = { ...so, ...locked };
+      const today = rateChoice === "current" ? withCurrentRate(restored) : null;
+      const next = today ? { ...restored, ...today.updates } : restored;
+      const after = soRateFields(next);
+      const rateDetail =
+        before.exchangeRate === after.exchangeRate && before.rateType === after.rateType && before.settlementCurrency === after.settlementCurrency
+          ? null
+          : `${describeRateChange(before, after)} · ${today ? "today's rate applied" : `V${fromVersion}'s locked rate restored`}`;
       // Update the labels: target becomes "Latest", others lose "Latest"
-      const updatedVersions = allVersions.map(v => ({
-        ...v,
-        label: v.number === fromVersion ? ('Latest' as const) : (v.label === 'Latest' ? ('Last Approved' as const) : v.label),
-      }));
+      const updatedVersions = allVersions.map(v => {
+        const entry = v.number === so.version?.number && v.number !== fromVersion ? stampVersionRate(v, so) : v;
+        return {
+          ...(v.number === fromVersion ? stampVersionRate(entry, next, true) : entry),
+          label: v.number === fromVersion ? ('Latest' as const) : (v.label === 'Latest' ? ('Last Approved' as const) : v.label),
+        };
+      });
       // Restore historical status if recorded on the version entry; else
       // keep current status. SOVersion may have a `status` field — if
       // not, default to "Cleared" as a safe restore.
       const restoredStatus = (targetEntry as any).status as SOStatus | undefined;
       return {
-        ...so,
+        ...next,
         status: restoredStatus || so.status,
-        version: { ...targetEntry, label: 'Latest' as const },
+        version: updatedVersions.find(v => v.number === fromVersion) ?? { ...targetEntry, label: 'Latest' as const },
         versions: updatedVersions,
-        activityLog: [...so.activityLog, addActivity(so, 'Version Reverted', `Reverted to V${fromVersion} — now the latest version`)],
+        activityLog: [
+          ...so.activityLog,
+          addActivity(so, 'Version Reverted', `Reverted to V${fromVersion} — now the latest version`),
+          ...(rateDetail ? [addActivity(so, "Exchange rate Changed", `${rateDetail} (V${fromVersion})`)] : []),
+        ],
       };
     }));
   }, []);

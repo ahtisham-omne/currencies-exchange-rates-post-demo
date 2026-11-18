@@ -22,7 +22,7 @@ import { SOFilterBar } from "./SOFilterBar";
 import { DatePickerField } from "./date-picker-field";
 import { InsightsRangeMenu, InsightsRefresh, type InsightsRange } from "@/app/components/shared/InsightsControls";
 import { summarizeSO } from "./summarizeSO";
-import { Money } from "@/app/components/currency/Money";
+import { BaseMoney } from "@/app/components/currency/Money";
 import { BaseCurrencyNote } from "@/app/components/currency/BaseCurrencyNote";
 import { CurrencyFlag } from "@/app/components/currency/CurrencyChip";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
@@ -1368,8 +1368,9 @@ export function SOList() {
         /* Listing's "Order Value" is the GRAND TOTAL (subtotal + tax +
            freight + adjustments − rules), not the line-subtotal-with-tax.
            Same number the detail sidebar's "Grand Total" tile shows. */
-        /* In the order's own currency (spec 4.3), with its rate on hover. */
-        return <Money value={summary.grandTotal} currency={so.currency} fx={soFx(so)} className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }} />;
+        /* In base at the order's rate, as Sales Orders shows amounts; the
+           customer's amount and the rate on hover. */
+        return <BaseMoney value={summary.grandTotal} currency={so.currency} fx={soFx(so)} role="Customer currency" className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }} />;
       case "invoiced": {
         const invoiced = so.linkedTransactions.filter(t => t.type === "Invoice").reduce((s, t) => s + txInOrderCurrency(t, so), 0);
         const invoiceList = so.linkedTransactions.filter(t => t.type === "Invoice");
@@ -1377,7 +1378,7 @@ export function SOList() {
           <div className="relative group/inv">
             <div className="flex items-center gap-1">
               <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 500, color: invoiced > 0 ? '#0F172A' : '#94A3B8' }}>
-                {invoiced > 0 ? <Money value={invoiced} currency={so.currency} fx={soFx(so)} /> : '—'}
+                {invoiced > 0 ? <BaseMoney value={invoiced} currency={so.currency} fx={soFx(so)} role="Customer currency" /> : '—'}
               </span>
               {invoiceList.length > 0 && (
                 <ArrowUpRight className="w-3 h-3 text-primary/40 group-hover/inv:text-primary transition-colors" />
@@ -1390,7 +1391,7 @@ export function SOList() {
                   {invoiceList.map((inv, i) => (
                     <div key={i} className="flex items-center justify-between py-1 px-2 rounded-md hover:bg-muted/40 transition-colors cursor-pointer">
                       <span className="text-[12px] text-primary" style={{ fontWeight: 500 }}>{inv.number}</span>
-                      <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }}>{formatMoney(inv.amount, inv.currency || so.currency)}</span>
+                      <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }} title={formatMoney(inv.amount, inv.currency || so.currency)}>{formatMoney(toSOBase(so, txInOrderCurrency(inv, so)), BASE_CURRENCY)}</span>
                     </div>
                   ))}
                 </div>
@@ -1401,7 +1402,7 @@ export function SOList() {
       }
       case "payments": {
         const payments = so.linkedTransactions.filter(t => t.type === "Payment Receipt").reduce((s, t) => s + txInOrderCurrency(t, so), 0);
-        return <span className="whitespace-nowrap tabular-nums text-left" style={{ fontSize: '13px', fontWeight: 500, color: payments > 0 ? '#0F172A' : '#94A3B8' }}>{payments > 0 ? <Money value={payments} currency={so.currency} fx={soFx(so)} /> : '—'}</span>;
+        return <span className="whitespace-nowrap tabular-nums text-left" style={{ fontSize: '13px', fontWeight: 500, color: payments > 0 ? '#0F172A' : '#94A3B8' }}>{payments > 0 ? <BaseMoney value={payments} currency={so.currency} fx={soFx(so)} role="Customer currency" /> : '—'}</span>;
       }
       case "orderdate": return <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{dates.orderDate}</span>;
       case "shipby": return <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{dates.shipBy}</span>;
@@ -3020,10 +3021,10 @@ export function SOList() {
         setShowCreateModal(false);
         navigate(`/sales-orders/${so.id}`);
       }} />
-      {confirmSingleSO && <ConfirmSOModal so={confirmSingleSO} onConfirm={() => handleSingleConfirmDone()} onClose={() => setConfirmSingleSO(null)} />}
+      {confirmSingleSO && <SODocCurrency so={confirmSingleSO}><ConfirmSOModal so={confirmSingleSO} onConfirm={() => handleSingleConfirmDone()} onClose={() => setConfirmSingleSO(null)} /></SODocCurrency>}
       {showBulkConfirm && <BulkConfirmSOModal orders={selectedSOs} onConfirm={(soIds) => handleBulkConfirmDone(soIds)} onClose={() => setShowBulkConfirm(false)} />}
-      {cancelTargetSO && <CancellationModal so={cancelTargetSO} mode={cancelModalMode} onConfirmFull={handleCancelFull} onConfirmPartial={handleCancelPartial} onClose={() => setCancelTargetSO(null)} />}
-      {archiveTargetSO && <ArchiveModal so={archiveTargetSO} onConfirm={handleConfirmArchive} onClose={() => setArchiveTargetSO(null)} />}
+      {cancelTargetSO && <SODocCurrency so={cancelTargetSO}><CancellationModal so={cancelTargetSO} mode={cancelModalMode} onConfirmFull={handleCancelFull} onConfirmPartial={handleCancelPartial} onClose={() => setCancelTargetSO(null)} /></SODocCurrency>}
+      {archiveTargetSO && <SODocCurrency so={archiveTargetSO}><ArchiveModal so={archiveTargetSO} onConfirm={handleConfirmArchive} onClose={() => setArchiveTargetSO(null)} /></SODocCurrency>}
       {/* Duplicate SO — modal + overlay flow. On confirm we build the
           duplicate via the shared helper, persist it through the SO
           store (so the listing reflects it immediately), play the
@@ -3081,9 +3082,10 @@ export function SOList() {
         <VersionHistoryModal
           soNumber={versionModalSO.soNumber}
           currentVersion={versionModalSO.version?.number ?? 1}
+          so={salesOrders.find(s => s.id === versionModalSO.id) ?? versionModalSO}
           onClose={() => setVersionModalSO(null)}
-          onRevert={(toVersion) => {
-            revertToVersion(versionModalSO.id, toVersion);
+          onRevert={(toVersion, rateChoice) => {
+            revertToVersion(versionModalSO.id, toVersion, rateChoice);
             setVersionModalSO(prev => prev ? { ...prev, version: prev.version ? { ...prev.version, number: toVersion } : { number: toVersion, label: 'Latest', date: '' } } : prev);
           }}
         />

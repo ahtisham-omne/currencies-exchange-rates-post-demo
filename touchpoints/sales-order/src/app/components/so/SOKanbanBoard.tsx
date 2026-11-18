@@ -27,7 +27,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import { FIELD_RULES } from "@/app/components/shared/fieldRequirements";
-import { Money } from "@/app/components/currency/Money";
+import { BaseMoney } from "@/app/components/currency/Money";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatCompactMoney } from "@/app/currency/money";
 import { soFx, toSOBase } from "@/app/currency/soFx";
@@ -476,6 +476,7 @@ export function SOKanbanBoard({ salesOrders, search, columnVisibility = {}, grou
 
       {/* Confirm SO modal for clearing */}
       {confirmSO && (
+        <SODocCurrency so={confirmSO}>
         <ConfirmSOModal
           so={confirmSO}
           onClose={() => setConfirmSO(null)}
@@ -485,6 +486,7 @@ export function SOKanbanBoard({ salesOrders, search, columnVisibility = {}, grou
             setConfirmSO(null);
           }}
         />
+        </SODocCurrency>
       )}
 
       {/* Reactivation modal for terminal → Draft */}
@@ -504,7 +506,7 @@ export function SOKanbanBoard({ salesOrders, search, columnVisibility = {}, grou
         />
       )}
 
-      {versionHistorySO && <SODocCurrency so={versionHistorySO}><VersionHistoryModal soNumber={versionHistorySO.soNumber} currentVersion={versionHistorySO.version?.number ?? 1} onClose={() => setVersionHistorySO(null)} /></SODocCurrency>}
+      {versionHistorySO && <SODocCurrency so={versionHistorySO}><VersionHistoryModal soNumber={versionHistorySO.soNumber} currentVersion={versionHistorySO.version?.number ?? 1} so={versionHistorySO} onClose={() => setVersionHistorySO(null)} /></SODocCurrency>}
 
       {/* Column Config Sidebar */}
       <BoardColumnConfigSidebar isOpen={showColumnConfig} onClose={() => setShowColumnConfig(false)} visibleColumns={visibleColumns} onSave={() => {}} allColumns={KANBAN_COLUMNS} />
@@ -969,7 +971,7 @@ function SOKanbanCard({ so, soIdx, columnStatus, accentColor, onOrderClick, sear
             {/* Order Value on the card = grand total, same number the
                 listing's `Order Value` column and the detail sidebar's
                 Grand Total tile render. */}
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#1F2937", lineHeight: "1.2" }}><Money value={summarizeSO(so).grandTotal} currency={so.currency} fx={soFx(so)} /></div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#1F2937", lineHeight: "1.2" }}><BaseMoney value={summarizeSO(so).grandTotal} currency={so.currency} fx={soFx(so)} role="Customer currency" /></div>
             <div style={{ fontSize: 10, color: "#9CA3AF", fontWeight: 400, marginTop: 2, lineHeight: "1" }}>Order Value</div>
           </div>
           <div style={{ flexShrink: 0, textAlign: "right" }}>

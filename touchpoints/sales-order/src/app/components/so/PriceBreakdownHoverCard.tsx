@@ -7,12 +7,14 @@
  *  rule and adjustment that compose the line total.
  * ═══════════════════════════════════════════════════════════════════════════ */
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
+import { BASE_CURRENCY as BASE } from "@/app/currency/currencies";
 import { createPortal } from 'react-dom';
 import { Info } from 'lucide-react';
 import { evaluateRuleForLine } from './pricingRulesData';
 import type { PricingRulesAPI } from './usePricingRules';
 import type { AdjustmentsAPI } from './useAdjustments';
 import { useRuleMoney } from "@/app/components/currency/useRuleMoney";
+import { useDocCurrency, useDocView } from "@/app/components/currency/docCurrencyContext";
 
 type Placement = 'top' | 'bottom';
 
@@ -25,8 +27,12 @@ interface PriceBreakdownHoverCardProps {
 }
 
 export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, formatCurrency, children }: PriceBreakdownHoverCardProps) {
-  /* "$" rule tiers are USD; convert into the order's currency. */
-  const ruleFactor = useRuleMoney().factor;
+  /* "$" rule tiers are USD; convert into the order's currency. The total in
+     the currency the page isn't showing rides under the Total row. */
+  const ruleMoney = useRuleMoney();
+  const ruleFactor = ruleMoney.factor;
+  const { currency } = useDocCurrency();
+  const { inBase } = useDocView();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number; placement: Placement } | null>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -226,6 +232,13 @@ export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, form
                   {formatCurrency(lineTotal)}
                 </span>
               </div>
+              {ruleMoney.baseText(lineTotal) && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '2px 14px 0' }}>
+                  <span style={{ fontSize: 11, color: '#6B7280', fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}>
+                    {ruleMoney.baseText(lineTotal)} {inBase ? `${currency} · customer currency` : `${BASE} · base currency`}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>,

@@ -46,14 +46,14 @@ import { getCustomerDefaults, isSparseCustomer } from "@/app/components/shared/c
 import { FIELD_RULES, isMissing } from "@/app/components/shared/fieldRequirements";
 import { SO_SALES_REP_ROSTER } from "./salesRepRoster";
 import { ArrowRight } from "lucide-react";
-import { SOCurrencyFields, type SOCurrencyChange, type SOCurrencyTotals } from "@/app/components/currency/SOCurrencyFields";
+import { type SOCurrencyChange, type SOCurrencyTotals } from "@/app/components/currency/SOCurrencyFields";
+import { SOCurrencyConfigDialog, SOCurrencySummary } from "@/app/components/currency/SOCurrencyConfig";
+import { DocMoney } from "@/app/components/currency/DocCurrency";
+import { useDocOtherText, useDocView, useDocWhole } from "@/app/components/currency/docCurrencyContext";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
-import { formatMoney, formatRate } from "@/app/currency/money";
-import { toBase } from "@/app/currency/rates";
 import { isoDay, roundTo, ruleAmountFactor, soFx, stampSoRate } from "@/app/currency/soFx";
-import { withSOCurrency, type SOCurrencyChoice } from "./soCurrency";
+import { describeRateChange, soRateFields, withSOCurrency, type SOCurrencyChoice } from "./soCurrency";
 import { computeLineBreakdowns } from "./pricingRulesData";
-import { formatWhole } from "./soMoney";
 import { toast } from "sonner";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -77,6 +77,10 @@ interface Props {
    *  release (Ship to) then render red with their missing message
    *  until filled. Set by SODetail. */
   releaseAttempted?: boolean;
+  /** The order's Currency Configuration, opened from the header's Currency
+   *  button (SODetail) or the CURRENCY card's View configuration. */
+  currencyConfigOpen?: boolean;
+  onCurrencyConfigOpenChange?: (open: boolean) => void;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -908,7 +912,7 @@ function deriveShippedMockIds(so: SalesOrder): string[] {
 /* ═══════════════════════════════════════════════════════════════════════════
  *  MAIN SIDEBAR COMPONENT
  * ═══════════════════════════════════════════════════════════════════════════ */
-export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, adjustmentsAPI, releaseAttempted = false }: Props) {
+export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, adjustmentsAPI, releaseAttempted = false, currencyConfigOpen = false, onCurrencyConfigOpenChange }: Props) {
   /* Store handle — needed so the FreightBreakdownModal can write
      order-level + per-line freight directly back to the SO. */
   const store = useSOStore();
@@ -1216,25 +1220,28 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
   // can read every digit. Cells that are too narrow CSS-truncate with `…`
   // and surface the full value via the `title` attribute on the surrounding
   // span (see usage sites — each value carries a `title`).
-  /* In the order's currency (spec 4.3), whole amounts as the design shows them. */
-  const fmtCurrency = (n: number) => formatWhole(n, so.currency);
+  /* Whole amounts as the design shows them, in the currency the page shows:
+     base by default, the customer's with the header toggle (spec 4.3). */
+  const fmtCurrency = useDocWhole();
+  const otherText = useDocOtherText();
+  const { inBase } = useDocView();
   const fx = soFx(so);
 
-  /* Currency or rate changed in Order Summary (SOCurrencyFields). Another
-     currency converts every price and freight charge (withSOCurrency) and
-     the fixed one-time adjustments, which live on the SO page. */
+  /* Currency, rate or "You receive" changed in the Currency Configuration.
+     Another currency converts every price and freight charge
+     (withSOCurrency) and the fixed one-time adjustments, which live on the
+     SO page. */
   const handleCurrencyChange = ({ next, subject }: SOCurrencyChange) => {
     const { updates, factor } = withSOCurrency(so, next);
     const after = { ...so, ...updates };
     const afterFx = soFx(after);
-    const detail = subject === "Currency"
-      ? `${fx.currency} → ${afterFx.currency}${afterFx.isBase ? "" : ` · 1 ${afterFx.currency} = ${formatRate(afterFx.rate)} ${BASE_CURRENCY}`}`
-      : `1 ${afterFx.currency} = ${formatRate(afterFx.rate)} ${BASE_CURRENCY} (${afterFx.source})`;
+    const change = describeRateChange(soRateFields(so), soRateFields(after));
+    const detail = subject === "Exchange rate" ? `${change} (${afterFx.source})` : subject === "You receive" ? `You receive: ${change}` : change;
     store.updateSO(so.id, {
       ...updates,
       activityLog: [
         ...so.activityLog,
-        { id: `ACT-${Date.now()}-fx`, timestamp: new Date().toLocaleString(), user: "Current User", action: `${subject} Changed`, details: detail },
+        { id: `ACT-${Date.now()}-fx`, timestamp: new Date().toLocaleString(), user: "Current User", action: subject === "You receive" ? "Currency Configuration Changed" : `${subject} Changed`, details: detail },
       ],
     });
     if (factor !== 1) {
@@ -1245,7 +1252,10 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
          (SODetail seeds from this map): keep them in the new currency. */
       if (getImportedAdjustments(so.id)) setImportedAdjustments(so.id, converted);
     }
-    toast.success(subject === "Currency" ? `Order converted to ${afterFx.currency}` : "Exchange rate updated", { position: "top-right" });
+    toast.success(
+      subject === "Currency" ? `Order converted to ${afterFx.currency}` : subject === "Exchange rate" ? "Exchange rate updated" : "Currency configuration saved",
+      { position: "top-right", description: subject === "You receive" ? `This order will settle in ${(after.settlementCurrency ?? BASE_CURRENCY).toUpperCase()}` : undefined },
+    );
   };
   const currencyLocked = so.status !== "Draft";
   /* The confirmation's "after" column: the order as it would be, with flat
@@ -1494,35 +1504,22 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
             <p
               className="text-slate-700 tracking-tight tabular-nums"
               style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2, fontFamily: "Inter, system-ui, sans-serif" }}
-              title={fmtCurrency(grandTotal)}
             >
-              {fmtCurrency(grandTotal)}
+              {/* In the shown currency, the other one on hover. */}
+              <DocMoney value={grandTotal}>{fmtCurrency(grandTotal)}</DocMoney>
             </p>
             <p className="text-slate-500 mt-1 truncate" style={{ fontSize: 11, fontWeight: 400, fontFamily: "Inter, system-ui, sans-serif" }}>
               {so.lines.length} item{so.lines.length !== 1 ? "s" : ""}
-              {/* The total's base equivalent, at the order's rate. */}
-              {!fx.isBase && (
-                <span className="tabular-nums" title={`At 1 ${fx.currency} = ${formatRate(fx.rate)} ${BASE_CURRENCY}`}>
-                  {" · ≈ "}{formatMoney(toBase(grandTotal, fx.rate), BASE_CURRENCY)} {BASE_CURRENCY}
+              {/* The total in the currency not shown: what the customer pays
+                  (base view), or what it's worth in base. */}
+              {otherText(grandTotal) && (
+                <span className="tabular-nums">
+                  {" · "}{otherText(grandTotal)}
+                  <span className="text-slate-400"> {inBase ? `${fx.currency} · customer currency` : `${BASE_CURRENCY} · base currency`}</span>
                 </span>
               )}
             </p>
           </div>
-
-          {/* Currency and exchange rate (spec 4.3) — same pattern as Purchase Orders. */}
-          <SOCurrencyFields
-            so={so}
-            canEdit={!currencyLocked}
-            lockReason={currencyLocked ? "The currency and rate are fixed once the order leaves Draft." : undefined}
-            totals={{
-              subtotal,
-              adjustments: adjustmentsNet - pricingRulesAmount,
-              freight: soSummary.freight,
-              total: grandTotal,
-            }}
-            totalsFor={totalsFor}
-            onChange={handleCurrencyChange}
-          />
 
           {/* Breakdown rows — PO's canonical recipe */}
           <div className="border-t border-muted pt-3" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1649,6 +1646,10 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
             )}
           </div>
 
+          {/* CURRENCY — Customer pays / You receive / Rate, and the way
+              into the order's currency configuration. */}
+          <SOCurrencySummary so={so} total={grandTotal} onViewConfig={() => onCurrencyConfigOpenChange?.(true)} />
+
           {/* Invoice Summary — SO-specific (no Quote equivalent). Sits
               below the breakdown with its own hairline divider. */}
           <div className="border-t border-border" style={{ paddingTop: 10, marginTop: 12 }}>
@@ -1765,6 +1766,23 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
        shippedQty > 0 marks the same-index mock LINE_ITEMS id as locked.
        Shipped (global readOnly) supersedes this. */}
     {(() => null)()}
+    {/* The order's Currency Configuration (header Currency button and the
+        CURRENCY card's View configuration). Read-only once the order
+        leaves Draft. */}
+    <SOCurrencyConfigDialog
+      so={so}
+      open={currencyConfigOpen}
+      onOpenChange={(o) => onCurrencyConfigOpenChange?.(o)}
+      canEdit={!currencyLocked}
+      totals={{
+        subtotal,
+        adjustments: adjustmentsNet - pricingRulesAmount,
+        freight: soSummary.freight,
+        total: grandTotal,
+      }}
+      totalsFor={totalsFor}
+      onChange={handleCurrencyChange}
+    />
     <PricingRulesManageModal
       isOpen={showPricingRules}
       onClose={() => setShowPricingRules(false)}

@@ -77,8 +77,15 @@ import {
 import { DateEditModal, type SODateType, type DateConfig } from "./ui/DateEditModal";
 import type { SOLine, CancellationReason, SOPriority } from "./types";
 import { DocCurrencyProvider } from "@/app/components/currency/DocCurrency";
+import { SOCurrencyHeaderControls } from "@/app/components/currency/SOCurrencyHeaderControls";
+import { setSOView, useSOView } from "@/app/components/currency/soView";
+import { versionRateOptions } from "@/app/components/currency/VersionRateChoice";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatMoney } from "@/app/currency/money";
+import { toBase } from "@/app/currency/rates";
 import { DESIGN_CURRENCY, convertOn, roundTo, ruleAmountFactor, soFx } from "@/app/currency/soFx";
+import { versionRateFields, type VersionRateChoice } from "./soCurrency";
+import { summarizeSO } from "./summarizeSO";
 import { ARCHIVABLE_STATES } from "./types";
 import { getLineItemImage } from "./lineItemImage";
 import { InactiveItemsWarningModal, type InactiveWarningMode } from "../shared/InactiveItemsWarningModal";
@@ -146,6 +153,10 @@ export function SODetail() {
   });
 
   const [activeTab, setActiveTab] = useState("lines");
+  /* Base Currency | Customer Currency (the header toggle), kept per order
+     for the session, and the order's Currency Configuration dialog. */
+  const soView = useSOView(so?.id);
+  const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
 
   /* Track the right sidebar's live height so the Attachments tab card
      can be capped at that height (dynamically — closing / opening any
@@ -320,7 +331,9 @@ export function SODetail() {
     fieldLabel: string;
     oldValue?: string;
     newValue?: string;
-    action: () => void;
+    /* Runs once the version is confirmed; a revert takes the rate chosen
+       there (the version's locked one, or today's). */
+    action: (rateChoice?: VersionRateChoice) => void;
     /* Called when the user DISCARDS the version prompt. Lets the
        originating modal undo the mutation it already applied (e.g.
        remove a discount that was added to adjustmentsAPI). Without
@@ -407,13 +420,17 @@ export function SODetail() {
      can't legally proceed — we'd be invoicing a negative number. Used
      to gate stage transitions out of Draft. */
   const projectedTotal = pricingAPI.soSubtotal + adjustmentsAPI.grandTotal.net;
+  /* An order amount in the currency the page shows (base by default), for
+     the toasts and version prompts this page writes itself. */
+  const pageMoney = (n: number) =>
+    soView === "base" && fx && !fx.isBase ? formatMoney(toBase(n, fx.rate), BASE_CURRENCY) : formatMoney(n, so.currency);
   const totalIsNegative = projectedTotal < 0;
   const blockTransitionIfNegative = (intent: string): boolean => {
     if (!totalIsNegative) return false;
     toast.error(
       `Cannot ${intent}. Projected total is ${
-        formatMoney(projectedTotal, so?.currency)
-      }. Deactivate one or more rules or one-time discounts to bring the total back to ${formatMoney(0, so?.currency)} or above.`,
+        pageMoney(projectedTotal)
+      }. Deactivate one or more rules or one-time discounts to bring the total back to ${pageMoney(0)} or above.`,
       { duration: 6000 },
     );
     return true;
@@ -589,7 +606,7 @@ export function SODetail() {
   /* ── Stepper uses resolvedStepIdx from above ── */
 
   return (
-    <DocCurrencyProvider currency={fx!.currency} fx={fx!.isBase ? null : fx} rateDate={fx!.rateDate} dateLabel="order date" role="order currency">
+    <DocCurrencyProvider currency={fx!.currency} fx={fx!.isBase ? null : fx} rateDate={fx!.rateDate} dateLabel="order date" role="customer currency" view={soView}>
       {/* Page container — Partner Management `VendorDetailsPage` parity.
           The OUTER wrapper spans the full width of the AppLayout's
           `<main>` scroll container and paints a slate-50 page
@@ -756,8 +773,8 @@ export function SODetail() {
                           onEditAsDraft={hasAnyShippedLine ? undefined : (fromVersion, originalStatus) => {
                             setPendingVersionChange({
                               fieldLabel: `Revert to V${fromVersion}`,
-                              action: () => {
-                                store.revertToVersion(so.id, fromVersion);
+                              action: (rateChoice) => {
+                                store.revertToVersion(so.id, fromVersion, rateChoice);
                               },
                               isRevert: true,
                               revertToVersion: fromVersion,
@@ -946,6 +963,16 @@ export function SODetail() {
 
                   {/* Right: Fullscreen + Actions dropdown + separator + CTA — mirrors Quotes' QuoteDetails header pattern */}
                   <div className="flex items-center shrink-0 max-md:w-full max-md:justify-end max-md:flex-wrap" style={{ gap: isScrolled ? 6 : 8 }}>
+                    {/* Base Currency | Customer Currency, and the order's
+                        currency configuration (ported from the earlier
+                        touchpoint, as Purchase Orders has them). */}
+                    <SOCurrencyHeaderControls
+                      currency={fx!.currency}
+                      view={soView}
+                      onViewChange={(v) => setSOView(so.id, v)}
+                      onOpenConfig={() => setCurrencyConfigOpen(true)}
+                      compact={isScrolled}
+                    />
                     {/* Fullscreen toggle (nothing to widen on a phone) */}
                     <button
                       onClick={() => setIsFullscreen(!isFullscreen)}
@@ -1741,8 +1768,8 @@ export function SODetail() {
                   const line = so.lines.find(l => l.id === lineId);
                   const isMaterial = updates.orderedQty !== undefined || updates.unitPrice !== undefined;
                   if (isMaterial && requiresNewDraftFirst(so.status)) {
-                    const oldVal = updates.orderedQty !== undefined ? `Qty: ${line?.orderedQty}` : updates.unitPrice !== undefined ? formatMoney(line?.unitPrice ?? 0, so.currency) : undefined;
-                    const newVal = updates.orderedQty !== undefined ? `Qty: ${updates.orderedQty}` : updates.unitPrice !== undefined ? formatMoney(updates.unitPrice, so.currency) : undefined;
+                    const oldVal = updates.orderedQty !== undefined ? `Qty: ${line?.orderedQty}` : updates.unitPrice !== undefined ? pageMoney(line?.unitPrice ?? 0) : undefined;
+                    const newVal = updates.orderedQty !== undefined ? `Qty: ${updates.orderedQty}` : updates.unitPrice !== undefined ? pageMoney(updates.unitPrice) : undefined;
                     setPendingVersionChange({ fieldLabel: updates.orderedQty !== undefined ? "Quantity" : "Unit Price", oldValue: oldVal, newValue: newVal, action: () => store.updateSOLine(so.id, lineId, updates) });
                     setAutoVersionField(updates.orderedQty !== undefined ? "Quantity" : "Unit Price");
                     setShowAutoVersionConfirm(true);
@@ -1769,8 +1796,8 @@ export function SODetail() {
                   const line = so.lines.find(l => l.id === lineId);
                   setPendingVersionChange({
                     fieldLabel: "Unit Price",
-                    oldValue: formatMoney(line?.unitPrice ?? 0, so.currency),
-                    newValue: formatMoney(newPrice, so.currency),
+                    oldValue: pageMoney(line?.unitPrice ?? 0),
+                    newValue: pageMoney(newPrice),
                     action: applyCallback,
                   });
                   setAutoVersionField("Unit Price");
@@ -1791,7 +1818,7 @@ export function SODetail() {
                   if (!line.uom || line.uom === newUom) return;
                   const scale = uomScaleFactor(line.uom, newUom);
                   const scaledPpu = roundTo(so.currency, line.unitPrice * scale);
-                  const fmt = (n: number) => formatMoney(n, so.currency);
+                  const fmt = pageMoney;
                   const apply = () => {
                     store.updateSOLine(so.id, line.id, { uom: newUom, unitPrice: scaledPpu });
                     toast.success(`Unit changed to ${newUom} (PPU rescaled to ${fmt(scaledPpu)} / ${newUom})`);
@@ -1895,8 +1922,8 @@ export function SODetail() {
               <VersionHistoryTab so={so} onEditAsDraft={hasAnyShippedLine ? undefined : (fromVersion) => {
                 setPendingVersionChange({
                   fieldLabel: `Revert to V${fromVersion}`,
-                  action: () => {
-                    store.revertToVersion(so.id, fromVersion);
+                  action: (rateChoice) => {
+                    store.revertToVersion(so.id, fromVersion, rateChoice);
                   },
                   isRevert: true,
                   revertToVersion: fromVersion,
@@ -1942,6 +1969,8 @@ export function SODetail() {
           >
             <SOSidebar
               so={so}
+              currencyConfigOpen={currencyConfigOpen}
+              onCurrencyConfigOpenChange={setCurrencyConfigOpen}
               releaseAttempted={releaseAttempted}
               pricingAPI={pricingAPI}
               adjustmentsAPI={adjustmentsAPI}
@@ -2048,8 +2077,8 @@ export function SODetail() {
                needs to be explicitly forwarded. */
             const updates: Partial<typeof configureLine> = { orderedQty, unitPrice, shipmentCost };
             if (requiresNewDraftFirst(so.status)) {
-              const oldVal = `Qty: ${configureLine.orderedQty}, ${formatMoney(configureLine.unitPrice, so.currency)}`;
-              const newVal = `Qty: ${orderedQty}, ${formatMoney(unitPrice, so.currency)}`;
+              const oldVal = `Qty: ${configureLine.orderedQty}, ${pageMoney(configureLine.unitPrice)}`;
+              const newVal = `Qty: ${orderedQty}, ${pageMoney(unitPrice)}`;
               setPendingVersionChange({ fieldLabel: "Line Item Configuration", oldValue: oldVal, newValue: newVal, action: () => { store.updateSOLine(so.id, configureLine.id, updates); toast.success(`${configureLine.itemCode} updated`); } });
               setAutoVersionField("Line Item Configuration");
               setConfigureLine(null);
@@ -2299,6 +2328,7 @@ export function SODetail() {
         <VersionHistoryModal
           soNumber={so.soNumber}
           currentVersion={soVersion.number}
+          so={so}
           onClose={() => setShowVersionModal(false)}
         />
       )}
@@ -2311,17 +2341,31 @@ export function SODetail() {
         newValue={pendingVersionChange?.newValue}
         currentVersion={soVersion.number}
         fromStatus={so.status}
-        onConfirm={() => {
+        /* A foreign-currency order: keep the locked rate (the current
+           version's, or the reverted-to version's) or apply today's. */
+        rate={(() => {
+          const fromVersion = pendingVersionChange?.isRevert && pendingVersionChange.revertToVersion != null
+            ? pendingVersionChange.revertToVersion
+            : soVersion.number;
+          const s = summarizeSO(so);
+          const total = s.subtotal + s.tax - (pricingAPI.totalDiscount - pricingAPI.totalPremium) + adjustmentsAPI.grandTotal.net + s.freight;
+          const options = versionRateOptions({ ...so, ...versionRateFields(so, fromVersion) }, total);
+          return options ? { fromVersion, options } : undefined;
+        })()}
+        onConfirm={(_reason, rateChoice = "locked") => {
           setShowAutoVersionConfirm(false);
           setShowAutoVersionOverlay(true);
           const isRevert = pendingVersionChange?.isRevert;
           if (!isRevert) {
-            store.createVersionDraft(so.id);
+            store.createVersionDraft(so.id, rateChoice);
           }
           const pendingAction = pendingVersionChange?.action;
           setPendingVersionChange(null);
           if (pendingAction) {
-            setTimeout(() => pendingAction(), 300);
+            setTimeout(() => pendingAction(rateChoice), 300);
+          }
+          if (rateChoice === "current") {
+            setTimeout(() => toast.success("Today's exchange rate applied", { position: "top-right" }), 400);
           }
         }}
         onDiscard={() => {

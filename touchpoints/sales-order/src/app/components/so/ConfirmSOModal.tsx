@@ -4,7 +4,7 @@ import { useModalShortcuts, KbdHint } from "./ModalKeyboard";
 import { Button } from "./ui/Button";
 import { useDiscardGuard } from "./ui/DiscardChangesDialog";
 import type { SalesOrder } from "./types";
-import { formatMoney } from "@/app/currency/money";
+import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
 
 interface Props {
   so: SalesOrder;
@@ -20,6 +20,8 @@ function addDaysStr(dateStr: string, days: number): string {
 }
 
 export function ConfirmSOModal({ so, onConfirm, onClose }: Props) {
+  /* In the shown currency: base, or the customer's on a toggled SO page. */
+  const money = useDocMoney();
   const defaultShipBy = addDaysStr(so.createdDate, 30);
   const defaultDelivery = so.requestedDeliveryDate
     ? (() => { const p = so.requestedDeliveryDate.split("/").map(Number); return `${String(p[2]).padStart(2, "0")}/${String(p[1]).padStart(2, "0")}/${p[0]}`; })()
@@ -95,7 +97,7 @@ export function ConfirmSOModal({ so, onConfirm, onClose }: Props) {
           <div className="border border-border rounded-lg overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-secondary/30">
               <span className="text-xs font-semibold text-foreground">Line Items ({activeLines.length})</span>
-              <span className="text-xs font-semibold bg-success/10 text-success px-2 py-[2px] rounded">{formatMoney(subtotal, so.currency)}</span>
+              <span className="text-xs font-semibold bg-success/10 text-success px-2 py-[2px] rounded">{money(subtotal)}</span>
               <span className="ml-auto text-xs font-medium text-primary cursor-pointer">Verify dates ↗</span>
             </div>
 
@@ -109,16 +111,16 @@ export function ConfirmSOModal({ so, onConfirm, onClose }: Props) {
                 <span className="text-foreground/70 truncate pr-2">{line.itemName}</span>
                 <span className="text-center text-foreground">{line.orderedQty}</span>
                 <span className="text-center text-foreground/50">{(line as any).uom || "EA"}</span>
-                <span className="text-right text-foreground font-medium">{formatMoney(line.orderedQty * line.unitPrice, so.currency)}</span>
+                <span className="text-right text-foreground font-medium">{money(line.orderedQty * line.unitPrice)}</span>
                 <span className="text-right text-foreground/50 flex items-center justify-end gap-1"><Calendar className="w-3 h-3 text-foreground/25" />{shipByDate}</span>
                 <span className="text-right text-foreground/50 flex items-center justify-end gap-1"><Calendar className="w-3 h-3 text-foreground/25" />{expectedDelivery}</span>
               </div>
             ))}
 
             <div className="px-4 py-3 border-t border-border flex items-center justify-end gap-6 text-xs">
-              <div className="text-right"><div className="text-foreground/50">Subtotal</div><div className="text-foreground font-medium">{formatMoney(subtotal, so.currency)}</div></div>
-              <div className="text-right"><div className="text-foreground/50">Tax ({(taxRate * 100).toFixed(2)}%)</div><div className="text-foreground font-medium">{formatMoney(tax, so.currency)}</div></div>
-              <div className="text-right"><div className="text-foreground/50">Total</div><div className="text-success font-semibold">{formatMoney(total, so.currency)}</div></div>
+              <div className="text-right"><div className="text-foreground/50">Subtotal</div><div className="text-foreground font-medium">{money(subtotal)}</div></div>
+              <div className="text-right"><div className="text-foreground/50">Tax ({(taxRate * 100).toFixed(2)}%)</div><div className="text-foreground font-medium">{money(tax)}</div></div>
+              <div className="text-right"><div className="text-foreground/50">Total</div><div className="text-success font-semibold">{money(total)}</div></div>
             </div>
           </div>
 
@@ -160,13 +162,13 @@ export function ConfirmSOModal({ so, onConfirm, onClose }: Props) {
           <div className="bg-secondary/60 border border-border rounded-md px-4 py-3 text-xs text-foreground/60">
             Releasing will lock <span className="text-foreground font-semibold">{so.soNumber}</span> from further line edits. All{" "}
             <span className="text-foreground font-medium">{activeLines.length} line items</span>{" "}
-            ({formatMoney(total, so.currency)} incl. tax) will be ready for fulfillment.
+            ({money(total)} incl. tax) will be ready for fulfillment.
           </div>
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-3 border-t border-border shrink-0">
-          <span className="text-xs text-foreground/50">{activeLines.length} items · {formatMoney(total, so.currency)} total</span>
+          <span className="text-xs text-foreground/50">{activeLines.length} items · {money(total)} total</span>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={guardedClose} icon={<X className="w-3.5 h-3.5" />}>
               Cancel <KbdHint keys="Esc" />

@@ -1,5 +1,5 @@
 import type { PricingRuleTier } from "@/app/components/so/pricingRulesData";
-import { useDocCurrency } from "./docCurrencyContext";
+import { useDocCurrency, useDocView } from "./docCurrencyContext";
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { formatMoney, moneyPrefix } from "@/app/currency/money";
 import { toBase } from "@/app/currency/rates";
@@ -16,6 +16,8 @@ type TierAmount = Pick<PricingRuleTier, "rate" | "unit">;
 
 export function useRuleMoney() {
   const { currency, fx, rateDate } = useDocCurrency();
+  const view = useDocView();
+  const inBase = view.inBase;
   // Outside an SO (no rate yet) today's rate stands in.
   const rate = fx?.rate ?? todayRate(currency);
   const factor = ruleAmountFactor({ currency, rateDate: fx?.rateDate ?? rateDate ?? localTodayIso() });
@@ -31,8 +33,8 @@ export function useRuleMoney() {
     currency,
     /** USD flat amounts → the SO's currency (evaluateRuleForLine / computeLineBreakdowns). */
     factor,
-    /** An amount already in the SO's currency. */
-    money: (n: number) => formatMoney(n, currency),
+    /** An amount in the SO's currency, shown in the page's currency. */
+    money: (n: number) => formatMoney(view.toView(n), view.viewCurrency),
     /** "7%" · "$15.00" */
     tierRate,
     /** "7%" · "$15" — hero chips and tier pills. */
@@ -48,7 +50,10 @@ export function useRuleMoney() {
     /** "25–49 units" · "20+ units" */
     tierBand: (t: Pick<PricingRuleTier, "minQty" | "maxQty">) =>
       t.maxQty === null ? `${t.minQty}+ units` : `${t.minQty}–${t.maxQty} units`,
-    /** "≈ ₨123,540.00": an SO amount in base; null on a base-currency SO. */
-    baseText: (amount: number) => (isBase ? null : `≈ ${formatMoney(toBase(amount, rate), BASE_CURRENCY)}`),
+    /** "≈ €243.78" or "≈ ₨123,540.00": an SO amount in the currency the page
+     *  isn't showing (the customer's in base view, base in the customer's);
+     *  null on a base-currency SO. */
+    baseText: (amount: number) =>
+      isBase ? null : inBase ? `≈ ${formatMoney(amount, currency)}` : `≈ ${formatMoney(toBase(amount, rate), BASE_CURRENCY)}`,
   };
 }

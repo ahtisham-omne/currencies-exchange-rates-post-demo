@@ -9,7 +9,7 @@ import { NumberPill } from "@/app/components/shared/NumberPill";
 import { EmptyPlaceholder } from "@/app/components/shared/EmptyPlaceholder";
 import { ThTooltip, Tooltip } from "./Tooltip";
 import type { LinkedTransaction } from "./types";
-import { useDocCurrency } from "@/app/components/currency/docCurrencyContext";
+import { useDocCurrency, useDocWhole } from "@/app/components/currency/docCurrencyContext";
 import { convertOn, localTodayIso } from "@/app/currency/soFx";
 import { formatWhole } from "./soMoney";
 
@@ -56,8 +56,10 @@ interface Props { transactions: LinkedTransaction[]; createdViaUI?: boolean; }
 export function LinkedTransactionsTab({ transactions, createdViaUI = false }: Props) {
   /* Documents are in the order's currency unless they carry their own (a
      quote, or one raised before the order's currency changed); section
-     totals add them up in the order's currency. */
+     totals add them up in the order's currency. Both are shown in the page's
+     currency (base by default); a document's own figure is on hover. */
   const { currency, fx, rateDate } = useDocCurrency();
+  const whole = useDocWhole();
   const inOrder = (t: { amount: number; currency?: string }) =>
     t.currency && t.currency.toUpperCase() !== currency ? convertOn(t.amount, t.currency, currency, fx?.rateDate ?? rateDate ?? localTodayIso()) : t.amount;
   const [search, setSearch] = useState("");
@@ -141,7 +143,7 @@ export function LinkedTransactionsTab({ transactions, createdViaUI = false }: Pr
                   <NumberPill count={items.length} />
                   {sectionTotal > 0 && (
                     <span className="text-foreground ml-auto" style={{ fontSize: 12, fontWeight: 500 }}>
-                      {formatWhole(sectionTotal, currency)}
+                      {whole(sectionTotal)}
                     </span>
                   )}
                   <ChevronDown
@@ -197,7 +199,7 @@ export function LinkedTransactionsTab({ transactions, createdViaUI = false }: Pr
                               </td>
                               <td className="py-2 px-4 pr-3 text-[length:var(--text-caption)] text-foreground whitespace-nowrap text-right font-medium">
                                 <Tooltip text={t.amount > 0 ? `Transaction value: ${formatWhole(t.amount, t.currency || currency)}` : "No monetary value"} position="top">
-                                  <span>{t.amount > 0 ? formatWhole(t.amount, t.currency || currency) : "\u2014"}</span>
+                                  <span>{t.amount > 0 ? whole(inOrder(t)) : "\u2014"}</span>
                                 </Tooltip>
                               </td>
                               <td className="py-2 px-4 pr-3 hidden lg:table-cell">

@@ -19,9 +19,13 @@ import { ConfirmDiscardModal } from '@/app/components/shared/ConfirmDiscardModal
 import { compareNumbers, compareValueText, compareValuesDiffer, isNumericCompare, type CompareField } from '@/app/components/shared/versionCompare';
 import type { SalesOrder } from './types';
 import { getWarehouseNamesForSelection } from './WarehouseSelectionModal';
-import { useDocWhole } from "@/app/components/currency/docCurrencyContext";
+import { useDocView, useDocWhole } from "@/app/components/currency/docCurrencyContext";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { rateSentence } from "@/app/currency/money";
+import { toBase } from "@/app/currency/rates";
 import { soFx } from "@/app/currency/soFx";
-import { restateDesign, restateDesignText } from "./soMoney";
+import { versionRateFields } from "./soCurrency";
+import { formatWhole, restateDesign, restateDesignText } from "./soMoney";
 
 // ── Types ──────────────────────────────────────────────────────────
 type VersionStatus = 'draft' | 'pending-review' | 'cleared' | 'shipped';
@@ -315,6 +319,22 @@ export function VersionHistoryTab({ so, onEditAsDraft }: VersionHistoryTabProps)
   };
 
   const formatCurrency = useDocWhole();
+  /* Like the rest of the order, versions show base unless the page is
+     toggled to the customer's currency: each at the rate that version
+     locked in (versionRateFields), so a version that took today's rate
+     reads differently from one that kept the old one. */
+  const { inBase } = useDocView();
+  const formatFor = (vNum: number) => (n: number) => {
+    if (!so || !inBase) return formatCurrency(n);
+    const r = versionRateFields(so, vNum);
+    return isBaseCurrency(r.currency) ? formatCurrency(n) : formatWhole(toBase(n, r.exchangeRate), BASE_CURRENCY);
+  };
+  /* "1 EUR = 304.8150 PKR" for the compare; null on a base-currency order. */
+  const rateFor = (vNum: number) => {
+    if (!so) return null;
+    const r = versionRateFields(so, vNum);
+    return isBaseCurrency(r.currency) ? null : rateSentence(r.currency, r.exchangeRate);
+  };
 
   const toggleExpanded = (v: number) => {
     setExpandedVersions(prev => { const next = new Set(prev); if (next.has(v)) next.delete(v); else next.add(v); return next; });
@@ -647,7 +667,7 @@ export function VersionHistoryTab({ so, onEditAsDraft }: VersionHistoryTabProps)
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                       <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', lineHeight: '1' }}>{ver.snapshot.lineItemCount} items</span>
                       {(ver.snapshot.rulesCount > 0 || ver.snapshot.adjustmentsCount > 0) && <span style={{ fontSize: '10px', color: 'var(--muted-foreground)', lineHeight: '1' }}>{ver.snapshot.rulesCount}R / {ver.snapshot.adjustmentsCount}A</span>}
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--foreground)', lineHeight: '1' }}>{formatCurrency(ver.snapshot.grandTotal)}</span>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--foreground)', lineHeight: '1' }}>{formatFor(ver.version)(ver.snapshot.grandTotal)}</span>
                     </div>
 
                     {!compareMode && ver.versionStatus === 'cleared' && !isLastApproved && (
@@ -763,8 +783,8 @@ export function VersionHistoryTab({ so, onEditAsDraft }: VersionHistoryTabProps)
                                   </div>
                                   <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 500, color: '#334155', lineHeight: '1', flexShrink: 0, width: '40px', textAlign: 'right' as const }}>{li.qty}</span>
                                   <span style={{ fontSize: '10px', fontWeight: 500, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '44px', textAlign: 'center' as const }}>{li.uom}</span>
-                                  <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 400, color: '#475569', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>{formatCurrency(li.unitPrice)}</span>
-                                  <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>{formatCurrency(li.total)}</span>
+                                  <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 400, color: '#475569', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>{formatFor(ver.version)(li.unitPrice)}</span>
+                                  <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>{formatFor(ver.version)(li.total)}</span>
                                 </div>
                               );
                             })}
@@ -775,20 +795,20 @@ export function VersionHistoryTab({ so, onEditAsDraft }: VersionHistoryTabProps)
                         {ver.snapshot.lineItems && ver.snapshot.lineItems.length > 0 && (
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '8px 14px', borderTop: '1px solid var(--border)', backgroundColor: 'var(--card)' }}>
                             <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', marginRight: '8px' }}>Subtotal</span>
-                            <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', width: '80px', textAlign: 'right' as const }}>{formatCurrency(ver.snapshot.lineItems.reduce((s, li) => s + li.total, 0))}</span>
+                            <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', width: '80px', textAlign: 'right' as const }}>{formatFor(ver.version)(ver.snapshot.lineItems.reduce((s, li) => s + li.total, 0))}</span>
                           </div>
                         )}
                         {/* Footer — Pricing Rules / One-Time Discounts/Premiums
                             on the left, Total on the right. */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', backgroundColor: 'color-mix(in srgb, var(--muted) 40%, transparent)', borderTop: '1px solid var(--border)' }}>
                           <span className="tabular-nums" style={{ fontSize: '11px', fontWeight: 400, color: 'var(--muted-foreground)', lineHeight: '1' }}>
-                            Pricing Rules: <span style={{ fontWeight: 500, color: '#334155' }}>{formatCurrency(ver.snapshot.pricingRulesTotal ?? 0)}</span>
+                            Pricing Rules: <span style={{ fontWeight: 500, color: '#334155' }}>{formatFor(ver.version)(ver.snapshot.pricingRulesTotal ?? 0)}</span>
                             {' '}&nbsp;·&nbsp;{' '}
-                            One-Time Discounts/Premiums: <span style={{ fontWeight: 500, color: '#334155' }}>{formatCurrency(ver.snapshot.adjustmentsTotal ?? 0)}</span>
+                            One-Time Discounts/Premiums: <span style={{ fontWeight: 500, color: '#334155' }}>{formatFor(ver.version)(ver.snapshot.adjustmentsTotal ?? 0)}</span>
                           </span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1' }}>Total</span>
-                            <span className="tabular-nums" style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', lineHeight: '1' }}>{formatCurrency(ver.snapshot.grandTotal)}</span>
+                            <span className="tabular-nums" style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', lineHeight: '1' }}>{formatFor(ver.version)(ver.snapshot.grandTotal)}</span>
                           </div>
                         </div>
                       </div>
@@ -852,7 +872,8 @@ export function VersionHistoryTab({ so, onEditAsDraft }: VersionHistoryTabProps)
         <CompareView
           v1={versions.find(v => v.version === Math.min(...compareSelections))!}
           v2={versions.find(v => v.version === Math.max(...compareSelections))!}
-          formatCurrency={formatCurrency}
+          formatFor={formatFor}
+          rateFor={rateFor}
           onClose={() => setShowCompareView(false)}
         />
       )}
@@ -881,13 +902,21 @@ export function VersionHistoryTab({ so, onEditAsDraft }: VersionHistoryTabProps)
 }
 
 // ── Compare View ──────────────────────────────────────────────────
-function CompareView({ v1, v2, formatCurrency, onClose }: {
-  v1: Version; v2: Version; formatCurrency: (n: number) => string; onClose: () => void;
+function CompareView({ v1, v2, formatFor, rateFor, onClose }: {
+  v1: Version; v2: Version;
+  /** A version's amounts as shown (base at its own rate, or the customer's). */
+  formatFor: (vNum: number) => (n: number) => string;
+  /** A version's rate sentence; null on a base-currency order. */
+  rateFor: (vNum: number) => string | null;
+  onClose: () => void;
 }) {
+  const rate1 = rateFor(v1.version);
+  const rate2 = rateFor(v2.version);
   const fields: CompareField[] = [
     { label: 'Status', val1: versionStatusConfig[v1.versionStatus].label, val2: versionStatusConfig[v2.versionStatus].label, kind: 'status' },
     { label: 'Line Items', val1: String(v1.snapshot.lineItemCount), val2: String(v2.snapshot.lineItemCount) },
-    { label: 'Grand Total', val1: formatCurrency(v1.snapshot.grandTotal), val2: formatCurrency(v2.snapshot.grandTotal) },
+    { label: 'Grand Total', val1: formatFor(v1.version)(v1.snapshot.grandTotal), val2: formatFor(v2.version)(v2.snapshot.grandTotal) },
+    ...(rate1 && rate2 ? [{ label: 'Exchange rate', val1: rate1, val2: rate2 }] : []),
     { label: 'Rules', val1: String(v1.snapshot.rulesCount), val2: String(v2.snapshot.rulesCount) },
     { label: 'Adjustments', val1: String(v1.snapshot.adjustmentsCount), val2: String(v2.snapshot.adjustmentsCount) },
     { label: 'Pickup Warehouse(s)', val1: v1.snapshot.pickupWarehouses, val2: v2.snapshot.pickupWarehouses },

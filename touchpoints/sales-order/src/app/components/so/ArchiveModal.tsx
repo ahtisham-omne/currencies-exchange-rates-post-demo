@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Archive } from "lucide-react";
 import { ConfirmationModal } from "./ConfirmationModal";
 import type { SalesOrder } from "./types";
-import { formatMoney } from "@/app/currency/money";
+import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
 
 /**
  * Archive Sales Order — Partner-style ConfirmationModal (red variant) with
@@ -22,6 +22,8 @@ interface Props {
 }
 
 export function ArchiveModal({ so, onConfirm, onClose }: Props) {
+  /* In the shown currency: base, or the customer's on a toggled SO page. */
+  const money = useDocMoney();
   const [reason, setReason] = useState("");
 
   const activeLines = so.lines.filter(l => !l.cancelled);
@@ -31,7 +33,7 @@ export function ArchiveModal({ so, onConfirm, onClose }: Props) {
     <ConfirmationModal
       isOpen
       title="Archive Sales Order?"
-      message={`This will move ${so.soNumber} (${formatMoney(totalValue, so.currency)}) to the archive. Archived orders are hidden from the default list but remain searchable under the Archived filter and can be unarchived at any time.`}
+      message={`This will move ${so.soNumber} (${money(totalValue)}) to the archive. Archived orders are hidden from the default list but remain searchable under the Archived filter and can be unarchived at any time.`}
       confirmText="Archive Order"
       cancelText="Cancel"
       variant="red"

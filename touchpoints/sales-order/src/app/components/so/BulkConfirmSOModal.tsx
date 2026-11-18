@@ -5,7 +5,8 @@ import { Button } from "./ui/Button";
 import type { SalesOrder } from "./types";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatMoney } from "@/app/currency/money";
-import { toSOBase } from "@/app/currency/soFx";
+import { soFx, toSOBase } from "@/app/currency/soFx";
+import { BaseMoney } from "@/app/components/currency/Money";
 
 /* Orders are in different currencies: totals across them are in base, each
    order at its own rate (spec 4.3); an order's own figures are in its currency. */
@@ -167,7 +168,8 @@ export function BulkConfirmSOModal({ orders, onConfirm, onClose }: Props) {
                       {activeLines.length} items
                     </span>
                     <span style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)", color: "var(--foreground)" }}>
-                      {formatMoney(soSubtotal, so.currency)}
+                      {/* In base at the order's rate; the customer's amount on hover. */}
+          <BaseMoney value={soSubtotal} currency={so.currency} fx={soFx(so)} role="Customer currency" />
                     </span>
                     {isExpanded ? <ChevronUp className="w-3.5 h-3.5" style={{ color: "var(--foreground)", opacity: 0.4 }} /> : <ChevronDown className="w-3.5 h-3.5" style={{ color: "var(--foreground)", opacity: 0.4 }} />}
                   </button>
@@ -175,7 +177,7 @@ export function BulkConfirmSOModal({ orders, onConfirm, onClose }: Props) {
                     <div className="px-4 pb-3">
                       <div
                         className="grid text-foreground/50 border-b border-border"
-                        style={{ gridTemplateColumns: "100px 1fr 50px 90px", fontSize: "var(--text-micro)", fontWeight: "var(--font-weight-medium)", letterSpacing: "0.05em", padding: "4px 0" }}
+                        style={{ gridTemplateColumns: "100px 1fr 50px 120px", fontSize: "var(--text-micro)", fontWeight: "var(--font-weight-medium)", letterSpacing: "0.05em", padding: "4px 0" }}
                       >
                         <span>ITEM #</span><span>DESCRIPTION</span><span className="text-center">QTY</span><span className="text-right">TOTAL</span>
                       </div>
@@ -183,13 +185,13 @@ export function BulkConfirmSOModal({ orders, onConfirm, onClose }: Props) {
                         <div
                           key={line.id}
                           className="grid items-center border-b border-border last:border-b-0"
-                          style={{ gridTemplateColumns: "100px 1fr 50px 90px", fontSize: "var(--text-caption)", padding: "6px 0" }}
+                          style={{ gridTemplateColumns: "100px 1fr 50px 120px", fontSize: "var(--text-caption)", padding: "6px 0" }}
                         >
                           <span style={{ color: "var(--primary)", fontWeight: "var(--font-weight-medium)" }}>{line.itemCode}</span>
                           <span className="truncate pr-2" style={{ color: "var(--foreground)", opacity: 0.7 }}>{line.itemName}</span>
                           <span className="text-center" style={{ color: "var(--foreground)" }}>{line.orderedQty}</span>
                           <span className="text-right" style={{ color: "var(--foreground)", fontWeight: "var(--font-weight-medium)" }}>
-                            {formatMoney(line.orderedQty * line.unitPrice, so.currency)}
+                            <BaseMoney value={line.orderedQty * line.unitPrice} currency={so.currency} fx={soFx(so)} role="Customer currency" />
                           </span>
                         </div>
                       ))}

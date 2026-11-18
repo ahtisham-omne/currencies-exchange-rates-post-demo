@@ -38,16 +38,20 @@ function InfoTip({ children }: { children: React.ReactNode }) {
 }
 
 /** Every active currency, searchable by code, name or country (spec 2.3). */
-function CurrencyPicker({
+export function CurrencyPicker({
   value,
   onPick,
   disabled,
   customerDefault,
+  ariaLabel = "Order currency",
+  className = "",
 }: {
   value: string;
   onPick: (code: string) => void;
   disabled: boolean;
   customerDefault: string;
+  ariaLabel?: string;
+  className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -60,7 +64,7 @@ function CurrencyPicker({
     : CURRENCIES;
   if (disabled) {
     return (
-      <div className={LOCKED}>
+      <div className={`${LOCKED} ${className}`}>
         <CurrencyFlag code={value} />
         <span className="text-slate-700" style={{ fontWeight: 500 }}>{value}</span>
         <span className="text-slate-500 truncate">{cur?.name}</span>
@@ -73,8 +77,8 @@ function CurrencyPicker({
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label="Order currency"
-          className={`${FIELD} bg-white border border-border hover:border-primary/45 focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none justify-between cursor-pointer transition-colors`}
+          aria-label={ariaLabel}
+          className={`${FIELD} ${className} bg-white border border-border hover:border-primary/45 focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none justify-between cursor-pointer transition-colors`}
         >
           <span className="flex items-center gap-1.5 min-w-0">
             <CurrencyFlag code={value} />
@@ -125,7 +129,7 @@ function CurrencyPicker({
 }
 
 /** Mid-market | Corporate, as the Exchange Rates module names them. */
-function RateTypeToggle({ value, onChange, corporateAvailable }: { value: RateType; onChange: (t: RateType) => void; corporateAvailable: boolean }) {
+export function RateTypeToggle({ value, onChange, corporateAvailable }: { value: RateType; onChange: (t: RateType) => void; corporateAvailable: boolean }) {
   return (
     <span className="ml-auto inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-px" role="radiogroup" aria-label="Rate type">
       {(["mid", "corporate"] as RateType[]).map((t) => (
@@ -319,11 +323,12 @@ export function SOCurrencyFields({
 }
 
 /** The confirmation a currency change asks for: the rate, and the totals before and after. */
-function SOCurrencyConfirmDialog({
+export function SOCurrencyConfirmDialog({
   so,
   totals,
   totalsFor,
   to,
+  rateType,
   onCancel,
   onConfirm,
 }: {
@@ -331,13 +336,16 @@ function SOCurrencyConfirmDialog({
   totals: SOCurrencyTotals;
   totalsFor?: (next: SOCurrencyChoice) => SOCurrencyTotals;
   to: string;
+  /** The rate type wanted; the order's when left out. */
+  rateType?: RateType;
   onCancel: () => void;
   onConfirm: (next: SOCurrencyChoice) => void;
 }) {
   const from = soFx(so);
   // Keep the rate type; finance may have no corporate rate for the new currency.
   const corp = rateOn(to, from.rateDate, "corporate");
-  const type: RateType = from.rateType === "corporate" && corp.rate != null ? "corporate" : "mid";
+  const wanted = rateType ?? from.rateType;
+  const type: RateType = wanted === "corporate" && corp.rate != null ? "corporate" : "mid";
   const quote = type === "corporate" ? corp : rateOn(to, from.rateDate, "mid");
   const next: SOCurrencyChoice = { currency: to, rateType: type, exchangeRate: isBaseCurrency(to) ? 1 : quote.rate ?? 1 };
   // Every amount converts at the cross rate between the two rates (withSOCurrency in store.tsx).
@@ -400,7 +408,7 @@ function SOCurrencyConfirmDialog({
                 {type === "mid" ? RATE_PROVIDER : quote.source.replace(/^Set by/, "set by")}, {formatRateDate(from.rateDate)}
               </span>
             </p>
-            {from.rateType === "corporate" && type === "mid" && (
+            {wanted === "corporate" && type === "mid" && (
               <p className="mt-1 text-[11px] text-amber-700">No corporate rate is set for {to}, so the mid-market rate is used.</p>
             )}
           </div>

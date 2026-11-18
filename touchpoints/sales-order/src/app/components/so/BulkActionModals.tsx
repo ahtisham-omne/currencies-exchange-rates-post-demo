@@ -11,7 +11,8 @@ import { SOStatusBadge } from "./StatusBadge";
 import type { SalesOrder, CancellationReason } from "./types";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatMoney } from "@/app/currency/money";
-import { toSOBase } from "@/app/currency/soFx";
+import { soFx, toSOBase } from "@/app/currency/soFx";
+import { BaseMoney } from "@/app/components/currency/Money";
 
 /* Orders are in different currencies: totals across them are in base, each
    order at its own rate (spec 4.3); an order's own figures are in its currency. */
@@ -81,7 +82,8 @@ function OrderAccordionRow({
           {activeLines.length} item{activeLines.length !== 1 ? "s" : ""}
         </span>
         <span style={{ ...captionStyle, color: "var(--foreground)" }}>
-          {formatMoney(soSubtotal, so.currency)}
+          {/* In base at the order's rate; the customer's amount on hover. */}
+          <BaseMoney value={soSubtotal} currency={so.currency} fx={soFx(so)} role="Customer currency" />
         </span>
         {isExpanded
           ? <ChevronUp className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--foreground)", opacity: 0.4 }} />
@@ -92,7 +94,7 @@ function OrderAccordionRow({
           <div
             className="grid border-b border-border"
             style={{
-              gridTemplateColumns: "100px 1fr 50px 90px",
+              gridTemplateColumns: "100px 1fr 50px 120px",
               ...microLabel,
               padding: "4px 0",
             }}
@@ -104,13 +106,13 @@ function OrderAccordionRow({
             <div
               key={line.id}
               className="grid items-center border-b border-border last:border-b-0"
-              style={{ gridTemplateColumns: "100px 1fr 50px 90px", ...captionNormal, padding: "6px 0" }}
+              style={{ gridTemplateColumns: "100px 1fr 50px 120px", ...captionNormal, padding: "6px 0" }}
             >
               <span style={{ color: "var(--primary)", fontWeight: "var(--font-weight-medium)" }}>{line.itemCode}</span>
               <span className="truncate pr-2" style={{ color: "var(--foreground)", opacity: 0.7 }}>{line.itemName}</span>
               <span className="text-center" style={{ color: "var(--foreground)" }}>{line.orderedQty}</span>
               <span className="text-right" style={{ color: "var(--foreground)", fontWeight: "var(--font-weight-medium)" }}>
-                {formatMoney(line.orderedQty * line.unitPrice, so.currency)}
+                <BaseMoney value={line.orderedQty * line.unitPrice} currency={so.currency} fx={soFx(so)} role="Customer currency" />
               </span>
             </div>
           ))}

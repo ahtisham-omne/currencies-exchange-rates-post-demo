@@ -6,8 +6,14 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/dia
 import { ConfirmDiscardModal } from '../shared/ConfirmDiscardModal';
 import { SOStatusBadge } from './StatusBadge';
 import { StateTransitionOverlay } from '@/app/components/shared/StateTransitionOverlay';
-import type { SOStatus } from './types';
-import { useDesignMoney } from "@/app/components/currency/docCurrencyContext";
+import type { SalesOrder, SOStatus } from './types';
+import { useDesignMoney, useDocView } from "@/app/components/currency/docCurrencyContext";
+import { VersionRateChoice as VersionRateChoiceCards, versionRateOptions } from "@/app/components/currency/VersionRateChoice";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { toBase } from "@/app/currency/rates";
+import { versionRateFields, type VersionRateChoice } from "./soCurrency";
+import { formatWhole } from "./soMoney";
+import { summarizeSO } from "./summarizeSO";
 
 /* Right-pane "Order Status" badge mapping.
    The version's internal status (draft / pending-review / cleared /
@@ -117,7 +123,11 @@ interface VersionHistoryModalProps {
   soNumber: string;
   currentVersion: number;
   onClose: () => void;
-  onRevert?: (toVersion: number) => void;
+  /** With the rate the order takes: the version's locked one, or today's. */
+  onRevert?: (toVersion: number, rateChoice: VersionRateChoice) => void;
+  /** The order, when known: each version's amounts in base at the rate it
+   *  locked in, and the revert's rate choice. */
+  so?: SalesOrder;
 }
 
 /* Change-kind icon + color — keyed by the high-level action (Added /
@@ -247,8 +257,16 @@ function generateSOVersions(): SOVersionEntry[] {
   ];
 }
 
-export function VersionHistoryModal({ soNumber, currentVersion, onClose, onRevert }: VersionHistoryModalProps) {
-  const formatCurrency = useDesignMoney().whole;
+export function VersionHistoryModal({ soNumber, currentVersion, onClose, onRevert, so }: VersionHistoryModalProps) {
+  const design = useDesignMoney();
+  const { inBase } = useDocView();
+  /* Shown in base (the default) at each version's own rate, or in the
+     order's currency when the page is toggled to it. */
+  const formatFor = (vNum: number) => (usd: number) => {
+    if (!so || !inBase) return design.whole(usd);
+    const r = versionRateFields(so, vNum);
+    return isBaseCurrency(r.currency) ? design.whole(usd) : formatWhole(toBase(design.amount(usd), r.exchangeRate), BASE_CURRENCY);
+  };
   /* Remap the rich `generateSOVersions()` templates onto the SO's
      actual version count so the modal's row list matches what the
      SO listing badge ("v4") shows for this record. Without this
@@ -272,9 +290,9 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose, onRever
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
   const [versionToRevert, setVersionToRevert] = useState<number | null>(null);
 
-  const [revertOverlay, setRevertOverlay] = useState<{ show: boolean; toVersion: number; fromVersion: number }>({ show: false, toVersion: 0, fromVersion: 0 });
+  const [revertOverlay, setRevertOverlay] = useState<{ show: boolean; toVersion: number; fromVersion: number; rateChoice?: VersionRateChoice }>({ show: false, toVersion: 0, fromVersion: 0 });
 
-  const handleRevert = (toVersion: number, reason: string) => {
+  const handleRevert = (toVersion: number, reason: string, rateChoice: VersionRateChoice) => {
     // Revert-in-place: V[toVersion] becomes the new "current" without
     // creating a new draft entry. Status is preserved. The full-screen
     // overlay plays first so the user has a visible confirmation that
@@ -289,14 +307,14 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose, onRever
     }
     setShowRevertConfirm(false);
     setVersionToRevert(null);
-    setRevertOverlay({ show: true, toVersion, fromVersion: currentVersionNum });
+    setRevertOverlay({ show: true, toVersion, fromVersion: currentVersionNum, rateChoice });
   };
 
   const finalizeRevert = () => {
-    const { toVersion } = revertOverlay;
+    const { toVersion, rateChoice = 'locked' } = revertOverlay;
     setRevertOverlay({ show: false, toVersion: 0, fromVersion: 0 });
     setSelectedVersion(toVersion);
-    onRevert?.(toVersion);
+    onRevert?.(toVersion, rateChoice);
     toast.success(`Reverted to V${toVersion}`, {
       description: `V${toVersion} is now the latest version of this sales order.`,
       position: 'top-right',
@@ -594,7 +612,7 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose, onRever
                 <CompareView
                   v1={versions.find(v => v.version === Math.min(compareVersions[0]!, compareVersions[1]!))!}
                   v2={versions.find(v => v.version === Math.max(compareVersions[0]!, compareVersions[1]!))!}
-                  formatCurrency={formatCurrency}
+                  formatFor={formatFor}
                   changeKindConfig={changeKindConfig}
                   versionStatusConfig={versionStatusConfig}
                 />
@@ -608,7 +626,7 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose, onRever
                   lastApprovedVersionNum={lastApprovedVersionNum}
                   versionStatusConfig={versionStatusConfig}
                   changeKindConfig={changeKindConfig}
-                  formatCurrency={formatCurrency}
+                  formatCurrency={formatFor(selectedVersionData.version)}
                   getUserColor={getUserColor}
                   getUserInitials={getUserInitials}
                   onRevert={(v) => { setVersionToRevert(v); setShowRevertConfirm(true); }}
@@ -632,8 +650,14 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose, onRever
       {showRevertConfirm && versionToRevert !== null && (
         <RevertConfirmModal
           version={versionToRevert}
+          rate={(() => {
+            if (!so) return undefined;
+            const s = summarizeSO(so);
+            const options = versionRateOptions({ ...so, ...versionRateFields(so, versionToRevert) }, s.grandTotal);
+            return options ?? undefined;
+          })()}
           onClose={() => { setShowRevertConfirm(false); setVersionToRevert(null); }}
-          onConfirm={(reason: string) => handleRevert(versionToRevert, reason)}
+          onConfirm={(reason: string, rateChoice: VersionRateChoice) => handleRevert(versionToRevert, reason, rateChoice)}
         />
       )}
 
@@ -881,9 +905,10 @@ function SingleVersionView({ version, currentVersionNum, latestVersionNum, lastA
 }
 
 // ── Compare View ──────────────────────────────────────────────────
-function CompareView({ v1, v2, formatCurrency: fmt, changeKindConfig: ctCfg, versionStatusConfig: vsCfg }: {
+function CompareView({ v1, v2, formatFor, changeKindConfig: ctCfg, versionStatusConfig: vsCfg }: {
   v1: SOVersionEntry; v2: SOVersionEntry;
-  formatCurrency: (n: number) => string;
+  /** A version's amounts as shown (base at its own rate, or the order's currency). */
+  formatFor: (vNum: number) => (n: number) => string;
   changeKindConfig: Record<"Added" | "Removed" | "Changed", { icon: React.ElementType; color: string; bg: string }>;
   versionStatusConfig: Record<SOVersionStatus, { label: string; bg: string; color: string; icon: React.ElementType }>;
 }) {
@@ -907,7 +932,7 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeKindConfig: ctCfg, ver
   const summaryFields: CompareField[] = [
     { label: 'Status', val1: vsCfg[v1.versionStatus].label, val2: vsCfg[v2.versionStatus].label, kind: 'status' },
     { label: 'Line Items', val1: String(v1.snapshot.lineItemCount), val2: String(v2.snapshot.lineItemCount) },
-    { label: 'Grand Total', val1: fmt(v1.snapshot.grandTotal), val2: fmt(v2.snapshot.grandTotal) },
+    { label: 'Grand Total', val1: formatFor(v1.version)(v1.snapshot.grandTotal), val2: formatFor(v2.version)(v2.snapshot.grandTotal) },
     { label: 'Rules', val1: String(v1.snapshot.rulesCount), val2: String(v2.snapshot.rulesCount) },
     { label: 'Adjustments', val1: String(v1.snapshot.adjustmentsCount), val2: String(v2.snapshot.adjustmentsCount) },
     { label: 'Pickup Warehouse(s)', val1: v1.snapshot.pickupWarehouses, val2: v2.snapshot.pickupWarehouses },
@@ -919,7 +944,7 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeKindConfig: ctCfg, ver
 
   const colHeaderStyle: React.CSSProperties = { fontSize: '9px', fontWeight: 500, color: '#9CA3AF', textTransform: 'none', lineHeight: '1' };
 
-  const renderCompareRow = (li: LineItem | null, status: DiffStatus) => {
+  const renderCompareRow = (li: LineItem | null, status: DiffStatus, fmt: (n: number) => string) => {
     if (!li) {
       return (
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', backgroundColor: status === 'removed' ? '#FEF2F2' : status === 'added' ? '#F0FDF4' : '#F9FAFB', borderBottom: '1px solid #F3F4F6', minHeight: '30px', opacity: 0.4 }}>
@@ -948,6 +973,7 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeKindConfig: ctCfg, ver
   };
 
   const renderVersionTable = (ver: SOVersionEntry, side: 'left' | 'right') => {
+    const fmt = formatFor(ver.version);
     /* Right pane uses the listing's SOStatusBadge below, so the
        local sCfg / SIcon look-up is no longer needed. */
     const itemMap = side === 'left' ? v1Map : v2Map;
@@ -977,7 +1003,7 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeKindConfig: ctCfg, ver
         {allIds.map(id => {
           const status = getDiffStatus(id);
           const li = itemMap.get(id) || null;
-          return <div key={id}>{renderCompareRow(li, status)}</div>;
+          return <div key={id}>{renderCompareRow(li, status, fmt)}</div>;
         })}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '3px 8px', borderTop: '1px solid #E5E7EB', backgroundColor: subtotalChanged && side === 'right' ? '#FFFBEB' : '#FFFFFF' }}>
           <span style={{ fontSize: '9px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.3px', marginRight: '6px' }}>Subtotal</span>
@@ -1130,10 +1156,14 @@ function CompareView({ v1, v2, formatCurrency: fmt, changeKindConfig: ctCfg, ver
 }
 
 // ── Revert Confirm Modal ──────────────────────────────────────────
-function RevertConfirmModal({ version, onClose, onConfirm }: {
-  version: number; onClose: () => void; onConfirm: (reason: string) => void;
+function RevertConfirmModal({ version, rate, onClose, onConfirm }: {
+  version: number;
+  /** A foreign-currency order: V{version}'s locked rate, or today's. */
+  rate?: import("@/app/components/currency/VersionRateChoice").VersionRateOptions;
+  onClose: () => void; onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
 }) {
   const [reason, setReason] = useState('');
+  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
   // Routes through the shared `ConfirmDiscardModal` so the listing-level
   // revert (this) and the detail-page version-tab revert use the same
   // Partner v7 chrome (gradient banner, glow icon, h-11 stacked buttons).
@@ -1146,8 +1176,13 @@ function RevertConfirmModal({ version, onClose, onConfirm }: {
       description={`V${version} will become the latest version of this sales order. Its existing status is preserved. The next material change starts a new version.`}
       confirmLabel={`Revert to V${version}`}
       cancelLabel="Cancel"
-      onConfirm={() => onConfirm(reason.trim())}
+      onConfirm={() => onConfirm(reason.trim(), rate ? rateChoice : 'locked')}
     >
+      {rate && (
+        <div style={{ marginBottom: 14 }}>
+          <VersionRateChoiceCards fromVersion={version} options={rate} value={rateChoice} onChange={setRateChoice} />
+        </div>
+      )}
       <div>
         <label
           className="block"
