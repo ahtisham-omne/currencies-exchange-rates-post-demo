@@ -4,8 +4,9 @@ import { X, Truck, Check, DollarSign, Layers, User } from 'lucide-react';
 import { SwitchFreightModeConfirm, splitEvenly } from '@/app/components/shared/SwitchFreightModeConfirm';
 import { FreightSplitOverlay } from '@/app/components/shared/FreightSplitOverlay';
 import { getLineItemImage } from '../../data/lineItemImage';
-import { useDocCurrency, useDocWhole } from "@/app/components/currency/docCurrencyContext";
+import { useDocCurrency } from "@/app/components/currency/docCurrencyContext";
 import { formatAmount } from "@/app/currency/money";
+import { formatWhole } from "@/app/currency/quoteMoney";
 
 /**
  * Freight Charges breakdown modal.
@@ -26,9 +27,11 @@ import { formatAmount } from "@/app/currency/money";
  *    "Customer pickup" indicator instead of a number.
  */
 
-/* Freight is in the document's currency (spec 4.3): the inputs show the
-   number alone (their labels carry the code), since a symbol such as
-   "د.إ" would trip the digits-only parsing below. */
+/* Freight is in the document's currency (spec 4.3), also while the page
+   shows base: it is charged in the currency the customer pays, so it is
+   typed in it and the modal reads in it. The inputs show the number alone
+   (their labels carry the code), since a symbol such as "د.إ" would trip
+   the digits-only parsing below. */
 
 type ShipmentMethodLite = 'courier-pickup' | 'courier-dropby' | 'customer-pickup';
 
@@ -66,8 +69,8 @@ type Mode = 'default' | 'per-line';
 export function FreightBreakdownModal({
   isOpen, onClose, defaultCost, lines, onToggleLine, onChangeLineCost, onChangeDefault, scopeLabel, defaultMethod,
 }: FreightBreakdownModalProps) {
-  const fmtCurrency = useDocWhole();
   const { currency } = useDocCurrency();
+  const fmtCurrency = (n: number) => formatWhole(n, currency);
   const fmtMoneyInput = (n: number) => formatAmount(n, currency);
   const [mode, setMode] = useState<Mode>('default');
   const [draftDefault, setDraftDefault] = useState(defaultCost);

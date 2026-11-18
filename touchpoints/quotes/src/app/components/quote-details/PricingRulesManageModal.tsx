@@ -17,7 +17,6 @@ import type { PricingRulesAPI } from './usePricingRules';
 import { InactiveItemPill } from '../shared/InactiveItemPill';
 import { useDocWhole } from '@/app/components/currency/docCurrencyContext';
 import { useRuleMoney } from '@/app/components/currency/useRuleMoney';
-import { BASE_CURRENCY } from '@/app/currency/currencies';
 
 /* Display-shaped line item, built from real Quote LineItem data passed in
    via the `lines` prop. Replaces the old mock LINE_ITEMS constant. */
@@ -1140,11 +1139,11 @@ function SummaryRuleCard({ rule, onOpenItemsModal, onDeactivate, onReactivate, r
             </span>
           </div>
           {/* Spec 4.2, 4.3: on a foreign-currency quote, what the rule met is
-              also stated in base, beside its amount in the quote's currency. */}
+              stated in both currencies: the shown one, and the other beside it. */}
           {rule.isApplied && rule.amount !== 0 && ruleMoney.baseText(Math.abs(rule.amount)) && (
             <p className="mt-1 px-1 text-[10.5px] text-slate-500 tabular-nums truncate">
               {rule.type === 'discount' ? '−' : '+'}{ruleMoney.money(Math.abs(rule.amount))} on this quote
-              <span className="text-slate-400"> · {ruleMoney.baseText(Math.abs(rule.amount))} {BASE_CURRENCY}</span>
+              <span className="text-slate-400"> · {ruleMoney.baseText(Math.abs(rule.amount))} {ruleMoney.otherCode}</span>
             </p>
           )}
         </div>

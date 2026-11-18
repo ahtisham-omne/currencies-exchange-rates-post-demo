@@ -164,6 +164,9 @@ export interface Quote {
   rateDate?: string;
   /** A corporate rate typed on this quote instead of finance's. */
   rateEdited?: boolean;
+  /** "You receive": the currency the quote is settled in. The base currency
+   *  unless set in the quote's currency configuration. */
+  settlementCurrency?: string;
   createdDate: Date;
   expiryDate: Date;
   /** Optional for the same reason: an unassigned quote has none. */

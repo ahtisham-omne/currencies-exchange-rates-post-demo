@@ -76,12 +76,18 @@ import { QuoteStatus } from '../types/quote';
 import { summarizeQuote } from '../data/summarizeQuote';
 import { DocCurrencyProvider } from '@/app/components/currency/DocCurrency';
 import type { QuoteCurrencyChange, QuoteCurrencyTotals } from '@/app/components/currency/QuoteCurrencyFields';
+import { QuoteCurrencyConfigDialog } from '@/app/components/currency/QuoteCurrencyConfig';
+import { QuoteCurrencyHeaderControls } from '@/app/components/currency/QuoteCurrencyHeaderControls';
+import { setQuoteView, useQuoteView } from '@/app/components/currency/quoteView';
+import { VersionRateChoice as VersionRateChoiceCards, useVersionRateOptions, versionRateOptions } from '@/app/components/currency/VersionRateChoice';
+import { useQuoteVersionFx } from '@/app/components/currency/versionMoney';
 import { formatMoney, formatRate } from '@/app/currency/money';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
-import { quoteFx, roundTo, ruleAmountFactor } from '@/app/currency/qFx';
+import type { RateType } from '@/app/currency/rates';
+import { currentRateFor, isoDay, quoteFx, roundTo, ruleAmountFactor } from '@/app/currency/qFx';
 import { scaleAdjustments, scaleQuoteLine, withQuoteCurrency, type QuoteCurrencyChoice, type QuoteCurrencyFields } from '../components/quote-details/quoteCurrency';
 import { computeLineBreakdowns } from '../components/quote-details/pricingRulesData';
-import { getCreatedQuoteLineItems, getQuoteLineFactor, setCreatedQuoteAdjustments, setCreatedQuoteLineItems, setQuoteLineFactor } from '../data/quoteStore';
+import { getCreatedQuoteLineItems, getQuoteLineFactor, getVersionRate, seedVersionRates, setCreatedQuoteAdjustments, setCreatedQuoteLineItems, setQuoteLineFactor, setVersionRate, type VersionRateChoice } from '../data/quoteStore';
 
 // Map from listing QuoteStatus → lifecycle status used in detail page
 function mapToLifecycleStatus(status: QuoteStatus): QuoteLifecycleStatus {
@@ -174,17 +180,27 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
      quote record so the listing follows (as totalValue is below). */
   const [fxFields, setFxFields] = useState<Partial<QuoteCurrencyFields>>(() => ({
     currency: quote?.currency, exchangeRate: quote?.exchangeRate, rateType: quote?.rateType,
-    rateDate: quote?.rateDate, rateEdited: quote?.rateEdited,
+    rateDate: quote?.rateDate, rateEdited: quote?.rateEdited, settlementCurrency: quote?.settlementCurrency,
   }));
   const fx = quoteFx({ ...fxFields, createdDate: quote?.createdDate, customer: quote?.customer });
+  /* The quote date. The design's USD figures and the flat USD rule amounts
+     convert on it, also once a version has applied today's rate (the rate
+     date moves then), so the customer's amounts stay as they are. */
+  const quoteDay = isoDay(quote?.createdDate ?? fx.rateDate);
+  const ruleFx = { currency: fx.currency, rateDate: quoteDay };
+  /* Base Currency | Customer Currency (the header toggle) and the quote's
+     Currency Configuration dialog. */
+  const viewKey = propQuoteId ?? quote?.id;
+  const quoteView = useQuoteView(viewKey);
+  const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   /* The design's line set (QUOTE_LINES) and its demo seeds are written in
      USD: this is what one of those dollars is in the quote's currency. It
      starts at the mid-market cross rate on the quote date, and a currency
      change multiplies it, so the rule lines move with the table's lines;
      the store keeps it for when the quote is reopened. */
-  const [designFactor, setDesignFactor] = useState(() => (propQuoteId && getQuoteLineFactor(propQuoteId)) || ruleAmountFactor(fx));
+  const [designFactor, setDesignFactor] = useState(() => (propQuoteId && getQuoteLineFactor(propQuoteId)) || ruleAmountFactor(ruleFx));
   const designLines = useMemo(() => designLinesAt(designFactor, fx.currency), [designFactor, fx.currency]);
-  const pricingAPI = usePricingRules(customerName, designLines, ruleAmountFactor(fx));
+  const pricingAPI = usePricingRules(customerName, designLines, ruleAmountFactor(ruleFx));
 
   /* One-time adjustments — parallel to pricingAPI, lifted here so the
      summary modal and the line-item configurator share the same list. */
@@ -290,6 +306,43 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   const [quoteVersion, setQuoteVersion] = useState(quote?.version || 3);
   const [quoteMaxVersion, setQuoteMaxVersion] = useState(quote?.version || 3);
 
+  /* Each version's rate (quoteStore): seeded from the quote's own the first
+     time it opens, then kept in step with the version in force while the
+     quote is edited (a Draft's currency or rate change, a version made or
+     reverted to at today's rate). Versions show their amounts at it. */
+  const rateStamp = { currency: fx.currency, exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate, rateEdited: !!fxFields.rateEdited };
+  useEffect(() => {
+    if (viewKey) seedVersionRates(viewKey, Array.from({ length: quoteMaxVersion }, (_, i) => i + 1), rateStamp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (viewKey) setVersionRate(viewKey, quoteVersion, rateStamp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewKey, quoteVersion, fx.currency, fx.rate, fx.rateType, fx.rateDate, fxFields.rateEdited]);
+  const versionFx = useQuoteVersionFx(viewKey, fx.currency);
+
+  /* Restamp the quote's rate: a version made or reverted to at today's
+     rate, or at the rate a version locked in. Amounts stay in the quote's
+     currency, so what the customer pays doesn't move; only what the quote
+     is worth in base does. The record follows, so the listing agrees. */
+  const restampRate = (next: { exchangeRate: number; rateType: RateType; rateDate: string; rateEdited?: boolean }) => {
+    const fields = { currency: fx.currency, exchangeRate: next.exchangeRate, rateType: next.rateType, rateDate: next.rateDate, rateEdited: !!next.rateEdited };
+    setFxFields((prev) => ({ ...prev, ...fields }));
+    if (rawQuote) Object.assign(rawQuote, fields);
+  };
+
+  /** The rate a new version (no `fromVersion`) or a version reverted to
+   *  takes: the one locked in (the quote's, or that version's), or today's
+   *  of the same type. */
+  const applyVersionRate = (choice: VersionRateChoice, fromVersion?: number) => {
+    if (fx.isBase) return;
+    const own = rateStamp;
+    const onRecord = fromVersion != null && viewKey ? getVersionRate(viewKey, fromVersion) : undefined;
+    const locked = onRecord && onRecord.currency === fx.currency ? onRecord : own;
+    if (choice === 'current') restampRate({ ...currentRateFor(locked), rateEdited: false });
+    else if (locked !== own) restampRate(locked);
+  };
+
   // Sales order number — populated when quote is converted to SO
   const [salesOrderNumber, setSalesOrderNumber] = useState<string | null>(
     (quote && mapToLifecycleStatus(quote.status) === 'converted') ? 'SO-2026-0142' : null
@@ -363,7 +416,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
      the transition overlay — inconsistent with every other revert
      entry point. */
   const [headerRevertConfirm, setHeaderRevertConfirm] = useState<{ version: number } | null>(null);
-  const [headerRevertOverlay, setHeaderRevertOverlay] = useState<{ toVersion: number; fromVersion: number } | null>(null);
+  const [headerRevertOverlay, setHeaderRevertOverlay] = useState<{ toVersion: number; fromVersion: number; rateChoice?: VersionRateChoice } | null>(null);
 
   // Draft conflict modal state — shown when reverting/editing while a draft already exists
   const [draftConflict, setDraftConflict] = useState<{ fromVersion: number } | null>(null);
@@ -748,13 +801,15 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
     }
   }, [quoteStatus, quoteVersion]);
 
-  /* Currency or rate changed in Quote Summary (QuoteCurrencyFields, Draft
-     only). Another currency converts every amount at the cross rate:
-     the table's lines (via `conversion`), the rule lines and demo seeds
-     (`designFactor`), freight, and fixed one-time adjustments. */
+  /* Currency, rate or "You receive" changed in the quote's Currency
+     Configuration (QuoteCurrencyConfig, Draft only). Another currency
+     converts every amount at the cross rate: the table's lines (via
+     `conversion`), the rule lines and demo seeds (`designFactor`),
+     freight, and fixed one-time adjustments. */
   const handleCurrencyChange = useCallback(({ next, subject }: QuoteCurrencyChange) => {
     const { fields, factor } = withQuoteCurrency(fx, next);
-    setFxFields(fields);
+    const receiveBefore = (fxFields.settlementCurrency ?? BASE_CURRENCY).toUpperCase();
+    setFxFields((prev) => ({ ...prev, ...fields }));
     const code = fields.currency;
     /* The stored record (`quote` is a copy once a status override exists),
        with its own line items, so the listing, Print and Duplicate follow. */
@@ -780,10 +835,16 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       /* An imported quote reopens with the adjustments its file carried. */
       if (propQuoteId && getCreatedQuoteAdjustments(propQuoteId)) setCreatedQuoteAdjustments(propQuoteId, converted);
     }
+    if (subject === 'You receive') {
+      const receive = (fields.settlementCurrency ?? receiveBefore).toUpperCase();
+      handleMaterialChange('settlementCurrency', subject, receiveBefore, receive);
+      toast.success(`Quote settles in ${receive}`, { position: 'top-right' });
+      return;
+    }
     const rateText = (c: string, r: number) => (c === BASE_CURRENCY ? c : `${c} · 1 ${c} = ${formatRate(r)} ${BASE_CURRENCY}`);
     handleMaterialChange(subject === 'Currency' ? 'currency' : 'exchangeRate', subject, rateText(fx.currency, fx.rate), rateText(code, fields.exchangeRate));
     toast.success(subject === 'Currency' ? `Quote converted to ${code}` : 'Exchange rate updated', { position: 'top-right' });
-  }, [fx, rawQuote, designFactor, adjustmentsAPI, propQuoteId, handleMaterialChange]);
+  }, [fx, fxFields.settlementCurrency, rawQuote, designFactor, adjustmentsAPI, propQuoteId, handleMaterialChange]);
 
   /* The confirmation's "after" column: the quote as handleCurrencyChange
      leaves it, worked out the same way (lines, rule lines and fixed
@@ -793,26 +854,43 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   const currencyTotalsFor = useCallback((next: QuoteCurrencyChoice): QuoteCurrencyTotals => {
     const { fields, factor } = withQuoteCurrency(fx, next);
     const code = fields.currency;
-    const afterFx = quoteFx({ ...fields, createdDate: quote?.createdDate, customer: quote?.customer });
     const activation = new Map<string, Set<string>>();
     for (const r of pricingAPI.state.attached) {
       activation.set(r.id, pricingAPI.state.deactivatedRuleIds.has(r.id) ? new Set() : (pricingAPI.state.activatedLineIdsByRule.get(r.id) ?? new Set()));
     }
     const ruleLines = designLinesAt(designFactor * factor, code);
-    const rules = computeLineBreakdowns(ruleLines, pricingAPI.state.attached, activation, ruleAmountFactor(afterFx))
+    const rules = computeLineBreakdowns(ruleLines, pricingAPI.state.attached, activation, ruleAmountFactor({ currency: code, rateDate: quoteDay }))
       .reduce((t, b) => t + b.discountAmount - b.premiumAmount, 0);
     const lines = liveLines.map((l) => scaleQuoteLine(l, factor, code));
     const sub = lines.reduce((sum, l) => sum + Number(l?.subtotal ?? l?.total ?? 0), 0);
     const adj = adjustmentsNet(scaleAdjustments(adjustmentsAPI.adjustments, factor, code), lines);
     return { subtotal: sub, adjustments: adj - rules, freight: 0, total: sub - rules + adj };
-  }, [fx, quote, pricingAPI.state, designFactor, liveLines, adjustmentsAPI.adjustments]);
+  }, [fx, quoteDay, pricingAPI.state, designFactor, liveLines, adjustmentsAPI.adjustments]);
+
+  /* Quote Summary's totals, as RightSidebar works them out: what the
+     currency configuration, its convert confirmation and the version rate
+     choice quote. */
+  const rulesNetAmount = pricingAPI.totalDiscount - pricingAPI.totalPremium;
+  const adjustmentsNetAmount = adjustmentsAPI.grandTotal.net;
+  const summaryTotal = rulesNetAmount !== 0 || adjustmentsNetAmount !== 0 ? liveSubtotal - rulesNetAmount + adjustmentsNetAmount : liveSubtotal;
+  const currencyTotals: QuoteCurrencyTotals = { subtotal: liveSubtotal, adjustments: adjustmentsNetAmount - rulesNetAmount, freight: 0, total: summaryTotal };
+  /* A new version's rate options (the locked rate, or today's); null on a
+     base-currency quote. */
+  const newVersionRate = (() => {
+    const options = versionRateOptions({ currency: fx.currency, rate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate }, summaryTotal);
+    return options ? { fromVersion: quoteVersion, options } : undefined;
+  })();
+  /* Edit as V{n+1} on a quote in a foreign currency asks for the rate first. */
+  const [editAsConfirm, setEditAsConfirm] = useState(false);
 
   /** Called when user confirms auto-version creation from the confirmation modal */
-  const handleAutoVersionConfirmed = useCallback((reason?: string) => {
+  const handleAutoVersionConfirmed = useCallback((reason?: string, rateChoice: VersionRateChoice = 'locked') => {
     const newVer = quoteMaxVersion + 1;
     setQuoteMaxVersion(newVer);
     const prevStatus = autoVersionConfirm.fromStatus;
     setAutoVersionConfirm(prev => ({ ...prev, show: false }));
+    // The new version keeps the locked rate, or takes today's.
+    applyVersionRate(rateChoice);
 
     setQuoteVersion(newVer);
     setQuoteStatus('draft');
@@ -826,7 +904,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       const label = trimmed
         ? `Auto-draft: ${autoVersionConfirm.fieldLabel}. Reason: ${trimmed}`
         : `Auto-draft: ${autoVersionConfirm.fieldLabel}`;
-      (window as any).__versionDropdownAddNewDraft(label);
+      (window as any).__versionDropdownAddNewDraft(rateChoice === 'current' ? `${label} · today's rate applied` : label);
     }
 
     setAutoVersionOverlay({ show: true, newVersion: newVer, fromStatus: prevStatus });
@@ -840,7 +918,8 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       setPendingPostVersionApply(null);
       setTimeout(() => cb(), 300);
     }
-  }, [quoteVersion, autoVersionConfirm, pendingPostVersionApply]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteVersion, autoVersionConfirm, pendingPostVersionApply, applyVersionRate]);
 
   /** Called when user discards the material change from the confirmation modal */
   const handleAutoVersionDiscarded = useCallback(() => {
@@ -980,14 +1059,16 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   // without pushing a new draft entry. Status is restored to whatever
   // V[fromVersion] historically had. A subsequent material change will
   // create V[max+1] via the normal auto-version flow.
-  const doRevertToVersion = (fromVersion: number, originalStatus?: 'draft' | 'sent' | 'confirmed') => {
+  const doRevertToVersion = (fromVersion: number, originalStatus?: 'draft' | 'sent' | 'confirmed', rateChoice: VersionRateChoice = 'locked') => {
+    // V[fromVersion]'s locked rate comes back with it, or today's is applied.
+    applyVersionRate(rateChoice, fromVersion);
     setQuoteVersion(fromVersion);
     if (originalStatus) {
       setQuoteStatus(originalStatus as QuoteLifecycleStatus);
     }
     setMaterialChangesInDraft(0);
     toast.success(`Reverted to V${fromVersion}`, {
-      description: 'V' + fromVersion + ' is now the latest version.',
+      description: 'V' + fromVersion + ' is now the latest version.' + (rateChoice === 'current' && !fx.isBase ? " Today's exchange rate applied." : ''),
       position: 'top-right',
     });
     setViewingVersion(null);
@@ -1009,8 +1090,24 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
 
   // Revert flow — no draft conflict check needed because we don't
   // create a new draft anymore; we just promote V[fromVersion] to latest.
-  const handleEditAsDraft = (fromVersion: number, originalStatus?: 'draft' | 'sent' | 'confirmed') => {
-    doRevertToVersion(fromVersion, originalStatus);
+  const handleEditAsDraft = (fromVersion: number, originalStatus?: 'draft' | 'sent' | 'confirmed', rateChoice: VersionRateChoice = 'locked') => {
+    doRevertToVersion(fromVersion, originalStatus, rateChoice);
+  };
+
+  /* Edit as V{n+1}: a new draft from the confirmed version, at its locked
+     rate or today's (asked first on a quote in a foreign currency). */
+  const startNewDraftVersion = (rateChoice: VersionRateChoice = 'locked') => {
+    applyVersionRate(rateChoice);
+    const newVersion = quoteVersion + 1;
+    setQuoteVersion(newVersion);
+    setQuoteStatus('draft');
+    setMaterialChangesInDraft(0);
+    toast.success(`Editing as V${newVersion} Draft`, {
+      description: rateChoice === 'current' && !fx.isBase
+        ? "Today's exchange rate applied. Material changes start a new version automatically."
+        : 'Make your changes. Material changes start a new version automatically.',
+      position: 'top-right',
+    });
   };
 
   // Intercept status changes to show transition overlay + Convert to SO modal
@@ -1181,7 +1278,15 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   const isFullyReadOnly = isViewingOldVersion || quoteStatus === 'converted' || quoteStatus === 'cancelled' || quoteStatus === 'archived' || quoteStatus === 'expired';
 
   return (
-    <DocCurrencyProvider currency={fx.currency} fx={fx.isBase ? null : fx} rateDate={fx.rateDate} dateLabel="quote date" role="quote currency">
+    <DocCurrencyProvider
+      currency={fx.currency}
+      fx={fx.isBase ? null : fx}
+      rateDate={quoteDay}
+      dateLabel={fx.rateDate === quoteDay ? 'quote date' : 'version date'}
+      role="customer currency"
+      view={quoteView}
+      versionFx={versionFx}
+    >
     {/* Page chrome — Partner Management `VendorDetailsPage` parity.
        The scroll container paints a slate-50 page background and lets
        each child section bound its own content with an inner
@@ -1356,6 +1461,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                             viewingVersion={viewingVersion}
                             onViewVersion={setViewingVersion}
                             onEditAsDraft={quoteStatus !== 'converted' ? handleEditAsDraft : undefined}
+                            rateTotal={summaryTotal}
                             materialChangesCount={materialChangesInDraft}
                             /* Seed the dropdown's roster from the quote
                                record so it reflects the same version
@@ -1492,6 +1598,17 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
 
                     {/* Right: Fullscreen + Actions dropdown + separator + CTA — Partner pattern */}
                     <div className="flex items-center shrink-0 max-md:w-full max-md:justify-end max-md:flex-wrap" style={{ gap: isScrolled ? 6 : 8 }}>
+                      {/* Base Currency | Customer Currency, and the quote's
+                          currency configuration (ported from the earlier
+                          touchpoint, as Purchase Orders has them). */}
+                      <QuoteCurrencyHeaderControls
+                        currency={fx.currency}
+                        view={quoteView}
+                        onViewChange={(v) => { if (viewKey) setQuoteView(viewKey, v); }}
+                        onOpenConfig={() => setCurrencyConfigOpen(true)}
+                        compact={isScrolled}
+                        narrow={isNarrow}
+                      />
                       {/* Fullscreen toggle (nothing to widen on a phone) */}
                       <button
                         onClick={() => setIsFullscreen(!isFullscreen)}
@@ -2019,14 +2136,9 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                   {!(outdatedBannerVisible && quoteStatus === 'draft') && quoteStatus === 'confirmed' && (
                     <button
                       onClick={() => {
-                        const newVersion = quoteVersion + 1;
-                        setQuoteVersion(newVersion);
-                        setQuoteStatus('draft');
-                        setMaterialChangesInDraft(0);
-                        toast.success(`Editing as V${newVersion} Draft`, {
-                          description: 'Make your changes. Material changes start a new version automatically.',
-                          position: 'top-right',
-                        });
+                        // A foreign-currency quote asks which rate the new draft takes.
+                        if (fx.isBase) startNewDraftVersion();
+                        else setEditAsConfirm(true);
                       }}
                       style={{
                         display: 'flex', alignItems: 'center', gap: '6px',
@@ -2220,11 +2332,10 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                 subtotal={liveSubtotal}
                 quoteFxInfo={fx}
                 currencyRateEdited={!!fxFields.rateEdited}
-                currencyLocked={quoteStatus !== 'draft' || isFullyReadOnly}
-                onCurrencyChange={handleCurrencyChange}
-                currencyTotalsFor={currencyTotalsFor}
-                currencyQuoteNumber={quoteNumber}
-                currencyLineCount={liveLines.length}
+                currencyLocked={quoteStatus !== 'draft'}
+                currencySettlement={fxFields.settlementCurrency}
+                currencyQuoteDay={quoteDay}
+                onViewCurrencyConfig={() => setCurrencyConfigOpen(true)}
                 onMaterialChange={handleMaterialChange}
                 onNonMaterialChange={handleNonMaterialChange}
                 onAskUserChange={handleAskUserChange}
@@ -2449,11 +2560,12 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       {headerRevertConfirm && (
         <HeaderRevertConfirmModal
           version={headerRevertConfirm.version}
+          total={summaryTotal}
           onClose={() => setHeaderRevertConfirm(null)}
-          onConfirm={() => {
+          onConfirm={(_reason, rateChoice) => {
             const target = headerRevertConfirm.version;
             setHeaderRevertConfirm(null);
-            setHeaderRevertOverlay({ toVersion: target, fromVersion: quoteVersion });
+            setHeaderRevertOverlay({ toVersion: target, fromVersion: quoteVersion, rateChoice });
           }}
         />
       )}
@@ -2469,8 +2581,9 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
         onComplete={() => {
           if (!headerRevertOverlay) return;
           const target = headerRevertOverlay.toVersion;
+          const rateChoice = headerRevertOverlay.rateChoice;
           setHeaderRevertOverlay(null);
-          handleEditAsDraft(target);
+          handleEditAsDraft(target, undefined, rateChoice);
         }}
       />
 
@@ -2618,8 +2731,41 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
         newValue={autoVersionConfirm.newValue}
         currentVersion={quoteVersion}
         fromStatus={autoVersionConfirm.fromStatus}
+        rate={newVersionRate}
         onConfirm={handleAutoVersionConfirmed}
         onDiscard={handleAutoVersionDiscarded}
+      />
+
+      {/* Edit as V{n+1} on a quote in a foreign currency: the new draft's rate. */}
+      {editAsConfirm && (
+        <EditAsVersionConfirmModal
+          fromVersion={quoteVersion}
+          total={summaryTotal}
+          onClose={() => setEditAsConfirm(false)}
+          onConfirm={(rateChoice) => {
+            setEditAsConfirm(false);
+            startNewDraftVersion(rateChoice);
+          }}
+        />
+      )}
+
+      {/* ── The quote's Currency Configuration (header Currency button and
+           Quote Summary's View configuration) ── */}
+      <QuoteCurrencyConfigDialog
+        fx={fx}
+        customerName={customerName}
+        quoteNumber={quoteNumber}
+        lineCount={liveLines.length}
+        settlementCurrency={fxFields.settlementCurrency}
+        rateEdited={!!fxFields.rateEdited}
+        quoteDay={quoteDay}
+        open={currencyConfigOpen}
+        onOpenChange={setCurrencyConfigOpen}
+        canEdit={quoteStatus === 'draft' && !isFullyReadOnly}
+        locked={quoteStatus !== 'draft'}
+        totals={currencyTotals}
+        totalsFor={currencyTotalsFor}
+        onChange={handleCurrencyChange}
       />
 
       {/* Auto-Version Creation Overlay */}
@@ -2755,6 +2901,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
         isOpen={showReactivateChoice}
         recordLabel={quoteNumber}
         newVersionNumber={quoteVersion + 1}
+        rate={newVersionRate}
         defaultEffectiveFrom={new Date()}
         defaultValidTill={(() => {
           const d = new Date();
@@ -2762,8 +2909,10 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
           return d;
         })()}
         onCancel={() => setShowReactivateChoice(false)}
-        onConfirm={(effectiveFrom, expirationDate) => {
+        onConfirm={(effectiveFrom, expirationDate, rateChoice) => {
           setShowReactivateChoice(false);
+          // The reactivated draft keeps the locked rate, or takes today's.
+          applyVersionRate(rateChoice ?? 'locked');
           const newVersion = quoteVersion + 1;
           const fromStatus = getStatusLabel(quoteStatus);
           /* Play the standard auto-version overlay so reactivation
@@ -2780,7 +2929,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
             setQuoteStatusOverride(propQuoteId, { status: 'Draft' });
           }
           toast.success(`Started V${newVersion} draft`, {
-            description: `Effective ${effectiveFrom}. Expires ${expirationDate}. Revise pricing or terms, then send.`,
+            description: `Effective ${effectiveFrom}. Expires ${expirationDate}.${rateChoice === 'current' && !fx.isBase ? " Today's exchange rate applied." : ''} Revise pricing or terms, then send.`,
             position: 'top-right',
           });
         }}
@@ -2797,10 +2946,17 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
    textarea. Pulled out as its own component so the parent stays
    tidy and so the reason state's lifecycle is scoped to one open
    instance. */
-function HeaderRevertConfirmModal({ version, onClose, onConfirm }: {
-  version: number; onClose: () => void; onConfirm: (reason: string) => void;
+function HeaderRevertConfirmModal({ version, total, onClose, onConfirm }: {
+  version: number;
+  /** The quote's total, for the rate choice's base totals. */
+  total?: number;
+  onClose: () => void;
+  onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
 }) {
   const [reason, setReason] = useState('');
+  // A foreign-currency quote: V{version}'s locked rate, or today's.
+  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
+  const rateOptions = useVersionRateOptions(version, total);
   return (
     <ConfirmDiscardModal
       open
@@ -2810,8 +2966,13 @@ function HeaderRevertConfirmModal({ version, onClose, onConfirm }: {
       description={`V${version} will become the latest version of this quote. Its existing status is preserved. The next material change starts a new version.`}
       confirmLabel={`Revert to V${version}`}
       cancelLabel="Cancel"
-      onConfirm={() => onConfirm(reason.trim())}
+      onConfirm={() => onConfirm(reason.trim(), rateOptions ? rateChoice : 'locked')}
     >
+      {rateOptions && (
+        <div style={{ marginBottom: 14 }}>
+          <VersionRateChoiceCards fromVersion={version} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
+        </div>
+      )}
       <div>
         <label
           className="block"
@@ -2839,6 +3000,39 @@ function HeaderRevertConfirmModal({ version, onClose, onConfirm }: {
           onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none'; }}
         />
       </div>
+    </ConfirmDiscardModal>
+  );
+}
+
+/* ── Edit as a new version ───────────────────────────────────────────
+   On a quote in a foreign currency, Edit as V{n+1} first asks which rate
+   the new draft takes: V{n}'s locked rate, or today's. Same chrome as the
+   revert confirmation above, in the module's primary (blue) variant. */
+function EditAsVersionConfirmModal({ fromVersion, total, onClose, onConfirm }: {
+  fromVersion: number;
+  /** The quote's total, for the rate choice's base totals. */
+  total?: number;
+  onClose: () => void;
+  onConfirm: (rateChoice: VersionRateChoice) => void;
+}) {
+  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
+  const rateOptions = useVersionRateOptions(undefined, total);
+  const next = fromVersion + 1;
+  return (
+    <ConfirmDiscardModal
+      open
+      onOpenChange={(o) => { if (!o) onClose(); }}
+      variant="primary"
+      badge={`New version · V${next}`}
+      title={`Edit as V${next}?`}
+      description={`V${fromVersion} stays as the customer confirmed it. Your changes go on a new V${next} draft.`}
+      confirmLabel={`Edit as V${next}`}
+      cancelLabel="Cancel"
+      onConfirm={() => onConfirm(rateOptions ? rateChoice : 'locked')}
+    >
+      {rateOptions && (
+        <VersionRateChoiceCards fromVersion={fromVersion} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
+      )}
     </ConfirmDiscardModal>
   );
 }

@@ -18,7 +18,8 @@ import { isItemInactive } from '../shared/inactiveItems';
 import { useItemQuickView, type ItemQuickViewItem } from '../shared/ItemQuickView';
 import { LineItemConfigModal } from '../quote-creation/LineItemConfigModal';
 import { HighlightText } from '../HighlightText';
-import { useDocCurrency, useDocMoney } from '@/app/components/currency/docCurrencyContext';
+import { useDocCurrency, useDocMoney, useDocView } from '@/app/components/currency/docCurrencyContext';
+import { DocMoney } from '@/app/components/currency/DocCurrency';
 import { moneyPrefix } from '@/app/currency/money';
 import { localTodayIso } from '@/app/currency/qFx';
 import { restateDesign } from '@/app/currency/quoteMoney';
@@ -458,8 +459,8 @@ export function FilterPanelContent({
   onDone: () => void;
 }) {
   const [categorySearch, setCategorySearch] = useState('');
-  /* The price range is in the quote's currency, as the listed prices are. */
-  const pricePrefix = moneyPrefix(useDocCurrency().currency).trim();
+  /* The price range is in the shown currency (base by default), as the listed prices are. */
+  const pricePrefix = moneyPrefix(useDocView().viewCurrency).trim();
   const activeCount = getActiveFilterCount(filters);
 
   const visibleCategories = categorySearch
@@ -634,6 +635,13 @@ export function FilterPanelContent({
 }
 
 /* ─── Shared filter application logic ─── */
+/* The price range is typed in the shown currency (base by default) and the
+   catalog's prices are in the quote's: the bounds convert at its rate. */
+export function filtersInDoc(f: AdvancedFilters, fromView: (n: number) => number): AdvancedFilters {
+  const conv = (v: string) => (v && Number.isFinite(Number(v)) ? String(fromView(Number(v))) : v);
+  return { ...f, priceMin: conv(f.priceMin), priceMax: conv(f.priceMax) };
+}
+
 export function applyAdvancedFilters(products: Product[], filters: AdvancedFilters): Product[] {
   return products.filter(p => {
     if (filters.categories.length > 0 && !filters.categories.includes(p.category)) return false;
@@ -718,7 +726,7 @@ export function FilterButton({
 
 /* ─── Active filter tag bar ─── */
 export function ActiveFilterTags({ filters, setFilters }: { filters: AdvancedFilters; setFilters: React.Dispatch<React.SetStateAction<AdvancedFilters>> }) {
-  const tags = getActiveFilterTags(filters, moneyPrefix(useDocCurrency().currency).trim());
+  const tags = getActiveFilterTags(filters, moneyPrefix(useDocView().viewCurrency).trim());
   if (tags.length === 0) return null;
 
   const removeTag = (key: string) => {
@@ -770,7 +778,8 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
      in its currency, at the mid-market rate on its quote date (spec 4.3). */
   const formatCurrency = useDocMoney();
   const { currency: docCurrency, fx: docFx, rateDate: docRateDate } = useDocCurrency();
-  const priceDay = docFx?.rateDate ?? docRateDate ?? localTodayIso();
+  const { fromView } = useDocView();
+  const priceDay = docRateDate ?? docFx?.rateDate ?? localTodayIso();
   const PRODUCTS = useMemo(
     () => CATALOG.map((p) => ({ ...p, unitPrice: restateDesign(p.unitPrice, docCurrency, priceDay) })),
     [docCurrency, priceDay],
@@ -965,25 +974,25 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
     const onQuoteIds = new Set(selectedItems.map(i => i.productId));
     const alreadyAdded = applyAdvancedFilters(
       PRODUCTS.filter(p => onQuoteIds.has(p.id)),
-      filters,
+      filtersInDoc(filters, fromView),
     );
     /* Draw from the open-time snapshot, not the live PRODUCTS list —
        so adding a card from this section shrinks it (6 → 5) instead
        of pulling in the next eligible SKU to backfill. */
     const recentlyOrdered = applyAdvancedFilters(
       PRODUCTS.filter(p => initialRecentlyOrderedIds.has(p.id) && !onQuoteIds.has(p.id)),
-      filters,
+      filtersInDoc(filters, fromView),
     );
     return { alreadyAdded, recentlyOrdered };
-  }, [PRODUCTS, selectedItems, filters, initialRecentlyOrderedIds]);
+  }, [PRODUCTS, selectedItems, filters, fromView, initialRecentlyOrderedIds]);
 
   /* Search-mode list — flat ranked matches with the same advanced
      filters applied. Falls back to the legacy `filteredProducts` name
      downstream so the rest of the file keeps working. */
   const searchResults = useMemo(() => {
     if (!search.trim()) return [];
-    return applyAdvancedFilters(PRODUCTS.filter(matchesProduct), filters);
-  }, [PRODUCTS, search, matchesProduct, filters]);
+    return applyAdvancedFilters(PRODUCTS.filter(matchesProduct), filtersInDoc(filters, fromView));
+  }, [PRODUCTS, search, matchesProduct, filters, fromView]);
 
   /* Backward-compat: a flat list for callers that still want one
      array (the FilterButton count, the action-bar "N products"
@@ -1486,7 +1495,7 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
                                 <ItemTypeBadge type={tracking.label} />
                               </div>
                               <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--foreground)' }}>{formatCurrency(product.unitPrice)}</span>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--foreground)' }}><DocMoney value={product.unitPrice}>{formatCurrency(product.unitPrice)}</DocMoney></span>
                                 <span style={{ fontSize: '11px', fontWeight: 400, color: 'var(--muted-foreground)', marginLeft: '2px' }}>/ {findUomById(getPrimaryUomForProduct(product))?.name || 'EA'}</span>
                               </div>
                             </div>
@@ -1910,7 +1919,7 @@ export function ProductPickerModal({ isOpen, onClose, onAddProducts, existingPro
                               <div style={{ textAlign: 'right' }}>
                                 <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--muted-foreground)', marginBottom: '4px', lineHeight: '1' }}>Item Total</div>
                                 <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--foreground)', lineHeight: '1' }}>
-                                  {formatCurrency(total)} <span style={{ fontSize: '11px', fontWeight: 400, color: 'var(--muted-foreground)' }}>({itemUomLabel})</span>
+                                  <DocMoney value={total}>{formatCurrency(total)}</DocMoney> <span style={{ fontSize: '11px', fontWeight: 400, color: 'var(--muted-foreground)' }}>({itemUomLabel})</span>
                                 </div>
                               </div>
                             </div>

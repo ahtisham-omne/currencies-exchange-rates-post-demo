@@ -4,6 +4,8 @@ import { ChevronDown, FileText, RotateCcw, Check, X, Eye, Send, CheckCircle2, Cl
 import { toast } from 'sonner';
 import { ConfirmDiscardModal } from '../shared/ConfirmDiscardModal';
 import { StateTransitionOverlay } from '../shared/StateTransitionOverlay';
+import { VersionRateChoice as VersionRateChoiceCards, useVersionRateOptions } from '@/app/components/currency/VersionRateChoice';
+import type { VersionRateChoice } from '@/app/data/quoteStore';
 
 type VersionStatus = 'draft' | 'sent' | 'confirmed';
 
@@ -26,7 +28,10 @@ interface VersionDropdownProps {
   onVersionChange?: (version: number) => void;
   onViewVersion?: (version: number | null) => void;
   onCompare?: (v1: number, v2: number) => void;
-  onEditAsDraft?: (fromVersion: number, originalStatus: 'draft' | 'sent' | 'confirmed') => void;
+  /** With the rate the quote takes: the version's locked one, or today's. */
+  onEditAsDraft?: (fromVersion: number, originalStatus: 'draft' | 'sent' | 'confirmed', rateChoice?: VersionRateChoice) => void;
+  /** The quote's total (its currency), for the revert's rate choice. */
+  rateTotal?: number;
   /** Number of material changes accumulated in current draft version */
   materialChangesCount?: number;
   /** Pre-seeded versions list — overrides the static INITIAL_VERSIONS
@@ -100,14 +105,14 @@ function LifecycleTag({ label, tone }: { label: string; tone: LifecycleTone }) {
   );
 }
 
-export function VersionDropdown({ currentVersion, currentStatus, viewingVersion, onVersionChange, onViewVersion, onCompare, onEditAsDraft, materialChangesCount, initialVersions, onVersionsChange }: VersionDropdownProps) {
+export function VersionDropdown({ currentVersion, currentStatus, viewingVersion, onVersionChange, onViewVersion, onCompare, onEditAsDraft, rateTotal, materialChangesCount, initialVersions, onVersionsChange }: VersionDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   /* Pending revert state — the dropdown's revert action now mirrors the
      Version History modal: open a confirmation, then on confirm play a
      short overlay and fire a toast. Holds the version the user has
      elected to revert to. */
   const [pendingRevert, setPendingRevert] = useState<{ version: number; versionStatus: 'draft' | 'sent' | 'confirmed' } | null>(null);
-  const [revertOverlay, setRevertOverlay] = useState<{ show: boolean; toVersion: number } | null>(null);
+  const [revertOverlay, setRevertOverlay] = useState<{ show: boolean; toVersion: number; rateChoice?: VersionRateChoice } | null>(null);
   /* Seed from `initialVersions` when the parent passes a real list
      (mock-data quotes do so); otherwise fall back to the static
      INITIAL_VERSIONS so legacy callers keep working. The local
@@ -593,11 +598,12 @@ export function VersionDropdown({ currentVersion, currentStatus, viewingVersion,
       {pendingRevert && (
         <RevertConfirmModal
           version={pendingRevert.version}
+          total={rateTotal}
           onClose={() => setPendingRevert(null)}
-          onConfirm={() => {
+          onConfirm={(_reason, rateChoice) => {
             const target = pendingRevert;
             setPendingRevert(null);
-            setRevertOverlay({ show: true, toVersion: target.version });
+            setRevertOverlay({ show: true, toVersion: target.version, rateChoice });
           }}
         />
       )}
@@ -617,10 +623,11 @@ export function VersionDropdown({ currentVersion, currentStatus, viewingVersion,
              confirmed; the source-list lookup recovers its status so
              onEditAsDraft can fork a fresh draft from it. */
           const targetVersion = revertOverlay?.toVersion ?? 0;
+          const rateChoice = revertOverlay?.rateChoice;
           const source = versions.find((v) => v.version === targetVersion);
           const status = (source?.versionStatus as 'draft' | 'sent' | 'confirmed' | undefined) ?? 'draft';
           setRevertOverlay(null);
-          onEditAsDraft?.(targetVersion, status);
+          onEditAsDraft?.(targetVersion, status, rateChoice);
           toast.success(`Reverted to V${targetVersion}`, {
             description: `A new draft was opened with the data from V${targetVersion}.`,
             position: 'top-right',
@@ -636,10 +643,13 @@ export function VersionDropdown({ currentVersion, currentStatus, viewingVersion,
    gate so all three revert entry points share one piece of chrome:
    ConfirmDiscardModal banner + glow icon + h-11 stacked buttons,
    plus an optional revert-reason textarea. */
-function RevertConfirmModal({ version, onClose, onConfirm }: {
-  version: number; onClose: () => void; onConfirm: (reason: string) => void;
+function RevertConfirmModal({ version, total, onClose, onConfirm }: {
+  version: number; total?: number; onClose: () => void; onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
 }) {
   const [reason, setReason] = useState('');
+  // A foreign-currency quote: V{version}'s locked rate, or today's.
+  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
+  const rateOptions = useVersionRateOptions(version, total);
   return (
     <ConfirmDiscardModal
       open
@@ -649,8 +659,13 @@ function RevertConfirmModal({ version, onClose, onConfirm }: {
       description={`V${version} will become the latest version of this quote. Its existing status is preserved. The next material change will auto-create a new version.`}
       confirmLabel={`Revert to V${version}`}
       cancelLabel="Cancel"
-      onConfirm={() => onConfirm(reason.trim())}
+      onConfirm={() => onConfirm(reason.trim(), rateOptions ? rateChoice : 'locked')}
     >
+      {rateOptions && (
+        <div style={{ marginBottom: 14 }}>
+          <VersionRateChoiceCards fromVersion={version} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
+        </div>
+      )}
       <div>
         <label
           className="block"

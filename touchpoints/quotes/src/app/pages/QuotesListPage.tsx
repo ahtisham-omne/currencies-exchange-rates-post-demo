@@ -32,7 +32,7 @@ import { CancelQuoteModal } from '@/app/components/quote-details/CancelQuoteModa
 import { ArchiveQuoteModal } from '@/app/components/quote-details/ArchiveQuoteModal';
 import { mockQuotes } from '@/app/data/mockQuotes';
 import { CURRENT_USER_REP } from '@/app/components/shared/salesRepRoster';
-import { addCreatedQuote, setCreatedQuoteAdjustments, getAllCreatedQuotes, getCreatedQuote, applyQuoteOverride, subscribeQuoteStatusOverrides } from '@/app/data/quoteStore';
+import { addCreatedQuote, setCreatedQuoteAdjustments, getAllCreatedQuotes, getCreatedQuote, applyQuoteOverride, subscribeQuoteStatusOverrides, getVersionRate, seedVersionRates, setVersionRate, type VersionRateChoice } from '@/app/data/quoteStore';
 import { duplicateQuote } from '@/app/data/duplicateQuote';
 import { DuplicateQuoteModal } from '@/app/components/quote-details/DuplicateQuoteModal';
 import {
@@ -100,10 +100,11 @@ import {
 } from '@/app/components/ui/popover';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/app/components/ui/tooltip';
 import { format } from 'date-fns';
-import { Money } from '@/app/components/currency/Money';
+import { BaseMoney } from '@/app/components/currency/Money';
 import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
 import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
-import { customerCurrency, quoteFx, stampQuoteRate, toQuoteBase } from '@/app/currency/qFx';
+import { currentRateFor, customerCurrency, quoteFx, stampQuoteRate, toQuoteBase } from '@/app/currency/qFx';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
 import { restateDesign } from '@/app/currency/quoteMoney';
 import { QuoteDocCurrency } from '@/app/components/currency/QuoteDocCurrency';
@@ -158,7 +159,7 @@ const COLUMN_DEFS: (ColSelectorConfig & { minWidth: string; sortable?: boolean; 
   { key: 'items', label: 'Line Items', minWidth: '220px', sortable: true },
   { key: 'totalValue', label: 'Quote Value', minWidth: '130px', sortable: true, align: 'right' },
   /* The quote's currency (spec 4.3), as Vendor Invoicing has. Optional:
-     hidden by default; the Quote Value column already shows its symbol. */
+     hidden by default; Quote Value is in base, the quote's currency on its hover. */
   { key: 'currency', label: 'Currency', minWidth: '100px', sortable: true },
   { key: 'deliveryLocation', label: 'Delivery Location', minWidth: '180px', sortable: true },
   { key: 'requestedDate', label: 'Requested On', minWidth: '120px', sortable: true },
@@ -501,6 +502,25 @@ function deriveQuoteItems(quoteId: string, quote?: Quote): MockItem[] {
       status: ITEM_STATUSES[statusIdx],
     };
   });
+}
+
+/* Reverting from the listing's history: the version's locked rate comes
+   back with it, or today's is applied, as on the quote page. The stored
+   record and the version's rate follow, so the quote page, Print and the
+   base totals agree. Nothing to do on a base-currency quote. */
+function revertRateFields(quote: Quote, toVersion: number, choice: VersionRateChoice) {
+  const fx = quoteFx(quote);
+  if (fx.isBase) return {};
+  const own = { currency: fx.currency, exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate, rateEdited: !!quote.rateEdited };
+  // Versions not on record yet keep the rate the quote has now.
+  seedVersionRates(quote.id, Array.from({ length: Math.max(quote.version || 1, toVersion) }, (_, i) => i + 1), own);
+  const onRecord = getVersionRate(quote.id, toVersion);
+  const locked = onRecord && onRecord.currency === fx.currency ? onRecord : own;
+  const fields = choice === 'current' ? { currency: fx.currency, ...currentRateFor(locked), rateEdited: false } : { ...locked };
+  const record = mockQuotes.find((q) => q.id === quote.id) ?? getCreatedQuote(quote.id);
+  if (record) Object.assign(record, fields);
+  setVersionRate(quote.id, toVersion, fields);
+  return fields;
 }
 
 export function QuotesListPage() {
@@ -1762,8 +1782,10 @@ export function QuotesListPage() {
                               );
                             }
                             case 'status': return <TableCell key={colKey}><StatusBadge status={quote.status} /></TableCell>;
-                            /* In the quote's own currency (spec 4.3), with its rate on hover. */
-                            case 'totalValue': { const qfx = quoteFx(quote); return <TableCell key={colKey} className="text-right"><Money value={quote.totalValue || 0} currency={qfx.currency} fx={qfx.isBase ? null : qfx} className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--foreground)' }} /></TableCell>; }
+                            /* In the base currency at the quote's own rate, as Quotes shows
+                               amounts, so rows compare whatever currency they're in; the
+                               customer's amount (the quote's currency) and the rate on hover. */
+                            case 'totalValue': { const qfx = quoteFx(quote); return <TableCell key={colKey} className="text-right"><BaseMoney value={quote.totalValue || 0} currency={qfx.currency} fx={qfx.isBase ? null : qfx} className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--foreground)' }} /></TableCell>; }
                             case 'currency': { const code = quoteFx(quote).currency; return <TableCell key={colKey}><span className="inline-flex items-center gap-1.5 whitespace-nowrap" style={{ fontSize: '13px', color: '#64748B' }}><CurrencyFlag code={code} />{code}</span></TableCell>; }
                             case 'deliveryLocation':
                               return (
@@ -2033,7 +2055,8 @@ export function QuotesListPage() {
                                               <span>On-Hand: <b>{first.onHand.toLocaleString()}</b></span>
                                             </div>
                                             <span className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>
-                                              {formatMoney(first.unitPrice, quoteFx(quote).currency)}
+                                              {/* In base at the quote's rate, as the Quote Value column. */}
+                                              {formatMoney(toQuoteBase(quote, first.unitPrice), BASE_CURRENCY)}
                                               <span className="text-slate-400 ml-1" style={{ fontWeight: 400 }}>/ unit</span>
                                             </span>
                                           </div>
@@ -2367,19 +2390,25 @@ export function QuotesListPage() {
       />
       <AssignSalesRepModal open={showAssignRepModal} onOpenChange={setShowAssignRepModal} selectedCount={selectedRows.size}
         onAssign={rep => { toast.success(`Assigned ${rep} to ${selectedRows.size} quote${selectedRows.size > 1 ? 's' : ''}`); setSelectedRows(new Set()); setShowAssignRepModal(false); }} />
-      {versionHistoryQuote && (
-        <QuoteDocCurrency quote={versionHistoryQuote}>
-        <VersionHistoryModal
-          quoteId={versionHistoryQuote.id}
-          currentVersion={versionHistoryQuote.version}
-          onClose={() => setVersionHistoryQuote(null)}
-          onRevert={(toVersion) => {
-            setQuotes(prev => prev.map(q => q.id === versionHistoryQuote.id ? { ...q, version: toVersion } : q));
-            setVersionHistoryQuote(prev => prev ? { ...prev, version: toVersion } : prev);
-          }}
-        />
-        </QuoteDocCurrency>
-      )}
+      {versionHistoryQuote && (() => {
+        /* The full record, for its currency and rate: the badge only hands
+           over the id and version. */
+        const record = quotes.find(q => q.id === versionHistoryQuote.id);
+        return (
+          <QuoteDocCurrency quote={record ? { ...record, version: versionHistoryQuote.version } : undefined}>
+          <VersionHistoryModal
+            quoteId={versionHistoryQuote.id}
+            currentVersion={versionHistoryQuote.version}
+            onClose={() => setVersionHistoryQuote(null)}
+            onRevert={(toVersion, rateChoice) => {
+              const rate = record ? revertRateFields(record, toVersion, rateChoice) : {};
+              setQuotes(prev => prev.map(q => q.id === versionHistoryQuote.id ? { ...q, version: toVersion, ...rate } : q));
+              setVersionHistoryQuote(prev => prev ? { ...prev, version: toVersion } : prev);
+            }}
+          />
+          </QuoteDocCurrency>
+        );
+      })()}
       {pdfPreviewQuote && (
         <PDFPreviewModal
           isOpen={true}

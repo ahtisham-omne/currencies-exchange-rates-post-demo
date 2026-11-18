@@ -91,7 +91,8 @@ import {
   pickSeededUomForLine,
   getUomSetIdForProduct,
 } from '../../data/uomSets';
-import { useDocCurrency } from '@/app/components/currency/docCurrencyContext';
+import { useDocCurrency, useDocMoney, useDocOtherText, useDocView } from '@/app/components/currency/docCurrencyContext';
+import { DocMoney } from '@/app/components/currency/DocCurrency';
 import { formatAmount, formatMoney, moneyPrefix } from '@/app/currency/money';
 import { roundTo } from '@/app/currency/qFx';
 import { formatWhole } from '@/app/currency/quoteMoney';
@@ -647,10 +648,22 @@ function ItemRow({
   pricingAPI,
   adjustmentsAPI,
 }: ItemRowProps) {
-  /* Price per unit in the quote's currency (spec 4.3): its symbol or code
-     and its minor unit. */
+  /* Prices are kept in the quote's currency (spec 4.3) and shown, and
+     typed, in the page's: base by default, the customer's with the header
+     toggle, with that currency's symbol or code and minor unit. A price
+     typed in base is converted at the quote's rate and rounded to the
+     quote currency's minor unit; an untouched input keeps the stored price. */
   const { currency: docCurrency } = useDocCurrency();
-  const pricePrefix = moneyPrefix(docCurrency).trim();
+  const { inBase, viewCurrency, toView, fromView, decimals: priceDecimals } = useDocView();
+  const otherText = useDocOtherText();
+  const pricePrefix = moneyPrefix(viewCurrency).trim();
+  const priceInput = inBase ? toView(item.unitPrice).toFixed(priceDecimals) : String(item.unitPrice);
+  const committed = (field: 'quantity' | 'unitPrice', value: number) =>
+    field !== 'unitPrice' || !inBase
+      ? value
+      : value.toFixed(priceDecimals) === priceInput
+        ? item.unitPrice
+        : roundTo(docCurrency, fromView(value));
   const ref = useRef<HTMLTableRowElement>(null);
   const uomDropdownRef = useRef<HTMLDivElement>(null);
   const uomPanelRef = useRef<HTMLDivElement>(null);
@@ -740,7 +753,7 @@ function ItemRow({
     if (e.key === 'Enter') {
       const value = parseFloat((e.target as HTMLInputElement).value);
       if (!isNaN(value) && value > 0) {
-        onCommitEdit(item.id, field, value);
+        onCommitEdit(item.id, field, committed(field, value));
       } else {
         onCancelEdit();
       }
@@ -752,7 +765,7 @@ function ItemRow({
   const handleBlur = (e: React.FocusEvent<HTMLInputElement>, field: 'quantity' | 'unitPrice') => {
     const value = parseFloat(e.target.value);
     if (!isNaN(value) && value > 0) {
-      onCommitEdit(item.id, field, value);
+      onCommitEdit(item.id, field, committed(field, value));
     } else {
       onCancelEdit();
     }
@@ -1200,16 +1213,19 @@ function ItemRow({
       <td className="li-fig" data-label="Price per unit" onClick={(e) => e.stopPropagation()} style={{ padding: '0 12px', textAlign: 'left', verticalAlign: 'middle' }}>
         {!showEditAffordance && !isEditingPrice ? (
           <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 4, fontFamily: 'Inter, system-ui, sans-serif' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)', lineHeight: 1 }}>{pricePrefix}</span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)', lineHeight: 1, whiteSpace: 'nowrap' }}>
-              {formatAmount(item.unitPrice, docCurrency)}
-            </span>
+            {/* The other currency on hover. */}
+            <DocMoney value={item.unitPrice}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)', lineHeight: 1, marginRight: 4 }}>{pricePrefix}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)', lineHeight: 1, whiteSpace: 'nowrap' }}>
+                {formatAmount(toView(item.unitPrice), viewCurrency)}
+              </span>
+            </DocMoney>
             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted-foreground)', lineHeight: 1, whiteSpace: 'nowrap' }}>
               {findUomById(item.uom)?.fullName || item.uom}
             </span>
           </span>
         ) : (
-        <div style={{ position: 'relative', display: 'inline-block', width: '110px' }}>
+        <div style={{ position: 'relative', display: 'inline-block', width: '132px' /* fits a base-currency price, ₨13,424,880.00 */ }}>
           {/* Price input/display — centered in row */}
           {isEditingPrice ? (
             <div
@@ -1230,7 +1246,8 @@ function ItemRow({
               <span style={{ fontSize: '12px', color: 'var(--muted-foreground)', fontWeight: 600, lineHeight: '1', flexShrink: 0 }}>{pricePrefix}</span>
               <input
                 type="number"
-                defaultValue={item.unitPrice}
+                defaultValue={priceInput}
+                aria-label={`Price per unit, ${viewCurrency}`}
                 min={0}
                 step={1}
                 inputMode="numeric"
@@ -1273,14 +1290,16 @@ function ItemRow({
                 fontFamily: 'Inter, system-ui, sans-serif',
                 boxSizing: 'border-box',
               }}
-              title={showEditAffordance ? `Click to edit · ${formatMoney(item.unitPrice, docCurrency)}` : undefined}
+              title={showEditAffordance
+                ? `Click to edit · ${formatMoney(toView(item.unitPrice), viewCurrency)}${otherText(item.unitPrice) ? ` (${otherText(item.unitPrice)} ${inBase ? 'customer currency' : 'base currency'})` : ''}`
+                : undefined}
             >
               <span style={{ fontSize: 12, color: 'var(--muted-foreground)', fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>{pricePrefix}</span>
               {/* Long values truncate with an ellipsis inside the capsule
                   rather than spilling into the next column. The button's
                   `title` surfaces the full value on hover. */}
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--foreground)', lineHeight: 1, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
-                {formatAmount(item.unitPrice, docCurrency)}
+                {formatAmount(toView(item.unitPrice), viewCurrency)}
               </span>
             </button>
           )}
@@ -1344,7 +1363,9 @@ function ItemRow({
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%',
                   }}
                 >
-                  {formatCurrency(lineTotal)}
+                  {/* A line with no rules or adjustments gets the currency
+                      hover instead of the (empty) breakdown. */}
+                  {hasOverlay ? formatCurrency(lineTotal) : <DocMoney value={lineTotal}>{formatCurrency(lineTotal)}</DocMoney>}
                 </span>
               </PriceBreakdownHoverCard>
             </div>
@@ -1458,6 +1479,10 @@ function ItemsTable({
   onRequestPriceVersionConfirm, onLinesChange, lineFactor = 1, conversion,
 }: ItemsTabTableCleanProps) {
   const { currency: docCurrency } = useDocCurrency();
+  /* Amounts in the page's currency: base by default, the customer's with
+     the header toggle (docCurrencyContext). */
+  const { viewCurrency, toView } = useDocView();
+  const docMoney = useDocMoney();
   // Item quick-view peek modal (opens from any line-item thumbnail).
   const { open: openItemQuickView, modal: itemQuickViewModal } = useItemQuickView();
   const previewLineItem = (item: LineItem) => {
@@ -1478,7 +1503,7 @@ function ItemsTable({
       uom: item.uom,
       onHand: product?.stockQuantity,
       metrics: [
-        { label: 'Unit Price', value: formatMoney(item.unitPrice, docCurrency), caption: 'Unit Price' },
+        { label: 'Unit Price', value: docMoney(item.unitPrice), caption: 'Unit Price' },
         ...(product?.stockQuantity !== undefined
           ? [{ label: 'In Stock', value: `${product.stockQuantity.toLocaleString()} ${item.uom}`, caption: 'In Stock' }]
           : []),
@@ -1582,9 +1607,11 @@ function ItemsTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineFreightCosts]);
 
-  /* In the quote's currency (spec 4.3); whole amounts drop the minor unit, as before. */
-  const formatCurrency = (amount: number) =>
-    amount % 1 !== 0 ? formatMoney(amount, docCurrency) : formatWhole(amount, docCurrency);
+  /* In the page's currency (base by default); whole amounts drop the minor unit, as before. */
+  const formatCurrency = (amount: number) => {
+    const v = toView(amount);
+    return v % 1 !== 0 ? formatMoney(v, viewCurrency) : formatWhole(v, viewCurrency);
+  };
 
   const toggleRowSelection = (itemId: string) => {
     const newSelected = new Set(selectedRows);
@@ -1824,8 +1851,8 @@ function ItemsTable({
       if (requiresNewDraftFirst(quoteStatus || '') && onRequestPriceVersionConfirm) {
         onRequestPriceVersionConfirm(
           `Unit Price · ${oldItem.productName}`,
-          formatMoney(oldItem.unitPrice, docCurrency),
-          formatMoney(value, docCurrency),
+          docMoney(oldItem.unitPrice),
+          docMoney(value),
           /* `silent` flag carried through pendingPriceEdit so the
              applyEdit downstream of the scope modal doesn't fire a
              second onMaterialChange — the version bump already counts
@@ -2035,7 +2062,7 @@ function ItemsTable({
       );
     };
 
-    const fmtPpu = (v: number) => formatMoney(v, docCurrency);
+    const fmtPpu = (v: number) => docMoney(v);
 
     /* Version-first gate: on sent/confirmed quotes, defer the UoM
        mutation until the user has agreed to fork a new draft. The
@@ -2304,7 +2331,7 @@ function ItemsTable({
                   instead of getting cropped. Matches the Sales Order
                   table behaviour. */}
               <col style={{ width: '132px' }} />
-              <col style={{ width: '128px' }} />
+              <col style={{ width: '148px' }} />
               <col style={{ width: '124px' }} />
               {/* Action column — Pencil is always rendered (view or edit
                   Advanced Configurator), so the column needs width even

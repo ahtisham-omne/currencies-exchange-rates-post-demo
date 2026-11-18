@@ -18,6 +18,12 @@ import {
   Divider as FilterModalDivider,
 } from '../shared/filterModal';
 import { useDesignMoney } from '@/app/components/currency/docCurrencyContext';
+import { useVersionMoney } from '@/app/components/currency/versionMoney';
+import { VersionRateChoice as VersionRateChoiceCards, useVersionRateOptions } from '@/app/components/currency/VersionRateChoice';
+import type { VersionRateChoice } from '@/app/data/quoteStore';
+import { formatRate, formatRateDate } from '@/app/currency/money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { RATE_TYPE_LABEL } from '@/app/currency/rates';
 
 // ── Types ──────────────────────────────────────────────────────────
 type VersionStatus = 'draft' | 'sent' | 'confirmed';
@@ -237,7 +243,8 @@ interface VersionHistoryTabProps {
    *  what the listing badge shows. Without this the tab always renders
    *  the static 3-row MOCK_VERSIONS list regardless of the quote. */
   currentVersion?: number;
-  onEditAsDraft?: (fromVersion: number, originalStatus?: 'draft' | 'sent' | 'confirmed') => void;
+  /** With the rate the quote takes: the version's locked one, or today's. */
+  onEditAsDraft?: (fromVersion: number, originalStatus?: 'draft' | 'sent' | 'confirmed', rateChoice?: VersionRateChoice) => void;
 }
 
 export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName = 'Tri-County EMS Authority', currentVersion, onEditAsDraft }: VersionHistoryTabProps) {
@@ -293,9 +300,12 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
   };
 
   /* The version history is the design's mock, written in USD: restated in
-     the quote's currency at its rate date (useDesignMoney). */
+     the quote's currency at its date (useDesignMoney), then shown in base at
+     the rate each version locked in, or in the quote's currency when the
+     page is toggled to it (useVersionMoney). */
   const design = useDesignMoney();
-  const formatCurrency = design.whole;
+  const vm = useVersionMoney();
+  const versionMoney = (usd: number, version: number) => vm.whole(design.amount(usd), version);
 
   const toggleExpanded = (v: number) => {
     setExpandedVersions(prev => {
@@ -316,10 +326,10 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
   // Draft conflict state for VersionHistoryTab internal reverts
   const [draftConflictRevert, setDraftConflictRevert] = useState<{ toVersion: number; reason: string } | null>(null);
 
-  const doRevert = (toVersion: number, reason: string, _overwriteDraft: boolean) => {
+  const doRevert = (toVersion: number, reason: string, _overwriteDraft: boolean, rateChoice: VersionRateChoice = 'locked') => {
     const source = versions.find(v => v.version === toVersion);
     if (source) {
-      onEditAsDraft?.(toVersion, source.versionStatus);
+      onEditAsDraft?.(toVersion, source.versionStatus, rateChoice);
       const trimmed = reason.trim();
       if (trimmed) {
         const stamp = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -337,8 +347,8 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
     setDraftConflictRevert(null);
   };
 
-  const handleRevert = (toVersion: number, reason: string) => {
-    doRevert(toVersion, reason, false);
+  const handleRevert = (toVersion: number, reason: string, rateChoice: VersionRateChoice = 'locked') => {
+    doRevert(toVersion, reason, false, rateChoice);
   };
 
   /* Change-kind icon + color — keyed by `change.action` (Added /
@@ -716,7 +726,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                       </span>
                     )}
                     <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--foreground-soft)', lineHeight: '1' }}>
-                      {formatCurrency(ver.snapshot.grandTotal)}
+                      {versionMoney(ver.snapshot.grandTotal, ver.version)}
                     </span>
                   </div>
 
@@ -785,6 +795,23 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                         <Clock style={{ width: '12px', height: '12px', color: 'var(--muted-foreground)' }} />
                         <span className="tabular-nums" style={{ fontSize: '12px', color: 'var(--muted-foreground)', lineHeight: '1' }}>Valid until {ver.snapshot.validUntil}</span>
                       </div>
+                      {/* The rate this version locked in (foreign-currency quote),
+                          as the earlier touchpoint showed it. */}
+                      {(() => {
+                        const vfx = vm.fxOf(ver.version);
+                        if (!vfx) return null;
+                        const hex = vfx.rateType === 'mid' ? '#7C3AED' : '#B45309';
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <Scale style={{ width: '12px', height: '12px', color: hex }} />
+                            <span className="tabular-nums" style={{ fontSize: '12px', color: 'var(--muted-foreground)', lineHeight: '1' }}>
+                              Rate locked: 1 {vm.currency} = {formatRate(vfx.rate)} {BASE_CURRENCY}
+                              <span style={{ color: hex, fontWeight: 600, marginLeft: '6px' }}>{RATE_TYPE_LABEL[vfx.rateType]}</span>
+                              <span style={{ color: '#94A3B8', marginLeft: '6px' }}>· {formatRateDate(vfx.rateDate)}</span>
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Snapshot + Line Items (combined) */}
@@ -810,8 +837,8 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                         </div>
                         <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '40px', textAlign: 'right' as const }}>Qty</span>
                         <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '44px', textAlign: 'center' as const }}>UoM</span>
-                        <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>Price</span>
-                        <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>Total</span>
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '96px', textAlign: 'right' as const }}>Price</span>
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '96px', textAlign: 'right' as const }}>Total</span>
                       </div>
                       {/* Line item rows */}
                       {ver.snapshot.lineItems && ver.snapshot.lineItems.length > 0 ? (
@@ -830,8 +857,8 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                               </div>
                               <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 500, color: '#334155', lineHeight: '1', flexShrink: 0, width: '40px', textAlign: 'right' as const }}>{li.qty}</span>
                               <span style={{ fontSize: '10px', fontWeight: 500, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '44px', textAlign: 'center' as const }}>{li.uom}</span>
-                              <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 400, color: '#475569', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>{formatCurrency(li.unitPrice)}</span>
-                              <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>{formatCurrency(li.total)}</span>
+                              <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 400, color: '#475569', lineHeight: '1', flexShrink: 0, width: '96px', textAlign: 'right' as const }}>{versionMoney(li.unitPrice, ver.version)}</span>
+                              <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', flexShrink: 0, width: '96px', textAlign: 'right' as const }}>{versionMoney(li.total, ver.version)}</span>
                             </div>
                           ))}
                         </div>
@@ -846,8 +873,8 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                           padding: '8px 14px', borderTop: '1px solid var(--border)', backgroundColor: '#FFFFFF',
                         }}>
                           <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', marginRight: '8px' }}>Subtotal</span>
-                          <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', width: '80px', textAlign: 'right' as const }}>
-                            {formatCurrency(ver.snapshot.lineItems.reduce((s, li) => s + li.total, 0))}
+                          <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', width: '96px', textAlign: 'right' as const }}>
+                            {versionMoney(ver.snapshot.lineItems.reduce((s, li) => s + li.total, 0), ver.version)}
                           </span>
                         </div>
                       )}
@@ -859,13 +886,13 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                         padding: '8px 14px', backgroundColor: 'color-mix(in srgb, var(--muted) 40%, transparent)', borderTop: '1px solid var(--border)',
                       }}>
                         <span className="tabular-nums" style={{ fontSize: '11px', fontWeight: 400, color: 'var(--muted-foreground)', lineHeight: '1' }}>
-                          Pricing Rules: <span style={{ fontWeight: 500, color: '#334155' }}>{formatCurrency(ver.snapshot.pricingRulesTotal ?? 0)}</span>
+                          Pricing Rules: <span style={{ fontWeight: 500, color: '#334155' }}>{versionMoney(ver.snapshot.pricingRulesTotal ?? 0, ver.version)}</span>
                           {' '}&nbsp;·&nbsp;{' '}
-                          One-Time Discounts/Premiums: <span style={{ fontWeight: 500, color: '#334155' }}>{formatCurrency(ver.snapshot.adjustmentsTotal ?? 0)}</span>
+                          One-Time Discounts/Premiums: <span style={{ fontWeight: 500, color: '#334155' }}>{versionMoney(ver.snapshot.adjustmentsTotal ?? 0, ver.version)}</span>
                         </span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1' }}>Total</span>
-                          <span className="tabular-nums" style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', lineHeight: '1' }}>{formatCurrency(ver.snapshot.grandTotal)}</span>
+                          <span className="tabular-nums" style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', lineHeight: '1' }}>{versionMoney(ver.snapshot.grandTotal, ver.version)}</span>
                         </div>
                       </div>
                     </div>
@@ -961,7 +988,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
         <CompareView
           v1={versions.find(v => v.version === Math.min(...compareSelections))!}
           v2={versions.find(v => v.version === Math.max(...compareSelections))!}
-          formatCurrency={formatCurrency}
+          money={versionMoney}
           onClose={() => setShowCompareView(false)}
         />
       )}
@@ -970,8 +997,12 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
       {showRevertConfirm !== null && (
         <RevertConfirmModal
           version={showRevertConfirm}
+          total={(() => {
+            const v = versions.find((x) => x.version === showRevertConfirm);
+            return v ? design.amount(v.snapshot.grandTotal) : undefined;
+          })()}
           onClose={() => setShowRevertConfirm(null)}
-          onConfirm={(reason: string) => handleRevert(showRevertConfirm, reason)}
+          onConfirm={(reason: string, rateChoice: VersionRateChoice) => handleRevert(showRevertConfirm, reason, rateChoice)}
         />
       )}
 
@@ -990,8 +1021,11 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
 }
 
 // ── Compare View ──────────────────────────────────────────────────
-function CompareView({ v1, v2, formatCurrency, onClose }: {
-  v1: Version; v2: Version; formatCurrency: (n: number) => string; onClose: () => void;
+function CompareView({ v1, v2, money, onClose }: {
+  v1: Version; v2: Version;
+  /** A version's figure as shown: in base at that version's rate, or in the quote's currency. */
+  money: (usd: number, version: number) => string;
+  onClose: () => void;
 }) {
   const design = useDesignMoney();
   /* Local kind config so CompareView stays self-contained (mirrors the
@@ -1005,7 +1039,7 @@ function CompareView({ v1, v2, formatCurrency, onClose }: {
   const fields: CompareField[] = [
     { label: 'Status', val1: versionStatusConfig[v1.versionStatus].label, val2: versionStatusConfig[v2.versionStatus].label, kind: 'status' },
     { label: 'Line Items', val1: String(v1.snapshot.lineItemCount), val2: String(v2.snapshot.lineItemCount) },
-    { label: 'Grand Total', val1: formatCurrency(v1.snapshot.grandTotal), val2: formatCurrency(v2.snapshot.grandTotal) },
+    { label: 'Grand Total', val1: money(v1.snapshot.grandTotal, v1.version), val2: money(v2.snapshot.grandTotal, v2.version) },
     { label: 'Rules', val1: String(v1.snapshot.rulesCount), val2: String(v2.snapshot.rulesCount) },
     { label: 'Adjustments', val1: String(v1.snapshot.adjustmentsCount), val2: String(v2.snapshot.adjustmentsCount) },
     { label: 'Valid Until', val1: v1.snapshot.validUntil, val2: v2.snapshot.validUntil },
@@ -1131,10 +1165,17 @@ function CompareView({ v1, v2, formatCurrency, onClose }: {
 }
 
 // ── Revert Confirm Modal — Partner red-themed discard chrome ─────
-function RevertConfirmModal({ version, onClose, onConfirm }: {
-  version: number; onClose: () => void; onConfirm: (reason: string) => void;
+function RevertConfirmModal({ version, total, onClose, onConfirm }: {
+  version: number;
+  /** The version's total (the quote's currency), for the rate choice. */
+  total?: number;
+  onClose: () => void;
+  onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
 }) {
   const [reason, setReason] = useState('');
+  // A foreign-currency quote: V{version}'s locked rate, or today's.
+  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
+  const rateOptions = useVersionRateOptions(version, total);
 
   return (
     <ConfirmDiscardModal
@@ -1145,8 +1186,13 @@ function RevertConfirmModal({ version, onClose, onConfirm }: {
       description={`V${version} will become the latest version of this quote. Its existing status is preserved. The next material change will auto-create a new version.`}
       confirmLabel={`Revert to V${version}`}
       cancelLabel="Cancel"
-      onConfirm={() => onConfirm(reason.trim())}
+      onConfirm={() => onConfirm(reason.trim(), rateOptions ? rateChoice : 'locked')}
     >
+      {rateOptions && (
+        <div style={{ marginBottom: 14 }}>
+          <VersionRateChoiceCards fromVersion={version} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
+        </div>
+      )}
       <div>
         <label
           className="block"

@@ -1,4 +1,5 @@
 import { Quote, QuoteStatus, QuoteRejectionReason } from '../types/quote';
+import type { RateType } from '@/app/currency/rates';
 
 // Module-level store for dynamically created quotes
 // This persists across React navigations within the same session
@@ -54,6 +55,69 @@ export function getQuoteLineFactor(quoteId: string): number | undefined {
 export function setQuoteLineFactor(quoteId: string, factor: number): void {
   quoteLineFactors.set(quoteId, factor);
 }
+
+/* ── Each version's rate (spec 4.3) ──
+   A version keeps the rate it was made at. A new version keeps the one
+   before it (the locked rate) unless today's is applied when it is created,
+   and reverting to a version takes its rate back unless today's is applied
+   then. The design's versions carry no snapshot of their own, so the rate
+   is kept here per quote and version: seeded from the quote's own rate the
+   first time the quote is opened, and kept in step with the version in
+   force while it is edited. Session only, like the rest of this store. */
+export type VersionRateChoice = 'locked' | 'current';
+
+export interface QuoteRateStamp {
+  currency: string;
+  exchangeRate: number;
+  rateType: RateType;
+  rateDate: string;
+  rateEdited?: boolean;
+}
+
+const versionRates: Map<string, Map<number, QuoteRateStamp>> = new Map();
+const versionRateListeners: Set<() => void> = new Set();
+let versionRateRevision = 0;
+
+const sameStamp = (a: QuoteRateStamp | undefined, b: QuoteRateStamp) =>
+  !!a && a.currency === b.currency && a.exchangeRate === b.exchangeRate && a.rateType === b.rateType &&
+  a.rateDate === b.rateDate && !!a.rateEdited === !!b.rateEdited;
+
+export function getVersionRate(quoteId: string, version: number): QuoteRateStamp | undefined {
+  return versionRates.get(quoteId)?.get(version);
+}
+
+export function setVersionRate(quoteId: string, version: number, stamp: QuoteRateStamp): void {
+  const rates = versionRates.get(quoteId) ?? new Map<number, QuoteRateStamp>();
+  if (sameStamp(rates.get(version), stamp)) return;
+  rates.set(version, stamp);
+  versionRates.set(quoteId, rates);
+  versionRateRevision++;
+  versionRateListeners.forEach((fn) => fn());
+}
+
+/** Versions with no rate on record take `stamp`: the rate the quote has now. */
+export function seedVersionRates(quoteId: string, versions: number[], stamp: QuoteRateStamp): void {
+  const rates = versionRates.get(quoteId) ?? new Map<number, QuoteRateStamp>();
+  let changed = false;
+  for (const v of versions) {
+    if (!rates.has(v)) {
+      rates.set(v, stamp);
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  versionRates.set(quoteId, rates);
+  versionRateRevision++;
+  versionRateListeners.forEach((fn) => fn());
+}
+
+export function subscribeVersionRates(listener: () => void): () => void {
+  versionRateListeners.add(listener);
+  return () => { versionRateListeners.delete(listener); };
+}
+
+/** Bumps on every change, for useSyncExternalStore. */
+export const getVersionRateRevision = () => versionRateRevision;
 
 export function getAllCreatedQuotes(): Quote[] {
   return Array.from(createdQuotes.values());

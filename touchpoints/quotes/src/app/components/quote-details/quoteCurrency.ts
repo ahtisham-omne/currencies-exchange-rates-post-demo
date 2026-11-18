@@ -2,12 +2,14 @@ import { isBaseCurrency } from "@/app/currency/currencies";
 import type { RateType } from "@/app/currency/rates";
 import { crossRate, roundTo, type QuoteFx } from "@/app/currency/qFx";
 
-/** A choice made in Quote Summary's Currency and Exchange rate fields. */
+/** A choice made in the quote's Currency Configuration. */
 export interface QuoteCurrencyChoice {
   currency: string;
   rateType: RateType;
   exchangeRate: number;
   rateEdited?: boolean;
+  /** "You receive"; unchanged when left out. */
+  settlementCurrency?: string;
 }
 
 /** The currency fields a quote carries (types/quote.ts). */
@@ -17,6 +19,8 @@ export interface QuoteCurrencyFields {
   rateType: RateType;
   rateDate: string;
   rateEdited: boolean;
+  /** "You receive": the base currency unless set. */
+  settlementCurrency?: string;
 }
 
 /**
@@ -34,6 +38,7 @@ export function withQuoteCurrency(before: QuoteFx, next: QuoteCurrencyChoice): {
     rateType: next.rateType,
     rateDate: before.rateDate,
     rateEdited: next.rateType === "corporate" && !!next.rateEdited,
+    ...(next.settlementCurrency ? { settlementCurrency: next.settlementCurrency.toUpperCase() } : {}),
   };
   return { fields, factor: code === before.currency ? 1 : crossRate(before.rate, rate) };
 }

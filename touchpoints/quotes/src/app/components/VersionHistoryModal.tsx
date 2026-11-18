@@ -8,6 +8,9 @@ import { StatusBadge } from './StatusBadge';
 import { StateTransitionOverlay } from './shared/StateTransitionOverlay';
 import type { QuoteStatus } from '@/app/types/quote';
 import { useDesignMoney } from '@/app/components/currency/docCurrencyContext';
+import { useVersionMoney } from '@/app/components/currency/versionMoney';
+import { VersionRateChoice as VersionRateChoiceCards, useVersionRateOptions } from '@/app/components/currency/VersionRateChoice';
+import type { VersionRateChoice } from '@/app/data/quoteStore';
 
 /* Right-pane "Order Status" badge mapping.
    The version's internal status (draft / sent / confirmed) is mapped
@@ -84,7 +87,8 @@ interface VersionHistoryModalProps {
   quoteId: string;
   currentVersion: number;
   onClose: () => void;
-  onRevert?: (toVersion: number) => void;
+  /** With the rate the quote takes: the version's locked one, or today's. */
+  onRevert?: (toVersion: number, rateChoice: VersionRateChoice) => void;
 }
 
 /* Change-kind icon + color — keyed by the high-level action (Added /
@@ -140,8 +144,12 @@ function StatusPill({ value }: { value: string }) {
 }
 
 export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert }: VersionHistoryModalProps) {
+  /* The design's USD history, restated in the quote's currency, shown in
+     base at the rate each version locked in (outside the quote page,
+     amounts are in base). */
   const design = useDesignMoney();
-  const formatCurrency = design.whole;
+  const vm = useVersionMoney();
+  const versionMoney = (usd: number, version: number) => vm.whole(design.amount(usd), version);
   // The "current version" is always the latest confirmed version.
   // Minimal data shape mirrors Sales Order V5's VersionHistoryTab — terse
   // subject/detail strings, 3-4 changes per version, short item descriptions.
@@ -259,9 +267,9 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
   const [versionToRevert, setVersionToRevert] = useState<number | null>(null);
 
-  const [revertOverlay, setRevertOverlay] = useState<{ show: boolean; toVersion: number; fromVersion: number }>({ show: false, toVersion: 0, fromVersion: 0 });
+  const [revertOverlay, setRevertOverlay] = useState<{ show: boolean; toVersion: number; fromVersion: number; rateChoice?: VersionRateChoice }>({ show: false, toVersion: 0, fromVersion: 0 });
 
-  const handleRevert = (toVersion: number, reason: string) => {
+  const handleRevert = (toVersion: number, reason: string, rateChoice: VersionRateChoice = 'locked') => {
     // Revert-in-place: V[toVersion] becomes the new "current" without
     // creating a new draft entry. Status is preserved. The full-screen
     // overlay plays first so the user has a visible confirmation that
@@ -276,14 +284,14 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
     }
     setShowRevertConfirm(false);
     setVersionToRevert(null);
-    setRevertOverlay({ show: true, toVersion, fromVersion: currentVersionNum });
+    setRevertOverlay({ show: true, toVersion, fromVersion: currentVersionNum, rateChoice });
   };
 
   const finalizeRevert = () => {
-    const { toVersion } = revertOverlay;
+    const { toVersion, rateChoice } = revertOverlay;
     setRevertOverlay({ show: false, toVersion: 0, fromVersion: 0 });
     setSelectedVersion(toVersion);
-    onRevert?.(toVersion);
+    onRevert?.(toVersion, rateChoice ?? 'locked');
     toast.success(`Reverted to V${toVersion}`, {
       description: `V${toVersion} is now the current version of this quote.`,
       position: 'top-right',
@@ -694,7 +702,7 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
                   const summaryFields: CompareField[] = [
                     { label: 'Status', val1: versionStatusConfig[v1.versionStatus].label, val2: versionStatusConfig[v2.versionStatus].label, kind: 'status' },
                     { label: 'Line Items', val1: String(v1.snapshot.lineItemCount), val2: String(v2.snapshot.lineItemCount) },
-                    { label: 'Grand Total', val1: formatCurrency(v1.snapshot.grandTotal), val2: formatCurrency(v2.snapshot.grandTotal) },
+                    { label: 'Grand Total', val1: versionMoney(v1.snapshot.grandTotal, v1.version), val2: versionMoney(v2.snapshot.grandTotal, v2.version) },
                     { label: 'Rules', val1: String(v1.snapshot.rulesCount), val2: String(v2.snapshot.rulesCount) },
                     { label: 'Adjustments', val1: String(v1.snapshot.adjustmentsCount), val2: String(v2.snapshot.adjustmentsCount) },
                     { label: 'Valid Until', val1: v1.snapshot.validUntil, val2: v2.snapshot.validUntil },
@@ -706,7 +714,7 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
 
                   const colHeaderStyle: React.CSSProperties = { fontSize: '9px', fontWeight: 500, color: '#9CA3AF', textTransform: 'none', lineHeight: '1' };
 
-                  const renderCompareRow = (li: LineItem | null, status: DiffStatus) => {
+                  const renderCompareRow = (li: LineItem | null, status: DiffStatus, version: number) => {
                     if (!li) {
                       return (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', backgroundColor: status === 'removed' ? '#FEF2F2' : status === 'added' ? '#F0FDF4' : '#F9FAFB', borderBottom: '1px solid #F3F4F6', minHeight: '30px', opacity: 0.4 }}>
@@ -727,8 +735,8 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
                         </div>
                         <span style={{ fontSize: '10px', color: isChanged ? '#92400E' : '#6B7280', fontWeight: isChanged ? 600 : 400, lineHeight: '1', flexShrink: 0, width: '24px', textAlign: 'right' as const }}>{li.qty}</span>
                         <span style={{ fontSize: '10px', color: '#9CA3AF', lineHeight: '1', flexShrink: 0, width: '24px', textAlign: 'center' as const }}>{li.uom}</span>
-                        <span style={{ fontSize: '10px', color: isChanged ? '#92400E' : '#9CA3AF', fontWeight: isChanged ? 500 : 400, lineHeight: '1', flexShrink: 0, width: '56px', textAlign: 'right' as const }}>{formatCurrency(li.unitPrice)}</span>
-                        <span style={{ fontSize: '10px', fontWeight: 600, color: isChanged ? '#92400E' : '#1F2937', lineHeight: '1', flexShrink: 0, width: '56px', textAlign: 'right' as const }}>{formatCurrency(li.total)}</span>
+                        <span style={{ fontSize: '10px', color: isChanged ? '#92400E' : '#9CA3AF', fontWeight: isChanged ? 500 : 400, lineHeight: '1', flexShrink: 0, width: '72px', textAlign: 'right' as const }}>{versionMoney(li.unitPrice, version)}</span>
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: isChanged ? '#92400E' : '#1F2937', lineHeight: '1', flexShrink: 0, width: '72px', textAlign: 'right' as const }}>{versionMoney(li.total, version)}</span>
                       </div>
                     );
                   };
@@ -762,19 +770,19 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
                           <div style={{ flex: 1 }}><span style={colHeaderStyle}>Item</span></div>
                           <span style={{ ...colHeaderStyle, flexShrink: 0, width: '24px', textAlign: 'right' as const }}>Qty</span>
                           <span style={{ ...colHeaderStyle, flexShrink: 0, width: '24px', textAlign: 'center' as const }}>Unit</span>
-                          <span style={{ ...colHeaderStyle, flexShrink: 0, width: '56px', textAlign: 'right' as const }}>Price</span>
-                          <span style={{ ...colHeaderStyle, flexShrink: 0, width: '56px', textAlign: 'right' as const }}>Total</span>
+                          <span style={{ ...colHeaderStyle, flexShrink: 0, width: '72px', textAlign: 'right' as const }}>Price</span>
+                          <span style={{ ...colHeaderStyle, flexShrink: 0, width: '72px', textAlign: 'right' as const }}>Total</span>
                         </div>
                         {/* Rows */}
                         {allIds.map(id => {
                           const status = getDiffStatus(id);
                           const li = itemMap.get(id) || null;
-                          return <div key={id}>{renderCompareRow(li, status)}</div>;
+                          return <div key={id}>{renderCompareRow(li, status, ver.version)}</div>;
                         })}
                         {/* Subtotal */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '3px 8px', borderTop: '1px solid #E5E7EB', backgroundColor: subtotalChanged && side === 'right' ? '#FFFBEB' : '#FFFFFF' }}>
                           <span style={{ fontSize: '9px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.3px', marginRight: '6px' }}>Subtotal</span>
-                          <span style={{ fontSize: '10px', fontWeight: 600, color: subtotalChanged && side === 'right' ? '#92400E' : '#374151', minWidth: '56px', textAlign: 'right' as const }}>{formatCurrency(otherSubtotal)}</span>
+                          <span style={{ fontSize: '10px', fontWeight: 600, color: subtotalChanged && side === 'right' ? '#92400E' : '#374151', minWidth: '72px', textAlign: 'right' as const }}>{versionMoney(otherSubtotal, ver.version)}</span>
                         </div>
                         {/* Footer */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', backgroundColor: totalChanged && side === 'right' ? '#FFFBEB' : '#F9FAFB', borderTop: '1px solid #E5E7EB' }}>
@@ -783,7 +791,7 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
                           </span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ fontSize: '9px', fontWeight: 500, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.3px' }}>Total</span>
-                            <span style={{ fontSize: '11px', fontWeight: 700, color: totalChanged && side === 'right' ? '#92400E' : '#1F2937' }}>{formatCurrency(ver.snapshot.grandTotal)}</span>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: totalChanged && side === 'right' ? '#92400E' : '#1F2937' }}>{versionMoney(ver.snapshot.grandTotal, ver.version)}</span>
                           </div>
                         </div>
                       </div>
@@ -1071,8 +1079,8 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
                       </div>
                       <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '40px', textAlign: 'right' as const }}>Qty</span>
                       <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '44px', textAlign: 'center' as const }}>UoM</span>
-                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>Price</span>
-                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>Total</span>
+                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '96px', textAlign: 'right' as const }}>Price</span>
+                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '96px', textAlign: 'right' as const }}>Total</span>
                     </div>
                     {/* Line item rows — Purchase Order parity. */}
                     {selectedVersionData.snapshot.lineItems.length > 0 ? (
@@ -1103,11 +1111,11 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
                             <span style={{ fontSize: '10px', fontWeight: 500, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', flexShrink: 0, width: '44px', textAlign: 'center' as const }}>
                               {li.uom}
                             </span>
-                            <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 400, color: '#475569', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>
-                              {formatCurrency(li.unitPrice)}
+                            <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 400, color: '#475569', lineHeight: '1', flexShrink: 0, width: '96px', textAlign: 'right' as const }}>
+                              {versionMoney(li.unitPrice, selectedVersionData.version)}
                             </span>
-                            <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', flexShrink: 0, width: '80px', textAlign: 'right' as const }}>
-                              {formatCurrency(li.total)}
+                            <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', flexShrink: 0, width: '96px', textAlign: 'right' as const }}>
+                              {versionMoney(li.total, selectedVersionData.version)}
                             </span>
                           </div>
                         ))}
@@ -1122,8 +1130,8 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
                         padding: '8px 14px', borderTop: '1px solid #E5E7EB', backgroundColor: '#FFFFFF',
                       }}>
                         <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1', marginRight: '8px' }}>Subtotal</span>
-                        <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', width: '80px', textAlign: 'right' as const }}>
-                          {formatCurrency(selectedVersionData.snapshot.lineItems.reduce((s, li) => s + li.total, 0))}
+                        <span className="tabular-nums" style={{ fontSize: '12px', fontWeight: 600, color: '#0F172A', lineHeight: '1', width: '96px', textAlign: 'right' as const }}>
+                          {versionMoney(selectedVersionData.snapshot.lineItems.reduce((s, li) => s + li.total, 0), selectedVersionData.version)}
                         </span>
                       </div>
                     )}
@@ -1134,13 +1142,13 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
                       padding: '8px 14px', backgroundColor: '#F8FAFC', borderTop: '1px solid #E5E7EB',
                     }}>
                       <span className="tabular-nums" style={{ fontSize: '11px', fontWeight: 400, color: '#64748B', lineHeight: '1' }}>
-                        Pricing Rules: <span style={{ fontWeight: 500, color: '#334155' }}>{formatCurrency(selectedVersionData.snapshot.pricingRulesTotal ?? 0)}</span>
+                        Pricing Rules: <span style={{ fontWeight: 500, color: '#334155' }}>{versionMoney(selectedVersionData.snapshot.pricingRulesTotal ?? 0, selectedVersionData.version)}</span>
                         {' '}&nbsp;·&nbsp;{' '}
-                        One-Time Discounts/Premiums: <span style={{ fontWeight: 500, color: '#334155' }}>{formatCurrency(selectedVersionData.snapshot.adjustmentsTotal ?? 0)}</span>
+                        One-Time Discounts/Premiums: <span style={{ fontWeight: 500, color: '#334155' }}>{versionMoney(selectedVersionData.snapshot.adjustmentsTotal ?? 0, selectedVersionData.version)}</span>
                       </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '10px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: '0.04em', lineHeight: '1' }}>Total</span>
-                        <span className="tabular-nums" style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', lineHeight: '1' }}>{formatCurrency(selectedVersionData.snapshot.grandTotal)}</span>
+                        <span className="tabular-nums" style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', lineHeight: '1' }}>{versionMoney(selectedVersionData.snapshot.grandTotal, selectedVersionData.version)}</span>
                       </div>
                     </div>
                   </div>
@@ -1252,8 +1260,12 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
       {showRevertConfirm && versionToRevert !== null && (
         <RevertConfirmModal
           version={versionToRevert}
+          total={(() => {
+            const v = versions.find((x) => x.version === versionToRevert);
+            return v ? design.amount(v.snapshot.grandTotal) : undefined;
+          })()}
           onClose={() => { setShowRevertConfirm(false); setVersionToRevert(null); }}
-          onConfirm={(reason: string) => handleRevert(versionToRevert, reason)}
+          onConfirm={(reason: string, rateChoice: VersionRateChoice) => handleRevert(versionToRevert, reason, rateChoice)}
         />
       )}
 
@@ -1273,10 +1285,17 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
 }
 
 // ── Revert Confirm Modal ──────────────────────────────────────────
-function RevertConfirmModal({ version, onClose, onConfirm }: {
-  version: number; onClose: () => void; onConfirm: (reason: string) => void;
+function RevertConfirmModal({ version, total, onClose, onConfirm }: {
+  version: number;
+  /** The version's total (the quote's currency), for the rate choice. */
+  total?: number;
+  onClose: () => void;
+  onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
 }) {
   const [reason, setReason] = useState('');
+  // A foreign-currency quote: V{version}'s locked rate, or today's.
+  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
+  const rateOptions = useVersionRateOptions(version, total);
   // Routes through the shared `ConfirmDiscardModal` (Partner v7 chrome:
   // gradient banner, glow icon, h-11 stacked buttons) — same component the
   // version tab's Revert button uses, so the modal looks identical wherever
@@ -1290,8 +1309,13 @@ function RevertConfirmModal({ version, onClose, onConfirm }: {
       description={`V${version} will become the latest version of this quote. Its existing status is preserved. The next material change will auto-create a new version.`}
       confirmLabel={`Revert to V${version}`}
       cancelLabel="Cancel"
-      onConfirm={() => onConfirm(reason.trim())}
+      onConfirm={() => onConfirm(reason.trim(), rateOptions ? rateChoice : 'locked')}
     >
+      {rateOptions && (
+        <div style={{ marginBottom: 14 }}>
+          <VersionRateChoiceCards fromVersion={version} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
+        </div>
+      )}
       <div>
         <label
           className="block"

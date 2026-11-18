@@ -124,7 +124,9 @@ import {
   findUomById,
   multiplierWithinSet,
 } from '../../data/uomSets';
-import { useDocCurrency, useDocMoney } from '@/app/components/currency/docCurrencyContext';
+import { useDocCurrency, useDocMoney, useDocView } from '@/app/components/currency/docCurrencyContext';
+import { DocMoney } from '@/app/components/currency/DocCurrency';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { localTodayIso } from '@/app/currency/qFx';
 import { restateDesign } from '@/app/currency/quoteMoney';
 const UNITS_OF_MEASURE = UOM_SETS.discrete;
@@ -320,11 +322,13 @@ const generateItemId = (itemId: string): string => {
 
 export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
   /* The quote will be in the customer's currency (CreateQuoteModal provides
-     it): catalog list prices, written in USD, are shown and added in it at
-     today's mid-market rate, the rate the new quote takes. */
+     it): catalog list prices, written in USD, are added in it at today's
+     mid-market rate, the rate the new quote takes. They are shown in the
+     base currency, as Quotes shows amounts, the customer's on hover. */
   const formatCurrency = useDocMoney();
   const formatCurrencyImmediate = formatCurrency;
   const { currency: draftCurrency } = useDocCurrency();
+  const { inBase, toView } = useDocView();
   const listPrice = (usd: number) => restateDesign(usd, draftCurrency, localTodayIso());
   const [searchQuery, setSearchQuery] = useState('');
   const [configModalOpen, setConfigModalOpen] = useState(false);
@@ -379,14 +383,14 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
          is visible without searching. The full catalogue is still
          reachable via search. */
       : catalog.filter(product => product.isRecentlyOrdered).slice(0, 12);
-    /* The price range is in the customer's currency, as the cards show
-       prices; the catalog is in USD. */
+    /* The price range is in the shown currency (base by default), as the
+       cards show prices; the catalog is in USD. */
     const day = localTodayIso();
     const kept = new Set(
-      applyAdvancedFilters(base.map((p) => ({ ...p, unitPrice: restateDesign(p.unitPrice, draftCurrency, day) })), advancedFilters).map((p) => p.id),
+      applyAdvancedFilters(base.map((p) => ({ ...p, unitPrice: toView(restateDesign(p.unitPrice, draftCurrency, day)) })), advancedFilters).map((p) => p.id),
     );
     return base.filter((p) => kept.has(p.id));
-  }, [searchQuery, advancedFilters, draftCurrency]);
+  }, [searchQuery, advancedFilters, draftCurrency, toView]);
 
   const isProductAdded = (productId: string) => {
     return quoteDraft.lineItems.some((item) => item.productId === productId);
@@ -1008,7 +1012,7 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <span className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>
-                          {formatCurrency(listPrice(product.unitPrice))}
+                          <DocMoney value={listPrice(product.unitPrice)}>{formatCurrency(listPrice(product.unitPrice))}</DocMoney>
                         </span>
                         <span className="text-[11px] text-muted-foreground ml-1" style={{ fontWeight: 400 }}>/ {findUomById(getPrimaryUomForProduct(product))?.name || 'EA'}</span>
                       </div>
@@ -1524,7 +1528,7 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
                             />
                             <div className="flex-1 text-right min-w-0">
                               <div className={`${sidebarWidth === 'narrow' ? 'text-[13px]' : 'text-[16px]'} text-foreground truncate`} style={{ fontWeight: 600 }}>
-                                {formatCurrency(item.total)}
+                                <DocMoney value={item.total}>{formatCurrency(item.total)}</DocMoney>
                               </div>
                               {/* Selected unit label so the user always sees
                                   which unit the total is priced in. */}
@@ -1587,9 +1591,15 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
                 Subtotal
               </span>
               <span className="text-[20px] text-primary" style={{ fontWeight: 600 }}>
-                {formatCurrency(subtotal)}
+                <DocMoney value={subtotal}>{formatCurrency(subtotal)}</DocMoney>
               </span>
             </div>
+            {/* Shown in base until the quote exists; it takes the rate on its quote date. */}
+            {inBase && (
+              <div className="mt-1 text-right text-[11px] text-muted-foreground">
+                In {BASE_CURRENCY}, base currency · {draftCurrency} converted at today's rate
+              </div>
+            )}
           </div>
         )}
       </div>

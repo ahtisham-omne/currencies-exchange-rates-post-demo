@@ -14,7 +14,8 @@ import { OverflowTooltip, type OverflowItem } from "./OverflowTooltip";
 import { getAvatarTint } from "../../utils/avatarTints";
 import { isSparseCustomer } from "./customerDefaults";
 import { formatCompactMoney } from "@/app/currency/money";
-import { LAST_SYNC_DAY, customerCurrency } from "@/app/currency/qFx";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { LAST_SYNC_DAY } from "@/app/currency/qFx";
 import { restateDesign } from "@/app/currency/quoteMoney";
 
 /* ─── helpers ─── */
@@ -59,11 +60,11 @@ function deriveCustomerQuoteInsights(name: string) {
   return { openQuotes, winRate, avgValue };
 }
 
-/* A customer's quotes are in its default currency (spec 4.3); the demo
-   figure is the design's USD, restated at the last sync's rate. */
-function formatCurrencyShort(usd: number, customerName: string): string {
-  const code = customerCurrency(customerName);
-  return formatCompactMoney(restateDesign(usd, code, LAST_SYNC_DAY), code);
+/* A customer's average quote value, in the base currency as the listing
+   shows quote amounts (quotes in different currencies add up in base). The
+   demo figure is the design's USD, restated at the last sync's rate. */
+function formatCurrencyShort(usd: number, _customerName: string): string {
+  return formatCompactMoney(restateDesign(usd, BASE_CURRENCY, LAST_SYNC_DAY), BASE_CURRENCY);
 }
 
 function KpiCard({ label, value, color }: { label: string; value: string; color: string }) {

@@ -8,10 +8,14 @@ import { AttachedLinkChip } from './AttachedLinkChip';
 import { LinkPickerPopover } from './LinkPickerPopover';
 import { getLineItemImage } from '../../data/lineItemImage';
 import { getLinksForId, subscribeToLinksRepository, type ExternalLink } from '../../data/linksRepository';
-import { useDocCurrency, useDocWhole } from "@/app/components/currency/docCurrencyContext";
+import { useDocCurrency } from "@/app/components/currency/docCurrencyContext";
 import { moneyPrefix } from "@/app/currency/money";
+import { formatWhole } from "@/app/currency/quoteMoney";
 
-/* Amounts are in the document's currency (useDocWhole, below). */
+/* Amounts are in the document's currency, also while the page shows base:
+   a fixed discount or premium is charged in the currency the customer
+   pays, so it is typed in it and the form reads in it (as Purchase Orders'
+   adjustment form does). */
 
 /* Centralised color tokens. Bridges the Partner-faithful design-system
    tokens (`var(--border)`, `var(--primary)`, etc.) with the literal
@@ -109,9 +113,10 @@ export function AdjustmentFormModal({
   onSave,
   onCancel,
 }: AdjustmentFormModalProps) {
-  const fmtCurrency = useDocWhole();
+  const { currency: docCurrency } = useDocCurrency();
+  const fmtCurrency = (n: number) => formatWhole(n, docCurrency);
   /* A fixed amount is in the document's currency: its symbol on the toggle. */
-  const fixedSymbol = moneyPrefix(useDocCurrency().currency).trim();
+  const fixedSymbol = moneyPrefix(docCurrency).trim();
   // Determine if we should show the items selection panel
   const showItemsPanel = scope === 'item' && lineItems && lineItems.length > 0;
 

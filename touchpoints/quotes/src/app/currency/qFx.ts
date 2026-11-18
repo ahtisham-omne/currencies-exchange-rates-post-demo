@@ -109,6 +109,22 @@ export function stampQuoteRate(
   return { currency: code, exchangeRate: usable.rate ?? 1, rateType: usable.type, rateDate: day, rateEdited: false };
 }
 
+/* ── A new version's rate: the one locked in, or today's ──────────────
+ * Ported from the earlier touchpoint's "Use locked rate or apply current
+ * rate?". A quote keeps the rate stamped on it (its quote date's) from
+ * version to version. Applying the current rate restamps it with today's
+ * rate of the same type: finance's corporate rate, when that is the type
+ * and one is set; otherwise mid-market. The customer's amounts stay as they
+ * are; only what the quote is worth in base moves. */
+export function currentRateFor(q: QuoteFxFields): { exchangeRate: number; rateType: RateType; rateDate: string } {
+  const fx = quoteFx(q);
+  const today = localTodayIso();
+  if (fx.isBase) return { exchangeRate: 1, rateType: fx.rateType, rateDate: today };
+  const corp = fx.rateType === 'corporate' ? rateOn(fx.currency, today, 'corporate') : null;
+  const quote = corp?.rate != null ? corp : rateOn(fx.currency, today, 'mid');
+  return { exchangeRate: quote.rate ?? fx.rate, rateType: quote.type, rateDate: today };
+}
+
 /** Today's rate (mid-market) for a currency: creating a quote, before it exists. */
 export const todayRate = (code: string) => rateOn(code, localTodayIso(), 'mid').rate ?? 1;
 

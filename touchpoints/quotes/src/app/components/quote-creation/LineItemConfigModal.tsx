@@ -249,7 +249,8 @@ import {
   findUomById,
   findSetContainingUom,
 } from '../../data/uomSets';
-import { useDocCurrency, useDocMoney } from '@/app/components/currency/docCurrencyContext';
+import { useDocCurrency, useDocMoney, useDocView } from '@/app/components/currency/docCurrencyContext';
+import { roundTo } from '@/app/currency/qFx';
 import { formatAmount } from '@/app/currency/money';
 const UNITS_OF_MEASURE = UOM_SETS.discrete.map((u) => ({ ...u, abbreviation: u.name }));
 
@@ -286,10 +287,16 @@ export function LineItemConfigModal({
   quoteDefaultFreight, siblingLineCount, anyOtherLineHasOverride,
   onSeedSiblingFreightShares, docId, currentUser, attachmentScopeKey,
 }: LineItemConfigModalProps) {
-  /* In the quote's currency (spec 4.3). Inputs show the number alone, since
-     their digits-only parsing can't take a symbol such as "د.إ". */
+  /* Amounts are kept in the quote's currency (spec 4.3) and shown in the
+     page's: base by default, the customer's with the header toggle. The price
+     per unit is typed in the shown currency too, as on the items table, and
+     converted at the quote's rate (rounded to its minor unit); freight stays
+     in the quote's currency, what the customer is charged. Inputs show the
+     number alone, since their digits-only parsing can't take a symbol such
+     as "د.إ". */
   const formatCurrency = useDocMoney();
   const { currency: docCurrency } = useDocCurrency();
+  const { viewCurrency, toView, fromView } = useDocView();
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   // Item peek modal — opens when user taps the product thumbnail in the
   // configurator's right-panel product card.
@@ -2216,14 +2223,14 @@ export function LineItemConfigModal({
                 </div>
                 {/* Price Per Unit Row */}
                 <div className="flex items-center justify-between px-4 py-2.5">
-                  <span className="text-[12px] text-muted-foreground flex items-center gap-1.5"><DollarSign className="w-3 h-3 text-muted-foreground" />Price Per Unit <span className="text-muted-foreground/70">({docCurrency})</span></span>
+                  <span className="text-[12px] text-muted-foreground flex items-center gap-1.5"><DollarSign className="w-3 h-3 text-muted-foreground" />Price Per Unit <span className="text-muted-foreground/70">({viewCurrency})</span></span>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
-                      value={formatAmount(formData.unitPrice, docCurrency)}
+                      value={formatAmount(toView(formData.unitPrice), viewCurrency)}
                       onChange={(e) => {
                         const cleaned = e.target.value.replace(/[^0-9.]/g, '');
-                        const value = parseFloat(cleaned) || 0;
+                        const value = viewCurrency === docCurrency ? parseFloat(cleaned) || 0 : roundTo(docCurrency, fromView(parseFloat(cleaned) || 0));
                         if (value !== formData.unitPrice) { setPendingPriceChange(value); setShowPriceUpdateConfirm(true); }
                       }}
                       readOnly={readOnly}
