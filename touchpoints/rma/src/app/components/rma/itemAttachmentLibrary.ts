@@ -1,0 +1,128 @@
+/**
+ * Item attachment library mock — the per-item document set a return line
+ * can draw evidence from. Extracted verbatim from the Purchase Order
+ * module's item Attachments tab so the RMA line-item picker resolves
+ * against the same shape.
+ */
+
+export const MOCK_ATTACHMENTS = [
+  {
+    id: "a1",
+    name: "Item_Spec_Sheet.pdf",
+    size: "245 KB",
+    type: "PDF",
+    uploadedBy: "Sam Chen",
+    uploadedAt: "2026-03-05T09:20:00Z",
+    previewUrl: null as string | null,
+  },
+  {
+    id: "a2",
+    name: "Manufacturing_Instructions.docx",
+    size: "128 KB",
+    type: "DOCX",
+    uploadedBy: "Taylor Kim",
+    uploadedAt: "2026-03-05T11:05:00Z",
+    previewUrl: null as string | null,
+  },
+  {
+    id: "a3",
+    name: "Product_Photo_Front.png",
+    size: "1.8 MB",
+    type: "PNG",
+    uploadedBy: "Alex Morgan",
+    uploadedAt: "2026-03-06T08:30:00Z",
+    previewUrl:
+      "https://images.unsplash.com/photo-1553413077-190dd305871c?w=800&q=80&auto=format&fit=crop" as string | null,
+  },
+  {
+    id: "a4",
+    name: "Inventory_Report_Q4_2026.xlsx",
+    size: "340 KB",
+    type: "XLSX",
+    uploadedBy: "Jordan Lee",
+    uploadedAt: "2026-03-04T14:00:00Z",
+    previewUrl: null as string | null,
+  },
+  {
+    id: "a5",
+    name: "Count_Sheet_WH_A01.pdf",
+    size: "1.1 MB",
+    type: "PDF",
+    uploadedBy: "Casey Wang",
+    uploadedAt: "2026-03-03T09:15:00Z",
+    previewUrl: null as string | null,
+  },
+  {
+    id: "a6",
+    name: "Receiving_Photo_Dock3.jpg",
+    size: "3.8 MB",
+    type: "JPG",
+    uploadedBy: "Riley Patel",
+    uploadedAt: "2026-03-02T09:20:00Z",
+    previewUrl:
+      "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&q=80&auto=format&fit=crop" as string | null,
+  },
+  {
+    id: "a7",
+    name: "Assembly_Walkthrough.mp4",
+    size: "12.6 MB",
+    type: "MP4",
+    uploadedBy: "Morgan Reid",
+    uploadedAt: "2026-03-01T10:45:00Z",
+    previewUrl: "https://www.w3schools.com/html/mov_bbb.mp4" as string | null,
+  },
+  {
+    id: "a8",
+    name: "Voice_Note_QA.mp3",
+    size: "980 KB",
+    type: "MP3",
+    uploadedBy: "Priya Sharma",
+    uploadedAt: "2026-02-28T15:20:00Z",
+    previewUrl: "https://www.w3schools.com/html/horse.mp3" as string | null,
+  },
+  {
+    id: "a9",
+    name: "Enclosure_Blueprint.dxf",
+    size: "352 KB",
+    type: "DXF",
+    uploadedBy: "Devon Blake",
+    uploadedAt: "2026-02-27T13:10:00Z",
+    previewUrl: null as string | null,
+  },
+  {
+    id: "a10",
+    name: "Mounting_Bracket.stl",
+    size: "1.2 KB",
+    type: "STL",
+    uploadedBy: "Sydney Stone",
+    uploadedAt: "2026-02-26T09:00:00Z",
+    previewUrl: null as string | null,
+  },
+  {
+    id: "a11",
+    name: "Legacy_Chassis.dwg",
+    size: "138 KB",
+    type: "DWG",
+    uploadedBy: "Rachel Wong",
+    uploadedAt: "2026-02-25T11:35:00Z",
+    previewUrl: null as string | null,
+  },
+  {
+    id: "a12",
+    name: "Release_Notes.txt",
+    size: "8 KB",
+    type: "TXT",
+    uploadedBy: "Kevin Ogutu",
+    uploadedAt: "2026-02-24T16:50:00Z",
+    previewUrl: null as string | null,
+  },
+  {
+    id: "a13",
+    name: "BOM_Snapshot.csv",
+    size: "42 KB",
+    type: "CSV",
+    uploadedBy: "Sofia Patel",
+    uploadedAt: "2026-02-23T08:15:00Z",
+    previewUrl: null as string | null,
+  },
+];
