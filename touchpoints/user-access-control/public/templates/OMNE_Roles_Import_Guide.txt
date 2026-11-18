@@ -1,0 +1,160 @@
+==================================================================
+OMNE ROLES IMPORT GUIDE
+Omne Pioneer  ·  User Access Control
+==================================================================
+
+This guide explains how to fill in the Roles import template and
+bring roles into Omne. Use the CSV or the Excel template, keep the
+column headers exactly as they are, and enter one role per row.
+Only Role Name is required.
+
+
+------------------------------------------------------------------
+WHAT THIS TEMPLATE DOES, AND WHAT IT DOES NOT
+------------------------------------------------------------------
+
+This template creates or updates roles and places users in them.
+It does not set permissions, and it has no license column. A
+role's permissions, and the license those permissions require, are
+set in the role builder in Omne, not in a spreadsheet. A role you
+bring in here has no permissions until you set them in Omne.
+
+
+------------------------------------------------------------------
+QUICK START
+------------------------------------------------------------------
+
+Step 1   Open the template, either the CSV or the Data Entry sheet
+         of the Excel file.
+
+Step 2   Delete the two example rows. They show the expected
+         format.
+
+Step 3   Enter your roles, one per row. Only Role Name is
+         required.
+
+Step 4   To place more than one user in a role, separate the
+         emails
+         with a pipe character ( | ). The pipe is on most
+         keyboards
+         above the backslash key, typed with Shift. Example:
+         [ priya.sharma@acme.com | marcus.lee@acme.com ]
+
+Step 5   Save the file, then upload it in Omne under Company
+         Setup,
+         Data Imports, Roles.
+
+
+------------------------------------------------------------------
+HOW ROLES ARE MATCHED
+------------------------------------------------------------------
+
+Omne matches each row by role name. A name that is not in Omne yet
+creates a new role. A name that matches an existing custom role
+updates that role, and blank cells leave the current values
+unchanged. The role name itself is never changed by an import.
+
+Predefined system roles cannot be created or changed by an import.
+A role name that matches a system role is rejected for that row.
+
+After you upload, Omne checks every row and shows the results
+before anything is saved. Rows with errors do not import until you
+fix them. Rows with warnings still import and are flagged, for
+example when an assigned user cannot be found. You confirm the
+import yourself, and only then does Omne save your changes.
+
+
+------------------------------------------------------------------
+PERMISSIONS AND LICENSE
+------------------------------------------------------------------
+
+You cannot set permissions in this template, and there is no
+license column. Permissions are chosen in the role builder in
+Omne, and Omne works out the license the role needs from those
+permissions. This is why neither appears here. Bring the role in
+first, then set its permissions in Omne.
+
+
+------------------------------------------------------------------
+COPYING FROM ANOTHER SYSTEM
+------------------------------------------------------------------
+
+This template is plain text, so you can copy and paste from an
+export of your old system. Line your old columns up with these
+columns and paste. You do not have to type each role by hand.
+
+
+------------------------------------------------------------------
+FILE LIMITS
+------------------------------------------------------------------
+
+Upload an Excel or CSV file up to 10 MB. Omne reads a single
+sheet. If you use the Excel template, keep only the Data Entry
+sheet before you upload.
+
+
+------------------------------------------------------------------
+FIELD REFERENCE
+------------------------------------------------------------------
+
+Required column
+---------------
+
+Role Name  The unique name of the role and the matching key. A
+           matching name updates that role, any other name creates
+           a new one. Must not match a predefined system role.
+
+Optional columns
+----------------
+
+Description  What the role is for. Free text.
+
+
+Role Owner  A single owner for the role, given as an email or the
+            full name of a user who already exists in Omne. If the
+            owner cannot be found, the role imports without an
+            owner and is flagged with a warning; you can set it
+            later.
+
+Assigned Users  Existing Omne users to place in the role, as
+                pipe-separated emails. An email that cannot be
+                found imports with a warning, and that user is
+                left out.
+
+
+------------------------------------------------------------------
+VALID VALUES
+------------------------------------------------------------------
+
+Role Name
+---------
+
+Each role name must be unique in the file. A name that matches an
+existing custom role updates it. A name that matches a predefined
+system role is rejected, since system roles cannot be changed by
+an import.
+
+Role Owner
+----------
+
+A single owner, given as an email or the full name of a user who
+already exists in Omne. If the owner cannot be found, the role
+imports without an owner and is flagged with a warning.
+
+Assigned Users
+--------------
+
+Pipe-separated emails, for example
+[ priya.sharma@acme.com | marcus.lee@acme.com ]. Each user must
+already exist in Omne. An email that cannot be found imports with
+a warning, and that user is left out.
+
+Permissions and license
+-----------------------
+
+Not set in this template. A role's permissions are chosen in the
+role builder in Omne, and Omne works out the license the role
+needs from those permissions. There is no permissions column and
+no license column here.
+
+

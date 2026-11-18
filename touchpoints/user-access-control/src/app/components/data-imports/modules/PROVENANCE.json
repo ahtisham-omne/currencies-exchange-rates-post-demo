@@ -1,0 +1,345 @@
+[
+  {
+    "dest": "categories/existing.ts",
+    "kind": "snapshot",
+    "sources": [
+      {
+        "path": "radiant-core-fusion/src/app/data/categories.ts",
+        "sha256": "646c0b8d7329a80885d77d10cab60e4d0485115cb35b55ba350a938f96f3d62c"
+      }
+    ],
+    "bodySha256": "fb367633d64838bb052918d36b30f3c8a551b16c6f0ee81128c0c493f15a3804"
+  },
+  {
+    "dest": "categories/spec.data.d.mts",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "radiant-core-fusion/src/app/import-export/spec.data.d.mts",
+        "sha256": "ab08823f5c8e64d6e39eda3869d1eaf200d8041d53281926e08bdfc915a889d1"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "ab08823f5c8e64d6e39eda3869d1eaf200d8041d53281926e08bdfc915a889d1"
+  },
+  {
+    "dest": "categories/spec.data.mjs",
+    "kind": "edited",
+    "sources": [
+      {
+        "path": "radiant-core-fusion/src/app/import-export/spec.data.mjs",
+        "sha256": "9435c3669cf07adce5095c1867cb54cc401ed86ba0ef0e35b552bed426ea81a7"
+      }
+    ],
+    "replacements": 5,
+    "bodySha256": "8b0f3d21e100820f7aecff3b7783bb74947bb63a10fd3aab1067de1c6f131581"
+  },
+  {
+    "dest": "categories/spec.ts",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "radiant-core-fusion/src/app/import-export/spec.ts",
+        "sha256": "bdb80635bb045c5462abf3a6eaa13ff9e39ddeed318714f1c0db60601e96706a"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "bdb80635bb045c5462abf3a6eaa13ff9e39ddeed318714f1c0db60601e96706a"
+  },
+  {
+    "dest": "categories/uom.d.mts",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "radiant-core-fusion/src/app/data/uom.d.mts",
+        "sha256": "a3fc12704cafd79663557b15227ac51bb9f7dbaeaa52d81a3111d54bd15ac495"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "a3fc12704cafd79663557b15227ac51bb9f7dbaeaa52d81a3111d54bd15ac495"
+  },
+  {
+    "dest": "categories/uom.mjs",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "radiant-core-fusion/src/app/data/uom.mjs",
+        "sha256": "1269cd0a8d7654d014a4c67d8e35c6cd13e68bd15a6bb3e6442574d187a31853"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "1269cd0a8d7654d014a4c67d8e35c6cd13e68bd15a6bb3e6442574d187a31853"
+  },
+  {
+    "dest": "categories/validation.ts",
+    "kind": "edited",
+    "sources": [
+      {
+        "path": "radiant-core-fusion/src/app/import-export/validation.ts",
+        "sha256": "67f7fa2c2c87f8818ffdf4fc247487430de1a3286950aaa282030a1f6394fd5c"
+      }
+    ],
+    "replacements": 5,
+    "bodySha256": "ce1adb7682678a5d6b198ad9c0f0dffa2634e72e0f21cc3a7f16093e2719469e"
+  },
+  {
+    "dest": "categories/values.ts",
+    "kind": "edited",
+    "sources": [
+      {
+        "path": "radiant-core-fusion/src/app/import-export/values.ts",
+        "sha256": "daed7821c2c63a78cb29b880c0a5e20194b40d5d0a123d282b857256244a6238"
+      }
+    ],
+    "replacements": 3,
+    "bodySha256": "5fa55f5902b594258bda9ee1998db5d7c4c671db951ee0223c3bc59e5aaca280"
+  },
+  {
+    "dest": "item-library/existing.ts",
+    "kind": "snapshot",
+    "sources": [
+      {
+        "path": "nimble-palette/src/app/context/ItemsContext.tsx",
+        "sha256": "4624aeab7ad2b1681047274b94afd79db8c50c3837a042a135f48112de45d581"
+      }
+    ],
+    "bodySha256": "e6d7583537b1b57e70f173d9d0557917ff5efa35331dd17aa57963014378cc66"
+  },
+  {
+    "dest": "item-library/helpers.ts",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "nimble-palette/src/app/import-export/helpers.ts",
+        "sha256": "324e28af971280d1e245084bd7b4049d0bde4c69393288892511d28b0d3576b3"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "324e28af971280d1e245084bd7b4049d0bde4c69393288892511d28b0d3576b3"
+  },
+  {
+    "dest": "item-library/spec.data.d.mts",
+    "kind": "edited",
+    "sources": [
+      {
+        "path": "nimble-palette/src/app/import-export/spec.data.d.mts",
+        "sha256": "62798ce30215de2411f576663f4cf73fb3ca7332d8ba12f4fcd85d331a5ba494"
+      }
+    ],
+    "replacements": 1,
+    "bodySha256": "7edcef6a0d30efb9fe6379b262d49f2f7a07eb660d18f68f5c720b2e011f8a5e"
+  },
+  {
+    "dest": "item-library/spec.data.mjs",
+    "kind": "edited",
+    "sources": [
+      {
+        "path": "nimble-palette/src/app/import-export/spec.data.mjs",
+        "sha256": "ce8c26f1e542b7961be9cb98a36162ee336746c66a154a4b50db78bbe571cf4c"
+      }
+    ],
+    "replacements": 3,
+    "bodySha256": "212c3dbcbe1a586294ee09b2d087f9fc2e868b5d27daac9fe6682da7f5d016d6"
+  },
+  {
+    "dest": "item-library/spec.ts",
+    "kind": "edited",
+    "sources": [
+      {
+        "path": "nimble-palette/src/app/import-export/spec.ts",
+        "sha256": "f90ae8c8b44380377e7aed532717825af40026f6592714a4840e0553574a8f7f"
+      }
+    ],
+    "replacements": 9,
+    "bodySha256": "7998b3f9115252bb3da5160eaf3d9197568fc3d8a8b8c58e10762d90e4371f06"
+  },
+  {
+    "dest": "item-library/validation.ts",
+    "kind": "edited",
+    "sources": [
+      {
+        "path": "nimble-palette/src/app/import-export/validation.ts",
+        "sha256": "83e538945fff76f1b70af04bafefeb314056aca503d5faf23c5672ebeaac022e"
+      }
+    ],
+    "replacements": 4,
+    "bodySha256": "93963dafe7d3bb757c0c58a449ffd551e909f78968e2e65a594bf949ccec5fb3"
+  },
+  {
+    "dest": "partners/existing.ts",
+    "kind": "snapshot",
+    "sources": [
+      {
+        "path": "partner-management-module/src/app/data/vendors.ts",
+        "sha256": "9314e960f3a16551bb8e61ca378a7231245673b9d38094782aaa570a61caeadc"
+      },
+      {
+        "path": "partner-management-module/src/app/components/vendors/partnerConstants.tsx",
+        "sha256": "efb016562dfc84b5bcfb2675371621d5a1116bd4da7e7bf7aa8fce4f4a43ff75"
+      }
+    ],
+    "bodySha256": "e5a9832ed8a5fa74110058181740cefcc0e23d38f28f3e49f2ee56b5069be236"
+  },
+  {
+    "dest": "partners/spec.data.d.mts",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "partner-management-module/src/app/import-export/spec.data.d.mts",
+        "sha256": "6a459a04ce3bcd201d1282bb81b2324158dee37027146eaa4cd3f2a3e104707f"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "6a459a04ce3bcd201d1282bb81b2324158dee37027146eaa4cd3f2a3e104707f"
+  },
+  {
+    "dest": "partners/spec.data.mjs",
+    "kind": "edited",
+    "sources": [
+      {
+        "path": "partner-management-module/src/app/import-export/spec.data.mjs",
+        "sha256": "a13bd455a1cdfbf3cb47716b444c903cca7cfebed172757bcd7cbffc2b793940"
+      }
+    ],
+    "replacements": 3,
+    "bodySha256": "f3cc0fe2e08a6e08d74c7b9744e26a0564a0d878082d7f590e7819a56548cbdf"
+  },
+  {
+    "dest": "partners/spec.ts",
+    "kind": "reduced",
+    "sources": [
+      {
+        "path": "partner-management-module/src/app/import-export/spec.ts",
+        "sha256": "f7921892b7b5c408fcbda01f56c305a353077c4b23af624000c761a0fd81b31e"
+      }
+    ],
+    "bodySha256": "8171c407415685abfdecbf07a2b8402c1b8e06b395a9e935b4ae24cb38394759"
+  },
+  {
+    "dest": "partners/validation.ts",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "partner-management-module/src/app/import-export/validation.ts",
+        "sha256": "98b56226d04ce87ac70fdf4067f19746a5b48bddf2bfa375142d62ec9b9b9dc1"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "98b56226d04ce87ac70fdf4067f19746a5b48bddf2bfa375142d62ec9b9b9dc1"
+  },
+  {
+    "dest": "physical-inventory/types.ts",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "your-invoice-mate/src/app/components/import-adjustment/types.ts",
+        "sha256": "9924d5a8b1e60636bf0437e93ef930da2ba4acdbe7b9e42198c71798f50f4814"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "9924d5a8b1e60636bf0437e93ef930da2ba4acdbe7b9e42198c71798f50f4814"
+  },
+  {
+    "dest": "physical-inventory/demo.ts",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "your-invoice-mate/src/app/components/import-adjustment/demo.ts",
+        "sha256": "b1bda1ac522b8fc8643853207acc36878e87edeaf5d92a6551312b22d06e1723"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "b1bda1ac522b8fc8643853207acc36878e87edeaf5d92a6551312b22d06e1723"
+  },
+  {
+    "dest": "physical-inventory/textMeasure.mjs",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "your-invoice-mate/src/app/components/import-adjustment/textMeasure.mjs",
+        "sha256": "62109f472abe6137b691e1e8e879d1ae88518d2e263a560e314d6bc07905a565"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "62109f472abe6137b691e1e8e879d1ae88518d2e263a560e314d6bc07905a565"
+  },
+  {
+    "dest": "physical-inventory/textMeasure.d.mts",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "your-invoice-mate/src/app/components/import-adjustment/textMeasure.d.mts",
+        "sha256": "da0f070ac4490a1a7c561ef57587f34e5e4c3b89cf531bdc18c62c47a63d6d0c"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "da0f070ac4490a1a7c561ef57587f34e5e4c3b89cf531bdc18c62c47a63d6d0c"
+  },
+  {
+    "dest": "physical-inventory/templateLayout.mjs",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "your-invoice-mate/src/app/components/import-adjustment/templateLayout.mjs",
+        "sha256": "8bbe04284c589abb895b526780846d063dc87312314290bb9294457f700de58e"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "8bbe04284c589abb895b526780846d063dc87312314290bb9294457f700de58e"
+  },
+  {
+    "dest": "physical-inventory/templateLayout.d.mts",
+    "kind": "verbatim",
+    "sources": [
+      {
+        "path": "your-invoice-mate/src/app/components/import-adjustment/templateLayout.d.mts",
+        "sha256": "1886bf76ecac4f763e64d09c9c3a7330a52ae56dec10c570cc22b3cac4a9493f"
+      }
+    ],
+    "replacements": 0,
+    "bodySha256": "1886bf76ecac4f763e64d09c9c3a7330a52ae56dec10c570cc22b3cac4a9493f"
+  },
+  {
+    "dest": "physical-inventory/validation.ts",
+    "kind": "edited",
+    "sources": [
+      {
+        "path": "your-invoice-mate/src/app/components/import-adjustment/validation.ts",
+        "sha256": "335d8ef4c72e2068f33efb8081332862a728d57f458988b5be822a07d93961a5"
+      }
+    ],
+    "replacements": 2,
+    "bodySha256": "79f9bc40b150a266a05e36a301c39eff51cb7d2066573b1ad641cfeed79432a9"
+  },
+  {
+    "dest": "physical-inventory/template.ts",
+    "kind": "edited",
+    "sources": [
+      {
+        "path": "your-invoice-mate/src/app/components/import-adjustment/template.ts",
+        "sha256": "2b3c5fb275cf74ef0a6d5bfb176e68a6ebda24560d86017f6ffca03847a43da7"
+      }
+    ],
+    "replacements": 1,
+    "bodySha256": "38c8d5c84a3f95ef9ab670f06c76f149e5990aa4f631d0da6b5050bd3df37f57"
+  },
+  {
+    "dest": "physical-inventory/piData.ts",
+    "kind": "snapshot",
+    "sources": [
+      {
+        "path": "your-invoice-mate/src/app/data/inventory-data.ts",
+        "sha256": "40353c815c9a877c1518c6874f2cd8791977e7bc833dc9690109aec8b40f9354"
+      },
+      {
+        "path": "your-invoice-mate/src/app/data/location-data.ts",
+        "sha256": "0554eaac4004b52b2cf372a73fe871328b9ddeaa89bf303c5037404aac12a633"
+      },
+      {
+        "path": "your-invoice-mate/src/app/components/adjust-inventory-modal.tsx",
+        "sha256": "f4c82244f02a7881d4b81f06109d65342f6a387083ae93e3c3ea90d8743ff833"
+      }
+    ],
+    "bodySha256": "2f276168625f05c6ddad0a54f43bb62e014fc40c855d96eaa6477a9a2c5d5918"
+  }
+]

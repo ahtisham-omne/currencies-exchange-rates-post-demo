@@ -1,0 +1,2 @@
+# Import templates are served byte-for-byte and checked by tests: never convert line endings.
+public/templates/** -text

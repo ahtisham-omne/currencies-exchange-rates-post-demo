@@ -1,0 +1,322 @@
+==================================================================
+OMNE CATEGORIES IMPORT GUIDE
+Omne Pioneer  ·  Items Management
+==================================================================
+
+This guide explains how to fill in the Categories import CSV. It
+covers the steps, every column, and what the import does for a new
+category and an existing category.
+
+The CSV has 1 required column and 11 optional ones.
+
+
+------------------------------------------------------------------
+QUICK START
+------------------------------------------------------------------
+
+Step 1   Open the CSV. The first row is the column headers. Each
+         row below it is one category.
+
+Step 2   Two example rows are included to show the expected
+         format. Delete both before you import.
+
+Step 3   Fill in your categories. The one required column is
+         marked with an asterisk and cannot be left blank:
+         Category Code.
+
+Step 4   Status and the configuration columns are optional. A
+         blank cell uses the default for a new category and leaves
+         an existing category unchanged. See How Categories Are
+         Matched below.
+
+Step 5   For columns that can hold a list, such as Tags,
+         Alternative Units, and Acquisition Method, separate each
+         value with a pipe character ( | ). The pipe is on most
+         keyboards above the backslash key, typed with Shift.
+         Example: [ Engine | Heavy Duty ]
+
+Step 6   Save the file, then upload it in Omne under Items
+         Management, Categories, Actions, Import.
+
+
+------------------------------------------------------------------
+HOW CATEGORIES ARE MATCHED
+------------------------------------------------------------------
+
+Omne matches each row by Category Code, then decides whether to
+create a new category or update an existing one. Matching ignores
+case and surrounding spaces. What happens next depends on whether
+the code is already in Omne.
+
+For a new category (code not in Omne)
+-------------------------------------
+A new category is created.
+
+  Status          Blank means Active. Enter Inactive to start the
+                  category switched off.
+  Configuration   Blank cells take the defaults: Stock,
+                  Non-Serialized, Lot Tracking No, Each,
+                  Purchased.
+  Tags            Added to the new category.
+
+For an existing category (code already in Omne)
+-----------------------------------------------
+The matching category is updated with the values you provide. A
+blank cell leaves the existing value unchanged.
+
+  Status          Blank keeps the current status. Enter a value
+                  only to change it.
+  Configuration   Each filled-in column replaces the current
+                  setting. Items already in the category are not
+                  changed by an import.
+  Tags            Replace the current tags. Leave blank to keep
+                  them.
+
+
+------------------------------------------------------------------
+COPYING FROM ANOTHER SYSTEM
+------------------------------------------------------------------
+
+This template is plain text, so you can copy and paste from an
+export of your old system. Line your old columns up with these
+columns, fill in any that your old system did not have, and paste.
+Unit names can be typed as Omne lists them or as their short form,
+such as EA or KG.
+
+
+------------------------------------------------------------------
+MORE THAN THE COLUMNS ALLOW
+------------------------------------------------------------------
+
+These columns cover the basic information and the required
+configuration of a category. Optional configurations such as stock
+limits, locations, procurement, selling, and governance settings
+are not in this template. Import what fits here, then finish the
+rest on the category page afterwards.
+
+
+------------------------------------------------------------------
+FILE LIMITS
+------------------------------------------------------------------
+
+Upload an Excel or CSV file up to 10 MB. Omne reads a single
+sheet. If you are using the Excel template, keep only the data
+sheet before you upload.
+
+
+------------------------------------------------------------------
+FIELD REFERENCE
+------------------------------------------------------------------
+
+Required column
+---------------
+
+Category Code  The unique code and the matching key. A new code
+               creates a category, a matching code updates that
+               category, and the code is never changed by an
+               import. Matching ignores case and surrounding
+               spaces.
+
+Basic information
+-----------------
+
+Status  Whether the category is in use. New category: blank means
+        Active. Existing category: blank keeps the current status.
+        Values: Active or Inactive.
+
+Description  What the category holds. Shown in the listing and on
+             the category page. No length limit.
+
+Tags  Keywords that describe the category's contents, industry, or
+      use case. One tag, or several separated with a pipe
+      character ( | ). Each tag up to 30 characters. Example: [
+      Engine | Heavy Duty ]
+
+Configuration
+-------------
+
+Inventory Type  Determines whether items in this category are
+                physically stocked. Stock for warehoused
+                materials, Non-stock for things ordered when
+                needed, Asset for equipment. Blank means Stock.
+                Values: Stock, Non-stock, or Asset.
+
+Control Type  Defines how individual units are tracked. Serialized
+              gives every unit its own ID, such as a laptop with a
+              serial number. Non-Serialized tracks bulk
+              quantities, such as bolts. Blank means
+              Non-Serialized. Values: Serialized or
+              Non-Serialized.
+
+Lot Tracking  Enables batch-level traceability. Enter Yes to track
+              items in lots, No or blank to leave lot tracking
+              off.
+
+Lot ID Assignment  Only applies when Lot Tracking is Yes. System
+                   Generated auto-creates lot IDs from a prefix.
+                   Vendor Lot uses the vendor's lot number as the
+                   lot ID. A value here with Lot Tracking No is
+                   ignored. Values: System Generated or Vendor
+                   Lot.
+
+Base Unit of Measure  The unit your inventory uses to count and
+                      store items in this category. All stock
+                      levels, valuations and movements are
+                      recorded in this unit. Must match one of the
+                      units listed under Valid Values below. Blank
+                      means Each.
+
+Alternative Units  Other units this category is bought or sold in.
+                   Each entry is the unit name, an equals sign,
+                   and how many base units make one of it.
+                   Separate entries with a pipe character ( | ).
+                   The unit must be one Omne knows and belong to a
+                   different unit category than the base unit.
+                   Example: [ Box=12 | Pallet=480 ]
+
+Acquisition Method  How items in this category are brought into
+                    stock. Purchased triggers a Purchase Order
+                    recommendation, Manufactured a Work Order
+                    recommendation. Enter one, or both separated
+                    with a pipe character ( | ). Blank means
+                    Purchased. Example: [ Purchased | Manufactured
+                    ]
+
+Primary Acquisition  Only needed when Acquisition Method lists
+                     both. The method Omne recommends first when
+                     stock runs low. With a single method, that
+                     method is primary and this cell can stay
+                     blank. Values: Purchased or Manufactured.
+
+
+------------------------------------------------------------------
+VALID VALUES
+------------------------------------------------------------------
+
+Status
+------
+Active  The category is in use and items can be assigned to it.
+
+Inactive  The category is switched off. Existing items keep it,
+          new items cannot pick it.
+
+(blank)  Safe on every row. New categories start as Active;
+         existing categories keep their current status.
+
+
+Inventory Type
+--------------
+Stock  Raw materials and parts kept in the warehouse.
+
+Non-stock  Things ordered when needed, such as office stationery.
+
+Asset  Equipment and tools tracked as assets.
+
+(blank)  New category: Stock. Existing category: unchanged.
+
+
+Control Type
+------------
+Serialized  Every unit has its own ID, such as a laptop with a
+            serial number.
+
+Non-Serialized  Units are tracked in bulk by quantity, such as
+                bolts.
+
+(blank)  New category: Non-Serialized. Existing category:
+         unchanged.
+
+
+Lot Tracking
+------------
+Yes  Items are tracked in lots for batch-level traceability.
+
+No  No lot tracking.
+
+(blank)  New category: No. Existing category: unchanged.
+
+
+Lot ID Assignment
+-----------------
+System Generated  Omne auto-generates lot IDs based on a prefix.
+
+Vendor Lot  The vendor's lot number becomes the lot ID.
+
+(blank)  New category: System Generated. Existing category:
+         unchanged.
+
+Only applies when Lot Tracking is Yes. A value here with Lot
+Tracking No is ignored.
+
+
+Base Unit of Measure
+--------------------
+Length  Meter, Kilometer, Centimeter, Millimeter, Inch, Foot,
+        Yard, Mile
+
+Area  Square Meter, Square Foot, Square Yard, Acre, Hectare
+
+Volume  Liter, Milliliter, Gallon, Quart, Pint, Cubic Meter, Cubic
+        Foot, Fluid Ounce
+
+Mass  Kilogram, Gram, Milligram, Metric Ton, Pound, Ounce, Kg, Lb,
+      Ton
+
+Quantity  Each, Dozen, Hundred, Thousand, Pair
+
+Time  Second, Minute, Hour, Day, Week, Month
+
+Temperature  Celsius, Fahrenheit, Kelvin
+
+Packaging  Box, Case, Carton, Pallet, Pack, Bundle, Roll, Bag,
+           Drum, Container, Tray, Sleeve, Tube, Spool, Ream, Skid
+
+Custom  Set, Kit, Assembly, Lot, Batch, Sheet, Strip, Coil, Bar,
+        Piece, Unit
+
+Use the unit name exactly as listed. Short forms such as EA, KG,
+or BX are also accepted. Blank means Each for a new category. A
+unit Omne does not know is an error and the row will not import
+until it is fixed.
+
+
+Alternative Units
+-----------------
+Unit=factor pairs separated with a pipe character ( | ), for
+example [ Box=12 | Pallet=480 ]. The unit must be one listed above
+and from a different category than the base unit. The factor is
+how many base units make one alternative unit and must be above 0.
+
+
+Acquisition Method
+------------------
+Purchased  Sourced from a vendor. Triggers a Purchase Order
+           recommendation.
+
+Manufactured  Produced in-house. Triggers a Work Order
+              recommendation.
+
+(blank)  New category: Purchased. Existing category: unchanged.
+
+Enter both separated with a pipe character ( | ) when a category
+is both bought and made.
+
+
+Primary Acquisition
+-------------------
+Purchased  Omne recommends a Purchase Order first.
+
+Manufactured  Omne recommends a Work Order first.
+
+(blank)  With a single Acquisition Method, that method is primary.
+         With both, Purchased is used.
+
+Must be one of the row's Acquisition Method values; otherwise it
+is ignored with a warning.
+
+
+Lists (Tags, Alternative Units, Acquisition Method)
+---------------------------------------------------
+These columns can hold more than one value. Separate each value
+with a pipe character ( | ), found above the backslash key using
+Shift. Example: [ Engine | Heavy Duty ].
