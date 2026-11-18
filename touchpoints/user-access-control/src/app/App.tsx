@@ -8,6 +8,7 @@ import { UserDetailPage } from "./components/user-detail/UserDetailPage";
 import { RoleDetailPage } from "./components/role-detail/RoleDetailPage";
 import { AccessMatrixPage } from "./components/AccessMatrixPage";
 import { PlaceholderPage } from "./components/PlaceholderPage";
+import { GeneralSettingsPage } from "./components/general-settings/GeneralSettingsPage";
 import { SecurityMfaPolicyPage } from "./components/SecurityMfaPolicyPage";
 import { DataImportsPage } from "./components/data-imports/DataImportsPage";
 import { DataImportDetailPage } from "./components/data-imports/DataImportDetailPage";
@@ -22,6 +23,7 @@ import { ResetMfaReturn } from "./components/shared/ResetMfaReturn";
 import { AssignPermissionsWizard } from "./components/assign-permissions/AssignPermissionsWizard";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useParams } from "react-router-dom";
+import { EmbeddingBridge } from "@/EmbeddingBridge";
 
 /* The import-record drill-down is module-specific: the Roles module renders
  * roles-shaped records, everything else keeps the Users-shaped page. Kept as
@@ -37,7 +39,9 @@ function ImportRecordDetailRoute() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    /* basename: the shell serves this app under /touchpoint-apps/user-access-control/ (see src/embedding.ts). */
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
+      <EmbeddingBridge />
       <TooltipProvider delayDuration={200}>
       <UserQuickViewProvider>
         <Routes>
@@ -49,7 +53,7 @@ export default function App() {
             <Route path="company-settings" element={<CompanySetupOverview />} />
             <Route path="company-settings/alerts" element={<PlaceholderPage />} />
             <Route path="company-settings/module-defaults" element={<PlaceholderPage />} />
-            <Route path="company-settings/general" element={<PlaceholderPage />} />
+            <Route path="company-settings/general" element={<GeneralSettingsPage />} />
             <Route path="company-settings/security" element={<PlaceholderPage />} />
             <Route path="company-settings/security/mfa-policy" element={<SecurityMfaPolicyPage />} />
             <Route path="company-settings/units-of-measure" element={<PlaceholderPage />} />

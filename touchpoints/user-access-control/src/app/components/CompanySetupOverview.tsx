@@ -32,7 +32,6 @@ const modules: ModuleCard[] = [
     iconColor: "#007FFF",
     iconBg: "#EDF4FF",
     path: "/company-settings/general",
-    externalUrl: "https://alert-settings-omne.lovable.app/company-settings/company-profile",
     enabled: true,
   },
   {

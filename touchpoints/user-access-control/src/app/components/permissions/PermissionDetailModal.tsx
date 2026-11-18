@@ -63,6 +63,7 @@ import {
 import { ViewInModuleModal } from "./ViewInModuleModal";
 import { VIEW_IN_MODULE_DATA } from "../../data/view-in-module-data";
 import { prefetchImages } from "../../lib/image-prefetch";
+import { asset } from "@/embedding";
 import { DataTable } from "../data-table/DataTable";
 import { highlightMatch } from "../../lib/highlight-text";
 import { users } from "../../data/users-data";
@@ -1977,7 +1978,7 @@ function PermissionDetailView({
   useEffect(() => {
     if (!SHOW_VIEW_IN_MODULE_CONTENT) return; // previews stashed, nothing to warm
     const vim = VIEW_IN_MODULE_DATA[permission.id];
-    if (vim) prefetchImages(vim.imageOn, vim.imageOff);
+    if (vim) prefetchImages(asset(vim.imageOn), asset(vim.imageOff));
   }, [permission.id]);
 
   const [callout, setCallout] = useState<{ text: string; type: "info" | "warning" } | null>(null);

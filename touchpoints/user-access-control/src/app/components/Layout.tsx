@@ -3,13 +3,15 @@ import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { Toaster } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
+import { embedded } from "@/embedding";
 
 export function Layout() {
   const location = useLocation();
 
   return (
     <div className="flex h-screen overflow-hidden font-['Inter',sans-serif]" style={{ backgroundColor: "#F8FAFC" }}>
-      <Sidebar />
+      {/* Inside the Currency & Exchange shell, the shell's sidebar replaces this one. */}
+      {!embedded && <Sidebar />}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header />
         <main className="flex-1 overflow-hidden flex flex-col min-h-0">

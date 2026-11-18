@@ -31,6 +31,8 @@ interface NavChild {
   except?: string[];
   /** No design yet: shown greyed out and not clickable, as the module's own sidebar does. */
   disabled?: boolean;
+  /** Designed in another prototype: opens it in a new tab, as the module's own sidebar does. */
+  externalUrl?: string;
 }
 
 interface NavItem {
@@ -136,11 +138,23 @@ const navItems: NavItem[] = [
     path: "/people",
     disabled: true,
   },
+  // The User Access Control app (touchpoints/user-access-control), listed as its
+  // own sidebar lists Company Setup. Its four settings screens are other
+  // prototypes, opened in a new tab as there; its Data Imports pages are reached
+  // from inside it.
   {
     label: "Company Setup",
     icon: Building2,
-    path: "/company-setup",
-    disabled: true,
+    path: "/company-settings",
+    children: [
+      { label: "Overview", path: "/company-settings" },
+      { label: "General Settings", path: "/company-settings/general" },
+      { label: "Alert Settings", path: "/company-settings/alerts", externalUrl: "https://alert-settings-omne.lovable.app/company-settings/alerts" },
+      { label: "Module Defaults", path: "/company-settings/module-defaults", externalUrl: "https://module-defaults.lovable.app/company-settings/modules" },
+      { label: "Security Settings", path: "/company-settings/security", externalUrl: "https://fusion-zen.lovable.app/company-settings/security" },
+      { label: "User Access Control", path: "/company-settings/user-access-control" },
+      { label: "Units of Measure", path: "/company-settings/units-of-measure" },
+    ],
   },
 ];
 
@@ -402,6 +416,17 @@ export function AppSidebar() {
                           >
                             {child.label}
                           </div>
+                        ) : child.externalUrl ? (
+                          <a
+                            key={child.path}
+                            href={child.externalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block px-2.5 py-1 rounded-md text-[13px] transition-all duration-150 text-muted-foreground hover:text-foreground hover:bg-muted"
+                            style={{ fontWeight: 400 }}
+                          >
+                            {child.label}
+                          </a>
                         ) : (
                           <NavLink
                             key={child.path}

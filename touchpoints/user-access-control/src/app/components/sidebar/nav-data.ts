@@ -110,7 +110,7 @@ export const NAV_ITEMS: NavItem[] = [
     path: "/company-settings",
     children: [
       { label: "Overview", path: "/company-settings" },
-      { label: "General Settings", path: "/company-settings/general", externalUrl: "https://alert-settings-omne.lovable.app/company-settings/company-profile" },
+      { label: "General Settings", path: "/company-settings/general" },
       { label: "Alert Settings", path: "/company-settings/alerts", externalUrl: "https://alert-settings-omne.lovable.app/company-settings/alerts" },
       { label: "Module Defaults", path: "/company-settings/module-defaults", externalUrl: "https://module-defaults.lovable.app/company-settings/modules" },
       { label: "Security Settings", path: "/company-settings/security", externalUrl: "https://fusion-zen.lovable.app/company-settings/security" },

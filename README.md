@@ -4,7 +4,7 @@ TODO: Document your project here
 
 ## Touchpoints
 
-The modules under Items & Inventory, Partners Management, Supply Chain Management and Sales, and Chart of Accounts, General Ledger and Vendor Invoices under Accounting & Finance, are touchpoint apps. Each lives in `touchpoints/<name>/` as its own Vite app and opens inside this app's layout.
+The modules under Items & Inventory, Partners Management, Supply Chain Management, Sales and Company Setup, and Chart of Accounts, General Ledger and Vendor Invoices under Accounting & Finance, are touchpoint apps. Each lives in `touchpoints/<name>/` as its own Vite app and opens inside this app's layout.
 
 The app serves each touchpoint from its built copy in `public/touchpoint-apps/<name>/`, so Lovable and any deploy show them with no extra setup.
 
@@ -91,4 +91,22 @@ To pull later design changes:
 ```sh
 git subtree pull --prefix=touchpoints/chart-of-accounts https://github.com/ahtisham-omne/chart-of-accounts-general-ledger-v2.1.git main --squash
 npm run touchpoints:build -- chart-of-accounts
+```
+
+### User Access Control
+
+User Access Control is the app from [`User-Access-Control`](https://github.com/ahtisham-omne/User-Access-Control), added as a squashed subtree in `touchpoints/user-access-control/`. It holds Company Setup:
+
+- Shell paths are the app's own: `/company-settings` (the Company Setup overview), `/company-settings/general`, `/company-settings/user-access-control` with its user and role pages, `/company-settings/data-imports`, and `/company-settings/security/mfa-policy`.
+- The sidebar lists Company Setup as the app's own sidebar does. Alert Settings, Module Defaults and Security Settings are other prototypes and open in a new tab, as there.
+- `src/embedding.ts` holds everything it needs to run inside the shell. Its own sidebar is hidden, root-relative links resolve against its base path, and its public files (the View in Module screenshots, the import templates) load from it.
+- **General Settings** (`/company-settings/general`, `src/app/components/general-settings/`) is the Company Profile tab of the General Settings prototype ([alert-settings-omne](https://alert-settings-omne.lovable.app/company-settings/company-profile)), built in UAC: Company Information, Account Owners (read from UAC's Account Owner role) and Global Preferences, each with its Edit dialog. Storage and Activity Log stay in the prototype.
+  - **The currency touchpoint:** Global Preferences' "Default Display Currency" is the company's **Base Currency**, PKR to start. Edit Global Settings changes it with the currency dropdown every module uses (`components/currency/CurrencyDropdown.tsx`, ported from Partners: flag and "PKR, Pakistani Rupee", searchable by code, name or country). The Country of Legal Registration picker is the same dropdown over 250 countries.
+  - Edits last for the session, like the rest of UAC's sample data. Changing the base currency here doesn't re-base the other modules, which keep PKR.
+
+To pull later design changes:
+
+```sh
+git subtree pull --prefix=touchpoints/user-access-control https://github.com/ahtisham-omne/User-Access-Control.git main --squash
+npm run touchpoints:build -- user-access-control
 ```

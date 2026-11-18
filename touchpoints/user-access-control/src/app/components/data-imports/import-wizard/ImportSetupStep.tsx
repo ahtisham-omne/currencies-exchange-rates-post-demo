@@ -25,6 +25,7 @@ import {
   type UploadedFile,
 } from "./types";
 import { parseImportFile } from "../import-review/fileParser";
+import { asset } from "@/embedding";
 import { AttachmentCard, UploadingCard, CARD_GRID_STYLE } from "./uploadedFileCard";
 
 /** Lowercased extension of a file name, e.g. "xlsx". */
@@ -317,7 +318,7 @@ export function ImportSetupStep<Row>({
    *  sit in a module subfolder; the download keeps the bare file name so the
    *  saved file is not called "quotes_OMNE...". */
   const saveTemplateFile = (filename: string) => {
-    const href = `/templates/${template.dir ? `${template.dir}/` : ""}${filename}`;
+    const href = asset(`/templates/${template.dir ? `${template.dir}/` : ""}${filename}`);
     const a = document.createElement("a");
     a.href = href;
     a.download = filename;
@@ -1107,7 +1108,7 @@ export function useGuideHowSections(template: ImportTemplateConfig = USERS_TEMPL
       return;
     }
     let alive = true;
-    fetch(`/templates/${template.dir ? `${template.dir}/` : ""}${template.guideFilename}`)
+    fetch(asset(`/templates/${template.dir ? `${template.dir}/` : ""}${template.guideFilename}`))
       .then((res) => (res.ok ? res.text() : Promise.reject(new Error(`Guide fetch failed: ${res.status}`))))
       .then((txt) => {
         if (alive) setSections(toHow(parseImportGuide(txt)));

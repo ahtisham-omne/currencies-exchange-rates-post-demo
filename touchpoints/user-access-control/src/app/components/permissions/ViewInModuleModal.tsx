@@ -8,6 +8,7 @@ import type { PermissionModule } from "../../data/permissions-data";
 import { VIEW_IN_MODULE_DATA } from "../../data/view-in-module-data";
 import { isImageReady, prefetchImages } from "../../lib/image-prefetch";
 import { SHOW_VIEW_IN_MODULE_CONTENT } from "../../lib/feature-flags";
+import { asset } from "@/embedding";
 
 interface ViewInModuleModalProps {
   open: boolean;
@@ -59,7 +60,8 @@ export function ViewInModuleModal({
     permission?.whenToRestrict ??
     "This setting is currently disabled for the selected role.";
   const currentCaption = isOn ? captionOn : captionOff;
-  const currentImage = isOn ? data?.imageOn : data?.imageOff;
+  // Screenshots live in public/, under the app's base path when the shell serves it.
+  const currentImage = asset(isOn ? data?.imageOn : data?.imageOff);
   const currentHotspot = isOn ? data?.hotspotOn : data?.hotspotOff;
 
   /* Warm BOTH states on open. Normally the shots are already in the shared
@@ -67,7 +69,7 @@ export function ViewInModuleModal({
      permission is selected — so this is the fallback for any entry path that
      skipped that dwell time. */
   useEffect(() => {
-    if (open && SHOW_VIEW_IN_MODULE_CONTENT) prefetchImages(data?.imageOn, data?.imageOff);
+    if (open && SHOW_VIEW_IN_MODULE_CONTENT) prefetchImages(asset(data?.imageOn), asset(data?.imageOff));
   }, [open, data?.imageOn, data?.imageOff]);
 
   /* Sources whose bytes have arrived, so the skeleton is only ever shown for
