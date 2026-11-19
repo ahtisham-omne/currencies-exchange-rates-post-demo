@@ -396,6 +396,15 @@ export interface RMASettlementEntry {
   method?: string;
   /** The account the money landed in (ERP-8664 AC2.3). */
   depositedToAccountId?: string;
+  /** A refund in another currency landing in a PKR account: what the bank
+   *  credited in PKR (Mahreen, 2026-11-20). The rate is worked out from the
+   *  two amounts. */
+  bankReceived?: number | undefined;
+  /** PKR per one unit of the return's currency the refund landed at: the
+   *  bank's (from bankReceived) or the day's mid-market rate (into an account
+   *  in the return's currency). Against the receiving-day rate it leaves an
+   *  exchange difference (GL Impact). */
+  rate?: number | undefined;
   description?: string;
   fileName?: string;
   /** Set when the entry came in short of what was agreed and the user

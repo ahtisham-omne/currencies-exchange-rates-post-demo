@@ -4,6 +4,7 @@ import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/curre
 import { formatMoney, formatRateDate, rateSentence } from '@/app/currency/money';
 import { RATE_TYPE_LABEL, toBase, type MoneyFx } from '@/app/currency/rates';
 import { CurrencyFlag } from './CurrencyChip';
+import { useReturnView } from './returnView';
 import { FX_ARROW_PADDING, FX_CARD_CLASS, FX_FLAG_PX, FxAlert, FxArrow, FxHead, FxInset, FxLine, FxLines, FxNote, FxRateType, withCode } from './FxCard';
 
 /* ── Money with its rate (as in the Vendor Invoicing touchpoint) ──────
@@ -207,6 +208,11 @@ export function Money({
   children?: React.ReactNode | undefined;
 }) {
   const code = (currency || BASE_CURRENCY).toUpperCase();
+  // A return's page on Base Currency (returnView.tsx): PKR, the PO's amount on hover.
+  const view = useReturnView();
+  if (view === 'base' && fx && !isBaseCurrency(code)) {
+    return <BaseMoney value={value} currency={code} fx={fx} className={className} dateLabel={dateLabel} role={role} />;
+  }
   const text = children ?? formatMoney(value, code);
   if (!fx || isBaseCurrency(code) || !value) {
     return <span className={`tabular-nums ${className}`}>{text}</span>;

@@ -1,6 +1,6 @@
 # Vendor Returns (RMA): currency & exchange-rate touchpoints
 
-The RMA app (`touchpoints/rma`, from [`rma-web-builder`](https://github.com/ahtisham-omne/rma-web-builder)) is in dollars. A return is in the currency of the PO its goods came on: the vendor priced the goods in it, invoiced them in it, and credits or refunds in it. So every amount on a return reads in that currency, "£30.23 per FT", with dollars on hover. Dollars are used wherever returns in different currencies are added up.
+The RMA app (`touchpoints/rma`, from [`rma-web-builder`](https://github.com/ahtisham-omne/rma-web-builder)) is in PKR, the base currency, like every other module (it was dollars until 20 Nov 2026, §6). A return is in the currency of the PO its goods came on: the vendor priced the goods in it, invoiced them in it, and credits or refunds in it. Its page opens in PKR, with the PO's currency on hover and on the header's Vendor Currency switch. PKR is used wherever returns in different currencies are added up.
 
 Paths below are under `touchpoints/rma/src/app/`.
 
@@ -50,14 +50,27 @@ Every money formatter on the return page read `currency === 'USD' ? '$' : 'GBP '
 
 ## 5. Not in this step
 
-The pasted list puts these "later, once invoices in other currencies are allowed":
-
-- **Log settlement.** Expected, Amount and Still outstanding should show in the PO's currency; "Deposited to" should only list pound or dollar accounts; a dollar account adds a "Dollars received" field and works out the rate. For now its amounts and the Amount prefix follow the return's currency (£), and nothing else has changed.
-- **GL Impact, "Exchange difference" step.** A refund or credit landing at a different rate posts the gap to FX Gain/Loss.
-- **Close return on a credit return.** Confirm the credit in the PO's currency, and send any rate gap to FX Gain/Loss when it's used on an invoice.
-
-Also not changed:
+The settlement and credit items parked here went in on 20 Nov 2026 (§6). Not changed:
 
 - **Earlier create-flow steps.** The vendor and item cards there that show a value (`ReturnSummaryPanel`, `ReturnItemCard`, `ReturnVendorCard` and others) still write `$`.
 - **The by-item route.** Its step numbers differ because the Vendor step is skipped: Receiving documents is step 3. The rules are the same.
 - **Serialized lines.** They pick their receipts on the units step. Those picks count toward a vendor's currency lock, but that step doesn't grey anything out.
+
+## 6. PKR base, set up like the PO (20 Nov 2026)
+
+Mahreen's changes. §1–§4 above describe the first round in dollars; where they differ, this section wins.
+
+| # | What | Where |
+|---|---|---|
+| 1 | **The base is PKR.** Rates are PKR per one unit, from the series Purchase Orders uses, so a return's receiving-day rate matches its PO module (1 GBP = Rs355.4200 PKR after the last sync). A PO with no currency of its own is in USD (`DESIGN_CURRENCY`), the currency the sample figures are written in. Chart of Accounts keeps its own USD base. | `currency/currencies.ts`, `currency/rates.ts`, `currency/returnCurrency.ts` |
+| 2 | **Insights** in PKR, each return at its receiving-day rate, with no currency-split hover (as on Partners). | `components/RMAInsightsPanel.tsx` |
+| 3 | **Return page header:** Base Currency / Vendor Currency and the Currency button, as on a PO. It opens on Base Currency; the view is kept per return for the session. | `components/currency/CurrencyHeaderControls.tsx`, `components/currency/returnView.tsx`, `components/InvoiceDetailScreen.tsx` |
+| 4 | **Return Items and Return Summary** in PKR by default, the PO's currency with the switch. The hover shows the PO's amount and the receiving-day rate, Open Exchange Rates linked. `Money` reads the page's view; the sidebar and the items tab write their plain figures through `viewMoney`. | `components/currency/Money.tsx`, `components/invoice-details/InvoiceDetailSidebar.tsx`, `LineItemsTab.tsx` |
+| 5 | **GL Impact:** "In GBP, the PO's currency, with PKR under each amount at the receiving-day rate…" | `components/invoice-details/GLImpactTab.tsx` |
+| 6 | **Currency Configuration** (new): Return value (locked), In your base currency, Exchange rate (one card per receipt day, "Rate on …, the receiving date"), and the note that the rate can't change and a different refund rate goes to FX Gain or FX Loss. | `components/currency/ReturnCurrencyConfig.tsx` (`ReturnCurrencyConfigDialog`) |
+| 7 | **Create New RMA:** the return takes its PO's currency. Step 4 is unchanged. Step 5 reads Paid, Total and Total Charges in PKR at today's rate, like the PO cart, and a "Currency · GBP" button opens the amounts in the PO's currency. | `components/rma/ReturnResolutionStep.tsx`, `CreateReturnCurrencyDialog`, `components/vendors/AdditionalChargesPanel.tsx` (`formatTotal`) |
+| 8 | **Print, Download and Communication** stay in the PO's currency (no view provider outside the page). | — |
+| 9a | **Log settlement:** Expected, Still outstanding and the loss line in PKR at the return's rate. The Amount is typed in the PO's currency (what the vendor sends) with its PKR under it. "Deposited to" lists only accounts in the PO's currency or PKR (accounts now carry a currency; GBP, EUR and AED settlement accounts added, kept out of the seed generator's list). A PKR account adds "Bank received (PKR)", required, and the rate is worked out from the two amounts; into a GBP account the day's mid-market rate stands. The entry records `bankReceived` and `rate`. | `components/rma/LogSettlementModal.tsx`, `data/mockPayments.ts`, `data/mockRMAs.ts` |
+| 9b | **GL Impact, Exchange difference:** a PKR-only step when the refund landed at another rate than the receipt's: Dr the bank / Cr 4910 FX Gain, or Dr 6910 FX Loss / Cr the bank. It stays out of the by-account rollup, which is in the PO's currency. | `data/rmaGLEntries.ts` (`exchangeDifferenceStep`), `GLImpactTab.tsx` |
+| 9c | **Credit return:** the pending credit reads in the PO's currency, with its rate and PKR value, and says it's applied to an invoice at that rate, like a prepayment, any gap to FX Gain or FX Loss. Applying it happens in Vendor Payments, a separate app with its own data. | `InvoiceDetailSidebar.tsx` |
+

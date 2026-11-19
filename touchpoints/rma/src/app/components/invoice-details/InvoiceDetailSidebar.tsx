@@ -1,5 +1,8 @@
-import { formatMoney as moneyIn } from '@/app/currency/money';
+import { formatMoney as moneyIn, formatRate, moneyPrefix } from '@/app/currency/money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { toBase } from '@/app/currency/rates';
 import { returnFx, rmaCurrency, rmaCurrencyPO } from '@/app/currency/returnCurrency';
+import { useReturnView, viewMoney } from '@/app/components/currency/returnView';
 import { Money } from '@/app/components/currency/Money';
 import React, { useEffect, useState } from 'react';
 import {
@@ -317,6 +320,11 @@ interface InvoiceDetailSidebarProps {
 
 export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, records = [], mode = 'invoice', rma, readOnly = false }: InvoiceDetailSidebarProps) {
   const isRma = mode === 'rma';
+  // A return's page reads in its view (returnView.tsx): PKR at the return's
+  // rate on Base Currency, the PO's currency on Vendor Currency.
+  const pageView = useReturnView();
+  const pageFx = isRma && rma ? returnFx(rma) : null;
+  const formatMoney = (amount: number, currency: string) => viewMoney(pageView, amount, currency, pageFx);
   // A return opens on the two cards somebody actually lands for: who it is
   // with, and what it is worth. The rest are there when they are wanted --
   // six open panels is a page to scroll rather than a rail to read.
@@ -1500,12 +1508,20 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                     Credit pending · {rma.pendingCredit.ref}
                   </span>
                   <span className="text-amber-900 tabular-nums" style={{ fontSize: 12, fontWeight: 700 }}>
-                    {formatMoney(rma.pendingCredit.amount, invoice.currency)}
+                    {/* In the return's currency: the credit is confirmed in it. */}
+                    {moneyIn(rma.pendingCredit.amount, invoice.currency)}
                   </span>
                 </div>
                 <p className="m-0 mt-1 text-amber-800" style={{ fontSize: 11 }}>
                   Raised when everything shipped. Accounting confirms it in partner credits with the vendor's memo number, amount and date.
                 </p>
+                {pageFx && (
+                  <p className="m-0 mt-1 text-amber-800 tabular-nums" style={{ fontSize: 11 }}>
+                    Confirmed in {invoice.currency} at the return's rate, 1 {invoice.currency} = {moneyPrefix(BASE_CURRENCY).trim()}
+                    {formatRate(pageFx.rate)} {BASE_CURRENCY} ({moneyIn(toBase(rma.pendingCredit.amount, pageFx.rate), BASE_CURRENCY)}). It's applied to an
+                    invoice at that rate, like a prepayment; any gap goes to FX Gain or FX Loss.
+                  </p>
+                )}
               </div>
             )}
             {paid > 0.004 ? (

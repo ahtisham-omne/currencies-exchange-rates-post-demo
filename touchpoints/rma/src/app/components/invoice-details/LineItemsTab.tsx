@@ -1,5 +1,7 @@
 import { formatMoney as moneyIn } from '@/app/currency/money';
 import { returnFx } from '@/app/currency/returnCurrency';
+import type { MoneyFx } from '@/app/currency/rates';
+import { useReturnView, viewMoney } from '@/app/components/currency/returnView';
 import { Money } from '@/app/components/currency/Money';
 import { useMemo, useState, type ReactNode } from 'react';
 import { shipmentForShippedLine } from '@/app/data/rmaShipments';
@@ -569,11 +571,16 @@ function LineSettlementPanel({
   line,
   settlements,
   currency,
+  fx,
 }: {
   line: RMALineItem;
   settlements: RMALineSettlement[];
   currency: string;
+  /** The return's rate, for the page's Base Currency view. */
+  fx?: MoneyFx | null | undefined;
 }) {
+  const pageView = useReturnView();
+  const formatMoney = (amount: number, code: string) => viewMoney(pageView, amount, code, fx);
   // There is no per-serial record of the invoice state a unit was billed
   // under, so the line's units are cut into contiguous slices in the same
   // order the breakdown was built in. Slice and breakdown describe the same
@@ -858,6 +865,9 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, rea
   // A return's amounts are in its PO's currency; the hover gives dollars at
   // the receiving-day rate, the rate the receipt reverses at (GL Impact).
   const returnRate = useMemo(() => (rma ? returnFx(rma) : null), [rma]);
+  // The page's view (returnView.tsx): PKR on Base Currency.
+  const pageView = useReturnView();
+  const formatMoney = (amount: number, currency: string) => viewMoney(pageView, amount, currency, returnRate);
   // Per-line amount = qty invoiced × unit price. For an invoice this is the
   // billable subtotal; for an RMA this is the total return value (footer
   // label swaps to "Return value" below). Quantities can't be summed across
@@ -1412,7 +1422,7 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, rea
                 const li = rmaItemById?.get(l.id);
                 const settlements = settlementsOf(l.id);
                 if (!li || !settlements) return null;
-                return <LineSettlementPanel line={li} settlements={settlements} currency={invoice.currency} />;
+                return <LineSettlementPanel line={li} settlements={settlements} currency={invoice.currency} fx={returnRate} />;
               },
             }
           : {})}

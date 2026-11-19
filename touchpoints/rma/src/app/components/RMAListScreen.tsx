@@ -1,5 +1,5 @@
 import { rmaCurrency } from '@/app/currency/returnCurrency';
-import { getCurrency } from '@/app/currency/currencies';
+import { BASE_CURRENCY, getCurrency } from '@/app/currency/currencies';
 import { useCallback, useMemo, useState } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -555,9 +555,9 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
   const itemCounts = useMemo(() => countsForMany((r) => r.items.map((li) => li.sku)), [rmas]);
   const poOptions = useMemo(() => optionsForMany(sourcePOsForRMA), [rmas]);
   const poCounts = useMemo(() => countsForMany(sourcePOsForRMA), [rmas]);
-  // Dollars first, then the others A to Z.
+  // The base currency first, then the others A to Z.
   const currencyOptions = useMemo(
-    () => Array.from(new Set(rmas.map(rmaCurrency))).sort((a, b) => Number(b === 'USD') - Number(a === 'USD') || a.localeCompare(b)),
+    () => Array.from(new Set(rmas.map(rmaCurrency))).sort((a, b) => Number(b === BASE_CURRENCY) - Number(a === BASE_CURRENCY) || a.localeCompare(b)),
     [rmas],
   );
   const currencyCounts = useMemo(() => countsFor(rmaCurrency), [rmas]);

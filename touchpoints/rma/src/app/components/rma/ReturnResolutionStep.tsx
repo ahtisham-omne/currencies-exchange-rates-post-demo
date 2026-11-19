@@ -93,6 +93,11 @@ import {
   HoverCardTrigger,
 } from '@/app/components/ui/hover-card';
 import { useLayoutEffect, useRef, useState } from 'react';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { fxToday } from '@/app/currency/rates';
+import { viewMoney } from '@/app/components/currency/returnView';
+import { CreateReturnCurrencyDialog } from '@/app/components/currency/ReturnCurrencyConfig';
+import { Settings2 as CurrencyIcon } from 'lucide-react';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import {
   ItemImageWithPreview,
@@ -108,8 +113,10 @@ import {
 } from '@/app/components/rma/CreateLineAttachments';
 import { type TrackingMode } from '@/app/data/mockRMAs';
 
-/** Money in the return's currency, its PO's: £30.23 (app/currency/money.ts). */
-const formatMoney = (n: number, currency: string = 'USD') => moneyIn(n, currency);
+/** Money in PKR, the base currency, at today's rate, like the PO cart
+ *  (Mahreen, 2026-11-20). A return takes its receiving-day rate once it is
+ *  created; the amounts in its PO's currency are behind the Currency button. */
+const formatMoney = (n: number, currency: string = BASE_CURRENCY) => viewMoney('base', n, currency, fxToday(currency));
 
 /** One part on this vendor's return, and what the steps before settled for
  *  it. Shown as a thumbnail and a part number, with the rest on hover. */
@@ -523,6 +530,8 @@ export function ReturnResolutionStep({
   /** The part a cell was clicked on, shown in the detail page's own quick
    *  view rather than a second one written here. */
   const [preview, setPreview] = useState<ResolutionItem | null>(null);
+  /** The vendor whose return's Currency Configuration is open. */
+  const [currencyFor, setCurrencyFor] = useState<string | null>(null);
   /** A settlement chosen on a return that is only part billed, held while the
    *  user is told what it will not cover. */
   const [partial, setPartial] = useState<{
@@ -627,7 +636,21 @@ export function ReturnResolutionStep({
                         )}
                       </div>
                     </div>
-
+                    {/* The return's currency, its PO's, and its amounts in it. */}
+                    {target.currency && (
+                      <button
+                        type="button"
+                        onClick={() => setCurrencyFor(target.vendorCode)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 text-[11.5px] text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-800 cursor-pointer"
+                        style={{ fontWeight: 500 }}
+                        aria-label="Open currency configuration"
+                      >
+                        <CurrencyIcon className="w-3.5 h-3.5" />
+                        Currency
+                        <span className="text-slate-400">·</span>
+                        <span className="text-slate-700" style={{ fontWeight: 600 }}>{target.currency}</span>
+                      </button>
+                    )}
                   </div>
 
                   {/* What the answers are about, as the detail page lists it:
@@ -1003,6 +1026,7 @@ export function ReturnResolutionStep({
                       onChange={(next) => onCharges(target.vendorCode, next)}
                       types={VENDOR_CHARGE_TYPES}
                       totalLabel="Total Charges"
+                      formatTotal={(n) => formatMoney(n, target.currency)}
                       addLabel="Add charge"
                       emptyNote="No charges yet. Add what the vendor keeps back."
                       glNote="Taken off what the vendor credits back, and posted against the return's settlement."
@@ -1267,6 +1291,25 @@ export function ReturnResolutionStep({
           </div>
         </div>
       )}
+
+      {/* The return's Currency Configuration, before it exists. */}
+      {(() => {
+        const t = currencyFor ? targets.find((x) => x.vendorCode === currencyFor) : null;
+        if (!t?.currency) return null;
+        const its = t.items ?? [];
+        return (
+          <CreateReturnCurrencyDialog
+            open
+            onOpenChange={(o) => {
+              if (!o) setCurrencyFor(null);
+            }}
+            currency={t.currency}
+            value={Math.round(its.reduce((n, i) => n + (i.value ?? 0), 0) * 100) / 100}
+            paid={Math.round(its.reduce((n, i) => n + (i.paidValue ?? 0), 0) * 100) / 100 || (t.paidValue ?? 0)}
+            charges={Math.round((charges[t.vendorCode] ?? []).reduce((n, c) => n + (c.amount || 0), 0) * 100) / 100}
+          />
+        );
+      })()}
 
       {/* The part, in the quick view the detail page opens. */}
       {preview && (

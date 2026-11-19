@@ -73,13 +73,14 @@ function formatMoney(amount: number, currency: string) {
   return moneyIn(amount, currency);
 }
 
-/* A return in another currency books in it and shows dollars under each
-   amount, at the receiving-day rate: sending goods back reverses their
-   receipt, and a receipt reverses at the rate it was booked at. */
+/* A return in another currency books in it and shows PKR (the base) under
+   each amount, at the receiving-day rate: sending goods back reverses their
+   receipt, and a receipt reverses at the rate it was booked at. An exchange
+   difference is in PKR only. */
 
-/** One side of a step in dollars: each amount converted, the cents split so
- *  the side still adds up to its total in dollars and the step stays
- *  balanced (Debit = Credit) in both currencies. */
+/** One side of a step in PKR: each amount converted, the paisa split so the
+ *  side still adds up to its total in PKR and the step stays balanced
+ *  (Debit = Credit) in both currencies. */
 function baseSplit(values: (number | undefined)[], rate: number): (number | undefined)[] {
   const amounts = values.map((v) => v ?? 0);
   const totalCents = Math.round(amounts.reduce((sum, v) => sum + v, 0) * rate * 100);
@@ -97,7 +98,7 @@ function baseSplit(values: (number | undefined)[], rate: number): (number | unde
   return values.map((v, i) => (v ? (cents[i] ?? 0) / 100 : undefined));
 }
 
-/** An amount in the return's currency, and its dollars under it. */
+/** An amount in the return's currency, and its PKR under it. */
 function InBoth({ value, currency, base }: { value: number; currency: string; base?: number | undefined }) {
   if (base === undefined) return <>{formatMoney(value, currency)}</>;
   return (
@@ -124,6 +125,8 @@ const ACCOUNT_COLORS: Record<string, string> = {
   '6000': '#F43F5E', // Operating Expenses — rose
   '6810': '#E11D48', // RMA Settlement Loss — rose, darker
   '6820': '#9F1239', // RMA Write-Off Loss — rose, darkest
+  '4910': '#059669', // FX Gain — emerald, darker
+  '6910': '#DC2626', // FX Loss — red
 };
 
 export function GLImpactTab({
@@ -498,7 +501,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const entries = useMemo<GLEntry[]>(() => buildRMAGLEntries(rma), [rma]);
   const clearing = returnsPendingBalance(entries);
-  // A return in another currency: dollars at the receiving-day rate.
+  // A return in another currency: PKR at the receiving-day rate.
   const fx = useMemo(() => returnFx(rma), [rma]);
   const receipts = useMemo(() => (fx ? returnReceipts(rma) : []), [fx, rma]);
   const usd = (n: number) => (fx ? toBase(n, fx.rate) : undefined);
@@ -553,6 +556,8 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
     entries.forEach((entry) => {
       if (filter === 'posted' && !entry.posted) return;
       if (filter === 'projected' && entry.posted) return;
+      // In the return's currency; the exchange difference is PKR only.
+      if (entry.baseOnly) return;
       entry.postings.forEach((posting) => {
         const at = byAccount.get(posting.account.code) ?? {
           code: posting.account.code,
@@ -796,7 +801,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
             <ArrowLeftRight className="w-3.5 h-3.5 shrink-0 mt-px" style={{ color: '#7C3AED' }} />
             <div className="text-[11px] text-slate-600 leading-snug">
               <p>
-                In <span style={{ fontWeight: 600 }}>{currency}</span>, the PO's currency, with dollars under each amount at the
+                In <span style={{ fontWeight: 600 }}>{currency}</span>, the PO's currency, with {BASE_CURRENCY} under each amount at the
                 receiving-day rate. Sending goods back reverses their receipt, and a receipt reverses at the rate it was booked at.
               </p>
               {receipts.map((r) => (
@@ -878,8 +883,11 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
           {shown.map((entry, idx) => {
           const open = closed[entry.id] !== true;
           const entryDebits = round2(entry.postings.reduce((n, p) => n + (p.debit ?? 0), 0));
-          const debitsUsd = fx ? baseSplit(entry.postings.map((p) => p.debit), fx.rate) : null;
-          const creditsUsd = fx ? baseSplit(entry.postings.map((p) => p.credit), fx.rate) : null;
+          // An exchange difference is in PKR only: no amount in the PO's currency.
+          const stepCurrency = entry.baseOnly ? BASE_CURRENCY : currency;
+          const stepBase = (n: number) => (entry.baseOnly ? undefined : usd(n));
+          const debitsUsd = fx && !entry.baseOnly ? baseSplit(entry.postings.map((p) => p.debit), fx.rate) : null;
+          const creditsUsd = fx && !entry.baseOnly ? baseSplit(entry.postings.map((p) => p.credit), fx.rate) : null;
           const entryCredits = round2(entry.postings.reduce((n, p) => n + (p.credit ?? 0), 0));
           return (
             <div
@@ -934,7 +942,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                     className="text-[12px] tabular-nums text-foreground text-right"
                     style={{ fontWeight: 600 }}
                   >
-                    <InBoth value={entryDebits} currency={currency} base={usd(entryDebits)} />
+                    <InBoth value={entryDebits} currency={stepCurrency} base={stepBase(entryDebits)} />
                   </span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`}
@@ -1005,14 +1013,14 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums">
                           {posting.debit ? (
-                            <span className="text-foreground" style={{ fontWeight: 600 }}><InBoth value={posting.debit} currency={currency} base={debitsUsd?.[pIdx]} /></span>
+                            <span className="text-foreground" style={{ fontWeight: 600 }}><InBoth value={posting.debit} currency={stepCurrency} base={debitsUsd?.[pIdx]} /></span>
                           ) : (
                             <span className="text-slate-200">-</span>
                           )}
                         </td>
                         <td className="px-4 py-2 pr-3.5 text-right tabular-nums">
                           {posting.credit ? (
-                            <span className="text-foreground" style={{ fontWeight: 600 }}><InBoth value={posting.credit} currency={currency} base={creditsUsd?.[pIdx]} /></span>
+                            <span className="text-foreground" style={{ fontWeight: 600 }}><InBoth value={posting.credit} currency={stepCurrency} base={creditsUsd?.[pIdx]} /></span>
                           ) : (
                             <span className="text-slate-200">-</span>
                           )}
@@ -1039,10 +1047,10 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                       </span>
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums text-foreground" style={{ fontWeight: 700 }}>
-                      <InBoth value={entry.postings.reduce((s, p) => s + (p.debit ?? 0), 0)} currency={currency} base={usd(entry.postings.reduce((s, p) => s + (p.debit ?? 0), 0))} />
+                      <InBoth value={entry.postings.reduce((s, p) => s + (p.debit ?? 0), 0)} currency={stepCurrency} base={stepBase(entry.postings.reduce((s, p) => s + (p.debit ?? 0), 0))} />
                     </td>
                     <td className="px-4 py-2 pr-3.5 text-right tabular-nums text-foreground" style={{ fontWeight: 700 }}>
-                      <InBoth value={entry.postings.reduce((s, p) => s + (p.credit ?? 0), 0)} currency={currency} base={usd(entry.postings.reduce((s, p) => s + (p.credit ?? 0), 0))} />
+                      <InBoth value={entry.postings.reduce((s, p) => s + (p.credit ?? 0), 0)} currency={stepCurrency} base={stepBase(entry.postings.reduce((s, p) => s + (p.credit ?? 0), 0))} />
                     </td>
                   </tr>
                 </tfoot>

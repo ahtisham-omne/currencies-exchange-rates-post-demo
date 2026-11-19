@@ -203,6 +203,9 @@ const users = [
 export interface PayFromAccount {
   id: string;
   label: string;
+  /** The account's currency; none is the base currency (PKR). A refund can
+   *  land only in the return's currency or the base (Mahreen, 2026-11-20). */
+  currency?: string | undefined;
   balance: number;
   type: 'bank' | 'card' | 'cash';
   creditGl: string;
@@ -242,7 +245,11 @@ export const PAY_FROM_ACCOUNTS: PayFromAccount[] = [
   { id: '1010-Operating', label: '1010 · JPMorgan Operating', balance: 1_240_000, type: 'bank', creditGl: '1010 JPMorgan Operating', bankName: 'JPMorgan Chase', accountMask: '4321', accountTypeLabel: 'Checking' },
   { id: '1020-Payroll', label: '1020 · Corporate Checking', balance: 380_000, type: 'bank', creditGl: '1020 Corporate Checking', bankName: 'Bank of America', accountMask: '8842', accountTypeLabel: 'Checking' },
   { id: '1030-AP Disbursements', label: '1030 · AP Disbursements', balance: 615_000, type: 'bank', creditGl: '1030 AP Disbursements', bankName: 'U.S. Bank', accountMask: '2025', accountTypeLabel: 'Checking' },
-  { id: '1040-FX Settlement', label: '1040 · Global FX Settlement', balance: 92_000, type: 'bank', creditGl: '1040 Global FX Settlement', bankName: 'Wells Fargo', accountMask: '7741', accountTypeLabel: 'Money Market' },
+  // Accounts in other currencies (Mahreen, 2026-11-20), as Vendor Payments has them.
+  { id: '1081-GBP Settlement', label: '1081 · GBP Settlement', currency: 'GBP', balance: 145_000, type: 'bank', creditGl: '1081 GBP Settlement', bankName: 'Barclays', accountMask: '2287', accountTypeLabel: 'Checking' },
+  { id: '1082-EUR Settlement', label: '1082 · EUR Settlement', currency: 'EUR', balance: 210_000, type: 'bank', creditGl: '1082 EUR Settlement', bankName: 'Deutsche Bank', accountMask: '5510', accountTypeLabel: 'Checking' },
+  { id: '1084-AED Settlement', label: '1084 · AED Settlement', currency: 'AED', balance: 680_000, type: 'bank', creditGl: '1084 AED Settlement', bankName: 'Emirates NBD', accountMask: '9034', accountTypeLabel: 'Checking' },
+  { id: '1040-FX Settlement', label: '1040 · Global FX Settlement', currency: 'USD', balance: 92_000, type: 'bank', creditGl: '1040 Global FX Settlement', bankName: 'Wells Fargo', accountMask: '7741', accountTypeLabel: 'Money Market' },
   // Bank-named disbursement accounts so the Pay-from default snaps to the
   // vendor's primary payment-method bank (e.g. a PNC Bank ACH method →
   // "1050 PNC Disbursements"). Bank names match vendorPaymentMethods' BANKS list.
@@ -253,7 +260,10 @@ export const PAY_FROM_ACCOUNTS: PayFromAccount[] = [
   { id: '1005-Petty Cash', label: '1005 · Petty Cash Drawer', balance: 3_500, type: 'cash', creditGl: '1005 Petty Cash Drawer', accountTypeLabel: 'Cash on hand' },
 ];
 // Bank-only subset kept for the data generator + any bank-specific consumers.
-export const BANK_ACCOUNTS = PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank');
+// The settlement accounts added on 2026-11-20 stay out of it, so the seeded
+// returns keep the accounts they had (mockRMAs picks by index).
+const ADDED_2026_11_20 = new Set(['1081-GBP Settlement', '1082-EUR Settlement', '1084-AED Settlement']);
+export const BANK_ACCOUNTS = PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank' && !ADDED_2026_11_20.has(a.id));
 /** Where a vendor credit lands. Money is coming back in, so a card payable is
  *  not a destination a return can settle to. */
 export const PAY_TO_ACCOUNTS = PAY_FROM_ACCOUNTS.filter((a) => a.type !== 'card');

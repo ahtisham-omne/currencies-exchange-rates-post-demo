@@ -9,9 +9,9 @@ import { PO_CURRENCY, VENDOR_CURRENCY } from './poCurrencySeed';
 /* ── A return's currency ──────────────────────────────────────────────
  * A return is in the currency of the PO its goods came on: the vendor priced
  * the goods in it, invoiced them in it and credits or refunds in it, so every
- * amount on the return reads in it ("£30.23 per FT"). Dollars are the base,
- * shown on hover and used wherever returns in different currencies are added
- * up (the listing's insights).
+ * amount on the return reads in it ("£30.23 per FT"). PKR is the base (since
+ * 2026-11-20; it was dollars): the return's page opens in it, and the
+ * listing's insights add returns up in it.
  *
  * One return, one currency: once a receiving document is picked, receipts
  * from a PO in another currency can't join it (Create New RMA, step 4).
@@ -34,11 +34,15 @@ export function poKey(po: string | null | undefined): string {
   return (po ?? '').split(',')[0]!.trim().replace(/^PO[- ]?/i, '');
 }
 
+/** The currency the design's sample figures are written in. A PO with no
+ *  currency of its own is in it. */
+export const DESIGN_CURRENCY = 'USD';
+
 /** The currency a PO was placed in. */
 export function poCurrency(po: string | null | undefined): string {
   const key = poKey(po);
   const vendor = VENDOR_OF_PO.get(key);
-  return PO_CURRENCY[key] ?? (vendor ? VENDOR_CURRENCY[vendor] : undefined) ?? BASE_CURRENCY;
+  return PO_CURRENCY[key] ?? (vendor ? VENDOR_CURRENCY[vendor] : undefined) ?? DESIGN_CURRENCY;
 }
 
 /** A return's currency: its PO's. */

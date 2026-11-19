@@ -22,6 +22,7 @@ import { authorizedQty } from './mockRMAs';
 import { invoiceSplitForRMALine } from './receiptInvoiceStatus';
 import type { ReturnBucket } from './rmaReturnAllocation';
 import { PAY_FROM_ACCOUNTS } from './mockPayments';
+import { returnFx } from '@/app/currency/returnCurrency';
 
 export interface GLAccount {
   code: string;
@@ -36,6 +37,9 @@ export interface GLPosting {
 
 export interface GLEntry {
   id: string;
+  /** Amounts already in the base currency (PKR), with nothing in the return's
+   *  currency: the exchange difference on a refund (Mahreen, 2026-11-20). */
+  baseOnly?: boolean;
   /** Step heading, the event that books the entry. */
   title: string;
   /** One line saying when it fires, so a projected step reads as a promise. */
@@ -63,6 +67,10 @@ export const GL_ACCOUNTS = {
    *  Agreed before the money moves, so it is a cost of the return rather than
    *  a shortfall on it. */
   vendorCharges: { code: '6830', name: 'RMA Vendor Charges' },
+  /** A refund or credit landing at another rate than the receipt it reverses
+   *  was booked at. Separate accounts, never "FX Gain/Loss" (Mahreen). */
+  fxGain: { code: '4910', name: 'FX Gain' },
+  fxLoss: { code: '6910', name: 'FX Loss' },
 } as const satisfies Record<string, GLAccount>;
 
 /**
@@ -598,7 +606,45 @@ export function buildRMAGLEntries(rma: RMA): GLEntry[] {
     }
   }
 
+  const fxStep = exchangeDifferenceStep(rma);
+  if (fxStep) entries.push(fxStep);
+
   return entries;
+}
+
+/** A refund in another currency landing at a different rate than the receipt
+ *  it reverses was booked at (Mahreen, 2026-11-20): the cash comes in at the
+ *  settlement's rate, the receipt reverses at its receiving-day rate, and the
+ *  gap posts in PKR to FX Gain (more PKR than booked) or FX Loss (less). Null
+ *  when nothing landed at another rate. */
+export function exchangeDifferenceStep(rma: RMA): GLEntry | null {
+  const fx = returnFx(rma);
+  if (!fx) return null;
+  const withRate = (rma.settlementEntries ?? []).filter((e) => e.amount > 0 && e.rate);
+  if (withRate.length === 0) return null;
+  const diff = round2(withRate.reduce((s, e) => s + e.amount * (e.rate! - fx.rate), 0));
+  if (Math.abs(diff) < 0.005) return null;
+  const cash = payFromAccount(rma);
+  const gain = diff > 0;
+  return {
+    id: 'exchange-difference',
+    baseOnly: true,
+    title: 'Exchange difference',
+    trigger: gain
+      ? 'The refund landed at a higher rate than the receipt it reverses was booked at: more PKR than booked, an FX Gain.'
+      : 'The refund landed at a lower rate than the receipt it reverses was booked at: less PKR than booked, an FX Loss.',
+    posted: Boolean(rma.cashRefundedDate),
+    ...(rma.cashRefundedDate ? { date: rma.cashRefundedDate } : {}),
+    postings: gain
+      ? [
+          { account: cash, debit: diff },
+          { account: GL_ACCOUNTS.fxGain, credit: diff },
+        ]
+      : [
+          { account: GL_ACCOUNTS.fxLoss, debit: -diff },
+          { account: cash, credit: -diff },
+        ],
+  };
 }
 
 /** What is left sitting in the holding account across the posted entries. A

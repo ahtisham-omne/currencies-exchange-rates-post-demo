@@ -1,5 +1,9 @@
 import { formatMoney as moneyIn } from '@/app/currency/money';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
+import { ReturnCurrencyConfigDialog } from '@/app/components/currency/ReturnCurrencyConfig';
+import { ReturnViewProvider, useStoredReturnView } from '@/app/components/currency/returnView';
+import { returnFx as returnFxOf, rmaCurrency as returnCurrencyOf } from '@/app/currency/returnCurrency';
 import { useNavigate as useTanstackNavigate } from '@tanstack/react-router';
 
 // react-router-dom shims. TanStack Router doesn't expose an equivalent of
@@ -809,6 +813,10 @@ function daysBetween(later: Date, earlier: Date) {
 
 export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [], applyInvoiceAction, onSettleInvoices, onPayInvoices, onAddPrepayment, onEditResubmit, onReversePayment, mode = 'invoice', rmaStatus, rma, onRmaAction, onRmaRevert }: InvoiceDetailScreenProps) {
   const isRma = mode === 'rma';
+  // Which currency the return's page reads in: Base Currency (PKR) until the
+  // header switches it, and its Currency Configuration (Mahreen, 2026-11-20).
+  const [returnView, setReturnView] = useStoredReturnView(isRma ? rma?.rmaNumber : null);
+  const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   // Opened from Vendor Payments (Ready to pay row, Applied To link) — the
@@ -1623,6 +1631,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
 
   return (
     <RMAEditGateProvider rma={isRma ? rma : null}>
+    <ReturnViewProvider value={isRma ? returnView : 'document'}>
     <div ref={scrollContainerRef} className="flex-1 flex flex-col bg-slate-50">
       {/* IntersectionObserver sentinel — sits just below the topbar */}
       <div ref={sentinelRef} className="shrink-0 h-px" />
@@ -2044,6 +2053,16 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
 
                 {/* Right: Fullscreen + Actions + Edit CTA */}
                 <div className="flex items-center shrink-0 transition-all duration-250" style={{ gap: isScrolled ? 6 : 8 }}>
+                  {/* Base Currency | Vendor Currency and the Currency button, as on a PO. */}
+                  {isRma && rma && (
+                    <CurrencyHeaderControls
+                      currency={returnCurrencyOf(rma)}
+                      view={returnView}
+                      onViewChange={setReturnView}
+                      onOpenConfig={() => setCurrencyConfigOpen(true)}
+                      compact={isScrolled}
+                    />
+                  )}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
@@ -3287,6 +3306,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
             currency={invoice.currency}
             payToAccountId={rma.payToAccountId}
             existingCharges={rma.additionalCharges ?? []}
+            fx={returnFxOf(rma)}
             onSubmit={(payload) => {
               onRmaAction?.('log-settlement', {
                 settlement: {
@@ -3298,6 +3318,8 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                   ...(payload.depositedToAccountId
                     ? { depositedToAccountId: payload.depositedToAccountId }
                     : {}),
+                  ...(payload.bankReceived ? { bankReceived: payload.bankReceived } : {}),
+                  ...(payload.rate ? { rate: payload.rate } : {}),
                   ...(payload.description ? { description: payload.description } : {}),
                   ...(payload.fileName ? { fileName: payload.fileName } : {}),
                   ...(payload.lossAcknowledged ? { lossAcknowledged: true } : {}),
@@ -3367,6 +3389,8 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
         }}
       />
     )}
+    {isRma && rma && <ReturnCurrencyConfigDialog rma={rma} open={currencyConfigOpen} onOpenChange={setCurrencyConfigOpen} />}
+    </ReturnViewProvider>
     </RMAEditGateProvider>
   );
 }

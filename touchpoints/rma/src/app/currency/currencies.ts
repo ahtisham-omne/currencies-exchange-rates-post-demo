@@ -18,9 +18,9 @@ export interface Currency {
   country: string;
 }
 
-/** The base currency. This module's ledger, KPIs and sample figures are in
- *  dollars; a return keeps the currency of the PO its goods came on. */
-export const BASE_CURRENCY = 'USD';
+/** The base currency: PKR, as in every other module (Mahreen, 2026-11-20;
+ *  it was dollars). A return keeps the currency of the PO its goods came on. */
+export const BASE_CURRENCY = 'PKR';
 
 export const CURRENCIES: Currency[] = [
   { code: "AED", name: "United Arab Emirates Dirham", symbol: "د.إ", decimals: 2, flag: "ae", country: "United Arab Emirates" },

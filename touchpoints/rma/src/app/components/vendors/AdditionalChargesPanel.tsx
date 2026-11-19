@@ -69,6 +69,7 @@ export function AdditionalChargesPanel({
   descriptionError = false,
   onDescriptionErrorClear,
   currency = 'USD',
+  formatTotal,
 }: {
   charges: AdditionalCharge[];
   /** The document's currency, which the amounts are in. A return is in its
@@ -82,6 +83,8 @@ export function AdditionalChargesPanel({
    *  keeps back out of what they owe us. The mechanics are identical and the
    *  words are not, so the document names them. */
   totalLabel?: string;
+  /** Writes the total another way, e.g. in PKR (Create New RMA, step 5). */
+  formatTotal?: ((total: number) => string) | undefined;
   addLabel?: string;
   emptyNote?: string;
   /** What kinds there are to pick from. An invoice is charged tax and fuel
@@ -244,7 +247,7 @@ export function AdditionalChargesPanel({
   <div className="flex items-center justify-between pt-3 mt-1 border-t border-slate-100">
     <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>{totalLabel}</span>
     <span className="text-[13px] text-foreground tabular-nums" style={{ fontWeight: 600 }}>
-      {moneyIn(total, currency)}
+      {formatTotal ? formatTotal(total) : moneyIn(total, currency)}
     </span>
   </div>
 
