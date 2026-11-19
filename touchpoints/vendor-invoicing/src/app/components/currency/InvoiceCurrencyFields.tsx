@@ -9,6 +9,7 @@ import { formatRate, formatRateDate, moneyPrefix, rateSentence } from '@/app/cur
 import { RATE_PROVIDER, RATE_TYPE_LABEL, type RateQuote, type RateType } from '@/app/currency/rates';
 import type { InvoiceRateBasis } from '@/app/data/mockInvoices';
 import { CurrencyFlag } from './CurrencyChip';
+import { ProviderLink } from './ProviderLink';
 
 /* ── Invoice Details: Currency and Exchange Rate (spec 4.4, 3.5) ──────
  * The row the Currency & Exchange Rates audit adds under Posting Date and
@@ -434,7 +435,7 @@ export function InvoiceExchangeRateField({
           <span className="truncate" style={{ color: edited ? '#B45309' : 'rgb(148 163 184)' }}>
             {!corporate
               ? // The provider steps aside for the PO chip (it's in the ⓘ too).
-                `Mid-market rate on ${day}${po ? '' : ` · ${RATE_PROVIDER}`}`
+                <>Mid-market rate on {day}{po ? null : <> · <ProviderLink /></>}</>
               : quote.rate == null
                 ? `No corporate rate for ${currency} on ${day}. Enter the rate to use.`
                 : edited

@@ -9,6 +9,7 @@ import { fxVarianceOf, gainLossOf, type FxVariance, type LockedPrepayment, type 
 import { rateChangePct } from '@/app/hooks/useApSettings';
 import type { InvoiceRateBasis } from '@/app/data/mockInvoices';
 import { CurrencyFlag } from './CurrencyChip';
+import { linkProvider } from './ProviderLink';
 import { CurrencyPicker, InvoiceExchangeRateField, InvoiceRateAsOfField, type CurrencySource } from './InvoiceCurrencyFields';
 
 /* ── An invoice's currency: summary card and Currency Configuration ────
@@ -313,7 +314,7 @@ export function RateCard({
       <div className="flex items-center gap-1.5 text-[11px]">
         <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RATE_HEX[type] }} />
         <span style={{ color: RATE_HEX[type], fontWeight: 600 }}>{RATE_TYPE_LABEL[type]}</span>
-        <span className="text-slate-500 truncate">· {source}</span>
+        <span className="text-slate-500 truncate">· {linkProvider(source)}</span>
       </div>
       <div className="mt-1.5 flex items-start justify-between gap-3">
         <div className="text-[12px] text-slate-700 tabular-nums leading-5" style={{ fontWeight: 500 }}>
