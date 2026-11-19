@@ -6,6 +6,7 @@ import { currencyDecimals, formatRate, formatRateDate } from '@/app/currency/mon
 import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, corporateRateOn, type RateType } from '@/app/currency/rates';
 import { priceFromBase, priceInBase, pricePrefix, type VendorRate } from '@/app/currency/vendorFx';
 import { CurrencyFlag } from './CurrencyChip';
+import { linkProvider } from './ProviderLink';
 
 /* ── Qualified-vendor prices in the Edit Vendors drawer (spec 4.1, 4.2, 3.5) ─
  * Laid out as the original Items file had its Price per UOM: the price in
@@ -150,7 +151,7 @@ export function VendorPriceFields({
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-[220px] text-[11px]">
-        Enter either price; the other is worked out at the vendor's current rate.
+        Enter the price in either currency. The other converts using the exchange rate.
       </TooltipContent>
     </Tooltip>
   );
@@ -226,10 +227,9 @@ export function VendorRateCard({
   const corporate = fx.rateType === 'corporate';
   const tone = RATE_TONE[fx.rateType];
   const finance = corporateRateOn(fx.currency, fx.rateDate);
-  // Offered where finance has set a corporate rate; a vendor already on
-  // corporate keeps the switch so it can go back.
-  const canSwitch = !!finance || corporate;
-  const noFinanceRate = corporate && !finance && !fx.edited;
+  // The switch is there only where finance has set a corporate rate for the
+  // currency; without one the price stays on mid-market (vendorRate).
+  const canSwitch = !!finance;
 
   const commitRate = () => {
     if (rateDraft == null) return;
@@ -241,18 +241,14 @@ export function VendorRateCard({
   const source = corporate
     ? fx.edited
       ? 'Entered for this vendor'
-      : finance
-        ? `Set by ${finance.setBy}${finance.note ? ` · ${finance.note}` : ''}`
-        : `No corporate rate set for ${fx.currency}`
+      : `Set by ${finance?.setBy ?? 'finance'}${finance?.note ? ` · ${finance.note}` : ''}`
     : `Source: ${RATE_PROVIDER}`;
   const when = corporate
-    ? fx.edited
-      ? finance
-        ? `Finance's rate is ${formatRate(finance.rate)} ${BASE_CURRENCY}, in effect since ${formatRateDate(finance.effectiveDate)}`
-        : 'Typed for this vendor only'
+    ? fx.edited && finance
+      ? `Finance's rate is ${formatRate(finance.rate)} ${BASE_CURRENCY}, in effect since ${formatRateDate(finance.effectiveDate)}`
       : finance
         ? `In effect since ${formatRateDate(finance.effectiveDate)}`
-        : 'Mid-market shown until one is entered'
+        : ''
     : `Updated as of ${syncedAt(LAST_SYNC)}`;
 
   return (
@@ -318,7 +314,9 @@ export function VendorRateCard({
       <div className="text-[10.5px] text-slate-600 mt-1 flex items-center gap-1.5 min-w-0">
         <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: tone.dot }} />
         <span className="shrink-0" style={{ color: tone.ink, fontWeight: 600 }}>{RATE_TYPE_LABEL[fx.rateType]} rate</span>
-        <span className={`truncate ${fx.edited || noFinanceRate ? 'text-amber-700' : 'text-slate-400'}`} title={source}>· {source}</span>
+        {/* Wraps rather than truncates, so the provider's link stays whole in
+            the drawer's narrow column. */}
+        <span className={`min-w-0 ${fx.edited ? 'text-amber-700' : 'text-slate-400'}`}>· {linkProvider(source)}</span>
       </div>
       <div className="text-[10.5px] text-slate-500 mt-0.5" style={{ lineHeight: 1.45 }}>{when}</div>
       <div className="text-[10.5px] text-slate-500 mt-1.5 pt-1.5 border-t border-dashed" style={{ borderColor: tone.line, lineHeight: 1.45 }}>
@@ -344,8 +342,8 @@ export function VendorCurrencyChip({ fx }: { fx: VendorRate }) {
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-[240px] text-[11px]">
-        {name}, inherited from the partner. This vendor's prices are entered in it; the price in {BASE_CURRENCY} is
-        worked out at the vendor's current rate.
+        {name}, inherited from the partner. This vendor's prices are entered in it; the price in {BASE_CURRENCY}
+        converts using the exchange rate.
       </TooltipContent>
     </Tooltip>
   );

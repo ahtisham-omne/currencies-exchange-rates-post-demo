@@ -63,17 +63,18 @@ export interface VendorRate {
 }
 
 /** The rate a vendor's prices convert at: today's, of the vendor's rate type.
- *  A corporate rate typed for the vendor wins; with no corporate rate set
- *  for the currency, the mid-market rate fills the (editable) corporate
- *  field until one is entered. */
+ *  Corporate is open only where finance has set a corporate rate for the
+ *  currency, and a corporate rate typed for the vendor wins over finance's.
+ *  With no corporate rate set the price stays on mid-market, whatever the
+ *  vendor was saved with (Mahreen, 2026-11-19). */
 export function vendorRate(
   currency: string | null | undefined,
   opts: { rateType?: RateType; exchangeRate?: string | number } = {},
 ): VendorRate {
   const code = (currency || BASE_CURRENCY).toUpperCase();
   const today = localTodayIso();
-  const rateType = opts.rateType ?? DEFAULT_RATE_TYPE;
   const corporate = isBaseCurrency(code) ? 1 : rateOn(code, today, 'corporate').rate;
+  const rateType = corporate == null ? 'mid' : (opts.rateType ?? DEFAULT_RATE_TYPE);
   if (isBaseCurrency(code)) {
     return { currency: code, rate: 1, rateType, rateDate: today, source: 'Base currency', edited: false, corporateRate: 1 };
   }
@@ -94,9 +95,6 @@ export function vendorRate(
     return { currency: code, rate: corporate, rateType, rateDate: today, source: 'Corporate rate', edited: false, corporateRate: corporate };
   }
   const mid = rateOn(code, today, 'mid').rate ?? 1;
-  if (rateType === 'corporate') {
-    return { currency: code, rate: mid, rateType, rateDate: today, source: 'No corporate rate set; mid-market shown', edited: false, corporateRate: null };
-  }
   return { currency: code, rate: mid, rateType: 'mid', rateDate: today, source: RATE_PROVIDER, edited: false, corporateRate: corporate };
 }
 
