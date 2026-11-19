@@ -23,7 +23,6 @@ import {
   ReceiptText,
   Package,
   Wallet,
-  Coins,
   Plus,
   AlertTriangle,
   AlertCircle,
@@ -158,14 +157,12 @@ import { DEFAULT_RATE_TYPE, RATE_TYPE_LABEL, rateOn, toBase, type RateType } fro
 import { baseGlEntries, postInvoiceGl, type BaseGl } from '@/app/currency/glFx';
 import { fxVarianceOf, receiptValuesForLine, receivingRateOn, type LockedPrepayment } from '@/app/currency/fxVariance';
 import { RATE_BASIS_DATE_LABEL, rateSourceLabel } from '@/app/currency/invoiceFx';
-import { InvoiceCurrencyField, InvoiceExchangeRateField, InvoiceRateAsOfField } from '@/app/components/currency/InvoiceCurrencyFields';
 import { paidRateText } from '@/app/currency/paidRate';
 import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
 import { DocCurrencyProvider, DocMoney } from '@/app/components/currency/DocCurrency';
-import { docViewOf } from '@/app/components/currency/docCurrencyContext';
-import { setDocView, useDocViewOf } from '@/app/components/currency/docView';
+import { docViewOf, type DocView } from '@/app/components/currency/docCurrencyContext';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
-import { InvoiceCurrencyConfigDialog, InvoiceCurrencySummary } from '@/app/components/currency/InvoiceCurrencyConfig';
+import { InvoiceCurrencyConfigDialog } from '@/app/components/currency/InvoiceCurrencyConfig';
 import type { MoneyFx } from '@/app/components/currency/Money';
 
 import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -1776,8 +1773,13 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   // Reconciliation (Eli, 8/31/26): prepayments on the selected POs apply
   // at the TOTALS level (never per line item), reduce the payable, and
   // close their pre-invoices on submit.
+  /* The PO's currency to the invoice's: 1 while they're the same. Set when the
+     invoice's currency is changed in Currency Configuration (convertCurrency
+     below); prepayments and receivings, kept in the PO's currency, are read in
+     the invoice's through it at their own base values. */
+  const [poToInvoice, setPoToInvoice] = useState(1);
   const appliedPrepayEntries = useMemo(() => {
-    type Entry = { invoiceNumber: string; amount: number; rate?: number; rateDate?: string };
+    type Entry = { invoiceNumber: string; amount: number; rate?: number; rateDate?: string; paid?: { currency: string; rate: number } };
     if (isStandalone) return [] as Entry[];
     // Editing an invoice that already consumed prepayments keeps them, each
     // at the rate it was paid (Currency & Exchange Rates): its journal still
@@ -1788,15 +1790,20 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
       const ctx = prepaidPOContext[po];
       if (!ctx) return;
       const prev = seen.get(ctx.preInvoiceNumber);
+      // In the invoice's currency; its base value (amount × rate) unchanged.
       seen.set(ctx.preInvoiceNumber, {
         invoiceNumber: ctx.preInvoiceNumber,
-        amount: Math.round(((prev?.amount ?? 0) + ctx.amount) * 100) / 100,
-        rate: ctx.rate,
+        amount: poToInvoice === 1
+          ? Math.round(((prev?.amount ?? 0) + ctx.amount) * 100) / 100
+          : (prev?.amount ?? 0) + ctx.amount * poToInvoice,
+        rate: ctx.rate != null ? ctx.rate / poToInvoice : ctx.rate,
         rateDate: ctx.rateDate,
+        // What it was paid in, for "Paid … at 1 AED = …" once converted.
+        paid: poToInvoice !== 1 && ctx.rate != null && currentPOsData[0]?.currency ? { currency: currentPOsData[0].currency, rate: ctx.rate } : undefined,
       });
     });
     return Array.from(seen.values());
-  }, [isStandalone, prepaidPOContext, uniquePONumbers, resubmitInvoice]);
+  }, [isStandalone, prepaidPOContext, uniquePONumbers, resubmitInvoice, poToInvoice, currentPOsData]);
   const prepayApplied = Math.min(
     Math.round(appliedPrepayEntries.reduce((sum, e) => sum + e.amount, 0) * 100) / 100,
     sliceAdjustedTotal,
@@ -1864,17 +1871,50 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     Math.abs(rateChangePct(typedRateValue, tableQuote.rate)) > apPerms.invoiceRateLimitPct + 1e-9;
   /** An invoice-currency amount in the base currency, at the invoice rate. */
   const inBase = (n: number) => toBase(n, invoiceRate ?? midQuote.rate ?? 1);
-  // Which currency the form shows (Currency & Exchange Rates): base by
-  // default, the vendor's with the header's Base Currency | Vendor Currency
-  // toggle, kept for the session per invoice (docView.ts). Amounts stay in
-  // the invoice's currency; an amount typed in base is converted at the
-  // invoice rate and rounded to the invoice currency's minor unit, and an
-  // input left untouched keeps what it holds.
-  const formViewKey = `invoice-form:${resubmitInvoice?.id ?? 'new'}`;
-  const storedFormView = useDocViewOf(formViewKey);
-  // A customer invoice (ledger 'ar') keeps its own currency: the customer
-  // side's currency work is a later step.
-  const formView = ledger === 'ar' ? 'document' : storedFormView;
+  /* Another currency for the invoice (Currency Configuration): every price,
+     charge and freight amount converts at the rate day's mid-market cross
+     rate and rounds to the new currency's minor unit, as a PO converts its
+     lines, so the base amounts on screen hardly move. */
+  const convertCurrency = (to: string) => {
+    const from = invoiceCurrency;
+    if (to === from) return;
+    const midOf = (code: string) => (isBaseCurrency(code) ? 1 : rateOn(code, rateDay, 'mid').rate ?? 1);
+    const k = midOf(from) / midOf(to);
+    const d = 10 ** currencyDecimals(to);
+    const conv = (n: number) => Math.round(n * k * d) / d;
+    // Unit prices to four places, so quantity × price stays on the converted total.
+    const convPrice = (n: number) => Math.round(n * k * 1e4) / 1e4;
+    const scale = <T extends object>(o: T): T => {
+      const out = { ...o } as Record<string, unknown>;
+      for (const key of ['unitPrice', 'poUnitPrice']) {
+        if (typeof out[key] === 'number') out[key] = convPrice(out[key] as number);
+      }
+      for (const key of ['totalPrice', 'poAmount', 'amount']) {
+        if (typeof out[key] === 'number') out[key] = conv(out[key] as number);
+      }
+      return out as T;
+    };
+    setCurrentPOsData((prev) =>
+      prev.map((po) => ({
+        ...scale(po),
+        items: po.items.map(scale),
+        relatedGRNs: po.relatedGRNs.map((g) => ({ ...g, items: g.items.map(scale) })),
+      })),
+    );
+    originalPriceRef.current.forEach((v, id) => originalPriceRef.current.set(id, convPrice(v)));
+    setStandaloneItems((prev) => prev.map(scale));
+    setAdditionalCharges((prev) => prev.map(scale));
+    setFreightAmount((prev: number) => conv(prev));
+    setPoToInvoice((prev) => prev * k);
+  };
+  // Which currency the form shows: the base currency, always (Mahreen,
+  // 2026-11-20: "keep the main screen light"); the invoice's own currency and
+  // its rate are in Currency Configuration. Amounts stay in the invoice's
+  // currency; an amount typed in base is converted at the invoice rate and
+  // rounded to the invoice currency's minor unit, and an input left untouched
+  // keeps what it holds. A customer invoice (ledger 'ar') keeps its own
+  // currency: the customer side's currency work is a later step.
+  const formView: DocView = ledger === 'ar' ? 'document' : 'base';
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   const rateDateLabel = ratePending ? 'today' : RATE_BASIS_DATE_LABEL[rateAsOf.basis];
   const docFx: MoneyFx | null = invoiceIsBase
@@ -1945,18 +1985,24 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     amount: e.amount,
     rate: e.rate ?? glRate,
     rateDate: e.rateDate,
+    paid: e.paid,
   }));
   /** What receiving booked for these lines' goods, by receiving. */
   const receiptsOf = (items: LineItem[]) =>
     items
       .filter((i) => !i.isPreInvoice && i.grnDate && i.invoiceQty > 0)
-      .flatMap((i) =>
-        receiptValuesForLine(
-          invoiceCurrency,
-          accrualSplit(i).accrualAmount,
-          i.receipts?.length ? i.receipts : [{ grnNumber: i.grnNumbers[0], date: i.grnDate!, qty: 1 }],
-        ),
-      );
+      .flatMap((i) => {
+        const receipts = i.receipts?.length ? i.receipts : [{ grnNumber: i.grnNumbers[0], date: i.grnDate!, qty: 1 }];
+        const accrual = accrualSplit(i).accrualAmount;
+        if (poToInvoice === 1 || !poCurrency) return receiptValuesForLine(invoiceCurrency, accrual, receipts);
+        // Booked in the PO's currency at each receiving's rate; read in the
+        // invoice's currency with the same base value.
+        return receiptValuesForLine(poCurrency, accrual / poToInvoice, receipts).map((r) => ({
+          ...r,
+          amount: Math.round(r.amount * poToInvoice * 100) / 100,
+          rate: r.rate / poToInvoice,
+        }));
+      });
   /** The journal's input for inventory lines (standalone builds its own). */
   const inventoryGlInput = (
     items: LineItem[],
@@ -2393,6 +2439,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     // a corporate rate with none on file must be entered.
     if (rateMissing || rateOverLimit) {
       setRateError(true);
+      setCurrencyConfigOpen(true);
       missingFieldTargets.push('invoice-exchange-rate-field');
     }
     // "Other" additional charges must say what they are.
@@ -2469,7 +2516,11 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
               : termKindWarning(activeTermPreset.category) ?? 'Pick a payment term that fits this invoice.'
             : onlyTarget === 'standalone-line-items'
               ? 'Every line needs a GL account and an amount above $0.00 before the invoice can submit.'
-              : 'Fill in the highlighted required fields.',
+              : onlyTarget === 'invoice-exchange-rate-field'
+                ? rateOverLimit
+                  ? 'The exchange rate is past what your role can change. Fix it in Currency Configuration.'
+                  : 'Enter the exchange rate in Currency Configuration.'
+                : 'Fill in the highlighted required fields.',
       });
       // Let the section expand before scrolling to it. FOCUS lands on the
       // first invalid field too (GPT QC23, 9/30 — S2#51: focus stayed on
@@ -3223,16 +3274,22 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-              {/* Base Currency | Vendor Currency, and the invoice's currency
-                  configuration (as Purchase Orders has them). */}
+              {/* The invoice's currency configuration: "Currency · AED". No
+                  Base Currency | Vendor Currency toggle; the screen is in the
+                  base currency. */}
               {ledger === 'ap' && (
+                <span id="invoice-exchange-rate-field" className="contents">
                 <CurrencyHeaderControls
                   currency={invoiceCurrency}
                   view={formView}
-                  onViewChange={(v) => setDocView(formViewKey, v)}
+                  onViewChange={() => {}}
                   onOpenConfig={() => setCurrencyConfigOpen(true)}
                   compact
+                  toggle={false}
+                  showCode
+                  alert={rateError && (rateMissing || rateOverLimit)}
                 />
+                </span>
               )}
               <button
                 type="button"
@@ -3828,55 +3885,9 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       stated-total capture is out of the design. The import
                       path keeps its supplied-total variance check. */}
 
-                  {/* Currency & Exchange Rate (Currency & Exchange Rates
-                      audit, spec 4.4 / 3.5): the currency defaults from the
-                      PO (locked to it) else the vendor; the rate is taken on
-                      the posting date, read-only on Mid-market and editable
-                      on Corporate. */}
-                  <div className="grid grid-cols-2 gap-4" id="invoice-exchange-rate-field">
-                    <InvoiceCurrencyField
-                      value={invoiceCurrency}
-                      onChange={(code) => {
-                        setInvoiceCurrency(code);
-                        setTypedRate(null);
-                        setRateError(false);
-                      }}
-                      source={
-                        poCurrency
-                          ? { kind: 'po', ref: currentPOsData[0]?.poNumber ? `PO-${currentPOsData[0].poNumber}` : 'the PO' }
-                          : { kind: 'vendor', ref: vendorDefaultCurrency }
-                      }
-                    />
-                    <InvoiceExchangeRateField
-                      currency={invoiceCurrency}
-                      rateType={rateType}
-                      onRateTypeChange={(t) => {
-                        setRateType(t);
-                        setTypedRate(null);
-                        setRateError(false);
-                      }}
-                      quote={tableQuote}
-                      midQuote={midQuote}
-                      typed={typedRate}
-                      onTypedChange={(v) => {
-                        setTypedRate(v);
-                        if (rateError) setRateError(false);
-                      }}
-                      rate={invoiceRate}
-                      pending={ratePending}
-                      error={rateError && rateMissing}
-                      po={poRateRef && invoiceCurrency === currentPOsData[0]?.currency ? { ...poRateRef, poNumber: `PO-${poRateRef.poNumber}` } : null}
-                      canEdit={apPerms.canChangeInvoiceRate}
-                      limitPct={apPerms.invoiceRateLimitPct}
-                    />
-                    <InvoiceRateAsOfField
-                      date={rateAsOf.date}
-                      basis={rateAsOf.basis}
-                      wanted={wantedRateBasis === 'paidDate' ? undefined : wantedRateBasis}
-                      pending={ratePending}
-                      isBase={invoiceIsBase}
-                    />
-                  </div>
+                  {/* Currency, Exchange Rate and Rate as of are in Currency
+                      Configuration (the header's Currency button), as on a
+                      PO (Mahreen, 2026-11-20). */}
 
                   {/* Row 3: Description */}
                   <div>
@@ -4981,25 +4992,9 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                             Auto-derived from this vendor's profile.
                           </span>
                         </div>
-                        {/* A/P posting (Currency & Exchange Rates, spec 4.4):
-                            A/P is posted in the base currency at the invoice
-                            rate, the rate a payment is later compared against. */}
-                        {!invoiceIsBase && (
-                          <div className="mt-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-2">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-[10px] text-slate-500" style={{ fontWeight: 600 }}>Posts to A/P in {BASE_CURRENCY}</span>
-                              <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }}>
-                                {formatMoney(inBase(sliceAdjustedTotal - formPrepaid), BASE_CURRENCY)}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
-                              {formatMoney(sliceAdjustedTotal - formPrepaid, invoiceCurrency)}
-                              {formPrepaid > 0 ? ', the rest after the prepayment,' : ''} at {rateSentence(invoiceCurrency, invoiceRate ?? midQuote.rate ?? 1)}
-                              {invoiceRate == null ? ' (enter a rate)' : ''}. A payment is later compared against this rate.
-                              {formPrepaid > 0 ? ' The prepayment clears Advance Payments at its locked rate.' : ''}
-                            </p>
-                          </div>
-                        )}
+                        {/* No "Posts to A/P in PKR" box here (Mahreen,
+                            2026-11-20): what A/P posts is "You pay" in
+                            Currency Configuration. */}
                       </div>
                       )}
 
@@ -6009,38 +6004,10 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                   </AccordionContent>
                 </AccordionItem>
 
-                {/* Currency (Currency & Exchange Rates): what the vendor
-                    bills, what posts to A/P in base, the rate, what
-                    receiving booked and the FX Variance, and the way into
-                    the invoice's Currency Configuration — the card Purchase
-                    Orders' Order Summary carries. */}
-                {ledger === 'ap' && (
-                <AccordionItem value="currency" className="border border-border rounded-lg bg-white px-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] overflow-hidden">
-                  <AccordionTrigger className="hover:no-underline py-2.5 group">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-md bg-emerald-50 flex items-center justify-center">
-                        <Coins className="w-3.5 h-3.5 text-emerald-600" />
-                      </div>
-                      <span className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>Currency</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pb-3.5 pt-1">
-                    <InvoiceCurrencySummary
-                      currency={invoiceCurrency}
-                      total={sliceAdjustedTotal}
-                      prepaid={formPrepaid}
-                      rate={ratePending ? null : invoiceRate}
-                      rateType={rateType}
-                      rateDate={rateDay}
-                      dateLabel={rateDateLabel}
-                      pending={ratePending}
-                      rateEdited={rateEdited}
-                      variance={formGl?.variance ?? null}
-                      onViewConfig={() => setCurrencyConfigOpen(true)}
-                    />
-                  </AccordionContent>
-                </AccordionItem>
-                )}
+                {/* No Currency card here: the screen stays in the base
+                    currency, and the vendor's amount, the rate and the FX
+                    difference are in Currency Configuration (the header's
+                    Currency button; Mahreen, 2026-11-20). */}
 
                 {/* GL impact — placed just above Attachments so the
                     journal preview sits at the tail of the sidebar
@@ -6403,55 +6370,17 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                   </div>
                 </div>
 
-                {invoiceIsBase ? (
-                  <div className="pt-2.5 border-t border-slate-100 flex justify-between items-baseline">
-                    <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>Total Due</span>
-                    {/* Compact total (8/31/26): the 20px hero read louder than
-                        the whole breakdown; one step above the row values.
-                        Net of the slice adjustment AND applied prepayments. */}
-                    <span className="text-[14px] text-foreground leading-none tracking-tight" style={{ fontWeight: 600 }}>
-                      {money(totalDueAfterPrepay)}
-                    </span>
-                  </div>
-                ) : (
-                  // Currency & Exchange Rates: the total in both currencies,
-                  // the shown one first (base by default, the vendor's with
-                  // the header toggle), at the invoice rate, and the rate
-                  // under both.
-                  <div className="pt-2.5 border-t border-slate-100">
-                    <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>Total Due</span>
-                    <div className="grid grid-cols-2 gap-3 mt-1.5">
-                      {(viewInBase
-                        ? [
-                            { code: BASE_CURRENCY, label: `In ${BASE_CURRENCY} (base)`, text: formatMoney(inBase(totalDueAfterPrepay), BASE_CURRENCY) },
-                            { code: invoiceCurrency, label: `In ${invoiceCurrency} (vendor)`, text: formatMoney(totalDueAfterPrepay, invoiceCurrency) },
-                          ]
-                        : [
-                            { code: invoiceCurrency, label: `In ${invoiceCurrency}`, text: formatMoney(totalDueAfterPrepay, invoiceCurrency) },
-                            { code: BASE_CURRENCY, label: `In ${BASE_CURRENCY} (base)`, text: formatMoney(inBase(totalDueAfterPrepay), BASE_CURRENCY) },
-                          ]
-                      ).map((cell, k) => (
-                        <div key={cell.code} className={`min-w-0 ${k === 1 ? 'text-right' : ''}`}>
-                          <span className={`flex items-center gap-1 text-[10.5px] text-slate-400 ${k === 1 ? 'justify-end' : ''}`} style={{ fontWeight: 500 }}>
-                            <CurrencyFlag code={cell.code} size={12} />
-                            {cell.label}
-                          </span>
-                          <span
-                            className={`block mt-0.5 text-[14px] leading-tight tracking-tight tabular-nums truncate ${k === 0 ? 'text-foreground' : 'text-slate-600'}`}
-                            style={{ fontWeight: k === 0 ? 600 : 500 }}
-                          >
-                            {cell.text}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-1.5 truncate" style={{ fontWeight: 400 }}>
-                      At {rateSentence(invoiceCurrency, invoiceRate ?? midQuote.rate ?? 1)}
-                      {ratePending ? " · today's rate" : invoiceRate == null ? '' : ` · ${RATE_TYPE_LABEL[rateType]}`}
-                      {!ratePending && rateAsOf.date ? ` · ${formatRateDate(rateAsOf.date)}` : ''}
-                    </p>
-                  </div>
-                )}
+                {/* Total Due in the shown currency, the base one (PKR): net of the
+                    slice adjustment and applied prepayments, at the invoice
+                    rate. The vendor's amount and the rate are in Currency
+                    Configuration (Mahreen, 2026-11-20). Compact (8/31/26): one
+                    step above the row values. */}
+                <div className="pt-2.5 border-t border-slate-100 flex justify-between items-baseline">
+                  <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>Total Due</span>
+                  <span className="text-[14px] text-foreground leading-none tracking-tight tabular-nums" style={{ fontWeight: 600 }}>
+                    {money(totalDueAfterPrepay)}
+                  </span>
+                </div>
               </div>
 
               {/* Inline qty-mismatch / Exception alert banners removed per
@@ -8931,13 +8860,13 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
       <InvoiceCurrencyConfigDialog
         open={currencyConfigOpen}
         onOpenChange={setCurrencyConfigOpen}
-        documentLabel={isResubmit ? invoiceNumber : 'this invoice'}
+        documentLabel={invoiceNumber || 'this invoice'}
         vendorName={vendorName}
         vendorDefault={vendorDefaultCurrency}
         total={sliceAdjustedTotal}
         source={
           poCurrency
-            ? { kind: 'po', ref: currentPOsData[0]?.poNumber ? `PO-${currentPOsData[0].poNumber}` : 'the PO' }
+            ? { kind: 'po', ref: currentPOsData[0]?.poNumber ? `PO-${currentPOsData[0].poNumber}` : 'the PO', currency: poCurrency }
             : { kind: 'vendor', ref: vendorDefaultCurrency }
         }
         value={{ currency: invoiceCurrency, rateType, typedRate }}
@@ -8951,6 +8880,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         canEditRate={apPerms.canChangeInvoiceRate}
         limitPct={apPerms.invoiceRateLimitPct}
         onSave={(next) => {
+          convertCurrency(next.currency);
           setInvoiceCurrency(next.currency);
           setRateType(next.rateType);
           setTypedRate(next.typedRate);

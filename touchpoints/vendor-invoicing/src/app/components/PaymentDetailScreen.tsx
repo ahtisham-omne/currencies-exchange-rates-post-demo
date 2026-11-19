@@ -1131,7 +1131,7 @@ function GLImpactCard({
               : isPrepay
                 ? 'Debit Prepayment / Credit Bank on entry; Debit A/P / Credit Prepayment as it gets applied.'
                 : foreignCurrency
-                  ? `In ${BASE_CURRENCY}: Debit Accounts Payable at the invoice rate, Credit Bank at what paying cost, the difference to Realized FX Gain/Loss. ${foreignCurrency} amounts beneath.`
+                  ? `In ${BASE_CURRENCY}: Debit Accounts Payable at the invoice rate, Credit Bank at what paying cost, the difference to FX Gain or FX Loss. ${foreignCurrency} amounts beneath.`
                   : 'Debit Accounts Payable / Credit Bank.'}
           </p>
         </div>
@@ -1404,8 +1404,8 @@ function PaymentDetailSidebar({
                       {isPrepay
                         ? 'The rate this advance was paid at. It shows wherever the advance is applied to an invoice.'
                         : ledgerFx?.converts
-                          ? 'Worked out from the bank’s figures: the rupees it took for what the vendor got. The difference from each invoice’s own rate is the realized FX Gain/Loss.'
-                          : 'Nothing converted (paid from an account in the invoices’ currency), so the payment is valued at the payment date’s mid-market rate. The difference from each invoice’s own rate is the realized FX Gain/Loss.'}
+                          ? 'Worked out from the bank’s figures: the rupees it took for what the vendor got. The difference from each invoice’s own rate goes to FX Gain or FX Loss.'
+                          : 'Nothing converted (paid from an account in the invoices’ currency), so the payment is valued at the payment date’s mid-market rate. The difference from each invoice’s own rate goes to FX Gain or FX Loss.'}
                     </p>
                   </TooltipContent>
                 </Tooltip>

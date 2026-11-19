@@ -111,10 +111,12 @@ export function CurrencyPicker({
 
 /** Where the currency came from, for the helper line and a provenance tag. */
 export interface CurrencySource {
-  /** "PO" when the PO sets it (locked), "vendor" when it is the vendor's default. */
+  /** "po" when it defaults to the PO's currency, "vendor" when to the vendor's. */
   kind: 'po' | 'vendor';
   /** The PO number, or the vendor's default currency. */
   ref: string;
+  /** The PO's currency, what Reset to default goes back to. */
+  currency?: string | undefined;
 }
 
 export function InvoiceCurrencyField({
@@ -165,7 +167,7 @@ export function InvoiceCurrencyField({
 }
 
 /** Mid-market | Corporate, as the Exchange Rates module names them. */
-function RateTypeToggle({ value, onChange }: { value: RateType; onChange: (t: RateType) => void }) {
+export function RateTypeToggle({ value, onChange }: { value: RateType; onChange: (t: RateType) => void }) {
   return (
     <span className="ml-auto inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-px" role="radiogroup" aria-label="Rate type">
       {(['mid', 'corporate'] as RateType[]).map((t) => (
@@ -188,7 +190,7 @@ function RateTypeToggle({ value, onChange }: { value: RateType; onChange: (t: Ra
 }
 
 /** The PO's rate beside the invoice's, as the earlier touchpoint's rate preview showed it. */
-function PoRateCompare({
+export function PoRateCompare({
   currency,
   invoiceRate,
   invoiceDate,

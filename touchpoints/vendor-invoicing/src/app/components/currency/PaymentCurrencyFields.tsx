@@ -129,7 +129,7 @@ export function BankTookField({
         Bank Took ({BASE_CURRENCY})<span className="text-red-500">*</span>
         <InfoTip>
           What the bank took from the {BASE_CURRENCY} account for the {currency} the vendor gets, from the bank’s advice or statement.
-          The rate is worked out from the two figures, and the difference from each invoice’s rate posts to FX Gain/Loss.
+          The rate is worked out from the two figures, and the difference from each invoice’s rate posts to FX Gain or FX Loss.
         </InfoTip>
       </Label>
       <div

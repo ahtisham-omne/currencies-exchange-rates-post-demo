@@ -7,7 +7,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/app/components/ui/too
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/app/components/ui/hover-card';
 import { MoneyInput, MaxChip } from '@/app/components/payments/MoneyInput';
 import { paidRateText } from '@/app/currency/paidRate';
-import { moneyPrefix } from '@/app/currency/money';
+import { formatMoney, moneyPrefix } from '@/app/currency/money';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 
 // Vendor-level prepayment source picker (feedback 7/22/26). When a
 // vendor holds MULTIPLE on-account prepayment records, the user picks
@@ -239,6 +240,12 @@ export function PrepaymentSourcePicker({
   // The chip totals INCLUDE the auto-applied anchored slice (8/28/26):
   // the card control reads the vendor's full applied prepayment.
   const shownTotal = round2(drawnTotal + anchoredTotal);
+  // The same in the base currency, each record at the rate it was paid at.
+  const baseOf = (src: (typeof sources)[number] | undefined, n: number) =>
+    src?.currency && !isBaseCurrency(src.currency) && src.rate ? n * src.rate : n;
+  const shownBase = round2(
+    sources.reduce((sum, src) => sum + baseOf(src, draws[src.id] || 0), 0) + baseOf(sources[0], anchoredTotal),
+  );
   const shownCount = selectedCount + anchoredCount;
   const chipActive = shownTotal > 0.004;
 
@@ -277,7 +284,7 @@ export function PrepaymentSourcePicker({
         </span>
         {chipActive ? (
           <span className="">
-            {fmt(shownTotal)}
+            {formatMoney(shownBase, BASE_CURRENCY)}
             <span className="text-purple-700" style={{ fontWeight: 500 }}> from {shownCount} credit memo{shownCount === 1 ? '' : 's'}</span>
           </span>
         ) : (
@@ -319,7 +326,14 @@ export function PrepaymentSourcePicker({
                 the Record Payment interstitial's phrasing — who has how
                 much, apply here or keep it. */}
             <p className="text-[12px] mt-0.5 mx-auto text-muted-foreground text-center px-8" style={{ lineHeight: 1.6, maxWidth: '440px' }}>
-              This vendor has <span className="text-foreground" style={{ fontWeight: 600 }}>{fmt(round2(sources.reduce((s, x) => s + x.remaining, 0)))}</span> in vendor credit. Apply it here, or keep it for a later invoice.
+              This vendor has{' '}
+              <span className="text-foreground" style={{ fontWeight: 600 }}>
+                {formatMoney(
+                  round2(sources.reduce((s, x) => s + (x.currency && !isBaseCurrency(x.currency) && x.rate ? x.remaining * x.rate : x.remaining), 0)),
+                  BASE_CURRENCY,
+                )}
+              </span>{' '}
+              in vendor credit. Apply it here, or keep it for a later invoice.
             </p>
           </div>
 

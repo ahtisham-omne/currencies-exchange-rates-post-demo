@@ -237,7 +237,7 @@ The dialog, modelled on `POCurrencyConfigDialog`, has these parts:
 - **You pay**: what A/P is booked at in PKR, the rest after any prepayment. It is shown, not chosen, because the payment currency is picked on the payment, so a settlement picker doesn't fit this module.
 - **Notes and buttons**: the amber "rate is locked" note, then Reset to default, Cancel and Save configuration. Save is disabled while the rate is missing or past the limit.
 
-The create screen keeps its inline Currency, Exchange Rate and Rate as of fields. They are required form fields with their own validation, and the dialog uses the same controls on the same state, so they can't disagree.
+Since 20 Nov (§11) the create screen has no inline Currency, Exchange Rate or Rate as of fields; they are in this dialog only.
 
 ### 9.4 FX Variance and Purchase Price Variance at invoice
 
@@ -442,3 +442,34 @@ New invoice numbers now start at INV-000221. The paid examples stay out of the s
 - In runs, vendor credit is valued at the payment's rate, because a draw doesn't carry its advance's rate.
 - Run Proposal and Execute amounts stay in the invoices' currency, since they are what the vendor gets. Only the run's display tables and totals moved to base.
 - Customer payments share the payment listing, so they read in base too.
+
+## 11. Fifth round (20 Nov 2026): a light create screen, Currency Configuration as the one place
+
+Mahreen's Vendor Invoices changes.
+
+| # | What | Where |
+|---|---|---|
+| 1 | Prepayment popup in PKR: the prepayment at the rate it was paid at; Selected Receivings and Due on This Invoice at today's rate, the rate a new invoice starts on. The paid-rate line stays. | `InvoiceCreationFlow.tsx` (`todayRateFor`, `prepaidInBase`) |
+| 2 | Create screen in PKR only: no Base Currency / Vendor Currency toggle, the Currency button reads "Currency · AED" (red when the rate needs attention), Total Due shows the PKR amount only. The sidebar's Currency card is gone from the create screen; the invoice page keeps it. | `CreateInvoiceScreen.tsx` (`formView` is always `'base'` for A/P), `CurrencyHeaderControls.tsx` (`toggle`, `showCode`, `alert`) |
+| 3 | No "Posts to A/P in PKR" box under A/P Account. | `CreateInvoiceScreen.tsx` |
+| 4 | Currency, Exchange Rate and Rate as of leave Invoice Details. A missing or over-limit rate blocks submit, marks the Currency button and opens Currency Configuration. The currency isn't locked to the PO's: changing it converts every PO price (to four places), charge, freight and standalone line at the rate day's mid-market cross rate (`convertCurrency`); receivings and prepayments are read in the new currency at the base values they were booked at (`poToInvoice`), and a prepayment remembers what it was paid in (`LockedPrepayment.paid`). | `CreateInvoiceScreen.tsx`, `currency/fxVariance.ts` |
+| 5 | Currency Configuration in her layout: "Applies to INV-000221 only. The vendor's default currency (AED) doesn't change."; Vendor invoices with a currency picker ("Defaults to the currency on PO-1003. Change it if the vendor invoiced in another currency."); Exchange rate with the Mid-market / Corporate switch and a card ("Mid-market · Open Exchange Rates", "1 AED = 75.8400 PKR · 1 PKR = 0.013186 AED", "Rate on …, the vendor invoice date · +10.33% vs PO"; a corporate rate reads "Corporate · Set by Ahtisham Ahmad · In effect since …"); Prepayment ("PRE-000002 −د.إ33,480.00 = −Rs2,539,123.20", paid at, deducted at that rate); You pay; FX difference at invoice; the amber note on when the rate locks. "Received and prepaid" and the Rate as of section are gone. The Locked tag shows only once the invoice has posted. A changed currency is previewed converted before it's saved. | `components/currency/InvoiceCurrencyConfig.tsx` (`InvoiceCurrencyConfigDialog`; `RateTypeToggle` and `PoRateCompare` now exported from `InvoiceCurrencyFields.tsx`) |
+
+The invoice summary card's corporate tooltip names who set the rate too, instead of "Finance's corporate rate".
+
+## 12. Sixth round (20 Nov 2026): invoice detail, and Vendor Payments light
+
+Mahreen's changes to the invoice detail page and Vendor Payments.
+
+| # | What | Where |
+|---|---|---|
+| A | The header toggle reads Base Currency / **Invoice Currency** (invoices and payments). Tooltip: "Show every amount in this invoice's currency (GBP). The PKR amount is on hover." (on a payment, "the invoices' currency"). | `components/currency/CurrencyHeaderControls.tsx` |
+| B | The invoice page's Currency button opens the same Currency Configuration as Create Vendor Invoice (§11), read-only, Locked only once the invoice has posted. A Pending Approval invoice changes it through Edit Invoice. | `InvoiceDetailScreen.tsx`, `InvoiceCurrencyConfig.tsx` |
+| 1 | Record Payment, Select Vendor and Payment Type steps: vendor credit, outstanding and invoice balances in PKR; credit at the rate it was paid at, balances at each invoice's rate (what A/P carries). "settling in GBP" stays. | `payments/RecordPaymentFlow.tsx` (`creditBaseOf`, `prepayAvailableBaseFor`, `dueBaseOf`, `fmtBase`) |
+| 2 | The vendor credit popup and the credit picker's question: the credit in PKR at its paid rate, with "Paid at 1 GBP = Rs355.4200 PKR" under it. | `RecordPaymentFlow.tsx`, `payments/PrepaymentSourcePicker.tsx` |
+| 3 | Record Payment (the payments-v2 layout) in PKR only: no toggle, "Currency · GBP" (red when the bank's rate is blocked); Total Payment, Terms, the vendor credit bar (and its draw chip) and Remaining Balance to Pay in PKR. Vendor Receives, Exchange Rate and the right panel's Currency card are gone from the screen; Bank Took (PKR) stays beside Pay From when the bank converts. | `RecordPaymentFlow.tsx` (`formView` is always `'base'`) |
+| 4 | Payment detail: "Invoice Currency", as A. | `PaymentDetailScreen.tsx` via `CurrencyHeaderControls` |
+| 5 | Payment Currency Configuration: "Applies to this payment only. The vendor is paid in the invoice's currency (GBP)."; Vendor receives with Bank took (PKR) beside it (no separate Vendor gets); a Vendor credit card per credit applied ("−£10,000.00 = −Rs3,554,200.00 · Paid at 1 GBP = Rs355.4200 PKR. It's applied at that rate."); "PKR is the default, from the PO."; "Bank's rate · worked out from the two amounts"; "FX difference at payment" reading FX Gain or FX Loss (separate accounts); "Paid from a GBP account, so the vendor gets exactly what you pay."; the last line "The vendor always receives the invoice's currency, whichever account pays. The rate and the FX Gain or FX Loss lock when the payment posts." | `components/currency/PaymentCurrencyConfig.tsx` |
+
+"FX Gain/Loss" is gone from the payment screens' copy elsewhere too (the invoice table column, tooltips, the payment page's GL note): a gain posts to FX Gain, a loss to FX Loss.
+

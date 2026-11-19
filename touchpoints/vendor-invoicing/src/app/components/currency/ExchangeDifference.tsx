@@ -12,7 +12,7 @@ import { differenceKind } from '@/app/currency/paymentFx';
  * payment's page (currency/paymentRules.ts works it out). */
 
 export const EXCHANGE_DIFFERENCE_TIP =
-  'What A/P carried for these invoices in the base currency, at their own rates, against what paying them cost: the bank’s figure from a base account, the day’s rate from one in the invoices’ currency. Costing less is a gain, more is a loss. It posts to Realized FX Gain/Loss.';
+  'What A/P carried for these invoices in the base currency, at their own rates, against what paying them cost: the bank’s figure from a base account, the day’s rate from one in the invoices’ currency. Costing less is a gain and posts to FX Gain; costing more is a loss and posts to FX Loss.';
 
 /** "+₨17.54" / "−₨17.54" / "₨0.00". */
 export function signedBase(d: number): string {

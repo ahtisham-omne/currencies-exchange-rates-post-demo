@@ -57,6 +57,9 @@ export interface LockedPrepayment {
   /** Base per one unit when it was paid. */
   rate: number;
   rateDate?: string;
+  /** The currency and rate it was paid in, where the invoice is in another
+   *  (its amount and rate above are then the invoice currency's, same base). */
+  paid?: { currency: string; rate: number } | undefined;
 }
 
 export interface FxVariance {

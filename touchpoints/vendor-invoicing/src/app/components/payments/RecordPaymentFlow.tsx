@@ -105,13 +105,13 @@ import {
   type SettledLine,
 } from '@/app/currency/paymentRules';
 import { useApPermissions, useApSettings } from '@/app/hooks/useApSettings';
-import { BankConversionLine, BankTookField, VendorReceivesField, type BankRateCheck } from '@/app/components/currency/PaymentCurrencyFields';
-import { PaymentCurrencyConfigDialog, PaymentCurrencySummary } from '@/app/components/currency/PaymentCurrencyConfig';
+import { BankTookField, type BankRateCheck } from '@/app/components/currency/PaymentCurrencyFields';
+import { PaymentCurrencyConfigDialog } from '@/app/components/currency/PaymentCurrencyConfig';
 import { configAccounts } from '@/app/currency/paymentLedger';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
-import { setDocView, useDocViewOf } from '@/app/components/currency/docView';
+import type { DocView } from '@/app/components/currency/docCurrencyContext';
 import { Money } from '@/app/components/currency/Money';
-import { ExchangeDifferenceLine, signedBase } from '@/app/components/currency/ExchangeDifference';
+import { signedBase } from '@/app/components/currency/ExchangeDifference';
 import { paidRateText } from '@/app/currency/paidRate';
 import { mockVendors, partnerVendorUrl, resolveRegistryVendor } from '@/app/data/mockVendors';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
@@ -1676,11 +1676,11 @@ export function RecordPaymentFlow({
       description,
     });
   };
-  // Which currency the form's totals show (the header toggle): the invoices'
-  // by default here, since what is owed stays in it (rule 1). In base they
-  // read at this payment's rate. Amount Due and the inputs stay in the
-  // invoices' currency either way: the vendor is paid in it.
-  const formView = useDocViewOf('payment-form:new', 'document');
+  // Which currency the form's totals show: the base currency, always
+  // (Mahreen, 2026-11-20: no toggle, the main screen light), at this
+  // payment's rate. Amount Due and the inputs stay in the invoices' currency:
+  // the vendor is paid in it. The rest is in Currency Configuration.
+  const formView: DocView = 'base';
   const formInBase = formView === 'base';
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   const fmtForm = (n: number, vendor?: string) => {
@@ -2117,6 +2117,20 @@ export function RecordPaymentFlow({
     payments
       .filter((p) => p.type === 'Prepayment' && p.vendor === vendor && !p.preInvoiceId && (p.unappliedAmount ?? 0) > 0 && creditInRowCurrency(p, vendor))
       .reduce((s, p) => s + (p.unappliedAmount ?? 0), 0);
+  // ── The selection steps in the base currency (Mahreen, 2026-11-20) ──
+  /** A credit's unapplied amount in base, at the rate it was paid at. */
+  const creditBaseOf = (p: Payment) => {
+    const code = (p.currency || BASE_CURRENCY).toUpperCase();
+    if (isBaseCurrency(code)) return p.unappliedAmount ?? 0;
+    return toBase(p.unappliedAmount ?? 0, p.exchangeRate ?? rateOn(code, localTodayIso(), 'mid').rate ?? 1);
+  };
+  const prepayAvailableBaseFor = (vendor: string) =>
+    payments
+      .filter((p) => p.type === 'Prepayment' && p.vendor === vendor && !p.preInvoiceId && (p.unappliedAmount ?? 0) > 0 && creditInRowCurrency(p, vendor))
+      .reduce((s, p) => s + creditBaseOf(p), 0);
+  /** Invoice balances in base, each at its own invoice rate (what A/P carries). */
+  const dueBaseOf = (list: Invoice[]) => list.reduce((sum, inv) => sum + toInvoiceBase(inv, inv.outstandingBalance), 0);
+  const fmtBase = (n: number) => formatMoney(Math.round(n * 100) / 100, BASE_CURRENCY);
 
   // ── Prepayment anchoring, retired at payment time (Eli, 8/31/26) ────
   // Anchored advances used to auto-apply (locked) on their pre-invoice
@@ -3273,7 +3287,9 @@ export function RecordPaymentFlow({
           openInvoices,
           openPreInvoices,
           advance: prepayAvailableFor(v),
+          advanceBase: prepayAvailableBaseFor(v),
           outstanding,
+          outstandingBase: dueBaseOf(openList),
           overdue,
           terms: mv?.paymentTerms ?? 'Net 30',
           currency: payCur ?? openList[0]?.currency ?? vendorPaymentCurrency(v),
@@ -3812,8 +3828,11 @@ export function RecordPaymentFlow({
                   const AccIcon = acct?.type === 'cash' ? Banknote : acct?.type === 'card' ? Wallet : Landmark;
                   return (
                     <div className="space-y-3">
+                      {/* Vendor Receives and Exchange Rate are in Currency
+                          Configuration (Mahreen, 2026-11-20). Bank Took stays
+                          here when the bank converts: the payment can't post
+                          without it. */}
                       <div className="grid grid-cols-2 gap-4">
-                        <VendorReceivesField currency={cur} amount={cashFor(v)} accountCurrency={payCurrencyFor(v)} />
                         <div>
                           <Label className="text-xs sm:text-[13px] text-foreground" style={{ fontWeight: 500 }}>Pay From<span className="text-red-500">*</span></Label>
                           <button
@@ -3835,9 +3854,7 @@ export function RecordPaymentFlow({
                               : `A ${cur} or a ${BASE_CURRENCY} account can pay.`}
                           </p>
                         </div>
-                      </div>
-                      {converts && (
-                        <div className="grid grid-cols-2 gap-4">
+                        {converts && (
                           <BankTookField
                             currency={cur}
                             vendorReceives={cashFor(v)}
@@ -3849,32 +3866,8 @@ export function RecordPaymentFlow({
                             check={bankRateCheckFor(v)}
                             allowedPct={apSettings.allowedDifferencePct}
                           />
-                          <div>
-                            <Label className="text-xs sm:text-[13px] text-foreground" style={{ fontWeight: 500 }}>Exchange Rate</Label>
-                            <div className="mt-1 h-10 w-full rounded-lg px-3 flex items-center border border-slate-200 bg-slate-50 cursor-default">
-                              <span className="text-sm tabular-nums text-foreground truncate" style={{ fontWeight: 500 }}>
-                                {rateSentence(cur, payRateFor(v))}
-                              </span>
-                              <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0 ml-auto" />
-                            </div>
-                            <p className="text-[11px] text-slate-400 mt-1 truncate">
-                              {bankEnteredFor(v) ? 'Worked out from the bank’s figures.' : 'Worked out once the bank’s figure is in.'}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                      {cashFor(v) > 0.004 && (
-                        <BankConversionLine
-                          className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2"
-                          currency={cur}
-                          vendorReceives={cashFor(v)}
-                          accountCurrency={payCurrencyFor(v)}
-                          bankTook={converts ? bankTookFor(v) : null}
-                          dayRate={dayRateFor(v)}
-                          paymentDate={paymentDate}
-                          accountLabel={acct?.label}
-                        />
-                      )}
+                        )}
+                      </div>
                     </div>
                   );
                 })()}
@@ -4185,6 +4178,9 @@ export function RecordPaymentFlow({
                 const appliedSum = m.selectedInvs.reduce((s, inv) => s + (lineFor(inv).prepayApplied || 0), 0);
                 const remainingCredit = Math.round((available - m.applied) * 100) / 100;
                 const creditUsedPct = available > 0 ? Math.min(100, Math.round((m.applied / available) * 100)) : 0;
+                // In PKR at the rate the credit was paid at (several advances: their blend).
+                const creditRate = available > 0 ? prepayAvailableBaseFor(row.vendor) / available : 1;
+                const fmtCredit = (n: number) => fmtBase(n * creditRate);
                 return (
                   <div key={row.vendor} className="rounded-lg border border-border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] overflow-hidden">
                     <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2 bg-slate-50 rounded-t-lg flex-wrap">
@@ -4250,8 +4246,8 @@ export function RecordPaymentFlow({
                             <span className="text-slate-400" style={{ fontWeight: 600 }}>Terms{termInv.paymentTerms ? ` · ${termInv.paymentTerms}` : ''}</span>
                             <span className="mx-1.5 text-slate-300">·</span>
                             {dTerms
-                              ? `${dTerms.percent}% off if paid by ${fmtDeadline(dTerms.deadline)}, otherwise ${fmt(termInv.outstandingBalance)} due by ${due}.`
-                              : `${fmt(termInv.outstandingBalance)} due by ${due}.`}
+                              ? `${dTerms.percent}% off if paid by ${fmtDeadline(dTerms.deadline)}, otherwise ${fmtForm(termInv.outstandingBalance, row.vendor)} due by ${due}.`
+                              : `${fmtForm(termInv.outstandingBalance, row.vendor)} due by ${due}.`}
                             {m.selectedInvs.length > 1 && (
                               <span className="text-slate-400"> Each invoice row carries its own dates and discount.</span>
                             )}
@@ -4291,7 +4287,7 @@ export function RecordPaymentFlow({
                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 cursor-help ${i > 0 ? 'border-l border-slate-100' : ''}`}>
                                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
                                   <span className="text-[10px] text-slate-500 underline decoration-dotted decoration-slate-300 underline-offset-2" style={{ fontWeight: 500 }}>{s.label}</span>
-                                  <span className={`text-[11px] ${s.text}`} style={{ fontWeight: 700 }}>{fmt(s.value)}</span>
+                                  <span className={`text-[11px] ${s.text}`} style={{ fontWeight: 700 }}>{fmtCredit(s.value)}</span>
                                 </span>
                               </TooltipTrigger>
                               <TooltipContent side="top" className="max-w-[220px] p-2 bg-white border border-border rounded-lg shadow-md z-[300]">
@@ -4408,7 +4404,7 @@ export function RecordPaymentFlow({
                                   <FxHeader tip={rowConverts ? `What this part cost in ${BASE_CURRENCY}, at the rate worked out from the bank’s figures.` : `Nothing converts from a ${settledCurrencyFor(row.vendor)} account; this part is valued at the payment date’s mid-market rate.`}>Paid in {BASE_CURRENCY}</FxHeader>
                                 </th>
                                 <th className="text-right px-3 py-2 text-[11px] text-slate-400 whitespace-nowrap" style={{ fontWeight: 600 }}>
-                                  <FxHeader tip="A/P carried minus what paying cost. Positive is a gain, negative a loss. It posts to Realized FX Gain/Loss.">FX Gain/Loss</FxHeader>
+                                  <FxHeader tip="A/P carried minus what paying cost. Positive is a gain and posts to FX Gain; negative is a loss and posts to FX Loss.">FX Gain or Loss</FxHeader>
                                 </th>
                               </>
                             )}
@@ -4683,7 +4679,7 @@ export function RecordPaymentFlow({
                 const sidebarTerm = allExplicit && explicitTerms.length === 1 ? explicitTerms[0] : (v?.paymentTerms ?? row?.terms ?? 'Net 30');
                 // Same vendor blurb shown in the step-1 selection list.
                 const blurb = row
-                  ? `Active vendor on ${row.terms} terms, settling in ${row.currency}.${row.open.length > 0 ? ` ${row.open.length} open invoice${row.open.length === 1 ? '' : 's'} totaling ${fmtIn(row.currency)(row.due)} outstanding.` : ` No open balance${row.closed.length ? `, ${row.closed.length} paid invoice${row.closed.length === 1 ? '' : 's'} on file.` : ' right now.'}`}`
+                  ? `Active vendor on ${row.terms} terms, settling in ${row.currency}.${row.open.length > 0 ? ` ${row.open.length} open invoice${row.open.length === 1 ? '' : 's'} totaling ${fmtBase(dueBaseOf(row.open))} outstanding.` : ` No open balance${row.closed.length ? `, ${row.closed.length} paid invoice${row.closed.length === 1 ? '' : 's'} on file.` : ' right now.'}`}`
                   : v
                     ? `${v.category} · ${v.type} vendor`
                     : '';
@@ -4813,29 +4809,9 @@ export function RecordPaymentFlow({
                     </Tooltip>
                   )}
                 </div>
-                {/* CURRENCY (Currency & Exchange Rates): what the vendor
-                    receives, the account, the bank's conversion and the
-                    FX Gain/Loss this payment will post. */}
-                {flowVendor && !isBaseCurrency(settledCurrencyFor(flowVendor)) && (() => {
-                  const v = flowVendor;
-                  const fx = mode === 'pay' && settledLinesFor(v).length > 0 ? glFxFor(v).fx : null;
-                  return (
-                    <div className="pt-2.5 border-t border-slate-100">
-                      <PaymentCurrencySummary
-                        currency={settledCurrencyFor(v)}
-                        vendorReceives={cashFor(v)}
-                        account={accountFor(v) ?? null}
-                        bankTook={convertsFor(v) ? bankTookFor(v) : null}
-                        rate={payRateFor(v)}
-                        paymentDate={paymentDate}
-                        dayRate={dayRateFor(v)}
-                        carried={fx?.carried}
-                        realized={fx ? fx.amount : null}
-                        onViewConfig={() => setCurrencyConfigOpen(true)}
-                      />
-                    </div>
-                  );
-                })()}
+                {/* No Currency card here: what the vendor receives, the bank's
+                    conversion and the FX Gain or FX Loss are in Currency
+                    Configuration (Mahreen, 2026-11-20). */}
               </div>
             </div>
 
@@ -4969,9 +4945,7 @@ export function RecordPaymentFlow({
               const fmtSum = (n: number) => (inBaseView ? formatMoney(n, BASE_CURRENCY) : fmt(n));
               const vendorGets = r2(perRow.reduce((t, r) => t + r.m.net, 0));
               const costTotal = r2(perRow.reduce((t, r) => t + (r.fx ? r.fx.cost : toBase(r.m.net, r.rate)), 0));
-              const fxTotal = r2(perRow.reduce((t, r) => t + (r.fx ? r.fx.amount : 0), 0));
               const anyForeign = perRow.some((r) => !isBaseCurrency(r.cur));
-              const anyConverts = perRow.some((r) => convertsAtBank(r.payCur, r.cur));
               return (
                 <>
                   {mode === 'pay' && (
@@ -4988,21 +4962,16 @@ export function RecordPaymentFlow({
                           <span className="text-[12px] text-purple-700 " style={{ fontWeight: 600 }}>−{fmtSum(sumIn((r) => r.m.applied))}</span>
                         </div>
                       )}
-                      {/* What the vendor receives, in the invoices' currency
-                          (Currency & Exchange Rates), then what it cost. */}
+                      {/* Total Payment in PKR, what paying it costs. What the
+                          vendor receives, Bank Took and the FX Gain or FX
+                          Loss are in Currency Configuration (Mahreen,
+                          2026-11-20). */}
                       <div className="flex justify-between items-center">
-                        <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>{!anyForeign ? 'Total Payment' : inBaseView ? `Paid in ${BASE_CURRENCY}` : 'Vendor Receives'}</span>
+                        <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Total Payment</span>
                         <span className="text-[12px] text-foreground " style={{ fontWeight: 600 }}>
-                          {mixedCurrencies ? formatMoney(costTotal, BASE_CURRENCY) : inBaseView ? formatMoney(costTotal, BASE_CURRENCY) : fmt(vendorGets)}
+                          {inBaseView ? formatMoney(costTotal, BASE_CURRENCY) : fmt(vendorGets)}
                         </span>
                       </div>
-                      {anyForeign && !inBaseView && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>{anyConverts ? 'Bank Took' : `In ${BASE_CURRENCY} (base)`}</span>
-                          <span className="text-[12px] text-slate-600 tabular-nums" style={{ fontWeight: 500 }}>{formatMoney(costTotal, BASE_CURRENCY)}</span>
-                        </div>
-                      )}
-                      {anyForeign && <ExchangeDifferenceLine difference={fxTotal} label="FX Gain/Loss" />}
                     </div>
                   )}
                   {preInvTableMode && (
@@ -5106,9 +5075,12 @@ export function RecordPaymentFlow({
                 <CurrencyHeaderControls
                   currency={settledCurrencyFor(flowVendor)}
                   view={formView}
-                  onViewChange={(v) => setDocView('payment-form:new', v, 'document')}
+                  onViewChange={() => {}}
                   onOpenConfig={() => setCurrencyConfigOpen(true)}
                   what="payment"
+                  toggle={false}
+                  showCode
+                  alert={flowVendor ? bankRateCheckFor(flowVendor) === 'blocked' : false}
                 />
               )}
               {!recorded && (
@@ -5329,7 +5301,7 @@ export function RecordPaymentFlow({
                             // their label, tip prefix AND the TIP box itself.
                             chosenVendorOpt.outstanding > 0 ? {
                               key: 'outstanding',
-                              value: fmt(chosenVendorOpt.outstanding),
+                              value: fmtBase(chosenVendorOpt.outstandingBase),
                               label: 'Outstanding',
                               valueClass: 'text-foreground',
                               labelClass: 'text-slate-400',
@@ -5355,7 +5327,7 @@ export function RecordPaymentFlow({
                             } : null,
                             chosenVendorOpt.advance > 0 ? {
                               key: 'advance',
-                              value: fmt(chosenVendorOpt.advance),
+                              value: fmtBase(chosenVendorOpt.advanceBase),
                               // "Vendor credit", never "On account" (user
                               // 9/24): one name for this money everywhere.
                               label: 'Vendor Credit',
@@ -5470,7 +5442,7 @@ export function RecordPaymentFlow({
                                       </span>
                                     ) : chosenVendorOpt && chosenVendorOpt.advance > 0 ? (
                                       <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] border " style={{ fontWeight: 600, backgroundColor: box.accentBg, color: box.accentColor, borderColor: box.accentBorder }}>
-                                        {fmt(chosenVendorOpt.advance)} vendor credit
+                                        {fmtBase(chosenVendorOpt.advanceBase)} vendor credit
                                       </span>
                                     ) : (
                                       <span className="text-[10px] text-slate-400">None on file</span>
@@ -5579,7 +5551,7 @@ export function RecordPaymentFlow({
                                     <div className="mt-0.5 text-[10px] text-gray-500" style={{ fontWeight: 500 }}>Due {humanDate(inv.dueDate)}</div>
                                   </div>
                                   <div className="flex flex-col items-end leading-none shrink-0">
-                                    <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmt(inv.outstandingBalance)}</span>
+                                    <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmtBase(toInvoiceBase(inv, inv.outstandingBalance))}</span>
                                     <span className="text-[9px] text-slate-400 mt-1" style={{ fontWeight: 600 }}>Balance Due</span>
                                   </div>
                                 </div>
@@ -5674,7 +5646,7 @@ export function RecordPaymentFlow({
                                     </div>
                                   </div>
                                   <div className="flex flex-col items-end leading-none shrink-0">
-                                    <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmt(pi.amount)}</span>
+                                    <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmtBase(toInvoiceBase(pi, pi.amount))}</span>
                                     <span className="text-[9px] text-slate-400 mt-1" style={{ fontWeight: 600 }}>Expected Total</span>
                                   </div>
                                 </div>
@@ -6026,7 +5998,7 @@ export function RecordPaymentFlow({
                         // Any pay-mode selection tints the row — vendor-only
                         // (advance intent) included (7/24/26).
                         (mode === 'pay' && (selCount > 0 || isVendorSelected));
-                      const blurb = `Active vendor on ${row.terms} terms, settling in ${row.currency}.${hasOpen ? ` ${row.open.length} open invoice${row.open.length === 1 ? '' : 's'} totaling ${fmtIn(row.currency)(row.due)} outstanding.` : ` No open balance${row.closed.length ? `, ${row.closed.length} paid invoice${row.closed.length === 1 ? '' : 's'} on file.` : ' right now.'}`}`;
+                      const blurb = `Active vendor on ${row.terms} terms, settling in ${row.currency}.${hasOpen ? ` ${row.open.length} open invoice${row.open.length === 1 ? '' : 's'} totaling ${fmtBase(dueBaseOf(row.open))} outstanding.` : ` No open balance${row.closed.length ? `, ${row.closed.length} paid invoice${row.closed.length === 1 ? '' : 's'} on file.` : ' right now.'}`}`;
                       // Prepay: every vendor row carries its saved-method pill and an
                       // on-account credit KPI (always visible, not only when selected).
                       // The selected row additionally shows the pre-invoice picker.
@@ -6200,7 +6172,7 @@ export function RecordPaymentFlow({
                                       <Wallet className="w-3.5 h-3.5" />
                                     </div>
                                     <div className="flex flex-col leading-none min-w-0">
-                                      <span className={`text-[14px] ${rowOnAccount > 0 ? 'text-foreground' : 'text-slate-400'}`} style={{ fontWeight: 600 }}>{fmtIn(row.currency)(rowOnAccount)}</span>
+                                      <span className={`text-[14px] ${rowOnAccount > 0 ? 'text-foreground' : 'text-slate-400'}`} style={{ fontWeight: 600 }}>{fmtBase(rowOnAccountList.reduce((sum, p) => sum + creditBaseOf(p), 0))}</span>
                                       <span className="text-[10px] text-slate-500 mt-1 truncate" style={{ fontWeight: 500 }}>
                                         {/* Vendor credit, nothing else
                                             (user 9/23): the chip shows how
@@ -6241,7 +6213,7 @@ export function RecordPaymentFlow({
                                     </div>
                                     <div className="flex flex-col leading-none min-w-0">
                                       <span className={`text-[14px] ${hasOpen ? 'text-foreground' : 'text-slate-400'}`} style={{ fontWeight: 600 }}>
-                                        {fmtIn(row.currency)(row.due)}
+                                        {fmtBase(dueBaseOf(row.open))}
                                       </span>
                                       <span className="text-[10px] text-slate-500 mt-1 block truncate" style={{ fontWeight: 500 }}>
                                         {hasOpen ? `${row.open.length} invoice${row.open.length === 1 ? '' : 's'}` : 'Nothing owed'}
@@ -6270,13 +6242,13 @@ export function RecordPaymentFlow({
                                         {preInvs.length > 0 && (
                                           <p className="text-[11px] text-foreground flex justify-between gap-3" style={{ fontWeight: 500 }}>
                                             <span>{preInvs.length} pre-invoice{preInvs.length === 1 ? '' : 's'}</span>
-                                            <span className="" style={{ fontWeight: 600 }}>{fmtIn(row.currency)(sumBal(preInvs))}</span>
+                                            <span className="" style={{ fontWeight: 600 }}>{fmtBase(dueBaseOf(preInvs))}</span>
                                           </p>
                                         )}
                                         {regInvs.length > 0 && (
                                           <p className="text-[11px] text-foreground flex justify-between gap-3" style={{ fontWeight: 500 }}>
                                             <span>{regInvs.length} invoice{regInvs.length === 1 ? '' : 's'}</span>
-                                            <span className="" style={{ fontWeight: 600 }}>{fmtIn(row.currency)(sumBal(regInvs))}</span>
+                                            <span className="" style={{ fontWeight: 600 }}>{fmtBase(dueBaseOf(regInvs))}</span>
                                           </p>
                                         )}
                                         {overdueCount > 0 && (
@@ -6288,7 +6260,7 @@ export function RecordPaymentFlow({
                                           <p className="text-[11px] text-amber-700 flex justify-between gap-3" style={{ fontWeight: 500 }}>
                                             {/* "Vendor credit", the one name (BA 9/25). */}
                                             <span>Vendor Credit</span>
-                                            <span className="" style={{ fontWeight: 600 }}>{fmtIn(row.currency)(rowUnapplied.total)}</span>
+                                            <span className="" style={{ fontWeight: 600 }}>{fmtBase(rowUnappliedList.reduce((sum, p) => sum + creditBaseOf(p), 0))}</span>
                                           </p>
                                         )}
                                       </div>
@@ -6339,7 +6311,7 @@ export function RecordPaymentFlow({
                                           </div>
                                         </div>
                                         <div className="flex flex-col items-end leading-none shrink-0">
-                                          <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmtIn(row.currency)(pi.amount)}</span>
+                                          <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmtBase(toInvoiceBase(pi, pi.amount))}</span>
                                           <span className="text-[9px] text-slate-400 mt-1" style={{ fontWeight: 600 }}>Expected Total</span>
                                         </div>
                                       </div>
@@ -6535,7 +6507,7 @@ export function RecordPaymentFlow({
                                       </div>
                                     </div>
                                     <div className="flex flex-col items-end leading-none shrink-0">
-                                      <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmtIn(row.currency)(pi.amount)}</span>
+                                      <span className="text-[14px] text-slate-900 " style={{ fontWeight: 700 }}>{fmtBase(toInvoiceBase(pi, pi.amount))}</span>
                                       <span className="text-[9px] text-slate-400 mt-1" style={{ fontWeight: 600 }}>Expected Total</span>
                                     </div>
                                   </div>
@@ -7799,7 +7771,20 @@ export function RecordPaymentFlow({
         >
           {(() => {
             const rows = selectedRows.filter((r) => prepayAvailableFor(r.vendor) > 0);
-            const total = rows.reduce((s, r) => s + prepayAvailableFor(r.vendor), 0);
+            // In the base currency, each credit at the rate it was paid at.
+            const totalBase = rows.reduce((s, r) => s + prepayAvailableBaseFor(r.vendor), 0);
+            const credits = rows.flatMap((r) =>
+              payments.filter(
+                (p) => p.type === 'Prepayment' && p.vendor === r.vendor && !p.preInvoiceId && (p.unappliedAmount ?? 0) > 0 && creditInRowCurrency(p, r.vendor),
+              ),
+            );
+            const paidRates = Array.from(new Set(credits.map((p) => p.exchangeRate).filter((x): x is number => !!x)));
+            const paidLine =
+              paidRates.length === 1
+                ? paidRateText(credits[0]?.currency, { rate: paidRates[0] })
+                : paidRates.length > 1
+                  ? 'Each credit at the rate it was paid at.'
+                  : null;
             const vendorLabel = rows.length === 1 ? rows[0].vendor : `${rows.length} vendors`;
             return (
               <>
@@ -7823,9 +7808,14 @@ export function RecordPaymentFlow({
                   {/* User copy 9/23. */}
                   <p className="text-[13px] mt-2 mx-auto text-muted-foreground" style={{ lineHeight: 1.7, maxWidth: '340px' }}>
                     {vendorLabel} {rows.length === 1 ? 'has' : 'have'}{' '}
-                    <span className="text-foreground " style={{ fontWeight: 700 }}>{fmt(total)}</span>{' '}
+                    <span className="text-foreground " style={{ fontWeight: 700 }}>{fmtBase(totalBase)}</span>{' '}
                     in vendor credit. Apply it here, or keep it for a later invoice.
                   </p>
+                  {paidLine && (
+                    <p className="text-[11px] mt-1 text-violet-500/80" style={{ fontWeight: 500 }}>
+                      {paidLine}
+                    </p>
+                  )}
                 </div>
                 {/* gap-4, not 2.5 (Eli 9/24): he misclicked "Keep for
                     later" reaching for Apply — the pair needs air. */}

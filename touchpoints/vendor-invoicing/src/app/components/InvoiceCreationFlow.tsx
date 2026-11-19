@@ -2,7 +2,9 @@ import type { Payment } from '@/app/data/mockPayments';
 import { useState } from 'react';
 import { CalendarClock, Lock, Wallet } from 'lucide-react';
 import { formatMoney } from '@/app/currency/money';
-import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { rateOn, toBase } from '@/app/currency/rates';
+import { localTodayIso } from '@/app/lib/dueBucket';
 import { paidRateText } from '@/app/currency/paidRate';
 import { InvoiceTypeSelectionModal } from '@/app/components/InvoiceTypeSelectionModal';
 import { VendorSelectionModalNested as VendorSelectionModal, SelectedPOData } from '@/app/components/VendorSelectionModalNested';
@@ -48,6 +50,18 @@ type FlowStep = 'type-selection' | 'inventory-selection' | 'standalone-vendor-se
  * receiving invoice, Standalone bills the vendor directly. Pre vs post is
  * decided by the entry point, never inferred from the selection. */
 type InvoiceType = 'pre-invoice' | 'inventory' | 'standalone';
+
+/** Today's mid-market rate for a currency (1 for the base currency). */
+function todayRateFor(code: string | undefined): number {
+  if (!code || isBaseCurrency(code)) return 1;
+  return rateOn(code, localTodayIso(), 'mid').rate ?? 1;
+}
+
+/** A prepayment in the base currency, at the rate it was paid at. */
+function prepaidInBase(code: string | undefined, e: { amount: number; rate?: number | undefined }): number {
+  if (!code || isBaseCurrency(code)) return e.amount;
+  return toBase(e.amount, e.rate ?? todayRateFor(code));
+}
 
 export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [], payments = [], creditMemos = [], ledger = 'ap', initialVendorName, initialType }: InvoiceCreationFlowProps) {
   // Deep-linked vendor + type lock (Eli 9/24, user 9/25): the split CTA
@@ -591,7 +605,7 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
                 {prepayGate.entries.length === 1 ? (
                   <>
                     <span className="text-violet-700" style={{ fontWeight: 600 }}>{prepayGate.entries[0].preInvoiceNumber}</span> already paid{' '}
-                    <span className="text-violet-700" style={{ fontWeight: 600 }}>{formatMoney(prepayGate.entries[0].amount, prepayGate.selection[0]?.currency ?? BASE_CURRENCY)}</span>{' '}
+                    <span className="text-violet-700" style={{ fontWeight: 600 }}>{formatMoney(prepaidInBase(prepayGate.selection[0]?.currency, prepayGate.entries[0]), BASE_CURRENCY)}</span>{' '}
                     against PO-{prepayGate.entries[0].poNumber}. We'll deduct it from this invoice automatically.
                   </>
                 ) : (
@@ -628,9 +642,11 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
                   return sum + po.poAmount;
                 }, 0);
                 const prepayTotal = prepayGate.entries.reduce((s, e) => s + e.amount, 0);
-                // In the PO's currency (Currency & Exchange Rates), not a fixed "$".
+                // In PKR, the base currency (Mahreen, 2026-11-20): the
+                // receivings and what's due at today's rate, the rate a new
+                // invoice starts on; each prepayment at the rate it was paid at.
                 const gateCurrency = prepayGate.selection[0]?.currency ?? BASE_CURRENCY;
-                const fmt = (n: number) => formatMoney(n, gateCurrency);
+                const fmt = (n: number) => formatMoney(toBase(n, todayRateFor(gateCurrency)), BASE_CURRENCY);
                 return (
                   <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
                     <div className="w-full flex items-center justify-between gap-2 px-3 py-2">
@@ -648,7 +664,7 @@ export function InvoiceCreationFlow({ onClose, onInvoicesCreated, invoices = [],
                             Prepayment · {e.preInvoiceNumber} (PO-{e.poNumber})
                           </span>
                           <span className="text-[12px] text-violet-700 shrink-0" style={{ fontWeight: 600 }}>
-                            −{fmt(e.amount)}
+                            −{formatMoney(prepaidInBase(gateCurrency, e), BASE_CURRENCY)}
                           </span>
                         </div>
                         {/* The rate the prepayment was paid at, which it keeps
