@@ -587,7 +587,7 @@ const PERSISTED_KEYS = [
 ] as const satisfies readonly (keyof State)[]
 
 /* The seed with the two entries written in another currency on top (a GBP one
-   at the mid-market rate, a EUR one at Treasury's corporate rate). See
+   at the mid-market rate, a EUR one at the corporate rate). See
    lib/fxExamples. */
 const seeded = withFxExamples(
   { accounts: seedAccounts, transactions: seedTransactions, journalEntries: seedJournalEntries },
@@ -1253,7 +1253,9 @@ export const useStore = create<State>()(persist((set, get) => ({
      typed in their account's currency (2026-11-14). A save from an earlier build
      holds them as base figures alone, and the ledger's Foreign currency amount
      and Rate columns would read empty. */
-  version: 14,
+  /* 15: the EUR sample entry's memo no longer says "Treasury's" corporate rate
+     (2026-11-20); a save from an earlier build keeps the old memo. */
+  version: 15,
   migrate: () => ({}) as State,
   // A save read back on a later day locks the months that have ended since.
   merge: (persisted, current) => {

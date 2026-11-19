@@ -21,6 +21,7 @@ import { MANUAL_ENTRIES_GUIDE, RETAINED_EARNINGS_GUIDE, SYSTEM_ACCOUNTS_GUIDE } 
 import { jumpToError } from '../lib/formErrors'
 import { cn, currencySymbol, fmtCurrencyExact, fmtDate, todayIso, uid } from '../lib/utils'
 import { CurrencyFlag } from './CurrencyFlag'
+import { linkProvider } from './ProviderLink'
 
 /* A line as it is being typed: a debit or a credit, in the entry's currency.
 
@@ -321,10 +322,10 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
     const others = heldIn(lineKey)
     const other = [...others.keys()].find(c => c !== code)
     if (other) {
-      return `Held in ${code}, and this entry already has a ${other} account. A ${other} and a ${code} account can't be in the same entry: use two entries through a ${base} clearing account, or a transfer.`
+      return `This account is in ${code}, and this entry already has a ${other} account. One entry can't mix them: post two entries through a ${base} clearing account, or use a transfer.`
     }
     if (others.size === 0 && foreign && currency !== code) {
-      return `Held in ${code}, and this entry is in ${currency}. A ${code} account only takes a ${code} entry: change the entry's currency to use it.`
+      return `This account is in ${code} and this entry is in ${currency}. To use it, change the entry's currency to ${code}.`
     }
     return undefined
   }
@@ -419,7 +420,7 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
   const misfit = lines.map(l => accountById.get(l.accountId)).find(a => a && a.currencyCode !== base && a.currencyCode !== currency)
   const currencyProblem = misfit
     ? [{ field: 'currency' as const, message: held.size > 1
-        ? `${[...held.keys()].join(' and ')} accounts can't be in the same entry. Use two entries through a ${base} clearing account, or a transfer.`
+        ? `One entry can't mix ${[...held.keys()].join(' and ')} accounts: post two entries through a ${base} clearing account, or use a transfer.`
         : `${misfit.accountName} is held in ${misfit.currencyCode}, so this entry has to be in ${misfit.currencyCode}.` }]
     : []
   const roundingProblem = rounding && !roundingAccount
@@ -497,7 +498,7 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
     const createdAt = new Date().toISOString()
     /* An entry in another currency keeps its currency, its rate and the kind of
        rate on every posting (rule 10): later rate changes never move it. A rate
-       typed over Treasury's posts as typed on the entry. */
+       typed over the corporate one posts as typed on the entry. */
     const fxFields = (fxDebit: number, fxCredit: number): Partial<Transaction> => foreign
       ? { entryCurrency: currency, entryRate: unitsPerBase(unit), entryRateType: rateEdited ? 'manual' : kind, fxDebit, fxCredit }
       : {}
@@ -587,10 +588,12 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
   const today = todayIso()
   const rateCaption = !foreign ? null
     : rateEdited ? `Typed on this entry · ${RATE_KIND_LABEL.corporate.toLowerCase()} rate was ${rateLabel(quote.rate).replace(/^1 \w+ = /, '')}`
-    : kind === 'corporate' ? `Corporate · set by Treasury, from ${fmtDate(quote.date)}${editable ? ' · you can change it' : ''}`
-    : `Mid-market · ${MID_SOURCE} · ${date >= today ? `today, ${fmtDate(today)}` : fmtDate(date)}`
+    // "Corporate · Set by Ahtisham Ahmad · In effect since Nov 1, 2026." (Mahreen, 2026-11-20)
+    : kind === 'corporate' ? `Corporate · ${quote.source} · In effect since ${fmtDate(quote.date)}.${editable ? ' You can change it for this entry.' : ''}`
+    // The entry date's rate; one dated after today takes today's.
+    : `Mid-market · ${MID_SOURCE} · ${date > today ? `today, ${fmtDate(today)}` : `${fmtDate(date)}, the entry date`}`
   const rateLockWhy = kind === 'mid'
-    ? `A mid-market rate can't be edited. It is the rate for the entry date${corporateAvailable ? ', or switch to Treasury\'s corporate rate' : ''}.`
+    ? `A mid-market rate can't be edited. It is the rate for the entry date${corporateAvailable ? ', or switch to the corporate rate' : ''}.`
     : 'Your company takes mid-market rates, so a corporate rate can be used here but not typed.'
 
   return (
@@ -699,8 +702,8 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
             </p>
           </div>
           {/* The rate every line converts at: the entry date's (rule 2), of the
-              kind the company takes (rule 3), switchable to Treasury's where it
-              sets one (rule 11), read the Currencies way (rule 4). */}
+              kind the company takes (rule 3), switchable to the corporate rate
+              where one is set (rule 11), read the Currencies way (rule 4). */}
           {foreign && (
             <div data-je-field="rate">
               <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -722,8 +725,8 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                   />
                   <span className="text-fg-muted shrink-0">{base}</span>
                   {rateEdited && (
-                    <Tooltip content={`Back to Treasury's rate, ${rateLabel(quote.rate)}`} side="top" align="right">
-                      <button type="button" onClick={() => setRateInput(null)} aria-label="Reset to Treasury's rate" className="inline-flex shrink-0 text-fg-subtle hover:text-primary">
+                    <Tooltip content={`Back to the corporate rate, ${rateLabel(quote.rate)}`} side="top" align="right">
+                      <button type="button" onClick={() => setRateInput(null)} aria-label="Reset to the corporate rate" className="inline-flex shrink-0 text-fg-subtle hover:text-primary">
                         <RotateCcw size={12} />
                       </button>
                     </Tooltip>
@@ -737,7 +740,7 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
                   </Tooltip>
                 </div>
               )}
-              <p className="mt-1.5 text-2xs leading-snug text-fg-muted">{rateCaption}</p>
+              <p className="mt-1.5 text-2xs leading-snug text-fg-muted">{linkProvider(rateCaption)}</p>
             </div>
           )}
           <div className="md:col-span-4">
@@ -771,8 +774,8 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
               <h3 className="text-[12px] text-fg leading-tight" style={{ fontWeight: 600 }}>Journal lines</h3>
               <p className="text-[11px] text-fg-subtle mt-0.5 leading-snug">
                 {foreign
-                  ? `Each line can contain either a debit or a credit, in ${currency}. The ${base} beside it is what posts, at ${rateLabel(unit)}.`
-                  : 'Each line can contain either a debit or a credit, in the base currency.'}
+                  ? `Enter a debit or a credit on each line, in ${currency}. The ${base} amount next to it is what posts to the ledger, at ${rateLabel(unit)}.`
+                  : 'Enter a debit or a credit on each line, in the base currency.'}
               </p>
             </div>
             {/* Live reconciliation chip, echoing Cash Management's header
@@ -1125,8 +1128,8 @@ function HeadInfo({ text }: { text: string }) {
   )
 }
 
-/* Mid-market or Treasury's corporate rate, where Treasury sets one for the
-   entry's currency (rule 11). The Currencies module's two names, purple and
+/* Mid-market or the corporate rate, where one is set for the entry's
+   currency (rule 11). The Currencies module's two names, purple and
    amber as its rate chips colour them. */
 function RateKindToggle({ value, onChange }: { value: RateKind; onChange: (kind: RateKind) => void }) {
   return (

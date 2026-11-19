@@ -1907,7 +1907,7 @@ export default function GeneralLedgerPage() {
         return (
           <td key={key} className={cn('px-4 text-right tabular-nums whitespace-nowrap text-slate-800', padY)}>
             {fx !== undefined && t.entryCurrency
-              ? <FxPostingTooltip code={t.entryCurrency} base={base} booked={t.debit || t.credit} rate={t.entryRate} on={fmtDate(t.date)} typed={fx} rateType={t.entryRateType}><span className="cursor-help"><Marked text={fmtCurrencyExact(fx, t.entryCurrency)} q={query} /></span></FxPostingTooltip>
+              ? <FxPostingTooltip code={t.entryCurrency} base={base} booked={t.debit || t.credit} rate={t.entryRate} on={fmtDate(t.date)} onIso={t.date} typed={fx} rateType={t.entryRateType} side={t.debit ? 'debit' : 'credit'}><span className="cursor-help"><Marked text={fmtCurrencyExact(fx, t.entryCurrency)} q={query} /></span></FxPostingTooltip>
               : <span className="text-fg-subtle">-</span>}
           </td>
         )

@@ -33,7 +33,7 @@ import { accountNotes, noteKey } from '../lib/notes'
 import { CommsTab, useCommsCount } from '../components/CommsTab'
 import { createdHere } from '../lib/comms'
 import { AttachmentsTab, type AttachmentFile } from '../components/AttachmentsTab'
-import { bookedFromBase, currencyMeta, ownBalanceOf, currentOwnBalanceOf, ownSide, typedCorrection, typedIn } from '../lib/currencies'
+import { bookedFromBase, currencyMeta, currentOwnBalanceOf, ownSide, typedCorrection, typedIn } from '../lib/currencies'
 import { CurrencyFlag } from '../components/CurrencyFlag'
 import { withCode } from '../components/FxCard'
 import { earningsPostings, isCurrentYearEarnings } from '../lib/currentYearEarnings'
@@ -1439,18 +1439,6 @@ function FxTrendBody({ series, transactions, account }: { series: { date: string
   const data = useMemo(
     () => windowSeriesByPeriod(series, period).map(p => ({ ...p, balance: bookedFromBase(p.balance, code) + typedCorrection(account, transactions, p.date) })),
     [series, period, code, account, transactions])
-  // Same KPI-consistent definition as the base-currency trend, restated into
-  // the holding currency (the net is a linear delta, so it converts directly).
-  const conv = (v: number) => bookedFromBase(v, code)
-  // Normal-side, because `end` comes from the normal-side series. Debit less
-  // credit here put Change on the opposite sign to the curve it annotated.
-  const windowed = useMemo(() => windowTxByPeriod(transactions, period), [transactions, period])
-  const netUsd = useMemo(() => windowed.reduce((s, t) => s + normalSideDelta(account, t), 0), [windowed, account])
-  const end = data.length ? data[data.length - 1].balance : ownBalanceOf(account)
-  const change = conv(netUsd) + typedCorrection(account, windowed)
-  // Not abs: Start has to be End less Change, or the three figures in the row
-  // below the chart do not reconcile with each other.
-  const start = end - change
   return (
     <>
       <WidgetPeriodHeader period={period} onChange={setPeriod} presets={['7d', '14d', '30d', '90d']} />
@@ -1475,14 +1463,8 @@ function FxTrendBody({ series, transactions, account }: { series: { date: string
               </AreaChart>
             </ResponsiveContainer>
           </div>
-          <WidgetStatRow
-            stats={[
-              { label: 'Start', value: fmtCurrency(start, code) },
-              { label: 'End', value: fmtCurrency(end, code), color: '#059669' },
-              { label: 'Change', value: `${change >= 0 ? '+' : '-'}${fmtCurrency(Math.abs(change), code)}`, color: change >= 0 ? '#059669' : '#DC2626' },
-              { label: 'Currency', value: code },
-            ]}
-          />
+          {/* Only the currency under the chart: no Start, End or Change (Mahreen, 2026-11-20). */}
+          <WidgetStatRow stats={[{ label: 'Currency', value: code }]} />
         </>
       )}
     </>
@@ -3686,7 +3668,7 @@ function RegisterTab({ transactions, currency, statistical, accountId, initialRa
                 // A line typed in this currency is the amount typed; there is no
                 // booked restatement of it to explain.
                 return currency !== base && !typedIn(t, currency)
-                  ? <FxPostingTooltip code={currency} base={base} booked={v}><span className="cursor-help">{label}</span></FxPostingTooltip>
+                  ? <FxPostingTooltip code={currency} base={base} booked={v} side={side}><span className="cursor-help">{label}</span></FxPostingTooltip>
                   : label
               }
               const cell = (k: TxColKey) => {

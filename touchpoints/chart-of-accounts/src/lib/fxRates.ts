@@ -79,23 +79,34 @@ export function midRateOn(code: string, isoDate: string, base = 'USD'): number {
   return series.get(d) ?? round4(v)
 }
 
-/* Corporate rates are set by Treasury in the Currencies module, each from an
-   effective date until the next. Only some currencies carry one; an entry in
-   any other takes the mid-market rate. */
+/* Corporate rates are set in the Currencies & Exchange Rates module, each from
+   an effective date until the next, by a named person (the module's own
+   corporate rates are Ahtisham Ahmad's; Mahreen, 2026-11-20: "show the name of
+   the person who set a corporate rate, not 'Treasury'"). Only some currencies
+   carry one; an entry in any other takes the mid-market rate. */
 export interface CorporateRate { code: string; rate: number; effectiveDate: string; setBy: string }
 
 export const CORPORATE_RATES: CorporateRate[] = [
-  { code: 'EUR', rate: 1.0740, effectiveDate: '2026-10-01', setBy: 'Treasury' },
-  { code: 'EUR', rate: 1.0800, effectiveDate: '2026-11-01', setBy: 'Treasury' },
-  { code: 'CAD', rate: 0.7250, effectiveDate: '2026-11-01', setBy: 'Treasury' },
+  { code: 'EUR', rate: 1.0740, effectiveDate: '2026-10-01', setBy: 'Ahtisham Ahmad' },
+  { code: 'EUR', rate: 1.0800, effectiveDate: '2026-11-01', setBy: 'Ahtisham Ahmad' },
+  { code: 'CAD', rate: 0.7250, effectiveDate: '2026-11-01', setBy: 'Ahtisham Ahmad' },
 ]
 
-/** The corporate rate in effect on a day, if Treasury has set one. */
+/** The corporate rate in effect on a day, if one has been set. */
 export function corporateRateOn(code: string, isoDate: string): CorporateRate | undefined {
   const day = isoDate.slice(0, 10)
   return CORPORATE_RATES
     .filter(r => r.code === code && r.effectiveDate <= day)
     .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate))[0]
+}
+
+/** Who set the corporate rate in effect for `code` on a day; without a day,
+ *  the latest one. */
+export function corporateSetBy(code: string, isoDate?: string): string {
+  const r = isoDate
+    ? corporateRateOn(code, isoDate)
+    : CORPORATE_RATES.filter(c => c.code === code).sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate))[0]
+  return r?.setBy ?? CORPORATE_RATES[0].setBy
 }
 
 export interface RateQuote {
@@ -110,7 +121,7 @@ export interface RateQuote {
 export const MID_SOURCE = 'Open Exchange Rates'
 
 /** The rate an entry in `code` dated `isoDate` takes, of the kind asked for. A
- *  corporate rate where Treasury has none falls back to mid-market. */
+ *  corporate rate where none is set falls back to mid-market. */
 export function rateQuote(code: string, isoDate: string, kind: RateKind, base = 'USD'): RateQuote {
   if (kind === 'corporate') {
     const c = corporateRateOn(code, isoDate)

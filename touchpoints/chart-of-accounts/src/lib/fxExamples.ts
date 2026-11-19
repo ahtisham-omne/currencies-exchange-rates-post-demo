@@ -13,8 +13,7 @@ import { rateQuote, unitsPerBase, type RateKind } from './fxRates'
    entry in another currency (see NewJournalEntryModal):
    - one currency for the whole entry, every line typed in it;
    - the rate is the entry date's, of the kind the company takes (mid-market
-     for GBP, which Treasury sets no corporate rate for; Treasury's corporate
-     rate for EUR);
+     for GBP, which has no corporate rate; the corporate rate for EUR);
    - a dollar account's line is converted at that rate, and a pound account
      only appears in a pound entry;
    - it balances in both currencies, the cent the line-by-line conversion
@@ -53,7 +52,7 @@ export const FX_EXAMPLES: Example[] = [
     time: '15:05:00',
     currency: 'EUR',
     kind: 'corporate',
-    memo: 'Interest credited on the Deutsche Bank euro account, booked at Treasury\'s corporate rate.',
+    memo: 'Interest credited on the Deutsche Bank euro account, booked at the corporate rate.',
     lines: [
       { number: '11170', side: 'debit', amount: 418.6, description: 'Interest credited, October balance' },
       { number: '42010', side: 'credit', amount: 418.6, description: 'Interest on the euro account' },

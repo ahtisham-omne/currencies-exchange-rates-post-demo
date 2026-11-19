@@ -15,6 +15,7 @@ import { AUDIT_HELP, GridComfort, PersonCell, StampCell, peopleIn, PERSON_PAD, p
 import { ME_MODE } from '../lib/features'
 import { currencyMeta, bookedFromBase, currentOwnBalanceOf, fxStanding, formatRate, PEGGED_TO_BASE, RATE_SOURCE, RATE_AS_OF_TIME, REVALUED_ON } from '../lib/currencies'
 import { useStore, usePeriodScopedAccounts, useSelectedPeriod, lifecycleCtx, useAccountNumberText } from '../store'
+import { corporateSetBy } from '../lib/fxRates'
 import { actionToward, canDeleteAccount, planLifecycle, showsSummaryTotal, statusesFor, statusMeaningLines } from '../lib/accountLifecycle'
 import type { LifecycleAction } from '../lib/accountLifecycle'
 import { manualPostingLock } from '../lib/journalEntry'
@@ -1040,9 +1041,11 @@ function LastBooked({ accountId, opening }: { accountId?: string; opening?: bool
 
    The booked leg comes first because it is the figure the ledger carries and
    the one every total adds up. The indicative leg is fenced into its own block
-   and says outright that the difference has not reached FX Gain/Loss: an
-   unrealized movement shown beside a booked figure is otherwise read as money
-   that has already been posted. */
+   and says outright that the difference is not booked yet, and where it books
+   at period end: a movement shown beside a booked figure is otherwise read as
+   money that has already been posted. Mahreen, 2026-11-20: *"We don't split FX
+   into realized and unrealized: everything posts to FX Gain or FX Loss."* When
+   nothing is left to book, the card ends at "Last booked on". */
 export function FxBalanceTooltip({ code, base, booked, own, accountId, children }: {
   code: string; base: string; booked: number
   /** The balance in its own currency, where it differs from the restatement. */
@@ -1063,19 +1066,18 @@ export function FxBalanceTooltip({ code, base, booked, own, accountId, children 
         <LastBooked accountId={accountId} />
       </FxInset>
       {PEGGED_TO_BASE.has(code) ? (
-        /* A peg has no unrealized movement to report, and an "Unrealized $ 0.00"
-           line would read as a revaluation waiting to be posted rather than as a
+        /* A peg has no movement to book, and a "Not yet booked $ 0.00" line
+           would read as a revaluation waiting to be posted rather than as a
            rate that cannot move. */
         <div className="mt-[8px]">
-          <FxNote>{code} is pegged to {base} at {symbolFor(code)}{formatRate(fx.rate)}, so there is no unrealized difference.</FxNote>
+          <FxNote>{code} is pegged to {base} at {symbolFor(code)}{formatRate(fx.rate)}, so there's nothing to book.</FxNote>
         </div>
-      ) : (
+      ) : nothingToBook(fx.difference) ? null : (
         <FxInset tone="amber">
           <FxLine label="At today's rate" value={fmtMoney(fx.indicative, symbolFor(base))} />
-          {/* Deliberately not coloured as a gain or a loss. Whether a rise in the
-              base value is one or the other depends on which side of the balance
-              sheet the account sits, and the cell does not know. */}
-          <FxLine label="Unrealized difference" value={fmtMoneySigned(fx.difference, symbolFor(base))} />
+          {/* Not coloured as a gain or a loss; the line under it says which. */}
+          <FxLine label="Not yet booked" value={fmtMoneySigned(fx.difference, symbolFor(base))} />
+          <BooksTo difference={fx.difference} accountId={accountId} />
           <FxNote>{unitRate(code, base, fx.rate)}</FxNote>
           <FxRateType type="mid" label="Mid-market" source={RATE_SOURCE} />
           <FxNote small>As of {RATE_AS_OF_TIME}</FxNote>
@@ -1084,6 +1086,28 @@ export function FxBalanceTooltip({ code, base, booked, own, accountId, children 
     </div>
   )
   return <Tooltip rich align="right" side="top" content={card}>{children}</Tooltip>
+}
+
+/** Under a cent either way: nothing left to book. */
+const nothingToBook = (difference: number) => Math.round(difference * 100) === 0
+
+/* "Books to FX Loss at period end.": where what isn't booked yet goes when the
+   period closes. A rise in the base value is a gain on the debit side (an
+   asset's balance, a debit line), as Mahreen wrote it ("FX Gain when the
+   difference is positive"), and a loss on the credit side: a dearer pound owed
+   costs more. Read when the card opens, like LastBooked. */
+function BooksTo({ difference, accountId, side }: {
+  difference: number
+  /** For a balance: the account, whose category gives its side. */
+  accountId?: string
+  /** For a line: the side it posts on. */
+  side?: 'debit' | 'credit'
+}) {
+  const accounts = useStore(s => s.accounts)
+  const account = accountId ? accounts.find(a => a.id === accountId) : undefined
+  const creditSide = side ? side === 'credit' : account ? account.accountType === 'LIA' || account.accountType === 'EQT' || account.accountType === 'REV' : false
+  const gain = creditSide ? difference < 0 : difference > 0
+  return <FxNote>Books to {gain ? 'FX Gain' : 'FX Loss'} at period end.</FxNote>
 }
 
 /* Hover card for a single posting written in another currency.
@@ -1095,17 +1119,23 @@ export function FxBalanceTooltip({ code, base, booked, own, accountId, children 
    the base it posted at, with the rate, its kind and its date - sits what the
    same amount is worth at today's rate and the difference, in the amber block
    the balance card uses for the same reading. A posting typed in base (no
-   rate of its own) states its booked figure only. */
-export function FxPostingTooltip({ code, base, booked, rate, on, typed, rateType, children }: {
+   rate of its own) states its booked figure only. Mahreen, 2026-11-20: the
+   same reading as the balance card ("Not yet booked", where it books), and a
+   corporate rate names the person who set it. */
+export function FxPostingTooltip({ code, base, booked, rate, on, onIso, typed, rateType, side, children }: {
   code: string; base: string; booked: number
   /** The rate the posting itself was written at (units per one of base), where it carries one. */
   rate?: number
   /** The day it posted, read with `rate`. */
   on?: string
+  /** The same day, ISO: whose corporate rate was in effect. */
+  onIso?: string
   /** The line as typed in `code`, where it was. */
   typed?: number
   /** The kind of rate the entry took. */
   rateType?: 'mid' | 'corporate' | 'manual'
+  /** The side the line posts on: which way its difference books. */
+  side?: 'debit' | 'credit'
   children: React.ReactNode
 }) {
   const fx = fxStanding(booked, code)
@@ -1113,7 +1143,7 @@ export function FxPostingTooltip({ code, base, booked, rate, on, typed, rateType
   const amount = own && typed != null ? typed : fx.own
   const kind = rateType ?? 'mid'
   const kindLabel = kind === 'corporate' ? 'Corporate' : kind === 'manual' ? 'Typed on the entry' : 'Mid-market'
-  const kindSource = kind === 'corporate' ? 'Set by Treasury' : kind === 'manual' ? undefined : RATE_SOURCE
+  const kindSource = kind === 'corporate' ? `Set by ${corporateSetBy(code, onIso)}` : kind === 'manual' ? undefined : RATE_SOURCE
   const today = amount / fx.rate
   const card = (
     <div className="p-[12px] whitespace-nowrap">
@@ -1126,10 +1156,16 @@ export function FxPostingTooltip({ code, base, booked, rate, on, typed, rateType
         <FxNote>At {own ? unitRate(code, base, rate) : fxRate(base, code, fx.bookedRate)} · {own && on ? on : REVALUED_ON}</FxNote>
         {own && <FxRateType type={kind === 'corporate' ? 'corporate' : 'mid'} label={kindLabel} source={kindSource} />}
       </FxInset>
-      {own && !PEGGED_TO_BASE.has(code) && (
+      {own && PEGGED_TO_BASE.has(code) && (
+        <div className="mt-[8px]">
+          <FxNote>{code} is pegged to {base} at {symbolFor(code)}{formatRate(fx.rate)}, so there's nothing to book.</FxNote>
+        </div>
+      )}
+      {own && !PEGGED_TO_BASE.has(code) && !nothingToBook(today - booked) && (
         <FxInset tone="amber">
           <FxLine label="At today's rate" value={fmtMoney(today, symbolFor(base))} />
-          <FxLine label="Unrealized difference" value={fmtMoneySigned(today - booked, symbolFor(base))} />
+          <FxLine label="Not yet booked" value={fmtMoneySigned(today - booked, symbolFor(base))} />
+          <BooksTo difference={today - booked} side={side} />
           <FxNote>{unitRate(code, base, fx.rate)}</FxNote>
           <FxRateType type="mid" label="Mid-market" source={RATE_SOURCE} />
           <FxNote small>As of {RATE_AS_OF_TIME}</FxNote>

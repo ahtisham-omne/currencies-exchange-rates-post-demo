@@ -393,14 +393,14 @@ function AdjustmentBanner({ entry }: { entry: ReconstructedEntry }) {
    add up the typed amounts only where every line was typed in one currency -
    amounts in different currencies cannot be added - and the base totals always. */
 function LinesTable({ lines, base, date, totalDebit, totalCredit, entryCurrency, flagSystemAccounts }: { lines: JeLine[]; base: string; date: string; totalDebit: number; totalCredit: number; entryCurrency?: string; flagSystemAccounts?: boolean }) {
-  const money = (baseValue: number, typed: number | undefined, code: string | undefined, rate?: number, strong = false, rateType?: 'mid' | 'corporate' | 'manual') => {
+  const money = (baseValue: number, typed: number | undefined, code: string | undefined, rate?: number, strong = false, rateType?: 'mid' | 'corporate' | 'manual', side?: 'debit' | 'credit') => {
     if (!baseValue && !typed) return <span className="text-fg-subtle">-</span>
     if (!code || typed === undefined) return <span className="whitespace-nowrap">{fmtCurrencyExact(baseValue, base)}</span>
     const amount = <span className={cn('whitespace-nowrap', !strong && 'text-slate-700')}>{fmtCurrencyExact(typed, code)}</span>
     return (
       <>
         {rate
-          ? <FxPostingTooltip code={code} base={base} booked={baseValue} rate={rate} on={fmtDate(date)} typed={typed} rateType={rateType}><span className="cursor-help">{amount}</span></FxPostingTooltip>
+          ? <FxPostingTooltip code={code} base={base} booked={baseValue} rate={rate} on={fmtDate(date)} onIso={date} typed={typed} rateType={rateType} side={side}><span className="cursor-help">{amount}</span></FxPostingTooltip>
           : amount}
         <span className="block text-[11px] text-fg-muted whitespace-nowrap" style={{ fontWeight: 400 }}>{fmtCurrencyExact(baseValue, base)}</span>
       </>
@@ -443,8 +443,8 @@ function LinesTable({ lines, base, date, totalDebit, totalCredit, entryCurrency,
               <td>{l.account ? <CategoryCell meta={ACCOUNT_TYPE_META[l.account.accountType]} /> : <span className="text-fg-subtle">-</span>}</td>
               <td className="text-muted-foreground [overflow-wrap:anywhere]">{l.description || <span className="text-fg-subtle">-</span>}</td>
               <td><DimensionPills dimensionValues={l.dimensionValues} /></td>
-              <td className="text-right tabular-nums text-slate-700">{money(l.debit, l.fxDebit || undefined, l.currency ?? entryCurrency, l.rate, false, l.rateType)}</td>
-              <td className="text-right tabular-nums text-slate-700">{money(l.credit, l.fxCredit || undefined, l.currency ?? entryCurrency, l.rate, false, l.rateType)}</td>
+              <td className="text-right tabular-nums text-slate-700">{money(l.debit, l.fxDebit || undefined, l.currency ?? entryCurrency, l.rate, false, l.rateType, 'debit')}</td>
+              <td className="text-right tabular-nums text-slate-700">{money(l.credit, l.fxCredit || undefined, l.currency ?? entryCurrency, l.rate, false, l.rateType, 'credit')}</td>
             </tr>
           ))}
         </tbody>
