@@ -3,6 +3,7 @@
 // Linked transactions table tab, Notes / Attachments / Activity, a ConfirmModal
 // (lifecycle) and a FormModal, toasts.
 import { useMemo, useState } from 'react'
+import { SourceLink } from '../../pages/exchange/SourceLink'
 import { useNavigate } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import {
@@ -261,7 +262,7 @@ function DashboardTab({ c, rate, change, corporate, docs }: {
               <div className="min-w-0"><DashInfoLabel>Mid-market rate</DashInfoLabel><InfoValue strong className="tabular-nums">{rate.toFixed(4)}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel align="right">Inverse rate</DashInfoLabel><InfoValue className="tabular-nums">{(1 / rate).toFixed(6)}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel>Corporate rate</DashInfoLabel>{corporate ? <InfoValue className="tabular-nums">{corporate.toFixed(4)}</InfoValue> : <InfoValue empty>Not set</InfoValue>}</div>
-              <div className="min-w-0"><DashInfoLabel align="right">Source</DashInfoLabel><InfoValue>Open Exchange Rates</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align="right">Source</DashInfoLabel><InfoValue><SourceLink className="text-primary" /></InfoValue></div>
             </InfoGrid>
             <div className="min-w-0"><DashInfoLabel>Last sync</DashInfoLabel><InfoValue>Apr 10, 2026, 2:30 PM</InfoValue></div>
           </DashInfoCard>

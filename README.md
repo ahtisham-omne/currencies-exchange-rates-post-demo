@@ -24,6 +24,15 @@ npm run dev                   # main app + a live, hot-reloading server per touc
 
 Lovable and deploys show the built copy, so a change that isn't rebuilt doesn't appear there. `npm run dev` warns when a built copy is older than its source.
 
+### The rate provider's link
+
+"Open Exchange Rates" links to [openexchangerates.org](https://openexchangerates.org) wherever it's shown on screen, opening in a new tab:
+
+- **The shell's pages:** `SourceLink` in `src/app/pages/exchange/SourceLink.tsx`.
+- **Every module:** `ProviderLink` and `linkProvider` in its `components/currency/ProviderLink.tsx` (`components/ProviderLink.tsx` in Chart of Accounts). Rate hover cards (`FxCard`'s rate-type line), rate cards and rate lines all go through it.
+
+Printed documents, message text and plain tooltips keep the name as plain text.
+
 ### Vendor Invoicing
 
 Vendor Invoicing is the redesigned app from [`vendor-invoicing-payments`](https://github.com/ahtisham-omne/vendor-invoicing-payments), added as a squashed subtree. [docs/vendor-invoicing-currency-touchpoints.md](docs/vendor-invoicing-currency-touchpoints.md) records:
@@ -84,7 +93,12 @@ Chart of Accounts is the app from [`chart-of-accounts-general-ledger-v2.1`](http
 
 - Shell paths are `/accounting` plus the app's own path: `/accounting/chart-of-accounts`, `/accounting/general-ledger`, and the Setup screens (`/accounting/numbering`, `/accounting/merge`, `/accounting/fiscal-year`, `/accounting/dimensions`).
 - `src/embedding.ts` holds everything it needs to run inside the shell. Its own sidebar is hidden, and its "Accounting" crumb opens the shell's Accounting overview.
-- Its currency and exchange-rate touchpoints aren't added yet.
+- **Currency touchpoints** (`lib/currencies.ts`, `lib/fxRates.ts`, `lib/fxExamples.ts`, the hover cards in `components/AccountTable.tsx`, `components/NewJournalEntryModal.tsx`). The base currency is USD.
+  - **Foreign-currency accounts** (11160 Savings - Barclays in GBP, 11170 EUR Account - Deutsche Bank) show a balance hover with three things: the balance in the account's currency, what is booked in USD, and when it was last booked. When part isn't booked yet, the hover adds the amount at today's rate, "Not yet booked" and "Books to FX Gain/Loss at period end." There is no realized/unrealized split (Mahreen, 20 Nov 2026). A rise is a gain on the debit side (an asset's balance, a debit line) and a loss on the credit side. A pegged currency says there's nothing to book. Line amounts in a journal entry have the same hover.
+  - **The account page's Foreign closing balance trend** shows only the Currency under the chart.
+  - **Sample entries in another currency:** JE-2026-7686 (GBP, on 11160, mid-market rate) and JE-2026-7685 (EUR, on 11170, corporate rate).
+  - **A new journal entry in another currency** takes one currency for all its lines. A foreign account only goes on an entry in its own currency. The rate caption names who set a corporate rate (`CORPORATE_RATES`, Ahtisham Ahmad as in Currency & Exchange Rates), or reads "…, the entry date" for mid-market.
+  - Store version 15 reseeds demo data saved by an earlier build.
 
 To pull later design changes:
 
@@ -102,6 +116,7 @@ User Access Control is the app from [`User-Access-Control`](https://github.com/a
 - `src/embedding.ts` holds everything it needs to run inside the shell. Its own sidebar is hidden, root-relative links resolve against its base path, and its public files (the View in Module screenshots, the import templates) load from it.
 - **General Settings** (`/company-settings/general`, `src/app/components/general-settings/`) is the Company Profile tab of the General Settings prototype ([alert-settings-omne](https://alert-settings-omne.lovable.app/company-settings/company-profile)), built in UAC: Company Information, Account Owners (read from UAC's Account Owner role) and Global Preferences, each with its Edit dialog. Storage and Activity Log stay in the prototype.
   - **The currency touchpoint:** Global Preferences' "Default Display Currency" is the company's **Base Currency**, PKR to start. Edit Global Settings changes it with the currency dropdown every module uses (`components/currency/CurrencyDropdown.tsx`, ported from Partners: flag and "PKR, Pakistani Rupee", searchable by code, name or country). The Country of Legal Registration picker is the same dropdown over 250 countries.
+  - It isn't locked here (Mahreen, 20 Nov 2026). Its info tooltip, on the page and in the dialog, says "You can change this until your first posting to the general ledger. After that it locks, because every amount in your books is kept in this currency." (`general-settings/copy.ts` `BASE_CURRENCY_TIP`).
   - Edits last for the session, like the rest of UAC's sample data. Changing the base currency here doesn't re-base the other modules, which keep PKR.
 
 To pull later design changes:

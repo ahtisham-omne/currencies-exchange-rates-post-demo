@@ -4,6 +4,8 @@
 // the mid-market page shows the provider's syncs, the corporate page the
 // corporate rate's changes. The page's range does not narrow it.
 import { useEffect, useMemo, useState } from 'react'
+import { SourceLink } from './SourceLink'
+import { API_PROVIDER } from '../../data/exchangeRates'
 import { RATE_TOOLTIPS } from '../../utils/rateCopy'
 import { Marked } from '../../coa/components/ui'
 import { CoaTableCard, PillRow, TableEmptyState } from '../../coa/components/TableCard'
@@ -69,7 +71,7 @@ export function RateHistoryTab({ rows, code, isStd }: { rows: RateHistoryRow[]; 
     },
     {
       key: 'source', label: 'Source', headerClassName: 'min-w-[160px]',
-      render: (r, ctx) => <span className="text-sm text-slate-700 whitespace-nowrap"><Marked text={r.source} q={ctx.q} /></span>,
+      render: (r, ctx) => <span className="text-sm text-slate-700 whitespace-nowrap">{r.source === API_PROVIDER ? <SourceLink className="text-primary" /> : <Marked text={r.source} q={ctx.q} />}</span>,
       sortValue: r => r.source, searchText: r => r.source, filter: 'multiselect',
     },
   ], [code, isStd])

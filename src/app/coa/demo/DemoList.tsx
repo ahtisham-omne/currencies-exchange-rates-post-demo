@@ -2,6 +2,7 @@
 // tabs, KPI shelf, table card with toolbar, pills, bulk bar, a 150-row table
 // with frozen and Actions columns, Filters modal, Columns panel, density menu.
 import { useEffect, useMemo, useState } from 'react'
+import { SourceLink } from '../../pages/exchange/SourceLink'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowRightLeft, ChevronDown, CircleCheck, CircleSlash, Coins, Download, Eye, FileSpreadsheet, FileText,
@@ -438,7 +439,7 @@ export function DemoList() {
               table={rateTable}
               notes={
                 <div className="px-4 py-3 border-b border-border">
-                  <Banner tone="info" title="Mid-market rates">Synced from Open Exchange Rates. Corporate rates you set are kept apart and never overwritten by a sync.</Banner>
+                  <Banner tone="info" title="Mid-market rates">Synced from <SourceLink className="underline underline-offset-2" />. Corporate rates you set are kept apart and never overwritten by a sync.</Banner>
                 </div>
               }
               toolbar={

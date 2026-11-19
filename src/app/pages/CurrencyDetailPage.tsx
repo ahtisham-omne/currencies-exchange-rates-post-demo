@@ -4,6 +4,7 @@
 // rail, the Linked transactions register, and the record tabs (Notes,
 // Attachments, Communications, Activity).
 import { useCallback, useMemo } from 'react'
+import { SourceLink } from './exchange/SourceLink'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeftRight, ChevronDown, CircleSlash, Coins, Download, FileText, MessageSquare, Power } from 'lucide-react'
 import { CoaPage } from '../coa/components/CoaPage'
@@ -258,7 +259,7 @@ function DashboardTab({ c, mid, corporate, upcoming }: {
               </div>
               {/* The base currency's rates come from no provider, so it has no Source;
                   Last Synced then opens the row on the left. */}
-              {!c.isBaseCurrency && <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{API_PROVIDER}</InfoValue></div>}
+              {!c.isBaseCurrency && <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue><SourceLink className="text-primary" /></InfoValue></div>}
               <div className="min-w-0"><DashInfoLabel align={c.isBaseCurrency ? undefined : 'right'} tooltip={RATE_TOOLTIPS.lastSync}>Last Synced</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
             </InfoGrid>
             {(corporate || upcoming) && (

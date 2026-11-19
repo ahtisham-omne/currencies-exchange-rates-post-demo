@@ -3,6 +3,7 @@
 // type, Dashboard (range bar, insights tiles and chart widgets, rail cards),
 // Rate history as a table tab, then Notes, Attachments, Communications, Activity.
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { SourceLink } from './exchange/SourceLink'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Activity, Archive, ArchiveRestore, ArrowLeftRight, Check, ChevronDown, FileText, MessageSquare, Pencil, Plus, Star,
@@ -312,7 +313,7 @@ export function CurrencyPairDetailPage() {
             </>
           ) : (
             <>
-              <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue>{API_PROVIDER}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue><SourceLink className="text-primary" /></InfoValue></div>
               <div className="min-w-0">
                 <DashInfoLabel align="right">Effective Date</DashInfoLabel>
                 <InfoValue>{fmtDate(mid.effectiveDate)}</InfoValue>
