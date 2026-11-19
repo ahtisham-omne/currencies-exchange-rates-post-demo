@@ -1,6 +1,7 @@
 import { formatMoney as moneyIn, formatRateDate, rateSentence } from '@/app/currency/money';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
-import { RATE_PROVIDER, toBase } from '@/app/currency/rates';
+import { toBase } from '@/app/currency/rates';
+import { ProviderLink } from '@/app/components/currency/ProviderLink';
 import { returnFx, returnReceipts } from '@/app/currency/returnCurrency';
 import { useMemo, useState } from 'react';
 import {
@@ -801,7 +802,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
               {receipts.map((r) => (
                 <p key={r.grnNumber} className="tabular-nums mt-0.5 text-slate-500">
                   <span style={{ fontWeight: 600 }} className="text-slate-700">{r.grnNumber}</span> received {formatRateDate(r.date)} ·{' '}
-                  <span style={{ fontWeight: 600 }} className="text-slate-700">{rateSentence(currency, r.rate)}</span> · Mid-market, {RATE_PROVIDER}
+                  <span style={{ fontWeight: 600 }} className="text-slate-700">{rateSentence(currency, r.rate)}</span> · Mid-market, <ProviderLink />
                 </p>
               ))}
               {receipts.length > 1 && fx.breakdown && (
