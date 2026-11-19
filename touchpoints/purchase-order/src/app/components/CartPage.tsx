@@ -63,10 +63,9 @@ import QuantityStepperInput from "./QuantityStepperInput";
 import ItemStatusChip from "./ItemStatusChip";
 import { lineOneTimeNet } from "./poOrderPricing";
 import { BaseMoney, Money } from "./currency/Money";
-import { CurrencyFlag } from "./currency/CurrencyChip";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatMoney } from "@/app/currency/money";
-import { poFx, ruleAmountFactorToday, toBaseToday, todayFx, vendorCurrency, type PoFx } from "@/app/currency/poFx";
+import { poFx, ruleAmountFactorToday, toBaseToday, vendorCurrency, type PoFx } from "@/app/currency/poFx";
 
 /* ═══════════════════════════════════════════════════════════════
    DESIGN CONSTANTS — Partners-aligned (mirrors PO detail page)
@@ -335,11 +334,8 @@ export default function CartPage() {
   const totalCheckedCount = checkedCart.length;
   const totalCheckedVendors = new Set(checkedCart.map((c) => c.catalogItem.partnerLocation || "Unknown Vendor")).size;
   const itemCount = checkedCart.reduce((sum, i) => sum + i.quantity, 0);
-  const cartCurrencies = new Set(checkedCart.map((c) => vendorCurrency(c.catalogItem.partnerLocation)));
-  /* Purchase Orders shows prices in the base currency: the totals are in
-     base, each vendor's amounts converted at today's rate (the cart isn't a
-     PO yet), the vendor's own figure on hover. */
-  const foreignInCart = [...cartCurrencies].some((c) => c !== BASE_CURRENCY);
+  /* The cart shows prices and totals in the base currency, plain: no
+     currency tags, rate hovers or conversion note (Mahreen, 2026-11-20). */
   const totalsCurrency = BASE_CURRENCY;
   const inTotals = (amount: number, vendor: string) => toBaseToday(amount, vendorCurrency(vendor));
   const subtotal = checkedCart.reduce((s, i) => s + inTotals(i.unitPrice * i.quantity, i.catalogItem.partnerLocation), 0);
@@ -971,13 +967,8 @@ export default function CartPage() {
                           <div className="flex items-center gap-3 mt-1">
                             <span style={{ fontSize: 12, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
                               Subtotal:{" "}
-                              {/* In the vendor's currency: this group becomes one PO in it (spec 4.2). */}
                               <span className="tabular-nums" style={{ fontWeight: 600, color: C.text900 }}>
-                                <BaseMoney value={group.checkedTotal} currency={group.currency} fx={todayFx(group.currency)} dateLabel="today" role="Vendor currency" />
-                              </span>
-                              <span className="inline-flex items-center gap-1 ml-1.5 align-middle" style={{ fontSize: 10, fontWeight: 500, color: C.text500 }}>
-                                <CurrencyFlag code={group.currency} size={10} />
-                                {group.currency}
+                                {formatMoney(toBaseToday(group.checkedTotal, group.currency), BASE_CURRENCY)}
                               </span>
                             </span>
                             {group.checkedDiscount > 0 && (
@@ -1148,14 +1139,9 @@ export default function CartPage() {
                               {g.checkedCount} of {g.selectableCount} selected
                             </span>
                           </div>
-                          {/* Each vendor in its own currency (spec 4.3). */}
                           <span className="shrink-0 flex flex-col items-end">
                             <span className="tabular-nums" style={{ fontSize: 12, fontWeight: 600, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}>
-                              <BaseMoney value={g.checkedTotal} currency={g.currency} fx={todayFx(g.currency)} dateLabel="today" role="Vendor currency" />
-                            </span>
-                            <span className="inline-flex items-center gap-1" style={{ fontSize: 10, fontWeight: 500, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
-                              <CurrencyFlag code={g.currency} size={10} />
-                              {g.currency}
+                              {formatMoney(toBaseToday(g.checkedTotal, g.currency), BASE_CURRENCY)}
                             </span>
                           </span>
                         </div>
@@ -1271,17 +1257,6 @@ export default function CartPage() {
                           {formatMoney(grandTotal, totalsCurrency)}
                         </span>
                       </div>
-                      {/* The total is in base; vendors in other currencies are
-                          converted at today's rate (each PO takes the rate on
-                          its PO date). */}
-                      {checkedCart.length > 0 && foreignInCart && (
-                        <div className="flex items-center justify-end gap-1.5 text-right" style={{ fontSize: 11, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
-                          <CurrencyFlag code={BASE_CURRENCY} size={11} />
-                          <span>
-                            In {BASE_CURRENCY}, base currency · {cartCurrencies.size === 1 ? [...cartCurrencies][0] : `${cartCurrencies.size} currencies`} converted at today's rate
-                          </span>
-                        </div>
-                      )}
                     </div>
 
                     {/* Multi-vendor info — white card + Vendor-blue icon chip, matching
@@ -1737,7 +1712,7 @@ function CartLineItemCard({
             <span style={{ color: C.text400, fontSize: 10 }}>·</span>
             <div className="flex items-baseline gap-1 tabular-nums">
               <span style={{ fontSize: 13, fontWeight: 600, color: tx(C.text900), fontFamily: FONT, lineHeight: 1.4 }}>
-                <BaseMoney value={effectivePrice} currency={currency} fx={todayFx(currency)} dateLabel="today" role="Vendor currency" />
+                {formatMoney(toBaseToday(effectivePrice, currency), BASE_CURRENCY)}
               </span>
               <span style={{ fontSize: 10, fontWeight: 400, color: tx(C.text500), fontFamily: FONT, lineHeight: 1.4 }}>
                 / {cat.vendorUOM}
@@ -1943,7 +1918,7 @@ function RecentlyOrderedCard({
         {/* Price + unit + discount chip */}
         <div className="flex items-baseline gap-1 mt-1.5 tabular-nums">
           <span style={{ fontSize: 13, fontWeight: 700, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}>
-            <BaseMoney value={effectivePrice} currency={currency} fx={todayFx(currency)} dateLabel="today" role="Vendor currency" />
+            {formatMoney(toBaseToday(effectivePrice, currency), BASE_CURRENCY)}
           </span>
           <span style={{ fontSize: 10, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
             / {item.defaultUOM}

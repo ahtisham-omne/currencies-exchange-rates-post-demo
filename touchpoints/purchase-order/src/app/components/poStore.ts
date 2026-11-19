@@ -658,23 +658,30 @@ function restoreRateFields(po: PurchaseOrderData, snapshot: POVersionSnapshot): 
  * corporate rate, when that's the type and one is set; otherwise mid-market).
  * Amounts stay in the PO's currency, so what the vendor receives is unchanged;
  * only what the PO is worth in base moves. */
-export type VersionRateChoice = "locked" | "current";
+/** A new version's rate: the one it locked in, or today's of either type
+ *  (corporate only when one is set; Mahreen, 2026-11-20). */
+export type VersionRateChoice = "locked" | "current-mid" | "current-corporate";
 
-/** Today's rate for a PO, of its type. */
-export function currentRateFor(po: Parameters<typeof poFx>[0]): { exchangeRate: number; rateType: RateType; rateDate: string } {
+/** The type of today's rate a choice takes, or null when it keeps the locked one. */
+export const todaysRateType = (choice: VersionRateChoice): RateType | null =>
+  choice === "locked" ? null : choice === "current-corporate" ? "corporate" : "mid";
+
+/** Today's rate for a PO, of `type` (the PO's own by default). Corporate
+ *  falls back to mid-market when no corporate rate is set. */
+export function currentRateFor(po: Parameters<typeof poFx>[0], type?: RateType): { exchangeRate: number; rateType: RateType; rateDate: string } {
   const fx = poFx(po);
   const today = localTodayIso();
   if (fx.isBase) return { exchangeRate: 1, rateType: fx.rateType, rateDate: today };
-  const corp = fx.rateType === "corporate" ? rateOn(fx.currency, today, "corporate") : null;
+  const corp = (type ?? fx.rateType) === "corporate" ? rateOn(fx.currency, today, "corporate") : null;
   const quote = corp?.rate != null ? corp : rateOn(fx.currency, today, "mid");
   return { exchangeRate: quote.rate ?? fx.rate, rateType: quote.type, rateDate: today };
 }
 
 /** Restamp a PO with today's rate. Returns the version-history change, or null
  *  when the rate is already today's. */
-function applyCurrentRate(po: PurchaseOrderData): Omit<POChangeRecord, "id" | "timestamp" | "user"> | null {
+function applyCurrentRate(po: PurchaseOrderData, type?: RateType): Omit<POChangeRecord, "id" | "timestamp" | "user"> | null {
   const before = poRateFields(po);
-  const now = currentRateFor(po);
+  const now = currentRateFor(po, type);
   po.exchangeRate = now.exchangeRate;
   po.rateType = now.rateType;
   po.rateDate = now.rateDate;
@@ -867,7 +874,8 @@ export function recordPOVersion(
   const po = purchaseOrders.get(poId);
   if (!po) return null;
 
-  const rateChange = payload.rateChoice === "current" ? applyCurrentRate(po) : null;
+  const todayType = payload.rateChoice ? todaysRateType(payload.rateChoice) : null;
+  const rateChange = todayType ? applyCurrentRate(po, todayType) : null;
   if (rateChange) {
     applyComputedTotals(po);
     payload = {
@@ -1064,7 +1072,8 @@ export function revertPOToVersion(poId: string, version: number, reason: string,
   }));
   po.shippingFee = source.snapshot.shippingFee;
   restoreRateFields(po, source.snapshot);
-  if (rateChoice === "current") applyCurrentRate(po);
+  const todayType = todaysRateType(rateChoice);
+  if (todayType) applyCurrentRate(po, todayType);
   applyComputedTotals(po);
 
   po.currentVersion = version;

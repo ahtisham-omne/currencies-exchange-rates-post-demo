@@ -87,7 +87,6 @@ import { toast } from "sonner";
 import QuantityStepperInput from "./QuantityStepperInput";
 import ItemStatusChip from "./ItemStatusChip";
 import { computeCartVendorPricing } from "./poOrderPricing";
-import { CurrencyFlag } from "./currency/CurrencyChip";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatMoney } from "@/app/currency/money";
 import { toBaseToday, todayFx, vendorCurrency } from "@/app/currency/poFx";
@@ -1303,8 +1302,8 @@ export default function ItemsCatalogueModal({
                                   </div>
                                   <div className="flex items-center gap-3 mt-0.5">
                                     <span className="text-muted-foreground text-xs leading-[16px]" style={{ fontFamily: FONT }}>
-                                      Subtotal: <span className="text-foreground font-semibold" style={{ fontFamily: FONT }}><BaseMoney value={group.checkedTotal} currency={group.currency} fx={todayFx(group.currency)} dateLabel="today" role="Vendor currency" /></span>
-                                      <span className="inline-flex items-center gap-1 ml-1.5 align-middle text-[10px] font-medium"><CurrencyFlag code={group.currency} size={10} />{group.currency}</span>
+                                      Subtotal: <span className="text-foreground font-semibold" style={{ fontFamily: FONT }}>{formatMoney(toBaseToday(group.checkedTotal, group.currency), BASE_CURRENCY)}</span>
+                                      
                                     </span>
                                     {group.checkedDiscount > 0 && (
                                       <span className="text-xs leading-[16px] text-emerald-600 font-medium" style={{ fontFamily: FONT }}>
@@ -1396,7 +1395,7 @@ export default function ItemsCatalogueModal({
                                               </div>
                                               <span className="text-muted-foreground/50 text-[10px]">·</span>
                                               <div className="flex items-baseline gap-1">
-                                                <span className={`${muted("text-foreground")} text-xs font-semibold leading-[18px]`} style={{ fontFamily: FONT }}><BaseMoney value={effectivePrice} currency={vendorCurrency(cat.partnerLocation)} fx={todayFx(vendorCurrency(cat.partnerLocation))} dateLabel="today" role="Vendor currency" /></span>
+                                                <span className={`${muted("text-foreground")} text-xs font-semibold leading-[18px]`} style={{ fontFamily: FONT }}>{formatMoney(toBaseToday(effectivePrice, vendorCurrency(cat.partnerLocation)), BASE_CURRENCY)}</span>
                                                 <span className={`${muted("text-muted-foreground")} text-[10px] leading-[14px]`} style={{ fontFamily: FONT }}>/ {cat.vendorUOM}</span>
                                               </div>
                                               {deactivated && (
@@ -1473,12 +1472,8 @@ export default function ItemsCatalogueModal({
                         const totalCheckedCount = checkedCart.length;
                         const checkedVendorCount = new Set(checkedCart.map((c) => c.catalogItem.partnerLocation || "Unknown Vendor")).size;
                         const checkedItemCount = checkedCart.reduce((sum, i) => sum + i.quantity, 0);
-                        /* Vendors in different currencies: totals in base, each
-                           converted at today's rate (spec 4.3); one currency
-                           keeps its totals in it. Same as CartPage. */
-                        const cartCurrencies = new Set(checkedCart.map((c) => vendorCurrency(c.catalogItem.partnerLocation)));
-                        // Totals in base, each vendor's amounts at today's rate (Purchase Orders shows base).
-                        const foreignInCart = [...cartCurrencies].some((c) => c !== BASE_CURRENCY);
+                        /* Prices and totals in the base currency, plain, as on the
+                           Cart page (Mahreen, 2026-11-20). */
                         const totalsCurrency = BASE_CURRENCY;
                         const inTotals = (n: number, vendor: string) => toBaseToday(n, vendorCurrency(vendor));
                         const checkedSubtotal = checkedCart.reduce((s, i) => s + inTotals(i.unitPrice * i.quantity, i.catalogItem.partnerLocation), 0);
@@ -1504,8 +1499,7 @@ export default function ItemsCatalogueModal({
                                     <span className="text-muted-foreground text-[11px] leading-[15px]" style={{ fontFamily: FONT }}>{g.checkedCount} of {g.selectableCount} selected</span>
                                   </div>
                                   <span className="shrink-0 flex flex-col items-end">
-                                    <span className="text-foreground text-xs font-semibold leading-[16px]" style={{ fontFamily: FONT }}><BaseMoney value={g.checkedTotal} currency={g.currency} fx={todayFx(g.currency)} dateLabel="today" role="Vendor currency" /></span>
-                                    <span className="inline-flex items-center gap-1 text-muted-foreground text-[10px] leading-[14px]" style={{ fontFamily: FONT }}><CurrencyFlag code={g.currency} size={10} />{g.currency}</span>
+                                    <span className="text-foreground text-xs font-semibold leading-[16px]" style={{ fontFamily: FONT }}>{formatMoney(toBaseToday(g.checkedTotal, g.currency), BASE_CURRENCY)}</span>
                                   </span>
                                 </div>
                               ))}
@@ -1545,12 +1539,6 @@ export default function ItemsCatalogueModal({
                                 <span className="text-foreground text-base font-semibold leading-[22px]" style={{ fontFamily: FONT }}>Total</span>
                                 <span className="text-foreground text-xl font-bold leading-[28px]" style={{ fontFamily: FONT }}>{money(checkedGrandTotal)}</span>
                               </div>
-                              {checkedCart.length > 0 && foreignInCart && (
-                                <div className="flex items-center justify-end gap-1.5 text-right text-muted-foreground text-[11px] leading-[15px]" style={{ fontFamily: FONT }}>
-                                  <CurrencyFlag code={BASE_CURRENCY} size={11} />
-                                  <span>In {BASE_CURRENCY}, base currency · {cartCurrencies.size === 1 ? [...cartCurrencies][0] : `${cartCurrencies.size} currencies`} converted at today's rate</span>
-                                </div>
-                              )}
                             </div>
 
                             {checkedVendorCount > 1 && (

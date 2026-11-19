@@ -4823,7 +4823,7 @@ export default function PurchaseOrderDraft() {
         ? `Version ${newVer} created successfully`
         : `Version ${newVer} created — PO returned to Draft`;
       toast.success(msg, {
-        description: rateChoice === "current" ? "Today's exchange rate applied" : undefined,
+        description: rateChoice !== "locked" ? "Today's exchange rate applied" : undefined,
         style: { fontFamily: FONT },
       });
     }

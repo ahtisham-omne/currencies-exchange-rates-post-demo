@@ -11,6 +11,7 @@ import { formatMoney, formatRate, formatRateDate } from "@/app/currency/money";
 import { crossRate, poFx, vendorCurrency } from "@/app/currency/poFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
+import { ProviderLink } from "./ProviderLink";
 
 /* ── Order Summary: Currency and Exchange Rate (spec 4.3, 4.2) ────────
  * The PO's currency, defaulted from the vendor, is changed here, near the
@@ -273,7 +274,7 @@ export function POCurrencyFields({
           {isBase
             ? `${BASE_CURRENCY} is the base currency, so the rate is 1`
             : !corporate
-              ? `${RATE_TYPE_LABEL.mid} rate on ${day} (PO date) · ${RATE_PROVIDER}`
+              ? <>{RATE_TYPE_LABEL.mid} rate on {day} (PO date) · <ProviderLink /></>
               : po.rateEdited
                 ? corpQuote.rate != null
                   ? `Changed on the PO from ${formatRate(corpQuote.rate)}, the corporate rate on ${day}`
@@ -372,7 +373,7 @@ export function POCurrencyConfirmDialog({
               1 {from.currency} = {formatRate(crossRate(from.rate, next.exchangeRate))} {to}
               <span className="text-slate-400">
                 {" · "}
-                {type === "mid" ? RATE_PROVIDER : quote.source.replace(/^Set by/, "set by")}, {formatRateDate(from.rateDate)}
+                {type === "mid" ? <ProviderLink /> : quote.source.replace(/^Set by/, "set by")}, {formatRateDate(from.rateDate)}
               </span>
             </p>
             {wanted === "corporate" && type === "mid" && (

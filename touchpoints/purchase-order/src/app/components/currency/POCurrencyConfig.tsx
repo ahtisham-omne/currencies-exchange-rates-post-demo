@@ -10,6 +10,7 @@ import { formatMoney, formatRate, formatRateDate, moneyPrefix } from "@/app/curr
 import { crossRate, poFx, vendorCurrency } from "@/app/currency/poFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
+import { linkProvider } from "./ProviderLink";
 import { CurrencyPicker, POCurrencyConfirmDialog, RateTypeToggle, type POCurrencyChange } from "./POCurrencyFields";
 
 /* ── The PO's currency: Order Summary card and Currency Configuration ──
@@ -183,7 +184,7 @@ function RateCard({ from, rate, type, date, source }: { from: string; rate: numb
       <div className="flex items-center gap-1.5 text-[11px]">
         <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RATE_HEX[type] }} />
         <span style={{ color: RATE_HEX[type], fontWeight: 600 }}>{RATE_TYPE_LABEL[type]}</span>
-        <span className="text-slate-500">· {source}</span>
+        <span className="text-slate-500">· {linkProvider(source)}</span>
       </div>
       <div className="mt-1.5 text-[12px] text-slate-700 tabular-nums leading-5" style={{ fontWeight: 500 }}>
         <div>1 {from} = {formatRate(rate)} {BASE_CURRENCY}</div>
@@ -307,7 +308,7 @@ export function POCurrencyConfigDialog({
                   )}
                 </div>
                 <DialogDescription className="text-slate-500" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                  Applies only to PO {po.poNumber}. {po.vendor.name}'s default currency ({vendorDefault}) stays the same.
+                  Applies to PO {po.poNumber} only. The vendor's default currency ({vendorDefault}) doesn't change.
                 </DialogDescription>
               </div>
             </div>
@@ -334,9 +335,9 @@ export function POCurrencyConfigDialog({
               />
               <p className="text-[11px] text-slate-500 leading-relaxed">
                 {currency === vendorDefault
-                  ? `${po.vendor.name}'s default currency, from the partner record. `
+                  ? "Defaults to the vendor's currency. "
                   : `Changed from ${vendorDefault}, the vendor's default. `}
-                Changing it converts every line at the PO date's rates.
+                Changing it converts every line at the PO date's rate.
               </p>
             </Section>
 
@@ -362,7 +363,7 @@ export function POCurrencyConfigDialog({
                 </p>
               )}
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                The currency you settle this PO in. The base currency unless you set another here.
+                The currency you pay this PO in. Defaults to your base currency.
               </p>
             </Section>
 
@@ -432,8 +433,8 @@ export function POCurrencyConfigDialog({
             <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-[11.5px] leading-relaxed" style={{ backgroundColor: "#FFFBEB", color: "#92400E", border: "1px solid #FDE68A" }}>
               <Lock className="w-3 h-3 mt-[3px] shrink-0" />
               <span>
-                The rate is locked to the PO date. New versions keep it unless you apply the current rate when you create
-                one, so totals don't move with the market.
+                This rate is locked so the PO total doesn't move with the market. New versions keep it unless you switch
+                to today's rate.
               </span>
             </div>
           </div>
