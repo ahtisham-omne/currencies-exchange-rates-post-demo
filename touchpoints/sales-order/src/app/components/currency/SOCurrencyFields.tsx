@@ -10,6 +10,7 @@ import { formatMoney, formatRate, formatRateDate } from "@/app/currency/money";
 import { crossRate, customerCurrency, roundTo, soFx } from "@/app/currency/soFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
+import { ProviderLink } from "./ProviderLink";
 
 /* ── Order Summary: Currency and Exchange Rate (spec 4.3) ─────────────
  * Same pattern as Purchase Orders. The SO's currency, from the quote or
@@ -296,7 +297,7 @@ export function SOCurrencyFields({
           {isBase
             ? `${BASE_CURRENCY} is the base currency, so the rate is 1`
             : !corporate
-              ? `${RATE_TYPE_LABEL.mid} rate on ${day} (order date) · ${RATE_PROVIDER}`
+              ? <>{RATE_TYPE_LABEL.mid} rate on {day} (order date) · <ProviderLink /></>
               : so.rateEdited
                 ? corpQuote.rate != null
                   ? `Changed on the SO from ${formatRate(corpQuote.rate)}, the corporate rate on ${day}`
@@ -405,7 +406,7 @@ export function SOCurrencyConfirmDialog({
               1 {from.currency} = {formatRate(crossRate(from.rate, next.exchangeRate))} {to}
               <span className="text-slate-400">
                 {" · "}
-                {type === "mid" ? RATE_PROVIDER : quote.source.replace(/^Set by/, "set by")}, {formatRateDate(from.rateDate)}
+                {type === "mid" ? <ProviderLink /> : quote.source.replace(/^Set by/, "set by")}, {formatRateDate(from.rateDate)}
               </span>
             </p>
             {wanted === "corporate" && type === "mid" && (

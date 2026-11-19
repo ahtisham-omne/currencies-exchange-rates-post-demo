@@ -9,6 +9,7 @@ import { formatMoney, formatRate, formatRateDate, moneyPrefix } from "@/app/curr
 import { crossRate, customerCurrency, roundTo, soFx } from "@/app/currency/soFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
+import { linkProvider } from "./ProviderLink";
 import {
   CurrencyPicker,
   RateTypeToggle,
@@ -30,7 +31,10 @@ import {
  *  - The rate: the order date's, mid-market (read-only) or corporate
  *    (finance's, which can be changed on the order).
  * As before, all of it can be changed while the order is a Draft and is
- * locked once it leaves Draft; a new version can take today's rate. */
+ * locked once it leaves Draft; a new version can take today's rate.
+ * An order made from a quote keeps the quote's currency configuration
+ * (currency, rate and "You receive"), so it is locked from the start
+ * (Mahreen, 2026-11-20). */
 
 const FONT = "Inter, system-ui, sans-serif";
 
@@ -84,7 +88,8 @@ export function SOCurrencySummary({ so, total, onViewConfig }: { so: SalesOrder;
   const receive = (so.settlementCurrency ?? BASE_CURRENCY).toUpperCase();
   const receiveRate = rateToBase(receive, so);
   const receiveTotal = receive === fx.currency ? total : total * crossRate(fx.rate, receiveRate);
-  const locked = so.status !== "Draft";
+  const fromQuote = so.sourceQuoteRef || null;
+  const locked = so.status !== "Draft" || !!fromQuote;
 
   const rows: { label: string; code: string; amount: number }[] = [{ label: "Customer pays", code: fx.currency, amount: total }];
   if (receive !== fx.currency) rows.push({ label: "You receive", code: receive, amount: receiveTotal });
@@ -111,7 +116,9 @@ export function SOCurrencySummary({ so, total, onViewConfig }: { so: SalesOrder;
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-[240px] text-[11px]">
-                {fx.rateType === "mid"
+                {fromQuote
+                  ? `The ${RATE_TYPE_LABEL[fx.rateType].toLowerCase()} rate from quote ${fromQuote} (${formatRateDate(fx.rateDate)}). The order keeps the quote's rate.`
+                  : fx.rateType === "mid"
                   ? `The mid-market rate on ${formatRateDate(fx.rateDate)}, the order date · ${RATE_PROVIDER}`
                   : so.rateEdited
                     ? `A corporate rate entered on this order (${formatRateDate(fx.rateDate)})`
@@ -120,7 +127,13 @@ export function SOCurrencySummary({ so, total, onViewConfig }: { so: SalesOrder;
             </Tooltip>
           )}
           {locked && !fx.isBase && (
-            <LockedChip title={`Locked once the order left Draft (${so.status}). New versions keep this rate unless today's is applied.`} />
+            <LockedChip
+              title={
+                fromQuote
+                  ? `From quote ${fromQuote}. New versions keep this rate unless today's is applied.`
+                  : `Locked once the order left Draft (${so.status}). New versions keep this rate unless today's is applied.`
+              }
+            />
           )}
         </div>
       </div>
@@ -194,19 +207,36 @@ function AmountRow({ amount, code, picker }: { amount: number; code: string; pic
   );
 }
 
-function RateCard({ from, rate, type, date, source }: { from: string; rate: number; type: RateType; date: string; source: string }) {
+function RateCard({
+  from,
+  rate,
+  type,
+  date,
+  source,
+  fromQuote,
+}: {
+  from: string;
+  rate: number;
+  type: RateType;
+  date: string;
+  source: string;
+  /** The quote the order was made from: its rate is the quote's. */
+  fromQuote?: string | null | undefined;
+}) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
       <div className="flex items-center gap-1.5 text-[11px]">
         <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RATE_HEX[type] }} />
         <span style={{ color: RATE_HEX[type], fontWeight: 600 }}>{RATE_TYPE_LABEL[type]}</span>
-        <span className="text-slate-500">· {source}</span>
+        <span className="text-slate-500">· {linkProvider(source)}</span>
       </div>
       <div className="mt-1.5 text-[12px] text-slate-700 tabular-nums leading-5" style={{ fontWeight: 500 }}>
         <div>1 {from} = {formatRate(rate)} {BASE_CURRENCY}</div>
         <div className="text-slate-500" style={{ fontWeight: 400 }}>1 {BASE_CURRENCY} = {formatRate(1 / rate)} {from}</div>
       </div>
-      <p className="mt-1 text-[10.5px] text-slate-400">Rate on {formatRateDate(date)}, the order date</p>
+      <p className="mt-1 text-[10.5px] text-slate-400">
+        {fromQuote ? `Rate on ${formatRateDate(date)}, from quote ${fromQuote}` : `Rate on ${formatRateDate(date)}, the order date`}
+      </p>
     </div>
   );
 }
@@ -306,7 +336,9 @@ export function SOCurrencyConfigDialog({
     setRateText(null);
   };
 
-  const readOnly = !canEdit;
+  /* Made from a quote: the quote's configuration, not changed here. */
+  const fromQuote = so.sourceQuoteRef || null;
+  const readOnly = !canEdit || !!fromQuote;
 
   return (
     <>
@@ -326,10 +358,12 @@ export function SOCurrencyConfigDialog({
                   <DialogTitle className="text-slate-900" style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>
                     Currency Configuration
                   </DialogTitle>
-                  {readOnly && <LockedChip title={`Locked once the order left Draft (${so.status}).`} />}
+                  {readOnly && (
+                    <LockedChip title={fromQuote ? `From quote ${fromQuote}, so it can't change here.` : `Locked once the order left Draft (${so.status}).`} />
+                  )}
                 </div>
                 <DialogDescription className="text-slate-500" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                  Applies only to {so.soNumber}. {so.customer || "The customer"}'s default currency ({customerDefault}) stays the same.
+                  Applies to order {so.soNumber} only. The customer's default currency ({customerDefault}) doesn't change.
                 </DialogDescription>
               </div>
             </div>
@@ -355,12 +389,14 @@ export function SOCurrencyConfigDialog({
                 }
               />
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                {currency !== customerDefault
-                  ? `Changed from ${customerDefault}, the customer's default. `
-                  : so.sourceQuoteRef
-                    ? `From quote ${so.sourceQuoteRef}, in the customer's default currency. `
-                    : `${so.customer || "The customer"}'s default currency, from the partner record. `}
-                The currency the customer is invoiced and pays in. Changing it converts every line at the order date's rates.
+                {fromQuote ? (
+                  `From quote ${fromQuote}. The order keeps the quote's currency configuration.`
+                ) : (
+                  <>
+                    {currency !== customerDefault ? `Changed from ${customerDefault}, the customer's default. ` : "Defaults to the customer's currency. "}
+                    Changing it converts every line at the order date's rate.
+                  </>
+                )}
               </p>
             </Section>
 
@@ -386,7 +422,9 @@ export function SOCurrencyConfigDialog({
                 </p>
               )}
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                The currency this order is settled in on your books. The base currency unless you set another here.
+                {fromQuote
+                  ? `The currency you receive payment in. From quote ${fromQuote}.`
+                  : "The currency you receive payment in. Defaults to your base currency."}
               </p>
             </Section>
 
@@ -437,6 +475,7 @@ export function SOCurrencyConfigDialog({
                   rate={rate}
                   type={type}
                   date={fx.rateDate}
+                  fromQuote={fromQuote}
                   source={
                     type === "mid"
                       ? RATE_PROVIDER
@@ -448,7 +487,7 @@ export function SOCurrencyConfigDialog({
                   }
                 />
                 {!isBaseCurrency(receive) && receive !== currency && (
-                  <RateCard from={receive} rate={receiveRate} type="mid" date={fx.rateDate} source={RATE_PROVIDER} />
+                  <RateCard from={receive} rate={receiveRate} type="mid" date={fx.rateDate} source={RATE_PROVIDER} fromQuote={fromQuote} />
                 )}
               </Section>
             )}
@@ -456,8 +495,9 @@ export function SOCurrencyConfigDialog({
             <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-[11.5px] leading-relaxed" style={{ backgroundColor: "#FFFBEB", color: "#92400E", border: "1px solid #FDE68A" }}>
               <Lock className="w-3 h-3 mt-[3px] shrink-0" />
               <span>
-                The rate is taken on the order date and locked once the order leaves Draft. New versions keep it unless
-                you apply the current rate when you start one, so totals don't move with the market.
+                {fromQuote
+                  ? `The rate comes from quote ${fromQuote}, so the total matches the quote and doesn't move with the market. New versions keep it unless you switch to today's rate.`
+                  : "The rate is set on the order date and locks once the order leaves Draft, so the total doesn't move with the market. New versions keep it unless you switch to today's rate."}
               </span>
             </div>
           </div>

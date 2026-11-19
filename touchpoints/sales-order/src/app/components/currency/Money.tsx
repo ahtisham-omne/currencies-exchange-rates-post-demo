@@ -5,7 +5,7 @@ import { formatMoney, formatRateDate, rateSentence } from '@/app/currency/money'
 import { RATE_TYPE_LABEL, toBase } from '@/app/currency/rates';
 import type { SoFx } from '@/app/currency/soFx';
 import { CurrencyFlag } from './CurrencyChip';
-import { FX_ARROW_PADDING, FX_CARD_CLASS, FX_FLAG_PX, FxAlert, FxArrow, FxHead, FxInset, FxLine, FxLines, FxNote, FxRateType, withCode } from './FxCard';
+import { FX_ARROW_PADDING, FX_CARD_CLASS, FX_FLAG_PX, FxArrow, FxHead, FxInset, FxLine, FxLines, FxNote, FxRateType, withCode } from './FxCard';
 
 /* ── Money with its rate ──────────────────────────────────────────────
  * An amount in a foreign currency wears a dotted underline, and hovering it
@@ -48,7 +48,6 @@ export function MoneyCard({
         <FxLine strong label={`In ${BASE_CURRENCY} (base)`} value={withCode(formatMoney(toBase(value, fx.rate), BASE_CURRENCY), BASE_CURRENCY)} />
         <FxNote>At {rateSentence(currency, fx.rate)} · {day}</FxNote>
         <FxRateType type={fx.rateType} label={RATE_TYPE_LABEL[fx.rateType]} source={fx.source} />
-        {fx.provisional && <FxAlert>Not on an order yet; an order takes the rate on its order date.</FxAlert>}
       </FxInset>
     </>
   );
@@ -83,7 +82,6 @@ export function BaseMoneyCard({
       <FxInset>
         <FxNote>At {rateSentence(currency, fx.rate)} · {day}</FxNote>
         <FxRateType type={fx.rateType} label={RATE_TYPE_LABEL[fx.rateType]} source={fx.source} />
-        {fx.provisional && <FxAlert>Not on an order yet; an order takes the rate on its order date.</FxAlert>}
       </FxInset>
     </>
   );

@@ -2364,7 +2364,7 @@ export function SODetail() {
           if (pendingAction) {
             setTimeout(() => pendingAction(rateChoice), 300);
           }
-          if (rateChoice === "current") {
+          if (rateChoice !== "locked") {
             setTimeout(() => toast.success("Today's exchange rate applied", { position: "top-right" }), 400);
           }
         }}

@@ -10,7 +10,7 @@ import type {
 import { ARCHIVABLE_STATES } from "./types";
 import { DESIGN_CURRENCY, convertOn, customerCurrency, stampSoRate } from "@/app/currency/soFx";
 import { formatWhole } from "./soMoney";
-import { describeRateChange, soRateFields, stampVersionRate, versionRateFields, withCurrentRate, type VersionRateChoice } from "./soCurrency";
+import { describeRateChange, soRateFields, stampVersionRate, todaysRateType, versionRateFields, withCurrentRate, type VersionRateChoice } from "./soCurrency";
 import { seedLineItemAttachments } from "./lineItemAttachmentsStore";
 import { getCustomerDefaults, SAMPLE_EMPTY_CUSTOMER } from "@/app/components/shared/customerDefaults";
 import { getMissingFields, type FieldRule } from "@/app/components/shared/fieldRequirements";
@@ -2410,7 +2410,8 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
         v.number === so.version?.number ? stampVersionRate({ ...v, label: "Last Approved" as const }, so) : v
       );
       /* The new version keeps the locked rate, or takes today's. */
-      const today = rateChoice === "current" ? withCurrentRate(so) : null;
+      const todayType = todaysRateType(rateChoice);
+      const today = todayType ? withCurrentRate(so, todayType) : null;
       const next = today ? { ...so, ...today.updates } : so;
       const newVersion: SOVersion = stampVersionRate({ number: newVersionNum, label: "Latest", date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) }, next, true);
       return {
@@ -2444,7 +2445,8 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
       const before = soRateFields(so);
       const locked = versionRateFields(so, fromVersion);
       const restored = { ...so, ...locked };
-      const today = rateChoice === "current" ? withCurrentRate(restored) : null;
+      const todayType = todaysRateType(rateChoice);
+      const today = todayType ? withCurrentRate(restored, todayType) : null;
       const next = today ? { ...restored, ...today.updates } : restored;
       const after = soRateFields(next);
       const rateDetail =

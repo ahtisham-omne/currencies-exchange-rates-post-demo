@@ -90,24 +90,31 @@ export function describeRateChange(before: SORateFields, after: SORateFields): s
  * same type (finance's corporate rate, when that's the type and one is set;
  * otherwise mid-market). Amounts stay in the order's currency, so what the
  * customer pays is unchanged; only what the order is worth in base moves. */
-export type VersionRateChoice = "locked" | "current";
+/** A new version's rate: the one it locked in, or today's of either type
+ *  (corporate only when one is set; Mahreen, 2026-11-20). */
+export type VersionRateChoice = "locked" | "current-mid" | "current-corporate";
 
-/** Today's rate for an order, of its type. */
-export function currentRateFor(so: SoFxFields): { exchangeRate: number; rateType: RateType; rateDate: string } {
+/** The type of today's rate a choice takes, or null when it keeps the locked one. */
+export const todaysRateType = (choice: VersionRateChoice): RateType | null =>
+  choice === "locked" ? null : choice === "current-corporate" ? "corporate" : "mid";
+
+/** Today's rate for an order, of `type` (the order's own by default).
+ *  Corporate falls back to mid-market when no corporate rate is set. */
+export function currentRateFor(so: SoFxFields, type?: RateType): { exchangeRate: number; rateType: RateType; rateDate: string } {
   const fx = soFx(so);
   const today = localTodayIso();
   if (fx.isBase) return { exchangeRate: 1, rateType: fx.rateType, rateDate: today };
-  const corp = fx.rateType === "corporate" ? rateOn(fx.currency, today, "corporate") : null;
+  const corp = (type ?? fx.rateType) === "corporate" ? rateOn(fx.currency, today, "corporate") : null;
   const quote = corp?.rate != null ? corp : rateOn(fx.currency, today, "mid");
   return { exchangeRate: quote.rate ?? fx.rate, rateType: quote.type, rateDate: today };
 }
 
 /** The order restamped with today's rate: the fields to update and the
  *  activity line, or null on a base-currency order. */
-export function withCurrentRate(so: SalesOrder): { updates: Partial<SalesOrder>; detail: string | null } | null {
+export function withCurrentRate(so: SalesOrder, type?: RateType): { updates: Partial<SalesOrder>; detail: string | null } | null {
   const before = soRateFields(so);
   if (isBaseCurrency(before.currency)) return null;
-  const now = currentRateFor(so);
+  const now = currentRateFor(so, type);
   const updates = { exchangeRate: now.exchangeRate, rateType: now.rateType, rateDate: now.rateDate, rateEdited: false };
   const same = before.exchangeRate === now.exchangeRate && before.rateType === now.rateType;
   return {
