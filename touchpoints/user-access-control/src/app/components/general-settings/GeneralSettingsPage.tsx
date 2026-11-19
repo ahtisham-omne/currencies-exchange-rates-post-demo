@@ -1,6 +1,6 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { Building2, Globe, Lock, UserCheck } from "lucide-react";
+import { Building2, Globe, UserCheck } from "lucide-react";
 import { PageHeader } from "../shared/PageHeader";
 import { HeaderTabs, type HeaderTabDef } from "../shared/HeaderTabs";
 import { useUserQuickView } from "../shared/UserQuickViewPanel";
@@ -9,8 +9,7 @@ import { FlagImage } from "../currency/FlagImage";
 import { Field, SettingsCard, TimezoneValue } from "./SettingsParts";
 import { EditCompanyInfoModal } from "./EditCompanyInfoModal";
 import { EditGlobalSettingsModal } from "./EditGlobalSettingsModal";
-import { baseCurrencyLock, useGeneralSettings } from "./generalSettingsStore";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import { useGeneralSettings } from "./generalSettingsStore";
 import { countryFlag, dialFlag } from "./countries";
 import { ADDRESS_TIP, BASE_CURRENCY_TIP, BILLING_ANCHOR_TIP, EMAIL_TIP, LANGUAGE_TIP, MFA_TIP } from "./copy";
 import { getUsersForRole } from "../../data/uac-derived";
@@ -119,23 +118,8 @@ export function GeneralSettingsPage() {
                 <Field label="Date Format">{preferences.dateFormat}</Field>
                 <Field label="Time Format">{preferences.timeFormat}</Field>
                 <Field label="Base Currency" tip={BASE_CURRENCY_TIP} wide>
-                  <CurrencyValue
-                    code={preferences.baseCurrency}
-                    trailing={
-                      baseCurrencyLock(preferences.baseCurrency) ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex shrink-0 cursor-help" tabIndex={0} aria-label={baseCurrencyLock(preferences.baseCurrency)!}>
-                              <Lock className="w-3 h-3 text-slate-400" />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-[280px] text-[12px] leading-[1.5]">
-                            {baseCurrencyLock(preferences.baseCurrency)}
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : undefined
-                    }
-                  />
+                  {/* Not locked here; the info tooltip says when it locks (Mahreen, 2026-11-20). */}
+                  <CurrencyValue code={preferences.baseCurrency} />
                 </Field>
                 <Field label="Functional Language" tip={LANGUAGE_TIP}>
                   {preferences.language}

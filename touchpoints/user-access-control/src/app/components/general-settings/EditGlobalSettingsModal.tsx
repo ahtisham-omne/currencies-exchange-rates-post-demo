@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { CurrencyDropdown } from "../currency/CurrencyDropdown";
 import { FieldLabel, LockedField, ModalSection, OptionCards, SettingsModal, TimezoneValue } from "./SettingsParts";
-import { DATE_FORMATS, baseCurrencyLock, savePreferences, useGeneralSettings, type FirstDayOfWeek, type GlobalPreferences, type TimeFormat } from "./generalSettingsStore";
+import { DATE_FORMATS, savePreferences, useGeneralSettings, type FirstDayOfWeek, type GlobalPreferences, type TimeFormat } from "./generalSettingsStore";
 import { BASE_CURRENCY_TIP } from "./copy";
 
 /* ── Edit Global Settings ───────────────────────────────────────────────
@@ -81,13 +81,7 @@ export function EditGlobalSettingsModal({ open, onClose }: { open: boolean; onCl
               value={draft.baseCurrency}
               onChange={(code) => set("baseCurrency", code)}
               ariaLabel="Base Currency"
-              locked={baseCurrencyLock(preferences.baseCurrency) ?? undefined}
             />
-            {!baseCurrencyLock(preferences.baseCurrency) && draft.baseCurrency === preferences.baseCurrency && (
-              <p className="mt-1.5 text-[11px] text-slate-500" style={{ lineHeight: 1.5 }}>
-                Can be changed until the first transaction posts to the general ledger. Then it locks.
-              </p>
-            )}
             {draft.baseCurrency !== preferences.baseCurrency && (
               <p className="mt-1.5 text-[11px] text-amber-700" style={{ lineHeight: 1.5 }}>
                 Exchange rates will be quoted against {draft.baseCurrency} instead of {preferences.baseCurrency}.

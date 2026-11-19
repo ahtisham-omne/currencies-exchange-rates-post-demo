@@ -104,20 +104,9 @@ export function saveProfile(profile: CompanyProfile) {
   listeners.forEach((l) => l());
 }
 
-/* ── When the base currency locks ──────────────────────────────────────
- * Mahad, 2026-11-18: *"This locks after 1st transaction to the general
- * ledger."* Every amount the ledger holds is kept in the base currency, so
- * once anything has posted it can't change. The sample company has posted
- * since it opened its books; a company onboarding just set up has posted
- * nothing, so its base currency stays open until its first transaction.
- * Asked at render time, as the tenant can change while the app is open. */
-export const FIRST_LEDGER_POSTING = { entry: "JE-2024-0001", date: "Jan 2, 2024" } as const;
-
-/** Why the base currency can't change, or null while nothing has posted. */
-export function baseCurrencyLock(code: string): string | null {
-  if (isNewTenant()) return null;
-  return `Locked after the first transaction posted to the general ledger (${FIRST_LEDGER_POSTING.entry}, ${FIRST_LEDGER_POSTING.date}). Every amount in the books is kept in ${code}, so it can't change.`;
-}
+/* The base currency isn't locked in General Settings: its info tooltip says
+ * it can change until the first posting to the general ledger, then locks
+ * (Mahreen, 2026-11-20; it was locked here from 2026-11-18). */
 
 export function savePreferences(preferences: GlobalPreferences) {
   state = { ...state, preferences };
