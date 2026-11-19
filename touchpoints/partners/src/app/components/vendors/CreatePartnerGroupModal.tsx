@@ -1118,6 +1118,7 @@ export function CreatePartnerGroupModal({ open, onOpenChange, onPartnerCreated, 
                     selectedGroup={primaryGroup}
                     partnerName={partnerName}
                     configDataRef={configDataRef}
+                    onGoToSection={configType === "vendor" ? setActiveConfigSection : setActiveCustomerConfigSection}
                   />
                 </div>
                 {(() => {
@@ -4586,6 +4587,7 @@ export function ConfigPageContent({
   selectedGroup,
   partnerName,
   configDataRef,
+  onGoToSection,
 }: {
   sectionId: string;
   configType: "vendor" | "customer";
@@ -4596,6 +4598,9 @@ export function ConfigPageContent({
   selectedGroup: PartnerGroup | null;
   partnerName: string;
   configDataRef: React.MutableRefObject<Record<string, unknown>>;
+  /** Opens another section of the same configuration, e.g. the Currency
+   *  field's "Billing & Shipping" link. Without it the name is plain text. */
+  onGoToSection?: ((sectionId: string) => void) | undefined;
 }) {
   const sections = configType === "vendor" ? GROUP_VENDOR_CONFIG_SECTIONS : GROUP_CUSTOMER_CONFIG_SECTIONS;
   const currentSection = sections.find((s) => s.id === sectionId) || sections[0];
@@ -6583,7 +6588,22 @@ export function ConfigPageContent({
                 <span style={{ fontWeight: 600 }}>{creditCurrency}</span>
                 <span className="text-slate-600 truncate">{getCurrency(creditCurrency)?.name}</span>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Inherited from Billing &amp; Shipping. Change it there to keep all financials aligned.</p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Set in{" "}
+                {onGoToSection ? (
+                  <button
+                    type="button"
+                    onClick={() => onGoToSection(configType === "customer" ? "customer_billing" : "billing_shipping")}
+                    className="text-primary underline underline-offset-2 hover:opacity-80 cursor-pointer"
+                    style={{ fontWeight: 500 }}
+                  >
+                    Billing &amp; Shipping
+                  </button>
+                ) : (
+                  "Billing & Shipping"
+                )}
+                . Change it there.
+              </p>
             </div>
             {/* Maximum Credit Limit */}
             <div>

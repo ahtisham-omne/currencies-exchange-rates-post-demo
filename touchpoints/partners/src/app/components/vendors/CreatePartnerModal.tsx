@@ -1054,6 +1054,7 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
                     configDataRef={configDataRef}
                     isCarrier={selectedVendorSubTypes.has("carrier")}
                     onSectionOverrideChange={(sectionId, overridden) => markSectionOverridden(configType, sectionId, overridden)}
+                    onGoToSection={configType === "vendor" ? setActiveConfigSection : setActiveCustomerConfigSection}
                   />
                 </div>
                 {(() => {
@@ -4637,6 +4638,7 @@ export function ConfigPageContent({
   locationContext = false,
   onSectionOverrideChange,
   suppressCarrierSectionHeader = false,
+  onGoToSection,
 }: {
   sectionId: string;
   configType: "vendor" | "customer";
@@ -4674,6 +4676,9 @@ export function ConfigPageContent({
    *  time a templated field flips between matching / differing from
    *  the group default. */
   onSectionOverrideChange?: (sectionId: string, overridden: boolean) => void;
+  /** Opens another section of the same configuration, e.g. the Currency
+   *  field's "Billing & Shipping" link. Without it the name is plain text. */
+  onGoToSection?: ((sectionId: string) => void) | undefined;
   /** Suppress the inline "Carrier" section header (title + helper copy +
    *  Learn More link) in the shipping_methods section. Used by the
    *  Partner detail Carrier Profile tab which already shows the same
@@ -6975,7 +6980,22 @@ export function ConfigPageContent({
                 <span style={{ fontWeight: 600 }}>{creditCurrency}</span>
                 <span className="text-slate-600 truncate">{getCurrency(creditCurrency)?.name}</span>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Inherited from Billing &amp; Shipping. Change it there to keep all financials aligned.</p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Set in{" "}
+                {onGoToSection ? (
+                  <button
+                    type="button"
+                    onClick={() => onGoToSection(configType === "customer" ? "customer_billing" : "billing_shipping")}
+                    className="text-primary underline underline-offset-2 hover:opacity-80 cursor-pointer"
+                    style={{ fontWeight: 500 }}
+                  >
+                    Billing &amp; Shipping
+                  </button>
+                ) : (
+                  "Billing & Shipping"
+                )}
+                . Change it there.
+              </p>
             </div>
             {/* Maximum Credit Limit */}
             <div>

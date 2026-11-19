@@ -1103,6 +1103,7 @@ export function SetupTab({
                     partnerName={group.name}
                     configDataRef={configDataRef}
                     groupContext
+                    onGoToSection={setDialogSectionId}
                   />
                 </div>
               </div>

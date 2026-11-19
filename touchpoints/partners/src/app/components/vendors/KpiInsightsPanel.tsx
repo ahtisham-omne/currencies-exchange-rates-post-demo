@@ -29,7 +29,7 @@ import {
 import type { Vendor } from "../../data/vendors";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatCompactMoney } from "@/app/currency/money";
-import { CORPORATE_RATE_EFFECTIVE, MID_RATE_UPDATED, partnerCurrencyOf, toBaseNow } from "@/app/currency/partnerCurrency";
+import { CORPORATE_RATE_EFFECTIVE, partnerCurrencyOf, toBaseNow } from "@/app/currency/partnerCurrency";
 import { usePartnerCurrencyOf } from "@/app/currency/usePartnerCurrency";
 
 /* Money KPIs add up partners that trade in different currencies, so each
@@ -252,17 +252,9 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     tooltip: "Sales orders received from customer-side partners across the portfolio.",
     formula: "sum(orders) over customer-side partners",
   },
-  // FX — one card per rate type, from the Currency & Exchange Rates module.
-  {
-    key: "market_rate",
-    label: "Mid-market Rate",
-    category: "FX",
-    iconName: "RefreshCw",
-    iconBg: "#F5F3FF",
-    iconColor: "#7C3AED",
-    subtitle: "Live mid-market rates",
-    tooltip: `The midpoint between global buy and sell prices, synced automatically from Open Exchange Rates. Partner amounts are converted to the base currency (${BASE_CURRENCY}) at this rate.`,
-  },
+  // FX — the corporate rate, from the Currency & Exchange Rates module. There
+  // is no Mid-market Rate card: insights are always in the base currency
+  // (Mahreen, 2026-11-19).
   {
     key: "corporate_rate",
     label: "Corporate Rate",
@@ -288,7 +280,7 @@ export const MONEY_KPI_KEYS = new Set([
 ]);
 
 /** KPIs that show when exchange rates were last updated. */
-export const RATE_KPI_KEYS = new Set(["market_rate", "corporate_rate"]);
+export const RATE_KPI_KEYS = new Set(["corporate_rate"]);
 
 /** Split a partner's order count by trade direction. Vendor-only
  *  partners are all POs, customer-only all SOs; dual-direction
@@ -317,8 +309,6 @@ export const DEFAULT_ACTIVE_KPIS = [
   "avg_credit_limit_vendors",
   "avg_credit_limit_customers",
   "active_partners",
-  // Mid-market Rate is on by default; Corporate Rate is added from Add Insights.
-  "market_rate",
 ];
 
 /* ─── Period-over-period delta (Vendor Invoicing listing pattern) ─── */
@@ -433,8 +423,6 @@ export function computeKpiValue(key: string, vendors: Vendor[], currencyOf: Curr
       return String(vendors.reduce((s, v) => s + splitVendorOrders(v).po, 0));
     case "sales_orders":
       return String(vendors.reduce((s, v) => s + splitVendorOrders(v).so, 0));
-    case "market_rate":
-      return MID_RATE_UPDATED;
     case "corporate_rate":
       return CORPORATE_RATE_EFFECTIVE;
     default:
@@ -503,7 +491,6 @@ function kpiSub(key: string, vendors: Vendor[], currencyOf: CurrencyOf): string 
     case "archived_partners": return pctOfPortfolio(kpiNumeric("archived_partners", vendors));
     case "purchase_orders": return `to ${kpiNumeric("total_vendors", vendors)} vendors`;
     case "sales_orders": return `from ${kpiNumeric("total_customers", vendors)} customers`;
-    case "market_rate": return "Open Exchange Rates";
     case "corporate_rate": return "Set in Currency & Exchange Rates";
     default: return "";
   }

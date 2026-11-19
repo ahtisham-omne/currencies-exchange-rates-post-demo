@@ -21,7 +21,6 @@ import {
   DEFAULT_ACTIVE_KPIS,
   computeKpi,
   insightsRangePeriodLabel,
-  kpiMoneySubset,
   kpiNumeric,
   MONEY_KPI_KEYS,
   RATE_KPI_KEYS,
@@ -32,7 +31,7 @@ import { RateKpiValue } from "../components/currency/RateKpiValue";
 import { BASE_CURRENCY } from "../currency/currencies";
 import { formatCompactMoney } from "../currency/money";
 import { toBaseNow } from "../currency/partnerCurrency";
-import { currencyBreakdown, partnerAmount, type CurrencyView } from "../currency/partnerAmounts";
+import { partnerAmount, type CurrencyView } from "../currency/partnerAmounts";
 import { usePartnerCurrencyOf } from "../currency/usePartnerCurrency";
 import { appUrl } from "@/embedding";
 import { InsightsRangeMenu, InsightsRefresh, InsightsResetButton, type InsightsRange } from "../components/vendors/InsightsControls";
@@ -1784,23 +1783,23 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
               <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
                 {activeKpiDefs.map((kpi, idx) => {
                   const computed = computeKpi(kpi.key, vendors, insightsDateRange, currencyOf);
-                  // Money KPIs: the base-currency total, with a hover listing
-                  // the currencies of the partners it adds up. Rate KPIs: when
-                  // the rates were last updated.
+                  // Money KPIs: the base-currency total, plain. KPIs are always
+                  // in the base currency, so there is no currency hover
+                  // (Mahreen, 2026-11-19). Rate KPIs: when the rates were last
+                  // updated.
                   const value: React.ReactNode = insightsFailed
                     ? "—"
                     : MONEY_KPI_KEYS.has(kpi.key)
                       ? (
                         <CurrencyAmount
-                          mode="aggregated-base"
+                          mode="single"
                           compact
                           value={kpiNumeric(kpi.key, vendors, currencyOf)}
                           currency={BASE_CURRENCY}
-                          partnerBreakdown={currencyBreakdown(kpiMoneySubset(kpi.key, vendors).map(currencyOf))}
                         />
                       )
                       : RATE_KPI_KEYS.has(kpi.key)
-                        ? <RateKpiValue rateType={kpi.key === "market_rate" ? "mid" : "corporate"} />
+                        ? <RateKpiValue rateType="corporate" />
                         : computed.value;
                   // Populate rich tooltip breakdowns with live data (only for complex KPIs)
                   const tooltipData = KPI_TOOLTIP_DATA[kpi.key];
