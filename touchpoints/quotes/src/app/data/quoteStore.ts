@@ -64,7 +64,13 @@ export function setQuoteLineFactor(quoteId: string, factor: number): void {
    is kept here per quote and version: seeded from the quote's own rate the
    first time the quote is opened, and kept in step with the version in
    force while it is edited. Session only, like the rest of this store. */
-export type VersionRateChoice = 'locked' | 'current';
+/** A new version's rate: the one it locked in, or today's of either type
+ *  (corporate only when one is set; Mahreen, 2026-11-20). */
+export type VersionRateChoice = 'locked' | 'current-mid' | 'current-corporate';
+
+/** The type of today's rate a choice takes, or null when it keeps the locked one. */
+export const todaysRateType = (choice: VersionRateChoice): RateType | null =>
+  choice === 'locked' ? null : choice === 'current-corporate' ? 'corporate' : 'mid';
 
 export interface QuoteRateStamp {
   currency: string;

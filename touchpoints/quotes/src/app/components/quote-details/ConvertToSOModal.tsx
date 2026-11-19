@@ -5,7 +5,10 @@ import {
 } from 'lucide-react';
 import { TitledSection } from '../shared/TitledSection';
 import { DatePickerField } from '../quote-creation/date-picker-field';
-import { useDesignMoney } from '@/app/components/currency/docCurrencyContext';
+import { useDesignMoney, useDocCurrency } from '@/app/components/currency/docCurrencyContext';
+import { isBaseCurrency } from '@/app/currency/currencies';
+import { formatRateDate, rateSentence } from '@/app/currency/money';
+import { RATE_TYPE_LABEL } from '@/app/currency/rates';
 
 /* Marshal helpers between ISO yyyy-MM-dd strings (what the modal's
    state holds) and Date instances (what DatePickerField speaks). */
@@ -118,6 +121,11 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
   /* The order keeps the quote's currency and rate (spec 4.3). Its lines here
      are the design's mock, written in USD, restated in that currency. */
   const formatCurrency = useDesignMoney().whole;
+  /* "EUR, Mid-market · 1 EUR = 304.8150 PKR · Nov 3, 2026": what the order inherits. */
+  const doc = useDocCurrency();
+  const keeps = doc.fx && !isBaseCurrency(doc.currency)
+    ? `${doc.currency}, ${RATE_TYPE_LABEL[doc.fx.rateType]} · ${rateSentence(doc.currency, doc.fx.rate)} · ${formatRateDate(doc.fx.rateDate)}`
+    : doc.currency;
   const [soNumber] = useState(generateSONumber);
   const [customerPO, setCustomerPO] = useState('');
   const [notes, setNotes] = useState('');
@@ -571,6 +579,7 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
             <span style={{ fontSize: '12px', color: 'var(--muted-foreground)', lineHeight: '1.5' }}>
               Converting will create Sales Order <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>{soNumber}</span> and lock this quote from further edits.
               All {lineItems.length} line items ({formatCurrency(grandTotal)} incl. tax) will carry over to the new order.
+              It keeps this quote's currency configuration: <span style={{ fontWeight: 500, color: 'var(--foreground)' }}>{keeps}</span>.
             </span>
           </div>
         </div>

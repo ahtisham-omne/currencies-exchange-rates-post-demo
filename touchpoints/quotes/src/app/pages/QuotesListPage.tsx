@@ -32,7 +32,7 @@ import { CancelQuoteModal } from '@/app/components/quote-details/CancelQuoteModa
 import { ArchiveQuoteModal } from '@/app/components/quote-details/ArchiveQuoteModal';
 import { mockQuotes } from '@/app/data/mockQuotes';
 import { CURRENT_USER_REP } from '@/app/components/shared/salesRepRoster';
-import { addCreatedQuote, setCreatedQuoteAdjustments, getAllCreatedQuotes, getCreatedQuote, applyQuoteOverride, subscribeQuoteStatusOverrides, getVersionRate, seedVersionRates, setVersionRate, type VersionRateChoice } from '@/app/data/quoteStore';
+import { addCreatedQuote, setCreatedQuoteAdjustments, getAllCreatedQuotes, getCreatedQuote, applyQuoteOverride, subscribeQuoteStatusOverrides, getVersionRate, seedVersionRates, setVersionRate, todaysRateType, type VersionRateChoice } from '@/app/data/quoteStore';
 import { duplicateQuote } from '@/app/data/duplicateQuote';
 import { DuplicateQuoteModal } from '@/app/components/quote-details/DuplicateQuoteModal';
 import {
@@ -516,7 +516,8 @@ function revertRateFields(quote: Quote, toVersion: number, choice: VersionRateCh
   seedVersionRates(quote.id, Array.from({ length: Math.max(quote.version || 1, toVersion) }, (_, i) => i + 1), own);
   const onRecord = getVersionRate(quote.id, toVersion);
   const locked = onRecord && onRecord.currency === fx.currency ? onRecord : own;
-  const fields = choice === 'current' ? { currency: fx.currency, ...currentRateFor(locked), rateEdited: false } : { ...locked };
+  const todayType = todaysRateType(choice);
+  const fields = todayType ? { currency: fx.currency, ...currentRateFor(locked, todayType), rateEdited: false } : { ...locked };
   const record = mockQuotes.find((q) => q.id === quote.id) ?? getCreatedQuote(quote.id);
   if (record) Object.assign(record, fields);
   setVersionRate(quote.id, toVersion, fields);

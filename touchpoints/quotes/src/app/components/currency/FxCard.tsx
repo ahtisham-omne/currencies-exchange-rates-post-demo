@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { linkProvider } from './ProviderLink';
 import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 
 /* ── The currency hover card ──────────────────────────────────────────
@@ -90,7 +91,7 @@ export function FxRateType({ type, label, source }: { type: 'mid' | 'corporate';
     <div className="flex items-center gap-[6px] whitespace-nowrap text-[11px] leading-[15px]">
       <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ background: color }} />
       <span style={{ color, fontWeight: 600 }}>{label}</span>
-      {source && <span style={{ color: MUTED }}>· {source}</span>}
+      {source && <span style={{ color: MUTED }}>· {linkProvider(source)}</span>}
     </div>
   );
 }

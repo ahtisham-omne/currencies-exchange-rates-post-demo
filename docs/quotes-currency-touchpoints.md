@@ -74,6 +74,15 @@ Asked for after the audit's changes, as for Purchase Orders ("Same pointers for 
 - **Not changed:** the printed quote, its PDF and the Send preview stay in the quote's currency, the customer's document, as Purchase Orders keeps the printed PO in the vendor's.
 - **In the demo** every quote is dated after the rate history's last sync (Apr 10, 2026), so today's mid-market and corporate rates are the ones locked in, and the choice says "Today's rate is the same". It differs on a quote whose corporate rate was typed: today's applies finance's rate.
 
+## 3b. Configuration copy, version rates and Convert to SO (20 Nov 2026)
+
+Mahreen's changes to the Currencies & Exchange Rates file ("Same as PO pointers 1, 2 and 4 wherever quotes have them"):
+
+- **Price hovers before a quote.** The orange line "Not on a quote yet; a quote takes the rate on its quote date." is gone (`components/currency/Money.tsx`). Quotes have no cart; Create Quote step 3's "In PKR, base currency · EUR converted at today's rate" converts the quote's own currency and stays.
+- **Currency Configuration copy** (`QuoteCurrencyConfig.tsx`): "Applies to quote {n} only. The customer's default currency (USD) doesn't change."; "Defaults to the customer's currency. Changing it converts every line at the quote date's rate."; "The currency you receive payment in. Defaults to your base currency."; on a Draft, "The rate is set on the quote date and locks once you send the quote, so the total doesn't move with the market. New versions keep it unless you switch to today's rate."; once sent, "The rate locked when you sent the quote, …". The Currency field's info tip in `QuoteCurrencyFields.tsx` reads the same way.
+- **Version rates** (`components/currency/VersionRateChoice.tsx`): each option names its rate, "Mid-market · 1 USD = 278.5200 PKR · Nov 19, 2026", then the base total. "Apply current rate" has a Mid-market | Corporate switch when a corporate rate is set for the currency today, starting on the quote's own type. The choice carries the type (`VersionRateChoice` is `"locked" | "current-mid" | "current-corporate"`, `todaysRateType` in `data/quoteStore.ts`), and `currency/qFx.ts` `currentRateFor(q, type)` (from `QuoteDetails.tsx` `applyVersionRate` and the listing's revert) stamp today's rate of that type.
+- **Convert to SO** (`quote-details/ConvertToSOModal.tsx`) says the order keeps the quote's currency configuration: "GBP, Mid-market · 1 GBP = 355.4200 PKR · Aug 19, 2026". Converting still only marks the quote; Sales Orders is a separate app (see its doc, §3b).
+
 ## 4. Shared currency code
 
 | File | What it holds |

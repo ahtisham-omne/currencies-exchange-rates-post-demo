@@ -8,6 +8,7 @@ import { formatMoney, formatRate, formatRateDate, moneyPrefix } from "@/app/curr
 import { crossRate, customerCurrency, type QuoteFx } from "@/app/currency/qFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
+import { linkProvider } from "./ProviderLink";
 import {
   CurrencyPicker,
   QuoteCurrencyConfirmDialog,
@@ -214,7 +215,7 @@ function RateCard({ from, rate, type, date, dayNote, source }: { from: string; r
       <div className="flex items-center gap-1.5 text-[11px]">
         <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RATE_HEX[type] }} />
         <span style={{ color: RATE_HEX[type], fontWeight: 600 }}>{RATE_TYPE_LABEL[type]}</span>
-        <span className="text-slate-500">· {source}</span>
+        <span className="text-slate-500">· {linkProvider(source)}</span>
       </div>
       <div className="mt-1.5 text-[12px] text-slate-700 tabular-nums leading-5" style={{ fontWeight: 500 }}>
         <div>1 {from} = {formatRate(rate)} {BASE_CURRENCY}</div>
@@ -360,7 +361,7 @@ export function QuoteCurrencyConfigDialog({
                   {readOnly && <LockedChip title={locked ? "Locked once the quote was sent to the customer" : "This quote can't be edited"} />}
                 </div>
                 <DialogDescription className="text-slate-500" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                  Applies only to quote {quoteNumber}. {customerName || "The customer"}'s default currency ({customerDefault}) stays the same.
+                  Applies to quote {quoteNumber} only. The customer's default currency ({customerDefault}) doesn't change.
                 </DialogDescription>
               </div>
             </div>
@@ -387,9 +388,9 @@ export function QuoteCurrencyConfigDialog({
               />
               <p className="text-[11px] text-slate-500 leading-relaxed">
                 {currency === customerDefault
-                  ? `${customerName || "The customer"}'s default currency, from the partner record. `
+                  ? "Defaults to the customer's currency. "
                   : `Changed from ${customerDefault}, the customer's default. `}
-                The currency the customer pays in on their invoice. Changing it converts every line at the quote date's rates.
+                Changing it converts every line at the quote date's rate.
               </p>
             </Section>
 
@@ -415,7 +416,7 @@ export function QuoteCurrencyConfigDialog({
                 </p>
               )}
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                The currency you settle the payment into your books. The base currency unless you set another here.
+                The currency you receive payment in. Defaults to your base currency.
               </p>
             </Section>
 
@@ -485,8 +486,8 @@ export function QuoteCurrencyConfigDialog({
               <Lock className="w-3 h-3 mt-[3px] shrink-0" />
               <span>
                 {locked
-                  ? "The rate was locked when the quote was sent to the customer, so totals stay fixed even if market rates move. A new version keeps it unless you apply the current rate when you create it."
-                  : "The rate is taken on the quote date and locks once the quote is sent to the customer. New versions keep it unless you apply the current rate when you create one, so totals don't move with the market."}
+                  ? "The rate locked when you sent the quote, so the total doesn't move with the market. New versions keep it unless you switch to today's rate."
+                  : "The rate is set on the quote date and locks once you send the quote, so the total doesn't move with the market. New versions keep it unless you switch to today's rate."}
               </span>
             </div>
           </div>

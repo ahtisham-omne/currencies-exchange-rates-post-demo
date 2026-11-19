@@ -87,7 +87,7 @@ import type { RateType } from '@/app/currency/rates';
 import { currentRateFor, isoDay, quoteFx, roundTo, ruleAmountFactor } from '@/app/currency/qFx';
 import { scaleAdjustments, scaleQuoteLine, withQuoteCurrency, type QuoteCurrencyChoice, type QuoteCurrencyFields } from '../components/quote-details/quoteCurrency';
 import { computeLineBreakdowns } from '../components/quote-details/pricingRulesData';
-import { getCreatedQuoteLineItems, getQuoteLineFactor, getVersionRate, seedVersionRates, setCreatedQuoteAdjustments, setCreatedQuoteLineItems, setQuoteLineFactor, setVersionRate, type VersionRateChoice } from '../data/quoteStore';
+import { getCreatedQuoteLineItems, getQuoteLineFactor, getVersionRate, seedVersionRates, setCreatedQuoteAdjustments, setCreatedQuoteLineItems, setQuoteLineFactor, setVersionRate, todaysRateType, type VersionRateChoice } from '../data/quoteStore';
 
 // Map from listing QuoteStatus → lifecycle status used in detail page
 function mapToLifecycleStatus(status: QuoteStatus): QuoteLifecycleStatus {
@@ -339,7 +339,8 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
     const own = rateStamp;
     const onRecord = fromVersion != null && viewKey ? getVersionRate(viewKey, fromVersion) : undefined;
     const locked = onRecord && onRecord.currency === fx.currency ? onRecord : own;
-    if (choice === 'current') restampRate({ ...currentRateFor(locked), rateEdited: false });
+    const todayType = todaysRateType(choice);
+    if (todayType) restampRate({ ...currentRateFor(locked, todayType), rateEdited: false });
     else if (locked !== own) restampRate(locked);
   };
 
@@ -1068,7 +1069,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
     }
     setMaterialChangesInDraft(0);
     toast.success(`Reverted to V${fromVersion}`, {
-      description: 'V' + fromVersion + ' is now the latest version.' + (rateChoice === 'current' && !fx.isBase ? " Today's exchange rate applied." : ''),
+      description: 'V' + fromVersion + ' is now the latest version.' + (rateChoice !== 'locked' && !fx.isBase ? " Today's exchange rate applied." : ''),
       position: 'top-right',
     });
     setViewingVersion(null);
@@ -1103,7 +1104,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
     setQuoteStatus('draft');
     setMaterialChangesInDraft(0);
     toast.success(`Editing as V${newVersion} Draft`, {
-      description: rateChoice === 'current' && !fx.isBase
+      description: rateChoice !== 'locked' && !fx.isBase
         ? "Today's exchange rate applied. Material changes start a new version automatically."
         : 'Make your changes. Material changes start a new version automatically.',
       position: 'top-right',
@@ -2929,7 +2930,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
             setQuoteStatusOverride(propQuoteId, { status: 'Draft' });
           }
           toast.success(`Started V${newVersion} draft`, {
-            description: `Effective ${effectiveFrom}. Expires ${expirationDate}.${rateChoice === 'current' && !fx.isBase ? " Today's exchange rate applied." : ''} Revise pricing or terms, then send.`,
+            description: `Effective ${effectiveFrom}. Expires ${expirationDate}.${rateChoice !== 'locked' && !fx.isBase ? " Today's exchange rate applied." : ''} Revise pricing or terms, then send.`,
             position: 'top-right',
           });
         }}

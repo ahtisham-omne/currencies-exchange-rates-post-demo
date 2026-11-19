@@ -9,6 +9,7 @@ import { formatMoney, formatRate, formatRateDate } from "@/app/currency/money";
 import { crossRate, customerCurrency, roundTo, type QuoteFx } from "@/app/currency/qFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
+import { ProviderLink } from "./ProviderLink";
 
 /* ── Quote Summary: Currency and Exchange Rate (spec 4.3) ─────────────
  * Same pattern, confirmation and conversion as Purchase Orders. The
@@ -230,8 +231,8 @@ export function QuoteCurrencyFields({
           Currency
           <InfoTip>
             Every price, total, discount and premium on this quote is in this currency. It defaults to the
-            customer's, from the partner record; changing it converts all lines at the quote date's rates. A sales
-            order made from the quote keeps its currency and rate.{lockReason ? ` ${lockReason}` : ""}
+            customer's currency; changing it converts every line at the quote date's rate. A sales order made from
+            the quote keeps its currency configuration.{lockReason ? ` ${lockReason}` : ""}
           </InfoTip>
         </p>
         <CurrencyPicker value={fx.currency} onPick={setPending} disabled={!canEdit} customerDefault={customerDefault} />
@@ -300,7 +301,7 @@ export function QuoteCurrencyFields({
           {isBase
             ? `${BASE_CURRENCY} is the base currency, so the rate is 1`
             : !corporate
-              ? `${RATE_TYPE_LABEL.mid} rate on ${day} (quote date) · ${RATE_PROVIDER}`
+              ? <>{RATE_TYPE_LABEL.mid} rate on {day} (quote date) · <ProviderLink /></>
               : rateEdited
                 ? corpQuote.rate != null
                   ? `Changed on the quote from ${formatRate(corpQuote.rate)}, the corporate rate on ${day}`
@@ -413,7 +414,7 @@ export function QuoteCurrencyConfirmDialog({
               1 {from.currency} = {formatRate(crossRate(from.rate, next.exchangeRate))} {to}
               <span className="text-slate-400">
                 {" · "}
-                {type === "mid" ? RATE_PROVIDER : quote.source.replace(/^Set by/, "set by")}, {formatRateDate(from.rateDate)}
+                {type === "mid" ? <ProviderLink /> : quote.source.replace(/^Set by/, "set by")}, {formatRateDate(from.rateDate)}
               </span>
             </p>
             {wanted === "corporate" && type === "mid" && (

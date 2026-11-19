@@ -116,11 +116,12 @@ export function stampQuoteRate(
  * rate of the same type: finance's corporate rate, when that is the type
  * and one is set; otherwise mid-market. The customer's amounts stay as they
  * are; only what the quote is worth in base moves. */
-export function currentRateFor(q: QuoteFxFields): { exchangeRate: number; rateType: RateType; rateDate: string } {
+export function currentRateFor(q: QuoteFxFields, type?: RateType): { exchangeRate: number; rateType: RateType; rateDate: string } {
   const fx = quoteFx(q);
   const today = localTodayIso();
   if (fx.isBase) return { exchangeRate: 1, rateType: fx.rateType, rateDate: today };
-  const corp = fx.rateType === 'corporate' ? rateOn(fx.currency, today, 'corporate') : null;
+  // Of `type` (the quote's own by default); corporate falls back to mid-market when none is set.
+  const corp = (type ?? fx.rateType) === 'corporate' ? rateOn(fx.currency, today, 'corporate') : null;
   const quote = corp?.rate != null ? corp : rateOn(fx.currency, today, 'mid');
   return { exchangeRate: quote.rate ?? fx.rate, rateType: quote.type, rateDate: today };
 }
