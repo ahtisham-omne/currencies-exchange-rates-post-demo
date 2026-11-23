@@ -1,16 +1,13 @@
 import * as React from 'react';
-import { Banknote, Check, Landmark, Lock, RotateCcw, Settings2, Wallet } from 'lucide-react';
+import { AlertCircle, AlertTriangle, RotateCcw, Settings2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/app/components/ui/dialog';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { MoneyInput } from '@/app/components/payments/MoneyInput';
 import type { PayFromAccount } from '@/app/data/mockPayments';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
-import { formatMoney, formatRateDate, moneyPrefix, rateSentence } from '@/app/currency/money';
+import { formatMoney, formatRate, formatRateDate, moneyPrefix } from '@/app/currency/money';
 import { RATE_PROVIDER, toBase } from '@/app/currency/rates';
-import { gainLossOf } from '@/app/currency/fxVariance';
 import {
   OTHER_CURRENCY_NOTE,
-  bankConversionText,
   bankRateNeedsReview,
   convertsAtBank,
   derivedRate,
@@ -21,172 +18,115 @@ import {
   type SettledLine,
 } from '@/app/currency/paymentRules';
 import { CurrencyFlag } from './CurrencyChip';
-import { AmountRow, GainLossTag, LockedCurrency, RateCard, Section, baseRate, signedBase } from './InvoiceCurrencyConfig';
-import { BankConversionLine } from './PaymentCurrencyFields';
+import { AmountBox, LockLine, LockedCurrency, RateCard, Section, VarianceCard, baseRate } from './InvoiceCurrencyConfig';
+import { CurrencyBlock, PAYMENT_FX_VARIANCE_TITLE, PAYMENT_LOCK_TITLE, type CurrencyBlockRow } from './CurrencyBlock';
+import { PayFromAccountPicker } from './PayFromAccountPicker';
 
-/* ── A payment's currency: summary card and Currency Configuration ────
- * The payment counterpart of the invoice's CURRENCY card and dialog
- * (InvoiceCurrencyConfig), on the payment rules (currency/paymentRules.ts):
- *  - "Vendor receives": the invoices' currency, fixed, with the reason.
- *  - "Pay from": the accounts that may pay, one in the invoices' currency or
- *    one in the base; any other is listed greyed with why. The PO's "You
- *    pay in" picked the default.
- *  - The amounts: one (the pounds paid) from an account in the invoices'
- *    currency; two (the pounds the vendor gets, the rupees the bank took)
- *    from a base account, with the rate worked out and the bank conversion
- *    line.
- *  - The payment date's mid-market rate, for comparison.
- *  - The realized FX Gain/Loss it posts: what A/P carried at the invoice
- *    rates against what paying cost.
+/* ── A payment's currency: the currency block and Currency Configuration ──
+ * The payment counterpart of the invoice's (InvoiceCurrencyConfig), in the
+ * Currency Touchpoints Map's shape (24 Nov 2026), on the payment rules
+ * (currency/paymentRules.ts):
+ *  - "Pay from": the account, in the invoices' currency or the base. Only
+ *    those are offered; the PO's "You pay in" (or the invoice's own pay-from
+ *    account) picked the default.
+ *  - "Vendor receives": the invoices' currency, fixed.
+ *  - "You pay": from a base account, what the bank took (entered, else the
+ *    payment date's mid-market estimate); from an account in the invoices'
+ *    currency, the same amount, with its base equivalent.
+ *  - "Rate": worked out from the two amounts, or the payment date's
+ *    mid-market rate when nothing converts; unlocked until the payment posts.
+ *  - "FX variance": what A/P carried at the invoice rates against what paying
+ *    cost. + is a gain (FX Gain), − a loss (FX Loss).
  * In Record Payment the dialog edits the account and the bank's figure
- * (Save configuration writes them back). On a saved payment it is
- * read-only. A payment of base-currency invoices converts nothing. */
+ * (Apply writes them back). On a saved payment it is read-only. A payment of
+ * base-currency invoices converts nothing. */
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** The FX Gain/Loss line: tag and signed amount, or "None". */
-function GainLossFigure({ amount, size = 12 }: { amount: number; size?: number }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <GainLossTag amount={amount} />
-      <span className="tabular-nums text-slate-700" style={{ fontSize: size, fontWeight: 600 }}>
-        {gainLossOf(amount) === 'none' ? 'None' : signedBase(amount)}
-      </span>
-    </span>
-  );
+/** "invoice rate 279.5200 → 280.2200" */
+export function paymentRatesText(lines: Pick<SettledLine, 'rate'>[], paidRate: number): string {
+  const rates = Array.from(new Set(lines.map((l) => l.rate))).sort((a, b) => a - b);
+  const from =
+    rates.length === 0
+      ? 'invoice rate'
+      : rates.length === 1
+        ? `invoice rate ${formatRate(rates[0])}`
+        : `invoice rates ${formatRate(rates[0])} to ${formatRate(rates[rates.length - 1])}`;
+  return `${from} → ${formatRate(paidRate)}`;
 }
 
-const FX_GAIN_LOSS_TIP =
-  'What A/P carried for the paid part, at each invoice’s rate, against what paying it cost in the base currency. Costing less is a gain and posts to FX Gain; costing more is a loss and posts to FX Loss.';
+/* ── The currency block (payment) ──────────────────────────────────── */
 
-/* ── Summary card: CURRENCY ────────────────────────────────────────── */
-
-export interface PaymentCurrencySummaryProps {
+export interface PaymentCurrencyBlockProps {
+  /** The invoices' currency: what the vendor receives. */
   currency: string;
-  /** What the vendor receives (the cash), in the invoices' currency. */
+  /** The cash the vendor receives, in it. */
   vendorReceives: number;
+  /** The pay-from account. */
   account?: Pick<PayFromAccount, 'label' | 'currency'> | null;
-  /** From a base account: what the bank took. */
+  /** From a base account: what the bank took (the estimate until entered). */
   bankTook?: number | null;
-  /** The payment's rate (derived, or the day's). */
+  /** The payment's rate: worked out from the two amounts, or the day's. */
   rate: number;
   paymentDate: string;
-  /** Mid-market on the payment date. */
-  dayRate: number;
-  /** A/P carried for the paid part, in base. */
-  carried?: number;
-  /** The realized FX Gain/Loss (above zero a gain). */
+  /** The invoices settled, for the variance's hover ("invoice rate X → Y"). */
+  lines?: Pick<SettledLine, 'rate'>[];
+  /** The FX variance (above zero a gain); null with nothing to compare. */
   realized?: number | null;
-  /** The payment is saved: what it posted. */
-  locked?: boolean;
-  onViewConfig: () => void;
+  /** The payment has posted: its rate is fixed. */
+  locked: boolean;
+  /** A saved payment reads in the past tense: "Vendor received", "You paid". */
+  past?: boolean;
+  /** The Rate row's qualifier; by default "from the two amounts" or "payment date". */
+  qualifier?: string;
+  onViewConfig?: () => void;
   className?: string;
 }
 
-export function PaymentCurrencySummary({
+/** Vendor receives / You pay / [Base equivalent] / [FX variance] / Rate. */
+export function PaymentCurrencyBlock({
   currency,
   vendorReceives,
   account,
   bankTook,
   rate,
   paymentDate,
-  dayRate,
-  carried,
+  lines = [],
   realized,
   locked,
+  past = false,
+  qualifier,
   onViewConfig,
   className = '',
-}: PaymentCurrencySummaryProps) {
-  const base = isBaseCurrency(currency);
-  const converts = !!account && convertsAtBank(account.currency, currency);
-  const rows: { label: string; code: string; text: string }[] = [
-    { label: 'Vendor receives', code: currency, text: `${formatMoney(vendorReceives, currency)}${formatMoney(vendorReceives, currency).includes(currency) ? '' : ` ${currency}`}` },
-  ];
-  if (account) rows.push({ label: 'Pay from', code: account.currency, text: account.label });
-  if (converts && bankTook != null) rows.push({ label: 'Bank took', code: BASE_CURRENCY, text: `${formatMoney(bankTook, BASE_CURRENCY)} ${BASE_CURRENCY}` });
+}: PaymentCurrencyBlockProps) {
+  const code = currency.toUpperCase();
+  const accountCurrency = account?.currency ?? BASE_CURRENCY;
+  const converts = convertsAtBank(accountCurrency, code);
+  const cost = converts ? round2(bankTook ?? toBase(vendorReceives, rate)) : toBase(vendorReceives, rate);
+  const rows: CurrencyBlockRow[] = [{ label: past ? 'Vendor received' : 'Vendor receives', code, amount: vendorReceives }];
+  rows.push({
+    label: past ? 'You paid' : 'You pay',
+    code: converts ? BASE_CURRENCY : code,
+    amount: converts ? cost : vendorReceives,
+    title: account ? `From ${account.label} (${account.currency})${converts ? ': what the bank took' : ''}` : undefined,
+  });
+  if (!converts) rows.push({ label: 'Base equivalent', code: BASE_CURRENCY, amount: cost, title: `At the ${formatRateDate(paymentDate)} rate` });
   return (
-    <div className={`space-y-2 ${className}`}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[9.5px] uppercase text-slate-400" style={{ fontWeight: 600, letterSpacing: '0.06em' }}>
-          Currency
-        </span>
-        {locked && !base && (
-          <span
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]"
-            style={{ color: '#047857', backgroundColor: '#ECFDF5', fontWeight: 600 }}
-            title="Fixed when the payment posted."
-          >
-            <Lock className="w-2.5 h-2.5" />
-            Locked
-          </span>
-        )}
-      </div>
-      {rows.map((r) => (
-        <div key={r.label} className="flex items-center justify-between gap-2">
-          <p className="text-slate-400 shrink-0" style={{ fontSize: 10.5, fontWeight: 500 }}>{r.label}</p>
-          <p className="flex items-center gap-1.5 tabular-nums min-w-0" style={{ fontSize: 12, fontWeight: 500, color: '#334155' }}>
-            <CurrencyFlag code={r.code} size={11} />
-            <span className="truncate">{r.text}</span>
-          </p>
-        </div>
-      ))}
-      {base ? (
-        <p className="text-slate-400" style={{ fontSize: 10.5 }}>
-          {BASE_CURRENCY} is the base currency, so there’s no conversion.
-        </p>
-      ) : (
-        <div className="border-t border-slate-100 pt-2 space-y-1">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-slate-400" style={{ fontSize: 10.5, fontWeight: 500 }}>{converts ? 'Bank rate' : 'Rate'}</p>
-            <div className="text-right">
-              <p className="text-slate-600 tabular-nums" style={{ fontSize: 11, fontWeight: 500 }}>1 {currency} = {baseRate(rate)} {BASE_CURRENCY}</p>
-              <p className="text-slate-400" style={{ fontSize: 10 }}>
-                {formatRateDate(paymentDate)} · {converts ? 'from the bank’s figures' : 'mid-market, nothing converts'}
-              </p>
-            </div>
-          </div>
-          {converts && (
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-slate-400" style={{ fontSize: 10.5, fontWeight: 500 }}>Mid-market</p>
-              <div className="text-right">
-                <p className="text-slate-600 tabular-nums" style={{ fontSize: 11, fontWeight: 500 }}>1 {currency} = {baseRate(dayRate)} {BASE_CURRENCY}</p>
-                <p className="text-slate-400" style={{ fontSize: 10 }}>
-                  {formatRateDate(paymentDate)} · {(() => {
-                    const g = rateGapPct(rate, dayRate);
-                    return Math.abs(g) < 0.005 ? 'the same' : `bank ${g > 0 ? '+' : '−'}${Math.abs(g).toFixed(2)}%`;
-                  })()}
-                </p>
-              </div>
-            </div>
-          )}
-          {carried != null && (
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-slate-400" style={{ fontSize: 10.5, fontWeight: 500 }}>A/P carried</p>
-              <p className="text-slate-600 tabular-nums" style={{ fontSize: 11, fontWeight: 500 }}>{formatMoney(carried, BASE_CURRENCY)}</p>
-            </div>
-          )}
-          {realized != null && (
-            <div className="flex items-center justify-between gap-2 pt-0.5">
-              <span className="text-slate-400 cursor-help" style={{ fontSize: 10.5, fontWeight: 500 }} title={FX_GAIN_LOSS_TIP}>
-                {gainLossOf(realized) === 'loss' ? 'FX Loss' : 'FX Gain'}
-              </span>
-              <GainLossFigure amount={realized} />
-            </div>
-          )}
-        </div>
-      )}
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={onViewConfig}
-          className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 hover:text-primary cursor-pointer"
-          style={{ fontWeight: 500 }}
-        >
-          <Settings2 className="w-3 h-3" />
-          View configuration
-        </button>
-      </div>
-    </div>
+    <CurrencyBlock
+      className={className}
+      currency={code}
+      rateType="mid"
+      rateTip={
+        converts
+          ? `Mid-market is the rate type. Paid from a ${BASE_CURRENCY} account, the rate comes from the two amounts: what the vendor receives and what the bank took.`
+          : `The mid-market rate on ${formatRateDate(paymentDate)}, the payment date · ${RATE_PROVIDER}`
+      }
+      lock={{ locked, title: locked ? PAYMENT_LOCK_TITLE.locked : PAYMENT_LOCK_TITLE.unlocked }}
+      rows={rows}
+      variance={realized != null ? { amount: realized, title: `${paymentRatesText(lines, rate)}. ${PAYMENT_FX_VARIANCE_TITLE}` } : null}
+      rate={{ rate, qualifier: qualifier ?? (converts ? 'from the two amounts' : 'payment date') }}
+      onViewConfig={onViewConfig}
+    />
   );
 }
 
@@ -201,14 +141,16 @@ export interface PaymentCurrencyChoice {
 export interface PaymentCurrencyConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** "PMT-000121", or "this payment" in Record Payment. */
+  /** "PMT-000121", or the next payment number in Record Payment. */
   documentLabel: string;
+  /** "INV-000221", the invoices it pays, for the subtitle. */
+  invoiceLabel?: string;
   vendorName: string;
   /** The invoices' currency, what the vendor receives. */
   currency: string;
   /** The cash, in the invoices' currency. */
   vendorReceives: number;
-  /** The accounts the method can draw from, every currency (others greyed). */
+  /** The accounts to offer; only those that may pay are listed. */
   accounts: PayFromAccount[];
   value: PaymentCurrencyChoice;
   /** The account currency the PO's You pay in asks for. */
@@ -224,6 +166,8 @@ export interface PaymentCurrencyConfigDialogProps {
   canRecordPastAllowed: boolean;
   /** A saved payment: nothing changes here. */
   readOnly?: boolean;
+  /** A saved payment that posted: its rate is locked. */
+  posted?: boolean;
   onSave?: (next: PaymentCurrencyChoice) => void;
 }
 
@@ -232,7 +176,7 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
     open,
     onOpenChange,
     documentLabel,
-    vendorName,
+    invoiceLabel,
     currency,
     vendorReceives,
     accounts,
@@ -245,6 +189,7 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
     allowedPct,
     canRecordPastAllowed,
     readOnly = false,
+    posted = false,
     onSave,
   } = props;
 
@@ -257,6 +202,8 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const base = isBaseCurrency(currency);
+  // Only an account in the invoices' currency or in base is offered (rule 3).
+  const eligible = accounts.filter((a) => !payFromBlockReason(a.currency, currency));
   const account = accounts.find((a) => a.id === accountId) ?? null;
   const accountCurrency = account?.currency ?? BASE_CURRENCY;
   const converts = convertsAtBank(accountCurrency, currency);
@@ -264,13 +211,13 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
   const took = converts ? bankTook ?? estimate : null;
   const rate = base ? 1 : converts ? derivedRate(vendorReceives, took ?? 0) ?? dayRate : dayRate;
   const cost = base ? round2(vendorReceives) : converts ? round2(took ?? 0) : toBase(vendorReceives, dayRate);
-  // A prepayment settles no invoice yet: it is booked at what it cost, so it has no FX Gain/Loss.
+  // A prepayment settles no invoice yet: it is booked at what it cost, so it has no FX variance.
   const fx = base || lines.length === 0 ? null : realizedFxOf(lines, credits, cost);
-  const review = converts && bankRateNeedsReview(rate, dayRate, allowedPct);
+  const review = converts && bankTook != null && bankRateNeedsReview(rate, dayRate, allowedPct);
   const blocked = review && !canRecordPastAllowed && !readOnly;
   const dirty = !readOnly && (accountId !== value.accountId || (bankTook ?? null) !== (value.bankTook ?? null));
   const canSave = dirty && !blocked && !!account && !payFromBlockReason(accountCurrency, currency);
-  const invoiceRates = Array.from(new Map(lines.map((l) => [`${l.rate}|${l.rateDate ?? ''}`, l])).values());
+  const gap = rateGapPct(rate, dayRate);
 
   const save = () => {
     if (readOnly || !dirty) {
@@ -282,22 +229,18 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
     onOpenChange(false);
   };
   const reset = () => {
-    const def = accounts.find((a) => a.currency === youPayIn && !payFromBlockReason(a.currency, currency))
-      ?? accounts.find((a) => isBaseCurrency(a.currency));
+    const def = eligible.find((a) => a.currency === youPayIn) ?? eligible.find((a) => isBaseCurrency(a.currency));
     if (def) setAccountId(def.id);
     setBankTook(null);
   };
 
-  // Allowed first (the invoices' currency, then base), the rest greyed after.
-  const ordered = [...accounts].sort((a, b) => {
-    const rank = (x: PayFromAccount) => (payFromBlockReason(x.currency, currency) ? 2 : x.currency === currency.toUpperCase() && !base ? 0 : 1);
-    return rank(a) - rank(b);
-  });
+  // "PMT-000301 · INV-000221"
+  const subtitle = invoiceLabel ? `${documentLabel} · ${invoiceLabel}` : documentLabel;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-[600px] p-0 gap-0 overflow-hidden !rounded-2xl border-0"
+        className="sm:max-w-[580px] p-0 gap-0 overflow-hidden !rounded-2xl border-0"
         style={{ boxShadow: '0 24px 48px -12px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05)' }}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
@@ -307,100 +250,123 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
               <Settings2 className="h-4 w-4" style={{ color: '#0A77FF' }} />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <DialogTitle className="text-slate-900" style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>
-                  Currency Configuration
-                </DialogTitle>
-                {readOnly && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]" style={{ color: '#047857', backgroundColor: '#ECFDF5', fontWeight: 600 }}>
-                    <Lock className="w-2.5 h-2.5" />
-                    Locked
-                  </span>
-                )}
-              </div>
+              <DialogTitle className="text-slate-900" style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>
+                Currency Configuration
+              </DialogTitle>
               <DialogDescription className="text-slate-500" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                Applies to {documentLabel} only. The vendor is paid in the invoice's currency ({currency}).
+                {subtitle}
               </DialogDescription>
             </div>
           </div>
         </div>
 
         <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto" style={{ backgroundColor: '#FAFBFC' }}>
-          <Section label="Vendor receives">
-            {converts ? (
-              // Bank took (PKR) beside it (Mahreen, 2026-11-20): the two
-              // amounts the bank's rate is worked out from.
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="text-[10.5px] text-slate-500 mb-1" style={{ fontWeight: 500 }}>Vendor receives ({currency})</p>
-                    <div className="h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center gap-2 text-[14px] text-slate-600 tabular-nums" style={{ fontWeight: 500 }}>
-                      <span className="truncate">{formatMoney(vendorReceives, currency)}</span>
-                      <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0 ml-auto" />
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-[10.5px] text-slate-500 mb-1" style={{ fontWeight: 500 }}>Bank took ({BASE_CURRENCY})</p>
-                    {readOnly ? (
-                      <div className="h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center text-[14px] text-slate-600 tabular-nums" style={{ fontWeight: 500 }}>
-                        {formatMoney(took ?? 0, BASE_CURRENCY)}
-                      </div>
-                    ) : (
-                      <div
-                        className={`h-10 px-3 rounded-lg border bg-white flex items-center gap-1.5 ${
-                          blocked ? 'border-red-400 ring-2 ring-red-100' : review ? 'border-amber-300' : 'border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20'
-                        }`}
-                      >
-                        <span className="text-slate-400 text-sm">{moneyPrefix(BASE_CURRENCY).trim()}</span>
-                        <MoneyInput
-                          value={took ?? 0}
-                          fluid
-                          onValueChange={(n) => setBankTook(n)}
-                          className="flex-1 min-w-0 bg-transparent outline-none tabular-nums text-foreground text-[14px] font-medium"
-                        />
-                        {bankTook != null && (
-                          <button type="button" onClick={() => setBankTook(null)} className="text-slate-400 hover:text-primary cursor-pointer" title="Back to the estimate" aria-label="Back to the estimate">
-                            <RotateCcw className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <p className="text-[11px] leading-relaxed" style={{ color: blocked ? '#DC2626' : review ? '#B45309' : '#64748B' }}>
-                  {bankTook == null && !readOnly
-                    ? `Estimated at the ${formatRateDate(paymentDate)} mid-market rate until you enter what the bank took.`
-                    : blocked
-                      ? `The bank’s rate is ${Math.abs(rateGapPct(rate, dayRate)).toFixed(2)}% from the day’s, past the allowed ${allowedPct}%. Your role can’t record that; Settings, Permissions sets who can.`
-                      : review
-                        ? `The bank’s rate is ${Math.abs(rateGapPct(rate, dayRate)).toFixed(2)}% from the day’s, past the allowed ${allowedPct}%: it needs review.`
-                        : 'The rate is worked out from the two amounts.'}
-                </p>
-              </>
-            ) : (
-              <AmountRow
-                amount={vendorReceives}
-                code={currency}
-                side={
-                  <LockedCurrency
-                    code={currency}
-                    note={
-                      base
-                        ? `${BASE_CURRENCY} is the base currency: nothing converts.`
-                        : `Paid from a ${currency} account, so the vendor gets exactly what you pay.`
-                    }
-                  />
-                }
-              />
-            )}
+          <Section label="Pay from">
+            <PayFromAccountPicker
+              value={accountId}
+              accounts={eligible}
+              onChange={setAccountId}
+              readOnly={readOnly}
+              documentCurrency={currency}
+              ariaLabel="Pay from account"
+            />
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              {!base && !converts ? `Paid from a ${currency} account, so the vendor gets exactly what you pay. ` : ''}
-              What you owe stays in {currency}, so this payment reduces the {currency} balance. {OTHER_CURRENCY_NOTE}
+              {base
+                ? `Only ${BASE_CURRENCY} accounts can pay a ${BASE_CURRENCY} invoice.`
+                : `Only a ${currency} account or a ${BASE_CURRENCY} account can pay. ${youPayIn} is the default, from the invoice.`}
             </p>
           </Section>
 
-          {/* The vendor credit or prepayment applied, each at the rate it was
-              paid at (Mahreen, 2026-11-20), as on the invoice. */}
+          <Section label="Vendor receives">
+            <div className="flex items-stretch gap-2">
+              <AmountBox text={formatMoney(vendorReceives, currency)} />
+              <div className="w-[200px] shrink-0">
+                <LockedCurrency code={currency} note={`Fixed: the invoices are in ${currency}. ${OTHER_CURRENCY_NOTE}`} />
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              {currency} · invoice currency. What you owe stays in {currency}, so this payment reduces the {currency} balance.
+            </p>
+          </Section>
+
+          <Section label="You pay">
+            {converts ? (
+              <>
+                {readOnly ? (
+                  <div className="flex items-stretch gap-2">
+                    <AmountBox text={formatMoney(took ?? 0, BASE_CURRENCY)} />
+                    <div className="w-[200px] shrink-0">
+                      <LockedCurrency code={BASE_CURRENCY} note="What the bank took from the account." />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-stretch gap-2">
+                    <div
+                      className={`flex-1 min-w-0 h-10 px-3 rounded-lg border bg-white flex items-center gap-1.5 ${
+                        blocked ? 'border-red-400 ring-2 ring-red-100' : review ? 'border-amber-300' : 'border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20'
+                      }`}
+                    >
+                      <span className="text-slate-400 text-sm">{moneyPrefix(BASE_CURRENCY).trim()}</span>
+                      <MoneyInput
+                        value={took ?? 0}
+                        fluid
+                        onValueChange={(n) => setBankTook(n)}
+                        className="flex-1 min-w-0 bg-transparent outline-none tabular-nums text-foreground text-[14px] font-medium"
+                      />
+                      {bankTook != null && (
+                        <button type="button" onClick={() => setBankTook(null)} className="text-slate-400 hover:text-primary cursor-pointer" title="Back to the estimate" aria-label="Back to the estimate">
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="w-[200px] shrink-0">
+                      <LockedCurrency code={BASE_CURRENCY} note="From a base-currency account the bank converts. Enter what it took." />
+                    </div>
+                  </div>
+                )}
+                <p className="text-[11px] leading-relaxed flex items-start gap-1" style={{ color: blocked ? '#DC2626' : review ? '#B45309' : '#64748B' }}>
+                  {blocked && <AlertCircle className="w-3 h-3 mt-[2px] shrink-0" />}
+                  {review && !blocked && <AlertTriangle className="w-3 h-3 mt-[2px] shrink-0" />}
+                  <span>
+                    {bankTook == null && !readOnly
+                      ? `What the bank took. Estimated at the ${formatRateDate(paymentDate)} mid-market rate until you enter it.`
+                      : blocked
+                        ? `The bank's rate is ${Math.abs(gap).toFixed(2)}% from the day's, past the allowed ${allowedPct}%. Your role can't record that; Settings, Permissions sets who can.`
+                        : review
+                          ? `The bank's rate is ${Math.abs(gap).toFixed(2)}% from the day's, past the allowed ${allowedPct}%: it needs review.`
+                          : 'What the bank took.'}
+                  </span>
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex items-stretch gap-2">
+                  <AmountBox text={formatMoney(vendorReceives, currency)} />
+                  <div className="w-[200px] shrink-0">
+                    <LockedCurrency
+                      code={currency}
+                      note={base ? `${BASE_CURRENCY} is the base currency: nothing converts.` : `Paid from a ${currency} account, so the vendor gets exactly what you pay.`}
+                    />
+                  </div>
+                </div>
+                {!base && (
+                  <div className="flex items-center justify-between gap-2 px-0.5 text-[11.5px]">
+                    <span className="text-slate-500">Base equivalent</span>
+                    <span className="inline-flex items-center gap-1.5 tabular-nums text-slate-700" style={{ fontWeight: 600 }}>
+                      <CurrencyFlag code={BASE_CURRENCY} size={12} />
+                      {formatMoney(cost, BASE_CURRENCY)} {BASE_CURRENCY}
+                    </span>
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  {base ? `${BASE_CURRENCY} is the base currency, so nothing converts.` : `Paid from a ${currency} account, so the vendor gets exactly what you pay. Nothing converts.`}
+                </p>
+              </>
+            )}
+          </Section>
+
+          {/* The vendor credit applied, each at the rate it was paid at
+              (Mahreen, 2026-11-20), as on the invoice. */}
           {!base && credits.some((c) => c.amount > 0.004) && (
             <Section label="Vendor credit">
               {credits
@@ -421,121 +387,50 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
             </Section>
           )}
 
-          <Section label="Pay from">
-            <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100 overflow-hidden">
-              {ordered.map((a) => {
-                const reason = payFromBlockReason(a.currency, currency);
-                const selected = a.id === accountId;
-                const Icon = a.type === 'cash' ? Banknote : a.type === 'card' ? Wallet : Landmark;
-                const row = (
-                  <button
-                    key={a.id}
-                    type="button"
-                    disabled={!!reason || readOnly}
-                    onClick={() => setAccountId(a.id)}
-                    aria-pressed={selected}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
-                      reason ? 'opacity-50 cursor-not-allowed bg-slate-50/60' : selected ? 'bg-blue-50' : readOnly ? 'cursor-default' : 'hover:bg-slate-50 cursor-pointer'
-                    }`}
-                  >
-                    <span className="w-6 h-6 rounded-md bg-slate-50 text-slate-500 flex items-center justify-center shrink-0">
-                      <Icon className="w-3.5 h-3.5" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5">
-                        <span className={`text-[12px] truncate ${selected ? 'text-primary' : 'text-foreground'}`} style={{ fontWeight: 600 }}>{a.label}</span>
-                        <CurrencyFlag code={a.currency} size={12} />
-                        <span className="text-[10.5px] text-slate-500" style={{ fontWeight: 600 }}>{a.currency}</span>
-                        {!reason && a.currency === youPayIn && (
-                          <span className="text-[9.5px] px-1.5 py-px rounded-full bg-slate-100 text-slate-500" style={{ fontWeight: 600 }}>You pay in</span>
-                        )}
-                      </span>
-                      <span className="block text-[10.5px] text-slate-400 truncate">
-                        {reason ?? (convertsAtBank(a.currency, currency) ? 'The bank converts: two amounts' : base ? 'No conversion' : 'Nothing converts: one amount')}
-                      </span>
-                    </span>
-                    <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{formatMoney(a.balance, a.currency)}</span>
-                    {selected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-                  </button>
-                );
-                return reason ? (
-                  <Tooltip key={a.id}>
-                    <TooltipTrigger asChild>
-                      <div>{row}</div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[260px] p-2.5 bg-white border border-border rounded-lg shadow-md z-[300]">
-                      <p className="text-[11px] text-slate-500 leading-snug">{reason}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                ) : (
-                  row
-                );
-              })}
-            </div>
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              {base
-                ? `Only ${BASE_CURRENCY} accounts can pay a ${BASE_CURRENCY} invoice.`
-                : `Only a ${currency} account or a ${BASE_CURRENCY} account can pay. ${youPayIn} is the default, from the PO.`}
-            </p>
-          </Section>
-
-
           {!base && (
             <Section label="Rate">
-              {converts ? (
-                <>
-                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-                    <div className="flex items-center gap-1.5 text-[11px]">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-600" />
-                      <span className="text-sky-700" style={{ fontWeight: 600 }}>Bank's rate</span>
-                      <span className="text-slate-500 truncate">· worked out from the two amounts</span>
-                    </div>
-                    <BankConversionLine
-                      className="mt-1.5"
-                      currency={currency}
-                      vendorReceives={vendorReceives}
-                      accountCurrency={accountCurrency}
-                      bankTook={took}
-                      dayRate={dayRate}
-                      paymentDate={paymentDate}
-                    />
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                {converts ? (
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-600" />
+                    <span className="text-sky-700" style={{ fontWeight: 600 }}>Bank's rate</span>
+                    <span className="text-slate-500 truncate">· worked out from the two amounts</span>
                   </div>
-                  <RateCard
-                    from={currency}
-                    rate={dayRate}
-                    type="mid"
-                    source={RATE_PROVIDER}
-                    caption={`The mid-market rate on ${formatRateDate(paymentDate)}, the payment date, for comparison.`}
-                    amount={vendorReceives}
-                  />
-                </>
-              ) : (
+                ) : (
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#7C3AED' }} />
+                    <span style={{ color: '#7C3AED', fontWeight: 600 }}>Mid-market</span>
+                    <span className="text-slate-500 truncate">· {RATE_PROVIDER}</span>
+                  </div>
+                )}
+                <p className="mt-1.5 text-[13px] text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>
+                  1 {currency} = {formatRate(rate)} {BASE_CURRENCY}
+                </p>
+                <p className="mt-1 text-[10.5px] text-slate-400">
+                  {converts ? `from the two amounts · ${formatRateDate(paymentDate)}` : `${formatRateDate(paymentDate)} · payment date`}
+                  {converts && Math.abs(gap) >= 0.005 ? ` · ${gap > 0 ? '+' : '−'}${Math.abs(gap).toFixed(2)}% vs the day's mid-market ${formatRate(dayRate)}` : ''}
+                </p>
+              </div>
+              {converts && (
                 <RateCard
                   from={currency}
                   rate={dayRate}
                   type="mid"
                   source={RATE_PROVIDER}
-                  caption={`Nothing converts. The ${currency} paid are valued at the ${formatRateDate(paymentDate)} mid-market rate in the base-currency ledger.`}
+                  caption={`${formatRateDate(paymentDate)} · payment date, for comparison`}
                   amount={vendorReceives}
                 />
               )}
+              <LockLine locked={posted} text={posted ? 'locked when the payment posted' : 'locks when the payment posts'} />
             </Section>
           )}
 
           {!base && fx && (
-            <Section label="FX difference at payment">
-              <div className="rounded-lg border px-3 py-2.5" style={{ backgroundColor: 'rgba(241,245,249,0.5)', borderColor: '#EEF2F6' }}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11.5px] text-slate-600" style={{ fontWeight: 600 }} title={FX_GAIN_LOSS_TIP}>
-                    {gainLossOf(fx.amount) === 'gain' ? 'FX Gain' : gainLossOf(fx.amount) === 'loss' ? 'FX Loss' : 'No difference'}
-                  </span>
-                  <GainLossFigure amount={fx.amount} size={12.5} />
-                </div>
-                <div className="mt-1.5 space-y-0.5 text-[11px] text-slate-500 tabular-nums">
+            <Section label="FX variance">
+              <VarianceCard amount={fx.amount} caption={paymentRatesText(lines, rate)}>
+                <div className="mt-2 pt-2 border-t border-[#EEF2F6] space-y-0.5 text-[11px] text-slate-500 tabular-nums">
                   <div className="flex justify-between gap-3">
-                    <span>
-                      A/P carried at {invoiceRates.length === 1 ? `the invoice rate, ${baseRate(invoiceRates[0].rate)}${invoiceRates[0].rateDate ? ` (${formatRateDate(invoiceRates[0].rateDate)})` : ''}` : `${invoiceRates.length} invoice rates`}
-                    </span>
+                    <span>A/P carried at the invoice rate{Array.from(new Set(lines.map((l) => l.rate))).length > 1 ? 's' : ''}</span>
                     <span className="text-slate-700">{formatMoney(fx.carried, BASE_CURRENCY)}</span>
                   </div>
                   {fx.credit > 0.004 && (
@@ -545,33 +440,16 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
                     </div>
                   )}
                   <div className="flex justify-between gap-3">
-                    <span>{converts ? 'Paid: what the bank took' : `Paid: at the ${formatRateDate(paymentDate)} rate`}</span>
+                    <span>{converts ? 'You pay: what the bank took' : `You pay: at the ${formatRateDate(paymentDate)} rate`}</span>
                     <span className="text-slate-700">−{formatMoney(fx.cost, BASE_CURRENCY)}</span>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-500 leading-relaxed mt-1.5">
-                  {gainLossOf(fx.amount) === 'gain'
-                    ? 'Paying cost less in the base currency than A/P carried: a gain.'
-                    : gainLossOf(fx.amount) === 'loss'
-                      ? 'Paying cost more in the base currency than A/P carried: a loss.'
-                      : 'Paying cost what A/P carried: nothing to post.'}
-                  {gainLossOf(fx.amount) === 'gain' ? ' Posts to FX Gain.' : gainLossOf(fx.amount) === 'loss' ? ' Posts to FX Loss.' : ''}
-                </p>
-              </div>
+              </VarianceCard>
             </Section>
           )}
 
-          {base ? (
-            <p className="text-[11.5px] text-slate-500">{BASE_CURRENCY} is the base currency, so this payment converts nothing and posts no FX Gain or FX Loss.</p>
-          ) : (
-            <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-[11.5px] leading-relaxed" style={{ backgroundColor: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
-              <Lock className="w-3 h-3 mt-[3px] shrink-0" />
-              <span>
-                {readOnly
-                  ? `This payment posted: ${converts && took != null ? bankConversionText(took, vendorReceives, currency) : `${formatMoney(vendorReceives, currency)} from the ${currency} account at ${rateSentence(currency, dayRate)}`}.`
-                  : "The vendor always receives the invoice's currency, whichever account pays. The rate and the FX Gain or FX Loss lock when the payment posts."}
-              </span>
-            </div>
+          {base && (
+            <p className="text-[11.5px] text-slate-500">{BASE_CURRENCY} is the base currency, so this payment converts nothing and posts no FX variance.</p>
           )}
         </div>
 
@@ -601,11 +479,11 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
               <button
                 type="button"
                 onClick={save}
-                disabled={!canSave}
+                disabled={dirty && !canSave}
                 className="inline-flex h-9 items-center rounded-lg px-4 text-[12.5px] font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 style={{ backgroundColor: '#0A77FF' }}
               >
-                Save configuration
+                Apply
               </button>
             )}
           </div>

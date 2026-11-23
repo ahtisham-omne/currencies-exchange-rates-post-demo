@@ -150,6 +150,7 @@ import { InfoTooltip } from "../ui/info-tooltip";
 import { PctAmountToggle } from "./PctAmountToggle";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "../ui/hover-card";
 import { getAvatarTint } from "../../utils/avatarTints";
+import { PaymentTermCurrencyTable } from "../currency/PaymentTermCurrency";
 import { STATUS_LABELS } from "../../data/vendors";
 import { GroupChipsRow } from "./GroupChipsRow";
 import { FilterPills } from "./FilterPills";
@@ -215,11 +216,14 @@ import {
   type ContactPerson,
 } from "./partnerConstants";
 import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
-import { currencyCodeOf, currencyIdOf } from "@/app/currency/partnerCurrency";
+import { currencyCodeOf, currencyIdOf, groupRateTypeOf } from "@/app/currency/partnerCurrency";
+import type { RateType } from "@/app/currency/rates";
+import { RULE_FIXED_TOOLTIP, RULE_SYMBOL, isFixedRuleAmount, ruleAmountFromInput, ruleInputValue } from "@/app/currency/pricingRuleCurrency";
 import { CurrencyFlag } from "../currency/CurrencyFlag";
 import { CurrencySymbol } from "../currency/CurrencySymbol";
 import { BaseCurrencyPreview } from "../currency/BaseCurrencyPreview";
-import { RuleAmountPreview } from "../currency/RuleAmountPreview";
+import { RateTypeToggle } from "../currency/CurrencyPill";
+import { RuleCreateExampleCard, RuleCurrencyField, RuleCurrencyNote } from "../currency/RuleCurrency";
 import { SelectPocDictionaryModal, CreatePocModal } from "./PocModals";
 import { PocPillsRow } from "./PocPillComponents";
 import { AddressAutocomplete } from "./AddressAutocomplete";
@@ -393,6 +397,12 @@ export function CreatePartnerGroupModal({ open, onOpenChange, onPartnerCreated, 
       const savedCredit = cfg.configCreditLimit as Record<string, unknown> | undefined;
       if (tplCurrency && !savedCredit?.currency) {
         configDataRef.current.configCreditLimit = { ...(savedCredit ?? {}), currency: tplCurrency };
+      }
+      // Same for its default exchange rate (mid-market unless set).
+      const tplRateType = (g.template as { rateType?: string } | undefined)?.rateType;
+      const savedCreditNow = configDataRef.current.configCreditLimit as Record<string, unknown> | undefined;
+      if (tplRateType && !savedCreditNow?.rateType) {
+        configDataRef.current.configCreditLimit = { ...(savedCreditNow ?? {}), rateType: tplRateType };
       }
 
       // configOnlyMode jumps straight to Step 3 (Template Configuration);
@@ -4612,6 +4622,7 @@ export function ConfigPageContent({
   const _seedCfg = configDataRef.current as Record<string, unknown>;
   const _seedCreditLimit = _seedCfg.configCreditLimit as {
     currency?: string;
+    rateType?: string;
     enforcement?: string;
     maxCreditLimit?: string;
     warningThreshold?: string;
@@ -5059,7 +5070,13 @@ export function ConfigPageContent({
     if (!createPrName.trim()) return;
     // All items prices every item, including future ones — always confirm on purpose.
     if (createPrItemScope === "all" && !confirmedAllItems) { setCreatePrAllItemsConfirmOpen(true); return; }
-    const tierData = createPrTiers.map((t) => ({ minValue: t.minQty || "-", maxValue: t.maxQty || "-", discount: t.discount ? `${t.discount}${t.fixRate ? "$" : "%"}` : "-" }));
+    // Value thresholds and fixed amounts are base-currency amounts ("₨280,000").
+    const threshold = (v: string) => (createPrBasis === "value" ? ruleAmountFromInput(v) : v) || "-";
+    const tierData = createPrTiers.map((t) => ({
+      minValue: threshold(t.minQty),
+      maxValue: threshold(t.maxQty),
+      discount: t.discount ? (t.fixRate ? ruleAmountFromInput(t.discount) || t.discount : `${t.discount.replace(/%$/, "")}%`) : "-",
+    }));
     if (editingPrRuleId) {
       // Update existing custom rule
       customPricingRulesRef.current = customPricingRulesRef.current.map((r) =>
@@ -5116,13 +5133,19 @@ export function ConfigPageContent({
     setCreatePrCategory(rule.category === "all" ? "discount" : rule.category);
     setCreatePrBasis(rule.basis);
     setCreatePrTiers(
-      rule.tiers.map((t) => ({
-        discount: t.discount,
-        fixRate: false,
-        qtyLimits: true,
-        minQty: t.minValue || "",
-        maxQty: t.maxValue || "",
-      }))
+      // The form shows the base currency's symbol beside value fields, so
+      // the stored "₨280,000" goes in as "280,000".
+      rule.tiers.map((t) => {
+        const fixed = isFixedRuleAmount(t.discount);
+        const field = (v: string) => (!v || v === "-" ? "" : rule.basis === "value" ? ruleInputValue(v) : v);
+        return {
+          discount: fixed ? ruleInputValue(t.discount) : (t.discount === "-" ? "" : t.discount.replace(/%$/, "")),
+          fixRate: fixed,
+          qtyLimits: true,
+          minQty: field(t.minValue),
+          maxQty: field(t.maxValue),
+        };
+      })
     );
     setPricingRulesModalOpen(false);
     setPreviewPricingRuleId(null);
@@ -5209,6 +5232,12 @@ export function ConfigPageContent({
   // inferred from the group's country (spec 4.2).
   // Seeded groups carry their currency in the template, not in configData.
   const [currency, setCurrency] = useState(() => _seedCreditLimit?.currency || selectedGroup?.template?.currency || currencyIdOf(BASE_CURRENCY));
+  // The group's default exchange rate (Currency Touchpoints Map): set beside
+  // the currency; its partners inherit it. Mid-market until set.
+  const [rateType, setRateType] = useState<RateType>(() => {
+    const saved = _seedCreditLimit?.rateType;
+    return saved === "mid" || saved === "corporate" ? saved : groupRateTypeOf(selectedGroup);
+  });
   // Perspective-aware defaults.
   // Vendor: we receive from vendor → Ship To = our location (pl-1), Pay To = vendor (pl-3), Funded By = us (pl-7).
   // Customer: we deliver to customer → Ship To = customer location (pl-2), Pay To = us (pl-7), Funded By = customer (pl-3).
@@ -5489,6 +5518,7 @@ export function ConfigPageContent({
       configPointsOfContact: pocData,
       configCreditLimit: {
         currency,
+        rateType,
         enforcement,
         maxCreditLimit,
         warningThreshold,
@@ -5501,7 +5531,7 @@ export function ConfigPageContent({
       // here so a Carrier profile's saved methods reappear on edit.
       configCustomMethods: customMethods,
     };
-  }, [paymentEntries, selectedPaymentTermPreset, selectedPricingRuleIds, selectedPocContacts, carrierServices, vendorShippingPrefs, currency, enforcement, maxCreditLimit, warningThreshold, hardBlockRecipients, softWarningRecipients, billingType, customMethods, configDataRef]);
+  }, [paymentEntries, selectedPaymentTermPreset, selectedPricingRuleIds, selectedPocContacts, carrierServices, vendorShippingPrefs, currency, rateType, enforcement, maxCreditLimit, warningThreshold, hardBlockRecipients, softWarningRecipients, billingType, customMethods, configDataRef]);
 
   if (sectionId === "billing_shipping" || sectionId === "customer_billing") {
     const currencyObj = CURRENCY_OPTIONS.find((c) => c.id === currency);
@@ -5717,7 +5747,7 @@ export function ConfigPageContent({
         <div>
           <h4 className="text-sm text-foreground" style={{ fontWeight: 700 }}>Billing & Shipping</h4>
           <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-            Only <span className="text-foreground" style={{ fontWeight: 600 }}>Currency</span> is inherited from this group template. Delivery destination, payment recipient, and funding source are partner-specific and configured on each partner individually.
+            Only <span className="text-foreground" style={{ fontWeight: 600 }}>Currency</span> and its <span className="text-foreground" style={{ fontWeight: 600 }}>Default exchange rate</span> are inherited from this group template. Delivery destination, payment recipient, and funding source are partner-specific and configured on each partner individually.
           </p>
         </div>
 
@@ -5922,6 +5952,18 @@ export function ConfigPageContent({
                         <p className="text-[12px] text-slate-400" style={{ fontWeight: 500 }}>Select currency</p>
                       </div>
                     )}
+                    {/* Default exchange rate — in the same card; the group's
+                        partners inherit it with the currency. Clicks here
+                        don't open the currency list. */}
+                    <div className="pt-2.5 border-t border-muted flex flex-col gap-1.5 cursor-default" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Default exchange rate</span>
+                        <InfoTooltip>{`The rate new documents with this group's ${configType === "customer" ? "customers" : "vendors"} start from: mid-market (synced from the rate provider) or corporate (set by finance). Each partner inherits it and can override it. A document can still switch it.`}</InfoTooltip>
+                      </div>
+                      <div>
+                        <RateTypeToggle value={rateType} onChange={setRateType} />
+                      </div>
+                    </div>
                   </div>
                 </PopoverTrigger>
                 <PopoverContent className="w-[340px] p-0 rounded-xl border border-border shadow-lg z-[250]" align="start" sideOffset={4}>
@@ -6271,43 +6313,23 @@ export function ConfigPageContent({
         {e.applyDiscount && (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
                 <Label className="text-xs text-slate-500" style={{ fontWeight: 500 }}>Discount</Label>
-                <PctAmountToggle
-                  isFixed={(e.discountMode ?? "percent") === "fixed"}
-                  onChange={(fixed) => updatePaymentEntry(e.id, { discountMode: fixed ? "fixed" : "percent" })}
-                  percentTooltip="Discount applied as a percentage of the transaction amount."
-                  amountTooltip="Discount applied as a fixed dollar amount."
-                />
+                <InfoTooltip>{"Discount applied as a percentage of the transaction amount. Percentages only, so it works on a payment in any currency."}</InfoTooltip>
               </div>
               <div className="relative mt-1.5">
-                {(e.discountMode ?? "percent") === "fixed" && (
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
-                )}
-                <Input value={e.discountPercent} onChange={(ev) => updatePaymentEntry(e.id, { discountPercent: ev.target.value })} placeholder={`e.g. ${(e.discountMode ?? "percent") === "percent" ? "5" : "25.00"}`} className={`rounded-lg border-border h-10 bg-white text-sm text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${(e.discountMode ?? "percent") === "fixed" ? "pl-7 pr-3" : "pr-8"}`} />
-                {(e.discountMode ?? "percent") === "percent" && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
-                )}
+                <Input value={e.discountPercent} onChange={(ev) => updatePaymentEntry(e.id, { discountPercent: ev.target.value, discountMode: "percent" })} placeholder="e.g. 5" className="rounded-lg border-border h-10 bg-white text-sm text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 pr-8" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
               </div>
             </div>
             <div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
                 <Label className="text-xs text-slate-500" style={{ fontWeight: 500 }}>Add. Charges</Label>
-                <PctAmountToggle
-                  isFixed={(e.additionalChargesMode ?? "percent") === "fixed"}
-                  onChange={(fixed) => updatePaymentEntry(e.id, { additionalChargesMode: fixed ? "fixed" : "percent" })}
-                  percentTooltip="Additional charges added as a percentage of the transaction amount."
-                  amountTooltip="Additional charges added as a fixed dollar amount."
-                />
+                <InfoTooltip>{"Additional charges added as a percentage of the transaction amount. Percentages only, so it works on a payment in any currency."}</InfoTooltip>
               </div>
               <div className="relative mt-1.5">
-                {(e.additionalChargesMode ?? "percent") === "fixed" && (
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
-                )}
-                <Input value={e.additionalCharges} onChange={(ev) => updatePaymentEntry(e.id, { additionalCharges: ev.target.value })} placeholder={`e.g. ${(e.additionalChargesMode ?? "percent") === "percent" ? "2" : "50.00"}`} className={`rounded-lg border-border h-10 bg-white text-sm text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${(e.additionalChargesMode ?? "percent") === "fixed" ? "pl-7 pr-3" : "pr-8"}`} />
-                {(e.additionalChargesMode ?? "percent") === "percent" && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
-                )}
+                <Input value={e.additionalCharges} onChange={(ev) => updatePaymentEntry(e.id, { additionalCharges: ev.target.value, additionalChargesMode: "percent" })} placeholder="e.g. 2" className="rounded-lg border-border h-10 bg-white text-sm text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 pr-8" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
               </div>
             </div>
           </div>
@@ -6515,8 +6537,8 @@ export function ConfigPageContent({
                   {entry.phone && <div><p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Phone</p><p className="text-[13px] text-foreground mt-0.5" style={{ fontWeight: 500 }}>{entry.countryCode} {entry.phone}</p></div>}
                   {entry.applyDiscount && (
                     <div className="flex gap-4">
-                      {entry.discountPercent && <div><p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Discount</p><p className="text-[13px] text-foreground mt-0.5" style={{ fontWeight: 500 }}>{(entry.discountMode ?? "percent") === "fixed" ? "$" : ""}{entry.discountPercent}{(entry.discountMode ?? "percent") === "percent" ? "%" : ""}</p></div>}
-                      {entry.additionalCharges && <div><p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Add. Charges</p><p className="text-[13px] text-foreground mt-0.5" style={{ fontWeight: 500 }}>{(entry.additionalChargesMode ?? "percent") === "fixed" ? "$" : ""}{entry.additionalCharges}{(entry.additionalChargesMode ?? "percent") === "percent" ? "%" : ""}</p></div>}
+                      {entry.discountPercent && <div><p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Discount</p><p className="text-[13px] text-foreground mt-0.5" style={{ fontWeight: 500 }}>{entry.discountPercent}%</p></div>}
+                      {entry.additionalCharges && <div><p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Add. Charges</p><p className="text-[13px] text-foreground mt-0.5" style={{ fontWeight: 500 }}>{entry.additionalCharges}%</p></div>}
                     </div>
                   )}
                 </div>
@@ -7375,7 +7397,7 @@ export function ConfigPageContent({
                           <Switch checked={createPtApplyDiscount} onCheckedChange={(v) => setCreatePtApplyDiscount(v === true)} />
                           <div className="flex-1 min-w-0">
                             <h5 className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>Apply Early Payment Discount</h5>
-                            <p className="text-[11px] text-slate-500 mt-0.5">Incentivize faster payments by offering a percentage or fixed discount within a defined window.</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">Incentivize faster payments with a percentage discount within a defined window. Terms use days and percentages only, so they work in any currency.</p>
                           </div>
                         </div>
 
@@ -7431,6 +7453,32 @@ export function ConfigPageContent({
                           </div>
                         )}
                       </div>
+                    </div>
+
+                    {/* In any currency (Partners §4): days and percentages only, so the
+                        term reads the same on a document in this partner's currency. */}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-3">
+                        <span className="text-sm text-foreground" style={{ fontWeight: 600 }}>In Any Currency</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild><span><Info className="w-3.5 h-3.5 text-slate-300 cursor-help" /></span></TooltipTrigger>
+                          <TooltipContent side="bottom" sideOffset={6} className="max-w-[260px] text-[11px] leading-[1.5] z-[300]">
+                            <p className="text-slate-500">Payment terms are days and percentages only, with no fixed amounts, so the same term applies to a document in any currency.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <PaymentTermCurrencyTable
+                        partnerCurrency={currencyCodeOf(currency)}
+                        term={{
+                          category: createPtType,
+                          duration: createPtType === "net" ? (createPtCustomDuration || createPtDuration) : undefined,
+                          discountPercent: createPtApplyDiscount ? createPtDiscountPercent : undefined,
+                          discountPeriod: createPtApplyDiscount ? (createPtCustomDiscountPeriod || createPtDiscountPeriod) : undefined,
+                          prepayPercent: createPtType === "prepayment" ? createPtCustomDuration : undefined,
+                          trigger: CREATE_PT_TRIGGERS.find((t) => t.id === createPtTrigger)?.label,
+                          milestones: createPtSplitEvents.map((e) => ({ pct: e.percent, label: CREATE_PT_TRIGGERS.find((t) => t.id === e.event)?.label ?? "" })),
+                        }}
+                      />
                     </div>
                   </div>
               </div>
@@ -7686,6 +7734,7 @@ export function ConfigPageContent({
           mode="create"
           onApply={(t) => { setSelectedPaymentTermId(t.id); setPaymentTermsModalOpen(false); }}
           onDuplicate={(t) => handleDuplicatePaymentTerm(t)}
+          partnerCurrency={currencyCodeOf(currency)}
         />
 
         {/* Shared Pricing Rule Detail Modal (same as VendorDetailsPage) */}
@@ -7736,7 +7785,7 @@ export function ConfigPageContent({
           <h4 className="text-sm text-foreground" style={{ fontWeight: 700 }}>{isCustomerCfg ? "Customer Pricing Rules" : "Vendor Pricing Rules"}</h4>
           <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
             {isCustomerCfg
-              ? "Default rules inherited by every customer created under this template. Tiered discounts or premiums attach automatically to their quotes and sales orders (e.g. 5% off on orders over $1,000). Partners can attach extra rules or detach inherited ones. "
+              ? "Default rules inherited by every customer created under this template. Tiered discounts or premiums attach automatically to their quotes and sales orders (e.g. 5% off on orders over ₨280,000). Partners can attach extra rules or detach inherited ones. "
               : "Default rules inherited by every vendor created under this template. Tiered discounts or premiums attach automatically to their purchase orders (e.g. 3% volume discount over 500 units). Partners can attach extra rules or detach inherited ones. "}
             <span className="text-primary inline-flex items-center gap-0.5 cursor-pointer hover:underline" style={{ fontWeight: 500 }}>
               Learn More <ExternalLink className="w-3 h-3" />
@@ -8531,7 +8580,7 @@ export function ConfigPageContent({
                                 <p className="text-slate-500">Measure thresholds by units ordered or order value.</p>
                                 <div className="mt-2 px-2.5 py-2 rounded-lg bg-slate-50 border border-muted">
                                   <p className="text-[10px] text-slate-400 tracking-wide" style={{ fontWeight: 600 }}>Example</p>
-                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over $10K.</p>
+                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over ₨2,800,000.</p>
                                 </div>
                               </TooltipContent>
                             </Tooltip>
@@ -8544,7 +8593,7 @@ export function ConfigPageContent({
                                   if (createPrBasis !== b) {
                                     setCreatePrBasis(b);
                                     // Clear tier thresholds when switching basis — old quantity values
-                                    // shouldn't linger as dollar amounts and vice versa.
+                                    // shouldn't linger as order values and vice versa.
                                     setCreatePrTiers(prev => prev.map(t => ({ ...t, minQty: "", maxQty: "" })));
                                   }
                                 }}
@@ -8561,6 +8610,9 @@ export function ConfigPageContent({
                             ))}
                           </div>
                         </div>
+                        {/* Currency: always the base currency, read-only (no currency pick on a rule). */}
+                        <RuleCurrencyField />
+                        <RuleCurrencyNote />
                         {/* Row 2: Description (full width) */}
                         <div className="col-span-2">
                           <ExpandableTextarea
@@ -8662,19 +8714,19 @@ export function ConfigPageContent({
                                     isFixed={tier.fixRate}
                                     onChange={(fixed) => updateCpmTier(idx, { fixRate: fixed })}
                                     percentTooltip={`${isDis ? "Discount" : "Premium"} applied as a percentage of the line value.`}
-                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in USD.`}
+                                    amountTooltip={RULE_FIXED_TOOLTIP(isDis ? "Discount" : "Premium")}
+                                    amountLabel={RULE_SYMBOL}
                                   />
                                 </div>
                                 <div className="relative">
                                   {tier.fixRate && (
                                     <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                   )}
-                                  <Input value={tier.discount} onChange={(e) => updateCpmTier(idx, { discount: e.target.value })} placeholder={tier.fixRate ? "e.g. 25.00" : "e.g. 50"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-7 pr-3" : "pr-8"}`} />
+                                  <Input value={tier.discount} onChange={(e) => updateCpmTier(idx, { discount: e.target.value })} placeholder={tier.fixRate ? "e.g. 7,000" : "e.g. 50"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-7 pr-3" : "pr-8"}`} />
                                   {!tier.fixRate && (
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                                   )}
                                 </div>
-                                {tier.fixRate && <RuleAmountPreview raw={tier.discount ?? ""} from={RULE_CURRENCY} to={currencyCodeOf(currency) ?? BASE_CURRENCY} />}
                               </div>
 
                               {/* Quantity limits toggle */}
@@ -8690,7 +8742,7 @@ export function ConfigPageContent({
                                   <span onClick={(e) => e.stopPropagation()}>
                                     <InfoTooltip>{createPrBasis === "volume"
                                       ? "Restricts this tier to orders within a specific quantity range. When enabled, the tier only applies when the order quantity falls between Min and Max."
-                                      : "Restricts this tier to orders within a specific dollar-value range. When enabled, the tier only applies when the order total falls between Min and Max."}</InfoTooltip>
+                                      : "Restricts this tier to orders within a specific value range, in PKR. When enabled, the tier only applies when the order total falls between Min and Max."}</InfoTooltip>
                                   </span>
                                 </label>
                               </div>
@@ -8704,30 +8756,28 @@ export function ConfigPageContent({
                                     <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createPrBasis === "volume" ? "Min Qty" : "Min Order Value"}</label>
                                     <InfoTooltip>{createPrBasis === "volume"
                                       ? "The smallest order quantity at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."
-                                      : "The smallest order value (in USD, the currency pricing rules are written in) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
+                                      : "The smallest order value (in PKR, the base currency pricing rules are written in) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createPrBasis === "value" && (
                                       <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                     )}
-                                    <Input value={tier.minQty} onChange={(e) => updateCpmTier(idx, { minQty: e.target.value })} placeholder={createPrBasis === "volume" ? "e.g. 100" : "e.g. 1,000"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createPrBasis === "value" ? "pl-7" : ""}`} />
+                                    <Input value={tier.minQty} onChange={(e) => updateCpmTier(idx, { minQty: e.target.value })} placeholder={createPrBasis === "volume" ? "e.g. 100" : "e.g. 280,000"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createPrBasis === "value" ? "pl-7" : ""}`} />
                                   </div>
-                                  {createPrBasis === "value" && <RuleAmountPreview raw={tier.minQty ?? ""} from={RULE_CURRENCY} to={currencyCodeOf(currency) ?? BASE_CURRENCY} />}
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
                                     <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createPrBasis === "volume" ? "Max Qty" : "Max Order Value"}</label>
                                     <InfoTooltip>{createPrBasis === "volume"
                                       ? "The largest order quantity this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."
-                                      : "The largest order value (in USD, the currency pricing rules are written in) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
+                                      : "The largest order value (in PKR, the base currency pricing rules are written in) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createPrBasis === "value" && (
                                       <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                     )}
-                                    <Input value={tier.maxQty} onChange={(e) => updateCpmTier(idx, { maxQty: e.target.value })} placeholder={createPrBasis === "volume" ? "e.g. 500" : "e.g. 5,000"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createPrBasis === "value" ? "pl-7" : ""}`} />
+                                    <Input value={tier.maxQty} onChange={(e) => updateCpmTier(idx, { maxQty: e.target.value })} placeholder={createPrBasis === "volume" ? "e.g. 500" : "e.g. 1,400,000"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createPrBasis === "value" ? "pl-7" : ""}`} />
                                   </div>
-                                  {createPrBasis === "value" && <RuleAmountPreview raw={tier.maxQty ?? ""} from={RULE_CURRENCY} to={currencyCodeOf(currency) ?? BASE_CURRENCY} />}
                                 </div>
                               </div>
                             )}
@@ -8739,6 +8789,17 @@ export function ConfigPageContent({
                     <button onClick={addCpmTier} className={`inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-lg border border-dashed text-[12px] transition-all cursor-pointer w-full justify-center ${createPrCategory === "discount" ? "border-[#BBF7D0] text-green-600 hover:bg-green-50 hover:border-[#86EFAC]" : "border-[#DDD6FE] text-violet hover:bg-violet-50 hover:border-[#C4B5FD]"}`} style={{ fontWeight: 600 }}>
                       <Plus className="w-3.5 h-3.5" /> Add Tier
                     </button>
+
+                    {/* Value-based: how the tiers meet a document in this currency
+                        (threshold checked in base at the document's rate). */}
+                    <RuleCreateExampleCard
+                      className="mt-4"
+                      basis={createPrBasis}
+                      tiers={createPrTiers}
+                      partnerCurrency={currencyCodeOf(currency)}
+                      rateType={rateType}
+                      category={createPrCategory}
+                    />
                   </div>
                 </div>
                 );
@@ -8756,7 +8817,7 @@ export function ConfigPageContent({
                       <p className="text-[13px] text-foreground truncate" style={{ fontWeight: 600 }}>{createPrName || "Untitled Rule"}</p>
                       <p className="text-[11px] text-slate-500 truncate">
                         {createPrCategory === "discount" ? "Discount" : "Premium"} · {createPrBasis === "volume" ? "Volume-Based" : "Value-Based"} · {createPrTiers.length} tier{createPrTiers.length !== 1 ? "s" : ""}
-                        {createPrTiers[0]?.discount ? ` · ${createPrTiers[0].discount}${createPrTiers[0].fixRate ? "$" : "%"}` : ""}
+                        {createPrTiers[0]?.discount ? ` · ${createPrTiers[0].fixRate ? ruleAmountFromInput(createPrTiers[0].discount) : `${createPrTiers[0].discount}%`}` : ""}
                       </p>
                     </div>
                     <button onClick={() => setCreatePrStep(1)} className="text-[11px] text-primary hover:text-[#086AE6] transition-colors cursor-pointer shrink-0" style={{ fontWeight: 600 }}>{createPrMode === "view" ? "View Setup" : "Edit Setup"}</button>

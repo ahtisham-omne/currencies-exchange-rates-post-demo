@@ -256,7 +256,7 @@ import { SerialQtyCell } from '@/app/components/SerialQtyCell';
 import { partnerForItem, type PartnerLocationItem } from '@/app/data/partnerLocations';
 import { getVendorDefaultExpenseAccount, setVendorDefaultExpenseAccount } from '@/app/lib/vendorDefaults';
 import { toast } from 'sonner';
-import { otherCurrencyReason, poCurrency, receiptCurrency } from '@/app/currency/returnCurrency';
+import { otherCurrencyReason, poCurrency, poKey, receiptCurrency, receiptPO } from '@/app/currency/returnCurrency';
 import { Invoice, mockInvoices } from '@/app/data/mockInvoices';
 
 import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -3879,6 +3879,22 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     return null;
   };
 
+  /** The PO the return's currency comes from: the first picked receipt's, for
+   *  "Return currency GBP · from PO-11151" on step 5 (2026-11-24). */
+  const currencyPOFor = (vendorCode: string): string | null => {
+    for (const byVendor of Object.values(itemTies)) {
+      const entry = byVendor[vendorCode];
+      if (!entry) continue;
+      for (const [grn, q] of Object.entries(entry.ties)) {
+        if (q > 0) {
+          const po = receiptPO(vendorCode, grn);
+          if (po) return po;
+        }
+      }
+    }
+    return null;
+  };
+
   const resolutionTargets = useMemo(
     () =>
       vendorDrafts.map((draft) => {
@@ -3907,6 +3923,12 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
           currency:
             currencyLockFor(draft.vendorCode) ??
             poCurrency(lineItems.find((li) => draft.lines.some((l) => l.sku === li.sku) && li.poNumber)?.poNumber),
+          // Where that currency comes from: "from PO-11151".
+          currencyPO:
+            currencyPOFor(draft.vendorCode) ??
+            ((po) => (po ? `PO-${poKey(po)}` : null))(
+              lineItems.find((li) => draft.lines.some((l) => l.sku === li.sku) && li.poNumber)?.poNumber,
+            ),
           // What is actually going back to them, so the card can show the
           // parts rather than a count of them, and say on hover what the
           // steps before it settled for each one.

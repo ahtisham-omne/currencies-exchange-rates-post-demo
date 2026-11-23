@@ -25,6 +25,7 @@
  */
 import React from "react";
 import { formatMoney } from "@/app/currency/money";
+import { docCurrencyLabels } from "@/app/components/so/soDocumentData";
 
 /* ─── Design tokens (kept local so the template survives theme drift) ─── */
 export const PDF_TOKENS = {
@@ -941,9 +942,12 @@ function PdfPaymentTotals({ data }: { data: PdfDocumentData }) {
             borderRadius: 4,
           }}
         >
-          <span style={{ fontSize: 15, fontWeight: 700 }}>Total Amount</span>
+          {/* The document's currency on the total, "Total (USD)", and the
+              footnote naming it (Currency Touchpoints Map, 24 Nov 2026). */}
+          <span style={{ fontSize: 15, fontWeight: 700 }}>{docCurrencyLabels(c).totalLabel}</span>
           <span style={{ fontSize: 19, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(data.grandTotal, c)}</span>
         </div>
+        <div style={{ marginTop: 6, textAlign: "right", fontSize: 11, color: PDF_TOKENS.muted }}>{docCurrencyLabels(c).footnote}</div>
       </div>
     </div>
   );

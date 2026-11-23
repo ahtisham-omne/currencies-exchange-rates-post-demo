@@ -39,19 +39,35 @@ import { MoneyOnDates } from '@/app/components/currency/MoneyOnDates';
 import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { formatMoney } from '@/app/currency/money';
 import { BaseMoney } from '@/app/components/currency/Money';
-import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { poRateFx } from '@/app/currency/invoiceFx';
-import { toBase } from '@/app/currency/rates';
+import { DEFAULT_RATE_TYPE, RATE_PROVIDER, toBase } from '@/app/currency/rates';
+import { receivingRateOn } from '@/app/currency/fxVariance';
 
 /* ── PO amounts in the base currency (Currency & Exchange Rates) ───────
  * The picker lists show amounts in base by default, as every list does: a
  * PO's figures at the PO's own rate (its PO date), the PO's currency on
- * hover; a receiving's value at the receiving date's rate (MoneyOnDates);
+ * hover; a receiving's value at the receiving date's rate (ReceivingMoney,
+ * the vendor's amount and that rate on hover);
  * a prepayment at the rate it was paid, which it keeps. */
 type PoRateRef = { currency?: string; exchangeRate?: number; poDate: string } | undefined;
 function PoMoney({ value, currency, po }: { value: number; currency: string; po: PoRateRef }) {
   const fx = po ? poRateFx({ currency: po.currency ?? currency, exchangeRate: po.exchangeRate, poDate: po.poDate }) : null;
   return <BaseMoney value={value} currency={po?.currency ?? currency} fx={fx} role="PO currency" dateLabel="PO date" />;
+}
+/** A receiving's value in base at the receiving date's rate, what it booked
+ *  into stock; the hover gives the vendor-currency amount and that rate
+ *  (Currency Touchpoints Map, Receiving 3). */
+function ReceivingMoney({ value, currency, date }: { value: number; currency: string; date: string }) {
+  const fx = isBaseCurrency(currency)
+    ? null
+    : { rate: receivingRateOn(currency, date), rateType: DEFAULT_RATE_TYPE, rateDate: date, source: RATE_PROVIDER, provisional: false, dateLabel: 'receiving date' };
+  return <BaseMoney value={value} currency={currency} fx={fx} role="Vendor currency" dateLabel="receiving date" />;
+}
+/** The currency tag on a foreign vendor's receiving (none on a base-currency one). */
+function ReceivingCurrencyTag({ currency }: { currency: string }) {
+  if (isBaseCurrency(currency)) return null;
+  return <CurrencyPill code={currency} note="The PO's currency. Receiving Value is in the base currency at the receiving date's rate; hover it for this currency." />;
 }
 /** A prepayment in base at its locked rate (as text, for chips and tooltips). */
 const prepaidText = (ctx: { amount: number; rate?: number }, currency: string) =>
@@ -4176,6 +4192,7 @@ function VendorNestedRow({
                             <span className={`font-semibold text-[13px] transition-colors ${isGRNFullyInvoiced ? 'text-emerald-800/80' : 'text-slate-400'}`}>
                               {highlightText(grn.grnNumber, grnSearch)}
                             </span>
+                            <ReceivingCurrencyTag currency={po.currency ?? vendor.currency} />
                             {/* Colour drains while locked — except FULLY
                                 INVOICED (BA 9/7), whose pill keeps its
                                 green "done" identity. */}
@@ -4228,7 +4245,7 @@ function VendorNestedRow({
                               numbers too (BA 9/7) — grey read odd inside
                               the emerald card. */}
                           <div className={`text-[14px] font-bold ${isGRNFullyInvoiced ? 'text-emerald-700' : 'text-slate-400'}`}>
-                            <MoneyOnDates value={grnTotalAmt} currency={po.currency ?? vendor.currency} poDate={po.poDate} receivingDate={grn.grnDate} />
+                            <ReceivingMoney value={grnTotalAmt} currency={po.currency ?? vendor.currency} date={grn.grnDate} />
                           </div>
                           <span className={`text-[8px] font-bold ${isGRNFullyInvoiced ? 'text-emerald-600/70' : 'text-gray-400'}`}>Receiving Value</span>
                         </div>
@@ -4267,6 +4284,7 @@ function VendorNestedRow({
                             <span className="font-semibold text-[13px] text-gray-900 group-hover:text-blue-600 transition-colors">
                               {highlightText(grn.grnNumber, grnSearch)}
                             </span>
+                            <ReceivingCurrencyTag currency={po.currency ?? vendor.currency} />
                             {(() => {
                               let statusLabel = 'Not Invoiced';
                               let statusStyles = 'bg-gray-50 text-gray-500 border-gray-200';
@@ -4330,7 +4348,7 @@ function VendorNestedRow({
                         <div className="flex flex-col items-end gap-0.5 px-2">
                           <div className="text-[14px] font-bold text-gray-900">
                             {/* The PO date, the receiving date and today (Currency & Exchange Rates). */}
-                            <MoneyOnDates value={grnTotalAmt} currency={po.currency ?? vendor.currency} poDate={po.poDate} receivingDate={grn.grnDate} />
+                            <ReceivingMoney value={grnTotalAmt} currency={po.currency ?? vendor.currency} date={grn.grnDate} />
                           </div>
                           <span className="text-[8px] text-gray-400 font-bold">Receiving Value</span>
                         </div>

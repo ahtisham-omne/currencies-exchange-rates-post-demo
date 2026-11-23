@@ -7,36 +7,38 @@ import { poFx, type PoFxFields } from "@/app/currency/poFx";
 import { RATE_TYPE_LABEL, toBase, type RateType } from "@/app/currency/rates";
 
 /* ── A new version's rate: the locked one, or today's ─────────────────
- * Ported from the earlier touchpoint's "Create new version" prompt: "Use
- * locked rate from V1 or apply current rate?". Shown when saving a version and
- * when reverting to one, on a PO in a foreign currency. Each option names its
- * rate; today's can be mid-market or corporate when a corporate rate is set
- * (Mahreen, 2026-11-20). The vendor's amounts don't change either way; the
- * base-currency totals do. */
+ * Ported from the earlier touchpoint's "Create new version" prompt, in the
+ * Currency Touchpoints Map's words (24 Nov): "Keep version 1's rate  1 USD =
+ * 276.1000 PKR" or "Use today's rate  1 USD = 278.5200 PKR". Shown when
+ * saving a version and when reverting to one, on a PO in a foreign currency.
+ * Under each rate: its type, its day and the base total (Mahreen,
+ * 2026-11-20); today's can be mid-market or corporate when a corporate rate
+ * is set. The vendor's amounts don't change either way; the base-currency
+ * totals do. */
 
 export interface VersionRateOptions {
-  /** The rate the version locked in: "Mid-market · 1 USD = 278.5200 PKR ·
-   *  Nov 19, 2026", then the base total when there is one. */
-  locked: string;
+  /** The rate the version locked in. */
+  locked: RateOption;
   /** Today's rate of each type; corporate only when a corporate rate is set. */
   today: { mid: TodayRate; corporate?: TodayRate | undefined };
-  /** The type "Apply current rate" starts on: the locked rate's, when today
+  /** The type "Use today's rate" starts on: the locked rate's, when today
    *  has one of that type. */
   defaultType: RateType;
 }
 
-interface TodayRate {
-  line: string;
+interface RateOption {
+  /** "1 USD = 276.1000 PKR" */
+  sentence: string;
+  /** "Mid-market · Nov 19, 2026 · total ₨2,823,134.42" */
+  meta: string;
+}
+
+interface TodayRate extends RateOption {
   /** False when it is the locked rate. */
   differs: boolean;
 }
 
 type Stamp = { exchangeRate: number; rateType: RateType; rateDate: string };
-
-/** "Mid-market · 1 USD = 278.5200 PKR · Nov 19, 2026". */
-function rateLine(currency: string, type: RateType, rate: number, day: string): string {
-  return `${RATE_TYPE_LABEL[type]} · ${rateSentence(currency, rate)} · ${day}`;
-}
 
 function buildOptions(
   currency: string,
@@ -49,13 +51,20 @@ function buildOptions(
   const today = (type: RateType, now: Stamp): TodayRate => {
     const differs = now.rateType !== locked.rateType || Math.abs(now.exchangeRate - locked.rate) > 1e-9;
     const totals = !withTotal ? "" : differs ? ` · total ${inBase(locked.rate)} → ${inBase(now.exchangeRate)}` : ` · total ${inBase(now.exchangeRate)}`;
-    return { line: rateLine(currency, type, now.exchangeRate, `Today, ${formatRateDate(now.rateDate)}`) + totals, differs };
+    return {
+      sentence: rateSentence(currency, now.exchangeRate),
+      meta: `${RATE_TYPE_LABEL[type]} · Today, ${formatRateDate(now.rateDate)}${totals}`,
+      differs,
+    };
   };
   // Today's corporate rate falls back to mid-market when none is set: then there is no corporate option.
   const corp = todayOf("corporate");
   const corporate = corp.rateType === "corporate" ? today("corporate", corp) : undefined;
   return {
-    locked: rateLine(currency, locked.rateType, locked.rate, formatRateDate(locked.rateDate)) + (withTotal ? ` · total ${inBase(locked.rate)}` : ""),
+    locked: {
+      sentence: rateSentence(currency, locked.rate),
+      meta: `${RATE_TYPE_LABEL[locked.rateType]} · ${formatRateDate(locked.rateDate)}${withTotal ? ` · total ${inBase(locked.rate)}` : ""}`,
+    },
     today: { mid: today("mid", todayOf("mid")), corporate },
     defaultType: locked.rateType === "corporate" && corporate ? "corporate" : "mid",
   };
@@ -78,12 +87,20 @@ export function VersionRateChoice({
   const today = (type === "corporate" && corporate) || options.today.mid;
   const pickToday = (t: RateType) => onChange(t === "corporate" ? "current-corporate" : "current-mid");
   const cards = [
-    { key: "locked", active: value === "locked", title: `Use locked rate from V${fromVersion}`, sub: options.locked, pick: () => onChange("locked") },
+    {
+      key: "locked",
+      active: value === "locked",
+      title: `Keep version ${fromVersion}'s rate`,
+      sentence: options.locked.sentence,
+      sub: options.locked.meta,
+      pick: () => onChange("locked"),
+    },
     {
       key: "current",
       active: value !== "locked",
-      title: "Apply current rate",
-      sub: today.differs ? today.line : `${today.line} · same as V${fromVersion}`,
+      title: "Use today's rate",
+      sentence: today.sentence,
+      sub: today.differs ? today.meta : `${today.meta} · same as version ${fromVersion}'s`,
       pick: () => pickToday(type),
     },
   ];
@@ -93,7 +110,7 @@ export function VersionRateChoice({
         Exchange rate
       </p>
       <p className="text-[11.5px] text-slate-500 mt-0.5">
-        Use locked rate from V{fromVersion} or apply current rate?
+        The vendor's amounts don't change. The PO's total in {BASE_CURRENCY} follows the rate.
       </p>
       <div className="mt-2 flex flex-col gap-2" role="radiogroup" aria-label="Exchange rate for the new version">
         {cards.map((c) => (
@@ -125,8 +142,13 @@ export function VersionRateChoice({
               {c.active && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
             </span>
             <div className="flex-1 min-w-0">
-              <span className="block text-[12.5px] text-slate-800" style={{ fontWeight: 600 }}>
-                {c.title}
+              <span className="flex items-baseline justify-between gap-3">
+                <span className="text-[12.5px] text-slate-800" style={{ fontWeight: 600 }}>
+                  {c.title}
+                </span>
+                <span className="text-[12px] text-slate-700 tabular-nums whitespace-nowrap" style={{ fontWeight: 500 }}>
+                  {c.sentence}
+                </span>
               </span>
               <span className="block text-[11px] text-slate-500 tabular-nums mt-0.5 leading-relaxed">{c.sub}</span>
               {/* Today's rate as mid-market or corporate, when a corporate rate is set. */}

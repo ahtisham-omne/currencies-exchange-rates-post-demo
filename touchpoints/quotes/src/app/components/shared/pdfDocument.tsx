@@ -25,6 +25,7 @@
  */
 import React from "react";
 import { formatMoney } from "@/app/currency/money";
+import { currencyFootnote } from "@/app/currency/currencies";
 
 /* ─── Design tokens (kept local so the template survives theme drift) ─── */
 export const PDF_TOKENS = {
@@ -883,6 +884,9 @@ function PdfPricingSection({ title, rows, currency }: {
 }
 
 function PdfPaymentTotals({ data }: { data: PdfDocumentData }) {
+  /* The document prints in the customer's currency (the quote's); the total
+     names it, and a footnote says what every amount is in (Currency
+     Touchpoints Map, Quotes 6). */
   const c = data.currency || "USD";
   return (
     <div style={{ marginTop: 20, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 32 }}>
@@ -941,8 +945,11 @@ function PdfPaymentTotals({ data }: { data: PdfDocumentData }) {
             borderRadius: 4,
           }}
         >
-          <span style={{ fontSize: 15, fontWeight: 700 }}>Total Amount</span>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>Total ({c.toUpperCase()})</span>
           <span style={{ fontSize: 19, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(data.grandTotal, c)}</span>
+        </div>
+        <div style={{ marginTop: 6, fontSize: 11, color: PDF_TOKENS.muted, textAlign: "right" }}>
+          {currencyFootnote(c.toUpperCase())}
         </div>
       </div>
     </div>

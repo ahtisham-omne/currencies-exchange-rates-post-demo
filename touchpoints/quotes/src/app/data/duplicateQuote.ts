@@ -1,6 +1,26 @@
 import type { Quote, QuoteVersion } from '../types/quote';
-import { CreatedLineItem, addCreatedQuote } from './quoteStore';
+import { CreatedLineItem, addCreatedQuote, getVersionRate, todaysRateType, type QuoteRateStamp, type VersionRateChoice } from './quoteStore';
 import { convertOn, customerCurrency, quoteFx, stampQuoteRate } from '@/app/currency/qFx';
+import { resolveAccount } from '@/app/currency/companyAccounts';
+
+/* ── The duplicate's currency and rate (Currency Touchpoints Map, Quotes 5) ──
+ * The same customer keeps the quote's currency, and the rep picks the rate:
+ * the original one (the seeded version's, else the quote's) or today's.
+ * Another customer takes that customer's currency; when it differs there is
+ * no original rate to keep, so the duplicate takes today's. */
+
+/** The rate the duplicate can keep: the version's on record, else the quote's. */
+export function originalRate(source: Quote, version?: number): QuoteRateStamp {
+  const fx = quoteFx(source);
+  const onRecord = version != null ? getVersionRate(source.id, version) : undefined;
+  if (onRecord && onRecord.currency.toUpperCase() === fx.currency) return onRecord;
+  return { currency: fx.currency, exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate, rateEdited: !!source.rateEdited };
+}
+
+/** The duplicate's currency: the quote's for the same customer, else the new customer's. */
+export function duplicateCurrency(source: Quote, newCustomerName?: string | null): string {
+  return newCustomerName ? customerCurrency(newCustomerName) : quoteFx(source).currency;
+}
 
 /* ════════════════════════════════════════════════════════════════════
    Shared duplicate-quote builder. Used by the listing page and the
@@ -20,6 +40,10 @@ export interface DuplicateOptions {
   selectedVersion: number;
   /** Existing quote numbers — used to make sure the new quote number is unique. */
   existingQuoteNumbers: string[];
+  /** Keep the original rate ("locked") or take today's of a type. Only
+   *  meaningful when the duplicate stays in the quote's currency; otherwise
+   *  it takes today's. Today's mid-market when left out. */
+  rateChoice?: VersionRateChoice;
 }
 
 export interface DuplicateResult {
@@ -95,16 +119,27 @@ export function duplicateQuote(source: Quote, options: DuplicateOptions): Duplic
     ? { id: options.newCustomerId, name: options.newCustomerName }
     : source.customer;
 
-  /* Same customer: the copy keeps the quote's currency. Another customer:
-     it opens in that customer's default (spec 4.3), prices converted at
-     today's mid-market rates. Either way it takes today's rate. */
+  /* Same customer: the copy keeps the quote's currency and the rate the rep
+     picked, the original or today's. Another customer: it opens in that
+     customer's default (spec 4.3), prices converted at today's mid-market
+     rates; in another currency there is no original rate, so it takes
+     today's. The pay-to account carries over when it can take the
+     duplicate's currency, else 1010. */
   const fromCurrency = quoteFx(source).currency;
-  const toCurrency = options.newCustomerId ? customerCurrency(options.newCustomerName) : fromCurrency;
+  const toCurrency = duplicateCurrency(source, options.newCustomerId ? options.newCustomerName : null);
   const convert = (n: number) => (toCurrency === fromCurrency ? n : convertOn(n, fromCurrency, toCurrency, now));
+  const keep = toCurrency === fromCurrency && options.rateChoice === 'locked';
+  const kept = keep ? originalRate(source, options.selectedVersion) : null;
+  const rateFields = kept
+    ? { currency: toCurrency, exchangeRate: kept.exchangeRate, rateType: kept.rateType, rateDate: kept.rateDate, rateEdited: !!kept.rateEdited }
+    : stampQuoteRate(toCurrency, now, (options.rateChoice && todaysRateType(options.rateChoice)) || 'mid');
+  const account = resolveAccount(toCurrency, source.payToAccount, source.settlementCurrency);
 
   const duplicated: Quote = {
     ...source,
-    ...stampQuoteRate(toCurrency, now),
+    ...rateFields,
+    payToAccount: account.id,
+    settlementCurrency: account.currency,
     totalValue: convert(source.totalValue),
     id: newId,
     quoteNumber: newQuoteNumber,

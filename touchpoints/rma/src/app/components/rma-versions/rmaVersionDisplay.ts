@@ -71,14 +71,6 @@ export const versionPalette = {
 /** The morph the rest of the module animates on. */
 export const VERSION_TRANSITION = 'all 250ms cubic-bezier(0.4, 0, 0.2, 1)';
 
-export const formatVersionCurrency = (n: number): string =>
-  new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
-
 export function formatVersionDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;

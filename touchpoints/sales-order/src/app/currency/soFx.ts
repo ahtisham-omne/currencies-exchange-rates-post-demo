@@ -137,20 +137,26 @@ export function convertOn(amount: number, from: string, to: string, day: string)
 export const DESIGN_CURRENCY = 'USD';
 export const LAST_SYNC_DAY = LAST_SYNC.slice(0, 10);
 
-/* ── Pricing-rule flat amounts ────────────────────────────────────────
- * Rule tiers are quantity bands; a "$" tier takes a flat amount off (or
- * adds it to) each unit. The rule book writes those amounts in USD, as
- * Partners and Purchase Orders do; on an SO they are converted to its
- * currency at the mid-market cross rate on its order date. Not at the SO's
- * own rate: that is the rate to base, and changing it (mid-market to
- * corporate, a rate typed on the SO) must not change the SO's total. */
-export const RULE_AMOUNT_CURRENCY = 'USD';
+/* ── Pricing-rule fixed amounts (Currency Touchpoints Map, 24 Nov 2026) ─
+ * Rules are written in the company's base currency, whatever it is, with
+ * no currency of their own: value thresholds and fixed amounts are PKR.
+ * Rule tiers here are quantity bands; a fixed-amount tier (unit "$" in the
+ * data, meaning "a fixed amount", not dollars) takes that many rupees off
+ * (or adds them to) each unit. On an SO in another currency the amount is
+ * converted at the SO's own rate, so it follows the order's rate, mid-market
+ * or corporate. (Until 24 Nov the rule book was in USD and converted at the
+ * order date's mid-market cross rate.) Seeded amounts first written in USD
+ * are restated at the spec's fixed factor, ×280 ($200 → Rs 56,000), the same
+ * in every module. */
+export const RULE_AMOUNT_CURRENCY = BASE_CURRENCY;
 
-export function ruleAmountFactor(fx: { currency: string; rateDate: string }): number {
-  if (fx.currency.toUpperCase() === RULE_AMOUNT_CURRENCY) return 1;
-  const usd = rateOn(RULE_AMOUNT_CURRENCY, fx.rateDate, 'mid').rate ?? 1;
-  const doc = rateOn(fx.currency, fx.rateDate, 'mid').rate ?? 1;
-  return crossRate(usd, doc);
+/** The spec's factor for restating a seeded USD rule amount in PKR. */
+export const RULE_USD_RESTATE_FACTOR = 280;
+
+/** A base-currency rule amount → the SO's currency, at the SO's rate. */
+export function ruleAmountFactor(fx: { currency: string; rate: number }): number {
+  if (isBaseCurrency(fx.currency)) return 1;
+  return fx.rate > 0 ? 1 / fx.rate : 1;
 }
 
 /* ── A customer's default currency (spec 4.3, 4.2) ────────────────────

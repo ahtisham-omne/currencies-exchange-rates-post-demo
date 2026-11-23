@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import type { RMAVersionEntry } from '@/app/data/rmaVersions';
 import { versionPalette as C } from './rmaVersionDisplay';
+import { LockChip } from '@/app/components/currency/ReturnCurrencyConfig';
 import {
   EMPTY_RMA_VERSION_FILTERS,
   filterRMAVersions,
@@ -26,6 +27,7 @@ export default function RMAVersionHistoryTab({
   currentVersion,
   onRevert,
   lockedNote,
+  rate,
 }: {
   versions: RMAVersionEntry[];
   /** Which version is in force. Drives the Current pill and hides Revert on
@@ -35,6 +37,10 @@ export default function RMAVersionHistoryTab({
   onRevert?: ((version: number, reason: string) => void) | undefined;
   /** Why no version can be reverted to, said above the list. */
   lockedNote?: string | undefined;
+  /** A return in another currency: the receiving rate every version's PKR
+   *  figures are at, locked with the return after the first shipment
+   *  (Currency Touchpoints Map, 2026-11-24). */
+  rate?: { sentence: string; qualifier: string; locked: boolean } | undefined;
 }) {
   const [filterState, setFilterState] = useState<RMAVersionFilterState>(
     EMPTY_RMA_VERSION_FILTERS,
@@ -132,6 +138,22 @@ export default function RMAVersionHistoryTab({
           >
             <Lock style={{ width: 13, height: 13, color: C.text500 }} />
             {lockedNote}
+          </div>
+        )}
+
+        {rate && (
+          <div
+            className="flex items-center gap-2 border-b px-4 py-2.5"
+            style={{ borderColor: C.border, fontSize: 12, color: C.text700 }}
+          >
+            <span style={{ color: C.text500, fontSize: 11, fontWeight: 500 }}>Rate</span>
+            <span className="tabular-nums" style={{ fontWeight: 500 }}>
+              {rate.sentence}
+              <span style={{ color: C.text500, fontWeight: 400 }}> · {rate.qualifier}</span>
+            </span>
+            {rate.locked && (
+              <LockChip locked title="Locked since the first shipment. Every version values its lines at this receiving rate, so a new version doesn't move them." />
+            )}
           </div>
         )}
 

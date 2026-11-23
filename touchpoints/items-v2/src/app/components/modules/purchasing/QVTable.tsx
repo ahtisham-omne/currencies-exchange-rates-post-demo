@@ -67,9 +67,11 @@ import {
 import { cn } from "@/lib/utils";
 import { PriorityChip } from "../../items-v3/PriorityChip";
 import { VendorPrice } from "../../currency/VendorPrice";
-import { Money } from "../../currency/Money";
-import { formatMoney } from "../../../currency/money";
-import { BASE_CURRENCY } from "../../../currency/currencies";
+import { BaseMoney } from "../../currency/Money";
+import { CurrencyPill } from "../../currency/CurrencyChip";
+import { formatMoney, rateSentence } from "../../../currency/money";
+import { RATE_TYPE_LABEL } from "../../../currency/rates";
+import { BASE_CURRENCY, isBaseCurrency } from "../../../currency/currencies";
 import { priceInBase, qvRate } from "../../../currency/vendorFx";
 import { OnTimeCell } from "../../items-v3/OnTimeCell";
 import { InitialAvatar } from "../../items-v3/InitialAvatar";
@@ -99,14 +101,16 @@ interface ColDef {
 export const COLUMNS: ColDef[] = [
   { key: "priority",           label: "Priority",                      width: 120 },
   { key: "partner",            label: "Partner",                       sortable: true, width: 240 },
+  /* The price sits next to the vendor, so it shows without scrolling
+     (Currency Touchpoints Map, Items 2, 24 Nov 2026). */
+  { key: "unitsPricing",       label: "Units & Pricing",               width: 260 },
   /* Partner-listing parity identity columns (ported from VendorsListPage). */
   { key: "location",           label: "Partner Locations",             sortable: true, width: 260 },
   { key: "pointOfContact",     label: "Points of Contact",                             width: 280 },
   { key: "country",            label: "Country",                       sortable: true, width: 200 },
-  /* Money is in each vendor's currency (spec 4.1, 4.2), so headers carry no $. */
+  /* Money is in the base currency, the vendor's own amount in the hover. */
   { key: "creditLimit",        label: "Credit Limit",                  sortable: true, align: "right", width: 170 },
   /* Captured-at-qualification columns (the important info). */
-  { key: "unitsPricing",       label: "Units & Pricing",               width: 260 },
   { key: "leadTime",           label: "Lead Time",                     sortable: true, align: "right", width: 120 },
   { key: "carrierVendor",      label: "Carrier (Vendor)",                              width: 240 },
   { key: "pricingRules",       label: "Pricing Rules",                                 width: 240 },
@@ -237,8 +241,9 @@ function UnitsPricingCell({ qv }: { qv: QualifiedVendor }) {
   const tiers = getUnitTiers(qv);
   const primary = tiers[0];
   const multi = tiers.length > 1;
-  // In the vendor's currency, with the base equivalent underneath (spec 4.1).
+  // In the base currency; the hover gives the vendor's own price and the rate.
   const fx = qvRate(qv);
+  const foreign = !isBaseCurrency(fx.currency);
   return (
     <div className="flex items-center gap-2 min-w-0" onClick={(e) => e.stopPropagation()}>
       <span className="min-w-0 truncate text-sm">
@@ -268,6 +273,11 @@ function UnitsPricingCell({ qv }: { qv: QualifiedVendor }) {
               <p className="text-[11px] text-muted-foreground mt-px truncate">
                 {qv.vendorName} sells this item in {tiers.length} units
               </p>
+              {foreign && (
+                <p className="text-[10.5px] text-slate-400 mt-px truncate tabular-nums">
+                  In {BASE_CURRENCY} at {rateSentence(fx.currency, fx.rate)} · {RATE_TYPE_LABEL[fx.rateType]}
+                </p>
+              )}
             </div>
             <div className="max-h-[280px] overflow-y-auto divide-y divide-[#F1F5F9]">
               {tiers.map((t, idx) => (
@@ -290,10 +300,16 @@ function UnitsPricingCell({ qv }: { qv: QualifiedVendor }) {
                       {toNum(t.lead) ? <span>· {toNum(t.lead)}d lead</span> : null}
                     </div>
                   </div>
+                  {/* Base first, as in the list; the vendor's own price under it. */}
                   <span className="flex flex-col items-end shrink-0 tabular-nums">
-                    <span className="text-[12.5px] text-emerald-700" style={{ fontWeight: 600 }}>{formatMoney(t.price, fx.currency)}</span>
-                    {fx.currency !== BASE_CURRENCY && t.price > 0 && (
-                      <span className="text-[10.5px] text-slate-500">≈ {formatMoney(priceInBase(t.price, fx.rate), BASE_CURRENCY)}</span>
+                    <span className="text-[12.5px] text-emerald-700" style={{ fontWeight: 600 }}>
+                      {formatMoney(foreign ? priceInBase(t.price, fx.rate) : t.price, BASE_CURRENCY)}
+                    </span>
+                    {foreign && t.price > 0 && (
+                      <span className="text-[10.5px] text-slate-500">
+                        {formatMoney(t.price, fx.currency)}
+                        {formatMoney(t.price, fx.currency).includes(fx.currency) ? "" : ` ${fx.currency}`}
+                      </span>
                     )}
                   </span>
                 </div>
@@ -424,10 +440,16 @@ function renderCell(
       return (
         <div className="flex items-center gap-2.5 min-w-0">
           <InitialAvatar name={qv.vendorName} square />
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 flex items-center gap-1.5">
             <p className="text-sm truncate" style={{ fontWeight: 500, color: "#1E293B" }}>
               {qv.vendorName}
             </p>
+            {/* Currency tag on a vendor that isn't in the base currency. */}
+            {!isBaseCurrency(qv.currency) && (
+              <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                <CurrencyPill code={qv.currency} note="The vendor's currency, from the partner" />
+              </span>
+            )}
           </div>
         </div>
       );
@@ -445,15 +467,15 @@ function renderCell(
     case "country":
       return <CountryCell country={qv.country} countryFlag={qv.countryFlag} />;
     case "creditLimit":
-      return <CreditLimitCell creditLimit={qv.creditLimit} currency={qv.currency} />;
+      return <CreditLimitCell creditLimit={qv.creditLimit} currency={qv.currency} fx={qvRate(qv)} />;
     case "unitsPricing":
       return <UnitsPricingCell qv={qv} />;
     case "lastPoPricePerUnit":
-      return <span className="text-sm"><Money value={qv.lastPOPricePerUnit} currency={qv.currency} fx={qvRate(qv)} className="text-foreground" /></span>;
+      return <span className="text-sm"><BaseMoney value={qv.lastPOPricePerUnit} currency={qv.currency} fx={qvRate(qv)} className="text-foreground" /></span>;
     case "lastPoTotalAmount":
       return (
         <span className="text-sm">
-          <Money value={qv.lastPOTotalAmount} currency={qv.currency} fx={qvRate(qv)} className="text-foreground" />
+          <BaseMoney value={qv.lastPOTotalAmount} currency={qv.currency} fx={qvRate(qv)} className="text-foreground" />
         </span>
       );
     case "carrierVendor":

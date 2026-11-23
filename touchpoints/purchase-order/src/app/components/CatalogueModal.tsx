@@ -87,7 +87,9 @@ import { toast } from "sonner";
 import QuantityStepperInput from "./QuantityStepperInput";
 import ItemStatusChip from "./ItemStatusChip";
 import { computeCartVendorPricing } from "./poOrderPricing";
-import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { CurrencyPill } from "./currency/CurrencyChip";
+import { CART_TAG_NOTE, CATALOG_TAG_NOTE, poPerVendorLine } from "./currency/cartCurrency";
 import { formatMoney } from "@/app/currency/money";
 import { toBaseToday, todayFx, vendorCurrency } from "@/app/currency/poFx";
 import { BaseMoney } from "./currency/Money";
@@ -1291,6 +1293,7 @@ export default function ItemsCatalogueModal({
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2">
                                     <span className="text-foreground truncate text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT }}>{group.vendor}</span>
+                                    {!isBaseCurrency(group.currency) && <CurrencyPill code={group.currency} note={CART_TAG_NOTE} />}
                                     <span className="inline-flex items-center px-1.5 py-0 rounded-full shrink-0 bg-muted text-muted-foreground text-[10px] font-semibold leading-[16px]" style={{ fontFamily: FONT }}>
                                       {checkedCount}/{group.selectableCount} selected
                                     </span>
@@ -1395,7 +1398,10 @@ export default function ItemsCatalogueModal({
                                               </div>
                                               <span className="text-muted-foreground/50 text-[10px]">·</span>
                                               <div className="flex items-baseline gap-1">
-                                                <span className={`${muted("text-foreground")} text-xs font-semibold leading-[18px]`} style={{ fontFamily: FONT }}>{formatMoney(toBaseToday(effectivePrice, vendorCurrency(cat.partnerLocation)), BASE_CURRENCY)}</span>
+                                                <span className={`${muted("text-foreground")} text-xs font-semibold leading-[18px]`} style={{ fontFamily: FONT }}>
+                                                  {/* In base; a foreign vendor's price and the rate on hover, as on the item card. */}
+                                                  <BaseMoney value={effectivePrice} currency={vendorCurrency(cat.partnerLocation)} fx={todayFx(vendorCurrency(cat.partnerLocation))} dateLabel="today" role="Vendor currency" />
+                                                </span>
                                                 <span className={`${muted("text-muted-foreground")} text-[10px] leading-[14px]`} style={{ fontFamily: FONT }}>/ {cat.vendorUOM}</span>
                                               </div>
                                               {deactivated && (
@@ -1495,7 +1501,10 @@ export default function ItemsCatalogueModal({
                               {vendorGroups.map((g) => (
                                 <div key={g.vendor} className="flex items-start justify-between gap-2">
                                   <div className="flex-1 min-w-0">
-                                    <span className="text-foreground truncate block text-xs font-medium leading-[16px]" style={{ fontFamily: FONT }}>{g.vendor}</span>
+                                    <span className="flex items-center gap-1.5 min-w-0">
+                                      <span className="text-foreground truncate text-xs font-medium leading-[16px]" style={{ fontFamily: FONT }}>{g.vendor}</span>
+                                      {!isBaseCurrency(g.currency) && <CurrencyPill code={g.currency} note={CART_TAG_NOTE} />}
+                                    </span>
                                     <span className="text-muted-foreground text-[11px] leading-[15px]" style={{ fontFamily: FONT }}>{g.checkedCount} of {g.selectableCount} selected</span>
                                   </div>
                                   <span className="shrink-0 flex flex-col items-end">
@@ -1541,11 +1550,12 @@ export default function ItemsCatalogueModal({
                               </div>
                             </div>
 
-                            {checkedVendorCount > 1 && (
+                            {/* One PO per vendor, in that vendor's currency. */}
+                            {checkedVendorCount > 0 && (
                               <div className="mx-4 mb-3 flex items-start gap-2 px-3 py-2.5 rounded-md bg-accent border border-primary/15">
                                 <Info className="size-3.5 text-primary shrink-0 mt-0.5" />
                                 <span className="text-muted-foreground text-[11px] leading-[15px]" style={{ fontFamily: FONT }}>
-                                  <strong className="text-foreground font-semibold" style={{ fontFamily: FONT }}>{checkedVendorCount} separate POs</strong> will be created — one per vendor.
+                                  {poPerVendorLine(vendorGroups.filter((g) => g.checkedCount > 0))}
                                 </span>
                               </div>
                             )}
@@ -1907,6 +1917,10 @@ export default function ItemsCatalogueModal({
                                           {item.partnerLocation}
                                         </span>
                                       </span>
+                                      {/* The vendor's currency tag (foreign vendors only). */}
+                                      {!isBaseCurrency(vendorCurrency(item.partnerLocation)) && (
+                                        <CurrencyPill code={vendorCurrency(item.partnerLocation)} note={CATALOG_TAG_NOTE} />
+                                      )}
                                       <span className="text-muted-foreground" style={{ fontSize: "10px" }}>·</span>
                                     </>
                                   )}
@@ -2161,6 +2175,9 @@ export default function ItemsCatalogueModal({
                                         <span className="text-foreground truncate" style={{ fontSize: "12px", fontWeight: "var(--font-weight-medium)", lineHeight: "16px" }}>
                                           {vendorMatches ? highlightText(offer.vendorName, qVendor) : offer.vendorName}
                                         </span>
+                                        {!isBaseCurrency(vendorCurrency(offer.vendorName)) && (
+                                          <CurrencyPill code={vendorCurrency(offer.vendorName)} note={CATALOG_TAG_NOTE} />
+                                        )}
                                         {/* Priority label — always shown */}
                                         <span className="inline-flex items-center px-1 rounded-[var(--radius-sm)] shrink-0" style={{ backgroundColor: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))", fontSize: "8px", fontWeight: "var(--font-weight-medium)", lineHeight: "14px" }}>
                                           {offer.priority === "default" ? "Default" : (() => { const n = parseInt(offer.priority, 10); return n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`; })()}
@@ -2293,8 +2310,13 @@ export default function ItemsCatalogueModal({
                                 onClick={() => toggleGroupSection(group.vendor)}
                               >
                                 <AvatarCircle name={group.vendor} initials={abbr} size={28} />
-                                <span className="text-foreground flex-1 min-w-0 truncate text-sm font-semibold leading-[18px]" style={{ fontFamily: FONT }}>
-                                  {vendorMatches ? highlightSearchText(group.vendor, qV) : group.vendor}
+                                <span className="flex-1 min-w-0 flex items-center gap-2">
+                                  <span className="text-foreground min-w-0 truncate text-sm font-semibold leading-[18px]" style={{ fontFamily: FONT }}>
+                                    {vendorMatches ? highlightSearchText(group.vendor, qV) : group.vendor}
+                                  </span>
+                                  {!isBaseCurrency(vendorCurrency(group.vendor)) && (
+                                    <CurrencyPill code={vendorCurrency(group.vendor)} note={CATALOG_TAG_NOTE} />
+                                  )}
                                 </span>
                                 <span className="text-muted-foreground shrink-0" style={{ fontSize: "11px", fontWeight: "var(--font-weight-medium)", fontFamily: FONT }}>
                                   {group.items.length} item{group.items.length !== 1 ? "s" : ""}
@@ -2383,8 +2405,13 @@ export default function ItemsCatalogueModal({
                                     {pocMatches ? highlightSearchText(group.pocName, qC) : group.pocName}
                                   </span>
                                 </UserHoverCard>
-                                <span className="text-muted-foreground truncate text-[11px] leading-[15px]" style={{ fontFamily: FONT }}>
-                                  {group.pocRole} · {group.vendorName}
+                                <span className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-muted-foreground truncate text-[11px] leading-[15px]" style={{ fontFamily: FONT }}>
+                                    {group.pocRole} · {group.vendorName}
+                                  </span>
+                                  {!isBaseCurrency(vendorCurrency(group.vendorName)) && (
+                                    <CurrencyPill code={vendorCurrency(group.vendorName)} note={CATALOG_TAG_NOTE} />
+                                  )}
                                 </span>
                               </div>
                               <span className="text-muted-foreground shrink-0" style={{ fontSize: "11px", fontWeight: "var(--font-weight-medium)", fontFamily: FONT }}>

@@ -20,6 +20,9 @@ import { ConfigRow } from '@/app/components/shared/ConfigRow';
 import { toast } from 'sonner';
 import { isSparseCustomer } from '@/app/components/shared/customerDefaults';
 import { FIELD_RULES, FieldErrorText } from '@/app/components/shared/fieldRequirements';
+import { CurrencyFlag, CurrencyTag } from '@/app/components/currency/CurrencyChip';
+import { BASE_CURRENCY, currencyLabel } from '@/app/currency/currencies';
+import { customerCurrency } from '@/app/currency/qFx';
 
 interface Step2ConfigurationProps {
   quoteDraft: QuoteDraft;
@@ -411,8 +414,16 @@ export function Step2Configuration({ quoteDraft, onUpdate, onClearAll, isFullVie
                       </div>
                       
                       <div className="flex-1 min-w-0 relative">
-                        <h3 className="text-[14px] text-foreground mb-1" style={{ fontWeight: 600 }}>
+                        <h3 className="text-[14px] text-foreground mb-1 flex items-center gap-1.5 flex-wrap" style={{ fontWeight: 600 }}>
                           {quoteDraft.customer?.name || 'Toyota Motor Manufacturing..'}
+                          {/* The customer's currency tag: the new quote is in it
+                              (Currency Touchpoints Map, Quotes 3). */}
+                          {quoteDraft.customer?.name && (
+                            <CurrencyTag
+                              code={customerCurrency(quoteDraft.customer.name)}
+                              note="The customer's currency. The quote is in it; prices show in the base currency with the customer's amount on hover."
+                            />
+                          )}
                         </h3>
                         <div className="flex items-center gap-2 mb-2">
                           <p className="text-[12px] text-muted-foreground">
@@ -692,6 +703,26 @@ export function Step2Configuration({ quoteDraft, onUpdate, onClearAll, isFullVie
                   {/* Payment Details — one shared row for all three, so the
                       label, value, pencil, spacing and hover area match. */}
                   <div className="space-y-1">
+                    {/* The currency the customer pays in: the customer's,
+                        read-only here (changed later in the quote's Currency
+                        configuration while it is a Draft). */}
+                    {quoteDraft.customer?.name && (() => {
+                      const code = customerCurrency(quoteDraft.customer.name);
+                      const base = code === BASE_CURRENCY;
+                      return (
+                        <div
+                          title={base ? 'The base currency: no conversion.' : "The customer's currency. Prices show in the base currency, with the customer's amount on hover."}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', minHeight: 36 }}
+                        >
+                          <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--muted-foreground)' }}>Currency</span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, fontSize: 13 }}>
+                            <CurrencyFlag code={code} />
+                            <span style={{ fontWeight: 600, color: 'var(--foreground)', whiteSpace: 'nowrap' }}>{currencyLabel(code)}</span>
+                            <span style={{ color: 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>· {base ? 'base currency' : 'from the customer'}</span>
+                          </span>
+                        </div>
+                      );
+                    })()}
                     <ConfigRow
                       label="Payment terms"
                       value={selectedPaymentTerms}

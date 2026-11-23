@@ -490,7 +490,7 @@ export function RMAVendorInformationCard({
               <AddressCard
                 type="billing"
                 label="Refund account"
-                hint="Where the vendor's refund is expected to land. Set on the partner."
+                hint="Where the vendor's refund lands: the currency configuration's Deposited to, an account in PKR or the return's currency."
                 site={payTo}
                 editable={editable}
                 onEdit={onEditPayTo}

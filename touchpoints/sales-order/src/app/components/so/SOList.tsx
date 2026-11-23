@@ -24,8 +24,8 @@ import { InsightsRangeMenu, InsightsRefresh, type InsightsRange } from "@/app/co
 import { summarizeSO } from "./summarizeSO";
 import { BaseMoney } from "@/app/components/currency/Money";
 import { BaseCurrencyNote } from "@/app/components/currency/BaseCurrencyNote";
-import { CurrencyFlag } from "@/app/components/currency/CurrencyChip";
-import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { CurrencyFlag, CurrencyPill } from "@/app/components/currency/CurrencyChip";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { formatCompactMoney, formatMoney } from "@/app/currency/money";
 import { soFx, toSOBase } from "@/app/currency/soFx";
 import { itemListPrice, txInOrderCurrency } from "./soMoney";
@@ -1191,15 +1191,25 @@ export function SOList() {
         return <span className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}><HighlightText text={so.sourceQuoteRef} search={search} /></span>;
       case "customer": {
         const tint = getAvatarTint(so.customer);
+        const orderCurrency = soFx(so).currency;
         return (
-          <CustomerHoverCard customerName={so.customer} customerInitials={so.customerInitials}>
-            <div className="flex items-center gap-2.5 cursor-pointer">
-              <div className="rounded-lg flex items-center justify-center shrink-0 overflow-hidden border border-[#E8ECF1]" style={{ width: isCondensed ? 28 : 32, height: isCondensed ? 28 : 32, backgroundColor: tint.bg }}>
-                <span style={{ fontSize: isCondensed ? 9 : 10, fontWeight: 700, color: '#334155' }}>{so.customerInitials}</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <CustomerHoverCard customerName={so.customer} customerInitials={so.customerInitials}>
+              <div className="flex items-center gap-2.5 cursor-pointer min-w-0">
+                <div className="rounded-lg flex items-center justify-center shrink-0 overflow-hidden border border-[#E8ECF1]" style={{ width: isCondensed ? 28 : 32, height: isCondensed ? 28 : 32, backgroundColor: tint.bg }}>
+                  <span style={{ fontSize: isCondensed ? 9 : 10, fontWeight: 700, color: '#334155' }}>{so.customerInitials}</span>
+                </div>
+                <span className="truncate" style={{ fontWeight: 500, maxWidth: 160, fontSize: '13px', color: '#334155' }}><HighlightText text={so.customer} search={search} /></span>
               </div>
-              <span className="truncate" style={{ fontWeight: 500, maxWidth: 160, fontSize: '13px', color: '#334155' }}><HighlightText text={so.customer} search={search} /></span>
-            </div>
-          </CustomerHoverCard>
+            </CustomerHoverCard>
+            {/* The order's currency tag, on a foreign-currency order only
+                (Currency Touchpoints Map: "Harbor Point Rescue USD"). */}
+            {!isBaseCurrency(orderCurrency) && (
+              <span className="shrink-0 inline-flex">
+                <CurrencyPill code={orderCurrency} note={`The order's currency. Amounts show in ${BASE_CURRENCY}; hover one for ${orderCurrency}.`} />
+              </span>
+            )}
+          </div>
         );
       }
       case "status":

@@ -95,13 +95,15 @@ import { SegmentedCountPill } from '@/app/components/SegmentedCountPill';
 import { formatMoney, moneyPrefix } from '@/app/currency/money';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { toBase } from '@/app/currency/rates';
-import { invoiceFx } from '@/app/currency/invoiceFx';
+import { invoiceFx, invoiceRateLocked } from '@/app/currency/invoiceFx';
+import { invoicePayFrom } from '@/app/currency/payFrom';
 import { invoiceFxInputs } from '@/app/currency/fxVariance';
 import { vendorCurrencyOf } from '@/app/currency/vendorCurrency';
 import { DocCurrencyProvider } from '@/app/components/currency/DocCurrency';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
 import { InvoiceCurrencyConfigDialog } from '@/app/components/currency/InvoiceCurrencyConfig';
-import { setDocView, useDocViewOf } from '@/app/components/currency/docView';
+import type { DocView } from '@/app/components/currency/docCurrencyContext';
+import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { useApPermissions } from '@/app/hooks/useApSettings';
 
 interface InvoiceDetailScreenProps {
@@ -832,10 +834,11 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
   const [activeTab, setActiveTab] = useState<TabKey>('line-items');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-  // Base Currency | Vendor Currency (the header toggle, base by default, kept
-  // for the session per invoice) and the invoice's Currency Configuration
-  // (Currency & Exchange Rates).
-  const currencyView = useDocViewOf(invoice ? `invoice:${invoice.id}` : undefined);
+  // Every amount on the page is in the base currency, the invoice's own on
+  // hover (Currency Touchpoints Map, 24 Nov 2026: no Base / Invoice Currency
+  // toggle on documents; the header keeps a currency tag and the Currency
+  // button, which opens the invoice's Currency Configuration).
+  const currencyView: DocView = 'base';
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   const apPerms = useApPermissions();
   const [creditMemoOpen, setCreditMemoOpen] = useState(false);
@@ -1696,6 +1699,9 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                           <VendorQuickCard vendor={invoice.vendor} description={invoice.description} />
                         </HoverCardContent>
                       </HoverCard>
+                      {/* The invoice's currency tag, on a foreign-currency
+                          invoice only (Currency Touchpoints Map). */}
+                      {!pageFx.isBase && <CurrencyPill code={pageFx.currency} note="The invoice's currency. Amounts on this page are in the base currency; hover one for this currency." />}
 
                       {/* Status pills — read-only, TWO axes (Eli review
                           7/15/26): approval answers "whose desk is this
@@ -1899,14 +1905,15 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                     <TooltipContent className="z-[300]">{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</TooltipContent>
                   </Tooltip>
 
-                  {/* Base Currency | Vendor Currency, and the invoice's
-                      currency configuration (as Purchase Orders has them). */}
+                  {/* The Currency button: the invoice's currency
+                      configuration. No Base / Invoice Currency toggle. */}
                   <CurrencyHeaderControls
                     currency={pageFx.currency}
                     view={currencyView}
-                    onViewChange={(v) => setDocView(`invoice:${invoice.id}`, v)}
+                    onViewChange={() => {}}
                     onOpenConfig={() => setCurrencyConfigOpen(true)}
                     compact={isScrolled}
+                    toggle={false}
                   />
 
                   <DropdownMenu>
@@ -2753,7 +2760,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
             vendorDefault={vendorCurrencyOf(invoice.vendor)}
             total={numbers.total}
             source={poRef && invoice.type !== 'Standalone' ? { kind: 'po', ref: `PO-${poRef}` } : { kind: 'vendor', ref: vendorCurrencyOf(invoice.vendor) }}
-            value={{ currency: pageFx.currency, rateType: pageFx.rateType, typedRate: invoice.rateEdited ? String(pageFx.rate) : null }}
+            value={{ currency: pageFx.currency, rateType: pageFx.rateType, typedRate: invoice.rateEdited ? String(pageFx.rate) : null, payFromAccount: invoicePayFrom(invoice).id }}
             rateAsOf={{ date: pageFx.rateDate, basis: invoice.rateBasis ?? 'postingDate' }}
             rateDay={pageFx.rateDate}
             dateLabel={pageFx.dateLabel}
@@ -2764,7 +2771,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
             limitPct={apPerms.invoiceRateLimitPct}
             readOnly
             savedRate={{ rate: pageFx.rate, rateType: pageFx.rateType, rateDate: pageFx.rateDate, edited: invoice.rateEdited, source: pageFx.source }}
-            posted={['Approved', 'Partially Paid', 'Paid in Full', 'Settled', 'Payment Hold'].includes(invoice.status) && invoice.type !== 'Pre-Invoice'}
+            posted={invoiceRateLocked(invoice)}
             onEdit={status === 'Pending Approval' ? () => handleAction({ key: 'edit', label: 'Edit Invoice', icon: Pencil }) : undefined}
           />
         );

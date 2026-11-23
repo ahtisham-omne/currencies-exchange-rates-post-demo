@@ -12,6 +12,7 @@ import {
   DOC_C, getLineShipment, shipStatusColors,
   getLineComments,
   statusBadgeColors, getPaymentInfo, getHeaderMeta, getParties, getItemPhoto, docPaymentTerms, docPaymentMethod, docPaymentTermsSentence,
+  docCurrencyLabels,
 } from "./soDocumentData";
 import { StateTransitionOverlay } from "@/app/components/shared/StateTransitionOverlay";
 import {
@@ -665,9 +666,11 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
               </div>
             )}
             <div style={{ borderTop: `2px solid ${DOC_C.fg}`, marginTop: 8, paddingTop: 10, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span style={{ fontSize: 16, fontWeight: 700 }}>Total Amount</span>
+              {/* The order's currency on the total: "Total (USD)" (24 Nov 2026). */}
+              <span style={{ fontSize: 16, fontWeight: 700 }}>{docCurrencyLabels(so.currency).totalLabel}</span>
               <span style={{ fontSize: 20, fontWeight: 700 }}>{fmtCurrency(grandTotal)}</span>
             </div>
+            <div style={{ marginTop: 6, textAlign: "right", fontSize: 11, color: DOC_C.muted }}>{docCurrencyLabels(so.currency).footnote}</div>
           </div>
         </div>
 

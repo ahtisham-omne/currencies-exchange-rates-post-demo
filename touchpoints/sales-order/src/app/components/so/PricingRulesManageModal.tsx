@@ -15,6 +15,7 @@ import {
   lineIdsForRule,
   pickTier,
   CUSTOMER_PRICING_RULES_BY_ID,
+  isFixedAmountText,
   type CustomerPricingRule,
 } from './pricingRulesData';
 import type { PricingRulesAPI } from './usePricingRules';
@@ -105,7 +106,7 @@ const LIBRARY_RULES: LibraryRule[] = [
 ];
 
 /* Amounts are in the SO's currency (useDocWhole, inside each component).
-   A "$" rule's own amount is written in USD (useRuleMoney): "$200.00 (≈ €182.73)". */
+   A fixed ("$") rule's own amount is written in base, PKR (useRuleMoney): "₨56,000.00 (≈ €183.72)". */
 type RuleAmount = { value: number; amountType: '%' | '$' };
 const ruleValueText = (money: ReturnType<typeof useRuleMoney>, r: RuleAmount) =>
   money.tierText({ rate: r.value, unit: r.amountType });
@@ -503,7 +504,8 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, lin
 
   const libraryToLocal = (lib: LibraryPricingRule): PricingRule => {
     const t0 = lib.tiers[0];
-    const isFixed = t0?.isFixRate || (t0?.discount?.includes('$') ?? false);
+    // A fixed amount reads "₨14,000" (in base; "$50" in older data).
+    const isFixed = t0?.isFixRate || isFixedAmountText(t0?.discount);
     const numericValue = t0 ? parseFloat(t0.discount.replace(/[^\d.]/g, '')) || 0 : 0;
     const appliedTo = items.map((i) => i.id);
     const applicableSubtotal = items.reduce((s, i) => s + i.subtotal, 0);
@@ -1510,7 +1512,7 @@ function SummaryRuleCard({ rule, onOpenItemsModal, onDeactivate, onReactivate, r
             </span>
             <span className="shrink-0 ml-2 text-slate-700" style={{ fontWeight: 600 }}>
               {heroValue}
-              {/* A "$" tier is USD; its amount in the order's currency. */}
+              {/* A fixed ("$") tier is in base, PKR; its amount in the order's currency at its rate. */}
               {ruleMoney.tierConverted({ rate: rule.value, unit: rule.amountType }) && (
                 <span className="text-slate-400" style={{ fontWeight: 500 }}> ({ruleMoney.tierConverted({ rate: rule.value, unit: rule.amountType })})</span>
               )}

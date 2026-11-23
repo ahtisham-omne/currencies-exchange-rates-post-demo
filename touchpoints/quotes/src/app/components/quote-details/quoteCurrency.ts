@@ -1,4 +1,5 @@
 import { isBaseCurrency } from "@/app/currency/currencies";
+import { resolveAccount } from "@/app/currency/companyAccounts";
 import type { RateType } from "@/app/currency/rates";
 import { crossRate, roundTo, type QuoteFx } from "@/app/currency/qFx";
 
@@ -8,7 +9,11 @@ export interface QuoteCurrencyChoice {
   rateType: RateType;
   exchangeRate: number;
   rateEdited?: boolean;
-  /** "You receive"; unchanged when left out. */
+  /** "You receive": the pay-to account (currency/companyAccounts.ts);
+   *  unchanged when left out. Its currency becomes `settlementCurrency`. */
+  payToAccount?: string;
+  /** "You receive": the settlement currency, derived from `payToAccount`
+   *  when that is given; unchanged when both are left out. */
   settlementCurrency?: string;
 }
 
@@ -21,6 +26,8 @@ export interface QuoteCurrencyFields {
   rateEdited: boolean;
   /** "You receive": the base currency unless set. */
   settlementCurrency?: string;
+  /** "You receive": the account paid into; 1010 unless set. */
+  payToAccount?: string;
 }
 
 /**
@@ -40,6 +47,13 @@ export function withQuoteCurrency(before: QuoteFx, next: QuoteCurrencyChoice): {
     rateEdited: next.rateType === "corporate" && !!next.rateEdited,
     ...(next.settlementCurrency ? { settlementCurrency: next.settlementCurrency.toUpperCase() } : {}),
   };
+  /* The account decides the settlement currency, so what reads
+     settlementCurrency keeps working. */
+  if (next.payToAccount) {
+    const account = resolveAccount(code, next.payToAccount);
+    fields.payToAccount = account.id;
+    fields.settlementCurrency = account.currency;
+  }
   return { fields, factor: code === before.currency ? 1 : crossRate(before.rate, rate) };
 }
 

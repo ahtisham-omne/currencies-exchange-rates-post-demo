@@ -58,7 +58,7 @@ import {
   attachRuleToVendor,
   type VendorPricingRule,
 } from "./poPricingRulesData";
-import { useRuleMoney } from "./currency/useRuleMoney";
+import { bandEdge, useRuleMoney } from "./currency/useRuleMoney";
 
 export interface POBrowsePricingTemplatesModalProps {
   open: boolean;
@@ -472,8 +472,8 @@ function BrowseTemplateCard({
   const t0 = rule.tiers[0];
   const [activeTier, setActiveTier] = useState(0);
   const shownTier = rule.tiers[isMulti ? activeTier : 0];
-  /* Flat ("$") tiers are USD per unit: "$15 off per unit", and the tier
-     row adds what that is in the PO's currency. */
+  /* Flat ("$") tiers are base-currency amounts per unit: "₨4,200 off per
+     unit", and the tier row adds what that is in the PO's currency. */
   const { tierRate, tierShort, tierConverted } = useRuleMoney();
   const heroRate = t0 ? tierShort(t0) : "—";
   const heroPerUnit = !!t0 && t0.unit !== "%";
@@ -507,7 +507,7 @@ function BrowseTemplateCard({
               className="inline-flex items-center px-2 py-[2px] text-[10px] bg-white text-slate-500 border-l"
               style={{ fontWeight: 500, borderColor: pill.border }}
             >
-              {t0?.unit === "%" ? "Volume" : "Value"}
+              {rule.basis === "value" ? "Value" : "Volume"}
             </span>
           </span>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -643,10 +643,10 @@ function BrowseTemplateCard({
           </div>
           <div className="flex items-center justify-between px-3 py-[6px] rounded-lg border border-[#E8ECF1] bg-[#FAFBFC] text-[11px] tabular-nums min-w-0">
             <div className="flex items-center gap-1.5 text-slate-500 min-w-0">
-              <span style={{ fontWeight: 400 }}>{shownTier?.minQty ?? "—"}</span>
+              <span style={{ fontWeight: 400 }}>{shownTier ? bandEdge(shownTier.minQty, rule.basis) : "—"}</span>
               <span className="text-slate-300">–</span>
               <span style={{ fontWeight: 400 }}>
-                {shownTier ? (shownTier.maxQty === null ? "∞" : shownTier.maxQty) : "—"}
+                {shownTier ? bandEdge(shownTier.maxQty, rule.basis) : "—"}
               </span>
             </div>
             <span

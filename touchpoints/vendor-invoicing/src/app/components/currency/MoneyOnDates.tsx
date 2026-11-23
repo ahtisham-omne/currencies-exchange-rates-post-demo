@@ -25,6 +25,7 @@ const DAY_LABEL: Record<RateDayKind, string> = {
 
 /** The module default's name in the footer line. */
 const BASIS_FOOTER: Record<RateDateBasis, string> = {
+  postingDate: 'Invoices take the posting date’s rate, the module default.',
   invoiceDate: 'Invoices take the vendor invoice date’s rate, the module default.',
   receivingDate: 'Invoices take the receiving date’s rate, the module default.',
   poDate: 'Invoices take the PO date’s rate, the module default.',

@@ -4,15 +4,19 @@ import { ChevronDown, Check, Package, Paperclip, X, FileText, Image as ImageIcon
 import { ConfirmDiscardModal } from './ConfirmDiscardModal';
 import { ItemTypeBadge } from './ItemTypeBadge';
 import { NestedModalLayer, NestedModalTitle } from './NestedModalLayer';
-import { useDocCurrency } from './currency/docCurrencyContext';
+import { useDocCurrency, useDocMoney, useDocView } from './currency/docCurrencyContext';
 import { currencyDecimals, formatMoney, moneyPrefix } from '@/app/currency/money';
+import { roundTo } from '@/app/currency/poFx';
 
 /* Ported verbatim from Sales-Order-V5 `shared/AdjustmentFormModal.tsx`.
    PO adaptations only: CSS vars wrapped for this app's HSL token
    format, the SO-only `getLineItemImage` helper swapped for the line's
    own `imageUrl`, and `ItemTypeBadge` ported locally. A fixed-amount
-   ("$") adjustment is an amount in the PO's currency, so the toggle and
-   the line totals read in that currency. */
+   ("$") adjustment is kept in the PO's currency but typed and shown in
+   the page's: the base currency on a PO in another one (Currency
+   Touchpoints Map, Purchase Orders 3: "Fixed discounts in base
+   currency"). It is converted at the PO's rate and rounded to the PO
+   currency's minor unit, as a price typed on a line is. */
 
 /* Centralised color tokens. Bridges the Partner-faithful design-system
    tokens (`hsl(var(--border))`, `hsl(var(--primary))`, etc.) with the literal
@@ -95,13 +99,21 @@ export function AdjustmentFormModal({
   const showItemsPanel = scope === 'item' && lineItems && lineItems.length > 0;
 
   const { currency } = useDocCurrency();
-  const decimals = currencyDecimals(currency);
-  const money = (n: number) => formatMoney(n, currency);
+  const view = useDocView();
+  // Fixed amounts are typed in the shown currency (base on a foreign PO).
+  const entryCurrency = view.viewCurrency;
+  const decimals = currencyDecimals(entryCurrency);
+  const money = useDocMoney();
   // A fixed amount keeps the currency's minor units (¥ has none).
   const roundAmount = (n: number) => Number(n.toFixed(decimals));
+  /** A typed fixed amount, in the PO's currency. */
+  const toDocAmount = (typed: number) => (view.inBase ? roundTo(currency, view.fromView(typed)) : roundAmount(typed));
+  const initialAmountText = initial
+    ? initial.amountType === '$' ? view.toView(initial.amount).toFixed(decimals) : String(initial.amount)
+    : '0';
 
   const [type, setType] = useState<'discount' | 'premium'>(initial?.type || 'discount');
-  const [amount, setAmount] = useState(initial ? String(initial.amount) : '0');
+  const [amount, setAmount] = useState(initialAmountText);
   const [amountType, setAmountType] = useState<'$' | '%'>(initial?.amountType || '%');
   const [label, setLabel] = useState(initial?.label || '');
   const [selectedItems, setSelectedItems] = useState<string[]>(
@@ -179,7 +191,12 @@ export function AdjustmentFormModal({
       label: label.trim(),
       type,
       amountType,
-      amount: amountType === '%' ? parseFloat(amount) || 0 : roundAmount(parseFloat(amount) || 0),
+      amount:
+        amountType === '%'
+          ? parseFloat(amount) || 0
+          : initial?.amountType === '$' && amount === initialAmountText
+            ? initial.amount // untouched: keep it (a round trip through base would nudge it)
+            : toDocAmount(parseFloat(amount) || 0),
       scope,
       appliedTo: scope === 'item' ? selectedItems : initial?.appliedTo,
       internalNotes,
@@ -430,8 +447,8 @@ export function AdjustmentFormModal({
   //    selector (% / $) replacing the cramped single toggle with an
   //    `ArrowUpDown` glyph. Reads as a real segmented control: the
   //    active option highlights, the inactive option dims. The fixed
-  //    side shows the PO currency's symbol (€, ¥) or code (MXN). ──
-  const fixedLabel = moneyPrefix(currency).trim();
+  //    side shows the shown currency's symbol (₨ on a foreign PO). ──
+  const fixedLabel = moneyPrefix(entryCurrency).trim();
   const amountToggleButton = (
     <div
       role="radiogroup"
@@ -467,7 +484,7 @@ export function AdjustmentFormModal({
               transition: 'background-color 100ms, color 100ms',
               boxShadow: active ? `inset 0 0 0 1px ${FIELD_BORDER}` : 'none',
             }}
-            title={unit === '%' ? 'Percentage' : `Fixed amount in ${currency}`}
+            title={unit === '%' ? 'Percentage' : `Fixed amount in ${entryCurrency}`}
           >
             {unit === '%' ? unit : fixedLabel}
           </button>
@@ -550,6 +567,12 @@ export function AdjustmentFormModal({
             />
             {amountToggleButton}
           </div>
+          {/* Typed in base: what it comes to in the PO's currency. */}
+          {amountType === '$' && view.inBase && parseFloat(amount) > 0 && (
+            <p style={{ fontSize: 11, color: TEXT_DIM, marginTop: 6, lineHeight: 1.4 }}>
+              ≈ {formatMoney(toDocAmount(parseFloat(amount)), currency)} {currency} in the vendor's currency
+            </p>
+          )}
         </div>
       </div>
 

@@ -69,7 +69,7 @@ import { MOCK_LINE_ITEMS as QUOTE_LINES } from '../components/quote-details/Item
 import { usePricingRules } from '../components/quote-details/usePricingRules';
 import { adjustmentsNet, useAdjustments } from '../components/quote-details/useAdjustments';
 import { getCreatedQuote, getCreatedQuoteAdjustments, setQuoteStatusOverride, clearQuoteStatusOverride, applyQuoteOverride, addRejectionDoc } from '../data/quoteStore';
-import type { QuoteRejectionReason } from '../types/quote';
+import type { Quote, QuoteRejectionReason } from '../types/quote';
 import { getQuoteDescription, setQuoteDescription } from '../data/quoteStore';
 import { duplicateQuote } from '../data/duplicateQuote';
 import { QuoteStatus } from '../types/quote';
@@ -78,13 +78,15 @@ import { DocCurrencyProvider } from '@/app/components/currency/DocCurrency';
 import type { QuoteCurrencyChange, QuoteCurrencyTotals } from '@/app/components/currency/QuoteCurrencyFields';
 import { QuoteCurrencyConfigDialog } from '@/app/components/currency/QuoteCurrencyConfig';
 import { QuoteCurrencyHeaderControls } from '@/app/components/currency/QuoteCurrencyHeaderControls';
-import { setQuoteView, useQuoteView } from '@/app/components/currency/quoteView';
+import { CurrencyTag } from '@/app/components/currency/CurrencyChip';
 import { VersionRateChoice as VersionRateChoiceCards, useVersionRateOptions, versionRateOptions } from '@/app/components/currency/VersionRateChoice';
 import { useQuoteVersionFx } from '@/app/components/currency/versionMoney';
 import { formatMoney, formatRate } from '@/app/currency/money';
-import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { BASE_CURRENCY, currencyLabel } from '@/app/currency/currencies';
+import { resolveAccount } from '@/app/currency/companyAccounts';
 import type { RateType } from '@/app/currency/rates';
-import { currentRateFor, isoDay, quoteFx, roundTo, ruleAmountFactor } from '@/app/currency/qFx';
+import { currentRateFor, designAmountFactor, isoDay, quoteFx, roundTo, ruleAmountFactor } from '@/app/currency/qFx';
+import { quoteConversionEntry, recordQuoteConversion } from '../data/quoteToSalesOrder';
 import { scaleAdjustments, scaleQuoteLine, withQuoteCurrency, type QuoteCurrencyChoice, type QuoteCurrencyFields } from '../components/quote-details/quoteCurrency';
 import { computeLineBreakdowns } from '../components/quote-details/pricingRulesData';
 import { getCreatedQuoteLineItems, getQuoteLineFactor, getVersionRate, seedVersionRates, setCreatedQuoteAdjustments, setCreatedQuoteLineItems, setQuoteLineFactor, setVersionRate, todaysRateType, type VersionRateChoice } from '../data/quoteStore';
@@ -181,26 +183,31 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   const [fxFields, setFxFields] = useState<Partial<QuoteCurrencyFields>>(() => ({
     currency: quote?.currency, exchangeRate: quote?.exchangeRate, rateType: quote?.rateType,
     rateDate: quote?.rateDate, rateEdited: quote?.rateEdited, settlementCurrency: quote?.settlementCurrency,
+    payToAccount: quote?.payToAccount,
   }));
   const fx = quoteFx({ ...fxFields, createdDate: quote?.createdDate, customer: quote?.customer });
-  /* The quote date. The design's USD figures and the flat USD rule amounts
-     convert on it, also once a version has applied today's rate (the rate
-     date moves then), so the customer's amounts stay as they are. */
+  /* The quote date. The design's USD figures convert on it, also once a
+     version has applied today's rate (the rate date moves then), so the
+     customer's amounts for them stay as they are. */
   const quoteDay = isoDay(quote?.createdDate ?? fx.rateDate);
-  const ruleFx = { currency: fx.currency, rateDate: quoteDay };
-  /* Base Currency | Customer Currency (the header toggle) and the quote's
-     Currency Configuration dialog. */
+  const designFx = { currency: fx.currency, rateDate: quoteDay };
+  /* The quote's Currency configuration dialog (header Currency button and
+     Quote Summary's View configuration). The page shows every amount in
+     base, the customer's on hover: the Currency Touchpoints Map (24 Nov)
+     drops the Base Currency | Customer Currency toggle, so the view is
+     pinned to base. */
   const viewKey = propQuoteId ?? quote?.id;
-  const quoteView = useQuoteView(viewKey);
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   /* The design's line set (QUOTE_LINES) and its demo seeds are written in
      USD: this is what one of those dollars is in the quote's currency. It
      starts at the mid-market cross rate on the quote date, and a currency
      change multiplies it, so the rule lines move with the table's lines;
      the store keeps it for when the quote is reopened. */
-  const [designFactor, setDesignFactor] = useState(() => (propQuoteId && getQuoteLineFactor(propQuoteId)) || ruleAmountFactor(ruleFx));
+  const [designFactor, setDesignFactor] = useState(() => (propQuoteId && getQuoteLineFactor(propQuoteId)) || designAmountFactor(designFx));
   const designLines = useMemo(() => designLinesAt(designFactor, fx.currency), [designFactor, fx.currency]);
-  const pricingAPI = usePricingRules(customerName, designLines, ruleAmountFactor(ruleFx));
+  /* Pricing rules are in the base currency: a fixed amount converts to the
+     quote's currency at the quote's own rate (ruleAmountFactor). */
+  const pricingAPI = usePricingRules(customerName, designLines, ruleAmountFactor(fx));
 
   /* One-time adjustments — parallel to pricingAPI, lifted here so the
      summary modal and the line-item configurator share the same list. */
@@ -809,7 +816,9 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
      freight, and fixed one-time adjustments. */
   const handleCurrencyChange = useCallback(({ next, subject }: QuoteCurrencyChange) => {
     const { fields, factor } = withQuoteCurrency(fx, next);
-    const receiveBefore = (fxFields.settlementCurrency ?? BASE_CURRENCY).toUpperCase();
+    /* "You receive" is an account (currency/companyAccounts.ts); its
+       currency is the settlement currency. */
+    const accountBefore = resolveAccount(fx.currency, fxFields.payToAccount, fxFields.settlementCurrency);
     setFxFields((prev) => ({ ...prev, ...fields }));
     const code = fields.currency;
     /* The stored record (`quote` is a copy once a status override exists),
@@ -836,22 +845,25 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       /* An imported quote reopens with the adjustments its file carried. */
       if (propQuoteId && getCreatedQuoteAdjustments(propQuoteId)) setCreatedQuoteAdjustments(propQuoteId, converted);
     }
+    const accountAfter = resolveAccount(code, fields.payToAccount ?? fxFields.payToAccount, fields.settlementCurrency ?? fxFields.settlementCurrency);
+    const accountText = (a: typeof accountAfter) => `${a.label} · ${a.currency}`;
+    if (accountAfter.id !== accountBefore.id) {
+      handleMaterialChange('payToAccount', 'You receive', accountText(accountBefore), accountText(accountAfter));
+    }
     if (subject === 'You receive') {
-      const receive = (fields.settlementCurrency ?? receiveBefore).toUpperCase();
-      handleMaterialChange('settlementCurrency', subject, receiveBefore, receive);
-      toast.success(`Quote settles in ${receive}`, { position: 'top-right' });
+      toast.success(`Customer pays into ${accountAfter.label}`, { position: 'top-right' });
       return;
     }
     const rateText = (c: string, r: number) => (c === BASE_CURRENCY ? c : `${c} · 1 ${c} = ${formatRate(r)} ${BASE_CURRENCY}`);
     handleMaterialChange(subject === 'Currency' ? 'currency' : 'exchangeRate', subject, rateText(fx.currency, fx.rate), rateText(code, fields.exchangeRate));
     toast.success(subject === 'Currency' ? `Quote converted to ${code}` : 'Exchange rate updated', { position: 'top-right' });
-  }, [fx, fxFields.settlementCurrency, rawQuote, designFactor, adjustmentsAPI, propQuoteId, handleMaterialChange]);
+  }, [fx, fxFields.payToAccount, fxFields.settlementCurrency, rawQuote, designFactor, adjustmentsAPI, propQuoteId, handleMaterialChange]);
 
   /* The confirmation's "after" column: the quote as handleCurrencyChange
      leaves it, worked out the same way (lines, rule lines and fixed
      adjustments converted and rounded as it does them), so the preview and
-     the result agree to the cent. Flat USD rule amounts go at the new
-     currency's cross rate (ruleAmountFactor). */
+     the result agree to the cent. Fixed rule amounts, in base, go at the
+     new rate (ruleAmountFactor). */
   const currencyTotalsFor = useCallback((next: QuoteCurrencyChoice): QuoteCurrencyTotals => {
     const { fields, factor } = withQuoteCurrency(fx, next);
     const code = fields.currency;
@@ -860,13 +872,13 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       activation.set(r.id, pricingAPI.state.deactivatedRuleIds.has(r.id) ? new Set() : (pricingAPI.state.activatedLineIdsByRule.get(r.id) ?? new Set()));
     }
     const ruleLines = designLinesAt(designFactor * factor, code);
-    const rules = computeLineBreakdowns(ruleLines, pricingAPI.state.attached, activation, ruleAmountFactor({ currency: code, rateDate: quoteDay }))
+    const rules = computeLineBreakdowns(ruleLines, pricingAPI.state.attached, activation, ruleAmountFactor({ currency: code, rate: fields.exchangeRate }))
       .reduce((t, b) => t + b.discountAmount - b.premiumAmount, 0);
     const lines = liveLines.map((l) => scaleQuoteLine(l, factor, code));
     const sub = lines.reduce((sum, l) => sum + Number(l?.subtotal ?? l?.total ?? 0), 0);
     const adj = adjustmentsNet(scaleAdjustments(adjustmentsAPI.adjustments, factor, code), lines);
     return { subtotal: sub, adjustments: adj - rules, freight: 0, total: sub - rules + adj };
-  }, [fx, quoteDay, pricingAPI.state, designFactor, liveLines, adjustmentsAPI.adjustments]);
+  }, [fx, pricingAPI.state, designFactor, liveLines, adjustmentsAPI.adjustments]);
 
   /* Quote Summary's totals, as RightSidebar works them out: what the
      currency configuration, its convert confirmation and the version rate
@@ -875,6 +887,11 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   const adjustmentsNetAmount = adjustmentsAPI.grandTotal.net;
   const summaryTotal = rulesNetAmount !== 0 || adjustmentsNetAmount !== 0 ? liveSubtotal - rulesNetAmount + adjustmentsNetAmount : liveSubtotal;
   const currencyTotals: QuoteCurrencyTotals = { subtotal: liveSubtotal, adjustments: adjustmentsNetAmount - rulesNetAmount, freight: 0, total: summaryTotal };
+  /* The quote as the page has it now (its currency, rate and pay-to
+     account), for Duplicate and Convert to sales order. */
+  const quoteNow: Quote | undefined = quote
+    ? { ...quote, ...fxFields, currency: fx.currency, exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate }
+    : undefined;
   /* A new version's rate options (the locked rate, or today's); null on a
      base-currency quote. */
   const newVersionRate = (() => {
@@ -1283,9 +1300,9 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       currency={fx.currency}
       fx={fx.isBase ? null : fx}
       rateDate={quoteDay}
-      dateLabel={fx.rateDate === quoteDay ? 'quote date' : 'version date'}
+      dateLabel={fx.rateDate === quoteDay ? 'quote date' : fx.rateDate > quoteDay ? 'version date' : "original quote's date"}
       role="customer currency"
-      view={quoteView}
+      view="base"
       versionFx={versionFx}
     >
     {/* Page chrome — Partner Management `VendorDetailsPage` parity.
@@ -1456,6 +1473,25 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                             {quoteNumber}
                           </span>
 
+                          {/* The customer, then the quote's currency tag
+                              (Currency Touchpoints Map: "Q-000-750 · Harbor
+                              Point Rescue Squad [USD] [Currency]"), as Sales
+                              Orders and Purchase Orders show theirs. The tag
+                              is only on a quote in a foreign currency. */}
+                          {customerName && (
+                            <span
+                              className="truncate text-slate-600"
+                              style={{ fontSize: isScrolled ? 11.5 : 12.5, fontWeight: 500, lineHeight: isScrolled ? '18px' : '22px', maxWidth: 320 }}
+                              title={customerName}
+                            >
+                              {customerName}
+                            </span>
+                          )}
+                          <CurrencyTag
+                            code={fx.currency}
+                            note={`${customerName} pays in ${currencyLabel(fx.currency)}. Amounts on this page are in ${BASE_CURRENCY}, the base currency; hover one for the customer's amount.`}
+                          />
+
                           <VersionDropdown
                             currentVersion={quoteVersion}
                             currentStatus={quoteStatus}
@@ -1599,16 +1635,12 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
 
                     {/* Right: Fullscreen + Actions dropdown + separator + CTA — Partner pattern */}
                     <div className="flex items-center shrink-0 max-md:w-full max-md:justify-end max-md:flex-wrap" style={{ gap: isScrolled ? 6 : 8 }}>
-                      {/* Base Currency | Customer Currency, and the quote's
-                          currency configuration (ported from the earlier
-                          touchpoint, as Purchase Orders has them). */}
+                      {/* The quote's currency configuration. No Base |
+                          Customer toggle: amounts are in base, the
+                          customer's on hover (Currency Touchpoints Map). */}
                       <QuoteCurrencyHeaderControls
-                        currency={fx.currency}
-                        view={quoteView}
-                        onViewChange={(v) => { if (viewKey) setQuoteView(viewKey, v); }}
                         onOpenConfig={() => setCurrencyConfigOpen(true)}
                         compact={isScrolled}
-                        narrow={isNarrow}
                       />
                       {/* Fullscreen toggle (nothing to widen on a phone) */}
                       <button
@@ -2335,6 +2367,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                 currencyRateEdited={!!fxFields.rateEdited}
                 currencyLocked={quoteStatus !== 'draft'}
                 currencySettlement={fxFields.settlementCurrency}
+                currencyPayToAccount={fxFields.payToAccount}
                 currencyQuoteDay={quoteDay}
                 onViewCurrencyConfig={() => setCurrencyConfigOpen(true)}
                 onMaterialChange={handleMaterialChange}
@@ -2376,15 +2409,20 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
             return isLatest && quote && nonDuplicableStatuses.includes(quote.status) ? { ...v, canDuplicate: false } : v;
           })}
           currentVersion={quote?.version}
-          onConfirm={({ customerId, customerName: custName, versionMode, selectedVersion }) => {
+          /* The quote as it is on the page (currency, rate, pay-to
+             account), for the rate choice: keep the original or today's. */
+          source={quoteNow}
+          sourceTotal={summaryTotal}
+          onConfirm={({ customerId, customerName: custName, versionMode, selectedVersion, rateChoice }) => {
             setShowDuplicateModal(false);
-            if (!quote) return;
+            if (!quoteNow) return;
             /* Build the duplicate immediately so QuoteDetails has a real
                id to navigate to once the overlay finishes. addCreatedQuote
                persists it in the module store so the listing also sees
                it on the next render. */
             const existingNumbers = mockQuotes.map(q => q.quoteNumber);
-            const result = duplicateQuote(quote, {
+            const result = duplicateQuote(quoteNow, {
+              rateChoice,
               newCustomerId: customerId,
               newCustomerName: custName,
               versionMode,
@@ -2462,11 +2500,51 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
           onClose={() => setShowConvertToSOModal(false)}
           quoteNumber={quoteNumber}
           customerName={customerName}
+          payToAccount={fxFields.payToAccount}
+          settlementCurrency={fxFields.settlementCurrency}
+          /* The quote's own lines and total (its currency), so the order's
+             totals in base match the Quote Summary. */
+          lines={(liveLines as any[]).map((l) => ({
+            id: String(l.id),
+            itemNumber: String(l.productId ?? ''),
+            name: String(l.productName ?? l.name ?? ''),
+            qty: Number(l.quantity ?? 0),
+            uom: String(l.uom ?? l.defaultUom ?? 'EA'),
+            total: Number(l?.subtotal ?? l?.total ?? 0),
+          }))}
+          orderTotal={summaryTotal}
           onConfirm={(data) => {
             setShowConvertToSOModal(false);
-            // Generate a SO number
-            const soNum = `SO-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
+            /* The order number the dialog announced, so the quote and the
+               record handed to Sales Orders agree. */
+            const soNum = data.soNumber;
             setSalesOrderNumber(soNum);
+            /* The order keeps the quote's currency configuration and the
+               rate picked (data/quoteToSalesOrder.ts). */
+            if (quoteNow) {
+              recordQuoteConversion(quoteConversionEntry(quoteNow, {
+                soNumber: soNum,
+                customerPO: data.customerPO,
+                notes: data.notes,
+                choice: data.currency,
+                total: summaryTotal,
+                quoteVersion,
+                /* The order takes the quote's lines, priced in its currency. */
+                lines: (liveLines as any[])
+                  .filter((l) => Number(l.quantity ?? 0) > 0)
+                  .map((l) => {
+                    const qty = Number(l.quantity ?? 0);
+                    const total = Number(l?.subtotal ?? l?.total ?? 0);
+                    return {
+                      itemCode: String(l.productId ?? ""),
+                      itemName: String(l.productName ?? l.name ?? ""),
+                      qty,
+                      uom: String(l.uom ?? l.defaultUom ?? "EA"),
+                      unitPrice: Math.round((total / qty) * 10000) / 10000,
+                    };
+                  }),
+              }));
+            }
             // Trigger transition overlay for convert-to-SO flow
             setTransitionOverlay({
               fromStatus: quoteStatus,
@@ -2757,6 +2835,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
         customerName={customerName}
         quoteNumber={quoteNumber}
         lineCount={liveLines.length}
+        payToAccount={fxFields.payToAccount}
         settlementCurrency={fxFields.settlementCurrency}
         rateEdited={!!fxFields.rateEdited}
         quoteDay={quoteDay}

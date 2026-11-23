@@ -347,6 +347,8 @@ export function ItemOverviewTab({ item, widgetRenderers, widgetLabels, widgetMet
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          {/* Item cost and stock value are in the base currency (Currency Touchpoints Map, Items 3). */}
+          <BaseCurrencyNote />
           <span className="text-slate-300">|</span>
           <span className="text-[11px] text-slate-400" style={{ fontWeight: 400 }}>Updated {format(lastRefreshed, "h:mm a")}</span>
           <button
@@ -357,7 +359,6 @@ export function ItemOverviewTab({ item, widgetRenderers, widgetLabels, widgetMet
             <RefreshCw className="w-3 h-3" />
             Refresh
           </button>
-          <BaseCurrencyNote />
         </div>
         <div className="flex items-center gap-2">
           <button

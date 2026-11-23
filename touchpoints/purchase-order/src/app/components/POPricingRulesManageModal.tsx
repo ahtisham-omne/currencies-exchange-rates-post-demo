@@ -78,7 +78,7 @@ import {
   type VendorPricingRule,
 } from "./poPricingRulesData";
 import { POPricingRuleDetailModal } from "./POPricingRuleDetailModal";
-import { useRuleMoney } from "./currency/useRuleMoney";
+import { bandEdge, useRuleMoney } from "./currency/useRuleMoney";
 import { POBrowsePricingTemplatesModal } from "./POBrowsePricingTemplatesModal";
 import { POCreatePricingRuleModal } from "./POCreatePricingRuleModal";
 
@@ -165,7 +165,7 @@ export function POPricingRulesManageModal({
     return map;
   }, [vendorRules, lineItems, deactivatedRuleIds]);
   // Keep the compute wired so future card-surface additions can read impact.
-  // Flat USD tier amounts convert to the PO's currency (ruleAmountFactor).
+  // Flat base-currency tier amounts convert to the PO's currency (ruleAmountFactor).
   const { factor: flatAmountFactor } = useRuleMoney();
   void useMemo(
     () =>
@@ -202,6 +202,7 @@ export function POPricingRulesManageModal({
     description: string;
     type: "discount" | "premium";
     tiers: VendorPricingRule["tiers"];
+    basis?: VendorPricingRule["basis"];
     appliesToItemCodes?: string[];
     validFrom?: string;
     validTo?: string | null;
@@ -497,6 +498,7 @@ export function POPricingRulesManageModal({
                       description: rule.description,
                       type: rule.type,
                       tiers: rule.tiers,
+                      basis: rule.basis,
                       appliesToItemCodes: rule.appliesToItemCodes,
                       validFrom: rule.validFrom,
                       validTo: rule.validTo,
@@ -514,6 +516,7 @@ export function POPricingRulesManageModal({
                       description: rule.description,
                       type: rule.type,
                       tiers: rule.tiers,
+                      basis: rule.basis,
                       appliesToItemCodes: rule.appliesToItemCodes,
                       validFrom: rule.validFrom,
                       validTo: rule.validTo,
@@ -599,6 +602,7 @@ export function POPricingRulesManageModal({
                   description: detailRule.description,
                   type: detailRule.type,
                   tiers: detailRule.tiers,
+                  basis: detailRule.basis,
                   appliesToItemCodes: detailRule.appliesToItemCodes,
                   validFrom: detailRule.validFrom,
                   validTo: detailRule.validTo,
@@ -633,6 +637,7 @@ export function POPricingRulesManageModal({
             description: rule.description,
             type: rule.type,
             tiers: rule.tiers,
+            basis: rule.basis,
             validFrom: rule.validFrom,
             validTo: rule.validTo,
           });
@@ -716,17 +721,14 @@ function PricingRuleCard({
     border: isActive ? "#A7F3D0" : "#FDE68A",
   };
 
-  /* Flat ("$") tiers are USD per unit: "$15 off per unit", and the tier
-     row adds what that is in the PO's currency. */
+  /* Flat ("$") tiers are base-currency amounts per unit: "₨4,200 off per
+     unit", and the tier row adds what that is in the PO's currency. A
+     value-based rule's band edges are order values in base. */
   const heroValue = t0 ? tierShort(t0) : "—";
   const heroPerUnit = !!t0 && t0.unit !== "%";
   const shownConverted = shownTier ? tierConverted(shownTier) : null;
-  const shownMinQty = shownTier ? shownTier.minQty : "—";
-  const shownMaxQty = shownTier
-    ? shownTier.maxQty === null
-      ? "∞"
-      : shownTier.maxQty
-    : "—";
+  const shownMinQty = shownTier ? bandEdge(shownTier.minQty, rule.basis) : "—";
+  const shownMaxQty = shownTier ? bandEdge(shownTier.maxQty, rule.basis) : "—";
 
   return (
     <div
@@ -760,7 +762,7 @@ function PricingRuleCard({
               className="inline-flex items-center px-2 py-[2px] text-[10px] bg-white text-slate-500 border-l"
               style={{ fontWeight: 500, borderColor: pill.border }}
             >
-              Volume
+              {rule.basis === "value" ? "Value" : "Volume"}
             </span>
           </span>
           <div className="flex items-center gap-1.5 shrink-0">

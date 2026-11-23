@@ -131,6 +131,7 @@ import {
   BarChart3,
   Plane,
   Layers,
+  ArrowLeftRight,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -150,6 +151,7 @@ import { InfoTooltip } from "../ui/info-tooltip";
 import { PctAmountToggle } from "./PctAmountToggle";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "../ui/hover-card";
 import { getAvatarTint } from "../../utils/avatarTints";
+import { PaymentTermCurrencyTable } from "../currency/PaymentTermCurrency";
 import { subscribeSpawnedCreations } from "../../utils/spawnedCreationChannel";
 import { GroupChipsRow } from "./GroupChipsRow";
 import { FilterPills } from "./FilterPills";
@@ -202,12 +204,15 @@ import {
   type ContactPerson,
 } from "./partnerConstants";
 import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
-import { currencyCodeOf, currencyIdOf, groupCurrencyOf } from "@/app/currency/partnerCurrency";
+import { currencyCodeOf, currencyIdOf, currencySettingsFromConfig, groupCurrencyOf, groupRateTypeOf, openDocumentCount, partnerCurrencyInfo, partnerRateTypeInfo } from "@/app/currency/partnerCurrency";
+import { RATE_TYPE_LABEL, type RateType } from "@/app/currency/rates";
+import { RULE_FIXED_TOOLTIP, RULE_SYMBOL, isFixedRuleAmount, ruleAmountFromInput, ruleInputValue } from "@/app/currency/pricingRuleCurrency";
 import { usePartnerGroups } from "../../context/PartnerGroupsContext";
 import { CurrencyFlag } from "../currency/CurrencyFlag";
 import { CurrencySymbol } from "../currency/CurrencySymbol";
 import { BaseCurrencyPreview } from "../currency/BaseCurrencyPreview";
-import { RuleAmountPreview } from "../currency/RuleAmountPreview";
+import { RateTypeToggle } from "../currency/CurrencyPill";
+import { RuleCreateExampleCard, RuleCurrencyField, RuleCurrencyNote } from "../currency/RuleCurrency";
 import { SelectPocDictionaryModal, CreatePocModal } from "./PocModals";
 import { PocPillsRow } from "./PocPillComponents";
 import { AddressAutocomplete } from "./AddressAutocomplete";
@@ -245,6 +250,9 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
   const [hasEnteredStep3, setHasEnteredStep3] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
+  // Edit Partner: Save with a new currency waits for this confirmation
+  // (open documents keep the saved currency; new documents use the new one).
+  const [pendingCurrencySave, setPendingCurrencySave] = useState<{ fromCode: string; toCode: string; openDocuments: number; data: Record<string, unknown> } | null>(null);
   const [initialProfileHandled, setInitialProfileHandled] = useState(false);
   const [editModeInitialized, setEditModeInitialized] = useState(false);
 
@@ -310,6 +318,22 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
           setPrimaryGroupId(grp.id);
         }
       }
+
+      // Billing & Shipping starts from the partner's own currency and default
+      // exchange rate (or its group's, marked Inherited), on both sides, so a
+      // change can be checked against what open documents use.
+      const partnerLike = v as Parameters<typeof partnerCurrencyInfo>[0];
+      const cur = partnerCurrencyInfo(partnerLike);
+      const rate = partnerRateTypeInfo(partnerLike);
+      const seed = {
+        currency: currencyIdOf(cur.code),
+        currencyInherited: cur.source === "group",
+        rateType: rate.type,
+        rateTypeInherited: rate.source === "group",
+        // So Save Changes keeps them even if Configure isn't opened.
+        configCreditLimit: { currency: currencyIdOf(cur.code), rateType: rate.type },
+      };
+      configDataRef.current = { vendor: { ...seed }, customer: { ...seed } };
 
       // Pre-populate step 2: partner info
       setPartnerName((v.displayName as string) || (v.companyName as string) || "");
@@ -697,6 +721,14 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
     onOpenChange(false);
   }, [onOpenChange]);
 
+  const commitSave = useCallback((data: Record<string, unknown>) => {
+    if (onPartnerCreated) {
+      onPartnerCreated(data);
+    }
+    // Reset and close
+    handleDiscard();
+  }, [onPartnerCreated, handleDiscard]);
+
   const handleSave = useCallback(() => {
     const newErrors: Record<string, string> = {};
     const trimmedName = partnerName.trim();
@@ -765,13 +797,26 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
       customerConfig: configDataRef.current.customer || {},
     };
 
-    if (onPartnerCreated) {
-      onPartnerCreated(data);
+    // Edit Partner: a new currency asks first (spec Partners 3: warn before
+    // saving; open documents keep their currency, new documents use the
+    // new one). Creating a partner has no open documents, so no prompt.
+    if (editMode && editVendor) {
+      const fromCode = partnerCurrencyInfo(editVendor as Parameters<typeof partnerCurrencyInfo>[0]).code;
+      const settings = currencySettingsFromConfig(data);
+      const toCode = settings
+        ? partnerCurrencyInfo({
+            partnerGroup: (editVendor.partnerGroup as string | undefined) ?? primaryGroup?.id,
+            configData: { creditLimitConfig: { currency: settings.currency } },
+          }).code
+        : fromCode;
+      if (toCode !== fromCode) {
+        setPendingCurrencySave({ fromCode, toCode, openDocuments: openDocumentCount(editVendor), data });
+        return;
+      }
     }
 
-    // Reset and close
-    handleDiscard();
-  }, [partnerName, allPartners, editMode, editVendor, primaryGroup, selectedGroups, phoneCountryCode, partnerPhone, email, website, address, profileImage, selectedPartnerTypes, selectedVendorSubTypes, selectedCustomerSubTypes, onPartnerCreated, handleDiscard]);
+    commitSave(data);
+  }, [partnerName, allPartners, editMode, editVendor, primaryGroup, selectedGroups, phoneCountryCode, partnerPhone, email, website, address, profileImage, selectedPartnerTypes, selectedVendorSubTypes, selectedCustomerSubTypes, commitSave]);
 
   // Determine if user has made any progress worth protecting
   const hasAnyProgress = useMemo(() => {
@@ -935,8 +980,9 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
                 heavy — this restores the lighter treatment. */}
             {primaryGroup && (() => {
               const tpl = primaryGroup.template;
-              const inheritedFields: string[] = [];
-              if (tpl?.currency) inheritedFields.push("Currency");
+              // Every group has a currency (its own, else base) and a default
+              // exchange rate (its own, else mid-market), so both always pre-fill.
+              const inheritedFields: string[] = ["Currency", "Default exchange rate"];
               if (tpl?.paymentTermId) inheritedFields.push("Payment Term");
               if (tpl?.creditEnforcement) inheritedFields.push("Credit Enforcement");
               if (tpl?.paymentMethodTypes?.length) inheritedFields.push("Payment Methods");
@@ -1055,6 +1101,11 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
                     isCarrier={selectedVendorSubTypes.has("carrier")}
                     onSectionOverrideChange={(sectionId, overridden) => markSectionOverridden(configType, sectionId, overridden)}
                     onGoToSection={configType === "vendor" ? setActiveConfigSection : setActiveCustomerConfigSection}
+                    // Edit Partner: a currency change asks first (open documents keep theirs).
+                    currencyChangeGuard={editMode && editVendor ? {
+                      savedCode: partnerCurrencyInfo(editVendor as Parameters<typeof partnerCurrencyInfo>[0]).code,
+                      openDocuments: openDocumentCount(editVendor),
+                    } : undefined}
                   />
                 </div>
                 {(() => {
@@ -1514,6 +1565,74 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
         </div>
       </AlertDialogContent>
     </AlertDialog>
+
+    {/* Edit Partner: Save with a new currency asks first. Open documents keep
+        the saved currency; new documents use the new one. Cancel goes back
+        to the form unsaved; Change saves. */}
+    {pendingCurrencySave && (() => {
+      const { fromCode, toCode, openDocuments: docs } = pendingCurrencySave;
+      return (
+        <AlertDialog open onOpenChange={(o) => { if (!o) setPendingCurrencySave(null); }}>
+          <AlertDialogContent
+            className="sm:max-w-[400px] p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-[0_24px_80px_-12px_rgba(0,0,0,0.25)]"
+            style={{ zIndex: 290 }}
+            onInteractOutside={() => setPendingCurrencySave(null)}
+          >
+            <div className="relative flex flex-col items-center pt-10 pb-6" style={{ background: "linear-gradient(180deg, #EBF3FF 0%, rgba(235,243,255,0.3) 70%, transparent 100%)" }}>
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[180px] h-[80px] rounded-full blur-[50px] opacity-25" style={{ backgroundColor: "#0A77FF" }} />
+              <div className="relative w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: "#DBEAFE" }}>
+                <ArrowLeftRight className="w-8 h-8" style={{ color: "#0A77FF" }} />
+              </div>
+              <span className="mt-4 px-3 py-1 rounded-full text-[11px]" style={{ fontWeight: 600, backgroundColor: "#EBF3FF", color: "#0548A3", letterSpacing: "0.05em" }}>
+                Currency
+              </span>
+            </div>
+            <div className="flex flex-col items-center text-center px-8 pb-8">
+              <AlertDialogHeader className="p-0 gap-0 text-center sm:text-center">
+                <AlertDialogTitle className="text-[18px] tracking-[-0.02em]" style={{ fontWeight: 600, color: "rgb(var(--foreground))" }}>
+                  Change currency to {toCode}?
+                </AlertDialogTitle>
+              </AlertDialogHeader>
+              <AlertDialogDescription className="text-[13px] mt-2 max-w-[300px] mx-auto" style={{ color: "rgb(var(--muted-foreground))", lineHeight: "1.65" }}>
+                Documents already open with {partnerName.trim() || "this partner"} keep their currency. New documents use {toCode}.
+              </AlertDialogDescription>
+              <div className="w-full mt-5 rounded-xl border border-[#E8ECF1] bg-[#FAFBFC] divide-y divide-[#E8ECF1] text-left">
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>Open documents</span>
+                  <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>
+                    {docs === 0 ? "None" : <>{docs} {docs === 1 ? "stays" : "stay"} in <CurrencyFlag code={fromCode} /> {fromCode}</>}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>New documents</span>
+                  <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-700" style={{ fontWeight: 600 }}>
+                    <CurrencyFlag code={toCode} /> {toCode}
+                  </span>
+                </div>
+              </div>
+              <div className="w-full mt-6 grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setPendingCurrencySave(null)}
+                  className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors"
+                  style={{ fontWeight: 500, backgroundColor: "rgb(var(--muted))", color: "#334155" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { const { data } = pendingCurrencySave; setPendingCurrencySave(null); commitSave(data); }}
+                  className="w-full h-11 text-[14px] rounded-xl border-0 cursor-pointer transition-colors hover:opacity-90"
+                  style={{ fontWeight: 600, backgroundColor: "#0A77FF", color: "#fff" }}
+                >
+                  Change
+                </button>
+              </div>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
+      );
+    })()}
 
     {/* Carrier Profile enable/disable confirmation — same canonical
         Activate/Deactivate palette as the partner detail page. Tells
@@ -4639,7 +4758,12 @@ export function ConfigPageContent({
   onSectionOverrideChange,
   suppressCarrierSectionHeader = false,
   onGoToSection,
+  currencyChangeGuard,
 }: {
+  /** Edit Partner: the partner's saved currency and how many open documents
+   *  use it. Picking another currency in Billing & Shipping shows a note
+   *  under it; Save of Edit Partner asks before the change applies. */
+  currencyChangeGuard?: { savedCode: string; openDocuments: number };
   sectionId: string;
   configType: "vendor" | "customer";
   /** Which profile (sub-type) the user is currently configuring — drives
@@ -5174,7 +5298,13 @@ export function ConfigPageContent({
     if (!createPrName.trim()) return;
     // All items prices every item, including future ones — always confirm on purpose.
     if (createPrItemScope === "all" && !confirmedAllItems) { setCreatePrAllItemsConfirmOpen(true); return; }
-    const tierData = createPrTiers.map((t) => ({ minValue: t.minQty || "-", maxValue: t.maxQty || "-", discount: t.discount ? `${t.discount}${t.fixRate ? "$" : "%"}` : "-" }));
+    // Value thresholds and fixed amounts are base-currency amounts ("₨280,000").
+    const threshold = (v: string) => (createPrBasis === "value" ? ruleAmountFromInput(v) : v) || "-";
+    const tierData = createPrTiers.map((t) => ({
+      minValue: threshold(t.minQty),
+      maxValue: threshold(t.maxQty),
+      discount: t.discount ? (t.fixRate ? ruleAmountFromInput(t.discount) || t.discount : `${t.discount.replace(/%$/, "")}%`) : "-",
+    }));
     if (editingPrRuleId) {
       // Update existing custom rule
       customPricingRulesRef.current = customPricingRulesRef.current.map((r) =>
@@ -5231,13 +5361,19 @@ export function ConfigPageContent({
     setCreatePrCategory(rule.category === "all" ? "discount" : rule.category);
     setCreatePrBasis(rule.basis);
     setCreatePrTiers(
-      rule.tiers.map((t) => ({
-        discount: t.discount,
-        fixRate: false,
-        qtyLimits: true,
-        minQty: t.minValue || "",
-        maxQty: t.maxValue || "",
-      }))
+      // The form shows the base currency's symbol beside value fields, so
+      // the stored "₨280,000" goes in as "280,000".
+      rule.tiers.map((t) => {
+        const fixed = isFixedRuleAmount(t.discount);
+        const field = (v: string) => (!v || v === "-" ? "" : rule.basis === "value" ? ruleInputValue(v) : v);
+        return {
+          discount: fixed ? ruleInputValue(t.discount) : (t.discount === "-" ? "" : t.discount.replace(/%$/, "")),
+          fixRate: fixed,
+          qtyLimits: true,
+          minQty: field(t.minValue),
+          maxQty: field(t.maxValue),
+        };
+      })
     );
     setPricingRulesModalOpen(false);
     setPreviewPricingRuleId(null);
@@ -5344,6 +5480,36 @@ export function ConfigPageContent({
   // survives unmount when they click Save Configuration and come back in.
   React.useEffect(() => { cache.currency = currency; }, [currency, cache]);
   React.useEffect(() => { cache.currencyInherited = currencyInherited; }, [currencyInherited, cache]);
+
+  // Default exchange rate (Currency Touchpoints Map, 24 Nov 2026): set in
+  // the Currency card beside the currency, inherited from the primary group
+  // (mid-market unless the group sets corporate) and overridable the same way.
+  const groupTemplateRateType: RateType | undefined = selectedGroup
+    ? groupRateTypeOf(getStoreGroup(selectedGroup.id) ?? selectedGroup)
+    : undefined;
+  const [rateType, setRateType] = useState<RateType>(() => {
+    const cached = cache.rateType;
+    if (cached === "mid" || cached === "corporate") return cached;
+    return groupTemplateRateType ?? "mid";
+  });
+  const [rateTypeInherited, setRateTypeInherited] = useState<boolean>(() => {
+    const cached = cache.rateTypeInherited;
+    if (typeof cached === "boolean") return cached;
+    return !!groupTemplateRateType;
+  });
+  React.useEffect(() => { cache.rateType = rateType; }, [rateType, cache]);
+  React.useEffect(() => { cache.rateTypeInherited = rateTypeInherited; }, [rateTypeInherited, cache]);
+  const handleRateTypeUserChange = useCallback((t: RateType) => {
+    setRateType(t);
+    setRateTypeInherited(t === groupTemplateRateType);
+  }, [groupTemplateRateType]);
+  const revertRateTypeToGroup = useCallback(() => {
+    if (groupTemplateRateType) {
+      setRateType(groupTemplateRateType);
+      setRateTypeInherited(true);
+    }
+  }, [groupTemplateRateType]);
+
   // All override-detection effects below are gated on `hydratedGroupId`
   // — they only fire AFTER hydration writes templated defaults onto
   // the local state. Without this gate, Step 3's initial render would
@@ -5351,13 +5517,13 @@ export function ConfigPageContent({
   // hadn't caught up to the group template yet.
   const isHydratedForCurrentGroup = hydratedGroupId === (selectedGroup?.id ?? null);
 
-  // Currency — only meaningful when the group actually templates one.
+  // Currency and default exchange rate — only meaningful when there is a group to inherit from.
   React.useEffect(() => {
     if (groupContext) return;
     if (!isHydratedForCurrentGroup) return;
     if (!groupTemplateCurrency) return;
-    onSectionOverrideChange?.("billing_shipping", !currencyInherited);
-  }, [currencyInherited, groupTemplateCurrency, groupContext, isHydratedForCurrentGroup, onSectionOverrideChange]);
+    onSectionOverrideChange?.("billing_shipping", !currencyInherited || !rateTypeInherited);
+  }, [currencyInherited, rateTypeInherited, groupTemplateCurrency, groupContext, isHydratedForCurrentGroup, onSectionOverrideChange]);
 
   // Payment Terms — flag override when the user picks a different
   // preset than the group templates. Skip when the user hasn't picked
@@ -5439,6 +5605,23 @@ export function ConfigPageContent({
       setCurrencyInherited(true);
     }
   }, [groupTemplateCurrency]);
+
+  // Edit Partner › Billing & Shipping: picking another currency just
+  // updates the field, with a note under it. The warning (open documents
+  // keep their currency, new documents use the new one) comes on Save of
+  // Edit Partner. Whether to block once a partner has transactions is open.
+  const requestCurrencyChange = useCallback((id: string, revert = false) => {
+    if (id === currency) return;
+    if (revert) revertCurrencyToGroup();
+    else handleCurrencyUserChange(id);
+  }, [currency, revertCurrencyToGroup, handleCurrencyUserChange]);
+  // The currency picked, when it differs from the partner's saved one.
+  const unsavedCurrencyChange = (() => {
+    if (!currencyChangeGuard) return null;
+    const from = currencyChangeGuard.savedCode.toUpperCase();
+    const to = currencyCodeOf(currency) ?? currency.toUpperCase();
+    return to !== from ? { from, to } : null;
+  })();
   // Perspective-aware defaults.
   // Vendor: we receive from vendor → Ship To = our location (pl-1),
   //   Pay To = this vendor (the partner being created, SELF_PARTNER_ID —
@@ -5752,7 +5935,7 @@ export function ConfigPageContent({
       configPaymentTerm: ptConfig,
       configPricingRules: allPricingRules,
       configPointsOfContact: pocData,
-      configCreditLimit: { currency, enforcement },
+      configCreditLimit: { currency, rateType, enforcement },
       configShipping: shippingData,
       configBillingType: billingType,
       // Carrier-self methods round-trip so a Carrier partner's saved
@@ -5761,7 +5944,7 @@ export function ConfigPageContent({
       // partner overall.
       configCustomMethods: customMethods,
     });
-  }, [paymentEntries, selectedPaymentTermPreset, selectedPricingRuleIds, selectedPocContacts, carrierServices, vendorShippingPrefs, currency, enforcement, billingType, cache, customMethods]);
+  }, [paymentEntries, selectedPaymentTermPreset, selectedPricingRuleIds, selectedPocContacts, carrierServices, vendorShippingPrefs, currency, rateType, enforcement, billingType, cache, customMethods]);
 
   // Location-context gate — sections that don't apply at the per-site
   // level render a uniform empty state up front so the nav still
@@ -6247,7 +6430,7 @@ export function ConfigPageContent({
                       {!groupContext && selectedGroup && groupTemplateCurrency && !currencyInherited ? (
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); revertCurrencyToGroup(); }}
+                          onClick={(e) => { e.stopPropagation(); requestCurrencyChange(groupTemplateCurrency, true); }}
                           className="text-[10px] text-primary hover:underline cursor-pointer shrink-0"
                           style={{ fontWeight: 500 }}
                         >
@@ -6275,6 +6458,54 @@ export function ConfigPageContent({
                         <p className="text-[12px] text-slate-400" style={{ fontWeight: 500 }}>Select currency</p>
                       </div>
                     )}
+                    {/* Edit Partner: the change is confirmed on Save. */}
+                    {unsavedCurrencyChange && (
+                      <p className="text-[10.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 leading-snug" style={{ fontWeight: 500 }}>
+                        Open documents keep {unsavedCurrencyChange.from}; new documents use {unsavedCurrencyChange.to}.
+                      </p>
+                    )}
+                    {/* Default exchange rate — in the same card, inherited from
+                        the group like the currency and overridable. Clicks here
+                        don't open the currency list. */}
+                    <div className="pt-2.5 border-t border-muted flex flex-col gap-1.5 cursor-default" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                          <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Default exchange rate</span>
+                          <InfoTooltip>{`The rate new documents with this ${configType === "customer" ? "customer" : "vendor"} start from: mid-market (synced from the rate provider) or corporate (set by finance). A document can still switch it.`}</InfoTooltip>
+                          {!groupContext && selectedGroup && groupTemplateRateType && rateTypeInherited && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] border bg-[#EEF2FF] text-[#4338CA] border-[#E0E7FF]"
+                              style={{ fontWeight: 600 }}
+                              title={`Inherited from ${selectedGroup.name}`}
+                            >
+                              <Check className="w-2.5 h-2.5" /> Inherited
+                            </span>
+                          )}
+                          {!groupContext && selectedGroup && groupTemplateRateType && !rateTypeInherited && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] border bg-amber-50 text-amber-800 border-amber-200"
+                              style={{ fontWeight: 600 }}
+                              title={`Overridden (group default: ${RATE_TYPE_LABEL[groupTemplateRateType]})`}
+                            >
+                              Overridden
+                            </span>
+                          )}
+                        </div>
+                        {!groupContext && selectedGroup && groupTemplateRateType && !rateTypeInherited && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); revertRateTypeToGroup(); }}
+                            className="text-[10px] text-primary hover:underline cursor-pointer shrink-0"
+                            style={{ fontWeight: 500 }}
+                          >
+                            Revert
+                          </button>
+                        )}
+                      </div>
+                      <div>
+                        <RateTypeToggle value={rateType} onChange={handleRateTypeUserChange} />
+                      </div>
+                    </div>
                   </div>
                 </PopoverTrigger>
                 <PopoverContent className="w-[340px] p-0 rounded-xl border border-border shadow-lg z-[250]" align="start" sideOffset={4}>
@@ -6309,7 +6540,7 @@ export function ConfigPageContent({
                       currencyFiltered.map((c) => (
                         <button
                           key={c.id}
-                          onClick={() => handleCurrencyUserChange(c.id)}
+                          onClick={() => requestCurrencyChange(c.id)}
                           className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-slate-50 ${currency === c.id ? "bg-accent/50" : ""}`}
                         >
                           <FlagImage code={c.flag} className="shrink-0 text-[13px]" />
@@ -6472,6 +6703,7 @@ export function ConfigPageContent({
             </div>
           );
         })()}
+
       </div>
     );
   }
@@ -6663,43 +6895,23 @@ export function ConfigPageContent({
         {e.applyDiscount && (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
                 <Label className="text-xs text-slate-500" style={{ fontWeight: 500 }}>Discount</Label>
-                <PctAmountToggle
-                  isFixed={(e.discountMode ?? "percent") === "fixed"}
-                  onChange={(fixed) => updatePaymentEntry(e.id, { discountMode: fixed ? "fixed" : "percent" })}
-                  percentTooltip="Discount applied as a percentage of the transaction amount."
-                  amountTooltip="Discount applied as a fixed dollar amount."
-                />
+                <InfoTooltip>{"Discount applied as a percentage of the transaction amount. Percentages only, so it works on a payment in any currency."}</InfoTooltip>
               </div>
               <div className="relative mt-1.5">
-                {(e.discountMode ?? "percent") === "fixed" && (
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
-                )}
-                <Input value={e.discountPercent} onChange={(ev) => updatePaymentEntry(e.id, { discountPercent: ev.target.value })} placeholder={`e.g. ${(e.discountMode ?? "percent") === "percent" ? "5" : "25.00"}`} className={`rounded-lg border-border h-10 bg-white text-sm text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${(e.discountMode ?? "percent") === "fixed" ? "pl-7 pr-3" : "pr-8"}`} />
-                {(e.discountMode ?? "percent") === "percent" && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
-                )}
+                <Input value={e.discountPercent} onChange={(ev) => updatePaymentEntry(e.id, { discountPercent: ev.target.value, discountMode: "percent" })} placeholder="e.g. 5" className="rounded-lg border-border h-10 bg-white text-sm text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 pr-8" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
               </div>
             </div>
             <div>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
                 <Label className="text-xs text-slate-500" style={{ fontWeight: 500 }}>Add. Charges</Label>
-                <PctAmountToggle
-                  isFixed={(e.additionalChargesMode ?? "percent") === "fixed"}
-                  onChange={(fixed) => updatePaymentEntry(e.id, { additionalChargesMode: fixed ? "fixed" : "percent" })}
-                  percentTooltip="Additional charges added as a percentage of the transaction amount."
-                  amountTooltip="Additional charges added as a fixed dollar amount."
-                />
+                <InfoTooltip>{"Additional charges added as a percentage of the transaction amount. Percentages only, so it works on a payment in any currency."}</InfoTooltip>
               </div>
               <div className="relative mt-1.5">
-                {(e.additionalChargesMode ?? "percent") === "fixed" && (
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
-                )}
-                <Input value={e.additionalCharges} onChange={(ev) => updatePaymentEntry(e.id, { additionalCharges: ev.target.value })} placeholder={`e.g. ${(e.additionalChargesMode ?? "percent") === "percent" ? "2" : "50.00"}`} className={`rounded-lg border-border h-10 bg-white text-sm text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${(e.additionalChargesMode ?? "percent") === "fixed" ? "pl-7 pr-3" : "pr-8"}`} />
-                {(e.additionalChargesMode ?? "percent") === "percent" && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
-                )}
+                <Input value={e.additionalCharges} onChange={(ev) => updatePaymentEntry(e.id, { additionalCharges: ev.target.value, additionalChargesMode: "percent" })} placeholder="e.g. 2" className="rounded-lg border-border h-10 bg-white text-sm text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 pr-8" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
               </div>
             </div>
           </div>
@@ -6907,8 +7119,8 @@ export function ConfigPageContent({
                   {entry.phone && <div><p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Phone</p><p className="text-[13px] text-foreground mt-0.5" style={{ fontWeight: 500 }}>{entry.countryCode} {entry.phone}</p></div>}
                   {entry.applyDiscount && (
                     <div className="flex gap-4">
-                      {entry.discountPercent && <div><p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Discount</p><p className="text-[13px] text-foreground mt-0.5" style={{ fontWeight: 500 }}>{(entry.discountMode ?? "percent") === "fixed" ? "$" : ""}{entry.discountPercent}{(entry.discountMode ?? "percent") === "percent" ? "%" : ""}</p></div>}
-                      {entry.additionalCharges && <div><p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Add. Charges</p><p className="text-[13px] text-foreground mt-0.5" style={{ fontWeight: 500 }}>{(entry.additionalChargesMode ?? "percent") === "fixed" ? "$" : ""}{entry.additionalCharges}{(entry.additionalChargesMode ?? "percent") === "percent" ? "%" : ""}</p></div>}
+                      {entry.discountPercent && <div><p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Discount</p><p className="text-[13px] text-foreground mt-0.5" style={{ fontWeight: 500 }}>{entry.discountPercent}%</p></div>}
+                      {entry.additionalCharges && <div><p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Add. Charges</p><p className="text-[13px] text-foreground mt-0.5" style={{ fontWeight: 500 }}>{entry.additionalCharges}%</p></div>}
                     </div>
                   )}
                 </div>
@@ -7764,7 +7976,7 @@ export function ConfigPageContent({
                           <Switch checked={createPtApplyDiscount} onCheckedChange={(v) => setCreatePtApplyDiscount(v === true)} />
                           <div className="flex-1 min-w-0">
                             <h5 className="text-[13px] text-foreground" style={{ fontWeight: 600 }}>Apply Early Payment Discount</h5>
-                            <p className="text-[11px] text-slate-500 mt-0.5">Incentivize faster payments by offering a percentage or fixed discount within a defined window.</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">Incentivize faster payments with a percentage discount within a defined window. Terms use days and percentages only, so they work in any currency.</p>
                           </div>
                         </div>
 
@@ -7820,6 +8032,32 @@ export function ConfigPageContent({
                           </div>
                         )}
                       </div>
+                    </div>
+
+                    {/* In any currency (Partners §4): days and percentages only, so the
+                        term reads the same on a document in this partner's currency. */}
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-3">
+                        <span className="text-sm text-foreground" style={{ fontWeight: 600 }}>In Any Currency</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild><span><Info className="w-3.5 h-3.5 text-slate-300 cursor-help" /></span></TooltipTrigger>
+                          <TooltipContent side="bottom" sideOffset={6} className="max-w-[260px] text-[11px] leading-[1.5] z-[300]">
+                            <p className="text-slate-500">Payment terms are days and percentages only, with no fixed amounts, so the same term applies to a document in any currency.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <PaymentTermCurrencyTable
+                        partnerCurrency={currencyCodeOf(currency)}
+                        term={{
+                          category: createPtType,
+                          duration: createPtType === "net" ? (createPtCustomDuration || createPtDuration) : undefined,
+                          discountPercent: createPtApplyDiscount ? createPtDiscountPercent : undefined,
+                          discountPeriod: createPtApplyDiscount ? (createPtCustomDiscountPeriod || createPtDiscountPeriod) : undefined,
+                          prepayPercent: createPtType === "prepayment" ? createPtCustomDuration : undefined,
+                          trigger: CREATE_PT_TRIGGERS.find((t) => t.id === createPtTrigger)?.label,
+                          milestones: createPtSplitEvents.map((e) => ({ pct: e.percent, label: CREATE_PT_TRIGGERS.find((t) => t.id === e.event)?.label ?? "" })),
+                        }}
+                      />
                     </div>
                   </div>
               </div>
@@ -8075,6 +8313,7 @@ export function ConfigPageContent({
           mode="create"
           onApply={(t) => { setSelectedPaymentTermId(t.id); setPaymentTermsModalOpen(false); }}
           onDuplicate={(t) => handleDuplicatePaymentTerm(t)}
+          partnerCurrency={currencyCodeOf(currency)}
         />
 
         {/* Shared Pricing Rule Detail Modal (same as VendorDetailsPage) */}
@@ -8910,7 +9149,7 @@ export function ConfigPageContent({
                                 <p className="text-slate-500">Measure thresholds by units ordered or order value.</p>
                                 <div className="mt-2 px-2.5 py-2 rounded-lg bg-slate-50 border border-muted">
                                   <p className="text-[10px] text-slate-400 tracking-wide" style={{ fontWeight: 600 }}>Example</p>
-                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over $10K.</p>
+                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over ₨2,800,000.</p>
                                 </div>
                               </TooltipContent>
                             </Tooltip>
@@ -8923,7 +9162,7 @@ export function ConfigPageContent({
                                   if (createPrBasis !== b) {
                                     setCreatePrBasis(b);
                                     // Clear tier thresholds when switching basis — old quantity values
-                                    // shouldn't linger as dollar amounts and vice versa.
+                                    // shouldn't linger as order values and vice versa.
                                     setCreatePrTiers(prev => prev.map(t => ({ ...t, minQty: "", maxQty: "" })));
                                   }
                                 }}
@@ -8940,6 +9179,9 @@ export function ConfigPageContent({
                             ))}
                           </div>
                         </div>
+                        {/* Currency: always the base currency, read-only (no currency pick on a rule). */}
+                        <RuleCurrencyField />
+                        <RuleCurrencyNote />
                         {/* Row 2: Description (full width) */}
                         <div className="col-span-2">
                           <ExpandableTextarea
@@ -9041,19 +9283,19 @@ export function ConfigPageContent({
                                     isFixed={tier.fixRate}
                                     onChange={(fixed) => updateCpmTier(idx, { fixRate: fixed })}
                                     percentTooltip={`${isDis ? "Discount" : "Premium"} applied as a percentage of the line value.`}
-                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in USD.`}
+                                    amountTooltip={RULE_FIXED_TOOLTIP(isDis ? "Discount" : "Premium")}
+                                    amountLabel={RULE_SYMBOL}
                                   />
                                 </div>
                                 <div className="relative">
                                   {tier.fixRate && (
                                     <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                   )}
-                                  <Input value={tier.discount} onChange={(e) => updateCpmTier(idx, { discount: e.target.value })} placeholder={tier.fixRate ? "e.g. 25.00" : "e.g. 50"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-7 pr-3" : "pr-8"}`} />
+                                  <Input value={tier.discount} onChange={(e) => updateCpmTier(idx, { discount: e.target.value })} placeholder={tier.fixRate ? "e.g. 7,000" : "e.g. 50"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-7 pr-3" : "pr-8"}`} />
                                   {!tier.fixRate && (
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                                   )}
                                 </div>
-                                {tier.fixRate && <RuleAmountPreview raw={tier.discount ?? ""} from={RULE_CURRENCY} to={currencyCodeOf(currency) ?? BASE_CURRENCY} />}
                               </div>
 
                               {/* Quantity limits toggle */}
@@ -9069,7 +9311,7 @@ export function ConfigPageContent({
                                   <span onClick={(e) => e.stopPropagation()}>
                                     <InfoTooltip>{createPrBasis === "volume"
                                       ? "Restricts this tier to orders within a specific quantity range. When enabled, the tier only applies when the order quantity falls between Min and Max."
-                                      : "Restricts this tier to orders within a specific dollar-value range. When enabled, the tier only applies when the order total falls between Min and Max."}</InfoTooltip>
+                                      : "Restricts this tier to orders within a specific value range, in PKR. When enabled, the tier only applies when the order total falls between Min and Max."}</InfoTooltip>
                                   </span>
                                 </label>
                               </div>
@@ -9083,30 +9325,28 @@ export function ConfigPageContent({
                                     <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createPrBasis === "volume" ? "Min Qty" : "Min Order Value"}</label>
                                     <InfoTooltip>{createPrBasis === "volume"
                                       ? "The smallest order quantity at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."
-                                      : "The smallest order value (in USD, the currency pricing rules are written in) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
+                                      : "The smallest order value (in PKR, the base currency pricing rules are written in) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createPrBasis === "value" && (
                                       <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                     )}
-                                    <Input value={tier.minQty} onChange={(e) => updateCpmTier(idx, { minQty: e.target.value })} placeholder={createPrBasis === "volume" ? "e.g. 100" : "e.g. 1,000"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createPrBasis === "value" ? "pl-7" : ""}`} />
+                                    <Input value={tier.minQty} onChange={(e) => updateCpmTier(idx, { minQty: e.target.value })} placeholder={createPrBasis === "volume" ? "e.g. 100" : "e.g. 280,000"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createPrBasis === "value" ? "pl-7" : ""}`} />
                                   </div>
-                                  {createPrBasis === "value" && <RuleAmountPreview raw={tier.minQty ?? ""} from={RULE_CURRENCY} to={currencyCodeOf(currency) ?? BASE_CURRENCY} />}
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
                                     <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createPrBasis === "volume" ? "Max Qty" : "Max Order Value"}</label>
                                     <InfoTooltip>{createPrBasis === "volume"
                                       ? "The largest order quantity this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."
-                                      : "The largest order value (in USD, the currency pricing rules are written in) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
+                                      : "The largest order value (in PKR, the base currency pricing rules are written in) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createPrBasis === "value" && (
                                       <CurrencySymbol code={RULE_CURRENCY} className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400" />
                                     )}
-                                    <Input value={tier.maxQty} onChange={(e) => updateCpmTier(idx, { maxQty: e.target.value })} placeholder={createPrBasis === "volume" ? "e.g. 500" : "e.g. 5,000"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createPrBasis === "value" ? "pl-7" : ""}`} />
+                                    <Input value={tier.maxQty} onChange={(e) => updateCpmTier(idx, { maxQty: e.target.value })} placeholder={createPrBasis === "volume" ? "e.g. 500" : "e.g. 1,400,000"} className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createPrBasis === "value" ? "pl-7" : ""}`} />
                                   </div>
-                                  {createPrBasis === "value" && <RuleAmountPreview raw={tier.maxQty ?? ""} from={RULE_CURRENCY} to={currencyCodeOf(currency) ?? BASE_CURRENCY} />}
                                 </div>
                               </div>
                             )}
@@ -9118,6 +9358,17 @@ export function ConfigPageContent({
                     <button onClick={addCpmTier} className={`inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-lg border border-dashed text-[12px] transition-all cursor-pointer w-full justify-center ${createPrCategory === "discount" ? "border-[#BBF7D0] text-green-600 hover:bg-green-50 hover:border-[#86EFAC]" : "border-[#DDD6FE] text-violet hover:bg-violet-50 hover:border-[#C4B5FD]"}`} style={{ fontWeight: 600 }}>
                       <Plus className="w-3.5 h-3.5" /> Add Tier
                     </button>
+
+                    {/* Value-based: how the tiers meet a document in this currency
+                        (threshold checked in base at the document's rate). */}
+                    <RuleCreateExampleCard
+                      className="mt-4"
+                      basis={createPrBasis}
+                      tiers={createPrTiers}
+                      partnerCurrency={currencyCodeOf(currency)}
+                      rateType={rateType}
+                      category={createPrCategory}
+                    />
                   </div>
                 </div>
                 );
@@ -9135,7 +9386,7 @@ export function ConfigPageContent({
                       <p className="text-[13px] text-foreground truncate" style={{ fontWeight: 600 }}>{createPrName || "Untitled Rule"}</p>
                       <p className="text-[11px] text-slate-500 truncate">
                         {createPrCategory === "discount" ? "Discount" : "Premium"} · {createPrBasis === "volume" ? "Volume-Based" : "Value-Based"} · {createPrTiers.length} tier{createPrTiers.length !== 1 ? "s" : ""}
-                        {createPrTiers[0]?.discount ? ` · ${createPrTiers[0].discount}${createPrTiers[0].fixRate ? "$" : "%"}` : ""}
+                        {createPrTiers[0]?.discount ? ` · ${createPrTiers[0].fixRate ? ruleAmountFromInput(createPrTiers[0].discount) : `${createPrTiers[0].discount}%`}` : ""}
                       </p>
                     </div>
                     <button onClick={() => setCreatePrStep(1)} className="text-[11px] text-primary hover:text-[#086AE6] transition-colors cursor-pointer shrink-0" style={{ fontWeight: 600 }}>{createPrMode === "view" ? "View Setup" : "Edit Setup"}</button>

@@ -9,10 +9,10 @@ import type { PurchaseOrderData, POVersionEntry } from "./poStore";
 import { getShipmentMethodLabel } from "./poStore";
 import { computePOPricing } from "./poOrderPricing";
 import { getPrintStatusBadgeStyle } from "./statusColors";
-import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
-import { formatMoney, formatRateDate, rateSentence } from "@/app/currency/money";
+import { getCurrency } from "@/app/currency/currencies";
+import { formatMoney } from "@/app/currency/money";
 import { poFx, type PoFx } from "@/app/currency/poFx";
-import { RATE_TYPE_LABEL, toBase } from "@/app/currency/rates";
+
 
 /* ── Color tokens (mirrored from theme.css for inline use) ── */
 const C = {
@@ -44,16 +44,21 @@ export function printFx(po: PurchaseOrderData, version?: POVersionEntry): PoFx {
   return snap?.currency ? poFx({ ...snap, vendor: { name: snap.vendorName } }) : poFx(po);
 }
 
-/** "Exchange rate: 1 EUR = 304.8150 PKR · Mid-market (Open Exchange Rates)
-    · Feb 20, 2026 · ≈ ₨4,164,682.82" — the total in the base currency. */
-function rateFootnote(fx: PoFx, total: number): string {
-  const type = fx.rateType === "mid" ? `${RATE_TYPE_LABEL.mid} (${fx.source})` : fx.source;
-  return [
-    `Exchange rate: ${rateSentence(fx.currency, fx.rate)}`,
-    type,
-    formatRateDate(fx.rateDate),
-    `≈ ${formatMoney(toBase(total, fx.rate), BASE_CURRENCY)}`,
-  ].join(" · ");
+/* Currency names written as a plural ("United States Dollars", "Euros"); a
+   name whose last word has no plural form in English keeps it ("Japanese
+   Yen", "Pound Sterling", "Renminbi"). */
+const PLURAL_S = new Set(["Dollar", "Euro", "Rupee", "Franc", "Peso", "Dinar", "Dirham", "Riyal", "Rial", "Shilling", "Ruble", "Mark", "Shekel", "Real"]);
+function currencyPlural(name: string): string {
+  const last = name.split(" ").pop() ?? "";
+  return PLURAL_S.has(last) ? `${name}s` : name;
+}
+
+/** "All amounts in United States Dollars (USD)." The printed PO is the
+    vendor's document, in its currency, with no base-currency figures
+    (Currency Touchpoints Map, Purchase Orders 5). */
+function currencyFootnote(code: string): string {
+  const name = getCurrency(code)?.name;
+  return name ? `All amounts in ${currencyPlural(name)} (${code}).` : `All amounts in ${code}.`;
 }
 
 function fmtNow(): string {
@@ -473,7 +478,7 @@ export function generatePrintHTML(
       <div style="flex:1;border:1px solid ${C.border};border-radius:10px;padding:16px;">
         <div style="font-size:10px;font-weight:600;color:${C.muted};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Payment &amp; Delivery</div>
         ${paymentRow("Payment Terms", display.payment.paymentTerms)}
-        ${paymentRow("Currency", `${cur} — ${getCurrency(cur)?.name ?? cur}`)}
+        ${paymentRow("Currency", getCurrency(cur) ? `${getCurrency(cur)!.name} (${cur})` : cur)}
         ${paymentRow("Pay To", display.payment.payTo)}
         ${paymentRow("Payment Method", display.payment.paymentMethod)}
         <div style="height:1px;background:${C.border};margin:8px 0;"></div>
@@ -494,8 +499,8 @@ export function generatePrintHTML(
           <span style="font-size:14px;font-weight:600;color:${C.fg};">Grand Total (${esc(cur)})</span>
           <span style="font-size:20px;font-weight:700;color:${C.fg};">${money(pricing.total)}</span>
         </div>
-        <!-- Rate note: what the total is in the base currency (foreign POs only) -->
-        ${fx.isBase ? "" : `<div style="font-size:10px;color:#a1a1aa;line-height:1.5;margin-top:8px;">${esc(rateFootnote(fx, pricing.total))}</div>`}
+        <!-- The document's currency, named -->
+        <div style="font-size:10px;color:#a1a1aa;line-height:1.5;margin-top:8px;">${esc(currencyFootnote(cur))}</div>
       </div>
     </div>
 

@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import type { Invoice } from '@/app/data/mockInvoices';
 import type { LineItem } from '@/app/components/invoice-details/LineItemsTab';
+import { currencyFootnote, formatMoneyPdf } from '@/app/currency/money';
 
 /* Invoice document builder (9/5/26, BB-26 — the release-blocker print/
  * export flows). Same recipe as remittanceAdvice.ts: jsPDF renders a
@@ -19,15 +20,18 @@ const COMPANY = {
   ],
 };
 
-const fmt = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/* The document prints in the invoice's currency (Currency Touchpoints Map,
+ * 24 Nov 2026: printed documents print in the document's currency, the
+ * totals labelled with its code, and "All amounts in US Dollars (USD)."). */
+const fmtIn = (code: string) => (n: number) => formatMoneyPdf(n, code);
 
 // Show the price at the precision that explains the line amount (9/22/26
 // review response, GPT EXP-02): 2 decimals when exact, up to 4 otherwise.
-const fmtPrice = (n: number) => {
+const fmtPriceIn = (code: string) => (n: number) => {
   const two = Math.round(n * 100) / 100;
   const four = Math.round(n * 10000) / 10000;
-  return two === four ? fmt(two) : `$${four.toFixed(4)}`;
+  if (two === four) return formatMoneyPdf(two, code);
+  return formatMoneyPdf(four, code).replace(/[\d,]+(\.\d+)?$/, four.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
 };
 
 const fmtDate = (iso?: string) => {
@@ -53,6 +57,9 @@ export interface InvoiceDocData {
 function buildInvoicePdf({ invoice, lines, subtotal, paymentTerms, creditsTotal = 0 }: InvoiceDocData): jsPDF {
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
   const isPre = invoice.type === 'Pre-Invoice';
+  const code = (invoice.currency || 'PKR').toUpperCase();
+  const fmt = fmtIn(code);
+  const fmtPrice = fmtPriceIn(code);
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const M = 48;
@@ -202,10 +209,10 @@ function buildInvoicePdf({ invoice, lines, subtotal, paymentTerms, creditsTotal 
   const totals: Array<[string, string, boolean]> = [
     ['Line Subtotal', fmt(subtotal), false],
     ...(extras > 0.004 ? [['Tax, Freight & Charges', fmt(extras), false] as [string, string, boolean]] : []),
-    ['Invoice Total', fmt(invoice.amount), true],
+    [`Invoice Total (${code})`, fmt(invoice.amount), true],
     ...(cashPaid > 0.004 ? [['Cash Paid', `-${fmt(cashPaid)}`, false] as [string, string, boolean]] : []),
     ...(credited > 0.004 ? [['Credit Memos', `-${fmt(credited)}`, false] as [string, string, boolean]] : []),
-    ['Balance Due', fmt(invoice.outstandingBalance), true],
+    [`Balance Due (${code})`, fmt(invoice.outstandingBalance), true],
   ];
   totals.forEach(([k, v, strong]) => {
     doc.setFontSize(strong ? 11 : 9);
@@ -217,6 +224,10 @@ function buildInvoicePdf({ invoice, lines, subtotal, paymentTerms, creditsTotal 
     y += strong ? 20 : 16;
   });
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(120);
+  doc.text(currencyFootnote(code), cAmount, y, { align: 'right' });
+  y += 14;
 
   // ── Description + footer ──
   if (invoice.description) {

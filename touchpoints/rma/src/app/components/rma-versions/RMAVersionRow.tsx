@@ -2,7 +2,8 @@ import { ChevronDown, ChevronRight, RotateCcw, Check } from 'lucide-react';
 
 import type { RMAVersionEntry } from '@/app/data/rmaVersions';
 import { PersonAvatar } from '@/app/components/data-table/PersonAvatar';
-import { formatVersionCurrency, versionPalette as C } from './rmaVersionDisplay';
+import { versionPalette as C } from './rmaVersionDisplay';
+import { VersionMoney } from './VersionMoney';
 
 /**
  * The clickable strip that opens a version's expanded body.
@@ -155,7 +156,7 @@ export default function RMAVersionRow({
           className="tabular-nums"
           style={{ fontSize: 13, fontWeight: 600, color: C.text900, lineHeight: 1 }}
         >
-          {formatVersionCurrency(ver.snapshot.totalValue)}
+          <VersionMoney snap={ver.snapshot} value={ver.snapshot.totalValue} />
         </span>
       </div>
 

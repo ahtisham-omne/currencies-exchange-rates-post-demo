@@ -87,7 +87,7 @@ import { vendorPaymentMethods, genericPaymentMethods, methodSummary, methodDataR
 import type { Invoice } from '@/app/data/mockInvoices';
 import { PAY_FROM_ACCOUNTS, PAYMENT_METHODS, accountTypeForMethod, accountBalanceLabel, accountsForCurrency, vendorPaymentCurrency, type Payment } from '@/app/data/mockPayments';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
-import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { CurrencyFlag, CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { formatMoney, rateSentence } from '@/app/currency/money';
 import { rateOn, toBase } from '@/app/currency/rates';
 import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
@@ -106,8 +106,7 @@ import {
 } from '@/app/currency/paymentRules';
 import { useApPermissions, useApSettings } from '@/app/hooks/useApSettings';
 import { BankTookField, type BankRateCheck } from '@/app/components/currency/PaymentCurrencyFields';
-import { PaymentCurrencyConfigDialog } from '@/app/components/currency/PaymentCurrencyConfig';
-import { configAccounts } from '@/app/currency/paymentLedger';
+import { PaymentCurrencyBlock, PaymentCurrencyConfigDialog } from '@/app/components/currency/PaymentCurrencyConfig';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
 import type { DocView } from '@/app/components/currency/docCurrencyContext';
 import { Money } from '@/app/components/currency/Money';
@@ -1396,10 +1395,14 @@ export function RecordPaymentFlow({
   // invoices' currency (Currency & Exchange Rates), only an account that may
   // pay them (rule 3), in the currency asked for (the PO's You pay in, rule
   // 5, or the one already paying), else in base.
-  const deriveAccountId = (type?: string, bankName?: string, invoiceCurrency?: string, want?: string) => {
+  // The invoices' own pay-from account (Currency Touchpoints Map, 24 Nov
+  // 2026: "You pay" on an invoice is an account) wins when it fits.
+  const deriveAccountId = (type?: string, bankName?: string, invoiceCurrency?: string, want?: string, preferId?: string) => {
     const tp = type ? accountTypeForMethod(type) : 'any';
     const ofType = tp === 'any' ? PAY_FROM_ACCOUNTS : PAY_FROM_ACCOUNTS.filter((a) => a.type === tp);
     const allowed = invoiceCurrency ? ofType.filter((a) => canPayFrom(a.currency, invoiceCurrency)) : ofType;
+    const preferred = preferId ? allowed.find((a) => a.id === preferId) : undefined;
+    if (preferred) return preferred.id;
     const wanted = want ? allowed.filter((a) => a.currency === want.toUpperCase()) : [];
     const inBase = allowed.filter((a) => isBaseCurrency(a.currency));
     const pool = wanted.length ? wanted : inBase.length ? inBase : allowed.length ? allowed : ofType;
@@ -1409,7 +1412,7 @@ export function RecordPaymentFlow({
   const defaultCfgFor = (vendor: string) => {
     const ms = vendorPaymentMethods(vendor);
     const m = ms.find((x) => x.isPrimary) ?? ms[0];
-    return { methodId: m?.id ?? '', bankAccount: deriveAccountId(m?.type, m?.bankName, rowCurrency(vendor), payInWantFor(vendor)) };
+    return { methodId: m?.id ?? '', bankAccount: deriveAccountId(m?.type, m?.bankName, rowCurrency(vendor), payInWantFor(vendor), payFromWantFor(vendor)) };
   };
   const cfgFor = (vendor: string) => vendorPayCfg[vendor] ?? defaultCfgFor(vendor);
   const cfgMethodFor = (vendor: string) => {
@@ -1630,6 +1633,15 @@ export function RecordPaymentFlow({
     const sel = row ? row.open.filter((inv) => lineFor(inv).selected) : [];
     return sel.length ? youPayInOfAll(sel) : BASE_CURRENCY;
   };
+  /** The pay-from account the selected invoices name, when they all name the same one. */
+  const payFromWantFor = (vendor?: string): string | undefined => {
+    if (!vendor || mode === 'prepay') return undefined;
+    const row = baseRows.find((r) => r.vendor === vendor);
+    const sel = row ? row.open.filter((inv) => lineFor(inv).selected) : [];
+    const ids = new Set(sel.map((inv) => inv.payFromAccount));
+    const only = ids.size === 1 ? [...ids][0] : undefined;
+    return only ?? undefined;
+  };
   /** The invoices this vendor's payment settles, each at its own rate (the GL and FX Gain/Loss). */
   const settledLinesFor = (vendor?: string): SettledLine[] => {
     const row = selectedRows.find((r) => r.vendor === vendor);
@@ -1676,17 +1688,14 @@ export function RecordPaymentFlow({
       description,
     });
   };
-  // Which currency the form's totals show: the base currency, always
-  // (Mahreen, 2026-11-20: no toggle, the main screen light), at this
-  // payment's rate. Amount Due and the inputs stay in the invoices' currency:
-  // the vendor is paid in it. The rest is in Currency Configuration.
+  // Which currency the form's totals show: the base currency (no toggle), at
+  // this payment's rate, with the currency block above Total Payment. The
+  // Invoices to Pay card is in the invoices' currency (Currency Touchpoints
+  // Map, 24 Nov 2026, reversing the PKR there of 20 Nov): the vendor is paid
+  // in it, and what is owed stays in it.
   const formView: DocView = 'base';
   const formInBase = formView === 'base';
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
-  const fmtForm = (n: number, vendor?: string) => {
-    const cur = settledCurrencyFor(vendor);
-    return formInBase && !isBaseCurrency(cur) ? formatMoney(toBase(n, payRateFor(vendor)), BASE_CURRENCY) : formatMoney(n, cur);
-  };
   // Pre-invoices belonging to the chosen vendor (proformas billed before a real
   // invoice exists). mockInvoices marks these with type 'Pre-Invoice'.
   const vendorPreInvoices = useMemo(
@@ -2306,17 +2315,18 @@ export function RecordPaymentFlow({
   // The user picked the account themselves: the PO's You pay in stops moving it.
   const accountPickedRef = useRef(false);
   const payInWantNow = payInWantFor(flowVendor);
+  const payFromWantNow = payFromWantFor(flowVendor);
   // An account that can't pay the invoices' currency (after switching which
   // currency's invoices are paid) moves to the default; until the user picks
   // one, the default follows the PO's You pay in (rule 5).
   useEffect(() => {
     const current = PAY_FROM_ACCOUNTS.find((a) => a.id === bankAccount);
     const fits = !!current && canPayFrom(current.currency, invoiceCurrencyNow);
-    if (fits && (accountPickedRef.current || current.currency === payInWantNow)) return;
-    const next = deriveAccountId(resolvedMethodRaw?.type ?? method, resolvedMethodRaw?.bankName, invoiceCurrencyNow, payInWantNow);
+    if (fits && (accountPickedRef.current || (payFromWantNow ? current.id === payFromWantNow : current.currency === payInWantNow))) return;
+    const next = deriveAccountId(resolvedMethodRaw?.type ?? method, resolvedMethodRaw?.bankName, invoiceCurrencyNow, payInWantNow, payFromWantNow);
     if (next !== bankAccount) setBankAccount(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoiceCurrencyNow, payInWantNow]);
+  }, [invoiceCurrencyNow, payInWantNow, payFromWantNow]);
   // Vendor-category A/P default (pay mode) — drives the "auto-derived" indicator
   // and the modal's reset-to-default affordance, exactly like invoicing.
   const apVendorCategory = mockVendors.find((v) => v.vendorName === selectedVendors[0])?.category ?? '';
@@ -2335,7 +2345,7 @@ export function RecordPaymentFlow({
     // an account there; the vendor's default lands in the currency the
     // PO's You pay in asks for (Currency & Exchange Rates, rule 5).
     if (fromDefault) accountPickedRef.current = false;
-    setBankAccount(deriveAccountId(picked.type, picked.bankName, invoiceCurrencyNow, fromDefault ? payInWantNow : payCurrencyNow));
+    setBankAccount(deriveAccountId(picked.type, picked.bankName, invoiceCurrencyNow, fromDefault ? payInWantNow : payCurrencyNow, fromDefault ? payFromWantNow : undefined));
   };
 
   // Derived-field model (design review 7/9/26): method and pay-from account
@@ -2348,7 +2358,7 @@ export function RecordPaymentFlow({
     setMethodId(primaryMethod.id);
     setMethod(primaryMethod.type);
     accountPickedRef.current = false;
-    setBankAccount(deriveAccountId(primaryMethod.type, primaryMethod.bankName, invoiceCurrencyNow, payInWantNow));
+    setBankAccount(deriveAccountId(primaryMethod.type, primaryMethod.bankName, invoiceCurrencyNow, payInWantNow, payFromWantNow));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [methodVendorName]);
 
@@ -3764,7 +3774,13 @@ export function RecordPaymentFlow({
           <span className="flex items-center gap-2 min-w-0 text-left">
             <span className="w-6 h-6 rounded-md bg-slate-50 text-slate-500 flex items-center justify-center shrink-0"><AccIcon className="w-3.5 h-3.5" /></span>
             <span className="flex flex-col leading-tight min-w-0">
-              <span className="truncate text-[12px]" style={{ fontWeight: 500 }}>{bank ? bank.label : 'Select account'}</span>
+              {/* The account's currency beside it (Currency Touchpoints Map):
+                  only the base currency or the invoices' can pay. */}
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate text-[12px]" style={{ fontWeight: 500 }}>{bank ? bank.label : 'Select account'}</span>
+                {bank && <CurrencyFlag code={bank.currency} size={12} />}
+                {bank && <span className="text-[10.5px] text-slate-500 shrink-0" style={{ fontWeight: 600 }}>{bank.currency}</span>}
+              </span>
               {detail && <span className="text-[10px] text-slate-400 truncate">{detail}</span>}
             </span>
           </span>
@@ -3804,7 +3820,19 @@ export function RecordPaymentFlow({
                       )}
                     </div>
                     <DatePicker id="rp-payment-date" value={paymentDate} onChange={(v) => { setPaymentDate(v); setFieldErrors((f) => ({ ...f, paymentDate: undefined })); }} className="mt-1" error={!!fieldErrors.paymentDate} />
-                    {fieldErrors.paymentDate && <p className="text-[11px] text-red-600 mt-1">{fieldErrors.paymentDate}</p>}
+                    {fieldErrors.paymentDate ? (
+                      <p className="text-[11px] text-red-600 mt-1">{fieldErrors.paymentDate}</p>
+                    ) : (() => {
+                      // The payment date sets the rate (Currency Touchpoints Map).
+                      const v = mode === 'prepay' ? prepayVendor : activePayVendor;
+                      const cur = v ? settledCurrencyFor(v) : BASE_CURRENCY;
+                      if (!v || isBaseCurrency(cur) || !paymentDate) return null;
+                      return (
+                        <p className="text-[11px] text-slate-400 mt-1 truncate">
+                          {convertsFor(v) ? 'Sets the estimate' : 'Sets the rate'}: {rateSentence(cur, dayRateFor(v))}, mid-market.
+                        </p>
+                      );
+                    })()}
                   </div>
                   <div>
                     <Label className="text-xs sm:text-[13px] text-foreground" style={{ fontWeight: 500 }}>{mode === 'prepay' ? 'Prepayment ID' : 'Payment ID'}<span className="text-red-500">*</span></Label>
@@ -3865,6 +3893,7 @@ export function RecordPaymentFlow({
                             paymentDate={paymentDate}
                             check={bankRateCheckFor(v)}
                             allowedPct={apSettings.allowedDifferencePct}
+                            label="You Pay"
                           />
                         )}
                       </div>
@@ -4179,8 +4208,13 @@ export function RecordPaymentFlow({
                 const remainingCredit = Math.round((available - m.applied) * 100) / 100;
                 const creditUsedPct = available > 0 ? Math.min(100, Math.round((m.applied / available) * 100)) : 0;
                 // In PKR at the rate the credit was paid at (several advances: their blend).
-                const creditRate = available > 0 ? prepayAvailableBaseFor(row.vendor) / available : 1;
-                const fmtCredit = (n: number) => fmtBase(n * creditRate);
+                // In the invoices' currency (Currency Touchpoints Map, 24 Nov 2026:
+                // "Invoices to Pay amounts in the invoice's currency"), which
+                // reverses the PKR amounts here of 20 Nov.
+                const fmtCredit = fmtIn(row.currency);
+                const rowFx = isBaseCurrency(row.currency)
+                  ? null
+                  : { rate: rowPayRate, rateType: 'mid' as const, rateDate: paymentDate, source: rowConverts ? 'Worked out from the bank’s figures' : 'Open Exchange Rates', provisional: false, dateLabel: 'payment date' };
                 return (
                   <div key={row.vendor} className="rounded-lg border border-border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] overflow-hidden">
                     <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2 bg-slate-50 rounded-t-lg flex-wrap">
@@ -4193,7 +4227,7 @@ export function RecordPaymentFlow({
                           <span className="text-[12px] text-foreground" style={{ fontWeight: 600 }}>{row.vendor}</span>
                         </>
                       )}
-                      <span className="ml-auto text-[12px] " style={{ fontWeight: 700 }}>Total Payment {fmtForm(m.net, row.vendor)}</span>
+                      <span className="ml-auto text-[12px] " style={{ fontWeight: 700 }}>Total Payment <Money value={m.net} currency={row.currency} fx={rowFx} role="invoice currency" dateLabel="payment date" /></span>
                       {/* Bulk fill stays one click (Eli 9/8 + Mahreen's
                           condition): amounts start empty, Pay in full
                           consciously fills every selected line. */}
@@ -4246,8 +4280,8 @@ export function RecordPaymentFlow({
                             <span className="text-slate-400" style={{ fontWeight: 600 }}>Terms{termInv.paymentTerms ? ` · ${termInv.paymentTerms}` : ''}</span>
                             <span className="mx-1.5 text-slate-300">·</span>
                             {dTerms
-                              ? `${dTerms.percent}% off if paid by ${fmtDeadline(dTerms.deadline)}, otherwise ${fmtForm(termInv.outstandingBalance, row.vendor)} due by ${due}.`
-                              : `${fmtForm(termInv.outstandingBalance, row.vendor)} due by ${due}.`}
+                              ? `${dTerms.percent}% off if paid by ${fmtDeadline(dTerms.deadline)}, otherwise ${fmtIn(row.currency)(termInv.outstandingBalance)} due by ${due}.`
+                              : `${fmtIn(row.currency)(termInv.outstandingBalance)} due by ${due}.`}
                             {m.selectedInvs.length > 1 && (
                               <span className="text-slate-400"> Each invoice row carries its own dates and discount.</span>
                             )}
@@ -4404,7 +4438,7 @@ export function RecordPaymentFlow({
                                   <FxHeader tip={rowConverts ? `What this part cost in ${BASE_CURRENCY}, at the rate worked out from the bank’s figures.` : `Nothing converts from a ${settledCurrencyFor(row.vendor)} account; this part is valued at the payment date’s mid-market rate.`}>Paid in {BASE_CURRENCY}</FxHeader>
                                 </th>
                                 <th className="text-right px-3 py-2 text-[11px] text-slate-400 whitespace-nowrap" style={{ fontWeight: 600 }}>
-                                  <FxHeader tip="A/P carried minus what paying cost. Positive is a gain and posts to FX Gain; negative is a loss and posts to FX Loss.">FX Gain or Loss</FxHeader>
+                                  <FxHeader tip="A/P carried minus what paying cost. + is a gain and posts to FX Gain; − is a loss and posts to FX Loss.">FX Variance</FxHeader>
                                 </th>
                               </>
                             )}
@@ -4809,9 +4843,8 @@ export function RecordPaymentFlow({
                     </Tooltip>
                   )}
                 </div>
-                {/* No Currency card here: what the vendor receives, the bank's
-                    conversion and the FX Gain or FX Loss are in Currency
-                    Configuration (Mahreen, 2026-11-20). */}
+                {/* No Currency card here: the currency block sits above Total
+                    Payment in the pinned footer (Currency Touchpoints Map). */}
               </div>
             </div>
 
@@ -4946,8 +4979,33 @@ export function RecordPaymentFlow({
               const vendorGets = r2(perRow.reduce((t, r) => t + r.m.net, 0));
               const costTotal = r2(perRow.reduce((t, r) => t + (r.fx ? r.fx.cost : toBase(r.m.net, r.rate)), 0));
               const anyForeign = perRow.some((r) => !isBaseCurrency(r.cur));
+              // The currency block above Total Payment (Currency Touchpoints
+              // Map, 24 Nov 2026), for one vendor's payment in a foreign
+              // currency: Vendor receives, You pay (what the bank took from a
+              // base account, else the same amount with its base equivalent),
+              // the FX variance against the invoice rate, and the rate.
+              const blockVendor = !isMultiVendorPay ? (mode === 'prepay' ? prepayVendor : activePayVendor) : undefined;
+              const blockCur = blockVendor ? settledCurrencyFor(blockVendor) : BASE_CURRENCY;
+              const blockRow = blockVendor ? perRow.find((r) => r.vendor === blockVendor) : undefined;
+              const blockLines = blockVendor && mode === 'pay' ? settledLinesFor(blockVendor) : [];
+              const currencyBlock = blockVendor && !isBaseCurrency(blockCur) ? (
+                <PaymentCurrencyBlock
+                  className="pb-2.5 mb-2.5 border-b border-slate-100"
+                  currency={blockCur}
+                  vendorReceives={cashFor(blockVendor)}
+                  account={accountFor(blockVendor) ?? null}
+                  bankTook={convertsFor(blockVendor) ? bankTookFor(blockVendor) : null}
+                  rate={payRateFor(blockVendor)}
+                  paymentDate={paymentDate}
+                  lines={blockLines}
+                  realized={blockRow?.fx && blockLines.length > 0 ? blockRow.fx.amount : null}
+                  locked={false}
+                  onViewConfig={() => setCurrencyConfigOpen(true)}
+                />
+              ) : null;
               return (
                 <>
+                  {currencyBlock}
                   {mode === 'pay' && (
                     <div className="space-y-1.5 pb-2">
                       {discountTotal > 0 && (
@@ -4962,10 +5020,9 @@ export function RecordPaymentFlow({
                           <span className="text-[12px] text-purple-700 " style={{ fontWeight: 600 }}>−{fmtSum(sumIn((r) => r.m.applied))}</span>
                         </div>
                       )}
-                      {/* Total Payment in PKR, what paying it costs. What the
-                          vendor receives, Bank Took and the FX Gain or FX
-                          Loss are in Currency Configuration (Mahreen,
-                          2026-11-20). */}
+                      {/* Total Payment in PKR, what paying it costs: the
+                          currency block's You pay (or its Base equivalent)
+                          above. */}
                       <div className="flex justify-between items-center">
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Total Payment</span>
                         <span className="text-[12px] text-foreground " style={{ fontWeight: 600 }}>
@@ -5049,13 +5106,27 @@ export function RecordPaymentFlow({
                 <ModeIcon className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-[15px] sm:text-[17px] text-foreground" style={{ fontWeight: 700 }}>
-                  {recorded
-                    ? mode === 'prepay'
-                      ? 'Prepayment Recorded'
-                      : recorded[0]?.record.status === 'Scheduled' ? 'Payment Scheduled' : 'Payment Recorded'
-                    : mode === 'prepay' ? 'Record Prepayment' : 'Record Payment'}
-                </h2>
+                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                  <h2 className="text-[15px] sm:text-[17px] text-foreground" style={{ fontWeight: 700 }}>
+                    {recorded
+                      ? mode === 'prepay'
+                        ? 'Prepayment Recorded'
+                        : recorded[0]?.record.status === 'Scheduled' ? 'Payment Scheduled' : 'Payment Recorded'
+                      : mode === 'prepay' ? 'Record Prepayment' : 'Record Payment'}
+                  </h2>
+                  {/* The vendor and its currency tag (Currency Touchpoints
+                      Map, 24 Nov 2026: "Record Payment  Toyota Technical
+                      Center [USD]  [Currency]"); a base-currency payment gets
+                      no tag. */}
+                  {!recorded && step === 2 && entryStage !== 'vendor' && flowVendor && !isMultiVendorPay && (
+                    <>
+                      <span className="text-[13px] text-slate-600 truncate max-w-[260px]" style={{ fontWeight: 600 }}>{flowVendor}</span>
+                      {!isBaseCurrency(settledCurrencyFor(flowVendor)) && (
+                        <CurrencyPill code={settledCurrencyFor(flowVendor)} note="The invoices' currency: what the vendor receives. Totals here are in the base currency." />
+                      )}
+                    </>
+                  )}
+                </div>
                 <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5" style={{ fontWeight: 400 }}>
                   {recorded
                     ? mode === 'prepay'
@@ -5079,7 +5150,6 @@ export function RecordPaymentFlow({
                   onOpenConfig={() => setCurrencyConfigOpen(true)}
                   what="payment"
                   toggle={false}
-                  showCode
                   alert={flowVendor ? bankRateCheckFor(flowVendor) === 'blocked' : false}
                 />
               )}
@@ -8253,14 +8323,14 @@ export function RecordPaymentFlow({
           <PaymentCurrencyConfigDialog
             open={currencyConfigOpen}
             onOpenChange={setCurrencyConfigOpen}
-            documentLabel="this payment"
+            documentLabel={idBase}
+            invoiceLabel={mode === 'pay' ? settledLinesFor(v).map((l) => l.invoiceNumber).join(', ') || undefined : undefined}
             vendorName={v}
             currency={cur}
             vendorReceives={cashFor(v)}
-            // The two kinds that can pay (the account chosen in each
-            // currency, else the method's first there), then one greyed per
-            // other currency (rule 4).
-            accounts={configAccounts(cur, current?.id, accountType)}
+            // Only the accounts that can pay: in the invoices' currency or
+            // the base (Currency Touchpoints Map; the dialog leaves out the rest).
+            accounts={PAY_FROM_ACCOUNTS}
             value={{ accountId: current?.id ?? '', bankTook: bankTookByVendor[v] ?? null }}
             youPayIn={payInWantFor(v)}
             paymentDate={paymentDate}

@@ -1,14 +1,22 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
   X, FileCheck, Upload, FileText, Trash2, Plus, AlertCircle, Package,
-  Calendar, Truck, ChevronDown, ChevronUp,
+  Calendar, Truck, ChevronDown, ChevronUp, ArrowLeftRight, Lock,
 } from 'lucide-react';
 import { TitledSection } from '../shared/TitledSection';
 import { DatePickerField } from '../quote-creation/date-picker-field';
 import { useDesignMoney, useDocCurrency } from '@/app/components/currency/docCurrencyContext';
-import { isBaseCurrency } from '@/app/currency/currencies';
+import { BaseMoney } from '@/app/components/currency/Money';
+import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { RateChoiceCards, versionRateOptions } from '@/app/components/currency/VersionRateChoice';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { resolveAccount } from '@/app/currency/companyAccounts';
 import { formatRateDate, rateSentence } from '@/app/currency/money';
-import { RATE_TYPE_LABEL } from '@/app/currency/rates';
+import { currentRateFor, localTodayIso } from '@/app/currency/qFx';
+import { formatWhole } from '@/app/currency/quoteMoney';
+import { RATE_PROVIDER, RATE_TYPE_LABEL, toBase } from '@/app/currency/rates';
+import { todaysRateType, type VersionRateChoice } from '@/app/data/quoteStore';
+import type { ConvertRateChoice } from '@/app/data/quoteToSalesOrder';
 
 /* Marshal helpers between ISO yyyy-MM-dd strings (what the modal's
    state holds) and Date instances (what DatePickerField speaks). */
@@ -29,9 +37,30 @@ function dateToIso(d: Date | undefined): string {
 interface ConvertToSOModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (data: { soNumber: string; customerPO: string; notes: string; files: UploadedFile[] }) => void;
+  /** `currency` is the rate the order takes (the quote's or today's); the
+   *  caller records it for Sales Orders (data/quoteToSalesOrder.ts). */
+  onConfirm: (data: { soNumber: string; customerPO: string; notes: string; files: UploadedFile[]; currency: ConvertRateChoice }) => void;
   quoteNumber: string;
   customerName: string;
+  /** "You receive" on the quote: the order keeps it. */
+  payToAccount?: string;
+  settlementCurrency?: string;
+  /** The quote's own lines, in its currency. Without them the dialog shows
+   *  the design's mock lines. */
+  lines?: QuoteLineForSO[];
+  /** The quote's total in its currency, after pricing rules and one-time
+   *  adjustments: what the order carries over. */
+  orderTotal?: number;
+}
+
+/** A quote line as the order takes it, in the quote's currency. */
+export interface QuoteLineForSO {
+  id: string;
+  itemNumber: string;
+  name: string;
+  qty: number;
+  uom: string;
+  total: number;
 }
 
 interface UploadedFile {
@@ -95,6 +124,13 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box' as const, transition: 'border-color 150ms, box-shadow 150ms',
 };
 
+/** A read-only field: the order's currency and pay-to account, from the quote. */
+const readOnlyBox: React.CSSProperties = {
+  height: '36px', display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px',
+  backgroundColor: 'var(--muted)', border: '1px solid var(--border)', borderRadius: '8px',
+  fontSize: '13px', minWidth: 0, cursor: 'default',
+};
+
 function focusBorder(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
   e.currentTarget.style.borderColor = 'rgba(10, 119, 255, 0.4)';
   e.currentTarget.style.boxShadow = '0 0 0 2px var(--accent)';
@@ -117,15 +153,51 @@ function SectionLabel({ icon: Icon, label }: { icon: any; label: string }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, customerName }: ConvertToSOModalProps) {
-  /* The order keeps the quote's currency and rate (spec 4.3). Its lines here
-     are the design's mock, written in USD, restated in that currency. */
-  const formatCurrency = useDesignMoney().whole;
-  /* "EUR, Mid-market · 1 EUR = 304.8150 PKR · Nov 3, 2026": what the order inherits. */
+export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, customerName, payToAccount, settlementCurrency, lines, orderTotal }: ConvertToSOModalProps) {
+  /* The order keeps the quote's currency configuration: its currency (no
+     change possible), its rate type and pay-to account, and the rate the
+     rep picks here, the quote's or today's (Currency Touchpoints Map,
+     Quote to sales order 1). Its lines here are the design's mock, written
+     in USD, restated in the quote's currency and shown in base at the rate
+     picked, the customer's amount on hover. */
+  const design = useDesignMoney();
+  /* The quote's real lines are already in its currency; the mock's are in
+     the design's USD. */
+  const realLines = !!lines && lines.length > 0;
+  const docAmount = (v: number) => (realLines ? v : design.amount(v));
   const doc = useDocCurrency();
-  const keeps = doc.fx && !isBaseCurrency(doc.currency)
-    ? `${doc.currency}, ${RATE_TYPE_LABEL[doc.fx.rateType]} · ${rateSentence(doc.currency, doc.fx.rate)} · ${formatRateDate(doc.fx.rateDate)}`
-    : doc.currency;
+  const fx = doc.fx;
+  const foreign = !!fx && !isBaseCurrency(doc.currency);
+  const account = resolveAccount(doc.currency, payToAccount, settlementCurrency);
+  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
+  const todayType = todaysRateType(rateChoice);
+  const chosen: ConvertRateChoice = !foreign || !fx
+    ? { rateChoice: 'quote', exchangeRate: 1, rateType: fx?.rateType ?? 'mid', rateDate: fx?.rateDate ?? doc.rateDate ?? localTodayIso() }
+    : todayType
+      ? { rateChoice: 'today', ...currentRateFor({ currency: doc.currency, exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate }, todayType) }
+      : { rateChoice: 'quote', exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate };
+  const chosenFx = foreign
+    ? { rate: chosen.exchangeRate, rateType: chosen.rateType, rateDate: chosen.rateDate, source: chosen.rateType === 'mid' ? RATE_PROVIDER : 'Corporate rate' }
+    : null;
+  /** A design (USD) amount: in base at the chosen rate, whole, as the dialog writes it. */
+  const formatCurrency = (usd: number) =>
+    foreign ? formatWhole(toBase(docAmount(usd), chosen.exchangeRate), BASE_CURRENCY) : formatWhole(docAmount(usd), doc.currency);
+  /** The same, with the customer's amount and the rate on hover. */
+  const money = (usd: number) => (
+    <BaseMoney
+      value={docAmount(usd)}
+      currency={doc.currency}
+      fx={chosenFx}
+      dateLabel={chosen.rateChoice === 'today' ? 'today' : 'quote date'}
+      role="Customer currency"
+    >
+      {formatCurrency(usd)}
+    </BaseMoney>
+  );
+  /* "EUR, Mid-market · 1 EUR = 304.8150 PKR · Nov 3, 2026": what the order inherits. */
+  const keeps = foreign
+    ? `${doc.currency}, ${RATE_TYPE_LABEL[chosen.rateType]} · ${rateSentence(doc.currency, chosen.exchangeRate)} · ${formatRateDate(chosen.rateDate)}, paid into ${account.label}`
+    : `${doc.currency}, paid into ${account.label}`;
   const [soNumber] = useState(generateSONumber);
   const [customerPO, setCustomerPO] = useState('');
   const [notes, setNotes] = useState('');
@@ -135,6 +207,17 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
 
   // Line items with editable dates
   const [lineItems, setLineItems] = useState<SOLineItem[]>(MOCK_LINE_ITEMS);
+  /* Each time the dialog opens, the quote's lines as they stand, with the
+     mock's ship and delivery dates as starting defaults. */
+  useEffect(() => {
+    if (!isOpen || !realLines || !lines) return;
+    setLineItems(
+      lines.map((l, i) => {
+        const d = MOCK_LINE_ITEMS[i % MOCK_LINE_ITEMS.length];
+        return { id: l.id, itemNumber: l.itemNumber, name: l.name, qty: l.qty, uom: l.uom, unitPrice: l.qty ? l.total / l.qty : 0, total: l.total, shipBy: d.shipBy, deliveryBy: d.deliveryBy };
+      }),
+    );
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   const [showLineItems, setShowLineItems] = useState(true);
   const [editingCell, setEditingCell] = useState<{ id: string; field: 'shipBy' | 'deliveryBy' } | null>(null);
 
@@ -145,8 +228,15 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
   const [orderDeliveryBy, setOrderDeliveryBy] = useState(latestDelivery);
 
   const subtotal = lineItems.reduce((s, li) => s + li.total, 0);
-  const tax = Math.round(subtotal * 0.0825);
+  /* The quote's own lines carry its pricing rules and one-time adjustments
+     to the total; the mock adds its design tax. */
+  const tax = realLines ? (orderTotal ?? subtotal) - subtotal : Math.round(subtotal * 0.0825);
   const grandTotal = subtotal + tax;
+  /* Keep the quote's rate or use today's, each with the order's total in base. */
+  const rateOptions = useMemo(
+    () => (foreign && fx ? versionRateOptions({ currency: doc.currency, rate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate }, docAmount(grandTotal)) : null),
+    [foreign, fx, doc.currency, design, grandTotal, realLines], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const updateLineDate = (id: string, field: 'shipBy' | 'deliveryBy', value: string) => {
     setLineItems(prev => prev.map(li => li.id === id ? { ...li, [field]: value } : li));
@@ -182,7 +272,7 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
   }, []);
 
   const handleConvert = () => {
-    onConfirm({ soNumber, customerPO: customerPO.trim(), notes: notes.trim(), files });
+    onConfirm({ soNumber, customerPO: customerPO.trim(), notes: notes.trim(), files, currency: chosen });
   };
 
   if (!isOpen) return null;
@@ -262,6 +352,55 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
                 onFocus={focusBorder} onBlur={blurBorder} />
             </div>
           </div>
+
+          {/* ── Currency: carried over from the quote (no change), and the
+              rate the order takes: the quote's or today's ── */}
+          <TitledSection title="Currency" icon={ArrowLeftRight}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div>
+                <label style={{ ...labelStyle, fontSize: '10px' }}>Currency</label>
+                <div style={readOnlyBox} title="The order is in the quote's currency; it can't change here.">
+                  <CurrencyFlag code={doc.currency} />
+                  <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>{doc.currency}</span>
+                  <span style={{ color: 'var(--muted-foreground)' }}>· from the quote</span>
+                  <Lock style={{ width: '12px', height: '12px', color: '#CBD5E1', marginLeft: 'auto', flexShrink: 0 }} />
+                </div>
+              </div>
+              <div>
+                <label style={{ ...labelStyle, fontSize: '10px' }}>You receive</label>
+                <div style={readOnlyBox} title="The account the customer pays into, from the quote's currency configuration.">
+                  <CurrencyFlag code={account.currency} />
+                  <span style={{ color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{account.label}</span>
+                  <span style={{ color: 'var(--muted-foreground)', flexShrink: 0 }}>· {account.currency}</span>
+                  <Lock style={{ width: '12px', height: '12px', color: '#CBD5E1', marginLeft: 'auto', flexShrink: 0 }} />
+                </div>
+              </div>
+            </div>
+            {rateOptions ? (
+              <div style={{ marginTop: '12px' }}>
+                <RateChoiceCards
+                  copy={{
+                    keep: "Keep the quote's rate",
+                    today: "Use today's rate",
+                    same: "same as the quote's",
+                    ariaLabel: 'Exchange rate for the sales order',
+                  }}
+                  options={rateOptions}
+                  value={rateChoice}
+                  onChange={setRateChoice}
+                />
+              </div>
+            ) : (
+              <p style={{ fontSize: '11px', color: 'var(--muted-foreground)', margin: '8px 0 0', lineHeight: '1.4' }}>
+                {BASE_CURRENCY} is the base currency, so there's no rate to choose.
+              </p>
+            )}
+            {foreign && (
+              <p style={{ fontSize: '11px', color: 'var(--muted-foreground)', margin: '8px 0 0', lineHeight: '1.4' }}>
+                Totals below are in {BASE_CURRENCY}, the base currency, at the rate picked. The order's rate locks when it is confirmed.
+              </p>
+            )}
+          </TitledSection>
 
           {/* ── Section 2: Order-Level Dates — Partner TitledSection chrome ── */}
           <TitledSection title="Fulfillment Schedule" icon={Calendar}>
@@ -364,7 +503,7 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
                     <span style={{ fontSize: '12px', color: 'var(--foreground)', textAlign: 'left' }}>{li.qty}</span>
                     <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', textAlign: 'left' }}>{li.uom}</span>
                     <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--foreground)', textAlign: 'right' }}>
-                      {formatCurrency(li.total)}
+                      {money(li.total)}
                     </span>
 
                     {/* Ship By — inline editable */}
@@ -441,15 +580,15 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
                 }}>
                   <div style={{ textAlign: 'right' }}>
                     <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1', marginBottom: '5px' }}>Subtotal</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--foreground)' }}>{formatCurrency(subtotal)}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--foreground)' }}>{money(subtotal)}</span>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1', marginBottom: '5px' }}>Tax (8.25%)</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--foreground)' }}>{formatCurrency(tax)}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1', marginBottom: '5px' }}>{realLines ? 'Rules & adjustments' : 'Tax (8.25%)'}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--foreground)' }}>{money(tax)}</span>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1', marginBottom: '5px' }}>Total</span>
-                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(grandTotal)}</span>
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--success)' }}>{money(grandTotal)}</span>
                   </div>
                 </div>
               </div>
@@ -578,7 +717,7 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
           }}>
             <span style={{ fontSize: '12px', color: 'var(--muted-foreground)', lineHeight: '1.5' }}>
               Converting will create Sales Order <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>{soNumber}</span> and lock this quote from further edits.
-              All {lineItems.length} line items ({formatCurrency(grandTotal)} incl. tax) will carry over to the new order.
+              All {lineItems.length} line items ({formatCurrency(grandTotal)}{realLines ? '' : ' incl. tax'}) will carry over to the new order.
               It keeps this quote's currency configuration: <span style={{ fontWeight: 500, color: 'var(--foreground)' }}>{keeps}</span>.
             </span>
           </div>

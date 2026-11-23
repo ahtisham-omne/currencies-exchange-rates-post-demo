@@ -2,7 +2,8 @@ import { Package, CheckCircle2, Clock, Undo2, CalendarClock } from 'lucide-react
 
 import type { RMAVersionEntry } from '@/app/data/rmaVersions';
 import { formatDate } from '@/app/components/vendorSelectionModel';
-import { formatVersionCurrency, versionPalette as C } from './rmaVersionDisplay';
+import { versionPalette as C } from './rmaVersionDisplay';
+import { VersionMoney } from './VersionMoney';
 
 /**
  * The expanded body of a version row: the timestamp strip, the revert reason
@@ -299,7 +300,7 @@ export default function RMAVersionSnapshotPanel({
                       textAlign: 'right',
                     }}
                   >
-                    {formatVersionCurrency(li.unitPrice)}
+                    <VersionMoney snap={ver.snapshot} value={li.unitPrice} />
                   </span>
                   <span
                     className="tabular-nums shrink-0"
@@ -312,7 +313,7 @@ export default function RMAVersionSnapshotPanel({
                       textAlign: 'right',
                     }}
                   >
-                    {formatVersionCurrency(li.totalValue)}
+                    <VersionMoney snap={ver.snapshot} value={li.totalValue} />
                   </span>
                 </div>
               );
@@ -344,7 +345,7 @@ export default function RMAVersionSnapshotPanel({
               <>
                 &nbsp;·&nbsp; Restocking fee:{' '}
                 <span style={{ fontWeight: 500, color: C.text700 }}>
-                  {formatVersionCurrency(ver.snapshot.restockingFee)}
+                  <VersionMoney snap={ver.snapshot} value={ver.snapshot.restockingFee} />
                 </span>
               </>
             )}
@@ -366,7 +367,7 @@ export default function RMAVersionSnapshotPanel({
               className="tabular-nums"
               style={{ fontSize: 14, fontWeight: 700, color: C.text900, lineHeight: 1 }}
             >
-              {formatVersionCurrency(ver.snapshot.totalValue)}
+              <VersionMoney snap={ver.snapshot} value={ver.snapshot.totalValue} />
             </span>
           </div>
         </div>

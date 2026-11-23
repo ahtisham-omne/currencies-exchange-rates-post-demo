@@ -195,7 +195,7 @@ export function computePORuleBreakdowns(po: PricingInput): Map<string, LinePrici
     }
     if (activeLineIds.size > 0) activatedItemsByRule.set(rule.id, activeLineIds);
   }
-  // Flat rule amounts (USD) in the PO's currency, at its rate (spec 4.3).
+  // Flat rule amounts (base currency) in the PO's currency, at its rate.
   const rows = computeLineBreakdowns(linesForCompute, vendorRules, activatedItemsByRule, ruleAmountFactor(poFx(po)));
   return new Map(rows.map((r) => [r.lineId, r]));
 }

@@ -9,6 +9,7 @@ import { BASE_CURRENCY, CURRENCIES, getCurrency, isBaseCurrency } from "@/app/cu
 import { formatMoney, formatRate, formatRateDate } from "@/app/currency/money";
 import { crossRate, customerCurrency, roundTo, soFx } from "@/app/currency/soFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
+import { eligibleAccounts, getCompanyAccount } from "@/app/currency/companyAccounts";
 import { CurrencyFlag } from "./CurrencyChip";
 import { ProviderLink } from "./ProviderLink";
 
@@ -121,6 +122,88 @@ export function CurrencyPicker({
                 </span>
               )}
               {c.code === value && <Check className="w-3.5 h-3.5 ml-auto shrink-0" />}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** "You receive": the bank or cash account the customer's payment goes to
+ *  (Currency Touchpoints Map, 24 Nov 2026). Only accounts in the base
+ *  currency or the order's own are listed (companyAccounts.ts). Rows: flag,
+ *  account and its currency code. */
+export function AccountPicker({
+  value,
+  docCurrency,
+  onPick,
+  disabled,
+  ariaLabel = "You receive into",
+  className = "",
+}: {
+  /** The account id. */
+  value: string;
+  /** The order's currency: decides which accounts can take the payment. */
+  docCurrency: string;
+  onPick: (id: string) => void;
+  disabled: boolean;
+  ariaLabel?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const account = getCompanyAccount(value);
+  const list = eligibleAccounts(docCurrency);
+  const face = (
+    <span className="flex items-center gap-1.5 min-w-0">
+      <CurrencyFlag code={account?.currency ?? BASE_CURRENCY} />
+      <span className="text-slate-700 truncate" style={{ fontWeight: 500 }}>{account?.label ?? value}</span>
+      <span className="text-slate-500 shrink-0">· {account?.currency ?? BASE_CURRENCY}</span>
+    </span>
+  );
+  if (disabled) {
+    return (
+      <div className={`${LOCKED} ${className}`} title={account?.label}>
+        {face}
+        <Lock className="w-3 h-3 text-slate-300 shrink-0 ml-auto" />
+      </div>
+    );
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={ariaLabel}
+          title={account?.label}
+          className={`${FIELD} ${className} bg-white border border-border hover:border-primary/45 focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none justify-between cursor-pointer transition-colors`}
+        >
+          {face}
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[300px] p-0 rounded-lg z-[200]" style={{ fontFamily: FONT }}>
+        <p className="px-3 pt-2.5 pb-1.5 text-[10.5px] text-slate-400 border-b border-slate-100" style={{ fontWeight: 500 }}>
+          Bank and cash accounts in {BASE_CURRENCY}
+          {isBaseCurrency(docCurrency) ? ", the base currency" : ` or ${docCurrency.toUpperCase()}, the order's currency`}
+        </p>
+        <div className="max-h-[260px] overflow-y-auto py-1" role="listbox">
+          {list.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              role="option"
+              aria-selected={a.id === value}
+              onClick={() => { setOpen(false); if (a.id !== value) onPick(a.id); }}
+              className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] cursor-pointer transition-colors ${
+                a.id === value ? "bg-primary/[0.06] text-primary" : "hover:bg-slate-50 text-foreground"
+              }`}
+            >
+              <CurrencyFlag code={a.currency} />
+              <span className="truncate" style={{ fontWeight: 500 }}>{a.label}</span>
+              {a.type === "cash" && <span className="shrink-0 text-[10px] text-slate-400" style={{ fontWeight: 500 }}>Cash</span>}
+              <span className="ml-auto shrink-0 text-[11px] text-slate-500 tabular-nums" style={{ fontWeight: 600 }}>{a.currency}</span>
+              {a.id === value && <Check className="w-3.5 h-3.5 shrink-0" />}
             </button>
           ))}
         </div>

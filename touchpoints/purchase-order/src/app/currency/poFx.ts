@@ -138,25 +138,29 @@ export function roundTo(code: string, value: number): number {
 /** One unit of `from` in `to`, through base, at the two rates given. */
 export const crossRate = (fromRate: number, toRate: number) => (toRate > 0 ? fromRate / toRate : 1);
 
-/* ── Pricing-rule flat amounts ────────────────────────────────────────
- * Rule tiers are quantity bands; a "$" tier takes a flat amount off (or
- * adds it to) each unit. The rule book writes those amounts in USD, as
- * Partners does; on a PO they are converted to its currency at the
- * mid-market cross rate on its PO date (today's for the cart). Not at the
- * PO's own rate: that is the rate to base, and changing it (mid-market to
- * corporate, a rate typed on the PO) must not change the PO's total. The
- * multiplier below turns a USD amount into one in the document's currency. */
-export const RULE_AMOUNT_CURRENCY = 'USD';
+/* ── Pricing-rule amounts ─────────────────────────────────────────────
+ * Pricing rules are in the base currency (Currency Touchpoints Map,
+ * Partners 5–6, 24 Nov): a rule has no currency of its own; its flat
+ * amounts per unit and its order-value limits are PKR. The rule book's
+ * amounts written in USD were restated ×280, the spec's factor ($15 →
+ * ₨4,200). On a PO in another currency a flat amount is converted to the
+ * PO's currency at the PO's own rate (today's in the cart), and an order
+ * value limit is checked in base (the PO's lines × its rate). This replaces
+ * the earlier rule (USD amounts converted at the PO date's mid-market cross
+ * rate), so changing only a PO's rate now changes what a flat amount comes to
+ * in the PO's currency. The multiplier below turns a base amount into one in
+ * the document's currency: 1 ÷ its rate. */
+export const RULE_AMOUNT_CURRENCY = BASE_CURRENCY;
 
-export function ruleAmountFactor(fx: { currency: string; rateDate: string }): number {
-  if (fx.currency.toUpperCase() === RULE_AMOUNT_CURRENCY) return 1;
-  const usd = rateOn(RULE_AMOUNT_CURRENCY, fx.rateDate, 'mid').rate ?? 1;
-  const doc = rateOn(fx.currency, fx.rateDate, 'mid').rate ?? 1;
-  return crossRate(usd, doc);
+export function ruleAmountFactor(fx: { currency: string; rate?: number; rateDate: string }): number {
+  if (isBaseCurrency(fx.currency)) return 1;
+  const rate = fx.rate && fx.rate > 0 ? fx.rate : rateOn(fx.currency, fx.rateDate, 'mid').rate ?? 1;
+  return rate > 0 ? 1 / rate : 1;
 }
 
-/** The same multiplier for a vendor group in the cart (today's rates). */
-export const ruleAmountFactorToday = (code: string) => ruleAmountFactor({ currency: code, rateDate: localTodayIso() });
+/** The same multiplier for a vendor group in the cart (today's rate). */
+export const ruleAmountFactorToday = (code: string) =>
+  ruleAmountFactor({ currency: code, rate: todayRate(code), rateDate: localTodayIso() });
 
 /* ── A vendor's default currency (spec 4.2) ───────────────────────────
  * The partner record's default currency, carried over from the earlier

@@ -80,6 +80,17 @@ export function invoiceFx(inv: FxFields): InvoiceFx {
   };
 }
 
+/** Statuses an invoice has posted in (Approved onward): its rate is fixed. */
+export const POSTED_INVOICE_STATUSES = ['Approved', 'Partially Paid', 'Paid in Full', 'Settled', 'Payment Hold'];
+
+/** Whether an invoice's rate is locked (Currency Touchpoints Map, 24 Nov
+ *  2026): Draft and Pending Approval are unlocked; posted is locked at the
+ *  posting-date rate. A pre-invoice takes its rate when it's paid, so it
+ *  locks then. */
+export function invoiceRateLocked(inv: FxFields & Pick<Invoice, 'status'>): boolean {
+  return POSTED_INVOICE_STATUSES.includes(inv.status) && !invoiceFx(inv).provisional;
+}
+
 /** An invoice amount (its total, balance, a line…) in the base currency. */
 export const toInvoiceBase = (inv: FxFields, amount: number) => toBase(amount, invoiceFx(inv).rate);
 

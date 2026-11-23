@@ -193,3 +193,23 @@ export function currencyLabel(code: string): string {
   const c = getCurrency(code);
   return c ? `${c.name} (${c.code})` : code;
 }
+
+/* Currency names that read the same in the plural ("Japanese Yen"). */
+const SAME_IN_PLURAL = /\b(Yen|Won|Yuan|Renminbi|Baht|Rand|Rupiah|Ringgit|Kip|Riel|Dong|Kyat|Tenge|Som|Lek|Vatu|Tala|Pa'anga)$/;
+
+/** "United States Dollars", "Euros", "Pounds Sterling", "Japanese Yen": a
+ *  currency list name in the plural, as Purchase Orders and Sales Orders
+ *  print it. */
+export function currencyNamePlural(name: string): string {
+  if (/Pound Sterling$/.test(name)) return name.replace(/Pound Sterling$/, "Pounds Sterling");
+  if (SAME_IN_PLURAL.test(name)) return name;
+  if (/Real$/.test(name)) return name.replace(/Real$/, "Reais");
+  if (/[sxz]$/.test(name)) return name;
+  return `${name}s`;
+}
+
+/** The printed quote's footnote: "All amounts in United States Dollars (USD)." */
+export function currencyFootnote(code: string): string {
+  const c = getCurrency(code);
+  return c ? `All amounts in ${currencyNamePlural(c.name)} (${c.code}).` : `All amounts in ${code}.`;
+}

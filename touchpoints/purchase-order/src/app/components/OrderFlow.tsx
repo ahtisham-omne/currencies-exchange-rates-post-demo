@@ -138,6 +138,7 @@ import { cn } from "./ui/utils";
 import { getPO } from "./poStore";
 import { DocCurrencyProvider } from "./currency/DocCurrency";
 import { useDocCurrency } from "./currency/docCurrencyContext";
+import { bandEdge } from "./currency/useRuleMoney";
 import { currencyDecimals, formatMoney, formatRate, moneyPrefix } from "@/app/currency/money";
 import { poFx, ruleAmountFactor, ruleAmountFactorToday, toBaseToday, toPOCurrency, todayFx, vendorCurrency } from "@/app/currency/poFx";
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
@@ -675,13 +676,21 @@ function LinePricingRulesCard({
   const rows = rules.map((r) => {
     const impact = breakdown?.ruleImpacts.find((ri) => ri.ruleId === r.id);
     const isUnapplied = deactivatedRuleIds.has(r.id);
-    const isPending = !isUnapplied && !impact && currentQty < (r.tiers[0]?.minQty ?? 1);
+    const isValue = r.basis === "value";
+    /* A value-based rule's band is an order value in base: pending until
+       the order reaches it (its impact says when it applies). */
+    const isPending = !isUnapplied && !impact && (isValue || currentQty < (r.tiers[0]?.minQty ?? 1));
     const minQtyFirst = r.tiers[0]?.minQty ?? 1;
     /* Active tier — 1-indexed. Picks the highest tier whose minQty
-       the current qty satisfies. */
+       the current qty satisfies (a value-based rule: the tier it met). */
     let activeTierIdx: number | null = null;
-    for (let i = 0; i < r.tiers.length; i++) {
-      if (currentQty >= r.tiers[i].minQty) activeTierIdx = i + 1;
+    if (isValue) {
+      const met = impact?.tier ? r.tiers.indexOf(impact.tier) : -1;
+      activeTierIdx = met >= 0 ? met + 1 : null;
+    } else {
+      for (let i = 0; i < r.tiers.length; i++) {
+        if (currentQty >= r.tiers[i].minQty) activeTierIdx = i + 1;
+      }
     }
     const validTo = r.validTo ? new Date(r.validTo + "T00:00:00") : null;
     const daysUntilExpiry = validTo && !isNaN(validTo.getTime())
@@ -840,7 +849,9 @@ function LinePricingRulesCard({
                 </div>
                 {isPending && (
                   <div className="text-[10px] mt-0.5" style={{ color: "#92400E", fontWeight: 400 }}>
-                    Requires min. {minQtyFirst} units
+                    {rule.basis === "value"
+                      ? `Requires an order of ${bandEdge(minQtyFirst, "value")} or more`
+                      : `Requires min. ${minQtyFirst} units`}
                   </div>
                 )}
                 {/* Metadata pill line — Volume/Value + expiry + tier */}
@@ -857,7 +868,7 @@ function LinePricingRulesCard({
                     }}
                   >
                     <Layers style={{ width: 10, height: 10, color: "#94A3B8" }} />
-                    Volume
+                    {rule.basis === "value" ? "Value" : "Volume"}
                   </span>
                   {validTo ? (
                     <span
@@ -2786,7 +2797,7 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
       ],
       vendorRules,
       seededActivation,
-      // Flat rule amounts (USD) in the line's currency, at the PO's or today's rate.
+      // Flat rule amounts (base currency) in the line's currency, at the PO's or today's rate.
       linkedFx ? ruleAmountFactor(linkedFx) : ruleAmountFactorToday(flowCurrency),
     );
     return entry ?? null;

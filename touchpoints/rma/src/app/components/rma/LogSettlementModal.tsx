@@ -18,10 +18,10 @@
  * with the vendor rather than something to refuse in a dialog.
  */
 
-import { formatMoney as moneyIn, formatRate, formatRateDate, moneyPrefix } from '@/app/currency/money';
+import { formatMoney as moneyIn, formatRateDate, moneyPrefix, rateSentence } from '@/app/currency/money';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
-import { midRateOn, type MoneyFx } from '@/app/currency/rates';
-import { viewMoney } from '@/app/components/currency/returnView';
+import { RATE_TYPE_LABEL, rateOn, toBase, type MoneyFx, type RateType } from '@/app/currency/rates';
+import { depositAccountsFor } from '@/app/currency/returnSettlement';
 import { localISODate } from '@/app/data/mockRMAs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Banknote, ChevronRight, FileText, Plus, Upload, X } from 'lucide-react';
@@ -62,10 +62,15 @@ export interface LogSettlementPayload {
   /** Check number, ACH trace or wire confirmation. */
   reference: string;
   method?: string;
-  /** Into a PKR account: what the bank credited, in PKR. */
+  /** Into a PKR account: what it came to in PKR, at `rate`. */
   bankReceived?: number;
-  /** PKR per one unit the refund landed at: the bank's, or the day's. */
+  /** PKR per one unit the vendor settled at: the configured type's rate on
+   *  the day the money landed (2026-11-24; it was worked out from what the
+   *  bank credited). */
   rate?: number;
+  /** Which rate that was: the PO's type unless changed in the currency
+   *  configuration. */
+  rateType?: RateType;
   /** The bank or cash account the refund landed in. Required when money came. */
   depositedToAccountId?: string;
   description?: string;
@@ -128,6 +133,7 @@ export function LogSettlementModal({
   payToAccountId,
   existingCharges = [],
   fx,
+  rateType = 'mid',
   onSubmit,
 }: {
   open: boolean;
@@ -137,26 +143,26 @@ export function LogSettlementModal({
   expected: number;
   receivedSoFar?: number;
   currency: string;
+  /** The currency configuration's "Deposited to": where it starts. */
   payToAccountId?: string | undefined;
   /** The charges already on the return. Carried forward and already taken
    *  off `expected`, so they are shown, not asked again. */
   existingCharges?: AdditionalCharge[];
-  /** The return's receiving-day rate: Expected and Still outstanding read in
-   *  PKR at it (Mahreen, 2026-11-20). */
+  /** The return's receiving-day rate: a shortfall and the vendor's charges
+   *  reverse at it, and the FX variance is taken against it. */
   fx?: MoneyFx | null | undefined;
+  /** The rate type the vendor settles at, from the currency configuration
+   *  (the PO's unless changed). The settlement is recorded at that type's
+   *  rate on the day the money landed (Currency Touchpoints Map, 2026-11-24). */
+  rateType?: RateType | undefined;
   onSubmit: (payload: LogSettlementPayload) => void;
 }) {
-  /** In PKR at the return's rate. */
-  const pk = (n: number) => viewMoney('base', n, currency, fx);
   const foreign = !isBaseCurrency(currency);
+  const receivingRate = foreign ? fx?.rate ?? 1 : 1;
   const [amountInput, setAmountInput] = useState('');
   const [date, setDate] = useState(todayIso);
   const [method, setMethod] = useState(METHODS[0] as string);
   const [depositTo, setDepositTo] = useState('');
-  /** Into a PKR account: what the bank credited, in PKR. */
-  const [bankInput, setBankInput] = useState('');
-  /** Record payment was clicked: the bank's figure is then asked for in red. */
-  const [triedSubmit, setTriedSubmit] = useState(false);
   const [reference, setReference] = useState('');
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -199,15 +205,17 @@ export function LogSettlementModal({
     setAmountInput('');
     setDate(todayIso());
     setMethod(METHODS[0] as string);
-    // The nominated account, where it can take this return's currency.
-    setDepositTo(
-      PAY_TO_ACCOUNTS.some((a) => {
-        const code = (a.currency ?? BASE_CURRENCY).toUpperCase();
-        return a.id === payToAccountId && (code === currency.toUpperCase() || isBaseCurrency(code));
-      })
-        ? payToAccountId!
-        : '',
-    );
+    // The currency configuration's "Deposited to", where it can take this
+    // return's currency; else the first account in PKR (1010), as the
+    // configuration defaults.
+    {
+      const eligible = depositAccountsFor(currency);
+      setDepositTo(
+        eligible.find((a) => a.id === payToAccountId)?.id ??
+          eligible.find((a) => isBaseCurrency(a.currency ?? BASE_CURRENCY))?.id ??
+          '',
+      );
+    }
     setReference('');
     setDescription('');
     setFile(null);
@@ -269,31 +277,38 @@ export function LogSettlementModal({
     touched && amount > 0 && !depositTo ? 'Choose the account the refund was deposited to.' : null;
 
   // Where it can land: an account in the return's currency or in PKR, like
-  // Pay from on a payment. Into PKR the bank converts, and what it credited
-  // in PKR gives the rate (Mahreen, 2026-11-20).
-  const depositAccounts = PAY_TO_ACCOUNTS.filter((a) => {
-    const code = (a.currency ?? BASE_CURRENCY).toUpperCase();
-    return code === currency.toUpperCase() || isBaseCurrency(code);
-  });
+  // Pay from on a payment.
+  const depositAccounts = depositAccountsFor(currency);
   const depositCurrency = (PAY_TO_ACCOUNTS.find((a) => a.id === depositTo)?.currency ?? BASE_CURRENCY).toUpperCase();
   const converts = foreign && amount > 0 && !!depositTo && isBaseCurrency(depositCurrency);
-  const dayRate = foreign ? midRateOn(currency, date) : 1;
-  const bankReceived = (() => {
-    const n = parseFloat(bankInput);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  })();
-  const settleRate = !foreign ? undefined : converts && bankReceived != null ? bankReceived / amount : dayRate;
-  const bankError = triedSubmit && converts && bankReceived == null ? 'Enter what the bank received in PKR.' : null;
+  // The rate the vendor settles at: the configured type's (the PO's, unless
+  // changed in the currency configuration) on the day the money landed
+  // (Currency Touchpoints Map, 2026-11-24). It replaces the rate worked out
+  // from what the bank said it received in PKR (Mahreen, 2026-11-20).
+  const quote = rateOn(currency, date, rateType);
+  const settleRate = foreign ? quote.rate : 1;
+  /** In PKR at the settlement rate: what comes back. */
+  const pk = (n: number) => moneyIn(toBase(n, settleRate), BASE_CURRENCY);
+  const bankReceived = converts ? toBase(amount, settleRate) : null;
 
   const canSubmit =
     !amountError &&
     (amount <= 0 || !!depositTo) &&
-    (!converts || bankReceived != null) &&
     !referenceError &&
     (amount > 0 || (isShort && lossAck));
   const writesOffLoss = isShort && lossAck;
 
   const debitAccount = bankAccount(depositTo || undefined);
+
+  // The posting, in PKR (2026-11-24). The cash lands at the settlement rate;
+  // the receivable it clears, a shortfall written off and a charge kept back
+  // are at the receiving rate the goods were booked at, and the gap on the
+  // cash is the FX variance.
+  const cashAtSettle = toBase(amount, settleRate);
+  const cashAtReceiving = toBase(amount, receivingRate);
+  const lossAtReceiving = writesOffLoss ? toBase(outstanding, receivingRate) : 0;
+  const chargesAtReceiving = toBase(addedTotal, receivingRate);
+  const fxOnCash = foreign && amount > 0 ? Math.round((cashAtSettle - cashAtReceiving) * 100) / 100 : 0;
 
   /** What is filled in behind the collapsed row, so closing it never hides
    *  something the user typed without saying so. */
@@ -302,7 +317,6 @@ export function LogSettlementModal({
 
   const handleSubmit = () => {
     setTouched(true);
-    setTriedSubmit(true);
     if (!canSubmit) return;
     onSubmit({
       kind: 'payment',
@@ -311,8 +325,8 @@ export function LogSettlementModal({
       reference: reference.trim(),
       method,
       ...(amount > 0 && depositTo ? { depositedToAccountId: depositTo } : {}),
-      ...(converts && bankReceived != null ? { bankReceived } : {}),
-      ...(amount > 0 && settleRate ? { rate: Math.round(settleRate * 1_000_000) / 1_000_000 } : {}),
+      ...(bankReceived != null ? { bankReceived } : {}),
+      ...(amount > 0 && foreign ? { rate: settleRate, rateType: quote.type } : {}),
       ...(description.trim() ? { description: description.trim() } : {}),
       ...(file ? { fileName: file.name } : {}),
       notify,
@@ -459,12 +473,11 @@ export function LogSettlementModal({
                 />
               </div>
               {amountError && <p className="text-[10px] text-red-600 mt-1">{amountError}</p>}
-              {!amountError && foreign && amount > 0 && settleRate && (
+              {!amountError && foreign && amount > 0 && (
                 <p className="text-[10px] text-slate-500 tabular-nums mt-1">
-                  {moneyIn(Math.round(amount * settleRate * 100) / 100, BASE_CURRENCY)}{' '}
-                  {converts && bankReceived != null
-                    ? `at the bank's rate, 1 ${currency} = ${moneyPrefix(BASE_CURRENCY).trim()}${formatRate(settleRate)}`
-                    : `at the ${formatRateDate(date)} mid-market rate`}
+                  {pk(amount)} at {date === todayIso() ? "today's" : `the ${formatRateDate(date)}`}{' '}
+                  {RATE_TYPE_LABEL[quote.type].toLowerCase()} rate, {rateSentence(currency, settleRate)}
+                  {quote.fellBack ? ' (no corporate rate is set)' : ''}
                 </p>
               )}
             </div>
@@ -556,44 +569,21 @@ export function LogSettlementModal({
             </Select>
             {depositError && <p className="text-[10px] text-red-600 mt-1">{depositError}</p>}
             {foreign && !depositError && (
-              <p className="text-[10px] text-slate-400 mt-1">
+              <p className="text-[10px] text-slate-400 mt-1 tabular-nums">
                 Only a {currency} account or a {BASE_CURRENCY} account can take this refund.
+                {amount > 0 && depositTo
+                  ? converts
+                    ? ` ${pk(amount)} lands in ${BASE_CURRENCY}, at the settlement rate.`
+                    : ` ${moneyIn(amount, currency)} lands in ${currency}, worth ${pk(amount)} at the settlement rate.`
+                  : ''}
               </p>
             )}
           </div>
 
-          {/* Into a PKR account the bank converts: what it credited, in PKR,
-              like Bank took on a payment. The rate is worked out from the
-              two amounts. */}
-          {converts && (
-            <div className="space-y-1.5">
-              <Label htmlFor="rma-settle-bank" className="text-[11px] text-slate-500 flex items-center gap-1" style={{ fontWeight: 500 }}>
-                Bank received ({BASE_CURRENCY})
-                <span style={{ color: '#DC2626' }}>*</span>
-              </Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 tabular-nums">
-                  {moneyPrefix(BASE_CURRENCY).trim()}
-                </span>
-                <Input
-                  id="rma-settle-bank"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={bankInput}
-                  onChange={(e) => setBankInput(e.target.value)}
-                  className={`h-9 text-[12px] tabular-nums pl-8 bg-white ${bankError ? 'border-red-300 focus-visible:ring-red-200' : ''}`}
-                  placeholder={(Math.round(amount * dayRate * 100) / 100).toFixed(2)}
-                />
-              </div>
-              <p className={`text-[10px] mt-1 ${bankError ? 'text-red-600' : 'text-slate-400'}`}>
-                {bankError ??
-                  (bankReceived != null
-                    ? `The bank's rate: 1 ${currency} = ${moneyPrefix(BASE_CURRENCY).trim()}${formatRate(bankReceived / amount)} ${BASE_CURRENCY}, worked out from the two amounts.`
-                    : `About ${moneyIn(Math.round(amount * dayRate * 100) / 100, BASE_CURRENCY)} at the ${formatRateDate(date)} mid-market rate. Enter what the bank received.`)}
-              </p>
-            </div>
-          )}
+          {/* No "Bank received (PKR)" any more (2026-11-24): the settlement is
+              recorded at the configured rate, today's of the PO's type
+              (mid-market or corporate, set in the currency configuration),
+              not at a rate worked out from what the bank credited. */}
 
           {/* Vendor charges: what is already on the return, carried forward,
               and a way to add one the vendor kept back that nobody entered
@@ -843,7 +833,7 @@ export function LogSettlementModal({
                 />
                 <span className="min-w-0">
                   <span className="block text-[12px]" style={{ fontWeight: 600, color: '#92400E' }}>
-                    Record {nothingBack ? 'the full' : 'the remaining'} {pk(outstanding)} as a loss
+                    Record {nothingBack ? 'the full' : 'the remaining'} {moneyIn(outstanding, currency)} as a loss
                   </span>
                   <span
                     id="rma-settle-loss-detail"
@@ -869,20 +859,25 @@ export function LogSettlementModal({
                 >
                   GL impact
                 </p>
+                {/* In PKR (2026-11-24): the cash at the settlement rate, the rest
+                    at the receiving rate, and the gap on the cash as the FX
+                    variance, to FX Gain or FX Loss. */}
                 {[
-                  ...(amount > 0 ? [{ key: 'dr', side: 'Debit', ...debitAccount, value: amount }] : []),
+                  ...(amount > 0 ? [{ key: 'dr', side: 'Debit', ...debitAccount, value: cashAtSettle }] : []),
                   ...(writesOffLoss
-                    ? [{ key: 'loss', side: 'Debit', ...GL_ACCOUNTS.settlementLoss, value: outstanding }]
+                    ? [{ key: 'loss', side: 'Debit', ...GL_ACCOUNTS.settlementLoss, value: lossAtReceiving }]
                     : []),
                   ...(addedTotal > 0.004
-                    ? [{ key: 'charges', side: 'Debit', ...GL_ACCOUNTS.vendorCharges, value: addedTotal }]
+                    ? [{ key: 'charges', side: 'Debit', ...GL_ACCOUNTS.vendorCharges, value: chargesAtReceiving }]
                     : []),
+                  ...(fxOnCash < -0.004 ? [{ key: 'fx-loss', side: 'Debit', ...GL_ACCOUNTS.fxLoss, value: -fxOnCash }] : []),
                   {
                     key: 'cr',
                     side: 'Credit',
                     ...GL_ACCOUNTS.vendorCredits,
-                    value: (writesOffLoss ? expectedNet : amount) + addedTotal,
+                    value: Math.round((cashAtReceiving + lossAtReceiving + chargesAtReceiving) * 100) / 100,
                   },
+                  ...(fxOnCash > 0.004 ? [{ key: 'fx-gain', side: 'Credit', ...GL_ACCOUNTS.fxGain, value: fxOnCash }] : []),
                 ].map((row) => (
                   <div key={row.key} className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5 min-w-0">
@@ -906,7 +901,7 @@ export function LogSettlementModal({
                       className="text-[11px] text-foreground tabular-nums shrink-0"
                       style={{ fontWeight: 600 }}
                     >
-                      {formatMoney(row.value, currency)}
+                      {moneyIn(row.value, BASE_CURRENCY)}
                     </span>
                   </div>
                 ))}

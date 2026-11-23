@@ -20,12 +20,14 @@ interface DraggableKpiCardProps {
   tooltip?: string;
   change?: string;
   changeColor?: string;
+  /** A short line under the value, e.g. "all orders, in PKR". */
+  note?: string;
   moveCard: (from: number, to: number) => void;
   onRemove?: () => void;
 }
 
 export function DraggableKpiCard({
-  index, kpiKey, label, value, iconName, tooltip, change, changeColor,
+  index, kpiKey, label, value, iconName, tooltip, change, changeColor, note,
   moveCard, onRemove,
 }: DraggableKpiCardProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -124,6 +126,9 @@ export function DraggableKpiCard({
           )}
           <p className="text-[15px] text-slate-700 tracking-tight truncate" style={{ fontWeight: 600, lineHeight: 1.2 }}>{value}</p>
         </div>
+        {note && (
+          <p className="text-[10px] text-slate-400 truncate mt-0.5" style={{ fontWeight: 400 }}>{note}</p>
+        )}
       </div>
       {onRemove && (
         <button

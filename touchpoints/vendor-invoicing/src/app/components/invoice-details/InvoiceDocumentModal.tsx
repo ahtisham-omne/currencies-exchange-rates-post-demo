@@ -5,6 +5,7 @@ import { Invoice } from '@/app/data/mockInvoices';
 import { generateLines } from './LineItemsTab';
 import { downloadInvoicePdf, downloadInvoiceCsv, printInvoicePdf, type InvoiceDocData } from '@/app/lib/invoicePdf';
 import { toast } from 'sonner';
+import { currencyFootnote, formatMoney } from '@/app/currency/money';
 
 /* Print / Export invoice (9/5/26, BB-26 — Eli's release blocker, built
  * per the BA's ask): ONE document surface for both actions. The modal
@@ -12,8 +13,6 @@ import { toast } from 'sonner';
  * PDF at the browser's print dialog, Export offers PDF + CSV. The two
  * entry points share everything but their framing. */
 
-const fmt = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const fmtDate = (iso?: string) => {
   if (!iso) return '—';
@@ -43,6 +42,10 @@ export function InvoiceDocumentModal({
   creditsTotal?: number;
 }) {
   const isPre = invoice.type === 'Pre-Invoice';
+  // In the invoice's currency, the totals labelled with its code (Currency
+  // Touchpoints Map: a printed document prints in the document's currency).
+  const code = (invoice.currency || 'PKR').toUpperCase();
+  const fmt = (n: number) => formatMoney(n, code);
   const lines = useMemo(() => generateLines(invoice, subtotal), [invoice, subtotal]);
   const data: InvoiceDocData = { invoice, lines, subtotal, paymentTerms, creditsTotal };
   const settledTotal = Math.max(0, invoice.amount - invoice.outstandingBalance);
@@ -199,20 +202,21 @@ export function InvoiceDocumentModal({
             </table>
 
             <div className="mt-3 pt-2 border-t border-slate-200 space-y-1 text-[10px]">
-              <p className="flex justify-end gap-6"><span className="text-slate-400">Line Subtotal</span><span className="text-slate-700 w-20 text-right" style={{ fontWeight: 600 }}>{fmt(subtotal)}</span></p>
+              <p className="flex justify-end gap-6"><span className="text-slate-400">Line Subtotal</span><span className="text-slate-700 min-w-20 text-right whitespace-nowrap" style={{ fontWeight: 600 }}>{fmt(subtotal)}</span></p>
               {extras > 0.004 && (
-                <p className="flex justify-end gap-6"><span className="text-slate-400">Tax, Freight &amp; Charges</span><span className="text-slate-700 w-20 text-right" style={{ fontWeight: 600 }}>{fmt(extras)}</span></p>
+                <p className="flex justify-end gap-6"><span className="text-slate-400">Tax, Freight &amp; Charges</span><span className="text-slate-700 min-w-20 text-right whitespace-nowrap" style={{ fontWeight: 600 }}>{fmt(extras)}</span></p>
               )}
-              <p className="flex justify-end gap-6 text-[11px]"><span className="text-slate-600" style={{ fontWeight: 600 }}>Invoice Total</span><span className="text-foreground w-20 text-right" style={{ fontWeight: 700 }}>{fmt(invoice.amount)}</span></p>
+              <p className="flex justify-end gap-6 text-[11px]"><span className="text-slate-600" style={{ fontWeight: 600 }}>Invoice Total ({code})</span><span className="text-foreground min-w-20 text-right whitespace-nowrap" style={{ fontWeight: 700 }}>{fmt(invoice.amount)}</span></p>
               {/* Cash and credits split (QC19): a credit memo is never
                   "paid". */}
               {cashPaid > 0.004 && (
-                <p className="flex justify-end gap-6"><span className="text-slate-400">Cash Paid</span><span className="text-slate-700 w-20 text-right" style={{ fontWeight: 600 }}>−{fmt(cashPaid)}</span></p>
+                <p className="flex justify-end gap-6"><span className="text-slate-400">Cash Paid</span><span className="text-slate-700 min-w-20 text-right whitespace-nowrap" style={{ fontWeight: 600 }}>−{fmt(cashPaid)}</span></p>
               )}
               {credited > 0.004 && (
-                <p className="flex justify-end gap-6"><span className="text-slate-400">Credit Memos</span><span className="text-slate-700 w-20 text-right" style={{ fontWeight: 600 }}>−{fmt(credited)}</span></p>
+                <p className="flex justify-end gap-6"><span className="text-slate-400">Credit Memos</span><span className="text-slate-700 min-w-20 text-right whitespace-nowrap" style={{ fontWeight: 600 }}>−{fmt(credited)}</span></p>
               )}
-              <p className="flex justify-end gap-6 text-[11px]"><span className="text-slate-600" style={{ fontWeight: 600 }}>Balance Due</span><span className="text-foreground w-20 text-right" style={{ fontWeight: 700 }}>{fmt(invoice.outstandingBalance)}</span></p>
+              <p className="flex justify-end gap-6 text-[11px]"><span className="text-slate-600" style={{ fontWeight: 600 }}>Balance Due ({code})</span><span className="text-foreground min-w-20 text-right whitespace-nowrap" style={{ fontWeight: 700 }}>{fmt(invoice.outstandingBalance)}</span></p>
+              <p className="text-right text-slate-400 pt-1">{currencyFootnote(code)}</p>
             </div>
           </div>
         </div>

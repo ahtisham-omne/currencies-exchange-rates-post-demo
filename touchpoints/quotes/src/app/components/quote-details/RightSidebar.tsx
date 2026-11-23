@@ -606,6 +606,8 @@ interface RightSidebarProps {
   currencyLocked?: boolean;
   /** "You receive": the base currency unless set. */
   currencySettlement?: string;
+  /** "You receive": the account the customer pays into (companyAccounts.ts). */
+  currencyPayToAccount?: string;
   /** The quote date (ISO), to tell a rate applied on a later version apart. */
   currencyQuoteDay?: string;
   /** Opens the quote's Currency Configuration. */
@@ -651,11 +653,12 @@ export function RightSidebar({
   currencyRateEdited,
   currencyLocked,
   currencySettlement,
+  currencyPayToAccount,
   currencyQuoteDay,
   onViewCurrencyConfig,
 }: RightSidebarProps) {
-  /* Whole amounts as the design shows them, in the page's currency: base by
-     default, the quote's (the customer's) with the header toggle. */
+  /* Whole amounts as the design shows them, in the page's currency: base
+     (the quote page pins it; the customer's amount is on hover). */
   const fmtCurrency = useDocWhole();
   const { inBase } = useDocView();
   // ── Collapse state (sub-sections) ──
@@ -1679,12 +1682,14 @@ export function RightSidebar({
             )}
           </div>
 
-          {/* CURRENCY — Customer pays / You receive / Rate, and the way into
-              the quote's currency configuration (as Purchase Orders has it). */}
+          {/* CURRENCY — Customer pays / You receive / Base equivalent /
+              Rate, the lock, and the way into the quote's currency
+              configuration (Currency Touchpoints Map, Quotes 4). */}
           {quoteFxInfo && onViewCurrencyConfig && (
             <QuoteCurrencySummary
               fx={quoteFxInfo}
               total={liveGrandTotal}
+              payToAccount={currencyPayToAccount}
               settlementCurrency={currencySettlement}
               locked={!!currencyLocked}
               rateEdited={currencyRateEdited}

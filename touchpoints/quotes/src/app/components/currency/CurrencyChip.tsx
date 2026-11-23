@@ -34,6 +34,14 @@ export function CurrencyPill({ code, note }: { code: string; note?: string }) {
   );
 }
 
+/** The currency tag after a customer's name or a quote's number (Currency
+ *  Touchpoints Map): the pill for a foreign currency, nothing for the base
+ *  currency, whose amounts need no tag. */
+export function CurrencyTag({ code, note }: { code: string | null | undefined; note?: string }) {
+  if (!code || code.toUpperCase() === BASE_CURRENCY) return null;
+  return <CurrencyPill code={code.toUpperCase()} note={note} />;
+}
+
 /**
  * Flag + ISO code, the way the module shows a currency in a cell or field;
  * the name rides a tooltip. The base currency is marked as such.

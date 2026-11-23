@@ -141,21 +141,3 @@ export function paymentLedger(p: Payment, invoices: Invoice[], payments: Payment
     youPayIn: settled.length ? youPayIn : BASE_CURRENCY,
   };
 }
-
-/** The accounts a payment's Currency Configuration lists: the one paying (or
- *  the first of its type) in each currency that may pay, then one greyed per
- *  other currency (rule 4). */
-export function configAccounts(invoiceCurrency: string, currentId: string | undefined, type?: PayFromAccount['type'] | 'any'): PayFromAccount[] {
-  const cur = invoiceCurrency.toUpperCase();
-  const current = PAY_FROM_ACCOUNTS.find((a) => a.id === currentId);
-  const typeOk = (a: PayFromAccount) => !type || type === 'any' || a.type === type;
-  const pickIn = (c: string) =>
-    (current && current.currency === c ? current : undefined) ??
-    PAY_FROM_ACCOUNTS.find((a) => a.currency === c && typeOk(a)) ??
-    PAY_FROM_ACCOUNTS.find((a) => a.currency === c);
-  const wanted = isBaseCurrency(cur) ? [BASE_CURRENCY] : [cur, BASE_CURRENCY];
-  const allowed = wanted.map(pickIn).filter((a): a is PayFromAccount => !!a);
-  const seen = new Set<string>(wanted);
-  const greyed = PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank' && !seen.has(a.currency) && (seen.add(a.currency), true));
-  return [...allowed, ...greyed];
-}

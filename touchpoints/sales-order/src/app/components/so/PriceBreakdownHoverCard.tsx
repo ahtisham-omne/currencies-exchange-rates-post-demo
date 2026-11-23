@@ -27,8 +27,9 @@ interface PriceBreakdownHoverCardProps {
 }
 
 export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, formatCurrency, children }: PriceBreakdownHoverCardProps) {
-  /* "$" rule tiers are USD; convert into the order's currency. The total in
-     the currency the page isn't showing rides under the Total row. */
+  /* Fixed ("$") rule tiers are in base, PKR; they convert into the order's
+     currency at its rate. The total in the currency the page isn't showing
+     rides under the Total row. */
   const ruleMoney = useRuleMoney();
   const ruleFactor = ruleMoney.factor;
   const { currency } = useDocCurrency();

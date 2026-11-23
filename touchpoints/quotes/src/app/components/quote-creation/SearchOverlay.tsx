@@ -3,6 +3,11 @@ import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { FIELD_RULES } from '@/app/components/shared/fieldRequirements';
 import { Search, Building2, Mail, Phone, MapPin, Users as UsersIcon, Plus, X, Smartphone, FileText, MoreHorizontal } from 'lucide-react';
+import { CurrencyTag } from '@/app/components/currency/CurrencyChip';
+import { customerCurrency } from '@/app/currency/qFx';
+
+/** The customer's currency tag on a picker row: a quote for them is in it. */
+const CUSTOMER_TAG_NOTE = "The customer's currency. A quote for them is in it.";
 
 interface Contact {
   id: string;
@@ -461,6 +466,7 @@ export function SearchOverlay({
                                         <span className="text-[13px] text-foreground" style={{ fontWeight: 500 }}>
                                           {customer.name}
                                         </span>
+                                        <CurrencyTag code={customerCurrency(customer.name)} note={CUSTOMER_TAG_NOTE} />
                                         {isCurrent && (
                                           <span className="inline-flex items-center px-1.5 py-0.5 bg-accent text-primary rounded text-[9px]" style={{ fontWeight: 600 }}>
                                             CURRENT
@@ -521,6 +527,7 @@ export function SearchOverlay({
                                           <span className="text-[13px] text-foreground" style={{ fontWeight: 500 }}>
                                             {customer.name}
                                           </span>
+                                          <CurrencyTag code={customerCurrency(customer.name)} note={CUSTOMER_TAG_NOTE} />
                                           <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                                             <UsersIcon className="w-3 h-3" />
                                             {customer.totalContacts}
@@ -742,6 +749,7 @@ export function SearchOverlay({
                                     <span className="text-[13px] text-foreground" style={{ fontWeight: 500 }}>
                                       {highlightMatch(customer.name, searchQuery)}
                                     </span>
+                                    <CurrencyTag code={customerCurrency(customer.name)} note={CUSTOMER_TAG_NOTE} />
                                     {isCurrent && (
                                       <span className="inline-flex items-center px-1.5 py-0.5 bg-accent text-primary rounded text-[9px]" style={{ fontWeight: 600 }}>
                                         CURRENT
@@ -876,6 +884,7 @@ export function SearchOverlay({
                                     <span className="text-[13px] text-foreground" style={{ fontWeight: 500 }}>
                                       {group.customer.name}
                                     </span>
+                                    <CurrencyTag code={customerCurrency(group.customer.name)} note={CUSTOMER_TAG_NOTE} />
                                     {showInactive && (
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-success/15 text-success-foreground rounded text-[10px]" style={{ fontWeight: 500 }}>
                                         <div className="w-1.5 h-1.5 rounded-full bg-success"></div>

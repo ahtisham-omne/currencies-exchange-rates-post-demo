@@ -78,8 +78,10 @@ function deriveTemplateFromConfig(
 ): PartnerGroupTemplate | undefined {
   const tpl: PartnerGroupTemplate = { ...(fallback ?? {}) };
 
-  const cl = cfg.configCreditLimit as { currency?: string; enforcement?: string } | undefined;
+  const cl = cfg.configCreditLimit as { currency?: string; rateType?: string; enforcement?: string } | undefined;
   if (cl?.currency) tpl.currency = cl.currency;
+  // The default exchange rate is set beside the currency in Billing & Shipping.
+  if (cl?.rateType === "mid" || cl?.rateType === "corporate") tpl.rateType = cl.rateType;
   if (cl?.enforcement) tpl.creditEnforcement = cl.enforcement;
 
   const pt = cfg.configPaymentTerm as { id?: string } | undefined;
@@ -207,14 +209,14 @@ const SHOWCASE_OVERRIDES: Partial<PartnerGroupRecord> = {
         name: "Standard Discount, Value (Single-Tier)",
         type: "discount",
         basis: "value",
-        description: "10% off on orders over $1,000",
+        description: "10% off on orders over ₨280,000",
       },
       {
         id: "pr-3",
         name: "Tiered Discount, Value (Multi-Tier)",
         type: "discount",
         basis: "value",
-        description: "Tiered discounts on $1K / $10K / $50K thresholds",
+        description: "Tiered discounts on ₨280K / ₨2.8M / ₨14M thresholds",
       },
       {
         id: "pr-5",

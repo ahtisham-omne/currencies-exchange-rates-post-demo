@@ -48,6 +48,12 @@ import {
 import { ItemImageWithPreview, ItemQuickViewModal } from '@/app/components/invoice-details/ItemQuickView';
 import { imageForSku } from '@/app/lib/itemImages';
 import { palette } from '@/styles/tokens';
+import { isBaseCurrency } from '@/app/currency/currencies';
+import { toBase } from '@/app/currency/rates';
+import { returnFx, rmaCurrency, rmaCurrencyPO } from '@/app/currency/returnCurrency';
+import { BaseMoney } from '@/app/components/currency/Money';
+import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
+import { returnValueOf } from '@/app/components/currency/ReturnCurrencyConfig';
 
 // ─── STATUS palette — mirrors the vendor-invoicing STATUS_STYLES pattern
 // (light/-50 background + -700 foreground + -200 border, terminal states
@@ -487,6 +493,13 @@ export const RMA_COLUMNS: ColumnDef<RMA>[] = [
         description={row.notes ?? `Source ${poLabel(row.sourcePO)}`}
         density={density}
         searchQuery={searchQuery}
+        // The return's currency on a foreign-currency return (2026-11-24);
+        // a PKR return gets none.
+        tag={
+          isBaseCurrency(rmaCurrency(row)) ? undefined : (
+            <CurrencyPill code={rmaCurrency(row)} note={`The return's currency, from PO-${rmaCurrencyPO(row)}.`} />
+          )
+        }
       />
     ),
   },
@@ -534,6 +547,30 @@ export const RMA_COLUMNS: ColumnDef<RMA>[] = [
             Payment overdue
           </span>
         )}
+      </span>
+    ),
+  },
+  {
+    // What the goods going back are worth, in PKR at the receiving rate, the
+    // rate their receipt was booked at (Currency Touchpoints Map,
+    // 2026-11-24). A foreign-currency return shows its own amount and the
+    // rate on hover; a PKR one is plain.
+    key: 'returnValue',
+    label: 'Return value',
+    minWidth: 150,
+    defaultWidth: 160,
+    sortable: true,
+    filterType: 'range',
+    filterable: true,
+    align: 'right',
+    getValue: (row) => {
+      const fx = returnFx(row);
+      const value = returnValueOf(row);
+      return fx ? toBase(value, fx.rate) : value;
+    },
+    render: (row) => (
+      <span className="text-[13px] text-foreground tabular-nums" style={{ fontWeight: 500 }}>
+        <BaseMoney value={returnValueOf(row)} currency={rmaCurrency(row)} fx={returnFx(row)} role="Return currency" />
       </span>
     ),
   },

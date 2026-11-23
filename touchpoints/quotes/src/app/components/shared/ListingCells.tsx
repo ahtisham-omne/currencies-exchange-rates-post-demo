@@ -259,6 +259,8 @@ interface CustomerCellRichProps {
   };
   onClick?: () => void;
   density?: "comfortable" | "compact";
+  /** Shown right after the name, e.g. the quote's currency tag. */
+  after?: React.ReactNode;
 }
 
 /** Listing cell for an optional person field (point of contact, sales
@@ -268,7 +270,7 @@ export function EmptyPersonCell({ label }: { label: string }) {
   return <span className="text-[13px] text-muted-foreground whitespace-nowrap">{label}</span>;
 }
 
-export function CustomerCellRich({ customer, onClick, density = "comfortable" }: CustomerCellRichProps) {
+export function CustomerCellRich({ customer, onClick, density = "comfortable", after }: CustomerCellRichProps) {
   const isRelaxed = density === "comfortable";
   const tint = getAvatarTint(customer.name);
   const initials = getInitials(customer.name);
@@ -364,12 +366,24 @@ export function CustomerCellRich({ customer, onClick, density = "comfortable" }:
         </HoverCardContent>
       </HoverCard>
       <div className="min-w-0 cursor-pointer group/cust" onClick={(e) => { e.stopPropagation(); onClick?.(); }}>
-        <span
-          className={`${isRelaxed ? "text-[13.5px]" : "text-sm"} block truncate group-hover/cust:text-primary group-hover/cust:underline transition-colors`}
-          style={{ fontWeight: 500, color: "#1E293B" }}
-        >
-          {customer.name}
-        </span>
+        {after ? (
+          <span className="flex items-center gap-1.5 min-w-0">
+            <span
+              className={`${isRelaxed ? "text-[13.5px]" : "text-sm"} truncate group-hover/cust:text-primary group-hover/cust:underline transition-colors`}
+              style={{ fontWeight: 500, color: "#1E293B" }}
+            >
+              {customer.name}
+            </span>
+            <span className="shrink-0 inline-flex">{after}</span>
+          </span>
+        ) : (
+          <span
+            className={`${isRelaxed ? "text-[13.5px]" : "text-sm"} block truncate group-hover/cust:text-primary group-hover/cust:underline transition-colors`}
+            style={{ fontWeight: 500, color: "#1E293B" }}
+          >
+            {customer.name}
+          </span>
+        )}
         {isRelaxed && customer.email && (
           <span className="text-xs text-muted-foreground/60 truncate block">{customer.email}</span>
         )}

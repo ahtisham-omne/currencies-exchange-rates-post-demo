@@ -494,7 +494,9 @@ export function InvoiceListScreen({
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() =>
     // The derivation dates (Trigger / Posting) join the palette hidden by
     // default (9/22/26, Claude C13-X3) — one toggle away, no layout shift.
-    Object.fromEntries(INVOICE_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'triggerDate' && c.key !== 'postingDate'])),
+    // Currency joins them (Currency Touchpoints Map, 24 Nov 2026): the vendor
+    // cell carries the currency tag and Amount is in base with the hover card.
+    Object.fromEntries(INVOICE_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'triggerDate' && c.key !== 'postingDate' && c.key !== 'currency'])),
   );
   // Column drawer Reset restores this default view and remounts the
   // table so dragged widths snap back too (10/9/26).
@@ -2576,7 +2578,7 @@ export function InvoiceListScreen({
                           hover quick-card + click full modal, name click
                           opens the partner module. */}
                       <div className="mt-0.5" onClick={(e) => e.stopPropagation()}>
-                        <VendorCell vendor={invoice.vendor} description={invoice.description} density="card" />
+                        <VendorCell vendor={invoice.vendor} description={invoice.description} density="card" currency={invoice.currency} />
                       </div>
                     </div>
                     <div className="min-w-0">
@@ -2710,7 +2712,7 @@ export function InvoiceListScreen({
           open={columnDrawerOpen}
           onOpenChange={setColumnDrawerOpen}
           defaultColumnOrder={INVOICE_COLUMN_CATALOG.map((c) => c.key)}
-          defaultColumnVisibility={Object.fromEntries(INVOICE_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'triggerDate' && c.key !== 'postingDate']))}
+          defaultColumnVisibility={Object.fromEntries(INVOICE_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'triggerDate' && c.key !== 'postingDate' && c.key !== 'currency']))}
           onReset={() => setColumnResetKey((k) => k + 1)}
         />
       </div>

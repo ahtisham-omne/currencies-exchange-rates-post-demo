@@ -28,7 +28,9 @@ import { CurrencyFlag } from "../components/currency/CurrencyFlag";
 import { CurrencyViewToggle, ProfileCurrencyProvider, profileFormatters, useProfileMoney } from "../components/currency/ProfileCurrency";
 import { BASE_CURRENCY, getCurrency } from "../currency/currencies";
 import type { CurrencyView } from "../currency/partnerAmounts";
-import { usePartnerCurrencyInfo } from "../currency/usePartnerCurrency";
+import { usePartnerCurrencyInfo, usePartnerRateTypeInfo } from "../currency/usePartnerCurrency";
+import { currencySettingsFromConfig } from "../currency/partnerCurrency";
+import { RATE_TYPE_LABEL } from "../currency/rates";
 import { ActivityFeed, type ActivityFeedItemType } from "../components/vendors/PartnerGroupDetailModal";
 import type { ContactPerson as PartnerContact } from "../components/vendors/partnerConstants";
 import { CreatePartnerLocationModal } from "../components/vendors/CreatePartnerLocationModal";
@@ -1597,7 +1599,27 @@ export function VendorDetailsPage() {
         onOpenChange={setEditModalOpen}
         editMode
         editVendor={vendor as unknown as Record<string, unknown>}
-        onPartnerCreated={() => {
+        onPartnerCreated={(data) => {
+          // The currency and default exchange rate chosen in Billing &
+          // Shipping are saved (only overrides; inherited saves none). Open
+          // documents keep their currency; new ones use this one.
+          const settings = currencySettingsFromConfig(data);
+          if (settings) {
+            const prev = vendor.configData?.creditLimitConfig;
+            updateVendor(vendor.id, {
+              configData: {
+                ...(vendor.configData ?? {}),
+                creditLimitConfig: {
+                  maxCreditLimit: vendor.creditLimit ?? 0,
+                  warningThreshold: 0,
+                  enforcement: "none",
+                  ...(prev ?? {}),
+                  currency: settings.currency,
+                  rateType: settings.rateType,
+                },
+              },
+            });
+          }
           setEditModalOpen(false);
           toast.success("Partner updated successfully");
         }}
@@ -2986,6 +3008,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
   // The partner's amounts in the profile's currency view (Base / Partner).
   const pm = useProfileMoney();
   const currencyInfo = usePartnerCurrencyInfo()(vendor);
+  const rateTypeInfo = usePartnerRateTypeInfo()(vendor);
   const spendCategories = [
     { name: "Services", value: Math.round(vendor.totalSpent * 0.4), pct: 40 },
     { name: "Materials", value: Math.round(vendor.totalSpent * 0.3), pct: 30 },
@@ -3782,6 +3805,14 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
                 <CurrencyFlag code={currencyInfo.code} />
                 <span className="truncate">{getCurrency(currencyInfo.code)?.name ?? currencyInfo.code} ({getCurrency(currencyInfo.code)?.symbol ?? currencyInfo.code})</span>
               </p>
+              {/* Its default exchange rate, set beside the currency in Billing & Shipping. */}
+              <p
+                className="text-[10.5px] text-slate-400 mt-0.5 truncate"
+                style={{ fontWeight: 500 }}
+                title={rateTypeInfo.source === "partner" ? "Default exchange rate, set on this partner" : `Default exchange rate, inherited from ${rateTypeInfo.group?.name ?? "its partner group"}`}
+              >
+                {RATE_TYPE_LABEL[rateTypeInfo.type]} rate by default
+              </p>
             </div>
             <div className="min-w-0">
               <DashInfoLabel>Pay To</DashInfoLabel>
@@ -4001,6 +4032,7 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
       open={ptDetailOpen}
       onClose={() => { setPtDetailOpen(false); setPtDetailTerm(null); }}
       mode="view"
+      partnerCurrency={currencyInfo.code}
       onDisable={(t) => toast.success(`"${t.name}" disabled for this partner`)}
     />
 
@@ -8051,6 +8083,7 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
         open={locPtDetailOpen}
         onClose={() => { setLocPtDetailOpen(false); setLocPtDetailTerm(null); }}
         mode="view"
+        partnerCurrency={currencyInfo.code}
         onDisable={(t) => toast.success(`"${t.name}" disabled for this partner`)}
       />
 

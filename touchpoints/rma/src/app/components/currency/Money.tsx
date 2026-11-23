@@ -8,8 +8,9 @@ import { useReturnView } from './returnView';
 import { FX_ARROW_PADDING, FX_CARD_CLASS, FX_FLAG_PX, FxAlert, FxArrow, FxHead, FxInset, FxLine, FxLines, FxNote, FxRateType, withCode } from './FxCard';
 
 /* ── Money with its rate (as in the Vendor Invoicing touchpoint) ──────
- * In RMA a return keeps the currency of its PO, and dollars are the base: an
- * amount reads "£30.23", and the hover shows "$38.25 USD" and the rate.
+ * In RMA a return keeps the currency of its PO, and PKR is the base. The
+ * return's page shows every amount in PKR (2026-11-24: no Base | Vendor
+ * Currency toggle), and the hover gives the PO's amount and the rate.
  *
  * An amount in a foreign currency wears a dotted underline, and hovering it
  * shows what it is in the base currency, at which rate, of which type, and for
@@ -96,6 +97,7 @@ export function BaseMoneyCard({
   fx,
   dateLabel,
   role = 'PO currency',
+  baseValue,
 }: {
   /** The amount in `currency`. */
   value: number;
@@ -104,13 +106,16 @@ export function BaseMoneyCard({
   dateLabel?: string | undefined;
   /** What `currency` is to the record: "Vendor currency", "Invoice currency". */
   role?: string | undefined;
+  /** The PKR figure where it is a share of a larger conversion (a ledger
+   *  line), so the card shows the paisa the page shows. */
+  baseValue?: number | undefined;
 }) {
   const base = getCurrency(BASE_CURRENCY);
   return (
     <>
       <FxHead flag={<CurrencyFlag code={BASE_CURRENCY} size={FX_FLAG_PX} />} name={base?.name ?? BASE_CURRENCY} code={BASE_CURRENCY} role="base currency" />
       <FxLines>
-        <FxLine strong label={`In ${BASE_CURRENCY}`} value={withCode(formatMoney(toBase(value, fx.rate), BASE_CURRENCY), BASE_CURRENCY)} />
+        <FxLine strong label={`In ${BASE_CURRENCY}`} value={withCode(formatMoney(baseValue ?? toBase(value, fx.rate), BASE_CURRENCY), BASE_CURRENCY)} />
         <FxLine label={role} value={withCode(formatMoney(value, currency), currency)} />
       </FxLines>
       <FxInset>
@@ -161,6 +166,7 @@ export function BaseMoney({
   className = '',
   dateLabel,
   role,
+  baseValue,
   children,
 }: {
   /** The amount in `currency`. */
@@ -170,17 +176,24 @@ export function BaseMoney({
   className?: string | undefined;
   dateLabel?: string | undefined;
   role?: string | undefined;
+  /** The PKR figure, where it is a share of a larger conversion (a journal
+   *  line, a Return Summary row) rather than `value` × the rate on its own. */
+  baseValue?: number | undefined;
   children?: React.ReactNode | undefined;
 }) {
   const code = (currency || BASE_CURRENCY).toUpperCase();
   if (!fx || isBaseCurrency(code)) {
-    return <span className={`tabular-nums ${className}`}>{children ?? formatMoney(value, code)}</span>;
+    return (
+      <span className={`tabular-nums ${className}`}>
+        {children ?? (baseValue !== undefined ? formatMoney(baseValue, BASE_CURRENCY) : formatMoney(value, code))}
+      </span>
+    );
   }
-  const text = children ?? formatMoney(toBase(value, fx.rate), BASE_CURRENCY);
+  const text = children ?? formatMoney(baseValue ?? toBase(value, fx.rate), BASE_CURRENCY);
   if (!value) return <span className={`tabular-nums ${className}`}>{text}</span>;
   return (
     <FxHover text={text} className={className}>
-      <BaseMoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} />
+      <BaseMoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} baseValue={baseValue} />
     </FxHover>
   );
 }

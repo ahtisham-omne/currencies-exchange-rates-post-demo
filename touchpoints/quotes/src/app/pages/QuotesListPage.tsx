@@ -102,7 +102,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/app/
 import { format } from 'date-fns';
 import { BaseMoney } from '@/app/components/currency/Money';
 import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
-import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { CurrencyFlag, CurrencyTag } from '@/app/components/currency/CurrencyChip';
 import { currentRateFor, customerCurrency, quoteFx, stampQuoteRate, toQuoteBase } from '@/app/currency/qFx';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
@@ -1735,7 +1735,11 @@ export function QuotesListPage() {
                                 </TableCell>
                               );
                             }
-                            case 'customer':
+                            case 'customer': {
+                              /* The quote's currency tag after the customer, only on a
+                                 quote in a foreign currency (Currency Touchpoints Map,
+                                 Quotes 1); Quote Value stays in base with the hover. */
+                              const quoteCurrencyCode = quoteFx(quote).currency;
                               return (
                                 <TableCell key={colKey}>
                                   <CustomerCellRich
@@ -1749,9 +1753,13 @@ export function QuotesListPage() {
                                       location: customerLoc ? { name: customerLoc, isPrimary: true } : undefined,
                                     }}
                                     density={isRelaxed ? 'comfortable' : 'compact'}
+                                    after={quoteCurrencyCode === BASE_CURRENCY ? undefined : (
+                                      <CurrencyTag code={quoteCurrencyCode} note="The quote's currency. Quote Value is in the base currency; hover it for the customer's amount." />
+                                    )}
                                   />
                                 </TableCell>
                               );
+                            }
                             case 'primaryPoC': {
                               const additional = (quote.additionalPoCs || []) as any[];
                               if (!quote.primaryPoC?.name) {
@@ -2477,11 +2485,15 @@ export function QuotesListPage() {
             return isLatest && nonDuplicableStatuses.includes(duplicateTarget.status) ? { ...v, canDuplicate: false } : v;
           })}
           currentVersion={duplicateTarget.version}
-          onConfirm={({ customerId, customerName, versionMode, selectedVersion }) => {
+          /* Its currency and rate, for keep the original rate or use today's. */
+          source={duplicateTarget}
+          sourceTotal={duplicateTarget.totalValue}
+          onConfirm={({ customerId, customerName, versionMode, selectedVersion, rateChoice }) => {
             const source = duplicateTarget;
             setDuplicateTarget(null);
             const existingNumbers = quotes.map(q => q.quoteNumber);
             const result = duplicateQuote(source, {
+              rateChoice,
               newCustomerId: customerId,
               newCustomerName: customerName,
               versionMode,

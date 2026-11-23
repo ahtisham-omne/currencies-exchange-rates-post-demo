@@ -28,7 +28,7 @@ export interface DocCurrency {
   /** What the currency is, for the hover ("order currency", "customer currency"). */
   role?: string;
   /** The document's rate date (ISO), also when `fx` is null (a base-currency
-   *  order): USD rule amounts and the design's figures convert on it. */
+   *  order): the design's USD figures convert on it. */
   rateDate?: string;
   /** Which currency amounts are shown in. Base unless the page says otherwise. */
   view?: DocView;

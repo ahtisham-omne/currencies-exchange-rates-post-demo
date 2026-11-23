@@ -25,7 +25,7 @@ interface PriceBreakdownHoverCardProps {
 }
 
 export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, formatCurrency, children }: PriceBreakdownHoverCardProps) {
-  /* "$" rule tiers are USD; convert into the quote's currency. */
+  /* Fixed ("$") rule tiers are in base; convert into the quote's currency at its rate. */
   const ruleFactor = useRuleMoney().factor;
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number; placement: Placement } | null>(null);

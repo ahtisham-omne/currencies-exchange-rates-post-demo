@@ -118,3 +118,10 @@ export function paymentExchangeDifference(p: Payment, invoices: Invoice[]): Exch
 
 /** "Gain" / "Loss" / "None" for an exchange difference. */
 export const differenceKind = (d: number): 'gain' | 'loss' | 'none' => (Math.abs(d) < 0.005 ? 'none' : d > 0 ? 'gain' : 'loss');
+
+/** Statuses a payment has posted in: its rate and FX variance are fixed
+ *  (Currency Touchpoints Map, 24 Nov 2026: "Rate locks when the payment
+ *  posts"). A scheduled payment hasn't posted yet. */
+export const POSTED_PAYMENT_STATUSES = ['Paid', 'Unapplied', 'Partially Applied', 'Fully Applied', 'Reversed'];
+
+export const paymentRateLocked = (p: Pick<Payment, 'status'>) => POSTED_PAYMENT_STATUSES.includes(p.status);

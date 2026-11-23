@@ -108,7 +108,8 @@ import {
 import { InsightsRangeMenu, INSIGHTS_RANGE_OPTIONS } from '@/app/components/InsightsRangeMenu';
 import { formatMoney } from '@/app/currency/money';
 import { BaseMoney } from '@/app/components/currency/Money';
-import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { paymentFx, toPaymentBase } from '@/app/currency/paymentFx';
 import { BulkActionBar, type BulkAction } from '@/app/components/BulkActionBar';
 import { getBulkActions, isBulkEligible, type PaymentActionId } from '@/app/data/paymentActions';
@@ -534,8 +535,10 @@ export function PaymentsScreen({
   // rearrangements never persist.
   const [columnDrawerOpen, setColumnDrawerOpen] = useState(false);
   const [columnOrder, setColumnOrder] = useState<string[]>(() => PAYMENT_COLUMN_CATALOG.map((c) => c.key));
+  // Currency starts hidden (Currency Touchpoints Map, 24 Nov 2026): the vendor
+  // cell carries the currency tag and Amount is in base with the hover card.
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, true])),
+    Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'currency'])),
   );
   // Column drawer Reset restores this default view and remounts the
   // table so dragged widths snap back too (10/9/26).
@@ -1836,8 +1839,10 @@ export function PaymentsScreen({
                   </div>
                   <div className="space-y-2 mb-3">
                     <MethodBadge method={payment.paymentMethod} />
-                    <div className="text-sm truncate" style={{ fontWeight: 500 }}>
-                      {payment.vendor}
+                    <div className="text-sm flex items-center gap-1.5 min-w-0" style={{ fontWeight: 500 }}>
+                      <span className="truncate">{payment.vendor}</span>
+                      {/* Currency tag on a foreign payment (Currency Touchpoints Map). */}
+                      {!isBaseCurrency(payment.currency) && <CurrencyPill code={payment.currency} note="What the vendor received. The amount is in the base currency; hover it for this currency." />}
                     </div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>{formatUsDate(payment.paymentDate)}</span>
@@ -1963,7 +1968,7 @@ export function PaymentsScreen({
           open={columnDrawerOpen}
           onOpenChange={setColumnDrawerOpen}
           defaultColumnOrder={PAYMENT_COLUMN_CATALOG.map((c) => c.key)}
-          defaultColumnVisibility={Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, true]))}
+          defaultColumnVisibility={Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'currency']))}
           onReset={() => setColumnResetKey((k) => k + 1)}
         />
       </div>

@@ -157,12 +157,15 @@ import { DEFAULT_RATE_TYPE, RATE_TYPE_LABEL, rateOn, toBase, type RateType } fro
 import { baseGlEntries, postInvoiceGl, type BaseGl } from '@/app/currency/glFx';
 import { fxVarianceOf, receiptValuesForLine, receivingRateOn, type LockedPrepayment } from '@/app/currency/fxVariance';
 import { RATE_BASIS_DATE_LABEL, rateSourceLabel } from '@/app/currency/invoiceFx';
+import { eligiblePayFromId, invoicePayFrom, payFromAccountById } from '@/app/currency/payFrom';
 import { paidRateText } from '@/app/currency/paidRate';
-import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { CurrencyFlag, CurrencyPill } from '@/app/components/currency/CurrencyChip';
+import { INVOICE_LOCK_TITLE, LockChip } from '@/app/components/currency/CurrencyBlock';
 import { DocCurrencyProvider, DocMoney } from '@/app/components/currency/DocCurrency';
 import { docViewOf, type DocView } from '@/app/components/currency/docCurrencyContext';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
-import { InvoiceCurrencyConfigDialog } from '@/app/components/currency/InvoiceCurrencyConfig';
+import { InvoiceCurrencyBlock, InvoiceCurrencyConfigDialog } from '@/app/components/currency/InvoiceCurrencyConfig';
+import { PostingDateRatePrompt, type RateDayPrompt } from '@/app/components/currency/PostingDateRatePrompt';
 import type { MoneyFx } from '@/app/components/currency/Money';
 
 import { ImageWithFallback } from './figma/ImageWithFallback';
@@ -1828,6 +1831,32 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     resubmitInvoice?.rateEdited && resubmitInvoice.exchangeRate ? String(resubmitInvoice.exchangeRate) : null,
   );
   const [rateError, setRateError] = useState(false);
+  // An edited invoice keeps its rate (Currency Touchpoints Map, 24 Nov 2026:
+  // "Edits keep the invoice's current rate"). A changed posting date asks
+  // whether to keep it or take the new date's rate (PostingDateRatePrompt);
+  // a new currency or rate type in Currency Configuration replaces it. A new
+  // invoice has no rate of its own yet: its rate follows the posting date.
+  const [heldRate, setHeldRate] = useState<{ rate: number; rateType: RateType; rateDate: string; edited?: boolean; taken?: boolean } | null>(() =>
+    resubmitInvoice && resubmitInvoice.type !== 'Pre-Invoice' && !isBaseCurrency(resubmitInvoice.currency) && resubmitInvoice.exchangeRate
+      ? {
+          rate: resubmitInvoice.exchangeRate,
+          rateType: resubmitInvoice.rateType ?? DEFAULT_RATE_TYPE,
+          rateDate: resubmitInvoice.rateDate || resubmitInvoice.postingDate || resubmitInvoice.invoiceDate,
+          edited: resubmitInvoice.rateEdited,
+        }
+      : null,
+  );
+  const [rateDayPrompt, setRateDayPrompt] = useState<RateDayPrompt | null>(null);
+  // "You pay" is an account in the base currency or the invoice's (shared
+  // decision 4): the invoice's own, else the default its PO's You pay in
+  // gives (1010 in base, or the first account in the invoice's currency).
+  const [payFromAccountId, setPayFromAccountId] = useState<string>(() => {
+    if (resubmitInvoice) return invoicePayFrom(resubmitInvoice).id;
+    const poYouPayIn = currentPOsData[0]?.poNumber
+      ? mockVendors.flatMap((v) => v.purchaseOrders).find((p) => p.poNumber === currentPOsData[0]?.poNumber)?.youPayIn
+      : undefined;
+    return eligiblePayFromId(null, resubmitInvoice?.currency || poCurrency || vendorDefaultCurrency, poYouPayIn);
+  });
   const invoiceIsBase = isBaseCurrency(invoiceCurrency);
   const ratePending = invoiceKind === 'pre';
   // Rate as of (Settings, Module defaults): a new invoice takes the rate of
@@ -1856,17 +1885,53 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   const typedRateValue = typedRate != null && typedRate.trim() !== '' ? Number(typedRate) : null;
   const invoiceRate: number | null = invoiceIsBase
     ? 1
-    : rateType === 'corporate' && typedRate != null
+    : heldRate
+      ? heldRate.rate
+      : rateType === 'corporate' && typedRate != null
       ? typedRateValue != null && typedRateValue > 0
         ? typedRateValue
         : null
       : tableQuote.rate;
-  const rateEdited = rateType === 'corporate' && typedRateValue != null && typedRateValue !== tableQuote.rate;
+  const rateEdited = heldRate ? !!heldRate.edited : rateType === 'corporate' && typedRateValue != null && typedRateValue !== tableQuote.rate;
+  /** The day the invoice's rate is for: the rate date, or the held rate's own. */
+  const invoiceRateDate = heldRate && !invoiceIsBase ? heldRate.rateDate : rateDay;
+  const invoiceRateType: RateType = heldRate && !invoiceIsBase ? heldRate.rateType : invoiceRate != null ? rateType : 'mid';
+  /** A date the rate is taken on moved (the posting date, by default). An
+   *  edited invoice asks whether to keep its rate or take the new date's;
+   *  a new one simply follows the date. */
+  const onRateDateFieldChange = (field: 'postingDate' | 'invoiceDate', next: string) => {
+    const prev = field === 'postingDate' ? postingDate : invoiceDate;
+    if (field === 'postingDate') setPostingDate(next);
+    else setInvoiceDate(next);
+    if (!heldRate || invoiceIsBase || ratePending || !next || next === prev) return;
+    const basisField = rateAsOf.basis === 'postingDate' ? 'postingDate' : rateAsOf.basis === 'invoiceDate' ? 'invoiceDate' : null;
+    if (basisField !== field) return;
+    const sameType = rateOn(invoiceCurrency, next, heldRate.rateType);
+    const quote = sameType.rate != null ? sameType : rateOn(invoiceCurrency, next, 'mid');
+    if (quote.rate == null) return;
+    if (Math.abs(quote.rate - heldRate.rate) < 1e-9) {
+      // The new date has the same rate: nothing to choose; it's that date's rate now.
+      if (!heldRate.edited) setHeldRate({ ...heldRate, rateDate: next });
+      return;
+    }
+    setRateDayPrompt({
+      field,
+      from: prev,
+      to: next,
+      currency: invoiceCurrency,
+      keepRate: heldRate.rate,
+      keepType: heldRate.rateType,
+      keepDate: heldRate.rateDate,
+      newRate: quote.rate,
+      newType: quote.type,
+      amount: totalDueAfterPrepay,
+    });
+  };
   // Nothing to post at when a foreign invoice has no usable rate (blocks submit).
   const rateMissing = !invoiceIsBase && !ratePending && invoiceRate == null;
   // A typed rate past the role's limit (Settings, Permissions) blocks submit too.
   const rateOverLimit =
-    !invoiceIsBase && !ratePending && rateEdited && apPerms.canChangeInvoiceRate && apPerms.invoiceRateLimitPct != null &&
+    !heldRate && !invoiceIsBase && !ratePending && rateEdited && apPerms.canChangeInvoiceRate && apPerms.invoiceRateLimitPct != null &&
     tableQuote.rate != null && typedRateValue != null &&
     Math.abs(rateChangePct(typedRateValue, tableQuote.rate)) > apPerms.invoiceRateLimitPct + 1e-9;
   /** An invoice-currency amount in the base currency, at the invoice rate. */
@@ -1921,13 +1986,16 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     ? null
     : {
         rate: invoiceRate ?? midQuote.rate ?? 1,
-        rateType: invoiceRate != null ? rateType : 'mid',
-        rateDate: rateDay,
+        rateType: invoiceRateType,
+        rateDate: invoiceRateDate,
         source: rateEdited ? 'Entered on the invoice' : rateSourceLabel(invoiceRate != null ? rateType : 'mid'),
         provisional: ratePending,
         dateLabel: rateDateLabel,
       };
   const formDoc = { currency: invoiceCurrency, fx: docFx, dateLabel: rateDateLabel, role: 'vendor currency', view: formView };
+  /** The pay-from account as it stands: the chosen one if it can pay this
+   *  currency, else the default. */
+  const payFromIdNow = eligiblePayFromId(payFromAccountId, invoiceCurrency);
   const { inBase: viewInBase, viewCurrency, toView, fromView } = docViewOf(formDoc);
   /** An amount typed in the shown currency, back in the invoice's, to its minor unit. */
   const fromViewInput = (n: number) => {
@@ -1946,19 +2014,19 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
    *  pre-invoice screen), at the rate its GL is built with. */
   const invoiceFxFields = (
     posted = !ratePending,
-  ): Pick<Invoice, 'currency' | 'exchangeRate' | 'rateType' | 'rateDate' | 'rateEdited' | 'youPayIn'> => {
+  ): Pick<Invoice, 'currency' | 'exchangeRate' | 'rateType' | 'rateDate' | 'rateEdited' | 'youPayIn' | 'payFromAccount'> => {
     const rate = invoiceRate ?? (posted ? midQuote.rate : null);
-    // The PO's "You pay in" rides the invoice, so a payment of it starts
-    // from an account in that currency (Vendor Payments, rule 5).
-    const poYouPayIn = !isStandalone
-      ? mockVendors.find((v) => v.vendorName === vendorName)?.purchaseOrders.find((p) => p.poNumber === currentPOsData[0]?.poNumber)?.youPayIn
-      : undefined;
+    // The account it's paid from rides the invoice, and its currency is the
+    // invoice's "You pay in", so a payment of it starts from that account
+    // (Vendor Payments, rule 5; Currency Touchpoints Map, 24 Nov 2026).
+    const payFrom = payFromAccountById(payFromIdNow);
     return {
       currency: invoiceCurrency,
-      ...(poYouPayIn && poYouPayIn === invoiceCurrency ? { youPayIn: poYouPayIn } : {}),
+      payFromAccount: payFromIdNow,
+      youPayIn: payFrom && payFrom.currency === invoiceCurrency.toUpperCase() ? invoiceCurrency : BASE_CURRENCY,
       ...(!posted || rate == null
         ? {}
-        : { exchangeRate: rate, rateType: invoiceRate != null ? rateType : 'mid', rateDate: rateDay, rateEdited: rateEdited || undefined, rateBasis: rateAsOf.basis }),
+        : { exchangeRate: rate, rateType: invoiceRateType, rateDate: invoiceRateDate, rateEdited: rateEdited || undefined, rateBasis: rateAsOf.basis }),
     };
   };
   // The PO's own rate, for the "vs PO" comparison on the rate field.
@@ -1967,7 +2035,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     : null;
   // The currency and rate are editable state too: an edit that only changes
   // them is still a change (the fingerprint above is built before them).
-  latestResubJsonRef.current += JSON.stringify([invoiceCurrency, rateType, typedRate]);
+  latestResubJsonRef.current += JSON.stringify([invoiceCurrency, rateType, typedRate, heldRate, payFromIdNow]);
 
   // ── The journal this form posts (one GL rule, 9/22/26) ────────────────
   // The sidebar preview, the confirmation and the saved snapshot all come
@@ -2037,7 +2105,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   const postGl = (input: InvoiceGlInput, items: LineItem[], prepayments: LockedPrepayment[] = []): BaseGl => {
     const variance =
       input.kind === 'received' && !invoiceIsBase
-        ? fxVarianceOf({ currency: invoiceCurrency, invoiceRate: glRate, invoiceDate: rateDay, receipts: receiptsOf(items), prepayments })
+        ? fxVarianceOf({ currency: invoiceCurrency, invoiceRate: glRate, invoiceDate: invoiceRateDate, receipts: receiptsOf(items), prepayments })
         : null;
     return postInvoiceGl(buildInvoiceGl(input), { currency: invoiceCurrency, rate: glRate, variance, prepayments });
   };
@@ -2059,6 +2127,17 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   });
   /** The form's journal as it stands: what the preview and the confirmation show. */
   const formPrepaid = lineItems.some((i) => i.isPreInvoice) ? 0 : prepayApplied;
+  /** The receiving-to-invoice FX variance the form posts (the currency block). */
+  const formVariance =
+    invoiceKind !== 'pre' && !isStandalone && !invoiceIsBase && lineItems.some((i) => !i.isPreInvoice && i.grnDate && i.invoiceQty > 0)
+      ? fxVarianceOf({
+          currency: invoiceCurrency,
+          invoiceRate: glRate,
+          invoiceDate: invoiceRateDate,
+          receipts: receiptsOf(lineItems),
+          prepayments: formPrepaid > 0 ? lockedPrepayments : [],
+        })
+      : null;
   const formGl: BaseGl | null =
     invoiceKind === 'pre'
       ? null
@@ -3143,6 +3222,11 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       user's 10/4 call (supersedes QC13's Pro-Forma). */}
                   {isEdit ? 'Edit Vendor Invoice' : isResubmit ? 'Edit and Resubmit Invoice' : isStandalone ? 'Create Standalone Vendor Invoice' : invoiceKind === 'pre' ? 'Create Pre-Invoice (Pro-Forma)' : 'Create Vendor Invoice'}
                 </h3>
+                {/* The invoice being edited (Currency Touchpoints Map: "Edit
+                    Vendor Invoice INV-000221 [USD]"). */}
+                {isResubmit && resubmitInvoice?.invoiceNumber && (
+                  <span className="text-[12px] text-slate-500 tabular-nums shrink-0" style={{ fontWeight: 600 }}>{resubmitInvoice.invoiceNumber}</span>
+                )}
                 {/* Vendor pill — every flow (user 10/10): the standalone
                     strip under the header is gone, so the vendor rides
                     the header like the inventory invoice. The pill wears
@@ -3236,6 +3320,15 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                     </HoverCardContent>
                   </HoverCard>
                 )}
+                {/* The invoice's currency tag after the vendor, on a
+                    foreign-currency invoice only (Currency Touchpoints Map,
+                    24 Nov 2026). The Currency button opens the configuration. */}
+                {ledger === 'ap' && !invoiceIsBase && (
+                  <CurrencyPill code={invoiceCurrency} note={poCurrency ? 'The invoice currency, from the PO. Amounts here are in the base currency; hover one for this currency.' : "The invoice currency, from the vendor. Amounts here are in the base currency; hover one for this currency."} />
+                )}
+                {/* Editing: the rate stays unlocked until the invoice posts
+                    (Currency Touchpoints Map, Vendor invoices 4). */}
+                {ledger === 'ap' && isEdit && !invoiceIsBase && <LockChip locked={false} title={INVOICE_LOCK_TITLE.unlocked} />}
                 {/* What the invoice draws from, in the payment run's
                     segmented pill (user 10/10): POs | receivings | items.
                     Inventory and pre-invoice only; standalone has none. */}
@@ -3274,9 +3367,10 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-              {/* The invoice's currency configuration: "Currency · AED". No
-                  Base Currency | Vendor Currency toggle; the screen is in the
-                  base currency. */}
+              {/* The Currency button opens the invoice's currency
+                  configuration; the tag after the vendor names the currency.
+                  No Base Currency | Invoice Currency toggle: the screen is in
+                  the base currency. */}
               {ledger === 'ap' && (
                 <span id="invoice-exchange-rate-field" className="contents">
                 <CurrencyHeaderControls
@@ -3286,7 +3380,6 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                   onOpenConfig={() => setCurrencyConfigOpen(true)}
                   compact
                   toggle={false}
-                  showCode
                   alert={rateError && (rateMissing || rateOverLimit)}
                 />
                 </span>
@@ -3542,7 +3635,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                       </Label>
                       <DatePicker
                         value={invoiceDate}
-                        onChange={setInvoiceDate}
+                        onChange={(v) => onRateDateFieldChange('invoiceDate', v)}
                         placeholder="Select invoice date"
                         className="mt-1"
                       />
@@ -3589,7 +3682,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                           <>
                             <DatePicker
                               value={postingDate}
-                              onChange={setPostingDate}
+                              onChange={(v) => onRateDateFieldChange('postingDate', v)}
                               placeholder="Select posting date"
                               className="mt-1"
                             />
@@ -6370,6 +6463,35 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                   </div>
                 </div>
 
+                {/* The currency block above Total Due (Currency Touchpoints Map,
+                    24 Nov 2026): Vendor invoiced, You pay (from the invoice's
+                    pay-from account), Base equivalent when that account isn't
+                    in base, the FX variance against the receiving rate, and
+                    the rate. You pay in base equals Total Due. */}
+                {ledger === 'ap' && (
+                  <InvoiceCurrencyBlock
+                    className="pt-2.5 pb-2.5 border-t border-slate-100"
+                    currency={invoiceCurrency}
+                    total={sliceAdjustedTotal}
+                    prepaid={prepayApplied}
+                    rate={docFx?.rate ?? 1}
+                    rateType={invoiceRateType}
+                    rateDate={invoiceRateDate}
+                    dateLabel={rateDateLabel}
+                    qualifier={
+                      // After "Use Nov 25’s rate" the row names the date it took (Currency
+                      // Touchpoints Map, Vendor invoices 4); a held rate from another day does too.
+                      heldRate && (heldRate.taken || heldRate.rateDate !== rateDay) ? formatRateDate(heldRate.rateDate) : rateDateLabel
+                    }
+                    pending={ratePending}
+                    rateMissing={rateMissing}
+                    rateEdited={rateEdited}
+                    variance={formVariance}
+                    locked={false}
+                    payFrom={payFromAccountById(payFromIdNow) ?? { label: '1010 · JPMorgan Operating', currency: BASE_CURRENCY }}
+                    onViewConfig={() => setCurrencyConfigOpen(true)}
+                  />
+                )}
                 {/* Total Due in the shown currency, the base one (PKR): net of the
                     slice adjustment and applied prepayments, at the invoice
                     rate. The vendor's amount and the rate are in Currency
@@ -8869,7 +8991,8 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
             ? { kind: 'po', ref: currentPOsData[0]?.poNumber ? `PO-${currentPOsData[0].poNumber}` : 'the PO', currency: poCurrency }
             : { kind: 'vendor', ref: vendorDefaultCurrency }
         }
-        value={{ currency: invoiceCurrency, rateType, typedRate }}
+        value={{ currency: invoiceCurrency, rateType, typedRate, payFromAccount: payFromIdNow }}
+        heldRate={invoiceIsBase ? null : heldRate}
         rateAsOf={{ date: rateAsOf.date, basis: rateAsOf.basis, wanted: wantedRateBasis === 'paidDate' ? undefined : wantedRateBasis }}
         rateDay={rateDay}
         dateLabel={rateDateLabel}
@@ -8880,11 +9003,37 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         canEditRate={apPerms.canChangeInvoiceRate}
         limitPct={apPerms.invoiceRateLimitPct}
         onSave={(next) => {
-          convertCurrency(next.currency);
-          setInvoiceCurrency(next.currency);
-          setRateType(next.rateType);
-          setTypedRate(next.typedRate);
+          // A new currency or rate replaces the rate an edit was keeping;
+          // an account change alone keeps it.
+          if (next.rateChanged) {
+            convertCurrency(next.currency);
+            setInvoiceCurrency(next.currency);
+            setRateType(next.rateType);
+            setTypedRate(next.typedRate);
+            setHeldRate(null);
+          }
+          setPayFromAccountId(next.payFromAccount);
           setRateError(false);
+        }}
+      />
+      {/* Posting date changed on an edited invoice: keep its rate or take
+          the new date's (Currency Touchpoints Map, Vendor invoices 4). */}
+      <PostingDateRatePrompt
+        prompt={rateDayPrompt}
+        onCancel={() => {
+          if (rateDayPrompt) {
+            if (rateDayPrompt.field === 'postingDate') setPostingDate(rateDayPrompt.from);
+            else setInvoiceDate(rateDayPrompt.from);
+          }
+          setRateDayPrompt(null);
+        }}
+        onApply={(choice) => {
+          if (rateDayPrompt && choice === 'new') {
+            setHeldRate({ rate: rateDayPrompt.newRate, rateType: rateDayPrompt.newType, rateDate: rateDayPrompt.to, taken: true });
+            setRateType(rateDayPrompt.newType);
+            setTypedRate(null);
+          }
+          setRateDayPrompt(null);
         }}
       />
     </div>

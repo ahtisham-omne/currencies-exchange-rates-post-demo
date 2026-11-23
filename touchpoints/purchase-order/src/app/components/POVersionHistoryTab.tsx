@@ -289,7 +289,7 @@ export default function POVersionHistoryTab({
           onConfirm={(reason: string, rateChoice: VersionRateChoice) => {
             onRevert(showRevertConfirm, reason, rateChoice);
             setShowRevertConfirm(null);
-            toast.success(`Reverted to Version ${showRevertConfirm}`, {
+            toast.success(`Restored version ${showRevertConfirm}`, {
               description: "Created as a new version in the history.",
               position: "top-right",
             });

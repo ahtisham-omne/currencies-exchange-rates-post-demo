@@ -7,6 +7,7 @@ import type { SalesOrder, SOLine } from "./types";
 import { FIELD_RULES, isMissing } from "@/app/components/shared/fieldRequirements";
 import { isSparseCustomer } from "@/app/components/shared/customerDefaults";
 import { formatMoney } from "@/app/currency/money";
+import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
 
 export const DOC_C = {
   bg: "#ffffff",
@@ -34,6 +35,33 @@ export const DOC_C = {
 /** An amount on the printed order, in the order's currency (spec 4.3). */
 export function fmtCurrency(n: number, currency: string): string {
   return formatMoney(n, currency);
+}
+
+/* Currency names that read the same in the plural ("Japanese Yen"). */
+const SAME_IN_PLURAL = /\b(Yen|Won|Yuan|Renminbi|Baht|Rand|Rupiah|Ringgit|Kip|Riel|Dong|Kyat|Tenge|Som|Lek|Vatu|Tala|Pa'anga)$/;
+
+/** "United States Dollars", "Euros", "Pounds Sterling", "Japanese Yen": a
+ *  currency list name, in the plural, for "All amounts in …". */
+export function currencyNamePlural(name: string): string {
+  if (/Pound Sterling$/.test(name)) return name.replace(/Pound Sterling$/, "Pounds Sterling");
+  if (SAME_IN_PLURAL.test(name)) return name;
+  if (/Real$/.test(name)) return name.replace(/Real$/, "Reais");
+  if (/[sxz]$/.test(name)) return name;
+  return `${name}s`;
+}
+
+/** How the printed order names its currency (Currency Touchpoints Map,
+ *  24 Nov 2026): the total labelled with the code, "Total (USD)", and the
+ *  footnote "All amounts in United States Dollars (USD)." (the name and
+ *  code from the currency list). The order prints in its own currency. */
+export function docCurrencyLabels(currency: string | null | undefined): { code: string; totalLabel: string; footnote: string } {
+  const code = (currency || BASE_CURRENCY).toUpperCase();
+  const name = getCurrency(code)?.name;
+  return {
+    code,
+    totalLabel: `Total (${code})`,
+    footnote: `All amounts in ${name ? `${currencyNamePlural(name)} (${code})` : code}.`,
+  };
 }
 
 export function escHtml(s: string): string {

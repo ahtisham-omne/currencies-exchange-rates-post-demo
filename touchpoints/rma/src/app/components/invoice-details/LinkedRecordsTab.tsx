@@ -1,4 +1,9 @@
 import { formatMoney as moneyIn } from '@/app/currency/money';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { toBase } from '@/app/currency/rates';
+import { linkedRecordFx, returnSettlementFx } from '@/app/currency/returnSettlement';
+import { BaseMoney } from '@/app/components/currency/Money';
+import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { useMemo, useState } from 'react';
 import {
   Wallet,
@@ -272,19 +277,29 @@ export function LinkedRecordsTab({
     );
   }, [records, query]);
 
+  // A return's records read in PKR, each at its own rate, with the return's
+  // currency tag and its amount on hover (Currency Touchpoints Map,
+  // 2026-11-24); the section totals add the PKR figures up.
+  const settle = useMemo(() => (rma ? returnSettlementFx(rma) : null), [rma]);
+  const fxOf = (r: LinkedFinancialRecord) => (rma && settle ? linkedRecordFx(rma, r, settle) : null);
+  const baseOf = (r: LinkedFinancialRecord) => {
+    const fx = fxOf(r);
+    return fx ? toBase(r.amount, fx.rate) : r.amount;
+  };
+
   // ── Group the (search-filtered) records by type, newest first. ──
   const groups = useMemo(() => {
     return GROUP_ORDER.map((type) => {
       const items = filteredRecords
         .filter((r) => r.type === type)
         .sort((a, b) => b.date.localeCompare(a.date));
-      const total = items.reduce(
-        (s, r) => s + (!isExcludedRow(r) ? r.amount : 0),
-        0,
-      );
+      const total = Math.round(
+        items.reduce((s, r) => s + (!isExcludedRow(r) ? baseOf(r) : 0), 0) * 100,
+      ) / 100;
       return { type, items, total };
     }).filter((g) => g.items.length > 0);
-  }, [filteredRecords]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredRecords, settle]);
 
   // Type pills — counts come from the unfiltered set so they stay stable
   // while searching.
@@ -451,7 +466,7 @@ export function LinkedRecordsTab({
                 </span>
                 {total > 0 && (
                   <span className="ml-auto text-foreground tabular-nums text-[13px]" style={{ fontWeight: 600 }}>
-                    {formatMoney(total, invoice.currency)}
+                    {formatMoney(total, isRma ? BASE_CURRENCY : invoice.currency)}
                   </span>
                 )}
                 {/* Stock with nothing behind it is a state, not an absence.
@@ -536,15 +551,24 @@ export function LinkedRecordsTab({
                             className="border-b border-border/70 last:border-b-0 hover:bg-muted/30 transition-colors group cursor-pointer"
                           >
                             <td className="py-2.5 px-4">
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); openRecord(r); }}
-                                className="text-foreground hover:text-primary hover:underline text-[12px] tabular-nums truncate block text-left max-w-full transition-colors"
-                                style={{ fontWeight: 600 }}
-                                aria-label={`Open ${r.reference}`}
-                              >
-                                {highlightText(r.reference, query)}
-                              </button>
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); openRecord(r); }}
+                                  className="text-foreground hover:text-primary hover:underline text-[12px] tabular-nums truncate block text-left max-w-full transition-colors"
+                                  style={{ fontWeight: 600 }}
+                                  aria-label={`Open ${r.reference}`}
+                                >
+                                  {highlightText(r.reference, query)}
+                                </button>
+                                {/* The return's currency, on every record with
+                                    an amount (2026-11-24): "PO-11233 EUR". */}
+                                {isRma && settle?.foreign && r.amount > 0 && (
+                                  <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <CurrencyPill code={invoice.currency} note={`In ${invoice.currency}, the return's currency. The amount reads in ${BASE_CURRENCY}.`} />
+                                  </span>
+                                )}
+                              </span>
                             </td>
                             {/* Which of the lines this document is about.
                                 One part named, the rest behind a count that
@@ -595,7 +619,11 @@ export function LinkedRecordsTab({
                                   style={{ fontWeight: 600 }}
                                   title={excluded ? (isRma ? 'Excluded from totals, this record no longer counts' : 'Excluded from totals, no longer counts toward the balance') : undefined}
                                 >
-                                  {formatMoney(r.amount, invoice.currency)}
+                                  {isRma ? (
+                                    <BaseMoney value={r.amount} currency={invoice.currency} fx={fxOf(r)} role="Return currency" />
+                                  ) : (
+                                    formatMoney(r.amount, invoice.currency)
+                                  )}
                                 </span>
                               ) : (
                                 // A stray comma sat here, which read as a

@@ -40,12 +40,17 @@ export interface PricingRuleTier {
   /** Inclusive upper bound. `null` = unbounded (top tier). */
   maxQty: number | null;
   /** Numeric rate. Interpreted as a percentage off the line subtotal when
-   *  `unit === '%'`, or as a flat dollar amount per qty when `unit === '$'`.
-   *  Flat amounts are written in USD (RULE_AMOUNT_CURRENCY, currency/poFx)
-   *  and converted to the PO's currency where they apply. */
+   *  `unit === '%'`, or as a flat amount per qty when `unit === '$'`.
+   *  Flat amounts are in the base currency (RULE_AMOUNT_CURRENCY,
+   *  currency/poFx) and converted to the PO's currency at its rate. */
   rate: number;
   unit: "%" | "$";
 }
+
+/** "volume": the tiers are quantity bands on each line (minQty–maxQty).
+ *  "value": they are order-value bands in the base currency, checked against
+ *  the PO's value in base (its lines' total × its rate). */
+export type RuleBasis = "volume" | "value";
 
 export interface VendorPricingRule {
   id: string;
@@ -63,6 +68,9 @@ export interface VendorPricingRule {
   /** Tier ladder — must be non-empty. For a single-rate rule, use one
    *  entry with `minQty: 1, maxQty: null`. */
   tiers: PricingRuleTier[];
+  /** How the tiers' bands are read; volume when unset. A value-based
+   *  rule keeps its order-value limits in minQty / maxQty, in base. */
+  basis?: RuleBasis;
   /** ISO date strings. `validTo: null` means open-ended. */
   validFrom: string;
   validTo: string | null;
@@ -153,12 +161,13 @@ export const VENDOR_PRICING_RULES: VendorPricingRule[] = [
   {
     id: "vpr-ford-lighting-volume",
     name: "Ford Lighting Bulk",
-    description: "$15 off per lightbar module when ordering 20+ units from Ford.",
+    /* Restated from $15 at the spec's ×280 (rules are in the base currency). */
+    description: "₨4,200 off per lightbar module when ordering 20+ units from Ford.",
     type: "discount",
     source: "custom",
     vendors: ["Ford Motor Company"],
     appliesToItemCodes: ["637281-45-22"],
-    tiers: [{ minQty: 20, maxQty: null, rate: 15, unit: "$" }],
+    tiers: [{ minQty: 20, maxQty: null, rate: 4200, unit: "$" }],
     validFrom: "2026-01-01",
     validTo: "2026-12-31",
   },
@@ -206,12 +215,13 @@ export const VENDOR_PRICING_RULES: VendorPricingRule[] = [
   {
     id: "vpr-bmw-sensor-flat",
     name: "BMW Sensor Contract Rate",
-    description: "$5 off per proximity sensor module — standing quarterly contract.",
+    /* Restated from $5 at the spec's ×280 (rules are in the base currency). */
+    description: "₨1,400 off per proximity sensor module on the standing quarterly contract.",
     type: "discount",
     source: "template",
     vendors: ["BMW of North America"],
     appliesToItemCodes: ["873561-78-42"],
-    tiers: [{ minQty: 1, maxQty: null, rate: 5, unit: "$" }],
+    tiers: [{ minQty: 1, maxQty: null, rate: 1400, unit: "$" }],
     validFrom: "2026-01-01",
     validTo: "2026-12-31",
   },
@@ -265,6 +275,7 @@ export function createCustomRuleForVendor(
     appliesToItemCodes?: string[];
     validFrom?: string;
     validTo?: string | null;
+    basis?: RuleBasis;
   },
 ): VendorPricingRule | null {
   const name = input.name.trim();
@@ -280,6 +291,7 @@ export function createCustomRuleForVendor(
     tiers: input.tiers,
     validFrom: input.validFrom ?? new Date().toISOString().slice(0, 10),
     validTo: input.validTo ?? null,
+    basis: input.basis ?? "volume",
   };
   VENDOR_PRICING_RULES.push(rule);
   VENDOR_PRICING_RULES_BY_ID.set(rule.id, rule);
@@ -304,6 +316,7 @@ export function updateCustomRule(
     appliesToItemCodes?: string[];
     validFrom?: string;
     validTo?: string | null;
+    basis?: RuleBasis;
   },
 ): VendorPricingRule | null {
   const rule = VENDOR_PRICING_RULES_BY_ID.get(ruleId);
@@ -324,6 +337,9 @@ export function updateCustomRule(
   if (input.validTo !== undefined) {
     rule.validTo = input.validTo;
   }
+  if (input.basis !== undefined) {
+    rule.basis = input.basis;
+  }
   return rule;
 }
 
@@ -336,20 +352,45 @@ export function pickTier(rule: VendorPricingRule, qty: number): PricingRuleTier 
   );
 }
 
-/** Evaluate the rule against a single line. Returns the dollar impact
+/** A value-based rule's tier: the band its order value in base falls in. */
+export function pickTierForValue(rule: VendorPricingRule, baseValue: number): PricingRuleTier | null {
+  return (
+    rule.tiers.find((t) => baseValue >= t.minQty && (t.maxQty === null || baseValue <= t.maxQty)) ??
+    null
+  );
+}
+
+/** A document's value in base for value-based rules: its lines' total in
+ *  its currency ÷ the flat-amount factor, which is 1 ÷ its rate. */
+export function orderBaseValue(
+  lines: Array<{ orderedQty: number; unitPrice: number }>,
+  flatAmountFactor = 1,
+): number {
+  const total = lines.reduce((s, l) => s + l.orderedQty * l.unitPrice, 0);
+  return flatAmountFactor > 0 ? total / flatAmountFactor : total;
+}
+
+/** Evaluate the rule against a single line. Returns the impact
  *  (positive = discount or premium magnitude — direction is encoded in
  *  rule.type, not the sign of this number) and whether the rule actually
  *  applies to this line at all. The impact is in the line's currency:
- *  `flatAmountFactor` turns a flat USD tier amount into it (ruleAmountFactor). */
+ *  `flatAmountFactor` turns a flat base-currency tier amount into it
+ *  (ruleAmountFactor). A value-based rule's band is checked against
+ *  `baseValue`, the document's value in base (this line alone when not
+ *  given). */
 export function evaluateRuleForLine(
   rule: VendorPricingRule,
   line: { itemCode: string; orderedQty: number; unitPrice: number },
   flatAmountFactor = 1,
+  baseValue?: number,
 ): { applies: boolean; amount: number; tier: PricingRuleTier | null } {
   if (!rule.appliesToItemCodes.includes(line.itemCode)) {
     return { applies: false, amount: 0, tier: null };
   }
-  const tier = pickTier(rule, line.orderedQty);
+  const tier =
+    rule.basis === "value"
+      ? pickTierForValue(rule, baseValue ?? orderBaseValue([line], flatAmountFactor))
+      : pickTier(rule, line.orderedQty);
   if (!tier) {
     return { applies: false, amount: 0, tier: null };
   }
@@ -376,6 +417,7 @@ export interface LinePricingBreakdown {
     type: RuleType;
     amount: number;
     tier: PricingRuleTier | null;
+    basis: RuleBasis;
   }>;
 }
 
@@ -387,9 +429,11 @@ export function computeLineBreakdowns(
   lines: Array<{ id: string; itemCode: string; orderedQty: number; unitPrice: number }>,
   rules: VendorPricingRule[],
   activatedItemsByRule: Map<string, Set<string>>,
-  /** Flat USD tier amounts → the lines' currency (see evaluateRuleForLine). */
+  /** Flat base-currency tier amounts → the lines' currency (see evaluateRuleForLine). */
   flatAmountFactor = 1,
 ): LinePricingBreakdown[] {
+  // Value-based rules read the whole document's value, in base.
+  const docBaseValue = orderBaseValue(lines, flatAmountFactor);
   return lines.map((line) => {
     const baseSubtotal = line.orderedQty * line.unitPrice;
     let discountAmount = 0;
@@ -398,7 +442,7 @@ export function computeLineBreakdowns(
     for (const rule of rules) {
       const activeOnThisLine = activatedItemsByRule.get(rule.id)?.has(line.id) ?? false;
       if (!activeOnThisLine) continue;
-      const { applies, amount, tier } = evaluateRuleForLine(rule, line, flatAmountFactor);
+      const { applies, amount, tier } = evaluateRuleForLine(rule, line, flatAmountFactor, docBaseValue);
       if (!applies) continue;
       if (rule.type === "discount") discountAmount += amount;
       else premiumAmount += amount;
@@ -408,6 +452,7 @@ export function computeLineBreakdowns(
         type: rule.type,
         amount,
         tier,
+        basis: rule.basis ?? "volume",
       });
     }
     return {

@@ -1,9 +1,12 @@
-import { formatMoney as moneyIn, formatRate, moneyPrefix } from '@/app/currency/money';
-import { BASE_CURRENCY } from '@/app/currency/currencies';
-import { toBase } from '@/app/currency/rates';
+import { formatMoney as moneyIn, formatRate, rateSentence } from '@/app/currency/money';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { splitToBase, toBase, type MoneyFx } from '@/app/currency/rates';
 import { returnFx, rmaCurrency, rmaCurrencyPO } from '@/app/currency/returnCurrency';
+import { accountCurrency, returnSettlementFx, settlementMoneyFx } from '@/app/currency/returnSettlement';
 import { useReturnView, viewMoney } from '@/app/components/currency/returnView';
-import { Money } from '@/app/components/currency/Money';
+import { BaseMoney } from '@/app/components/currency/Money';
+import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { LockChip, RateTypeChip, ReturnCurrencyBlock, lockTitle, settleRateLine } from '@/app/components/currency/ReturnCurrencyConfig';
 import React, { useEffect, useState } from 'react';
 import {
   Banknote,
@@ -22,6 +25,7 @@ import {
   Plus,
   Receipt,
   ReceiptText,
+  Settings2,
   ShieldCheck,
   Truck,
   Wallet,
@@ -64,7 +68,7 @@ import {
   VENDOR_CHARGE_TYPES,
   type AdditionalCharge,
 } from '@/app/components/vendors/AdditionalChargesPanel';
-import { rmaScenarioValues, restockingFeeBase } from '@/app/data/rmaGLEntries';
+import { rmaScenarioValues, restockingFeeAmount, restockingFeeBase } from '@/app/data/rmaGLEntries';
 import { RestockingFeeScopeModal } from '@/app/components/rma/RestockingFeeScopeModal';
 import { invoiceSplitForRMALine } from '@/app/data/receiptInvoiceStatus';
 import { CarrierCard } from '@/app/components/CarrierCard';
@@ -103,6 +107,8 @@ type SectionKey =
 function formatMoney(amount: number, currency: string) {
   return moneyIn(amount, currency);
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function daysBetween(later: Date, earlier: Date) {
   const ms = later.getTime() - earlier.getTime();
@@ -316,9 +322,12 @@ interface InvoiceDetailSidebarProps {
   rma?: RMA;
   /** Locks the RMA edit affordances while an older version is on screen. */
   readOnly?: boolean;
+  /** Opens the return's currency configuration (the header's Currency
+   *  button does the same). */
+  onOpenCurrencyConfig?: (() => void) | undefined;
 }
 
-export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, records = [], mode = 'invoice', rma, readOnly = false }: InvoiceDetailSidebarProps) {
+export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, records = [], mode = 'invoice', rma, readOnly = false, onOpenCurrencyConfig }: InvoiceDetailSidebarProps) {
   const isRma = mode === 'rma';
   // A return's page reads in its view (returnView.tsx): PKR at the return's
   // rate on Base Currency, the PO's currency on Vendor Currency.
@@ -498,7 +507,10 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
         const contact = vendorContactFor(invoice.vendor);
         const shipTo =
           rma.returnShipTo ?? rma.returnLegs[0]?.shipTo ?? null;
-        const payTo = PAY_FROM_ACCOUNTS.find((a) => a.id === rma.payToAccountId);
+        // The account the money comes back to: the currency configuration's
+        // "Deposited to", an account in PKR or the return's currency
+        // (2026-11-24), so the card and the configuration name the same one.
+        const payTo = returnSettlementFx(rma).account ?? PAY_FROM_ACCOUNTS.find((a) => a.id === rma.payToAccountId);
         return (
           <>
             {/* The order's own card, ported whole. */}
@@ -513,7 +525,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                 const site = mockVendors.find((v) => v.vendorName === shipTo);
                 return site ? vendorAddress(site.vendorCode) : null;
               })()}
-              payTo={payTo ? payTo.label : null}
+              payTo={payTo ? `${payTo.label} · ${accountCurrency(payTo)}` : null}
               paymentMethod={
                 rma.paymentMethodName ?? vendorData?.primaryPaymentMethod ?? '–'
               }
@@ -540,7 +552,10 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               onOpenVendor={PARTNER_VENDOR_URL}
               editable={rmaMaterialOk}
               onEditShipTo={() => guardEdit(() => setCardShipToOpen(true))}
-              onEditPayTo={() => guardEdit(() => setPayToPickerOpen(true))}
+              // The refund account is the currency configuration's "Deposited
+              // to", so its pencil opens that (which asks for the version
+              // itself when it applies).
+              onEditPayTo={() => (onOpenCurrencyConfig ? onOpenCurrencyConfig() : guardEdit(() => setPayToPickerOpen(true)))}
               onEditMethod={() => guardEdit(() => setMethodPickerOpen(true))}
             />
 
@@ -1126,77 +1141,124 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
       >
         {isRma && rma ? (
           (() => {
-            // One figure said what the return was worth and nothing about
-            // what happens to it. Three different things happen to the money
-            // on a return: some comes back as money, and some is credited
-            // against an invoice still open. Goods that were never billed
-            // simply unwind -- nobody is owed anything for them -- so they
-            // are not a form of money coming back and the summary no longer
-            // lists them. The rows here therefore do not add to the return
-            // value above, by design: that figure is what is going back, and
-            // these are what is owed for it.
-            const v = rmaScenarioValues(rma);
-            const claimed = v['credit-paid'];
+            // Currency Touchpoints Map (2026-11-24). The return value is at
+            // the receiving rate, the rate its receipt was booked at. Of it,
+            // what the vendor settles (the credit note and the refund) is
+            // worth today's rate, until they settle; what reverses (goods
+            // never invoiced) stays at the receiving rate. The gap between the
+            // two is the FX variance, which the currency block below states.
+            //
+            // The rows add back to the return value at the receiving rate:
+            // settled + charges + any loss is everything that was invoiced,
+            // and reversed, replacement and written off are the rest. They
+            // replace Refund / Vendor credit / Reversed (unpaid), which split
+            // what is settled by where it came from; that split is on the
+            // Settled row's hover.
+            const s = returnSettlementFx(rma);
+            const code = invoice.currency;
+            const p = s.parts;
+            const settleFx = s.foreign ? settlementMoneyFx(s) : null;
+            const at = (where: 'today' | 'receiving') =>
+              !s.foreign
+                ? null
+                : where === 'today'
+                  ? s.locked
+                    ? 'at the settlement rate'
+                    : "at today's rate"
+                  : 'at receiving rate';
             const settlement = rma.creditTerms?.refundOrCredit ?? null;
-            const rows = [
-              {
-                key: 'claim',
-                label: settlement === 'Credit' ? 'Credit' : settlement === 'Refund' ? 'Refund' : 'Refund or credit',
-                hint: settlement ? 'Already paid for' : 'Paid for, not yet chosen',
-                value: claimed,
+            const settledSplit = [
+              p.paid > 0.004 ? `${settlement === 'Credit' ? 'Credit' : 'Refund'} ${moneyIn(p.paid, code)} (already paid for)` : null,
+              p.credit > 0.004 ? `vendor credit ${moneyIn(p.credit, code)} (against the open invoice)` : null,
+            ]
+              .filter(Boolean)
+              .join(' and ');
+            const deductions = round2(p.charges + p.loss);
+            type SummaryRow = {
+              key: string;
+              label: string;
+              sub: string;
+              tooltip?: string;
+              value: number;
+              base: number;
+              fx: MoneyFx | null;
+              strong?: boolean;
+            };
+            const rows: SummaryRow[] = [];
+            if (p.settles > 0.004)
+              rows.push({
+                key: 'settled',
+                label: 'Settled by vendor',
+                sub: `${moneyIn(p.settles, code)}${at('today') ? ` ${at('today')}` : ''}`,
+                tooltip: `${settledSplit ? `${settledSplit[0]!.toUpperCase()}${settledSplit.slice(1)}` : 'What was invoiced'}${
+                  deductions > 0.004 ? `, less ${moneyIn(deductions, code)} kept back or unpaid` : ''
+                }. The credit note and the refund come back at ${s.locked ? 'the rate on the day the vendor settled' : "today's rate until the vendor settles"}.`,
+                value: p.settles,
+                base: s.foreign ? s.settlesNow : p.settles,
+                fx: settleFx,
                 strong: true,
-              },
-              {
-                key: 'open',
-                label: 'Vendor credit',
-                hint: 'Against the open invoice',
-                value: v['credit-unpaid'],
-                strong: false,
-              },
-              {
+              });
+            if (p.reverses > 0.004)
+              rows.push({
                 // Goods never billed: the receipt's accrual reverses and
-                // nothing comes back for them (ERP-8688, "Unwound" renamed).
+                // nothing comes back for them (ERP-8688).
                 key: 'reversed',
-                label: 'Reversed (unpaid)',
-                hint: 'Not invoiced, the receipt reverses',
-                tooltip: "Goods we hadn't paid for. The bill or receipt is reversed, so nothing comes back.",
-                value: v.accrual + v['accrual-noclaim'],
-                strong: false,
-              },
-              {
+                label: 'Reversed, not invoiced',
+                sub: `${moneyIn(p.reverses, code)}${at('receiving') ? ` ${at('receiving')}` : ''}`,
+                tooltip: "Goods we hadn't been invoiced for. The receipt's accrual reverses at the rate it was booked at, so nothing comes back and there's no FX.",
+                value: p.reverses,
+                base: s.base.reverses,
+                fx: summaryFx,
+              });
+            if (p.replacement > 0.004)
+              rows.push({
                 key: 'replacement',
                 label: 'Replacement',
-                hint: 'Stock comes back in, no money moves',
-                value: v.replacement,
-                strong: false,
-              },
-              {
+                sub: `${moneyIn(p.replacement, code)}${at('receiving') ? ` ${at('receiving')}` : ''} · stock comes back in`,
+                value: p.replacement,
+                base: s.base.replacement,
+                fx: summaryFx,
+              });
+            if (p.loss > 0.004)
+              rows.push({
+                key: 'loss',
+                label: 'Not paid, booked as a loss',
+                sub: `${moneyIn(p.loss, code)}${at('receiving') ? ` ${at('receiving')}` : ''} · RMA Settlement Loss`,
+                value: p.loss,
+                base: s.base.loss,
+                fx: summaryFx,
+              });
+            if (p.writtenOff > 0.004)
+              rows.push({
                 key: 'write-off',
                 label: 'Written off as a loss',
-                hint: 'Booked as a loss, nothing is coming back for it',
-                value: v['write-off'],
-                strong: false,
-              },
-            ].filter((r) => r.value > 0.004);
+                sub: `${moneyIn(p.writtenOff, code)}${at('receiving') ? ` ${at('receiving')}` : ''} · nothing is coming back for it`,
+                value: p.writtenOff,
+                base: s.base.writtenOff,
+                fx: summaryFx,
+              });
 
-            // What the charges take off it, and what is left.
-            //
-            // The two decisions on this page both land here: which way the
-            // paid share comes back, and what the vendor deducts before it
-            // does. Neither was reaching the summary, so the card stated a
-            // figure the settlement could no longer produce.
-            const charges =
-              Math.round(
-                (rma.additionalCharges ?? []).reduce((n, c) => n + (c.amount || 0), 0) * 100,
-              ) / 100;
+            // What the vendor keeps back, each charge by name: a restocking
+            // fee and return freight are two deductions agreed for different
+            // reasons. A fee held only as a percentage reads as its own line.
+            // They are part of what was invoiced, at the receiving rate, and
+            // the PKR figures share the charges' total to the paisa.
             const settlementWord =
               settlement === 'Credit' ? 'credit' : settlement === 'Refund' ? 'refund' : 'claim';
+            const listed = (rma.additionalCharges ?? []).filter((c) => Math.abs(c.amount) > 0.004);
+            const feeListed = listed.some((c) => c.type === 'Restocking fee');
+            const feePct = rma.creditTerms?.restockingFee ?? 0;
+            const chargeLines = [
+              ...listed.map((c) => ({ id: String(c.id), type: c.type, amount: Math.round(c.amount * 100) / 100, description: c.description?.trim() ?? '' })),
+              ...(!feeListed && feePct > 0 && p.charges > 0.004
+                ? [{ id: 'pct-fee', type: 'Restocking fee', amount: restockingFeeAmount(rma, feePct), description: `${feePct}% of the return value` }]
+                : []),
+            ]
+              .filter((c) => c.amount > 0.004)
+              .sort((a, b) => b.amount - a.amount);
+            const chargeBases = p.charges > 0.004 ? splitToBase(chargeLines.map((c) => c.amount), s.receivingRate, s.base.charges) : [];
             /** The vendor's promise about paying, resolved to a date where the
-             *  clock has started and said in words where it has not. A return
-             *  owed money thirty days after shipping has no date until it
-             *  ships, and inventing one gives somebody a date to chase that
-             *  nobody agreed to. The method rides with it where one was
-             *  agreed; "don't know yet" is not a method and says nothing. */
+             *  clock has started and said in words where it has not. */
             const refundPromise = (() => {
               const when = expectedRefundDate(rma)
                 ? formatDate(expectedRefundDate(rma)!)
@@ -1205,26 +1267,22 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               const how = rma.refundExpectation?.method;
               return how && how !== 'Unknown' ? `${when} · by ${how}` : when;
             })();
-            /** The charges worth printing, biggest first, so the deduction a
-             *  reader is most likely chasing is the one they meet. */
-            const chargeLines = (rma.additionalCharges ?? [])
-              .filter((c) => Math.abs(c.amount) > 0.004)
-              .slice()
-              .sort((a, b) => b.amount - a.amount);
             return (
               <>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase tracking-wider text-slate-400" style={{ fontWeight: 600 }}>Return value</p>
+                    <p className="text-[10px] uppercase tracking-wider text-slate-400 tabular-nums" style={{ fontWeight: 600 }}>
+                      Return value{s.foreign ? ` · receiving rate ${formatRate(s.receivingRate)}` : ''}
+                    </p>
                     <p className="text-[22px] text-foreground tabular-nums mt-0.5" style={{ fontWeight: 700, lineHeight: 1.1 }}>
-                      <Money value={Math.round(rmaReturnValue * 100) / 100} currency={invoice.currency} fx={summaryFx} />
+                      <BaseMoney value={Math.round(rmaReturnValue * 100) / 100} currency={code} fx={summaryFx} role="Return currency" />
                     </p>
                     <p className="text-[11px] text-slate-400 tabular-nums mt-1" style={{ fontWeight: 500 }}>
                       Sum of authorized qty × unit price
                     </p>
                   </div>
                 </div>
-                {rows.length > 0 && (
+                {(rows.length > 0 || chargeLines.length > 0) && (
                   <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
                     {rows.map((r) => (
                       <div key={r.key} className="flex items-start justify-between gap-2">
@@ -1234,7 +1292,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                             style={{ fontWeight: r.strong ? 600 : 500 }}
                           >
                             {r.label}
-                            {'tooltip' in r && r.tooltip && (
+                            {r.tooltip && (
                               <Tooltip delayDuration={200}>
                                 <TooltipTrigger asChild>
                                   <button
@@ -1245,56 +1303,36 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                                     <Info className="w-3 h-3" />
                                   </button>
                                 </TooltipTrigger>
-                                <TooltipContent side="top" className="max-w-[240px] text-[11px]">
+                                <TooltipContent side="top" className="max-w-[260px] text-[11px]">
                                   {r.tooltip}
                                 </TooltipContent>
                               </Tooltip>
                             )}
                           </span>
-                          <span className="block text-[10px] text-slate-400">{r.hint}</span>
+                          <span className="block text-[10px] text-slate-400 tabular-nums">{r.sub}</span>
                         </span>
                         <span
                           className={`shrink-0 text-[12px] tabular-nums ${r.strong ? 'text-primary' : 'text-foreground'}`}
                           style={{ fontWeight: r.strong ? 700 : 600 }}
                         >
-                          <Money value={Math.round(r.value * 100) / 100} currency={invoice.currency} fx={summaryFx} />
+                          <BaseMoney value={r.value} currency={code} fx={r.fx} baseValue={r.base} role="Return currency" />
                         </span>
                       </div>
                     ))}
-                    {/* Each charge by name, not one summed figure.
-                        
-                        "Vendor charges -$176.18" is the only row on this card
-                        that answers a question with an arithmetic result: a
-                        restocking fee and return freight are two different
-                        deductions, agreed at different times for different
-                        reasons, and a reader chasing one of them had nothing
-                        to chase. Each line says what it is and what it cost,
-                        and the column still adds up because the figures are
-                        the same ones. */}
                     {chargeLines.map((charge, idx) => (
-                      <div
-                        key={charge.id}
-                        className="flex items-start justify-between gap-2"
-                      >
+                      <div key={charge.id} className="flex items-start justify-between gap-2">
                         <span className="min-w-0">
-                          <span
-                            className="block text-[12px] text-slate-600"
-                            style={{ fontWeight: 500 }}
-                          >
+                          <span className="block text-[12px] text-slate-600" style={{ fontWeight: 500 }}>
                             {charge.type}
                           </span>
-                          <span className="block text-[10px] text-slate-400">
-                            {charge.description?.trim() ||
-                              (idx === 0
-                                ? `Kept back before the ${settlementWord} settles`
-                                : '')}
+                          <span className="block text-[10px] text-slate-400 tabular-nums">
+                            {charge.description ||
+                              (idx === 0 ? `Kept back before the ${settlementWord} settles` : 'Kept back by the vendor')}
+                            {s.foreign ? ` · ${moneyIn(charge.amount, code)} at receiving rate` : ''}
                           </span>
                         </span>
-                        <span
-                          className="shrink-0 text-[12px] tabular-nums text-rose-600"
-                          style={{ fontWeight: 600 }}
-                        >
-                          −<Money value={Math.round(charge.amount * 100) / 100} currency={invoice.currency} fx={summaryFx} />
+                        <span className="shrink-0 text-[12px] tabular-nums text-rose-600" style={{ fontWeight: 600 }}>
+                          −<BaseMoney value={charge.amount} currency={code} fx={summaryFx} baseValue={chargeBases[idx]} role="Return currency" />
                         </span>
                       </div>
                     ))}
@@ -1303,24 +1341,24 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>
                           Total charges
                         </span>
-                        <span
-                          className="shrink-0 text-[12px] tabular-nums text-rose-600"
-                          style={{ fontWeight: 700 }}
-                        >
-                          −<Money value={charges} currency={invoice.currency} fx={summaryFx} />
+                        <span className="shrink-0 text-[12px] tabular-nums text-rose-600" style={{ fontWeight: 700 }}>
+                          −<BaseMoney
+                            value={chargeLines.reduce((sum, c) => sum + c.amount, 0)}
+                            currency={code}
+                            fx={summaryFx}
+                            baseValue={s.base.charges}
+                            role="Return currency"
+                          />
                         </span>
                       </div>
                     )}
                   </div>
                 )}
-                {/* When the money is due, under what is owed.
-                    
-                    This stood in Record details, which is the card for the
-                    return's identifiers -- its number, its PO, its vendor
-                    reference. What the vendor promised about paying is not an
-                    identifier, it belongs with the figures it is a promise
-                    about, and a reader checking what is owed should not have
-                    to open another card to find out when. */}
+                {/* The return's currency block: what the vendor settles,
+                    what comes back today and into which account, the FX
+                    variance and the rate. */}
+                <ReturnCurrencyBlock rma={rma} onViewConfig={() => onOpenCurrencyConfig?.()} />
+                {/* When the money is due, under what is owed. */}
                 {refundPromise && (
                   <div className="mt-3 flex items-start justify-between gap-2 border-t border-slate-100 pt-3">
                     <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>
@@ -1515,13 +1553,19 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                 <p className="m-0 mt-1 text-amber-800" style={{ fontSize: 11 }}>
                   Raised when everything shipped. Accounting confirms it in partner credits with the vendor's memo number, amount and date.
                 </p>
-                {pageFx && (
-                  <p className="m-0 mt-1 text-amber-800 tabular-nums" style={{ fontSize: 11 }}>
-                    Confirmed in {invoice.currency} at the return's rate, 1 {invoice.currency} = {moneyPrefix(BASE_CURRENCY).trim()}
-                    {formatRate(pageFx.rate)} {BASE_CURRENCY} ({moneyIn(toBase(rma.pendingCredit.amount, pageFx.rate), BASE_CURRENCY)}). It's applied to an
-                    invoice at that rate, like a prepayment; any gap goes to FX Gain or FX Loss.
-                  </p>
-                )}
+                {pageFx && (() => {
+                  // What the vendor settles is worth today's rate until they
+                  // do (2026-11-24); the gap to the receiving rate is the FX
+                  // variance on the Return Summary.
+                  const settle = returnSettlementFx(rma);
+                  return (
+                    <p className="m-0 mt-1 text-amber-800 tabular-nums" style={{ fontSize: 11 }}>
+                      Confirmed in {invoice.currency}. Until then it's at today's rate, {rateSentence(invoice.currency, settle.settleRate)} (
+                      {moneyIn(toBase(rma.pendingCredit.amount, settle.settleRate), BASE_CURRENCY)}). Against the receiving rate,{' '}
+                      {formatRate(pageFx.rate)}, the difference is the FX variance, to FX Gain or FX Loss.
+                    </p>
+                  );
+                })()}
               </div>
             )}
             {paid > 0.004 ? (
@@ -1632,6 +1676,51 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                 {automatic}
               </p>
             )}
+            {/* Where the money lands and at what rate, with the settlement
+                choice (Currency Touchpoints Map, 2026-11-24): the deposit
+                account and the rate are set in the currency configuration. */}
+            {(() => {
+              const settle = returnSettlementFx(rma);
+              return (
+                <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-400" style={{ fontSize: 10, fontWeight: 500 }}>Deposited to</span>
+                    <span className="flex min-w-0 items-center gap-1.5 text-slate-700" style={{ fontSize: 11.5, fontWeight: 500 }}>
+                      <CurrencyFlag code={settle.accountCurrency} size={11} />
+                      <span className="truncate">{settle.account?.label ?? 'No account'}</span>
+                      <span className="shrink-0 text-slate-400">· {settle.accountCurrency}</span>
+                    </span>
+                  </div>
+                  {settle.foreign ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-400" style={{ fontSize: 10, fontWeight: 500 }}>Rate</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-slate-500 tabular-nums" style={{ fontSize: 11 }}>{settleRateLine(settle)}</span>
+                        <RateTypeChip type={settle.rateType} />
+                        <LockChip locked={settle.locked} title={lockTitle(settle)} />
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-slate-400" style={{ fontSize: 10.5 }}>
+                      {BASE_CURRENCY} is the base currency, so there's no conversion.
+                    </p>
+                  )}
+                  {onOpenCurrencyConfig && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={onOpenCurrencyConfig}
+                        className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 hover:text-primary cursor-pointer"
+                        style={{ fontWeight: 500 }}
+                      >
+                        <Settings2 className="w-3 h-3" />
+                        {settle.locked || readOnly ? 'View configuration' : 'Change in configuration'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </SidebarSection>
         );
       })()}

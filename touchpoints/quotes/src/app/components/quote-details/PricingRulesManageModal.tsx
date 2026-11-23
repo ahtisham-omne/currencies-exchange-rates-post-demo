@@ -17,6 +17,9 @@ import type { PricingRulesAPI } from './usePricingRules';
 import { InactiveItemPill } from '../shared/InactiveItemPill';
 import { useDocWhole } from '@/app/components/currency/docCurrencyContext';
 import { useRuleMoney } from '@/app/components/currency/useRuleMoney';
+import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { toBase } from '@/app/currency/rates';
+import { formatThreshold, isFixedAmountText, pickValueTier, ruleNumber } from '@/app/currency/ruleBook';
 
 /* Display-shaped line item, built from real Quote LineItem data passed in
    via the `lines` prop. Replaces the old mock LINE_ITEMS constant. */
@@ -84,7 +87,7 @@ interface PricingRule {
 }
 
 /* Amounts are in the quote's currency (useDocWhole, inside each component).
-   A "$" rule's own amount is written in USD (useRuleMoney): "$200.00 (≈ €182.73)". */
+   A fixed ("$") rule amount is in the base currency (useRuleMoney): "₨56,000.00 (≈ $201.06)". */
 type RuleAmount = { value: number; amountType: '%' | '$' };
 const ruleValueText = (money: ReturnType<typeof useRuleMoney>, r: RuleAmount) =>
   money.tierText({ rate: r.value, unit: r.amountType });
@@ -426,12 +429,34 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, onR
   };
 
   const libraryToLocal = (lib: LibraryPricingRule): PricingRule => {
-    const t0 = lib.tiers[0];
-    const isFixed = t0?.isFixRate || (t0?.discount?.includes('$') ?? false);
-    const numericValue = t0 ? parseFloat(t0.discount.replace(/[^\d.]/g, '')) || 0 : 0;
     const appliedTo = items.map((i) => i.id);
     const applicableSubtotal = items.reduce((s, i) => s + i.subtotal, 0);
-    const amount = isFixed ? Math.round(numericValue * ruleMoney.factor) : Math.round(applicableSubtotal * (numericValue / 100));
+    /* A value threshold is in the base currency: the quote's total is
+       checked in base, at the quote's rate, and the highest tier it reaches
+       applies (Currency Touchpoints Map, Partners 5–6). */
+    const baseTotal = toBase(applicableSubtotal, ruleMoney.rate);
+    const valueTier = lib.basis === 'value' ? pickValueTier(lib.tiers, baseTotal) : undefined;
+    const met = lib.basis !== 'value' || !!valueTier;
+    const t0 = valueTier ?? lib.tiers[0];
+    const isFixed = !!t0?.isFixRate || isFixedAmountText(t0?.discount);
+    const numericValue = t0 ? parseFloat(t0.discount.replace(/[^\d.]/g, '')) || 0 : 0;
+    const amount = !met ? 0 : isFixed ? Math.round(numericValue * ruleMoney.factor) : Math.round(applicableSubtotal * (numericValue / 100));
+    const lowest = Math.min(...lib.tiers.map((t) => ruleNumber(t.minQty) ?? 0));
+    const condition: PricingRule['condition'] = lib.basis !== 'value'
+      ? conditionForBasis(lib.basis)
+      : valueTier
+        ? {
+            type: 'value',
+            status: 'threshold_met',
+            label: `${formatThreshold(baseTotal)} in ${BASE_CURRENCY} · over ${formatThreshold(ruleNumber(valueTier.minQty) ?? 0)}, ${valueTier.discount} applies`,
+            threshold: `Over ${formatThreshold(ruleNumber(valueTier.minQty) ?? 0)}`,
+          }
+        : {
+            type: 'value',
+            status: 'partial',
+            label: `${formatThreshold(baseTotal)} in ${BASE_CURRENCY} · under the ${formatThreshold(lowest)} threshold`,
+            threshold: `Over ${formatThreshold(lowest)}`,
+          };
     return {
       id: lib.id,
       name: lib.name,
@@ -441,7 +466,7 @@ export function PricingRulesManageModal({ isOpen, onClose, readOnly = false, onR
       appliedTo,
       amount,
       isApplied: true,
-      condition: conditionForBasis(lib.basis),
+      condition,
     };
   };
 
@@ -1132,7 +1157,7 @@ function SummaryRuleCard({ rule, onOpenItemsModal, onDeactivate, onReactivate, r
             </span>
             <span className="shrink-0 ml-2 text-slate-700" style={{ fontWeight: 600 }}>
               {heroValue}
-              {/* A "$" tier is USD; its amount in the quote's currency. */}
+              {/* A fixed tier is in base; its amount in the quote's currency, at the quote's rate. */}
               {ruleMoney.tierConverted({ rate: rule.value, unit: rule.amountType }) && (
                 <span className="text-slate-400" style={{ fontWeight: 500 }}> ({ruleMoney.tierConverted({ rate: rule.value, unit: rule.amountType })})</span>
               )}

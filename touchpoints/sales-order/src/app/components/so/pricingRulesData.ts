@@ -30,7 +30,10 @@ export interface PricingRuleTier {
   /** Inclusive upper bound. `null` = unbounded (top tier). */
   maxQty: number | null;
   /** Numeric rate. Interpreted as a percentage off the line subtotal when
-   *  `unit === '%'`, or as a flat dollar amount per qty when `unit === '$'`. */
+   *  `unit === '%'`, or as a fixed amount per qty when `unit === '$'`. A
+   *  fixed amount is in the base currency, PKR (rules have no currency of
+   *  their own; Currency Touchpoints Map, 24 Nov 2026): `'$'` names the kind
+   *  of tier, not dollars. */
   rate: number;
   unit: '%' | '$';
 }
@@ -135,12 +138,14 @@ export const CUSTOMER_PRICING_RULES: CustomerPricingRule[] = [
   {
     id: 'pr-lighting-volume',
     name: 'Lighting Package Volume',
-    description: '$200 off per lightbar when ordering 3+ units.',
+    /* Written as $200 in the design; restated in base at the spec's ×280
+       (RULE_USD_RESTATE_FACTOR in currency/soFx.ts). */
+    description: '₨56,000 off per lightbar when ordering 3+ units.',
     type: 'discount',
     source: 'custom',
     customers: ['Metro City Fire & Rescue', 'Pinecrest Volunteer Fire Dept', 'Great Plains Fire Protection', 'Eagle County Sheriff\'s Office'],
     appliesToItemCodes: ['000-100-026'],
-    tiers: [{ minQty: 3, maxQty: null, rate: 200, unit: '$' }],
+    tiers: [{ minQty: 3, maxQty: null, rate: 56_000, unit: '$' }],
     validFrom: '2026-01-01',
     validTo: '2026-12-31',
   },
@@ -161,6 +166,11 @@ export const CUSTOMER_PRICING_RULES: CustomerPricingRule[] = [
 /* ═══════════════════════════════════════════════════════════════════════════
  *  Helpers
  * ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Is a rule tier's text a fixed amount ("₨14,000"; "$50" in older data)
+ *  rather than a percentage? The library and the manage modal read tiers
+ *  as text. */
+export const isFixedAmountText = (s: string | null | undefined) => /[$₨]|Rs/.test(s ?? '');
 
 /** Return every rule whose `customers` list includes the given name. */
 export function getCustomerRules(customerName: string): CustomerPricingRule[] {
@@ -186,8 +196,9 @@ export function pickTier(rule: CustomerPricingRule, qty: number): PricingRuleTie
 export function evaluateRuleForLine(
   rule: CustomerPricingRule,
   line: { itemCode: string; orderedQty: number; unitPrice: number },
-  /** A "$" tier's amount is written in USD; this turns it into the SO's
-   *  currency (ruleAmountFactor in src/app/currency/soFx.ts). */
+  /** A fixed tier's amount is written in the base currency (PKR); this
+   *  turns it into the SO's currency at the SO's rate (ruleAmountFactor in
+   *  src/app/currency/soFx.ts). */
   flatFactor = 1,
 ): { applies: boolean; amount: number; tier: PricingRuleTier | null } {
   if (!rule.appliesToItemCodes.includes(line.itemCode)) {

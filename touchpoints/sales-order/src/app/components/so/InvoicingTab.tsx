@@ -1568,7 +1568,10 @@ function _InvoicingTabLegacy({ so }: { so: SalesOrder }) {
  * Compact invoice summary for the sidebar — horizontal stacked bar with paid/pending breakdown.
  */
 export function InvoiceSidebarSummary({ so, onOpenInvoicing }: { so: SalesOrder; onOpenInvoicing?: () => void }) {
-  const invoices = generateMockInvoices(so);
+  /* Same rule as the Invoicing tab: an order made here (or converted from a
+     quote) and one not yet released has no invoices, so no sample ones. */
+  const preInvoice = so.createdViaUI || ['Draft', 'Pending Review', 'Cleared'].includes(so.status);
+  const invoices = preInvoice ? [] : generateMockInvoices(so);
   const totalInvoiced = invoices.reduce((s, inv) => s + inv.amount, 0);
   const totalPaid = invoices.reduce((s, inv) => s + inv.paidAmount, 0);
   const totalPending = totalInvoiced - totalPaid;

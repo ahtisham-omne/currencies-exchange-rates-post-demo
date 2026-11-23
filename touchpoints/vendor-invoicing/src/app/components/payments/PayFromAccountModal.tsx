@@ -24,8 +24,9 @@ interface PayFromAccountModalProps {
   accounts: PayFromAccount[];
   onApply: (id: string) => void;
   /** The invoices' currency (Currency & Exchange Rates): only an account in
-   *  it or in the base currency can pay; the rest are listed greyed with the
-   *  reason ("This account is in EUR. Pick a GBP or PKR account."). */
+   *  it or in the base currency can pay, and only those are listed (Currency
+   *  Touchpoints Map, 24 Nov 2026: "base or invoice currency only"; before
+   *  that the rest were listed greyed with the reason). */
   invoiceCurrency?: string;
   /** The PO's You pay in, marked on the accounts in it. */
   youPayIn?: string;
@@ -54,16 +55,18 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
   }, [open, value]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return accounts;
+    // Only the accounts that can pay these invoices.
+    const payable = invoiceCurrency ? accounts.filter((a) => !payFromBlockReason(a.currency, invoiceCurrency)) : accounts;
+    if (!search.trim()) return payable;
     const q = search.toLowerCase();
-    return accounts.filter(
+    return payable.filter(
       (a) =>
         a.label.toLowerCase().includes(q) ||
         a.creditGl.toLowerCase().includes(q) ||
         (a.bankName?.toLowerCase().includes(q) ?? false) ||
         (a.accountMask?.includes(q) ?? false),
     );
-  }, [search, accounts]);
+  }, [search, accounts, invoiceCurrency]);
 
   const grouped = useMemo(() => {
     const g: Record<string, PayFromAccount[]> = {};

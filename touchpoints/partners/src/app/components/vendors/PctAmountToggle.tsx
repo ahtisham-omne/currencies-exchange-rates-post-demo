@@ -5,6 +5,8 @@ interface PctAmountToggleProps {
   onChange: (fixed: boolean) => void;
   percentTooltip?: string;
   amountTooltip?: string;
+  /** The fixed side's label: the amount's currency symbol ("₨" for pricing rules). */
+  amountLabel?: string;
   className?: string;
 }
 
@@ -19,6 +21,7 @@ export function PctAmountToggle({
   onChange,
   percentTooltip = "Enter as a percentage of the base value.",
   amountTooltip = "Enter as a fixed dollar amount.",
+  amountLabel = "$",
   className = "",
 }: PctAmountToggleProps) {
   return (
@@ -46,7 +49,7 @@ export function PctAmountToggle({
             className={`px-2 h-[18px] rounded-full text-[10px] transition-all ${isFixed ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
             style={{ fontWeight: 600 }}
           >
-            $
+            {amountLabel}
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" sideOffset={6} className="max-w-[220px] text-[11px] leading-[1.5] z-[300]">

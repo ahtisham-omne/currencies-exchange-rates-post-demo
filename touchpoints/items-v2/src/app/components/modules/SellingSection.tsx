@@ -10,7 +10,7 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Users, Store, DollarSign,
+  Plus, Trash2, Users, Store, Banknote,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { RadioOption } from './configAtoms';
@@ -109,8 +109,8 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
       {sellingScope === 'all' && (
         <ConfigCard
           title="Custom Price Per Unit"
-          icon={DollarSign}
-          tooltip="Set a default selling price per unit for this item. Defined prices apply to every partner when selling globally."
+          icon={Banknote}
+          tooltip={`Set a default selling price per unit for this item, in ${BASE_CURRENCY}, the base currency. Defined prices apply to every partner when selling globally.`}
         >
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
@@ -168,6 +168,11 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
                 ))}
               </div>
             )}
+            {/* The selling price is the base price (Currency Touchpoints Map,
+                Items 4). A price per currency is Eli's to decide. */}
+            <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748B', fontFamily: FONT }}>
+              Base price, in {BASE_CURRENCY}. A quote in another currency converts this price at the quote's rate.
+            </p>
           </div>
         </ConfigCard>
       )}

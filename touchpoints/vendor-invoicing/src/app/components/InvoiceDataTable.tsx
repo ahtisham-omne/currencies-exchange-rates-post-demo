@@ -34,7 +34,7 @@ import {
 } from '@/app/components/ui/dropdown-menu';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/ui/hover-card';
 import { BaseMoney } from '@/app/components/currency/Money';
-import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
+import { CurrencyFlag, CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { rateOn } from '@/app/currency/rates';
 import { localTodayIso } from '@/app/lib/dueBucket';
@@ -1468,8 +1468,12 @@ interface VendorCellProps {
   /** Chips after the description, on its line (comfort density), so they
    *  never squeeze the name. */
   descriptionAddon?: ReactNode;
+  /** The record's currency: a foreign one gets a currency tag after the
+   *  name (Currency Touchpoints Map, 24 Nov 2026); base gets none. */
+  currency?: string;
 }
-export function VendorCell({ vendor, description, density, searchQuery, descriptionAddon }: VendorCellProps) {
+export function VendorCell({ vendor, description, density, searchQuery, descriptionAddon, currency }: VendorCellProps) {
+  const foreignCode = currency && currency.toUpperCase() !== BASE_CURRENCY ? currency.toUpperCase() : null;
   const [fullCardOpen, setFullCardOpen] = useState(false);
   const isComfort = density === 'comfort';
   // Card density (user 9/28): see CreatedByCell — 12px semibold to match
@@ -1513,13 +1517,20 @@ export function VendorCell({ vendor, description, density, searchQuery, descript
         >
           {/* Color = text-foreground (matches partner Partners column exactly).
               Hover → primary blue + underline, same as Created By name. */}
-          <span
-            className={`truncate text-foreground transition-colors group-hover/vn:text-primary group-hover/vn:underline ${
-              isCard ? 'text-[12px]' : isComfort ? 'text-[13px]' : 'text-sm'
-            }`}
-            style={{ fontWeight: isCard ? 600 : 400 }}
-          >
-            {highlightText(vendor, searchQuery)}
+          <span className="flex items-center gap-1.5 min-w-0">
+            <span
+              className={`truncate text-foreground transition-colors group-hover/vn:text-primary group-hover/vn:underline ${
+                isCard ? 'text-[12px]' : isComfort ? 'text-[13px]' : 'text-sm'
+              }`}
+              style={{ fontWeight: isCard ? 600 : 400 }}
+            >
+              {highlightText(vendor, searchQuery)}
+            </span>
+            {foreignCode && (
+              <span className="shrink-0 inline-flex" onClick={(e) => e.stopPropagation()}>
+                <CurrencyPill code={foreignCode} note="This record's currency. Amounts are in the base currency; hover one for this currency." />
+              </span>
+            )}
           </span>
           {isComfort && descriptionAddon ? (
             <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0 mt-0.5">
@@ -1661,6 +1672,7 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
         description={row.description}
         density={ctx.density}
         searchQuery={ctx.searchQuery}
+        currency={row.currency}
       />
     ),
   },

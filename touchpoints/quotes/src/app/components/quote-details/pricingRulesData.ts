@@ -15,7 +15,11 @@ export type RuleType = 'discount' | 'premium';
 export interface PricingRuleTier {
   minQty: number;
   maxQty: number | null;
+  /** A percentage, or a fixed amount per unit in the base currency (PKR). */
   rate: number;
+  /** '%' or '$': '$' is the design's key for a fixed amount, which the rule
+   *  book writes in the base currency (Currency Touchpoints Map, Partners
+   *  5–6), not in dollars. */
   unit: '%' | '$';
 }
 
@@ -104,12 +108,13 @@ export const CUSTOMER_PRICING_RULES: CustomerPricingRule[] = [
   {
     id: 'pr-lighting-volume',
     name: 'Lighting Package Volume',
-    description: '$200 off per lightbar when ordering 3+ units.',
+    /* In the base currency: the design's $200 restated ×280 (ruleBook.ts). */
+    description: '₨56,000 off per lightbar when ordering 3+ units.',
     type: 'discount',
     source: 'custom',
     customers: ['Metro City Fire & Rescue', 'Pinecrest Volunteer Fire Dept', 'Great Plains Fire Protection', 'Eagle County Sheriff\'s Office', 'Lakeshore Police Department'],
     appliesToItemCodes: ['000-100-026'],
-    tiers: [{ minQty: 3, maxQty: null, rate: 200, unit: '$' }],
+    tiers: [{ minQty: 3, maxQty: null, rate: 56_000, unit: '$' }],
     validFrom: '2026-01-01',
     validTo: '2026-12-31',
   },
@@ -142,8 +147,9 @@ export function pickTier(rule: CustomerPricingRule, qty: number): PricingRuleTie
 export function evaluateRuleForLine(
   rule: CustomerPricingRule,
   line: { productId: string; quantity: number; unitPrice: number },
-  /** A "$" tier's amount is written in USD; this turns it into the quote's
-   *  currency (ruleAmountFactor in src/app/currency/qFx.ts). */
+  /** A fixed-amount ("$") tier's amount is in the base currency; this turns
+   *  it into the quote's currency at the quote's rate (ruleAmountFactor in
+   *  src/app/currency/qFx.ts). */
   flatFactor = 1,
 ): { applies: boolean; amount: number; tier: PricingRuleTier | null } {
   if (!rule.appliesToItemCodes.includes(line.productId)) {

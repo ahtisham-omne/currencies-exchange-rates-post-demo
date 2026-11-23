@@ -103,9 +103,13 @@ export function BankTookField({
   paymentDate,
   check,
   allowedPct,
+  label = 'Bank Took',
 }: {
   currency: string;
   vendorReceives: number;
+  /** The field's name: "You Pay" in Record Payment (Currency Touchpoints
+   *  Map, 24 Nov 2026: "You pay" is what the bank took), "Bank Took" elsewhere. */
+  label?: string;
   /** In base: the entered figure, or the estimate. */
   value: number;
   /** The bank's figure was entered (not the estimate). */
@@ -126,7 +130,7 @@ export function BankTookField({
   return (
     <div>
       <Label className={LABEL} style={{ fontWeight: 500 }}>
-        Bank Took ({BASE_CURRENCY})<span className="text-red-500">*</span>
+        {label} ({BASE_CURRENCY})<span className="text-red-500">*</span>
         <InfoTip>
           What the bank took from the {BASE_CURRENCY} account for the {currency} the vendor gets, from the bank’s advice or statement.
           The rate is worked out from the two figures, and the difference from each invoice’s rate posts to FX Gain or FX Loss.

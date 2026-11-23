@@ -112,6 +112,9 @@ export interface VendorConfigData {
     /** Lower-case ISO code, set when the partner overrides its group's
      *  currency; absent, it inherits (currency/partnerCurrency.ts). */
     currency?: string;
+    /** Default exchange rate, set when the partner overrides its group's;
+     *  absent, it inherits (currency/partnerCurrency.ts). */
+    rateType?: "mid" | "corporate";
     maxCreditLimit: number;
     warningThreshold: number;
     enforcement: string;

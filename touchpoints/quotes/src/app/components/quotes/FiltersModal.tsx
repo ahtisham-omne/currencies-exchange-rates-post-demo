@@ -441,8 +441,10 @@ export function QuoteFiltersModal({ open, onOpenChange, filters, onFiltersChange
               </>
             )}
 
-            {/* Quote Value Range */}
-            <Section title="Quote value range" subtitle={`Filter by total quote value, in ${BASE_CURRENCY}.`}>
+            {/* Quote Value Range — in the base currency, whatever currency a
+                quote is in (each compared at its own rate); no currency pick
+                (Currency Touchpoints Map, Quotes 2). */}
+            <Section title="Quote value range" subtitle={`Filter by total quote value in ${BASE_CURRENCY}, the base currency.`}>
               <RangeInputs min={draftFilters.valueMin} max={draftFilters.valueMax}
                 onMinChange={v => update("valueMin", v)} onMaxChange={v => update("valueMax", v)} prefix={moneyPrefix(BASE_CURRENCY).trim()} />
             </Section>

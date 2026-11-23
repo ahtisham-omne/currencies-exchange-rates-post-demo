@@ -1,5 +1,8 @@
-import { rmaCurrency } from '@/app/currency/returnCurrency';
-import { BASE_CURRENCY, getCurrency } from '@/app/currency/currencies';
+import { returnFx, rmaCurrency, rmaCurrencyPO } from '@/app/currency/returnCurrency';
+import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
+import { BaseMoney } from '@/app/components/currency/Money';
+import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
+import { returnValueOf } from '@/app/components/currency/ReturnCurrencyConfig';
 import { useCallback, useMemo, useState } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -891,7 +894,11 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
                   {sorted
                     .slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage)
                     .map((rma) => {
-                      const value = rma.items.reduce((s, li) => s + authorizedQty(li) * li.unitPrice, 0);
+                      // In PKR at the receiving rate, as the list's Return value
+                      // column reads (2026-11-24). It wrote the return's own
+                      // figure with a dollar sign whatever its currency.
+                      const value = returnValueOf(rma);
+                      const code = rmaCurrency(rma);
                       return (
                         <div
                           key={rma.id}
@@ -918,8 +925,13 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
                                   {rma.rmaNumber}
                                 </div>
                                 {cardSize !== 'small' && (
-                                  <div className="text-[11px] text-muted-foreground truncate" title={rma.vendor}>
-                                    {rma.vendor}
+                                  <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground" title={rma.vendor}>
+                                    <span className="truncate">{rma.vendor}</span>
+                                    {!isBaseCurrency(code) && (
+                                      <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        <CurrencyPill code={code} note={`The return's currency, from PO-${rmaCurrencyPO(rma)}.`} />
+                                      </span>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -946,7 +958,7 @@ export function RMAListScreen({ rmas, onCreateRMA, onViewRMA, onRowAction }: RMA
 
                           <div className="flex items-center justify-between pt-3 border-t border-border gap-2">
                             <div className="text-lg tabular-nums" style={{ fontWeight: 600 }}>
-                              ${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                              <BaseMoney value={value} currency={code} fx={returnFx(rma)} role="Return currency" />
                             </div>
                             <StatusPill label={rmaStatusLabel(rma)} style={RMA_STATUS_STYLES[rmaStatusLabel(rma)]} />
                           </div>

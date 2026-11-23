@@ -300,12 +300,12 @@ export default function POVersionHistoryModal({
       setVersions(getPOVersions(poId));
       setCurrentVersion(getPO(poId)?.currentVersion ?? restored);
       setSelectedVersion(restored);
-      toast.success(`Reverted to V${revertTarget}`, {
-        description: `V${revertTarget} is now the current version.`,
+      toast.success(`Restored version ${revertTarget}`, {
+        description: `Version ${revertTarget} is now the current version.`,
         position: "top-right",
       });
     } else {
-      toast.error(`Revert failed`, { position: "top-right" });
+      toast.error(`Restore failed`, { position: "top-right" });
     }
     setRevertTarget(null);
   };

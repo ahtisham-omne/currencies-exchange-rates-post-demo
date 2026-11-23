@@ -33,6 +33,35 @@ Lovable and deploys show the built copy, so a change that isn't rebuilt doesn't 
 
 Printed documents, message text and plain tooltips keep the name as plain text.
 
+### Currency Touchpoints Map (24 Nov 2026)
+
+The product team's *Currency Touchpoints Map* set one pattern across Partners, Items, Purchase Orders, Quotes, Sales Orders, Vendor Invoicing, Vendor Payments and Vendor Returns. Each module's doc has a dated section for it, with what changed and where:
+
+- **Amounts in PKR, the base currency,** with the document's own amount and rate on hover. A foreign document, partner or line carries a currency tag; KPIs are in PKR with no hover.
+- **Document headers** show the partner's name, the currency tag and a Currency button. The Base | Vendor (or Customer) Currency toggle is gone.
+- **A currency block** ends each summary: Vendor receives / You pay (Customer pays / You receive on quotes and sales orders, Vendor invoiced on invoices, Vendor settles / Comes back today on returns), Base equivalent when the account isn't in PKR, FX variance where there is one (+ gain, − loss), the rate and its date, and a Locked or Unlocked chip. A document locks when it's confirmed (POs, sales orders), sent (quotes), posted (invoices, payments), completed (receiving docs) or settled (returns).
+- **You pay and You receive are bank or cash accounts,** in PKR or the document's currency only (the same account list as Vendor Payments).
+- **Rate choices** read "Keep version 1's rate" / "Use today's rate", "Keep the quote's rate", "Keep the current rate" / "Use Nov 25's rate".
+- **Printed documents** are in the document's currency: "Grand Total (USD)", "Total (USD)", and "All amounts in United States Dollars (USD)."
+- **Pricing rules are in PKR,** with no currency picker. Seeded dollar amounts are restated ×280 (a tier ending at $4,999 ends at ₨1,399,999). A value threshold is checked in PKR at the document's rate, and a fixed amount converts at that rate.
+- **New here:** the Purchase Order's Receiving Docs tab (each doc's value and rate), the partner group's and partner's Default exchange rate (Mid-market or Corporate), and the Edit Partner warning when its currency changes.
+- **Follow-up pass, same day** (an audit of every touchpoint against the map):
+  - **Quote → sales order:** a converted quote now opens in Sales Orders as a Draft order. It carries the quote's currency, the rate picked, the pay-to account and its lines at list price. Sales Orders reads the record Quotes writes (`omne.quotes.convertedToSalesOrder`, `sales-order/.../so/quoteConversions.ts`).
+  - **Partners:**
+    - The Edit Partner currency warning now opens on Save Changes, not when you pick the currency.
+    - Payment terms show a "Term / Set as / On a USD PO" table.
+    - Payment Methods discounts and charges are percentages only.
+    - Create Pricing Rule shows the "On a USD PO for $3,000" worked example.
+  - **Items:** the Mid-market | Corporate switch always shows for a foreign vendor. Corporate is disabled until finance sets a corporate rate.
+  - **Purchase Orders:**
+    - The restore dialog reads "Restore version N".
+    - The catalog's cart prices have the hover card.
+  - **Vendor Invoicing:**
+    - Invoices and payment history hide the old Currency column by default; the vendor's tag and the PKR amount carry it.
+    - Payment blocks always show the rate-type chip.
+    - After "Use Nov 25's rate", Edit Invoice names the date and shows the Unlocked chip in its header.
+  - **Returns:** vendor charges show their "−" again, with a Total charges row.
+
 ### Vendor Invoicing
 
 Vendor Invoicing is the redesigned app from [`vendor-invoicing-payments`](https://github.com/ahtisham-omne/vendor-invoicing-payments), added as a squashed subtree. [docs/vendor-invoicing-currency-touchpoints.md](docs/vendor-invoicing-currency-touchpoints.md) records:
@@ -140,7 +169,7 @@ Vendor Returns is the RMA app from [`rma-web-builder`](https://github.com/ahtish
   - Its "Supply Chain Management" crumb opens the shell's Supply Chain overview, standing in for the app's own overview.
   - A return opened in a new tab gets the shell's page.
 - A refund payment opened from a return's Linked Records goes to the app's own `/payments-v2` path. The shell sends that, and `/prepayments`, to Vendor Payments.
-- **Currency:** a return is in its PO's currency, with dollars on hover at the receiving-day rate. [docs/rma-currency-touchpoints.md](docs/rma-currency-touchpoints.md) records the touchpoints (create flow steps 4 and 5, the return page, GL Impact, the printed RMA, the listing's insights and Currency filter), where each is defined, the seed, and what is left for later.
+- **Currency:** a return is in its PO's currency, shown in PKR at the receiving-day rate with the return's amount on hover; what the vendor settles is valued at the settlement day's rate, and the gap is the FX variance. [docs/rma-currency-touchpoints.md](docs/rma-currency-touchpoints.md) records the touchpoints (create flow steps 4 and 5, the return page, GL Impact, the printed RMA, the listing's insights and Currency filter), where each is defined, the seed, and what is left for later.
 
 To pull later design changes:
 

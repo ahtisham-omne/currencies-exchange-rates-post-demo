@@ -60,6 +60,22 @@ import {
 import { Checkbox } from "../ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { CurrencyFlag } from "../currency/CurrencyChip";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { moneyPrefix } from "@/app/currency/money";
+import { isFixedAmountText, restateTier, restateUsdText } from "@/app/currency/ruleBook";
+
+/* ── Rules are in the base currency (Currency Touchpoints Map, Partners 5–6) ──
+ * A pricing rule has no currency of its own: value thresholds and fixed
+ * amounts are in PKR, the base currency, and the create form says so
+ * ("Currency PKR · base currency", locked). The design's templates and
+ * seeds are written in USD; they are restated ×280 where they are defined
+ * or generated (currency/ruleBook.ts). */
+const BASE_PREFIX = moneyPrefix(BASE_CURRENCY);
+
+function restateRule<T extends { description: string; aboutText?: string; tiers: TierData[] }>(rule: T): T {
+  return { ...rule, description: restateUsdText(rule.description), aboutText: restateUsdText(rule.aboutText), tiers: rule.tiers.map(restateTier) };
+}
 import {
   Search,
   X,
@@ -141,7 +157,7 @@ interface PricingRulePreset {
   validityPeriod?: string;
   warningText?: string;
 }
-const PRICING_RULE_PRESETS: PricingRulePreset[] = [
+const PRICING_RULE_PRESETS: PricingRulePreset[] = ([
   { id: "pr-1", name: "Standard Discount – Value (Single-Tier)", category: "discount", basis: "value", tierType: "single", tiers: [{ minValue: "$1,000", maxValue: "$25,000", discount: "10%" }], description: "10% off on orders over $1,000", aboutText: "Straightforward, commonly used model where a fixed percentage discount is applied once the total purchase value exceeds a defined threshold." },
   { id: "pr-2", name: "Standard Discount – Volume (Single-Tier)", category: "discount", basis: "volume", tierType: "single", tiers: [{ minValue: "100 EA", maxValue: "500 EA", discount: "10%" }], description: "10% off on orders of 100+ units", aboutText: "Volume-based single-tier discount that applies a fixed percentage when the order quantity meets or exceeds a set threshold." },
   { id: "pr-3", name: "Tiered Discount – Value (Multi-Tier)", category: "discount", basis: "value", tierType: "multiple", tiers: [{ minValue: "$1,000", maxValue: "$4,999", discount: "10%" }, { minValue: "$5,000", maxValue: "$9,999", discount: "10%" }, { minValue: "$10,000", maxValue: "$24,999", discount: "10%" }, { minValue: "$25,000", maxValue: "$50,000", discount: "10%" }], description: "10% off at each tier from $1K to $25K", aboutText: "Multi-tier discount that applies at distinct value thresholds — useful when you want the discount percentage to scale with order size." },
@@ -150,7 +166,7 @@ const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   { id: "pr-6", name: "Standard Premium – Volume (Single-Tier)", category: "premium", basis: "volume", tierType: "single", tiers: [{ minValue: "1 EA", maxValue: "20 EA", discount: "12%" }], description: "12% premium for small-batch orders", aboutText: "Premium applied to low-volume orders to recover fixed handling overhead." },
   { id: "pr-7", name: "Tiered Premium – Value (Multi-Tier)", category: "premium", basis: "value", tierType: "multiple", tiers: [{ minValue: "$0", maxValue: "$200", discount: "10%" }, { minValue: "$200", maxValue: "$500", discount: "7%" }, { minValue: "$500", maxValue: "$1,000", discount: "5%" }, { minValue: "$1,000", maxValue: "$5,000", discount: "3%" }], description: "Premium scales down as value grows", aboutText: "Multi-tier premium that fades as the order grows in value — common for handling-fee structures." },
   { id: "pr-8", name: "Tiered Premium – Volume (Multi-Tier)", category: "premium", basis: "volume", tierType: "multiple", tiers: [{ minValue: "1 EA", maxValue: "25 EA", discount: "$50" }, { minValue: "25 EA", maxValue: "50 EA", discount: "$25" }, { minValue: "50 EA", maxValue: "100 EA", discount: "$15" }, { minValue: "100 EA", maxValue: "250 EA", discount: "$10" }], description: "Flat handling premium per quantity bracket", aboutText: "Fixed-rate per-unit premium that decreases with order volume." },
-];
+] as PricingRulePreset[]).map((p) => ({ ...p, description: restateUsdText(p.description), aboutText: restateUsdText(p.aboutText), tiers: p.tiers.map(restateTier) }));
 
 // ── Stubbed AttachmentFile + ActivityFeedItemType (formerly imported) ──
 interface AttachmentFile {
@@ -748,8 +764,8 @@ function generatePricingRules(vendor: Vendor, cfg?: VendorConfigData): PricingRu
       for (let ti = 1; ti < Math.min(p.totalTiers, 4); ti++) {
         const base = parseInt(srcTiers[0]?.maxValue.replace(/[^0-9]/g, "") || "100") * (ti + 1);
         tiers.push({
-          minQty: p.basis === "volume" ? `${base} EA` : `$${base.toLocaleString()}`,
-          maxQty: p.basis === "volume" ? `${base * 2} EA` : `$${(base * 2).toLocaleString()}`,
+          minQty: p.basis === "volume" ? `${base} EA` : `${BASE_PREFIX}${base.toLocaleString()}`,
+          maxQty: p.basis === "volume" ? `${base * 2} EA` : `${BASE_PREFIX}${(base * 2).toLocaleString()}`,
           discount: `${parseInt(srcTiers[0]?.discount || "5") + ti * 3}%`,
           isFixRate: ti === 1 && rng() > 0.7,
         });
@@ -815,7 +831,8 @@ function generatePricingRules(vendor: Vendor, cfg?: VendorConfigData): PricingRu
     });
   });
 
-  return rules;
+  /* The design writes these in USD; restated in the base currency. */
+  return rules.map(restateRule);
 }
 
 // ──────────────────────────────────────────────
@@ -3255,7 +3272,7 @@ export function PricingRulesLibrary({
       const seed = id.split("").reduce((a, c) => a + c.charCodeAt(0), 0) * 1000;
       const rng = seededRng(seed);
       const ic = Math.floor(rng() * 12) + 3, cc = Math.floor(rng() * 6) + 10, pc = Math.floor(rng() * 6) + 1;
-      return { id, ruleNo, name, category: cat, basis, tierType, totalTiers: tiers.length, description: desc, aboutText: about, status: "Active", scope, validFrom: "Jan 01, 2026", validTo: "Dec 31, 2026", hasDateLimit: false, durationDays: 365, itemCount: ic, categoryCount: cc, partnerCount: pc, tiers, createdBy: by, createdDate: "Mar 01, 2026", isPreset: preset, items: genItems(rng, ic), categories: genCategories(rng, cc), partners: genPartners(rng, pc) };
+      return { id, ruleNo, name, category: cat, basis, tierType, totalTiers: tiers.length, description: restateUsdText(desc), aboutText: restateUsdText(about), status: "Active", scope, validFrom: "Jan 01, 2026", validTo: "Dec 31, 2026", hasDateLimit: false, durationDays: 365, itemCount: ic, categoryCount: cc, partnerCount: pc, tiers: tiers.map(restateTier), createdBy: by, createdDate: "Mar 01, 2026", isPreset: preset, items: genItems(rng, ic), categories: genCategories(rng, cc), partners: genPartners(rng, pc) };
     };
     const presetRules = PRICING_RULE_PRESETS.map(p => {
       const tiers = expandedTiers[p.id] || p.tiers.map(t => ({ minQty: t.minValue, maxQty: t.maxValue, discount: t.discount }));
@@ -3336,7 +3353,7 @@ export function PricingRulesLibrary({
     setCreateTiers(r.tiers.length > 0
       ? r.tiers.map((t) => ({
           discount: t.discount,
-          fixRate: t.discount.includes("$"),
+          fixRate: isFixedAmountText(t.discount),
           qtyLimits: !!(t.minQty || t.maxQty),
           minQty: t.minQty || "",
           maxQty: t.maxQty || "",
@@ -4218,7 +4235,7 @@ export function PricingRulesLibrary({
                                 <p className="text-slate-500">Measure thresholds by units ordered or order value.</p>
                                 <div className="mt-2 px-2.5 py-2 rounded-lg bg-slate-50 border border-muted">
                                   <p className="text-[10px] text-slate-400 tracking-wide" style={{ fontWeight: 600 }}>EXAMPLE</p>
-                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over $10K.</p>
+                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over {BASE_PREFIX}2.8M.</p>
                                 </div>
                               </TooltipContent>
                             </Tooltip>
@@ -4246,6 +4263,25 @@ export function PricingRulesLibrary({
                                 {b === "volume" ? "Volume-Based" : "Value-Based"}
                               </button>
                             ))}
+                          </div>
+                        </div>
+                        {/* Currency: the base currency, locked. A rule has no
+                            currency of its own (Currency Touchpoints Map,
+                            Partners 6); it applies to quotes in any currency,
+                            checked in base. */}
+                        <div className="col-span-2">
+                          <label className="text-[12px] text-foreground mb-1.5 block" style={{ fontWeight: 500 }}>Currency</label>
+                          <div
+                            className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 flex items-center gap-1.5 text-[13px] cursor-not-allowed"
+                            title={`Pricing rules are created in ${BASE_CURRENCY}, the base currency. Thresholds and fixed amounts are in ${BASE_CURRENCY}; a quote in another currency is checked in ${BASE_CURRENCY} at its own rate.`}
+                          >
+                            <CurrencyFlag code={BASE_CURRENCY} />
+                            <span className="text-foreground" style={{ fontWeight: 600 }}>{BASE_CURRENCY}</span>
+                            <span className="text-slate-500">· base currency</span>
+                            <span className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-500 bg-white border border-slate-200" style={{ fontWeight: 600 }}>
+                              <Lock className="w-2.5 h-2.5" />
+                              Locked
+                            </span>
                           </div>
                         </div>
                         {/* Row 2: Description (full width) */}
@@ -4356,18 +4392,18 @@ export function PricingRulesLibrary({
                               <div>
                                 <div className="flex items-center justify-between mb-1.5">
                                   <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>
-                                    {isDis ? "Discount" : "Premium"} {tier.fixRate ? "Amount (USD)" : "Rate"}
+                                    {isDis ? "Discount" : "Premium"} {tier.fixRate ? `Amount (${BASE_CURRENCY})` : "Rate"}
                                   </label>
                                   <PctAmountToggle
                                     isFixed={tier.fixRate}
                                     onChange={(fixed) => updateTier(idx, { fixRate: fixed })}
                                     percentTooltip={`${isDis ? "Discount" : "Premium"} applied as a percentage of the line value.`}
-                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in USD, the currency the rule book is written in.`}
+                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in ${BASE_CURRENCY}, the base currency. On a quote in another currency it converts at the quote's rate.`}
                                   />
                                 </div>
                                 <div className="relative">
                                   {tier.fixRate && (
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{BASE_PREFIX}</span>
                                   )}
                                   <Input
                                     value={tier.discount}
@@ -4394,7 +4430,7 @@ export function PricingRulesLibrary({
                                   <span onClick={(e) => e.stopPropagation()}>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "Restricts this tier to orders within a specific quantity range. When enabled, the tier only applies when the order quantity falls between Min and Max."
-                                      : "Restricts this tier to orders within a specific dollar-value range. When enabled, the tier only applies when the order total falls between Min and Max."}</InfoTooltip>
+                                      : `Restricts this tier to orders within a value range in ${BASE_CURRENCY}, the base currency. When enabled, the tier only applies when the order total in ${BASE_CURRENCY} falls between Min and Max.`}</InfoTooltip>
                                   </span>
                                 </label>
                               </div>
@@ -4405,14 +4441,14 @@ export function PricingRulesLibrary({
                               <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-muted">
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
-                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Min Qty" : "Min Order Value (USD)"}</label>
+                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Min Qty" : `Min Order Value (${BASE_CURRENCY})`}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The smallest order quantity at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."
-                                      : "The smallest order value (in USD) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
+                                      : `The smallest order value, in ${BASE_CURRENCY}, at which this tier starts to apply. An order in another currency is checked in ${BASE_CURRENCY} at its own rate.`}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{BASE_PREFIX}</span>
                                     )}
                                     <Input
                                       value={tier.minQty}
@@ -4424,14 +4460,14 @@ export function PricingRulesLibrary({
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
-                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Max Qty" : "Max Order Value (USD)"}</label>
+                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Max Qty" : `Max Order Value (${BASE_CURRENCY})`}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The largest order quantity this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."
-                                      : "The largest order value (in USD) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
+                                      : `The largest order value, in ${BASE_CURRENCY}, this tier covers. Orders above it roll into the next tier or stop receiving this adjustment.`}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{BASE_PREFIX}</span>
                                     )}
                                     <Input
                                       value={tier.maxQty}
@@ -4471,7 +4507,7 @@ export function PricingRulesLibrary({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] text-slate-700 truncate" style={{ fontWeight: 600 }}>{createName || "Untitled Rule"}</p>
-                      <p className="text-[11px] text-slate-500 truncate">{createCategory === "discount" ? "Discount" : "Premium"} · {createBasis === "volume" ? "Volume-Based" : "Value-Based"} · {createTiers.length} tier{createTiers.length !== 1 ? "s" : ""}{createTiers[0]?.discount ? ` · ${createTiers[0].discount}${createTiers[0].fixRate ? "$" : "%"}` : ""}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{createCategory === "discount" ? "Discount" : "Premium"} · {createBasis === "volume" ? "Volume-Based" : "Value-Based"} · {createTiers.length} tier{createTiers.length !== 1 ? "s" : ""}{createTiers[0]?.discount ? ` · ${createTiers[0].fixRate ? `${BASE_PREFIX}${createTiers[0].discount}` : `${createTiers[0].discount}%`}` : ""}</p>
                     </div>
                     <button
                       onClick={() => setCreateStep(1)}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Building2, MapPin, Check, Copy, GitBranch, X, ChevronDown, FileText, Send, CheckCircle2 } from 'lucide-react';
+import { Search, Building2, MapPin, Check, Copy, GitBranch, X, ChevronDown, FileText, Send, CheckCircle2, ArrowLeftRight } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,14 @@ import {
   DialogDescription,
 } from '@/app/components/ui/dialog';
 import { Button } from '@/app/components/ui/button';
-import type { QuoteVersion } from '@/app/types/quote';
+import type { Quote, QuoteVersion } from '@/app/types/quote';
+import type { VersionRateChoice } from '@/app/data/quoteStore';
+import { duplicateCurrency, originalRate } from '@/app/data/duplicateQuote';
+import { CurrencyTag } from '@/app/components/currency/CurrencyChip';
+import { RateChoiceCards, versionRateOptions } from '@/app/components/currency/VersionRateChoice';
+import { BASE_CURRENCY, currencyLabel, isBaseCurrency } from '@/app/currency/currencies';
+import { rateSentence } from '@/app/currency/money';
+import { customerCurrency, quoteFx, todayRate } from '@/app/currency/qFx';
 
 /* ════════════════════════════════════════════════════════════════════
    DuplicateQuoteModal — partner-aligned. Uses the shared Dialog
@@ -25,6 +32,13 @@ interface Customer {
 }
 
 const CUSTOMERS: Customer[] = [
+  /* Customers from the listing that trade in another currency (qFx
+     CUSTOMER_CURRENCIES), so a duplicate for a different customer can show
+     that it takes that customer's currency. */
+  { id: 'CUST-LCH', name: 'Lakewood Community Hospital', location: 'Fleet Services' },
+  { id: 'CUST-SRMC', name: 'Summit Regional Medical Center', location: 'Transport Division' },
+  { id: 'CUST-HAA', name: 'Heartland Air Ambulance', location: 'Hangar/Fleet HQ' },
+  { id: 'CUST-VHS', name: 'Valley Health System', location: 'Central Supply' },
   { id: 'CUST-001', name: 'Tri-County EMS Authority', location: 'Springfield, IL' },
   { id: 'CUST-002', name: 'TechStart Industries', location: 'California HQ' },
   { id: 'CUST-003', name: 'Global Solutions Ltd', location: 'New York Office' },
@@ -49,6 +63,8 @@ export interface DuplicateQuoteConfirmPayload {
   customerName: string;
   versionMode: DuplicateVersionMode;
   selectedVersion: number;
+  /** Keep the original rate ("locked") or use today's (duplicateQuote). */
+  rateChoice: VersionRateChoice;
 }
 
 interface DuplicateQuoteModalProps {
@@ -59,6 +75,10 @@ interface DuplicateQuoteModalProps {
   quoteNumber?: string;
   availableVersions?: QuoteVersion[];
   currentVersion?: number;
+  /** The quote being copied: its currency and rate, for the rate choice. */
+  source?: Quote;
+  /** Its total in its currency, for the base totals beside each rate. */
+  sourceTotal?: number;
 }
 
 function SectionCard({
@@ -353,10 +373,15 @@ export function DuplicateQuoteModal({
   quoteNumber,
   availableVersions,
   currentVersion,
+  source,
+  sourceTotal,
 }: DuplicateQuoteModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [useSameCustomer, setUseSameCustomer] = useState(true);
+  /* Keep the original rate or use today's (Currency Touchpoints Map,
+     Quotes 5; Eli approved a rate prompt on copy, 29 Apr). */
+  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
   const searchRef = useRef<HTMLInputElement>(null);
 
   const versions = useMemo<QuoteVersion[]>(() => {
@@ -395,6 +420,7 @@ export function DuplicateQuoteModal({
       setSelectedCustomer(null);
       setUseSameCustomer(true);
       setSelectedVersion(latestVersionNum);
+      setRateChoice('locked');
     }
   }, [isOpen, latestVersionNum]);
 
@@ -403,12 +429,25 @@ export function DuplicateQuoteModal({
     c.location.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  /* The duplicate's currency: the quote's for the same customer, the new
+     customer's otherwise. Only in the quote's own (foreign) currency is
+     there an original rate to keep. */
+  const sourceCurrency = source ? quoteFx(source).currency : null;
+  const targetCustomer = useSameCustomer ? currentCustomer : selectedCustomer?.name ?? null;
+  const targetCurrency = source && targetCustomer ? duplicateCurrency(source, useSameCustomer ? null : targetCustomer) : null;
+  const rateOptions = useMemo(() => {
+    if (!source || !targetCurrency || targetCurrency !== sourceCurrency || isBaseCurrency(targetCurrency)) return null;
+    const kept = originalRate(source, selectedVersion);
+    return versionRateOptions({ currency: kept.currency, rate: kept.exchangeRate, rateType: kept.rateType, rateDate: kept.rateDate }, sourceTotal);
+  }, [source, sourceCurrency, targetCurrency, selectedVersion, sourceTotal]);
+
   const handleConfirm = () => {
     onConfirm({
       customerId: useSameCustomer ? '' : (selectedCustomer?.id ?? ''),
       customerName: useSameCustomer ? currentCustomer : (selectedCustomer?.name ?? ''),
       versionMode: 'single',
       selectedVersion,
+      rateChoice: rateOptions ? rateChoice : 'current-mid',
     });
   };
 
@@ -484,6 +523,7 @@ export function DuplicateQuoteModal({
               <div className="flex items-center gap-1.5 mt-1 text-[11.5px] text-muted-foreground">
                 <Building2 className="w-3 h-3 shrink-0" />
                 <span className="truncate">{currentCustomer}</span>
+                <CurrencyTag code={sourceCurrency} note="The quote's currency. The duplicate keeps it." />
               </div>
             </RadioOptionCard>
 
@@ -528,8 +568,11 @@ export function DuplicateQuoteModal({
                               <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
                             </div>
                             <div className="min-w-0">
-                              <div className="text-[13px] text-foreground leading-tight truncate" style={{ fontWeight: 500 }}>
-                                {customer.name}
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-[13px] text-foreground leading-tight truncate" style={{ fontWeight: 500 }}>
+                                  {customer.name}
+                                </span>
+                                <CurrencyTag code={customerCurrency(customer.name)} note="The customer's currency. A duplicate for them is in it." />
                               </div>
                               <div className="flex items-center gap-1 mt-1 text-[10.5px] text-muted-foreground">
                                 <MapPin className="w-2.5 h-2.5 shrink-0" />
@@ -574,6 +617,38 @@ export function DuplicateQuoteModal({
                   onSelect={setSelectedVersion}
                 />
               </div>
+            </SectionCard>
+          )}
+
+          {/* Exchange rate — keep the original rate or use today's. A
+              customer in another currency has no original rate to keep. */}
+          {targetCurrency && (rateOptions || targetCurrency !== sourceCurrency) && (
+            <SectionCard
+              icon={ArrowLeftRight}
+              title="Exchange rate"
+              description={rateOptions ? "Keep the original rate or use today's" : undefined}
+            >
+              {rateOptions ? (
+                <div className="px-1 pt-1 pb-0.5">
+                  <RateChoiceCards
+                    copy={{
+                      keep: 'Keep the original rate',
+                      today: "Use today's rate",
+                      same: 'same as the original',
+                      ariaLabel: 'Exchange rate for the duplicate',
+                    }}
+                    options={rateOptions}
+                    value={rateChoice}
+                    onChange={setRateChoice}
+                  />
+                </div>
+              ) : (
+                <p className="px-1 py-1 text-[11.5px] text-muted-foreground leading-relaxed">
+                  {isBaseCurrency(targetCurrency)
+                    ? `${targetCustomer} pays in ${BASE_CURRENCY}, the base currency, so there's no rate to choose. Prices convert from ${sourceCurrency} at today's rate.`
+                    : `${targetCustomer} pays in ${currencyLabel(targetCurrency)}, so there's no original rate to keep. The duplicate takes today's rate, ${rateSentence(targetCurrency, todayRate(targetCurrency))}, and its prices convert from ${sourceCurrency}.`}
+                </p>
+              )}
             </SectionCard>
           )}
         </div>

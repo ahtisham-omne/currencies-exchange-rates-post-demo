@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { X, ArrowLeftRight, ArrowUp, ArrowDown, Plus, Minus, Pencil } from 'lucide-react';
 
 import type { RMAChangeRecord, RMAVersionEntry } from '@/app/data/rmaVersions';
-import { formatVersionCurrency, versionStatusConfig } from './rmaVersionDisplay';
+import { versionStatusConfig } from './rmaVersionDisplay';
+import { versionMoney } from '@/app/data/rmaVersions';
 
 /**
  * Side-by-side comparison of two versions, rendered inline below the version
@@ -82,8 +83,8 @@ export default function RMAVersionCompareView({
       },
       {
         label: 'Return Value',
-        val1: formatVersionCurrency(v1.snapshot.totalValue),
-        val2: formatVersionCurrency(v2.snapshot.totalValue),
+        val1: versionMoney(v1.snapshot, v1.snapshot.totalValue),
+        val2: versionMoney(v2.snapshot, v2.snapshot.totalValue),
       },
     ],
     [v1, v2],

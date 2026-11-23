@@ -5,7 +5,13 @@
  * values, and validity windows are copied byte-for-byte so the Browse
  * Templates library reads identically to the partner surface. Do not edit the
  * preset copy — it is reference data, transcribed as-is.
+ *
+ * One exception (Currency Touchpoints Map, Partners 5–6, 24 Nov 2026): rules
+ * are in the base currency, so every "$" amount in a description or a
+ * value-based tier is restated in PKR ×280 exactly (ruleAmount: $2,500 →
+ * ₨700,000), as every module restates them. Percentages and units don't change.
  */
+import { ruleAmount } from "../../../currency/ruleMoney";
 
 // ── Pricing Rule Presets ──
 export type PricingRuleCategory = "all" | "discount" | "premium";
@@ -44,8 +50,8 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   // ── PRESET DISCOUNTS ──
   {
     id: "pr-1", name: "Standard Discount · Value (Single-Tier)", category: "discount", basis: "value", tierType: "single", totalTiers: 1,
-    description: "10% off on orders over $1,000",
-    tiers: [{ minValue: "$1,000", maxValue: "$25,000", discount: "10%" }],
+    description: `10% off on orders over ${ruleAmount(1000)}`,
+    tiers: [{ minValue: ruleAmount(1000), maxValue: ruleAmount(25000), discount: "10%" }],
     vendorsApplied: 5,
     validityPeriod: "Jan 2026 · Apr 2026",
     aboutText: "The Standard Discount · Value (Single-Tier) pricing rule is a straightforward, commonly used model in ERP systems where a fixed percentage discount is applied once the total purchase value exceeds a defined threshold.",
@@ -60,12 +66,12 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   },
   {
     id: "pr-3", name: "Tiered Discount · Value (Multi-Tier)", category: "discount", basis: "value", tierType: "multiple", totalTiers: 4,
-    description: "10% off at each tier from $1K to $25K",
+    description: `10% off at each tier from ${ruleAmount(1000)} to ${ruleAmount(25000)}`,
     tiers: [
-      { minValue: "$1,000", maxValue: "$4,999", discount: "10%" },
-      { minValue: "$5,000", maxValue: "$9,999", discount: "10%" },
-      { minValue: "$10,000", maxValue: "$24,999", discount: "10%" },
-      { minValue: "$25,000", maxValue: "$50,000", discount: "10%" },
+      { minValue: ruleAmount(1000), maxValue: ruleAmount(4999), discount: "10%" },
+      { minValue: ruleAmount(5000), maxValue: ruleAmount(9999), discount: "10%" },
+      { minValue: ruleAmount(10000), maxValue: ruleAmount(24999), discount: "10%" },
+      { minValue: ruleAmount(25000), maxValue: ruleAmount(50000), discount: "10%" },
     ],
     vendorsApplied: 4,
     validityPeriod: "Dec 2025 · Mar 2026",
@@ -86,8 +92,8 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   // ── PRESET PREMIUMS ──
   {
     id: "pr-5", name: "Standard Premium · Value (Single-Tier)", category: "premium", basis: "value", tierType: "single", totalTiers: 1,
-    description: "10% surcharge on orders over $1,000",
-    tiers: [{ minValue: "$1,000", maxValue: "$25,000", discount: "10%" }],
+    description: `10% surcharge on orders over ${ruleAmount(1000)}`,
+    tiers: [{ minValue: ruleAmount(1000), maxValue: ruleAmount(25000), discount: "10%" }],
     vendorsApplied: 3,
     validityPeriod: "Jan 2026 · Apr 2026",
     aboutText: "A value-based premium surcharge applied to exclusive product lines and VIP offerings. Automate pricing increases to enhance exclusivity and maximize profitability.",
@@ -102,11 +108,11 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   },
   {
     id: "pr-7", name: "Tiered Premium · Value (Multi-Tier)", category: "premium", basis: "value", tierType: "multiple", totalTiers: 3,
-    description: "10% surcharge at each tier from $1K to $10K",
+    description: `10% surcharge at each tier from ${ruleAmount(1000)} to ${ruleAmount(10000)}`,
     tiers: [
-      { minValue: "$1,000", maxValue: "$4,999", discount: "10%" },
-      { minValue: "$5,000", maxValue: "$9,999", discount: "10%" },
-      { minValue: "$10,000", maxValue: "$25,000", discount: "10%" },
+      { minValue: ruleAmount(1000), maxValue: ruleAmount(4999), discount: "10%" },
+      { minValue: ruleAmount(5000), maxValue: ruleAmount(9999), discount: "10%" },
+      { minValue: ruleAmount(10000), maxValue: ruleAmount(25000), discount: "10%" },
     ],
     vendorsApplied: 1,
     validityPeriod: "Dec 2025 · Mar 2026",
@@ -128,8 +134,8 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   // ── CUSTOM DISCOUNTS ──
   {
     id: "pr-custom-1", name: "Q2 Loyalty Value Discount", category: "discount", basis: "value", tierType: "single", totalTiers: 1,
-    description: "12% off on orders over $2,500 for loyal partners",
-    tiers: [{ minValue: "$2,500", maxValue: "$45,000", discount: "12%" }],
+    description: `12% off on orders over ${ruleAmount(2500)} for loyal partners`,
+    tiers: [{ minValue: ruleAmount(2500), maxValue: ruleAmount(45000), discount: "12%" }],
     vendorsApplied: 6,
     validityPeriod: "Jan 2026 · Apr 2026",
     aboutText: "A custom single-tier value-based discount created for Q2 2025 to reward long-standing partners who consistently place high-value orders.",
@@ -144,11 +150,11 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   },
   {
     id: "pr-custom-3", name: "Annual Value-Based Savings Plan", category: "discount", basis: "value", tierType: "multiple", totalTiers: 3,
-    description: "Progressive savings: 3% at $750, 8% at $3K, 14% at $10K",
+    description: `Progressive savings: 3% at ${ruleAmount(750)}, 8% at ${ruleAmount(3000)}, 14% at ${ruleAmount(10000)}`,
     tiers: [
-      { minValue: "$750", maxValue: "$2,999", discount: "3%" },
-      { minValue: "$3,000", maxValue: "$9,999", discount: "8%" },
-      { minValue: "$10,000", maxValue: "$25,000", discount: "14%" },
+      { minValue: ruleAmount(750), maxValue: ruleAmount(2999), discount: "3%" },
+      { minValue: ruleAmount(3000), maxValue: ruleAmount(9999), discount: "8%" },
+      { minValue: ruleAmount(10000), maxValue: ruleAmount(25000), discount: "14%" },
     ],
     vendorsApplied: 12,
     validityPeriod: "Dec 2025 · Mar 2026",
@@ -169,8 +175,8 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   // ── CUSTOM PREMIUMS ──
   {
     id: "pr-custom-5", name: "Rush Order Premium", category: "premium", basis: "value", tierType: "single", totalTiers: 1,
-    description: "18% surcharge on rush orders under $5,000",
-    tiers: [{ minValue: "$100", maxValue: "$5,000", discount: "18%" }],
+    description: `18% surcharge on rush orders under ${ruleAmount(5000)}`,
+    tiers: [{ minValue: ruleAmount(100), maxValue: ruleAmount(5000), discount: "18%" }],
     vendorsApplied: 7,
     validityPeriod: "Jan 2026 · Apr 2026",
     aboutText: "A custom premium surcharge applied to rush and expedited orders to cover additional processing and logistics costs.",

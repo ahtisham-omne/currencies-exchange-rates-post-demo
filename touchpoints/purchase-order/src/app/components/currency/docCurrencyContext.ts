@@ -7,8 +7,9 @@ import type { MoneyFx } from "./Money";
 /* ── The document's currency, and which one the page shows ────────────
  * A PO's amounts are kept in its currency, the vendor's (spec 4.2, 4.3), at a
  * rate to the base currency taken on the PO date. The page shows them in the
- * base currency by default, the vendor's amount riding the hover; the header's
- * Base Currency | Vendor Currency toggle flips that (`view`). The PO page puts
+ * base currency, the vendor's amount riding the hover. `view` could show the
+ * document's currency instead; the PO page pins it to base since the header
+ * toggle was removed (Currency Touchpoints Map, 24 Nov). The PO page puts
  * the currency, its rate and the view here so the pieces (line rows, hover
  * cards, rule and adjustment modals) don't each need a prop; the cart does the
  * same for each vendor group. Outside a provider, amounts are in base. */

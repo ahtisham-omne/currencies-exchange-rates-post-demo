@@ -29,6 +29,7 @@ import { PARTNER_LOCATION_ITEMS, partnerForItem } from './partnerLocations';
 import { invoiceSplitForRMALine } from './receiptInvoiceStatus';
 import type { RMAVersionEntry } from './rmaVersions';
 import type { ReturnBucket } from './rmaReturnAllocation';
+import type { RateType } from '@/app/currency/rates';
 import { CARRIER_CATALOGUE } from '@/app/data/vendorCarriers';
 
 const rand = mulberry32(0x2114DA1);
@@ -396,15 +397,17 @@ export interface RMASettlementEntry {
   method?: string;
   /** The account the money landed in (ERP-8664 AC2.3). */
   depositedToAccountId?: string;
-  /** A refund in another currency landing in a PKR account: what the bank
-   *  credited in PKR (Mahreen, 2026-11-20). The rate is worked out from the
-   *  two amounts. */
+  /** A refund in another currency landing in a PKR account: what it came to
+   *  in PKR. Since 2026-11-24 it is the amount at the settlement rate below,
+   *  no longer typed in (it was what the bank credited, and gave the rate). */
   bankReceived?: number | undefined;
-  /** PKR per one unit of the return's currency the refund landed at: the
-   *  bank's (from bankReceived) or the day's mid-market rate (into an account
-   *  in the return's currency). Against the receiving-day rate it leaves an
-   *  exchange difference (GL Impact). */
+  /** PKR per one unit of the return's currency the vendor settled at: the
+   *  rate of the configured type (the PO's, mid-market or corporate) on the
+   *  day the money landed (Currency Touchpoints Map, 2026-11-24). Against the
+   *  receiving-day rate it leaves the FX variance (GL Impact). */
   rate?: number | undefined;
+  /** Which rate that was. */
+  rateType?: RateType | undefined;
   description?: string;
   fileName?: string;
   /** Set when the entry came in short of what was agreed and the user
@@ -546,8 +549,14 @@ export interface RMA {
    *  memo number, amount and date, so it is recorded there and not here. */
   pendingCredit?: { ref: string; raisedDate: string; amount: number };
   /** Account the vendor's credit settles to, picked on the create form the
-   *  same way the Record Payment flow picks one. Holds a `PayFromAccount.id`. */
+   *  same way the Record Payment flow picks one. Holds a `PayFromAccount.id`.
+   *  It is the currency configuration's "Deposited to": an account in the
+   *  base currency or the return's (2026-11-24). */
   payToAccountId?: string;
+  /** The rate type the vendor settles at, set in the currency configuration.
+   *  Absent is the PO's type (`rmaPORateType`). The rate is today's until the
+   *  vendor settles, then the settlement day's (2026-11-24). */
+  settlementRateType?: RateType;
   /** Revision history. Every version carries a full snapshot of the return as
    *  it stood when the version was cut, so a revert is a copy rather than a
    *  replay. Seeded lazily, since a return created before versioning has none. */

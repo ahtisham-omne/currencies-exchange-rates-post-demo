@@ -59,12 +59,14 @@ import { Input } from "./ui/input";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./ui/tooltip";
 import {
   evaluateRuleForLine,
+  orderBaseValue,
   type PricingRuleTier,
   type VendorPricingRule,
 } from "./poPricingRulesData";
 import type { POLineItem } from "./poStore";
-import { useRuleMoney } from "./currency/useRuleMoney";
+import { bandEdge, useRuleMoney } from "./currency/useRuleMoney";
 import { RULE_AMOUNT_CURRENCY } from "@/app/currency/poFx";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
 
 /* ─── Seeded content for Notes / Attachments / Activity tabs ─────────
    Matches SO's PricingRulesLibrary PR_DUMMY_* pattern — small hand-
@@ -248,7 +250,7 @@ export function POPricingRuleDetailModal({
                         className="inline-flex items-center gap-1 px-2 py-0.5 text-[10.5px] bg-white text-slate-500 border-l"
                         style={{ fontWeight: 500, borderColor: theme.pillBorder }}
                       >
-                        Volume-Based
+                        {rule.basis === "value" ? "Value-Based" : "Volume-Based"}
                       </span>
                     </span>
                     {/* Status */}
@@ -551,7 +553,23 @@ export function POPricingRuleDetailModal({
                             <label className="text-[12px] text-slate-900 block" style={{ fontWeight: 500 }}>
                               Calculation Basis
                             </label>
-                            <Input value="Volume-Based" disabled className="mt-1 !h-10 text-sm" />
+                            <Input value={rule.basis === "value" ? "Value-Based" : "Volume-Based"} disabled className="mt-1 !h-10 text-sm" />
+                          </div>
+                          {/* Rules are in the base currency: no picker (Currency
+                              Touchpoints Map, Partners 5–6). */}
+                          <div>
+                            <label className="text-[12px] text-slate-900 block" style={{ fontWeight: 500 }}>
+                              Currency
+                            </label>
+                            <div
+                              className="mt-1 h-10 rounded-md border border-input bg-slate-50 px-3 flex items-center gap-2 text-sm cursor-not-allowed select-none opacity-90"
+                              aria-readonly="true"
+                              title="Pricing rules are in the base currency"
+                            >
+                              <span className="text-slate-700" style={{ fontWeight: 500 }}>{BASE_CURRENCY}</span>
+                              <span className="text-slate-400">· base currency</span>
+                              <Lock className="w-3 h-3 text-slate-300 ml-auto shrink-0" />
+                            </div>
                           </div>
                           <div className="sm:col-span-2">
                             <label className="text-[12px] text-slate-900 block" style={{ fontWeight: 500 }}>
@@ -611,10 +629,10 @@ export function POPricingRuleDetailModal({
                               >
                                 {idx + 1}
                               </span>
-                              <span className="text-slate-500 tabular-nums">{tier.minQty}</span>
+                              <span className="text-slate-500 tabular-nums">{bandEdge(tier.minQty, rule.basis)}</span>
                               <span className="text-slate-300">–</span>
                               <span className="text-slate-500 tabular-nums">
-                                {tier.maxQty === null ? "∞" : tier.maxQty}
+                                {bandEdge(tier.maxQty, rule.basis)}
                               </span>
                             </div>
                             <span
@@ -630,10 +648,10 @@ export function POPricingRuleDetailModal({
                             </span>
                           </div>
                         ))}
-                        {/* Flat tiers are written in USD; say so when the PO isn't. */}
+                        {/* Flat tiers are in the base currency; say so when the PO isn't. */}
                         {hasFlatTier && currency !== RULE_AMOUNT_CURRENCY && (
                           <p className="text-[11px] text-slate-400 pt-0.5">
-                            Flat amounts are written in {RULE_AMOUNT_CURRENCY} and converted to this PO's currency ({currency}).
+                            Flat amounts are in {RULE_AMOUNT_CURRENCY}, the base currency, and converted to this PO's currency ({currency}) at its rate.
                           </p>
                         )}
                       </div>
@@ -740,6 +758,11 @@ export function POPricingRuleDetailModal({
                                       unitPrice: effUnitPrice,
                                     },
                                     factor,
+                                    // A value-based rule reads the whole PO's value, in base.
+                                    orderBaseValue(
+                                      (lineItems ?? []).map((l) => ({ orderedQty: l.quantity, unitPrice: l.unitPrice * (1 - l.discount / 100) })),
+                                      factor,
+                                    ),
                                   );
                                   const activeOnLine = activatedLineIds
                                     ? activatedLineIds.has(li.id)
@@ -784,7 +807,7 @@ export function POPricingRuleDetailModal({
                                           {evalRes.applies && evalRes.tier && (
                                             <span className={`ml-2 ${activeOnLine ? "" : "line-through"}`}>
                                               <span className={activeOnLine ? "text-slate-500" : undefined}>
-                                                Tier {tierBand(evalRes.tier)} · {tierText(evalRes.tier)}{" "}
+                                                Tier {tierBand(evalRes.tier, rule.basis)} · {tierText(evalRes.tier)}{" "}
                                                 {isDis ? "off" : "premium"}
                                                 {evalRes.tier.unit !== "%" ? " per unit" : ""} ·{" "}
                                               </span>

@@ -3,48 +3,49 @@ import { useDocCurrency, useDocView } from "./docCurrencyContext";
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { formatMoney, moneyPrefix } from "@/app/currency/money";
 import { toBase } from "@/app/currency/rates";
-import { RULE_AMOUNT_CURRENCY, localTodayIso, ruleAmountFactor, todayRate } from "@/app/currency/qFx";
+import { RULE_AMOUNT_CURRENCY, ruleAmountFactor, todayRate } from "@/app/currency/qFx";
 
 /* ─── Rule tiers and impacts in money ────────────────────────────────
-   A "%" tier reads "7%". A "$" tier is a flat amount per unit that the
-   rule book writes in USD (RULE_AMOUNT_CURRENCY, as Partners does); on a
-   quote in another currency its converted amount rides along:
-   "$15.00 (≈ €13.71)". Impacts are kept in the quote's currency and shown
-   in the page's (base by default), with the other one beside them
-   ("≈ €243.78" in base view, "≈ ₨123,540.00" in the customer's).
-   Shared by the rule cards, the create form and the price breakdown. */
+   A "%" tier reads "7%". A fixed-amount ("$") tier is an amount per unit
+   that the rule book writes in the base currency (RULE_AMOUNT_CURRENCY,
+   Currency Touchpoints Map, Partners 5–6); on a quote in another currency
+   its amount at the quote's rate rides along: "₨56,000.00 (≈ $201.06)".
+   Impacts are kept in the quote's currency and shown in the page's (base),
+   with the quote's beside them ("≈ €243.78"). Shared by the rule cards, the
+   create form and the price breakdown. */
 type TierAmount = Pick<PricingRuleTier, "rate" | "unit">;
 
 export function useRuleMoney() {
-  const { currency, fx, rateDate } = useDocCurrency();
+  const { currency, fx } = useDocCurrency();
   const view = useDocView();
   const inBase = view.inBase;
   // Outside a quote (no rate yet) today's rate stands in.
   const rate = fx?.rate ?? todayRate(currency);
-  // On the quote date, also when a version has since applied today's rate.
-  const factor = ruleAmountFactor({ currency, rateDate: rateDate ?? fx?.rateDate ?? localTodayIso() });
-  const isRuleCurrency = currency === RULE_AMOUNT_CURRENCY;
+  // A base amount in the quote's currency, at the quote's rate.
+  const factor = ruleAmountFactor({ currency, rate });
   const isBase = isBaseCurrency(currency);
 
   const tierRate = (t: TierAmount) =>
     t.unit === "%" ? `${t.rate}%` : formatMoney(t.rate, RULE_AMOUNT_CURRENCY);
   const tierConverted = (t: TierAmount) =>
-    t.unit === "%" || isRuleCurrency ? null : `≈ ${formatMoney(t.rate * factor, currency)}`;
+    t.unit === "%" || isBase ? null : `≈ ${formatMoney(t.rate * factor, currency)}`;
 
   return {
     currency,
-    /** USD flat amounts → the quote's currency (evaluateRuleForLine / computeLineBreakdowns). */
+    /** The quote's rate to base: a value threshold is checked at it. */
+    rate,
+    /** Base fixed amounts → the quote's currency (evaluateRuleForLine / computeLineBreakdowns). */
     factor,
     /** An amount in the quote's currency, shown in the page's currency. */
     money: (n: number) => formatMoney(view.toView(n), view.viewCurrency),
-    /** "7%" · "$15.00" */
+    /** "7%" · "₨56,000.00" */
     tierRate,
-    /** "7%" · "$15" — hero chips and tier pills. */
+    /** "7%" · "₨56,000" — hero chips and tier pills. */
     tierShort: (t: TierAmount) =>
-      t.unit === "%" || !Number.isInteger(t.rate) ? tierRate(t) : `${moneyPrefix(RULE_AMOUNT_CURRENCY)}${t.rate}`,
-    /** "≈ €13.71": a "$" tier in the quote's currency; null for "%" or a USD quote. */
+      t.unit === "%" || !Number.isInteger(t.rate) ? tierRate(t) : `${moneyPrefix(RULE_AMOUNT_CURRENCY)}${t.rate.toLocaleString("en-US")}`,
+    /** "≈ $201.06": a fixed tier in the quote's currency; null for "%" or a base-currency quote. */
     tierConverted,
-    /** "7%" · "$15.00 (≈ €13.71)" */
+    /** "7%" · "₨56,000.00 (≈ $201.06)" */
     tierText: (t: TierAmount) => {
       const converted = tierConverted(t);
       return converted ? `${tierRate(t)} (${converted})` : tierRate(t);

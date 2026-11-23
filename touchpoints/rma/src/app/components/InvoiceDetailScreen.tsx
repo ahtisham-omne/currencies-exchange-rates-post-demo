@@ -1,9 +1,11 @@
-import { formatMoney as moneyIn } from '@/app/currency/money';
+import { formatMoney as moneyIn, rateSentence } from '@/app/currency/money';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
+import { CurrencyHeaderControls, ReturnCurrencyTag } from '@/app/components/currency/CurrencyHeaderControls';
 import { ReturnCurrencyConfigDialog } from '@/app/components/currency/ReturnCurrencyConfig';
-import { ReturnViewProvider, useStoredReturnView } from '@/app/components/currency/returnView';
-import { returnFx as returnFxOf, rmaCurrency as returnCurrencyOf } from '@/app/currency/returnCurrency';
+import { ReturnViewProvider } from '@/app/components/currency/returnView';
+import { returnFx as returnFxOf, rmaCurrency as returnCurrencyOf, rmaCurrencyPO } from '@/app/currency/returnCurrency';
+import { returnSettlementFx } from '@/app/currency/returnSettlement';
+import { useRMAEditGate } from './rma-versions/RMAEditGate';
 import { useNavigate as useTanstackNavigate } from '@tanstack/react-router';
 
 // react-router-dom shims. TanStack Router doesn't expose an equivalent of
@@ -89,7 +91,7 @@ import { Textarea } from '@/app/components/ui/textarea';
 import { Button } from '@/app/components/ui/button';
 import { Invoice, mockInvoices } from '@/app/data/mockInvoices';
 import type { RMA, RMAStatus } from '@/app/data/mockRMAs';
-import { authorizedQty, PAYMENT_OVERDUE_DAYS, rmaCanRevert, rmaDaysSinceShipped, rmaLifecycleSteps, rmaPaymentOverdue, rmaShipsDirect, rmaStatusLabel } from '@/app/data/mockRMAs';
+import { authorizedQty, PAYMENT_OVERDUE_DAYS, rmaCanRevert, rmaMaterialEditable, rmaDaysSinceShipped, rmaLifecycleSteps, rmaPaymentOverdue, rmaShipsDirect, rmaStatusLabel } from '@/app/data/mockRMAs';
 import { RMA_STATUS_STYLES } from '@/app/components/RMADataTable';
 import type { RMAActionId, RMAActionPayload } from './RMADetailScreen';
 import { SYSTEM_USERS, SYSTEM_ROLES } from '@/app/data/systemUsers';
@@ -813,9 +815,9 @@ function daysBetween(later: Date, earlier: Date) {
 
 export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [], applyInvoiceAction, onSettleInvoices, onPayInvoices, onAddPrepayment, onEditResubmit, onReversePayment, mode = 'invoice', rmaStatus, rma, onRmaAction, onRmaRevert }: InvoiceDetailScreenProps) {
   const isRma = mode === 'rma';
-  // Which currency the return's page reads in: Base Currency (PKR) until the
-  // header switches it, and its Currency Configuration (Mahreen, 2026-11-20).
-  const [returnView, setReturnView] = useStoredReturnView(isRma ? rma?.rmaNumber : null);
+  // The return's page reads in PKR, the base currency, with the PO's amount
+  // on hover (Currency Touchpoints Map, 2026-11-24: no Base | Vendor Currency
+  // toggle). The header's Currency button opens its currency configuration.
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -1631,7 +1633,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
 
   return (
     <RMAEditGateProvider rma={isRma ? rma : null}>
-    <ReturnViewProvider value={isRma ? returnView : 'document'}>
+    <ReturnViewProvider value={isRma ? 'base' : 'document'}>
     <div ref={scrollContainerRef} className="flex-1 flex flex-col bg-slate-50">
       {/* IntersectionObserver sentinel — sits just below the topbar */}
       <div ref={sentinelRef} className="shrink-0 h-px" />
@@ -1704,6 +1706,26 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                       >
                         {invoice.invoiceNumber}
                       </h1>
+
+                      {/* The vendor, then the return's currency tag
+                          (2026-11-24; the spec's "RMA-01024 · Oakmoor
+                          Transport [EUR] [Currency]"), as Purchase Orders,
+                          Quotes and Sales Orders show theirs. A PKR return
+                          gets no tag. */}
+                      {isRma && rma && (
+                        <>
+                          {invoice.vendor && (
+                            <span
+                              className="truncate text-slate-600"
+                              style={{ fontSize: isScrolled ? 11.5 : 12.5, fontWeight: 500, lineHeight: isScrolled ? '18px' : '22px', maxWidth: 320 }}
+                              title={invoice.vendor}
+                            >
+                              {invoice.vendor}
+                            </span>
+                          )}
+                          <ReturnCurrencyTag currency={returnCurrencyOf(rma)} po={`PO-${rmaCurrencyPO(rma)}`} />
+                        </>
+                      )}
 
                       {/* Type pill — mirrors the listing table's Type column
                           exactly: one flat pill per type (taxonomy rev
@@ -2053,12 +2075,11 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
 
                 {/* Right: Fullscreen + Actions + Edit CTA */}
                 <div className="flex items-center shrink-0 transition-all duration-250" style={{ gap: isScrolled ? 6 : 8 }}>
-                  {/* Base Currency | Vendor Currency and the Currency button, as on a PO. */}
+                  {/* The Currency button, which opens the return's currency
+                      configuration. No Base | Vendor Currency toggle
+                      (2026-11-24): the page reads in PKR. */}
                   {isRma && rma && (
                     <CurrencyHeaderControls
-                      currency={returnCurrencyOf(rma)}
-                      view={returnView}
-                      onViewChange={setReturnView}
                       onOpenConfig={() => setCurrencyConfigOpen(true)}
                       compact={isScrolled}
                     />
@@ -2585,6 +2606,17 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                         ? 'This return is over, so no earlier version can be made current.'
                         : 'Locked since the first shipment. To correct it, remove a line that has not shipped, or use Vendor refused.'
                   }
+                  // Every version's PKR figures are at the receiving rate,
+                  // locked with the return at the first shipment (2026-11-24).
+                  rate={(() => {
+                    const fx = returnFxOf(rma);
+                    if (!fx) return undefined;
+                    return {
+                      sentence: rateSentence(returnCurrencyOf(rma), fx.rate),
+                      qualifier: fx.provisional ? 'today' : fx.breakdown && fx.breakdown.length > 1 ? 'receiving dates, blended' : 'receiving date',
+                      locked: Boolean(rma.shippedDate || rma.shipmentStartedDate),
+                    };
+                  })()}
                 />
               )}
               {activeTab === 'activity' && (
@@ -2608,6 +2640,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
               mode={mode}
               rma={rma}
               readOnly={viewingVersion !== null}
+              onOpenCurrencyConfig={() => setCurrencyConfigOpen(true)}
             />
           </div>
         </div>
@@ -3304,7 +3337,11 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
             expected={rmaSettlementRemaining}
             receivedSoFar={rmaReceivedSoFar}
             currency={invoice.currency}
-            payToAccountId={rma.payToAccountId}
+            // The currency configuration's deposit account and rate type: the
+            // settlement is recorded at that type's rate on the day the money
+            // landed (2026-11-24).
+            payToAccountId={returnSettlementFx(rma).account?.id ?? rma.payToAccountId}
+            rateType={returnSettlementFx(rma).chosenType}
             existingCharges={rma.additionalCharges ?? []}
             fx={returnFxOf(rma)}
             onSubmit={(payload) => {
@@ -3320,6 +3357,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                     : {}),
                   ...(payload.bankReceived ? { bankReceived: payload.bankReceived } : {}),
                   ...(payload.rate ? { rate: payload.rate } : {}),
+                  ...(payload.rateType ? { rateType: payload.rateType } : {}),
                   ...(payload.description ? { description: payload.description } : {}),
                   ...(payload.fileName ? { fileName: payload.fileName } : {}),
                   ...(payload.lossAcknowledged ? { lossAcknowledged: true } : {}),
@@ -3389,9 +3427,64 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
         }}
       />
     )}
-    {isRma && rma && <ReturnCurrencyConfigDialog rma={rma} open={currencyConfigOpen} onOpenChange={setCurrencyConfigOpen} />}
+    {isRma && rma && (
+      <ReturnCurrencyConfigHost
+        rma={rma}
+        open={currencyConfigOpen}
+        onOpenChange={setCurrencyConfigOpen}
+        readOnly={viewingVersion !== null}
+      />
+    )}
     </ReturnViewProvider>
     </RMAEditGateProvider>
+  );
+}
+
+/** The return's currency configuration, inside the page's edit gate.
+ *
+ *  Its two choices, the deposit account and the rate type, stay open until
+ *  the vendor settles (Currency Touchpoints Map, 2026-11-24), which is later
+ *  than the return's lines lock (the first shipment, DQ-09). Before the
+ *  shipment a change goes through the usual version prompt; after it, while
+ *  the return waits on the vendor, it is saved on the current version, as a
+ *  minor edit is. A closed, cancelled or archived return reads only. */
+function ReturnCurrencyConfigHost({
+  rma,
+  open,
+  onOpenChange,
+  readOnly,
+}: {
+  rma: RMA;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  readOnly: boolean;
+}) {
+  const guardEdit = useRMAEditGate();
+  const { updateRMA } = useRMAContext();
+  const settlement = returnSettlementFx(rma);
+  const canEdit =
+    !readOnly &&
+    !settlement.locked &&
+    !rma.archived &&
+    ['Draft', 'Sent', 'Approved', 'Shipped to Vendor'].includes(rma.status);
+  return (
+    <ReturnCurrencyConfigDialog
+      rma={rma}
+      open={open}
+      onOpenChange={onOpenChange}
+      canEdit={canEdit}
+      onApply={(change) => {
+        guardEdit(
+          () => {
+            updateRMA(rma.id, { payToAccountId: change.payToAccountId, settlementRateType: change.settlementRateType });
+            toast.success('Currency configuration applied', {
+              description: `${rma.rmaNumber} settles at today's ${change.settlementRateType === 'corporate' ? 'corporate' : 'mid-market'} rate until the vendor settles.`,
+            });
+          },
+          rmaMaterialEditable(rma) ? 'material' : 'minor',
+        );
+      }}
+    />
   );
 }
 

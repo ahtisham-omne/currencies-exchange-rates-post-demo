@@ -123,15 +123,21 @@ import { useVendors } from "../../context/VendorContext";
 import { TableEmptyRow, TableEmptyState, TableSkeletonRows, CardSkeletonGrid, resolveTableEmptyKind, useTableLoadState } from "../ui/table-empty-state";
 import { findSearchSuggestion } from "../../utils/searchSuggestion";
 import { usePricingRuleStatus } from "../../context/PricingRuleStatusContext";
-import { BASE_CURRENCY } from "@/app/currency/currencies";
-import { moneyPrefix } from "@/app/currency/money";
-import { convertNow } from "@/app/currency/partnerCurrency";
-import { partnerAmount, type CurrencyView } from "@/app/currency/partnerAmounts";
-import { usePartnerCurrencyOf } from "@/app/currency/usePartnerCurrency";
+import { isBaseCurrency } from "@/app/currency/currencies";
+import { partnerAmount } from "@/app/currency/partnerAmounts";
+import {
+  RULE_CURRENCY,
+  RULE_FIXED_TOOLTIP,
+  RULE_SYMBOL,
+  isFixedRuleAmount,
+  ruleAmountFromInput,
+  ruleInputValue,
+  ruleTierText,
+} from "@/app/currency/pricingRuleCurrency";
+import { usePartnerCurrencyOf, usePartnerRateTypeInfo } from "@/app/currency/usePartnerCurrency";
 import { CurrencyAmount } from "../currency/CurrencyAmount";
 import { CurrencySymbol } from "../currency/CurrencySymbol";
-import { CurrencyViewToggle } from "../currency/ProfileCurrency";
-import { RuleAmountPreview } from "../currency/RuleAmountPreview";
+import { RuleCreateExampleCard, RuleCurrencyField, RuleCurrencyNote, RuleDocumentExampleCard } from "../currency/RuleCurrency";
 import { Textarea } from "../ui/textarea";
 import {
   PRICING_RULE_PRESETS,
@@ -234,30 +240,18 @@ const CAT_NAMES = ["Ram Pro Master 2500", "Ram Pro Master 3500", "Ram Pro Master
 const CREATORS = ["Ahtisham Ahmad", "Sarah Chen", "Marcus Obi", "Elena Volkov"];
 
 /* ── Tier amounts ─────────────────────────────────────────────────────
- * Value tiers and fixed discounts are written in US dollars ("$ 2,300"):
- * one rule can apply to partners in different currencies, so its amounts
- * keep one currency. On a partner they are shown converted to the
- * partner's currency, or to the base currency (the Base / Partner switch). */
-export const RULE_CURRENCY = "USD";
+ * Rules are in the base currency (Currency Touchpoints Map, Partners §5–6):
+ * value thresholds and fixed amounts are written in PKR ("₨700,000"), the
+ * design's dollar amounts restated ×280. They show as written on every
+ * partner; a document in another currency is checked in base at its own
+ * rate (see currency/pricingRuleCurrency.ts). */
+export { RULE_CURRENCY };
 
-/** The currency tier amounts are shown in (set by PricingRulesTabNew). */
-const TierCurrencyContext = React.createContext<string>(RULE_CURRENCY);
-
-/** A tier value in a currency: "$ 2,300" → "₨640,596"; "100 EA" and "5%" as they are. */
-export function formatTierValue(v: string | undefined, code: string): string {
-  if (!v) return "—";
-  const m = v.match(/^\$\s*([\d,]+(?:\.\d+)?)(.*)$/);
-  if (!m || code === RULE_CURRENCY) return v;
-  const n = parseFloat(m[1].replace(/,/g, ""));
-  if (!Number.isFinite(n)) return v;
-  const converted = convertNow(n, RULE_CURRENCY, code);
-  const d = Math.abs(converted) < 100 ? 2 : 0;
-  return `${moneyPrefix(code)}${converted.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })}${m[2]}`;
-}
+/** A tier value as shown: "₨700,000", "100 EA", "5%". */
+export const formatTierValue = (v: string | undefined) => ruleTierText(v);
 
 function useTierFormat() {
-  const code = React.useContext(TierCurrencyContext);
-  return useCallback((v: string | undefined) => formatTierValue(v, code), [code]);
+  return formatTierValue;
 }
 const PARTNER_NAMES = [
   "Toyota International", "Ford Motor Company", "General Motors (GM)", "Tesla, Inc.",
@@ -410,12 +404,12 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-preset-disc-val-single",
     name: "Standard Discount, Value (Single-Tier)",
     category: "discount", basis: "value", tierType: "single",
-    description: "10% off on orders over $1,000",
+    description: "10% off on orders over ₨280,000",
     aboutText: "The Standard Discount, Value (Single-Tier) pricing rule is a straightforward model where a fixed percentage discount is applied once the total purchase value exceeds a defined threshold. Commonly used for repeat customers.",
     isPreset: true, status: "Active", scope: "vendor",
     validFrom: "1 Jan 2025", validTo: "30 Jun 2025", hasDateLimit: true, durationDays: 180,
     createdBy: "Ahtisham Ahmad", createdDate: "15 Jan 2025",
-    tiers: [{ minQty: "$1,000", maxQty: "$25,000", discount: "10%" }],
+    tiers: [{ minQty: "₨280,000", maxQty: "₨7,000,000", discount: "10%" }],
     itemCount: 12, categoryCount: 12, partnerCount: 8,
     appliesToAllItems: true,
   },
@@ -435,16 +429,16 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-preset-disc-val-multi",
     name: "Tiered Discount, Value (Multi-Tier)",
     category: "discount", basis: "value", tierType: "multiple",
-    description: "10% off at each tier from $1K to $25K",
+    description: "10% off at each tier from ₨280K to ₨7M",
     aboutText: "A multi-tier value-based discount model where different discount percentages are applied at various purchase value thresholds. Encourages larger order values with increasing savings.",
     isPreset: true, status: "Active", scope: "vendor",
     validFrom: "1 Mar 2025", validTo: "31 Dec 2025", hasDateLimit: true, durationDays: 305,
     createdBy: "Marcus Obi", createdDate: "28 Feb 2025",
     tiers: [
-      { minQty: "$1,000", maxQty: "$4,999", discount: "10%" },
-      { minQty: "$5,000", maxQty: "$9,999", discount: "10%", isFixRate: false },
-      { minQty: "$10,000", maxQty: "$24,999", discount: "10%" },
-      { minQty: "$25,000", maxQty: "$50,000", discount: "10%" },
+      { minQty: "₨280,000", maxQty: "₨1,399,999", discount: "10%" },
+      { minQty: "₨1,400,000", maxQty: "₨2,799,999", discount: "10%", isFixRate: false },
+      { minQty: "₨2,800,000", maxQty: "₨6,999,999", discount: "10%" },
+      { minQty: "₨7,000,000", maxQty: "₨14,000,000", discount: "10%" },
     ],
     itemCount: 15, categoryCount: 14, partnerCount: 12,
   },
@@ -470,12 +464,12 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-preset-prem-val-single",
     name: "Standard Premium, Value (Single-Tier)",
     category: "premium", basis: "value", tierType: "single",
-    description: "10% surcharge on orders over $1,000",
+    description: "10% surcharge on orders over ₨280,000",
     aboutText: "A value-based premium surcharge applied to exclusive product lines and VIP offerings. Automate pricing increases to enhance exclusivity and maximize profitability.",
     isPreset: true, status: "Active", scope: "customer",
     validFrom: "1 Apr 2025", validTo: "30 Sep 2025", hasDateLimit: true, durationDays: 182,
     createdBy: "Sarah Chen", createdDate: "25 Mar 2025",
-    tiers: [{ minQty: "$1,000", maxQty: "$25,000", discount: "10%" }],
+    tiers: [{ minQty: "₨280,000", maxQty: "₨7,000,000", discount: "10%" }],
     itemCount: 6, categoryCount: 10, partnerCount: 4,
   },
   {
@@ -494,15 +488,15 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-preset-prem-val-multi",
     name: "Tiered Premium, Value (Multi-Tier)",
     category: "premium", basis: "value", tierType: "multiple",
-    description: "10% surcharge at each tier from $1K to $10K",
+    description: "10% surcharge at each tier from ₨280K to ₨2.8M",
     aboutText: "A multi-tier value-based premium model where different surcharges are applied at decreasing purchase value thresholds. Protects margins on smaller deals.",
     isPreset: true, status: "Active", scope: "vendor",
     validFrom: "5 Feb 2025", validTo: "5 Nov 2025", hasDateLimit: true, durationDays: 273,
     createdBy: "Ahtisham Ahmad", createdDate: "1 Feb 2025",
     tiers: [
-      { minQty: "$1,000", maxQty: "$4,999", discount: "10%" },
-      { minQty: "$5,000", maxQty: "$9,999", discount: "10%" },
-      { minQty: "$10,000", maxQty: "$25,000", discount: "10%" },
+      { minQty: "₨280,000", maxQty: "₨1,399,999", discount: "10%" },
+      { minQty: "₨1,400,000", maxQty: "₨2,799,999", discount: "10%" },
+      { minQty: "₨2,800,000", maxQty: "₨7,000,000", discount: "10%" },
     ],
     itemCount: 9, categoryCount: 10, partnerCount: 6,
   },
@@ -529,12 +523,12 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-custom-disc-val-single",
     name: "Q2 Loyalty Value Discount",
     category: "discount", basis: "value", tierType: "single",
-    description: "12% off on orders over $2,500 for loyal partners",
+    description: "12% off on orders over ₨700,000 for loyal partners",
     aboutText: "A custom single-tier value-based discount created specifically for Q2 2025 to reward long-standing partners who consistently place high-value orders. Fully configurable tiers and settings.",
     isPreset: false, status: "Active", scope: "vendor",
     validFrom: "1 Apr 2025", validTo: "30 Jun 2025", hasDateLimit: true, durationDays: 90,
     createdBy: "Ahtisham Ahmad", createdDate: "20 Mar 2025",
-    tiers: [{ minQty: "$2,500", maxQty: "$45,000", discount: "12%" }],
+    tiers: [{ minQty: "₨700,000", maxQty: "₨12,600,000", discount: "12%" }],
     itemCount: 7, categoryCount: 10, partnerCount: 6,
   },
   {
@@ -553,16 +547,16 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-custom-disc-val-multi",
     name: "Annual Value-Based Savings Plan",
     category: "discount", basis: "value", tierType: "multiple",
-    description: "Progressive savings: 3% at $750, 8% at $3K, 14% at $10K",
+    description: "Progressive savings: 3% at ₨210,000, 8% at ₨840,000, 14% at ₨2,800,000",
     aboutText: "A comprehensive multi-tier value-based savings program designed for annual contracts. Each tier offers increasing discounts to incentivize higher purchase commitments throughout the year.",
     isPreset: false, status: "Active", scope: "vendor",
     validFrom: "1 Jan 2025", validTo: "31 Dec 2025", hasDateLimit: true, durationDays: 365,
     createdBy: "Marcus Obi", createdDate: "28 Dec 2024",
     tiers: [
-      { minQty: "$750", maxQty: "$2,999", discount: "3%" },
-      { minQty: "$3,000", maxQty: "$9,999", discount: "8%" },
-      { minQty: "$10,000", maxQty: "$24,999", discount: "14%" },
-      { minQty: "$25,000", maxQty: "$100,000", discount: "19%", isFixRate: true },
+      { minQty: "₨210,000", maxQty: "₨839,999", discount: "3%" },
+      { minQty: "₨840,000", maxQty: "₨2,799,999", discount: "8%" },
+      { minQty: "₨2,800,000", maxQty: "₨6,999,999", discount: "14%" },
+      { minQty: "₨7,000,000", maxQty: "₨28,000,000", discount: "19%", isFixRate: true },
     ],
     itemCount: 22, categoryCount: 13, partnerCount: 15,
   },
@@ -588,12 +582,12 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-custom-prem-val-single",
     name: "Expedited Processing Fee",
     category: "premium", basis: "value", tierType: "single",
-    description: "18% surcharge for rush orders under $5,000",
+    description: "18% surcharge for rush orders under ₨1,400,000",
     aboutText: "Custom premium rule applying an expedited processing surcharge on orders requiring priority handling. Covers additional logistics and labor costs for rush fulfillment.",
     isPreset: false, status: "Active", scope: "vendor",
     validFrom: "1 Mar 2025", validTo: "28 Feb 2026", hasDateLimit: false, durationDays: 365,
     createdBy: "Ahtisham Ahmad", createdDate: "25 Feb 2025",
-    tiers: [{ minQty: "$50", maxQty: "$5,000", discount: "18%" }],
+    tiers: [{ minQty: "₨14,000", maxQty: "₨1,400,000", discount: "18%" }],
     itemCount: 4, categoryCount: 10, partnerCount: 11,
   },
   {
@@ -612,15 +606,15 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-custom-prem-val-multi",
     name: "VIP Exclusive Tiered Markup",
     category: "premium", basis: "value", tierType: "multiple",
-    description: "5% on $1K+, 10% on $5K+, 18% on $20K+ exclusives",
+    description: "5% on ₨280K+, 10% on ₨1.4M+, 18% on ₨5.6M+ exclusives",
     aboutText: "A multi-tier value-based premium for exclusive product lines available only through VIP channels. Higher-value orders carry progressively higher premiums reflecting product exclusivity.",
     isPreset: false, status: "Active", scope: "customer",
     validFrom: "15 Jan 2025", validTo: "15 Jan 2026", hasDateLimit: false, durationDays: 365,
     createdBy: "Marcus Obi", createdDate: "10 Jan 2025",
     tiers: [
-      { minQty: "$1,000", maxQty: "$4,999", discount: "5%" },
-      { minQty: "$5,000", maxQty: "$19,999", discount: "10%" },
-      { minQty: "$20,000", maxQty: "$75,000", discount: "18%", isFixRate: true },
+      { minQty: "₨280,000", maxQty: "₨1,399,999", discount: "5%" },
+      { minQty: "₨1,400,000", maxQty: "₨5,599,999", discount: "10%" },
+      { minQty: "₨5,600,000", maxQty: "₨21,000,000", discount: "18%", isFixRate: true },
     ],
     itemCount: 3, categoryCount: 10, partnerCount: 4,
   },
@@ -659,14 +653,14 @@ function generatePricingRules(vendor: Vendor, cfg?: VendorConfigData): PricingRu
     const fmt = (d: Date) => d.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
 
     const srcTiers = p?.tiers.map((t) => ({ minValue: t.minValue, maxValue: t.maxValue, discount: t.discount }))
-      || [{ minValue: cr.basis === "volume" ? "35 EA" : "$1,000", maxValue: cr.basis === "volume" ? "500 EA" : "$32,000", discount: "13%" }];
+      || [{ minValue: cr.basis === "volume" ? "35 EA" : "₨280,000", maxValue: cr.basis === "volume" ? "500 EA" : "₨8,960,000", discount: "13%" }];
     const tiers: TierData[] = srcTiers.map((t) => ({ minQty: t.minValue, maxQty: t.maxValue, discount: t.discount }));
     if ((p?.tierType === "multiple") && (p?.totalTiers || 1) > 1) {
       for (let ti = 1; ti < Math.min(p.totalTiers, 4); ti++) {
         const base = parseInt(srcTiers[0]?.maxValue.replace(/[^0-9]/g, "") || "100") * (ti + 1);
         tiers.push({
-          minQty: p.basis === "volume" ? `${base} EA` : `$${base.toLocaleString()}`,
-          maxQty: p.basis === "volume" ? `${base * 2} EA` : `$${(base * 2).toLocaleString()}`,
+          minQty: p.basis === "volume" ? `${base} EA` : `${RULE_SYMBOL}${base.toLocaleString()}`,
+          maxQty: p.basis === "volume" ? `${base * 2} EA` : `${RULE_SYMBOL}${(base * 2).toLocaleString()}`,
           discount: `${parseInt(srcTiers[0]?.discount || "5") + ti * 3}%`,
           isFixRate: ti === 1 && rng() > 0.7,
         });
@@ -1668,6 +1662,7 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
   const fmtTier = useTierFormat();
   // A linked partner's amounts are in its own currency.
   const currencyOfPartner = usePartnerCurrencyOf();
+  const rateTypeOfPartner = usePartnerRateTypeInfo();
   const [itemSearch, setItemSearch] = useState("");
   const [catSearch, setCatSearch] = useState("");
   const [partnerSearch, setPartnerSearch] = useState("");
@@ -2163,6 +2158,9 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                               <label className="text-[12px] text-foreground block" style={{ fontWeight: 500 }}>Calculation Basis</label>
                               <Input value={rule.basis === "volume" ? "Volume-Based" : "Value-Based"} disabled className="mt-1 !h-10 text-sm" />
                             </div>
+                            {/* Rules are in the base currency; no currency pick. */}
+                            <RuleCurrencyField height="h-10" showInfo={false} />
+                            <RuleCurrencyNote />
                             <div className="sm:col-span-2">
                               <label className="text-[12px] text-foreground block" style={{ fontWeight: 500 }}>Description</label>
                               <Input value={rule.description} disabled placeholder="—" className="mt-1 !h-10 text-sm" />
@@ -2210,6 +2208,17 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                       ))}
                     </div>
                   </div>
+
+                  {/* On a partner in another currency: how a value rule meets its
+                      documents (threshold checked in base at the document's rate). */}
+                  {vendor && rule.basis === "value" && !isBaseCurrency(currencyOfPartner(vendor)) && (
+                    <RuleDocumentExampleCard
+                      tiers={rule.tiers}
+                      currency={currencyOfPartner(vendor)}
+                      rateType={rateTypeOfPartner(vendor).type}
+                      category={isDis ? "discount" : "premium"}
+                    />
+                  )}
 
                   {/* Metadata footer */}
                   <div className="flex items-center gap-3 pt-2 text-[11px] text-slate-500" style={{ fontWeight: 500 }}>
@@ -2628,7 +2637,7 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                           <TableHead style={{ width: 140, minWidth: 140, maxWidth: 140 }} className="text-[13px] text-foreground !pl-4"><span style={{ fontWeight: 600 }}>Partner Type</span></TableHead>
                           <TableHead style={{ width: 180, minWidth: 180, maxWidth: 180 }} className="text-[13px] text-foreground !pl-4"><span style={{ fontWeight: 600 }}>No. of Items</span></TableHead>
                           <TableHead style={{ width: 150, minWidth: 150, maxWidth: 150 }} className="text-[13px] text-foreground !pl-4"><span style={{ fontWeight: 600 }}>Country</span></TableHead>
-                          <TableHead style={{ width: 130, minWidth: 130, maxWidth: 130 }} className="text-[13px] text-foreground !pl-4 text-right"><span style={{ fontWeight: 600 }}>Credit Limit ($)</span></TableHead>
+                          <TableHead style={{ width: 130, minWidth: 130, maxWidth: 130 }} className="text-[13px] text-foreground !pl-4 text-right"><span style={{ fontWeight: 600 }}>Credit Limit</span></TableHead>
                           <TableHead style={{ width: 100, minWidth: 100, maxWidth: 100 }} className="text-[13px] text-foreground !pl-4"><span style={{ fontWeight: 600 }}>Status</span></TableHead>
                           <TableHead className="sticky right-0 z-20 bg-slate-50 !pl-2 !pr-2" style={{ width: 60, minWidth: 60, maxWidth: 60, boxShadow: "inset 1px 0 0 0 rgba(0,0,0,0.08)" }}>
                             <span className="text-[13px]">Actions</span>
@@ -3275,10 +3284,9 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
   onEmbeddedCreateSaved?: (saved: { name: string; description: string; category: "discount" | "premium"; appliesToAllItems: boolean }) => void;
 }) {
   const allRules = useMemo(() => generatePricingRules(vendor, cfg), [vendor, cfg]);
-  // Tier amounts (written in USD) shown in this partner's currency or in base.
-  const partnerCcy = usePartnerCurrencyOf()(vendor);
-  const [tierView, setTierView] = useState<CurrencyView>("partner");
-  const tierCurrency = tierView === "base" ? BASE_CURRENCY : partnerCcy;
+  // The worked example in Create New Pricing Rule is shown on a document in this partner's currency.
+  const currencyOfPartner = usePartnerCurrencyOf();
+  const rateTypeOfPartner = usePartnerRateTypeInfo();
 
   const [subTab, setSubTab] = useState<SubTab>("vendor");
   const [categoryView, setCategoryView] = useState<CategoryView>("discount");
@@ -3310,10 +3318,10 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
   const exploreCards = useMemo<PricingRule[]>(() => {
     const expandedTiers: Record<string, TierData[]> = {
       "pr-3": [
-        { minQty: "$ 500", maxQty: "$ 2,300", discount: "5%" },
-        { minQty: "$ 2,300", maxQty: "$ 5,000", discount: "10%" },
-        { minQty: "$ 5,000", maxQty: "$ 10,000", discount: "15%" },
-        { minQty: "$ 10,000", maxQty: "$ 25,000", discount: "20%" },
+        { minQty: "₨140,000", maxQty: "₨644,000", discount: "5%" },
+        { minQty: "₨644,000", maxQty: "₨1,400,000", discount: "10%" },
+        { minQty: "₨1,400,000", maxQty: "₨2,800,000", discount: "15%" },
+        { minQty: "₨2,800,000", maxQty: "₨7,000,000", discount: "20%" },
       ],
       "pr-4": [
         { minQty: "35 EA", maxQty: "100 EA", discount: "5%" },
@@ -3322,16 +3330,16 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
         { minQty: "500 EA", maxQty: "1,000 EA", discount: "20%" },
       ],
       "pr-7": [
-        { minQty: "$ 0", maxQty: "$ 200", discount: "10%" },
-        { minQty: "$ 200", maxQty: "$ 500", discount: "7%" },
-        { minQty: "$ 500", maxQty: "$ 1,000", discount: "5%" },
-        { minQty: "$ 1,000", maxQty: "$ 5,000", discount: "3%" },
+        { minQty: "₨0", maxQty: "₨56,000", discount: "10%" },
+        { minQty: "₨56,000", maxQty: "₨140,000", discount: "7%" },
+        { minQty: "₨140,000", maxQty: "₨280,000", discount: "5%" },
+        { minQty: "₨280,000", maxQty: "₨1,400,000", discount: "3%" },
       ],
       "pr-8": [
-        { minQty: "1 EA", maxQty: "25 EA", discount: "$50" },
-        { minQty: "25 EA", maxQty: "50 EA", discount: "$25" },
-        { minQty: "50 EA", maxQty: "100 EA", discount: "$15" },
-        { minQty: "100 EA", maxQty: "250 EA", discount: "$10" },
+        { minQty: "1 EA", maxQty: "25 EA", discount: "₨14,000" },
+        { minQty: "25 EA", maxQty: "50 EA", discount: "₨7,000" },
+        { minQty: "50 EA", maxQty: "100 EA", discount: "₨4,200" },
+        { minQty: "100 EA", maxQty: "250 EA", discount: "₨2,800" },
       ],
     };
     const mk = (id: string, ruleNo: string, name: string, cat: "discount"|"premium", basis: "value"|"volume", tierType: "single"|"multiple", tiers: TierData[], desc: string, about: string, preset: boolean, by: string, scope: "vendor"|"customer"|"both"): PricingRule => {
@@ -3345,14 +3353,14 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
       return mk(p.id, `PRE-${(p.id.split("-")[1] || "0").padStart(3, "0")}`, p.name, p.category as "discount" | "premium", p.basis, p.tierType, tiers, p.description, p.aboutText || "", true, "System", "both");
     });
     const byMe: PricingRule[] = [
-      mk("cust-me-1", "CUS-001", "Early Payment Discount", "discount", "value", "single", [{ minQty: "$ 5,000", maxQty: "$ 50,000", discount: "8%" }], "8% discount for payments made within 10 days of invoice", "Encourages early payment by offering a percentage discount when partners pay invoices within a specified early window.", false, "Ahtisham Ahmad", "vendor"),
+      mk("cust-me-1", "CUS-001", "Early Payment Discount", "discount", "value", "single", [{ minQty: "₨1,400,000", maxQty: "₨14,000,000", discount: "8%" }], "8% discount for payments made within 10 days of invoice", "Encourages early payment by offering a percentage discount when partners pay invoices within a specified early window.", false, "Ahtisham Ahmad", "vendor"),
       mk("cust-me-2", "CUS-002", "Rush Order Premium", "premium", "volume", "single", [{ minQty: "1 EA", maxQty: "50 EA", discount: "12%" }], "12% surcharge on expedited orders under 50 units", "Applies a premium surcharge for rush orders requiring expedited processing and shipping for small quantities.", false, "Ahtisham Ahmad", "vendor"),
       mk("cust-me-3", "CUS-003", "Seasonal Volume Discount", "discount", "volume", "multiple", [{ minQty: "100 EA", maxQty: "300 EA", discount: "5%" }, { minQty: "300 EA", maxQty: "750 EA", discount: "10%" }, { minQty: "750 EA", maxQty: "2,000 EA", discount: "18%" }], "Tiered discounts for Q4 seasonal bulk ordering", "A multi-tier seasonal promotion offering increasing discounts at higher volume breakpoints during the Q4 ordering season.", false, "Ahtisham Ahmad", "both"),
     ];
     const byOthers: PricingRule[] = [
-      mk("cust-oth-1", "CUS-004", "VIP Client Premium", "premium", "value", "single", [{ minQty: "$ 0", maxQty: "$ 10,000", discount: "15%" }], "15% premium for exclusive VIP-tier partnerships", "A value-based premium applied to VIP client orders, reflecting the enhanced service level and priority handling.", false, "Sarah Chen", "customer"),
-      mk("cust-oth-2", "CUS-005", "Loyalty Tier Discount", "discount", "value", "multiple", [{ minQty: "$ 10,000", maxQty: "$ 25,000", discount: "3%" }, { minQty: "$ 25,000", maxQty: "$ 75,000", discount: "7%" }, { minQty: "$ 75,000", maxQty: "$ 200,000", discount: "12%" }], "Progressive discounts based on cumulative order value", "Rewards long-term partners with increasing discounts as their cumulative purchase value crosses defined thresholds.", false, "Marcus Obi", "both"),
-      mk("cust-oth-3", "CUS-006", "Small Batch Surcharge", "premium", "volume", "single", [{ minQty: "1 EA", maxQty: "20 EA", discount: "$75" }], "Flat $75 handling fee for orders under 20 units", "Covers additional handling and logistics costs incurred when processing small batch orders below the minimum efficient quantity.", false, "Elena Volkov", "vendor"),
+      mk("cust-oth-1", "CUS-004", "VIP Client Premium", "premium", "value", "single", [{ minQty: "₨0", maxQty: "₨2,800,000", discount: "15%" }], "15% premium for exclusive VIP-tier partnerships", "A value-based premium applied to VIP client orders, reflecting the enhanced service level and priority handling.", false, "Sarah Chen", "customer"),
+      mk("cust-oth-2", "CUS-005", "Loyalty Tier Discount", "discount", "value", "multiple", [{ minQty: "₨2,800,000", maxQty: "₨7,000,000", discount: "3%" }, { minQty: "₨7,000,000", maxQty: "₨21,000,000", discount: "7%" }, { minQty: "₨21,000,000", maxQty: "₨56,000,000", discount: "12%" }], "Progressive discounts based on cumulative order value", "Rewards long-term partners with increasing discounts as their cumulative purchase value crosses defined thresholds.", false, "Marcus Obi", "both"),
+      mk("cust-oth-3", "CUS-006", "Small Batch Surcharge", "premium", "volume", "single", [{ minQty: "1 EA", maxQty: "20 EA", discount: "₨21,000" }], "Flat ₨21,000 handling fee for orders under 20 units", "Covers additional handling and logistics costs incurred when processing small batch orders below the minimum efficient quantity.", false, "Elena Volkov", "vendor"),
     ];
     return [...presetRules, ...byMe, ...byOthers];
   }, []);
@@ -3488,13 +3496,19 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
     setCreateItemScope(r.appliesToAllItems ? "all" : DEFAULT_ITEM_SCOPE);
     setCreateWasAllItems(!!r.appliesToAllItems);
     setCreateTiers(r.tiers.length > 0
-      ? r.tiers.map((t) => ({
-          discount: t.discount,
-          fixRate: t.discount.includes("$"),
-          qtyLimits: !!(t.minQty || t.maxQty),
-          minQty: t.minQty || "",
-          maxQty: t.maxQty || "",
-        }))
+      ? r.tiers.map((t) => {
+          // Fields carry the number; the form shows the base currency's
+          // symbol and the % beside them.
+          const fixed = isFixedRuleAmount(t.discount);
+          const field = (v: string) => (r.basis === "value" ? ruleInputValue(v) : v || "");
+          return {
+            discount: fixed ? ruleInputValue(t.discount) : t.discount.replace(/%$/, ""),
+            fixRate: fixed,
+            qtyLimits: !!(t.minQty || t.maxQty),
+            minQty: field(t.minQty),
+            maxQty: field(t.maxQty),
+          };
+        })
       : [makeTier()]
     );
     setCreateModalOpen(true);
@@ -3553,7 +3567,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
   const paginated = filtered.slice((currentPage - 1) * effectiveRecordsPerPage, currentPage * effectiveRecordsPerPage);
 
   return (
-    <TierCurrencyContext.Provider value={tierCurrency}>
+    <>
     {/* Embedded create-only mode hides the tab chrome entirely — the
        Dialogs below portal to <body>, so only the create modal shows. */}
     <div className={`bg-card overflow-clip flex flex-col ${embeddedCreateOnly ? "hidden" : flush ? "flex-1 min-h-0" : "border border-border rounded-xl"}`} style={flush || embeddedCreateOnly ? undefined : { minHeight: 400 }}>
@@ -3575,7 +3589,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
               color: "#0548A3",
               bg: "#EBF3FF",
               tip: "Tier-based discounts or premiums that fire automatically when you purchase from this partner. Applies to new POs only, existing PO snapshots aren't recalculated.",
-              example: <><span className="text-[#0548A3]" style={{ fontWeight: 600 }}>5% volume discount</span> on POs over $5,000, applied at checkout when buying from this partner.</>,
+              example: <><span className="text-[#0548A3]" style={{ fontWeight: 600 }}>5% volume discount</span> on POs over ₨1,400,000, applied at checkout when buying from this partner.</>,
             },
             {
               key: "customer" as SubTab,
@@ -3747,8 +3761,6 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
             })}
           </div>
         </div>
-        {/* Tier amounts in the partner's currency or the base currency. */}
-        <CurrencyViewToggle size="sm" view={tierView} onChange={setTierView} partnerCurrency={partnerCcy} />
       </div>
 
       {/* Quick Filter Pills */}
@@ -4230,7 +4242,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                 <p className="text-slate-500">Measure thresholds by units ordered or order value.</p>
                                 <div className="mt-2 px-2.5 py-2 rounded-lg bg-slate-50 border border-muted">
                                   <p className="text-[10px] text-slate-400 tracking-wide" style={{ fontWeight: 600 }}>Example</p>
-                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over $10K.</p>
+                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over ₨2,800,000.</p>
                                 </div>
                               </TooltipContent>
                             </Tooltip>
@@ -4243,7 +4255,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                   if (createBasis !== b) {
                                     setCreateBasis(b);
                                     // Clear tier thresholds when switching basis — old quantity values
-                                    // shouldn't linger as dollar amounts and vice versa.
+                                    // shouldn't linger as order values and vice versa.
                                     setCreateTiers(prev => prev.map(t => ({ ...t, minQty: "", maxQty: "" })));
                                   }
                                 }}
@@ -4260,6 +4272,9 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                             ))}
                           </div>
                         </div>
+                        {/* Currency: always the base currency, read-only (no currency pick on a rule). */}
+                        <RuleCurrencyField />
+                        <RuleCurrencyNote />
                         {/* Row 2: Description (full width) */}
                         <div className="col-span-2">
                           <ExpandableTextarea
@@ -4374,7 +4389,8 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                     isFixed={tier.fixRate}
                                     onChange={(fixed) => updateTier(idx, { fixRate: fixed })}
                                     percentTooltip={`${isDis ? "Discount" : "Premium"} applied as a percentage of the line value.`}
-                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in USD.`}
+                                    amountTooltip={RULE_FIXED_TOOLTIP(isDis ? "Discount" : "Premium")}
+                                    amountLabel={RULE_SYMBOL}
                                   />
                                 </div>
                                 <div className="relative">
@@ -4384,14 +4400,13 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                   <Input
                                     value={tier.discount}
                                     onChange={(e) => updateTier(idx, { discount: e.target.value })}
-                                    placeholder={tier.fixRate ? "e.g. 25.00" : "e.g. 50"}
+                                    placeholder={tier.fixRate ? "e.g. 7,000" : "e.g. 50"}
                                     className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-7 pr-3" : "pr-8"}`}
                                   />
                                   {!tier.fixRate && (
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">%</span>
                                   )}
                                 </div>
-                                {tier.fixRate && <RuleAmountPreview raw={tier.discount ?? ""} from={RULE_CURRENCY} to={partnerCcy} />}
                               </div>
 
                               {/* Quantity limits toggle */}
@@ -4407,7 +4422,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                   <span onClick={(e) => e.stopPropagation()}>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "Restricts this tier to orders within a specific quantity range. When enabled, the tier only applies when the order quantity falls between Min and Max."
-                                      : "Restricts this tier to orders within a specific dollar-value range. When enabled, the tier only applies when the order total falls between Min and Max."}</InfoTooltip>
+                                      : "Restricts this tier to orders within a specific value range, in PKR. When enabled, the tier only applies when the order total falls between Min and Max."}</InfoTooltip>
                                   </span>
                                 </label>
                               </div>
@@ -4421,7 +4436,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                     <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Min Qty" : "Min Order Value"}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The smallest order quantity at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."
-                                      : "The smallest order value (in USD, the currency pricing rules are written in) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
+                                      : "The smallest order value (in PKR, the base currency pricing rules are written in) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
@@ -4430,18 +4445,17 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                     <Input
                                       value={tier.minQty}
                                       onChange={(e) => updateTier(idx, { minQty: e.target.value })}
-                                      placeholder={createBasis === "volume" ? "e.g. 100" : "e.g. 1,000"}
+                                      placeholder={createBasis === "volume" ? "e.g. 100" : "e.g. 280,000"}
                                       className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createBasis === "value" ? "pl-7" : ""}`}
                                     />
                                   </div>
-                                  {createBasis === "value" && <RuleAmountPreview raw={tier.minQty ?? ""} from={RULE_CURRENCY} to={partnerCcy} />}
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
                                     <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Max Qty" : "Max Order Value"}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The largest order quantity this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."
-                                      : "The largest order value (in USD, the currency pricing rules are written in) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
+                                      : "The largest order value (in PKR, the base currency pricing rules are written in) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
@@ -4450,11 +4464,10 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                                     <Input
                                       value={tier.maxQty}
                                       onChange={(e) => updateTier(idx, { maxQty: e.target.value })}
-                                      placeholder={createBasis === "volume" ? "e.g. 500" : "e.g. 5,000"}
+                                      placeholder={createBasis === "volume" ? "e.g. 500" : "e.g. 1,400,000"}
                                       className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createBasis === "value" ? "pl-7" : ""}`}
                                     />
                                   </div>
-                                  {createBasis === "value" && <RuleAmountPreview raw={tier.maxQty ?? ""} from={RULE_CURRENCY} to={partnerCcy} />}
                                 </div>
                               </div>
                             )}
@@ -4471,6 +4484,17 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                     >
                       <Plus className="w-3.5 h-3.5" /> Add Tier
                     </button>
+
+                    {/* Value-based: how the tiers meet a document in the partner's
+                        currency (threshold checked in base at the document's rate). */}
+                    <RuleCreateExampleCard
+                      className="mt-4"
+                      basis={createBasis}
+                      tiers={createTiers}
+                      partnerCurrency={currencyOfPartner(vendor)}
+                      rateType={rateTypeOfPartner(vendor).type}
+                      category={createCategory}
+                    />
                   </div>
                 </div>
                 );
@@ -4486,7 +4510,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] text-slate-700 truncate" style={{ fontWeight: 600 }}>{createName || "Untitled Rule"}</p>
-                      <p className="text-[11px] text-slate-500 truncate">{createCategory === "discount" ? "Discount" : "Premium"} · {createBasis === "volume" ? "Volume-Based" : "Value-Based"} · {createTiers.length} tier{createTiers.length !== 1 ? "s" : ""}{createTiers[0]?.discount ? ` · ${createTiers[0].discount}${createTiers[0].fixRate ? "$" : "%"}` : ""}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{createCategory === "discount" ? "Discount" : "Premium"} · {createBasis === "volume" ? "Volume-Based" : "Value-Based"} · {createTiers.length} tier{createTiers.length !== 1 ? "s" : ""}{createTiers[0]?.discount ? ` · ${createTiers[0].fixRate ? ruleAmountFromInput(createTiers[0].discount) : `${createTiers[0].discount}%`}` : ""}</p>
                     </div>
                     <button
                       onClick={() => setCreateStep(1)}
@@ -5068,6 +5092,6 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
         </DialogContent>
       </Dialog>
     </div>
-    </TierCurrencyContext.Provider>
+    </>
   );
 }

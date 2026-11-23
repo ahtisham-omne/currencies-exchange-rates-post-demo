@@ -51,8 +51,9 @@ import { SOCurrencyConfigDialog, SOCurrencySummary } from "@/app/components/curr
 import { DocMoney } from "@/app/components/currency/DocCurrency";
 import { useDocOtherText, useDocView, useDocWhole } from "@/app/components/currency/docCurrencyContext";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { getCompanyAccount } from "@/app/currency/companyAccounts";
 import { isoDay, roundTo, ruleAmountFactor, soFx, stampSoRate } from "@/app/currency/soFx";
-import { describeRateChange, soRateFields, withSOCurrency, type SOCurrencyChoice } from "./soCurrency";
+import { describeRateChange, soRateFields, soRateLocked, withSOCurrency, type SOCurrencyChoice } from "./soCurrency";
 import { computeLineBreakdowns } from "./pricingRulesData";
 import { toast } from "sonner";
 
@@ -1221,22 +1222,30 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
   // and surface the full value via the `title` attribute on the surrounding
   // span (see usage sites — each value carries a `title`).
   /* Whole amounts as the design shows them, in the currency the page shows:
-     base by default, the customer's with the header toggle (spec 4.3). */
+     base (spec 4.3; the header toggle is gone since 24 Nov 2026). */
   const fmtCurrency = useDocWhole();
   const otherText = useDocOtherText();
   const { inBase } = useDocView();
   const fx = soFx(so);
 
-  /* Currency, rate or "You receive" changed in the Currency Configuration.
-     Another currency converts every price and freight charge
-     (withSOCurrency) and the fixed one-time adjustments, which live on the
-     SO page. */
+  /* Currency, rate or "You receive" (the pay-to account) changed in the
+     Currency Configuration. Another currency converts every price and
+     freight charge (withSOCurrency) and the fixed one-time adjustments,
+     which live on the SO page. */
   const handleCurrencyChange = ({ next, subject }: SOCurrencyChange) => {
     const { updates, factor } = withSOCurrency(so, next);
     const after = { ...so, ...updates };
     const afterFx = soFx(after);
-    const change = describeRateChange(soRateFields(so), soRateFields(after));
-    const detail = subject === "Exchange rate" ? `${change} (${afterFx.source})` : subject === "You receive" ? `You receive: ${change}` : change;
+    const beforeFields = soRateFields(so);
+    const afterFields = soRateFields(after);
+    const change = describeRateChange(beforeFields, afterFields);
+    const afterAccount = getCompanyAccount(afterFields.payToAccount);
+    const accountChange = beforeFields.payToAccount !== afterFields.payToAccount
+      ? `You receive: ${getCompanyAccount(beforeFields.payToAccount)?.label ?? beforeFields.payToAccount} → ${afterAccount?.label ?? afterFields.payToAccount}`
+      : null;
+    const detail = subject === "You receive"
+      ? accountChange ?? `You receive: ${change}`
+      : `${change}${subject === "Exchange rate" ? ` (${afterFx.source})` : ""}${accountChange ? ` · ${accountChange}` : ""}`;
     store.updateSO(so.id, {
       ...updates,
       activityLog: [
@@ -1254,13 +1263,15 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
     }
     toast.success(
       subject === "Currency" ? `Order converted to ${afterFx.currency}` : subject === "Exchange rate" ? "Exchange rate updated" : "Currency configuration saved",
-      { position: "top-right", description: subject === "You receive" ? `This order will settle in ${(after.settlementCurrency ?? BASE_CURRENCY).toUpperCase()}` : undefined },
+      { position: "top-right", description: subject === "You receive" && afterAccount ? `The customer pays into ${afterAccount.label} (${afterAccount.currency})` : undefined },
     );
   };
-  const currencyLocked = so.status !== "Draft";
-  /* The confirmation's "after" column: the order as it would be, with flat
-     USD rule amounts at the new currency's cross rate (ruleAmountFactor),
-     % rules and one-time adjustments scaling with the converted prices. */
+  /* The rate locks when the order is confirmed, i.e. leaves Draft (Currency
+     Touchpoints Map: draft order unlocked, confirmed order locked). */
+  const currencyLocked = soRateLocked(so);
+  /* The confirmation's "after" column: the order as it would be, with fixed
+     rule amounts (written in base) at the new rate (ruleAmountFactor), %
+     rules and one-time adjustments scaling with the converted prices. */
   const totalsFor = (next: SOCurrencyChoice): SOCurrencyTotals => {
     const { updates, factor } = withSOCurrency(so, next);
     const after = { ...so, ...updates } as SalesOrder;
@@ -1526,8 +1537,9 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
             {/* Subtotal */}
             <div className="flex items-center justify-between">
               <p style={{ fontSize: 11, fontWeight: 500, color: "#64748B", fontFamily: "Inter, system-ui, sans-serif" }}>Subtotal</p>
-              <p className="tabular-nums" style={{ fontSize: 12, fontWeight: 600, color: "#334155", fontFamily: "Inter, system-ui, sans-serif" }} title={fmtCurrency(subtotal)}>
-                {fmtCurrency(subtotal)}
+              <p className="tabular-nums" style={{ fontSize: 12, fontWeight: 600, color: "#334155", fontFamily: "Inter, system-ui, sans-serif" }}>
+                {/* In base, the customer's amount and the rate on hover. */}
+                <DocMoney value={subtotal}>{fmtCurrency(subtotal)}</DocMoney>
               </p>
             </div>
 
@@ -1545,9 +1557,8 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
                     <p
                       className="tabular-nums"
                       style={{ fontSize: 12, fontWeight: 500, color, fontFamily: "Inter, system-ui, sans-serif" }}
-                      title={`${sign}${fmtCurrency(Math.abs(pricingRulesNet))}`}
                     >
-                      {sign}{fmtCurrency(Math.abs(pricingRulesNet))}
+                      <DocMoney value={Math.abs(pricingRulesNet)}>{sign}{fmtCurrency(Math.abs(pricingRulesNet))}</DocMoney>
                     </p>
                   );
                 })()}
@@ -1590,9 +1601,10 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
                     color: adjustmentsNet > 0 ? "#7C3AED" : adjustmentsNet < 0 ? "var(--success)" : "#475569",
                     fontFamily: "Inter, system-ui, sans-serif",
                   }}
-                  title={`${adjustmentsNet > 0 ? "+" : adjustmentsNet < 0 ? "-" : ""}${fmtCurrency(Math.abs(adjustmentsNet))}`}
                 >
-                  {adjustmentsNet > 0 ? "+" : adjustmentsNet < 0 ? "-" : ""}{fmtCurrency(Math.abs(adjustmentsNet))}
+                  <DocMoney value={Math.abs(adjustmentsNet)}>
+                    {adjustmentsNet > 0 ? "+" : adjustmentsNet < 0 ? "-" : ""}{fmtCurrency(Math.abs(adjustmentsNet))}
+                  </DocMoney>
                 </p>
               </div>
               {adjustmentCount > 0 ? (
@@ -2074,8 +2086,9 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
               // storage field for the customer-requested date (renamed to
               // "Requested On" in the UI).
               /* The rate is taken on the order date (spec 4.3): a Draft re-takes
-                 it, unless a corporate rate was typed on the order. Amounts stay. */
-              const restamp = so.status !== "Draft"
+                 it, unless a corporate rate was typed on the order. Amounts stay.
+                 An order from a quote keeps the quote's rate (24 Nov 2026). */
+              const restamp = so.status !== "Draft" || so.sourceQuoteRef
                 ? {}
                 : so.rateEdited
                   ? { rateDate: isoDay(config.absoluteValue) }

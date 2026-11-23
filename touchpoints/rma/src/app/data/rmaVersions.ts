@@ -23,6 +23,10 @@ import {
 } from './mockRMAs';
 import { restockingFeeAmount } from '@/app/data/rmaGLEntries';
 import { PAY_FROM_ACCOUNTS } from './mockPayments';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { formatMoney } from '@/app/currency/money';
+import { RATE_TYPE_LABEL, toBase, type MoneyFx, type RateType } from '@/app/currency/rates';
+import { returnFx, rmaCurrency } from '@/app/currency/returnCurrency';
 
 /* ── Taxonomy ───────────────────────────────────────────────────────── */
 
@@ -115,6 +119,20 @@ export interface RMAVersionSnapshot {
   totalValue: number;
   lineItems: RMALineSnapshot[];
   attachmentNames: string[];
+  /** The return's currency, and the receiving rate its values convert to PKR
+   *  at (Currency Touchpoints Map, 2026-11-24). Versions show PKR at that
+   *  rate, and it is the receipt's, so a new version doesn't move them. */
+  currency?: string;
+  receivingFx?: MoneyFx;
+  /** The rate type the vendor settles at, from the currency configuration. */
+  settlementRateType?: RateType;
+}
+
+/** An amount of a version in PKR, at its receiving rate: "₨283,719.97". */
+export function versionMoney(snap: Pick<RMAVersionSnapshot, 'currency' | 'receivingFx'>, n: number): string {
+  const code = (snap.currency ?? BASE_CURRENCY).toUpperCase();
+  if (isBaseCurrency(code) || !snap.receivingFx) return formatMoney(n, BASE_CURRENCY);
+  return formatMoney(toBase(n, snap.receivingFx.rate), BASE_CURRENCY);
 }
 
 export interface RMAVersionEntry {
@@ -250,6 +268,9 @@ export function buildRMAVersionSnapshot(rma: RMA): RMAVersionSnapshot {
     totalValue: lineItems.reduce((s, li) => s + li.totalValue, 0),
     lineItems,
     attachmentNames: (rma.attachments ?? []).map((a) => a.name),
+    currency: rmaCurrency(rma),
+    ...((fx) => (fx ? { receivingFx: fx } : {}))(returnFx(rma)),
+    ...(rma.settlementRateType ? { settlementRateType: rma.settlementRateType } : {}),
   };
 }
 
@@ -282,6 +303,12 @@ const HEADER_FIELDS: {
     type: 'value-changed',
     format: (v) => PAY_FROM_ACCOUNTS.find((a) => a.id === v)?.label ?? String(v ?? ''),
   },
+  {
+    key: 'settlementRateType',
+    label: 'Settlement Rate Type',
+    type: 'value-changed',
+    format: (v) => RATE_TYPE_LABEL[v as RateType] ?? String(v ?? ''),
+  },
   { key: 'creditPct', label: 'Agreed Credit Rate', type: 'value-changed' },
   { key: 'restockingFee', label: 'Restocking Fee', type: 'value-changed' },
 ];
@@ -310,7 +337,8 @@ export function diffRMASnapshots(
   // because the id is a counter the panel hands out and a charge retyped from
   // Handling fee to Intake fee is a different deduction, not an edited one.
   {
-    const money = (n: number) => `$${n.toFixed(2)}`;
+    // In PKR at the receiving rate (2026-11-24), as the Versions tab shows it.
+    const money = (n: number) => versionMoney(next, n);
     const before = new Map((prev.charges ?? []).map((c) => [c.type, c.amount]));
     const after = new Map((next.charges ?? []).map((c) => [c.type, c.amount]));
     [...new Set([...before.keys(), ...after.keys()])].forEach((type) => {
@@ -412,7 +440,7 @@ export function diffRMASnapshots(
         type: 'value-changed',
         action: 'Changed',
         subject: after.sku,
-        subjectDetail: `Unit price · $${before.unitPrice.toFixed(2)} → $${after.unitPrice.toFixed(2)}`,
+        subjectDetail: `Unit price · ${versionMoney(prev, before.unitPrice)} → ${versionMoney(next, after.unitPrice)}`,
         itemRef: after.id,
       });
     }
@@ -472,7 +500,7 @@ function creationChange(rma: RMA, snapshot: RMAVersionSnapshot): RMAChangeRecord
     type: 'config-changed',
     action: 'Added',
     subject: 'Return Authorization Created',
-    detail: `${snapshot.lineItemCount} lines · $${snapshot.totalValue.toFixed(2)}`,
+    detail: `${snapshot.lineItemCount} lines · ${versionMoney(snapshot, snapshot.totalValue)}`,
     timestamp: '09:00 AM',
     user: rma.createdBy,
     initials: initialsOf(rma.createdBy),

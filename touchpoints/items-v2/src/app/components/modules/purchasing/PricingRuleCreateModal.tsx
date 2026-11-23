@@ -51,7 +51,7 @@ import {
   TrendingDown,
   TrendingUp,
   ChartColumn,
-  DollarSign,
+  Banknote,
   Info,
   Lock,
   Copy,
@@ -78,6 +78,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { toast } from "sonner";
 import { moneyPrefix } from "@/app/currency/money";
 import { RULE_CURRENCY, RuleAmountPreview } from "@/app/components/currency/RuleAmountPreview";
+import { CurrencyFlag } from "@/app/components/currency/CurrencyChip";
+import { ruleAmount } from "@/app/currency/ruleMoney";
 import {
   PRICING_RULE_PRESETS,
   type PricingRulePreset,
@@ -222,7 +224,8 @@ function InfoTooltip({
   );
 }
 
-/** ./PctAmountToggle — % / $ segmented toggle, ported 1:1. */
+/** ./PctAmountToggle — % / amount segmented toggle, ported 1:1; the amount
+ *  side shows the base currency's symbol (₨), as rules are in PKR. */
 function PctAmountToggle({
   isFixed,
   onChange,
@@ -260,8 +263,9 @@ function PctAmountToggle({
             onClick={() => onChange(true)}
             className={`px-2 h-[18px] rounded-full text-[10px] transition-all ${isFixed ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
             style={{ fontWeight: 600 }}
+            aria-label={`Fixed amount in ${RULE_CURRENCY}`}
           >
-            $
+            {moneyPrefix(RULE_CURRENCY).trim()}
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" sideOffset={6} className="max-w-[220px] text-[11px] leading-[1.5] z-[300]">
@@ -548,8 +552,8 @@ export interface PricingRuleCreateModalProps {
   } | null;
   /** Vendor name — substituted wherever the reference said "this partner". */
   scopeName: string;
-  /** The vendor's currency. Fixed amounts are written in USD (RULE_CURRENCY)
-   *  and show what they are in it today. */
+  /** The vendor's currency. Rules are in the base currency (RULE_CURRENCY,
+   *  PKR); a fixed amount shows what it is in the vendor's currency today. */
   currency?: string;
   /** Fire on ANY close: X, Cancel, Discard, backdrop, and after a save. */
   onClose: () => void;
@@ -681,7 +685,9 @@ export function PricingRuleCreateModal({
     setCreateDescription(card.description);
     setCreateCategory(card.category);
     setCreateBasis(card.basis);
-    setCreateTiers(card.tiers.map((t) => ({ discount: t.discount, fixRate: false, qtyLimits: true, minQty: t.minQty, maxQty: t.maxQty })));
+    // Numbers only: the inputs carry the ₨ and % themselves ("₨280,000" → "280000").
+    const parseNum = (s: string) => (s || "").replace(/[^0-9.]/g, "");
+    setCreateTiers(card.tiers.map((t) => ({ discount: parseNum(t.discount), fixRate: false, qtyLimits: true, minQty: parseNum(t.minQty), maxQty: parseNum(t.maxQty) })));
     setExplorePresetsOpen(false);
     setExplorePresetsFullscreen(false);
   };
@@ -1022,7 +1028,7 @@ export function PricingRuleCreateModal({
                                 <p className="text-slate-500">Measure thresholds by units ordered or order value.</p>
                                 <div className="mt-2 px-2.5 py-2 rounded-lg bg-slate-50 border border-muted">
                                   <p className="text-[10px] text-slate-400 tracking-wide" style={{ fontWeight: 600 }}>EXAMPLE</p>
-                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over {moneyPrefix(RULE_CURRENCY)}10K ({RULE_CURRENCY}).</p>
+                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over {ruleAmount(10000)} ({RULE_CURRENCY}, the base currency).</p>
                                 </div>
                               </TooltipContent>
                             </Tooltip>
@@ -1044,10 +1050,36 @@ export function PricingRuleCreateModal({
                                 }`}
                                 style={{ fontWeight: createBasis === b ? 600 : 500 }}
                               >
-                                {b === "volume" ? <ChartColumn className="w-3.5 h-3.5" /> : <DollarSign className="w-3.5 h-3.5" />}
+                                {b === "volume" ? <ChartColumn className="w-3.5 h-3.5" /> : <Banknote className="w-3.5 h-3.5" />}
                                 {b === "volume" ? "Volume-Based" : "Value-Based"}
                               </button>
                             ))}
+                          </div>
+                        </div>
+                        {/* Currency: the base currency, read-only. A rule has no
+                            currency pick (Currency Touchpoints Map, Partners 6). */}
+                        <div className="col-span-2">
+                          <div className="flex items-center gap-1 mb-1.5">
+                            <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>Currency</label>
+                            <InfoTooltip>
+                              {`Pricing rules are in ${RULE_CURRENCY}, the base currency. On an order in another currency, value thresholds are checked in ${RULE_CURRENCY} at the order's rate, and fixed amounts convert at that rate.`}
+                            </InfoTooltip>
+                          </div>
+                          <div
+                            className="flex items-center gap-2 h-9 px-3 rounded-lg border border-border bg-slate-50 text-[13px] cursor-not-allowed"
+                            aria-readonly="true"
+                            aria-label={`Currency: ${RULE_CURRENCY}, base currency, locked`}
+                          >
+                            <CurrencyFlag code={RULE_CURRENCY} />
+                            <span className="text-foreground tabular-nums" style={{ fontWeight: 600 }}>{RULE_CURRENCY}</span>
+                            <span className="text-slate-400">· base currency</span>
+                            <span
+                              className="ml-auto inline-flex items-center gap-1 px-1.5 py-[2px] rounded-md bg-white border border-slate-200 text-[10px] text-slate-500"
+                              style={{ fontWeight: 600 }}
+                            >
+                              <Lock className="w-2.5 h-2.5" />
+                              Locked
+                            </span>
                           </div>
                         </div>
                         {/* Row 2: Description (full width) */}
@@ -1172,7 +1204,7 @@ export function PricingRuleCreateModal({
                                   <Input
                                     value={tier.discount}
                                     onChange={(e) => updateTier(idx, { discount: e.target.value })}
-                                    placeholder={tier.fixRate ? "e.g. 25.00" : "e.g. 50"}
+                                    placeholder={tier.fixRate ? "e.g. 7,000.00" : "e.g. 50"}
                                     className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-7 pr-3" : "pr-8"}`}
                                   />
                                   {!tier.fixRate && (
@@ -1218,7 +1250,7 @@ export function PricingRuleCreateModal({
                                     <Input
                                       value={tier.minQty}
                                       onChange={(e) => updateTier(idx, { minQty: e.target.value })}
-                                      placeholder={createBasis === "volume" ? "e.g. 100" : "e.g. 1,000"}
+                                      placeholder={createBasis === "volume" ? "e.g. 100" : "e.g. 280,000"}
                                       className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createBasis === "value" ? "pl-7" : ""}`}
                                     />
                                   </div>
@@ -1237,7 +1269,7 @@ export function PricingRuleCreateModal({
                                     <Input
                                       value={tier.maxQty}
                                       onChange={(e) => updateTier(idx, { maxQty: e.target.value })}
-                                      placeholder={createBasis === "volume" ? "e.g. 500" : "e.g. 5,000"}
+                                      placeholder={createBasis === "volume" ? "e.g. 500" : "e.g. 1,400,000"}
                                       className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createBasis === "value" ? "pl-7" : ""}`}
                                     />
                                   </div>

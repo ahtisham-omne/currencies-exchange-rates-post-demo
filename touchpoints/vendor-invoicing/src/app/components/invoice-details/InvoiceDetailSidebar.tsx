@@ -16,15 +16,15 @@ import { SubmittedFlagCard, exceptionTypeLabelsFromReason } from '@/app/componen
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { Invoice } from '@/app/data/mockInvoices';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
-import { formatMoney as formatInCurrency, rateSentence } from '@/app/currency/money';
-import { RATE_TYPE_LABEL, toBase } from '@/app/currency/rates';
-import { invoiceFx, toInvoiceBase, type InvoiceFx } from '@/app/currency/invoiceFx';
+import { formatMoney as formatInCurrency } from '@/app/currency/money';
+import { toBase } from '@/app/currency/rates';
+import { invoiceFx, invoiceRateLocked, toInvoiceBase, type InvoiceFx } from '@/app/currency/invoiceFx';
+import { invoicePayFrom } from '@/app/currency/payFrom';
 import { differenceNeedsReview, useApSettings } from '@/app/hooks/useApSettings';
 import { paidRateText } from '@/app/currency/paidRate';
-import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
 import { DocMoney } from '@/app/components/currency/DocCurrency';
 import { useDocMoney, useDocOtherText, useDocView } from '@/app/components/currency/docCurrencyContext';
-import { InvoiceCurrencySummary } from '@/app/components/currency/InvoiceCurrencyConfig';
+import { InvoiceCurrencyBlock } from '@/app/components/currency/InvoiceCurrencyConfig';
 import { invoiceFxVariance } from '@/app/currency/fxVariance';
 import { ADVANCES_ACCOUNT } from '@/app/data/glAccounts';
 import { CollapseReveal } from '@/app/components/ui/collapse-reveal';
@@ -529,47 +529,8 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               </Tooltip>
               <p className="text-[12px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>{invoice.type === 'Pre-Invoice' ? ADVANCES_ACCOUNT : (invoice.apAccount || '·')}</p>
             </div>
-            <div className="min-w-0">
-              <p className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>Currency</p>
-              <p className="text-[12px] text-foreground truncate mt-0.5" style={{ fontWeight: 600 }}>
-                <CurrencyChip code={invoice.currency} size={14} />
-              </p>
-            </div>
-            {/* The rate taken on the posting date (Currency & Exchange Rates,
-                spec 4.4): A/P posted in the base currency at it, and a
-                payment is later compared against it. */}
-            {!fx.isBase && (
-              <div className="min-w-0 col-span-2">
-                <Tooltip delayDuration={300}>
-                  <TooltipTrigger asChild>
-                    <p className="inline-flex items-center gap-1 text-[11px] text-slate-400 cursor-help" style={{ fontWeight: 500 }}>
-                      Exchange Rate
-                      <Lock className="w-2.5 h-2.5 text-slate-300" />
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[260px] p-2.5 bg-white border border-border rounded-lg shadow-md z-[300]">
-                    <p className="text-[11px] text-foreground leading-snug" style={{ fontWeight: 600 }}>Taken on the Rate as of date</p>
-                    <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
-                      A/P posted in the base currency at this rate. A payment is later compared against it, and the difference is an exchange gain or loss.
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-                {fx.provisional ? (
-                  <>
-                    <p className="text-[12px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>Set when paid</p>
-                    <p className="text-[11px] text-slate-400 leading-snug">Today, {rateSentence(fx.currency, fx.rate)} (mid-market)</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-[12px] text-foreground mt-0.5 tabular-nums" style={{ fontWeight: 600 }}>{rateSentence(fx.currency, fx.rate)}</p>
-                    <p className="text-[11px] text-slate-500 leading-snug">
-                      <span style={{ fontWeight: 600, color: fx.rateType === 'mid' ? '#6D28D9' : '#B45309' }}>{RATE_TYPE_LABEL[fx.rateType]}</span>
-                      {' · '}{fmtSidebarDate(fx.rateDate)} ({fx.dateLabel}){invoice.rateEdited ? ' · changed on the invoice' : ''}
-                    </p>
-                  </>
-                )}
-              </div>
-            )}
+            {/* Currency and Exchange Rate moved to the Invoice Summary's
+                currency block (Currency Touchpoints Map, 24 Nov 2026). */}
           </div>
           {termDetailOpen && (
             <PaymentTermDetailsModal
@@ -732,7 +693,9 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
             </div>
           </div>
           <div className="flex items-center justify-between text-[13px] pt-1.5 mt-1.5 border-t border-slate-100">
-            <span className="text-foreground" style={{ fontWeight: 600 }}>Invoice Total</span>
+            {/* "Total Due" when nothing reduces it (Currency Touchpoints Map):
+                it equals the currency block's You pay in base. */}
+            <span className="text-foreground" style={{ fontWeight: 600 }}>{(numbers.credits ?? 0) > 0 || prepayTotal > 0 ? 'Invoice Total' : 'Total Due'}</span>
             <span className="text-foreground " style={{ fontWeight: 700 }}>
               <DocMoney value={numbers.total} />
             </span>
@@ -797,24 +760,27 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               two-column grid (user 10/1) — no duplicate rows down here. */}
         </div>
 
-        {/* CURRENCY: what the vendor bills, what posts to A/P in base, the
-            rate, what receiving booked and the FX Variance, and the way into
-            the invoice's Currency Configuration (as Purchase Orders' Order
-            Summary has it). */}
+        {/* The currency block (Currency Touchpoints Map, 24 Nov 2026): Vendor
+            invoiced, You pay (from the invoice's pay-from account), Base
+            equivalent when that account isn't in base, FX variance against
+            the receiving rate (only with a receiving), and the Rate. Draft
+            and Pending Approval are unlocked; posted locks at the
+            posting-date rate. */}
         {onViewCurrencyConfig && (
-          <InvoiceCurrencySummary
+          <InvoiceCurrencyBlock
             className="mt-3 pt-3 border-t border-slate-100"
             currency={fx.currency}
             total={numbers.total}
             prepaid={prepayTotal}
-            rate={fx.provisional ? null : fx.rate}
+            rate={fx.rate}
             rateType={fx.rateType}
             rateDate={fx.rateDate}
             dateLabel={fx.dateLabel}
             pending={fx.provisional}
             rateEdited={invoice.rateEdited}
             variance={variance}
-            locked={['Approved', 'Partially Paid', 'Paid in Full', 'Settled', 'Payment Hold'].includes(invoice.status) && invoice.type !== 'Pre-Invoice'}
+            locked={invoiceRateLocked(invoice)}
+            payFrom={invoicePayFrom(invoice)}
             onViewConfig={onViewCurrencyConfig}
           />
         )}

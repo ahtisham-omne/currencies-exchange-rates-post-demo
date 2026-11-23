@@ -50,6 +50,8 @@ import {
   type StateTransitionTone,
 } from '@/app/components/shared/StateTransitionOverlay';
 import { QuoteValue } from '@/app/components/currency/QuoteValue';
+import { CurrencyTag } from '@/app/components/currency/CurrencyChip';
+import { quoteConversionEntry, recordQuoteConversion } from '@/app/data/quoteToSalesOrder';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatCompactMoney } from '@/app/currency/money';
 import { quoteFx, toQuoteBase } from '@/app/currency/qFx';
@@ -582,8 +584,21 @@ export function KanbanView({
             isOpen
             quoteNumber={convertModal.quoteNumber}
             customerName={q?.customer.name ?? ''}
+            payToAccount={q?.payToAccount}
+            settlementCurrency={q?.settlementCurrency}
             onClose={() => setConvertModal(null)}
-            onConfirm={(_data) => {
+            onConfirm={(data) => {
+              /* The order keeps the quote's currency configuration and the
+                 rate picked (data/quoteToSalesOrder.ts). */
+              if (q) {
+                recordQuoteConversion(quoteConversionEntry(q, {
+                  soNumber: data.soNumber,
+                  customerPO: data.customerPO,
+                  notes: data.notes,
+                  choice: data.currency,
+                  total: q.totalValue || 0,
+                }));
+              }
               applyTransition(convertModal.quoteId, convertModal.from, 'Confirmed SO');
               setConvertModal(null);
             }}
@@ -1501,10 +1516,15 @@ function QuoteCard({ quote, onQuoteClick, searchTerm, columnStatus, accentColor 
             })()}
             <div style={{
               fontSize: '13px', fontWeight: 600, color: '#1F2937', lineHeight: '1.4',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '0 1 auto', minWidth: 0,
             }}>
               <HighlightText text={quote.customer.name} searchTerm={searchTerm} />
             </div>
+            {/* The quote's currency tag: only on a quote in a foreign currency;
+                its value below is in base, the customer's on hover. */}
+            <span style={{ flexShrink: 0, display: 'inline-flex' }}>
+              <CurrencyTag code={quoteFx(quote).currency} note="The quote's currency. Its value is in the base currency; hover it for the customer's amount." />
+            </span>
           </div>
           <div style={{
             fontSize: '11.5px', color: '#9CA3AF', lineHeight: '1.4',

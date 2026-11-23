@@ -205,7 +205,8 @@ import { CurrencyFlag } from "./currency/CurrencyChip";
 import { type POCurrencyChange } from "./currency/POCurrencyFields";
 import { POCurrencyConfigDialog, POCurrencySummary } from "./currency/POCurrencyConfig";
 import { POCurrencyHeaderControls } from "./currency/POCurrencyHeaderControls";
-import { setPOView, usePOView } from "./currency/poView";
+import { withCode } from "./currency/CurrencyBlock";
+import { POReceivingDocsTab } from "./currency/POReceivingDocsTab";
 import { versionRateOptions } from "./currency/VersionRateChoice";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { currencyDecimals, formatMoney, moneyPrefix } from "@/app/currency/money";
@@ -4240,7 +4241,7 @@ export default function PurchaseOrderDraft() {
      listing sends `?tab=versions`). Falls back to `"items"` for the
      regular flow. Whitelisted so an unknown query value doesn't put us
      into a phantom tab. */
-  const VALID_TABS = new Set(["items", "invoices-payments", "communications", "versions", "notes", "comments"]);
+  const VALID_TABS = new Set(["items", "receiving-docs", "invoices-payments", "communications", "versions", "notes", "comments"]);
   const [activeTab, setActiveTab] = useState(
     initialTab && VALID_TABS.has(initialTab) ? initialTab : "items",
   );
@@ -4259,9 +4260,11 @@ export default function PurchaseOrderDraft() {
      route through the SO-style confirmation modal instead of firing
      `revertPOToVersion` immediately). */
   const [dropdownRevertVersion, setDropdownRevertVersion] = useState<number | null>(null);
-  /* Base Currency | Vendor Currency (the header toggle) and the PO's
-     Currency Configuration dialog. */
-  const poView = usePOView(id);
+  /* The PO shows its amounts in the base currency, the vendor's amount and
+     the rate in each hover. The Base | Vendor toggle is gone (Currency
+     Touchpoints Map, 24 Nov); the view stays pinned to base so the
+     document-currency plumbing (docCurrencyContext) is unchanged. */
+  const poView = "base" as const;
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   /* Source version for the Duplicate flow — lifted here so the
      "View details" Version History modal can update it externally
@@ -5085,6 +5088,16 @@ export default function PurchaseOrderDraft() {
                     versions={po.versions}
                     compact={isScrolled}
                   />
+
+                  {/* Vendor, the PO's currency tag (foreign POs only) and the
+                      Currency button: "PO-000002 · Toyota Technical Center
+                      [USD] [Currency]" (Currency Touchpoints Map). */}
+                  <POCurrencyHeaderControls
+                    vendorName={po.vendor.name}
+                    currency={fx.currency}
+                    compact={isScrolled}
+                    onOpenConfig={() => setCurrencyConfigOpen(true)}
+                  />
                   </div>{/* /info block */}
 
                 </div>
@@ -5102,14 +5115,6 @@ export default function PurchaseOrderDraft() {
                     the previous row of four standalone icon buttons + split combo CTA,
                     saving ~140px of header real estate. */}
                 <div className="flex items-center flex-shrink-0 ml-4" style={{ gap: isScrolled ? 6 : 8, transition: MORPH_TRANSITION }}>
-                  {/* Base Currency | Vendor Currency, and the PO's currency
-                      configuration (ported from the earlier touchpoint). */}
-                  <POCurrencyHeaderControls
-                    currency={fx.currency}
-                    view={poView}
-                    onViewChange={(v) => setPOView(po.id, v)}
-                    onOpenConfig={() => setCurrencyConfigOpen(true)}
-                  />
                   {(() => {
                     const openReceiving = () => {
                       const init: Record<string, number> = {};
@@ -6154,11 +6159,11 @@ export default function PurchaseOrderDraft() {
                   currentVersion={po.currentVersion}
                   canRevert={!isVersionLocked && !isCancelled}
                   onRevert={(version, reason, rateChoice) => {
-                    const restored = revertPOToVersion(po.id, version, reason || `Reverted to Version ${version}`, rateChoice);
+                    const restored = revertPOToVersion(po.id, version, reason || `Restored version ${version}`, rateChoice);
                     if (restored) {
                       setViewingVersion(null);
-                      toast.success(`Reverted to Version ${version}`, {
-                        description: `V${version} is now the current version.`,
+                      toast.success(`Restored version ${version}`, {
+                        description: `Version ${version} is now the current version.`,
                         style: { fontFamily: FONT },
                       });
                     }
@@ -6198,13 +6203,9 @@ export default function PurchaseOrderDraft() {
               )}
 
               {/* ─── TAB: RECEIVING DOCS ─── */}
-              {activeTab === "receiving-docs" && (
-                <TabPlaceholderPanel
-                  icon={ClipboardCheck}
-                  title="Receiving Documents"
-                  description="Packing slips, inspection reports, and other goods-receipt paperwork uploaded for this PO will surface here."
-                />
-              )}
+              {/* Each receiving doc's value in the base currency, at the rate
+                  on its receiving date (Currency Touchpoints Map, Receiving). */}
+              {activeTab === "receiving-docs" && <POReceivingDocsTab po={po} />}
 
               {/* ─── TAB: ATTACHMENTS ─── */}
               {/* Verbatim port of the SO Detail Attachments tab
@@ -6290,21 +6291,15 @@ export default function PurchaseOrderDraft() {
                       >
                         <DocMoney value={poPricing?.total ?? po.total} />
                       </p>
-                      {/* The total in the currency not shown: what the vendor
-                          receives (base view), or what it's worth in base. */}
+                      {/* The total is in the base currency; under it, what the
+                          vendor receives in the PO's (Currency Touchpoints Map,
+                          Purchase Orders 3). */}
                       {!fx.isBase && (
                         <p className="text-slate-500 tabular-nums mt-0.5 truncate" style={{ fontSize: 11, fontWeight: 400 }}>
-                          {poView === "base" ? (
-                            <>
-                              ≈ {formatMoney(poPricing?.total ?? po.total, fx.currency)}
-                              <span className="text-slate-400"> {fx.currency} · vendor currency</span>
-                            </>
-                          ) : (
-                            <>
-                              ≈ {formatMoney(toBase(poPricing?.total ?? po.total, fx.rate), BASE_CURRENCY)}
-                              <span className="text-slate-400"> {BASE_CURRENCY} · base currency</span>
-                            </>
-                          )}
+                          Vendor receives{" "}
+                          <span className="text-slate-700" style={{ fontWeight: 500 }}>
+                            {withCode(poPricing?.total ?? po.total, fx.currency)}
+                          </span>
                         </p>
                       )}
                       <p
@@ -7715,13 +7710,13 @@ export default function PurchaseOrderDraft() {
             const restored = revertPOToVersion(
               po.id,
               target,
-              reason || `Reverted to Version ${target}`,
+              reason || `Restored version ${target}`,
               rateChoice,
             );
             if (restored) {
               setViewingVersion(null);
-              toast.success(`Reverted to Version ${target}`, {
-                description: `V${target} is now the current version.`,
+              toast.success(`Restored version ${target}`, {
+                description: `Version ${target} is now the current version.`,
                 style: { fontFamily: FONT },
               });
             }
@@ -8109,7 +8104,7 @@ export default function PurchaseOrderDraft() {
             orderedQty: li.quantity,
             unitPrice: li.unitPrice * (1 - li.discount / 100),
           }));
-          // Flat rule amounts (USD) in the PO's currency, as the totals take them.
+          // Flat rule amounts (base currency) in the PO's currency, as the totals take them.
           const flatAmountFactor = ruleAmountFactor(poFx(fresh));
           const enforced = enforceHundredPercentCap(
             linesForCompute,

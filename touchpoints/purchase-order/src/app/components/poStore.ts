@@ -9,6 +9,7 @@ import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { formatMoney, formatRate, rateSentence } from "@/app/currency/money";
 import { crossRate, localTodayIso, poFx, roundTo, stampPoRate, vendorCurrency } from "@/app/currency/poFx";
 import { midRateOn, rateOn, type RateType } from "@/app/currency/rates";
+import { getCompanyAccount, resolvePayFrom } from "@/app/currency/companyAccounts";
 
 export type POStatus = "Draft" | "Sent" | "Confirmed" | "Partially Received" | "Fully Received" | "Cancelled" | "Active with Cancellations" | "Fully Received with Cancellations";
 
@@ -20,6 +21,9 @@ export interface ReceivingRecord {
   receivedBy: string;
   condition: "good" | "damaged" | "rejected";
   notes: string;
+  /** The receiving doc it was recorded on: every line of one goods receipt
+   *  ("Confirm Receipt") shares it. Receiving Docs tab (currency/receivingDocs.ts). */
+  receivingDocId?: string;
 }
 
 export type PONoteType = "vendor" | "internal";
@@ -245,6 +249,7 @@ export interface POVersionSnapshot {
   rateDate?: string;
   rateEdited?: boolean;
   settlementCurrency?: string;
+  payFromAccount?: string;
 }
 
 export interface POVersionEntry {
@@ -302,9 +307,14 @@ export interface PurchaseOrderData {
   rateDate?: string;
   /** A corporate rate typed on the PO instead of finance's. */
   rateEdited?: boolean;
-  /** "You pay": the currency the PO is settled in. The base currency unless
-   *  set in the PO's currency configuration. */
+  /** "You pay": the currency the PO is settled in, the currency of its
+   *  pay-from account (`payFromAccount`): the base currency unless a
+   *  foreign-currency account is chosen. */
   settlementCurrency?: string;
+  /** "You pay": the company bank or cash account the PO is paid from, in the
+   *  base currency or the PO's (currency/companyAccounts). 1010 · JPMorgan
+   *  Operating unless set in the currency configuration. */
+  payFromAccount?: string;
   notes: string;
   /** Structured notes (vendor-facing + internal, PO-level + line-item-level) */
   poNotes: PONote[];
@@ -332,6 +342,9 @@ export interface PurchaseOrderData {
   /** ISO timestamp of the approval event. Paired with approvedBy. */
   approvedAt?: string;
   receivingRecords: ReceivingRecord[];
+  /** The day receiving completed (the PO became fully received): the day
+   *  its open receiving doc takes the rate on. Receiving Docs tab. */
+  receivingCompletedDate?: string | null;
   currentVersion: number;
   versions: POVersionEntry[];
   /* Cancellation fields */
@@ -625,18 +638,22 @@ export function buildVersionSnapshot(po: PurchaseOrderData): POVersionSnapshot {
 
 /* ── The PO's currency and rate (spec 4.3) ── */
 
-type PORateFields = Pick<PurchaseOrderData, "currency" | "exchangeRate" | "rateType" | "rateDate" | "rateEdited" | "settlementCurrency">;
+type PORateFields = Pick<PurchaseOrderData, "currency" | "exchangeRate" | "rateType" | "rateDate" | "rateEdited" | "settlementCurrency" | "payFromAccount">;
 
-/** The currency fields a PO carries, as `poFx` resolves them. */
+/** The currency fields a PO carries, as `poFx` resolves them. "You pay" is
+ *  its pay-from account (1010 unless set) and that account's currency. */
 export function poRateFields(po: Parameters<typeof poFx>[0]): PORateFields {
   const fx = poFx(po);
+  const pay = po as Partial<PurchaseOrderData>;
+  const account = resolvePayFrom(fx.currency, pay.payFromAccount, pay.settlementCurrency);
   return {
     currency: fx.currency,
     exchangeRate: fx.rate,
     rateType: fx.rateType,
     rateDate: fx.rateDate,
     rateEdited: !!po.rateEdited,
-    settlementCurrency: (po as Partial<PurchaseOrderData>).settlementCurrency ?? BASE_CURRENCY,
+    settlementCurrency: account.currency,
+    payFromAccount: account.id,
   };
 }
 
@@ -648,7 +665,18 @@ function restoreRateFields(po: PurchaseOrderData, snapshot: POVersionSnapshot): 
   po.rateType = snapshot.rateType;
   po.rateDate = snapshot.rateDate;
   po.rateEdited = snapshot.rateEdited;
-  po.settlementCurrency = snapshot.settlementCurrency ?? BASE_CURRENCY;
+  const account = resolvePayFrom(snapshot.currency, snapshot.payFromAccount, snapshot.settlementCurrency);
+  po.payFromAccount = account.id;
+  po.settlementCurrency = account.currency;
+}
+
+/** A PO's rate is unlocked while it is a Draft or Sent, and locks when it is
+ *  confirmed, staying locked in every later status (Currency Touchpoints
+ *  Map, Purchase Orders 4). A cancelled PO keeps the state it was cancelled
+ *  in, since reactivating it returns it there. */
+export function isPORateLocked(po: Pick<PurchaseOrderData, "status" | "preCancellationStatus">): boolean {
+  const status = po.status === "Cancelled" ? po.preCancellationStatus ?? "Sent" : po.status;
+  return status !== "Draft" && status !== "Sent";
 }
 
 /* ── A new version's rate: the one locked in, or today's ──────────────
@@ -699,8 +727,14 @@ function applyCurrentRate(po: PurchaseOrderData, type?: RateType): Omit<POChange
 export function describeRateChange(before: PORateFields, after: PORateFields): string {
   const from = (before.currency || BASE_CURRENCY).toUpperCase();
   const to = (after.currency || BASE_CURRENCY).toUpperCase();
-  const payFrom = (before.settlementCurrency || BASE_CURRENCY).toUpperCase();
-  const payTo = (after.settlementCurrency || BASE_CURRENCY).toUpperCase();
+  /* "You pay" is the pay-from account: "1010 · JPMorgan Operating (PKR) →
+     1040 · Global FX Settlement (USD)". */
+  const payText = (fields: PORateFields) => {
+    const account = getCompanyAccount(fields.payFromAccount);
+    return account ? `${account.label} (${account.currency})` : (fields.settlementCurrency || BASE_CURRENCY).toUpperCase();
+  };
+  const payFrom = payText(before);
+  const payTo = payText(after);
   const pays = payFrom !== payTo ? `${payFrom} → ${payTo}` : null;
   if (from === to && before.exchangeRate === after.exchangeRate && before.rateType === after.rateType && pays) return pays;
   if (from !== to) {
@@ -723,8 +757,10 @@ export interface POCurrencyChoice {
   rateType: RateType;
   exchangeRate: number;
   rateEdited?: boolean;
-  /** "You pay"; unchanged when left out. */
-  settlementCurrency?: string;
+  /** "You pay": the pay-from account. Unchanged when left out, and back to
+   *  1010 when the PO's new currency doesn't allow it. The settlement
+   *  currency follows the account. */
+  payFromAccount?: string;
 }
 
 /** The PO as it would be in `next` (a copy, totals recomputed): the
@@ -750,7 +786,12 @@ export function withPOCurrency(po: PurchaseOrderData, next: POCurrencyChoice): P
   out.rateType = next.rateType;
   out.rateDate = before.rateDate;
   out.rateEdited = next.rateType === "corporate" && !!next.rateEdited;
-  if (next.settlementCurrency) out.settlementCurrency = next.settlementCurrency.toUpperCase();
+  // Paid from an account in the base currency or the PO's own.
+  const account = next.payFromAccount
+    ? resolvePayFrom(code, next.payFromAccount)
+    : resolvePayFrom(code, po.payFromAccount, po.settlementCurrency);
+  out.payFromAccount = account.id;
+  out.settlementCurrency = account.currency;
   return applyComputedTotals(out);
 }
 
@@ -1376,9 +1417,11 @@ export function confirmPO(id: string): void {
 export function markPOFullyReceived(id: string): void {
   const po = purchaseOrders.get(id);
   if (!po || po.status !== "Confirmed") return;
-  const today = new Date().toISOString().split("T")[0];
+  // The local day, so a receipt is dated the day it was recorded (receiving docs take its rate).
+  const today = localTodayIso();
   po.lineItems = po.lineItems.map((li) => (li.cancelled ? li : { ...li, receivedQuantity: li.quantity }));
   if (!po.receivingStartDate) po.receivingStartDate = today;
+  po.receivingCompletedDate = today;
   po.status = "Fully Received";
   purchaseOrders.set(id, { ...po });
   notify();
@@ -1408,6 +1451,8 @@ export function revertPOStatus(id: string, targetStatus: POStatus): void {
     // Reverting to Confirmed — clear receiving
     po.receivingStartDate = null;
   }
+  // Below Fully Received, receiving hasn't completed.
+  if (targetIdx >= 0 && targetIdx < 4) po.receivingCompletedDate = null;
 
   if (targetStatus === "Cancelled") {
     // Don't clear dates for cancelled — keep history
@@ -1664,6 +1709,7 @@ export function cancelRemaining(id: string, reason?: string, notes?: string): vo
   applyComputedTotals(po);
   if (!po.preCancellationStatus) po.preCancellationStatus = "Partially Received";
   po.status = "Fully Received with Cancellations";
+  po.receivingCompletedDate = localTodayIso();
   po.cancellationReason = reason;
   po.cancellationNotes = notes || undefined;
   po.cancellationDate = today;
@@ -1684,7 +1730,8 @@ export function recordReceiving(
   const po = purchaseOrders.get(poId);
   if (!po) return;
 
-  const today = new Date().toISOString().split("T")[0];
+  // The local day, so a receipt is dated the day it was recorded (receiving docs take its rate).
+  const today = localTodayIso();
 
   // Track if this is the first receiving event
   if (!po.receivingStartDate) {
@@ -1692,6 +1739,8 @@ export function recordReceiving(
   }
 
   let recCounter = po.receivingRecords.length;
+  /* One receiving doc per goods receipt: its lines share an id. */
+  const receivingDocId = `rcvdoc-${new Set(po.receivingRecords.map((r) => r.receivingDocId ?? r.receivedDate)).size + 1}`;
 
   for (const rec of records) {
     if (rec.quantityReceived <= 0) continue;
@@ -1705,6 +1754,7 @@ export function recordReceiving(
       receivedBy: "Areeb Tanvir",
       condition: rec.condition,
       notes: rec.notes,
+      receivingDocId,
     };
 
     po.receivingRecords.push(receivingRecord);
@@ -1724,6 +1774,8 @@ export function recordReceiving(
   const activeItems = po.lineItems.filter((li) => !li.cancelled);
   const allFullyReceived = activeItems.length > 0 && activeItems.every((li) => li.receivedQuantity >= li.quantity);
   const anyReceived = activeItems.some((li) => li.receivedQuantity > 0);
+
+  if (allFullyReceived && !po.receivingCompletedDate) po.receivingCompletedDate = today;
 
   // Don't change status if PO is cancelled — receiving on cancelled PO keeps it cancelled
   if (po.status !== "Cancelled") {
@@ -2165,6 +2217,7 @@ export function duplicatePO(
   if (chosenVersion) reasonParts.push(`V${chosenVersion.version}`);
   if (opts.vendorLabel) reasonParts.push(`Vendor: ${opts.vendorLabel}`);
   if (rate.currency !== fromFx.currency) reasonParts.push(`Prices converted ${fromFx.currency} → ${rate.currency}`);
+  const payFrom = resolvePayFrom(rate.currency, source.payFromAccount, source.settlementCurrency);
 
   const po: PurchaseOrderData = {
     id,
@@ -2185,6 +2238,9 @@ export function duplicatePO(
     discountTotal: 0,
     total: 0,
     ...rate,
+    // "You pay": the source's account, when the new PO's currency allows it.
+    payFromAccount: payFrom.id,
+    settlementCurrency: payFrom.currency,
     adjustments: [],
     notes: source.notes,
     poNotes: source.poNotes.map(n => ({ ...n, id: `note-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` })),

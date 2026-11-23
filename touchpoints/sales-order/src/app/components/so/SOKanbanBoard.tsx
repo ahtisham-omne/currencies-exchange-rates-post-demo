@@ -28,7 +28,8 @@ import {
 } from "lucide-react";
 import { FIELD_RULES } from "@/app/components/shared/fieldRequirements";
 import { BaseMoney } from "@/app/components/currency/Money";
-import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { CurrencyPill } from "@/app/components/currency/CurrencyChip";
 import { formatCompactMoney } from "@/app/currency/money";
 import { soFx, toSOBase } from "@/app/currency/soFx";
 import { SODocCurrency } from "@/app/components/currency/SODocCurrency";
@@ -961,6 +962,12 @@ function SOKanbanCard({ so, soIdx, columnStatus, accentColor, onOrderClick, sear
             <span style={{ fontSize: 13, fontWeight: 600, color: "#1F2937", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: "1.4" }}>
               <HighlightText text={so.customer} searchTerm={search} />
             </span>
+            {/* The order's currency tag, on a foreign-currency order only. */}
+            {!isBaseCurrency(soFx(so).currency) && (
+              <span style={{ flexShrink: 0, display: "inline-flex" }}>
+                <CurrencyPill code={soFx(so).currency} note={`The order's currency. Amounts show in ${BASE_CURRENCY}; hover one for ${soFx(so).currency}.`} />
+              </span>
+            )}
           </div>
           {so.description && <div style={{ fontSize: "11.5px", color: "#9CA3AF", lineHeight: "1.4", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}><HighlightText text={so.description} searchTerm={search} /></div>}
         </div>

@@ -111,7 +111,12 @@ export function PDFPreviewModal({ isOpen, onClose, quote, detail, mode = "downlo
               {data.kind === "quote" ? "Quote" : "Sales Order"} preview
             </span>
             <span style={{ fontSize: 11.5, color: "#64748B", marginTop: 2 }}>
-              {data.docNumber} · {fmtCurrency(data.grandTotal, data.currency)}
+              {/* In the customer's currency, named, as the document prints it. */}
+              {data.docNumber} · {(() => {
+                const code = (data.currency || "USD").toUpperCase();
+                const text = fmtCurrency(data.grandTotal, code);
+                return text.includes(code) ? text : `${text} ${code}`;
+              })()}
             </span>
           </div>
           <button

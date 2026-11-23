@@ -10,8 +10,10 @@ export type ApRole = 'Accounting Manager' | 'AP Clerk' | 'General User';
 
 export const AP_ROLES: ApRole[] = ['Accounting Manager', 'AP Clerk', 'General User'];
 
-/** Which date's exchange rate a new vendor invoice takes. */
-export type RateDateBasis = 'invoiceDate' | 'receivingDate' | 'poDate';
+/** Which date's exchange rate a new vendor invoice takes. The posting date
+ *  is the default (Currency Touchpoints Map, 24 Nov 2026: "Invoice uses the
+ *  posting-date rate", as SAP and Business Central do). */
+export type RateDateBasis = 'postingDate' | 'invoiceDate' | 'receivingDate' | 'poDate';
 
 export interface ApSettings {
   role: ApRole;
@@ -37,7 +39,7 @@ const STORAGE_KEY = 'omnesoft:ap-settings';
 
 const DEFAULTS: ApSettings = {
   role: 'Accounting Manager',
-  rateDateBasis: 'invoiceDate',
+  rateDateBasis: 'postingDate',
   allowedDifferencePct: 1,
   allowedDifferenceBase: null,
   invoiceRateRoles: ['Accounting Manager'],
@@ -84,6 +86,7 @@ export function useApSettings(): ApSettings {
 /* ── Rate date ─────────────────────────────────────────────────────── */
 
 export const RATE_DATE_BASIS_LABEL: Record<RateDateBasis, string> = {
+  postingDate: 'Posting date',
   invoiceDate: 'Vendor invoice date',
   receivingDate: 'Receiving date',
   poDate: 'PO date',
@@ -94,8 +97,9 @@ export const RATE_DATE_BASIS_LABEL: Record<RateDateBasis, string> = {
  *  its vendor invoice date. */
 export function rateDateFor(
   basis: RateDateBasis,
-  dates: { invoiceDate?: string; receivingDate?: string; poDate?: string },
+  dates: { invoiceDate?: string; receivingDate?: string; poDate?: string; postingDate?: string },
 ): { date: string | undefined; basis: RateDateBasis } {
+  if (basis === 'postingDate' && dates.postingDate) return { date: dates.postingDate, basis };
   if (basis === 'receivingDate' && dates.receivingDate) return { date: dates.receivingDate, basis };
   if (basis === 'poDate' && dates.poDate) return { date: dates.poDate, basis };
   return { date: dates.invoiceDate, basis: 'invoiceDate' };

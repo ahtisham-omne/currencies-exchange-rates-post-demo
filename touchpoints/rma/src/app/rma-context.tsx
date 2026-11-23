@@ -159,10 +159,25 @@ function isMaterialRMAChange(prev: RMA, next: RMA): boolean {
   return (
     !same(shipTo(prev), shipTo(next)) ||
     !same(prev.payToAccountId, next.payToAccountId) ||
+    !same(prev.settlementRateType, next.settlementRateType) ||
     !same(prev.paymentMethodName, next.paymentMethodName) ||
     !same(prev.creditTerms?.refundOrCredit, next.creditTerms?.refundOrCredit) ||
     !same(prev.creditTerms?.restockingFee, next.creditTerms?.restockingFee) ||
     !same(prev.additionalCharges, next.additionalCharges)
+  );
+}
+
+/** Only the currency configuration's choices changed, the deposit account and
+ *  the settlement rate type, on a return the vendor hasn't settled. They stay
+ *  open until the vendor settles (Currency Touchpoints Map, 2026-11-24), which
+ *  is after the lines lock at the first shipment, so past that point they
+ *  save on the current version rather than being refused. */
+function isOpenSettlementChange(prev: RMA, next: RMA): boolean {
+  if (prev.settledDate || prev.refusedDate) return false;
+  const rest = (r: RMA) => ({ ...r, payToAccountId: null, settlementRateType: null, versions: null, currentVersion: null });
+  return (
+    same(rest(prev), rest(next)) &&
+    (!same(prev.payToAccountId, next.payToAccountId) || !same(prev.settlementRateType, next.settlementRateType))
   );
 }
 
@@ -174,7 +189,7 @@ function saveEdit(prev: RMA, next: RMA, reason: string): RMA {
   // version to protect (DQ-07, the PO rule).
   if (prev.status === "Draft") return saveInPlace(prev, next);
   if (isMaterialRMAChange(prev, next)) {
-    if (!rmaMaterialEditable(prev)) return prev;
+    if (!rmaMaterialEditable(prev)) return isOpenSettlementChange(prev, next) ? saveInPlace(prev, next) : prev;
     return cutVersion(prev, next, reason);
   }
   return saveInPlace(prev, next);
@@ -311,7 +326,7 @@ export function RMAProvider({ children }: { children: ReactNode }) {
    *  A material change is still refused once the return is locked. */
   const applyEdit = (prev: RMA, next: RMA, reason: string): RMA => {
     if (prev.status !== "Draft" && editSessionsRef.current[prev.id]) {
-      if (isMaterialRMAChange(prev, next) && !rmaMaterialEditable(prev)) return prev;
+      if (isMaterialRMAChange(prev, next) && !rmaMaterialEditable(prev) && !isOpenSettlementChange(prev, next)) return prev;
       return next;
     }
     return saveEdit(prev, next, reason);
@@ -820,6 +835,7 @@ export function RMAProvider({ children }: { children: ReactNode }) {
               ? { returnShipToPartner: snap.returnShipToPartner }
               : {}),
             ...(snap.payToAccountId ? { payToAccountId: snap.payToAccountId } : {}),
+            ...(snap.settlementRateType ? { settlementRateType: snap.settlementRateType } : {}),
             items: snap.lineItems.map((li) => {
               const match = seeded.items.find((x) => x.id === li.id);
               const base = match ?? seeded.items[0]!;

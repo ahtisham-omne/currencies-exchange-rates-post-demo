@@ -10,7 +10,7 @@
 
 import type { SalesOrder, SOLine } from "./types";
 import {
-  DOC_C, fmtCurrency as fmtDocCurrency, escHtml,
+  DOC_C, fmtCurrency as fmtDocCurrency, escHtml, docCurrencyLabels,
   getLineShipment, shipStatusColors,
   getLineComments, getLinePricingRules,
   statusBadgeColors, getPaymentInfo, getHeaderMeta, getParties, docPaymentTerms, docPaymentMethod, docPaymentTermsSentence,
@@ -51,7 +51,10 @@ export function printSalesOrder(so: SalesOrder): void {
 
 /* ── HTML Generation ── */
 function generatePrintHTML(so: SalesOrder): string {
+  /* The order prints in its own currency, the customer's, and says so:
+     "Total (USD)", "All amounts in United States Dollars (USD)." */
   const fmtCurrency = (n: number) => fmtDocCurrency(n, so.currency);
+  const docCur = docCurrencyLabels(so.currency);
   const activeLines = so.lines.filter(l => !l.cancelled);
   const cancelledLines = so.lines.filter(l => l.cancelled);
   const subtotal = activeLines.reduce((s, l) => s + l.orderedQty * l.unitPrice, 0);
@@ -207,9 +210,10 @@ function generatePrintHTML(so: SalesOrder): string {
           <span style="font-weight:600;color:${DOC_C.green};">-${fmtCurrency(totalDiscounts)}</span>
         </div>` : ""}
         <div style="border-top:2px solid ${DOC_C.fg};margin-top:8px;padding-top:10px;display:flex;justify-content:space-between;align-items:baseline;">
-          <span style="font-size:16px;font-weight:700;">Total Amount</span>
+          <span style="font-size:16px;font-weight:700;">${escHtml(docCur.totalLabel)}</span>
           <span style="font-size:20px;font-weight:700;">${fmtCurrency(grandTotal)}</span>
         </div>
+        <div style="margin-top:6px;text-align:right;font-size:11px;color:${DOC_C.muted};">${escHtml(docCur.footnote)}</div>
       </div>
     </div>
 

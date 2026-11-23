@@ -77,8 +77,8 @@ import {
 import { DateEditModal, type SODateType, type DateConfig } from "./ui/DateEditModal";
 import type { SOLine, CancellationReason, SOPriority } from "./types";
 import { DocCurrencyProvider } from "@/app/components/currency/DocCurrency";
-import { SOCurrencyHeaderControls } from "@/app/components/currency/SOCurrencyHeaderControls";
-import { setSOView, useSOView } from "@/app/components/currency/soView";
+import { SOCurrencyHeaderControls, SOHeaderCustomer } from "@/app/components/currency/SOCurrencyHeaderControls";
+import type { DocView } from "@/app/components/currency/docCurrencyContext";
 import { versionRateOptions } from "@/app/components/currency/VersionRateChoice";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatMoney } from "@/app/currency/money";
@@ -133,7 +133,8 @@ export function SODetail() {
      truth, so totals + applicability stay in lockstep. Safe defaults
      when `so` hasn't resolved yet so we don't break rules-of-hooks. */
   /* The order's currency and rate (spec 4.3): every amount on the page is
-     in it (DocCurrencyProvider below); flat "$" rule tiers convert into it. */
+     in it (DocCurrencyProvider below); fixed rule amounts, written in base,
+     convert into it at its rate. */
   const fx = so ? soFx(so) : null;
   const pricingAPI = usePricingRules(so?.customer ?? '', so?.lines ?? [], fx ? ruleAmountFactor(fx) : 1);
 
@@ -153,9 +154,12 @@ export function SODetail() {
   });
 
   const [activeTab, setActiveTab] = useState("lines");
-  /* Base Currency | Customer Currency (the header toggle), kept per order
-     for the session, and the order's Currency Configuration dialog. */
-  const soView = useSOView(so?.id);
+  /* Every amount on the page is in base, the customer's amount and the rate
+     on hover. The Base Currency | Customer Currency toggle is gone (Currency
+     Touchpoints Map, 24 Nov 2026: a currency tag and the Currency button in
+     the header, no toggle); the view plumbing stays, pinned to base. The
+     order's Currency Configuration dialog opens from the header. */
+  const soView: DocView = "base";
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
 
   /* Track the right sidebar's live height so the Attachments tab card
@@ -420,8 +424,8 @@ export function SODetail() {
      can't legally proceed — we'd be invoicing a negative number. Used
      to gate stage transitions out of Draft. */
   const projectedTotal = pricingAPI.soSubtotal + adjustmentsAPI.grandTotal.net;
-  /* An order amount in the currency the page shows (base by default), for
-     the toasts and version prompts this page writes itself. */
+  /* An order amount in the currency the page shows (base), for the toasts
+     and version prompts this page writes itself. */
   const pageMoney = (n: number) =>
     soView === "base" && fx && !fx.isBase ? formatMoney(toBase(n, fx.rate), BASE_CURRENCY) : formatMoney(n, so.currency);
   const totalIsNegative = projectedTotal < 0;
@@ -938,6 +942,17 @@ export function SODetail() {
                         {so.legacyImport && (
                           <LegacyImportPill meta={so.legacyImport} isScrolled={isScrolled} recordNoun="order" />
                         )}
+
+                        {/* "from Q-… · Customer [USD]": the quote it came
+                            from, the customer and, on an order in a foreign
+                            currency, its currency tag (Currency Touchpoints
+                            Map, 24 Nov 2026). */}
+                        <SOHeaderCustomer
+                          customer={so.customer}
+                          currency={fx!.currency}
+                          sourceQuoteRef={so.sourceQuoteRef}
+                          compact={isScrolled}
+                        />
                       </div>
 
                       {/* Line 2: Description — animated max-height + opacity
@@ -963,13 +978,10 @@ export function SODetail() {
 
                   {/* Right: Fullscreen + Actions dropdown + separator + CTA — mirrors Quotes' QuoteDetails header pattern */}
                   <div className="flex items-center shrink-0 max-md:w-full max-md:justify-end max-md:flex-wrap" style={{ gap: isScrolled ? 6 : 8 }}>
-                    {/* Base Currency | Customer Currency, and the order's
-                        currency configuration (ported from the earlier
-                        touchpoint, as Purchase Orders has them). */}
+                    {/* The Currency button: the order's currency
+                        configuration. No Base | Customer toggle (24 Nov
+                        2026); the page is always in base. */}
                     <SOCurrencyHeaderControls
-                      currency={fx!.currency}
-                      view={soView}
-                      onViewChange={(v) => setSOView(so.id, v)}
                       onOpenConfig={() => setCurrencyConfigOpen(true)}
                       compact={isScrolled}
                     />

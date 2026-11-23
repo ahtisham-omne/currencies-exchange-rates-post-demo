@@ -1,96 +1,83 @@
 import * as React from "react";
-import { Info, Settings2 } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/app/components/ui/tooltip";
-import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
-import type { DocView } from "./docCurrencyContext";
+import { Settings2 } from "lucide-react";
+import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "@/app/currency/currencies";
+import { customerCurrency } from "@/app/currency/soFx";
+import { CurrencyPill } from "./CurrencyChip";
 
-/* ── The SO header's currency controls ─────────────────────────────────
- * Ported from the earlier Sales Orders touchpoint (SODetail's header row),
- * in the shape Purchase Orders uses: the Base Currency | Customer Currency
- * toggle, which switches every amount on the order between the base currency
- * and the customer's, and the Currency button, which opens the order's
- * currency configuration. The toggle only shows on an order in a foreign
- * currency: on a base-currency order there's nothing to switch. */
+/* ── The SO header's currency ──────────────────────────────────────────
+ * Currency Touchpoints Map (24 Nov 2026): "SO-000-112 from Q-000-750 ·
+ * Harbor Point Rescue [USD] [Currency]". The header carries the order's
+ * currency tag, after the customer's name, and the Currency button, which
+ * opens the order's currency configuration. There is no Base Currency |
+ * Customer Currency toggle any more: every amount on the order is in the
+ * base currency, the customer's on hover. A base-currency order gets no
+ * tag. */
 
 const FONT = "Inter, system-ui, sans-serif";
 
-function Segment({ active, onClick, label, tip, compact }: { active: boolean; onClick: () => void; label: string; tip: string; compact: boolean }) {
+/** "from Q-000-105-001 · Harbor Point Rescue [USD]", after the state pills.
+ *  The tag shows only on an order in a foreign currency. */
+export function SOHeaderCustomer({
+  customer,
+  currency,
+  sourceQuoteRef,
+  compact = false,
+}: {
+  customer: string;
+  /** The order's currency. */
+  currency: string;
+  /** The quote the order was made from, if any. */
+  sourceQuoteRef?: string;
+  /** The scrolled (compact) header. */
+  compact?: boolean;
+}) {
+  const code = currency.toUpperCase();
+  const foreign = !isBaseCurrency(code);
+  if (!customer && !foreign) return null;
+  const name = getCurrency(code)?.name ?? code;
+  const note = sourceQuoteRef
+    ? `The order's currency, from quote ${sourceQuoteRef}. Amounts show in ${BASE_CURRENCY}; hover one for ${code}.`
+    : `The order's currency${customerCurrency(customer) === code ? `, ${customer || "the customer"}'s default` : ""}. Amounts show in ${BASE_CURRENCY}; hover one for ${code}.`;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`inline-flex items-center gap-1.5 px-2.5 rounded-md text-[11.5px] whitespace-nowrap cursor-pointer transition-colors ${compact ? "h-6" : "h-7"} ${
-        active ? "bg-[#EDF4FF] text-primary" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-      }`}
-      style={{ fontWeight: active ? 600 : 500, fontFamily: FONT }}
-    >
-      {label}
-      <Tooltip delayDuration={200}>
-        <TooltipTrigger asChild>
-          <span role="img" aria-label={tip} onClick={(e) => e.stopPropagation()} className="inline-flex">
-            <Info className="w-3 h-3 opacity-60" />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-[260px] text-[11.5px] leading-[1.5]">
-          {tip}
-        </TooltipContent>
-      </Tooltip>
-    </button>
+    <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full" style={{ fontFamily: FONT }}>
+      {customer && (
+        <span
+          className="truncate text-slate-600"
+          style={{ fontSize: compact ? 11.5 : 12.5, fontWeight: 500, lineHeight: compact ? "18px" : "22px", maxWidth: 320 }}
+          title={sourceQuoteRef ? `From quote ${sourceQuoteRef} · ${customer}` : customer}
+        >
+          {sourceQuoteRef && <span className="text-slate-400" style={{ fontWeight: 400 }}>from {sourceQuoteRef} · </span>}
+          {customer}
+        </span>
+      )}
+      {foreign && (
+        <span className="shrink-0 inline-flex" aria-label={`Order currency: ${name} (${code})`}>
+          <CurrencyPill code={code} note={note} />
+        </span>
+      )}
+    </span>
   );
 }
 
+/** The Currency button: opens the order's currency configuration. */
 export function SOCurrencyHeaderControls({
-  currency,
-  view,
-  onViewChange,
   onOpenConfig,
   compact = false,
 }: {
-  /** The order's currency (the customer's, unless changed on the order). */
-  currency: string;
-  view: DocView;
-  onViewChange: (view: DocView) => void;
   onOpenConfig: () => void;
   /** The scrolled (compact) header. */
   compact?: boolean;
 }) {
-  const foreign = currency.toUpperCase() !== BASE_CURRENCY;
-  const baseName = getCurrency(BASE_CURRENCY)?.name ?? BASE_CURRENCY;
   return (
-    <div className="flex items-center gap-1.5 shrink-0">
-      {foreign && (
-        <div
-          className={`inline-flex items-center gap-0.5 rounded-lg border border-border p-0.5 bg-white shadow-sm ${compact ? "h-8" : "h-9"}`}
-          role="group"
-          aria-label="Show amounts in"
-        >
-          <Segment
-            compact={compact}
-            active={view === "base"}
-            onClick={() => onViewChange("base")}
-            label="Base Currency"
-            tip={`Show every amount in the company's base currency, ${baseName} (${BASE_CURRENCY}), so orders compare whatever currency they're in. The customer's amount is on hover.`}
-          />
-          <Segment
-            compact={compact}
-            active={view === "document"}
-            onClick={() => onViewChange("document")}
-            label="Customer Currency"
-            tip={`Show every amount in the currency this order is placed in (${currency}), what the customer pays. The base-currency amount is on hover.`}
-          />
-        </div>
-      )}
-      <button
-        type="button"
-        onClick={onOpenConfig}
-        aria-label="Open currency configuration"
-        className={`inline-flex items-center gap-1.5 px-2.5 rounded-lg border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-800 transition-colors cursor-pointer text-[12px] ${compact ? "h-8" : "h-9"}`}
-        style={{ fontWeight: 500, fontFamily: FONT }}
-      >
-        <Settings2 className="w-3.5 h-3.5 text-slate-500" />
-        Currency
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={onOpenConfig}
+      aria-label="Open currency configuration"
+      className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 rounded-lg border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-800 transition-colors cursor-pointer text-[12px] ${compact ? "h-8" : "h-9"}`}
+      style={{ fontWeight: 500, fontFamily: FONT }}
+    >
+      <Settings2 className="w-3.5 h-3.5 text-slate-500" />
+      Currency
+    </button>
   );
 }

@@ -41,6 +41,11 @@ export interface PartnerGroupTemplate {
    *  ISO code ("usd"); unset means the base currency (spec 4.2, see
    *  currency/partnerCurrency.ts). */
   currency?: string;
+  /** Default exchange rate for the group's partners' documents, set beside
+   *  the currency in Billing & Shipping: "mid" (mid-market) or "corporate".
+   *  Unset means mid-market. Partners inherit it and can override it
+   *  (currency/partnerCurrency.ts). */
+  rateType?: "mid" | "corporate";
   /** Default payment term preset id. */
   paymentTermId?: string;
   /** Default pricing rule preset ids. */
@@ -896,8 +901,8 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   // ── PRESET DISCOUNTS ──
   {
     id: "pr-1", name: "Standard Discount, Value (Single-Tier)", category: "discount", basis: "value", tierType: "single", totalTiers: 1,
-    description: "10% off on orders over $1,000",
-    tiers: [{ minValue: "$1,000", maxValue: "$25,000", discount: "10%" }],
+    description: "10% off on orders over ₨280,000",
+    tiers: [{ minValue: "₨280,000", maxValue: "₨7,000,000", discount: "10%" }],
     vendorsApplied: 5,
     validityPeriod: "Jan 2026 to Apr 2026",
     appliesToAllItems: true,
@@ -913,12 +918,12 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   },
   {
     id: "pr-3", name: "Tiered Discount, Value (Multi-Tier)", category: "discount", basis: "value", tierType: "multiple", totalTiers: 4,
-    description: "10% off at each tier from $1K to $25K",
+    description: "10% off at each tier from ₨280K to ₨7M",
     tiers: [
-      { minValue: "$1,000", maxValue: "$4,999", discount: "10%" },
-      { minValue: "$5,000", maxValue: "$9,999", discount: "10%" },
-      { minValue: "$10,000", maxValue: "$24,999", discount: "10%" },
-      { minValue: "$25,000", maxValue: "$50,000", discount: "10%" },
+      { minValue: "₨280,000", maxValue: "₨1,399,999", discount: "10%" },
+      { minValue: "₨1,400,000", maxValue: "₨2,799,999", discount: "10%" },
+      { minValue: "₨2,800,000", maxValue: "₨6,999,999", discount: "10%" },
+      { minValue: "₨7,000,000", maxValue: "₨14,000,000", discount: "10%" },
     ],
     vendorsApplied: 4,
     validityPeriod: "Dec 2025 to Mar 2026",
@@ -939,8 +944,8 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   // ── PRESET PREMIUMS ──
   {
     id: "pr-5", name: "Standard Premium, Value (Single-Tier)", category: "premium", basis: "value", tierType: "single", totalTiers: 1,
-    description: "10% surcharge on orders over $1,000",
-    tiers: [{ minValue: "$1,000", maxValue: "$25,000", discount: "10%" }],
+    description: "10% surcharge on orders over ₨280,000",
+    tiers: [{ minValue: "₨280,000", maxValue: "₨7,000,000", discount: "10%" }],
     vendorsApplied: 3,
     validityPeriod: "Jan 2026 to Apr 2026",
     aboutText: "A value-based premium surcharge applied to exclusive product lines and VIP offerings. Automate pricing increases to enhance exclusivity and maximize profitability.",
@@ -955,11 +960,11 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   },
   {
     id: "pr-7", name: "Tiered Premium, Value (Multi-Tier)", category: "premium", basis: "value", tierType: "multiple", totalTiers: 3,
-    description: "10% surcharge at each tier from $1K to $10K",
+    description: "10% surcharge at each tier from ₨280K to ₨2.8M",
     tiers: [
-      { minValue: "$1,000", maxValue: "$4,999", discount: "10%" },
-      { minValue: "$5,000", maxValue: "$9,999", discount: "10%" },
-      { minValue: "$10,000", maxValue: "$25,000", discount: "10%" },
+      { minValue: "₨280,000", maxValue: "₨1,399,999", discount: "10%" },
+      { minValue: "₨1,400,000", maxValue: "₨2,799,999", discount: "10%" },
+      { minValue: "₨2,800,000", maxValue: "₨7,000,000", discount: "10%" },
     ],
     vendorsApplied: 1,
     validityPeriod: "Dec 2025 to Mar 2026",
@@ -981,8 +986,8 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   // ── CUSTOM DISCOUNTS ──
   {
     id: "pr-custom-1", name: "Q2 Loyalty Value Discount", category: "discount", basis: "value", tierType: "single", totalTiers: 1,
-    description: "12% off on orders over $2,500 for loyal partners",
-    tiers: [{ minValue: "$2,500", maxValue: "$45,000", discount: "12%" }],
+    description: "12% off on orders over ₨700,000 for loyal partners",
+    tiers: [{ minValue: "₨700,000", maxValue: "₨12,600,000", discount: "12%" }],
     vendorsApplied: 6,
     validityPeriod: "Jan 2026 to Apr 2026",
     aboutText: "A custom single-tier value-based discount created for Q2 2025 to reward long-standing partners who consistently place high-value orders.",
@@ -997,11 +1002,11 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   },
   {
     id: "pr-custom-3", name: "Annual Value-Based Savings Plan", category: "discount", basis: "value", tierType: "multiple", totalTiers: 3,
-    description: "Progressive savings: 3% at $750, 8% at $3K, 14% at $10K",
+    description: "Progressive savings: 3% at ₨210,000, 8% at ₨840,000, 14% at ₨2,800,000",
     tiers: [
-      { minValue: "$750", maxValue: "$2,999", discount: "3%" },
-      { minValue: "$3,000", maxValue: "$9,999", discount: "8%" },
-      { minValue: "$10,000", maxValue: "$25,000", discount: "14%" },
+      { minValue: "₨210,000", maxValue: "₨839,999", discount: "3%" },
+      { minValue: "₨840,000", maxValue: "₨2,799,999", discount: "8%" },
+      { minValue: "₨2,800,000", maxValue: "₨7,000,000", discount: "14%" },
     ],
     vendorsApplied: 12,
     validityPeriod: "Dec 2025 to Mar 2026",
@@ -1022,8 +1027,8 @@ export const PRICING_RULE_PRESETS: PricingRulePreset[] = [
   // ── CUSTOM PREMIUMS ──
   {
     id: "pr-custom-5", name: "Rush Order Premium", category: "premium", basis: "value", tierType: "single", totalTiers: 1,
-    description: "18% surcharge on rush orders under $5,000",
-    tiers: [{ minValue: "$100", maxValue: "$5,000", discount: "18%" }],
+    description: "18% surcharge on rush orders under ₨1,400,000",
+    tiers: [{ minValue: "₨28,000", maxValue: "₨1,400,000", discount: "18%" }],
     vendorsApplied: 7,
     validityPeriod: "Jan 2026 to Apr 2026",
     aboutText: "A custom premium surcharge applied to rush and expedited orders to cover additional processing and logistics costs.",

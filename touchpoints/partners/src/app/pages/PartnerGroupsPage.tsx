@@ -137,9 +137,9 @@ type TemplateType = "vendor" | "customer" | "both";
 type GroupStatus = "Active" | "Inactive" | "Archived";
 
 import type { CreatedByPerson } from "../data/currentUser";
-import { CurrencyFlag } from "../components/currency/CurrencyFlag";
-import { getCurrency } from "../currency/currencies";
-import { groupCurrencyOf } from "../currency/partnerCurrency";
+import { CurrencyPill } from "../components/currency/CurrencyPill";
+import { groupCurrencyOf, groupRateTypeOf } from "../currency/partnerCurrency";
+import { RATE_TYPE_LABEL } from "../currency/rates";
 export type { CreatedByPerson };
 
 export interface EnrichedGroup extends PartnerGroup {
@@ -190,7 +190,7 @@ const COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align
   { key: "group", label: "Partner Groups", minWidth: "320px", sortable: true },
   { key: "type", label: "Partner Group Type", minWidth: "200px", sortable: true },
   // The group's default currency, which its partners inherit (spec 4.2).
-  { key: "currency", label: "Currency", minWidth: "200px", sortable: true },
+  { key: "currency", label: "Currency", minWidth: "130px", sortable: true },
   { key: "partners", label: "Linked Partners", minWidth: "220px", sortable: true },
   { key: "description", label: "Description", minWidth: "280px" },
   { key: "last_updated_by", label: "Last Updated By", minWidth: "220px", sortable: true },
@@ -2991,14 +2991,12 @@ function GroupsListingTable({
                         </span>
                       )}
                       {key === "currency" && (() => {
-                        // A group without a currency of its own uses the base currency.
+                        // Every group has a currency tag (Currency Touchpoints Map): its own,
+                        // else the base currency, which a group starts from.
                         const code = groupCurrencyOf(g);
+                        const origin = g.template?.currency ? "Set on the group" : "Base currency by default";
                         return (
-                          <div className="flex items-center gap-1.5 text-[12px] text-slate-600 min-w-0" style={{ fontWeight: 500 }}>
-                            <CurrencyFlag code={code} />
-                            <span className="text-foreground" style={{ fontWeight: 600 }}>{code}</span>
-                            <span className="truncate text-slate-500">{g.template?.currency ? getCurrency(code)?.name : "Base currency (default)"}</span>
-                          </div>
+                          <CurrencyPill code={code} note={`${origin} · ${RATE_TYPE_LABEL[groupRateTypeOf(g)]} rate by default`} />
                         );
                       })()}
                       {key === "country" && (

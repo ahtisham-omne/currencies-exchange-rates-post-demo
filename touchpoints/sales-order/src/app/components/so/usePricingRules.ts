@@ -76,7 +76,7 @@ export interface PricingRulesAPI {
 export function usePricingRules(
   customerName: string,
   lines: SOLine[],
-  /** USD "$" tier amounts → the SO's currency (ruleAmountFactor). */
+  /** Fixed ("$") tier amounts, in base (PKR), → the SO's currency at its rate (ruleAmountFactor). */
   flatFactor = 1,
 ): PricingRulesAPI {
   /* Seed: attach every customer rule and activate it on every matching line.

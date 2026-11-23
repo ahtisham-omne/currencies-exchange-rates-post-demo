@@ -3,8 +3,8 @@ import type { RMA } from '@/app/data/mockRMAs';
 import { getRMALinkedRecords } from '@/app/data/rmaLinkedRecords';
 import { BASE_CURRENCY, isBaseCurrency } from './currencies';
 import { formatMoney } from './money';
-import { fxOn, fxToday, midRateOn, toBase, type MoneyFx } from './rates';
-import { PO_CURRENCY, VENDOR_CURRENCY } from './poCurrencySeed';
+import { DEFAULT_RATE_TYPE, fxOn, fxToday, midRateOn, toBase, type MoneyFx, type RateType } from './rates';
+import { PO_CURRENCY, PO_RATE_TYPE, VENDOR_CURRENCY } from './poCurrencySeed';
 
 /* ── A return's currency ──────────────────────────────────────────────
  * A return is in the currency of the PO its goods came on: the vendor priced
@@ -53,6 +53,16 @@ export function rmaCurrency(rma: Pick<RMA, 'sourcePO' | 'sourcePOs'>): string {
 /** "PO-11151", for the record's "Currency: GBP (from PO 11151)". */
 export const rmaCurrencyPO = (rma: Pick<RMA, 'sourcePO' | 'sourcePOs'>) => poKey(rma.sourcePOs?.[0] ?? rma.sourcePO);
 
+/** The rate type a PO was placed at: mid-market unless the seed says
+ *  otherwise. */
+export function poRateType(po: string | null | undefined): RateType {
+  return PO_RATE_TYPE[poKey(po)] ?? DEFAULT_RATE_TYPE;
+}
+
+/** The rate type a return settles at by default: its PO's (Currency
+ *  Touchpoints Map, 2026-11-24). */
+export const rmaPORateType = (rma: Pick<RMA, 'sourcePO' | 'sourcePOs'>) => poRateType(rma.sourcePOs?.[0] ?? rma.sourcePO);
+
 export interface ReturnReceipt {
   grnNumber: string;
   /** The receiving date, as Linked Records shows it. */
@@ -95,7 +105,11 @@ export function returnFx(rma: RMA): MoneyFx | null {
   const blended = receipts.reduce((s, r) => s + (r.value || 1) * r.rate, 0) / weight;
   return {
     ...fxOn(code, receipts[0]!.date, 'receiving dates'),
-    rate: Math.round(blended * 1_000_000) / 1_000_000,
+    // To the 4 decimals every rate row shows (2026-11-24), so "base = amount ×
+    // rate" checks by hand against the "receiving rate 307.6686" the return
+    // prints. It was kept to 6, and the PKR figures were a few paisa off the
+    // printed rate.
+    rate: Math.round(blended * 10_000) / 10_000,
     breakdown: receipts.map((r) => ({ label: r.grnNumber, date: r.date, rate: r.rate })),
   };
 }
@@ -122,6 +136,15 @@ export function receiptCurrency(vendorCode: string, grnNumber: string): string |
   const vendor = mockVendors.find((v) => v.vendorCode === vendorCode);
   const grn = vendor?.receivingDocuments.find((g) => g.grnNumber === grnNumber);
   return grn ? poCurrency(grn.poNumber) : null;
+}
+
+/** The PO a vendor's receipt came on, "PO-11151", for "Return currency GBP ·
+ *  from PO-11151" on Create New RMA. */
+export function receiptPO(vendorCode: string, grnNumber: string): string | null {
+  const vendor = mockVendors.find((v) => v.vendorCode === vendorCode);
+  const grn = vendor?.receivingDocuments.find((g) => g.grnNumber === grnNumber);
+  const key = grn ? poKey(grn.poNumber) : '';
+  return key ? `PO-${key}` : null;
 }
 
 /** Why a receipt can't join a return already in another currency. */

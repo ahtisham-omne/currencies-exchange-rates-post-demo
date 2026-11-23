@@ -108,7 +108,9 @@ import { MAX_PRIORITY } from "../../../context/PurchasingContext";
 import { vendorCurrencyFor, vendorRate } from "../../../currency/vendorFx";
 import { formatMoney } from "../../../currency/money";
 import { DEFAULT_RATE_TYPE } from "../../../currency/rates";
-import { VendorCurrencyChip, VendorPriceFields, VendorRateCard } from "../../currency/VendorPriceFields";
+import { VendorCurrencyChip, VendorPriceFields, VendorRateCard, VendorUnitRateNote } from "../../currency/VendorPriceFields";
+import { CurrencyPill } from "../../currency/CurrencyChip";
+import { isBaseCurrency } from "../../../currency/currencies";
 
 /* ──────────────────────────────────────────────────────────────
    buildQualifiedVendor — kept for existing callers (ProcurementSection,
@@ -1409,6 +1411,12 @@ export function AddQualifiedVendorModal({
           <div className="flex items-center gap-2.5 min-w-0">
             <VendorAvatar name={vendor.name} size="md" square />
             <p className="text-sm truncate" style={{ fontWeight: 600, color: "#1E293B" }}>{highlightText(vendor.name, search)}</p>
+            {/* Currency tag on a vendor that isn't in the base currency. */}
+            {vendor.currency && !isBaseCurrency(vendor.currency) && (
+              <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                <CurrencyPill code={vendor.currency} note="The vendor's currency, from the partner" />
+              </span>
+            )}
           </div>
         </TableCell>
         {/* Partner Locations — interactive scope picker for addable/selected rows;
@@ -2230,15 +2238,6 @@ export function AddQualifiedVendorModal({
                                       <div aria-hidden={!isOpen} className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
                                         <div className="overflow-hidden">
                                           <div className="border-t border-[#EEF2F6] p-3 sm:p-4 space-y-2.5 bg-white">
-                                                      {/* The vendor's rate, once: every selling unit converts at it. */}
-                                                      <VendorRateCard
-                                                        key={`${v.id}:rate`}
-                                                        fx={vfx}
-                                                        onRateTypeChange={setVendorRateType}
-                                                        onRateChange={setVendorRate}
-                                                        // One tag for the rate: reverting the type restores a typed rate too.
-                                                        tag={renderFieldTag("rateType") ?? renderFieldTag("exchangeRate")}
-                                                      />
                                                       {/* Primary card */}
                                                       {(() => {
                                                         // Base card is primary unless the draft pointer names one of the tier cards.
@@ -2315,7 +2314,7 @@ export function AddQualifiedVendorModal({
                                                                   <FieldInfo content="The unit price this vendor charges for this item, expressed in the chosen unit of measure. The price does NOT convert between pack sizes — each pack carries its own rate. Quantities still convert at PO time." />
                                                                   {renderFieldTag("pricePerUnit")}
                                                                 </label>
-                                                                {/* Base ⇆ Vendor, as the original Items file priced a vendor. */}
+                                                                {/* Base currency ⇄ Vendor currency (Currency Touchpoints Map, Items 1). */}
                                                                 <VendorPriceFields
                                                                   key={`${v.id}:p`}
                                                                   price={cfg.pricePerUnit}
@@ -2330,6 +2329,17 @@ export function AddQualifiedVendorModal({
                                                                       disabledIds={new Set(additionalPrices.map((t) => t.uom))}
                                                                     />
                                                                   }
+                                                                />
+                                                                {/* The vendor's rate, once, under the price: the Mid-market |
+                                                                    Corporate switch and the rate. Every selling unit converts at it. */}
+                                                                <VendorRateCard
+                                                                  key={`${v.id}:rate`}
+                                                                  fx={vfx}
+                                                                  onRateTypeChange={setVendorRateType}
+                                                                  onRateChange={setVendorRate}
+                                                                  // One tag for the rate: reverting the type restores a typed rate too.
+                                                                  tag={renderFieldTag("rateType") ?? renderFieldTag("exchangeRate")}
+                                                                  unitCount={additionalPrices.length + 1}
                                                                 />
                                                               </div>
                                                               <div className="border-t border-dashed border-[#E2E8F0]" />
@@ -2453,6 +2463,7 @@ export function AddQualifiedVendorModal({
                                                                     />
                                                                   }
                                                                 />
+                                                                <VendorUnitRateNote fx={vfx} />
                                                               </div>
                                                               <div className="border-t border-dashed border-[#E2E8F0]" />
                                                               <div className="grid grid-cols-3 gap-2">

@@ -1,4 +1,4 @@
-import { formatMoney as moneyIn } from '@/app/currency/money';
+import { formatMoney as moneyIn, formatRate } from '@/app/currency/money';
 import { returnFx } from '@/app/currency/returnCurrency';
 import type { MoneyFx } from '@/app/currency/rates';
 import { useReturnView, viewMoney } from '@/app/components/currency/returnView';
@@ -876,7 +876,8 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, rea
   // authorized quantity, so a line the vendor cut short does not pay its full
   // asking value into the total.
   const lineAmountTotal = rma
-    ? rma.items.reduce((s, li) => s + authorizedQty(li) * li.unitPrice, 0)
+    ? // Rounded line by line, as the Return Summary and the ledger round it.
+      Math.round(rma.items.reduce((s, li) => s + Math.round(authorizedQty(li) * li.unitPrice * 100) / 100, 0) * 100) / 100
     : lines.reduce((s, l) => s + l.invoicedQty * l.unitPrice, 0);
 
   // RMA-mode lookups — reason + serial/lot render against the original
@@ -1398,7 +1399,15 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, rea
         defaultHiddenKeys={['notYetInvoiced', 'glAccount', 'po']}
         storageKey={rma ? 'omnesoft:rma-lines-v1' : 'omnesoft:invoice-lines-v3'}
         getRowId={(l) => l.id}
-        subtotalLabel={rma ? 'Return value' : 'Invoice line subtotal'}
+        // "Return value · receiving rate 307.6686" in PKR, the rate the
+        // receipt was booked at (Currency Touchpoints Map, 2026-11-24).
+        subtotalLabel={
+          rma
+            ? returnRate
+              ? `Return value · ${returnRate.provisional ? "today's rate" : 'receiving rate'} ${formatRate(returnRate.rate)}`
+              : 'Return value'
+            : 'Invoice line subtotal'
+        }
         subtotalValue={<Money value={lineAmountTotal} currency={invoice.currency} fx={returnRate} />}
         rowHeight={62}
         title={rma ? 'Return Items' : 'Line Items'}

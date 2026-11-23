@@ -156,6 +156,11 @@ export interface Invoice {
    *  base. Absent reads as the base. The vendor still receives the invoice's
    *  currency either way. */
   youPayIn?: string;
+  /** The account it is to be paid from (Currency Touchpoints Map, 24 Nov
+   *  2026): a PAY_FROM_ACCOUNTS id in the base currency or the invoice's.
+   *  Its currency is `youPayIn`. Absent reads as the default
+   *  (currency/payFrom.ts `invoicePayFrom`). */
+  payFromAccount?: string;
   apAccount: string;
   description: string;
   postingDate?: string;
@@ -1160,7 +1165,7 @@ function fxDemoInvoice(opts: {
     exchangeRate: invoiceRate,
     rateType: 'mid',
     rateDate: invoicedOn,
-    rateBasis: 'invoiceDate',
+    rateBasis: 'postingDate', // posted on the vendor invoice date, so the same rate
     ...(opts.youPayIn ? { youPayIn: opts.youPayIn } : {}),
     apAccount: FX_DEMO.apAccount,
     description: opts.description ?? (opts.prepayment

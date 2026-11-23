@@ -63,7 +63,9 @@ import QuantityStepperInput from "./QuantityStepperInput";
 import ItemStatusChip from "./ItemStatusChip";
 import { lineOneTimeNet } from "./poOrderPricing";
 import { BaseMoney, Money } from "./currency/Money";
-import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { CurrencyPill } from "./currency/CurrencyChip";
+import { CART_TAG_NOTE, poPerVendorLine } from "./currency/cartCurrency";
 import { formatMoney } from "@/app/currency/money";
 import { poFx, ruleAmountFactorToday, toBaseToday, vendorCurrency, type PoFx } from "@/app/currency/poFx";
 
@@ -295,7 +297,7 @@ export default function CartPage() {
             }
             if (activeLines.size > 0) activation.set(r.id, activeLines);
           }
-          // Flat rule amounts (USD) in the vendor's currency, at today's rate.
+          // Flat rule amounts (base currency) in the vendor's currency, at today's rate.
           const bds = computeLineBreakdowns(linesForCompute, vendorRules, activation, ruleAmountFactorToday(vendorCurrency(vendor)));
           checkedRulesDiscount = sumRuleDiscount(bds);
           checkedRulesPremium = sumRulePremium(bds);
@@ -334,8 +336,10 @@ export default function CartPage() {
   const totalCheckedCount = checkedCart.length;
   const totalCheckedVendors = new Set(checkedCart.map((c) => c.catalogItem.partnerLocation || "Unknown Vendor")).size;
   const itemCount = checkedCart.reduce((sum, i) => sum + i.quantity, 0);
-  /* The cart shows prices and totals in the base currency, plain: no
-     currency tags, rate hovers or conversion note (Mahreen, 2026-11-20). */
+  /* The cart shows prices and totals in the base currency, plain: no rate
+     hovers or conversion note (Mahreen, 2026-11-20). Each vendor carries its
+     currency tag again, and a line under the total says which POs are made
+     in which currency (Currency Touchpoints Map, Purchase Orders 2). */
   const totalsCurrency = BASE_CURRENCY;
   const inTotals = (amount: number, vendor: string) => toBaseToday(amount, vendorCurrency(vendor));
   const subtotal = checkedCart.reduce((s, i) => s + inTotals(i.unitPrice * i.quantity, i.catalogItem.partnerLocation), 0);
@@ -945,6 +949,7 @@ export default function CartPage() {
                             >
                               {group.vendor}
                             </span>
+                            {!isBaseCurrency(group.currency) && <CurrencyPill code={group.currency} note={CART_TAG_NOTE} />}
                             <span
                               className="inline-flex items-center rounded-md border shrink-0 tabular-nums"
                               style={{
@@ -1132,8 +1137,11 @@ export default function CartPage() {
                       {vendorGroups.map((g) => (
                         <div key={g.vendor} className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <span className="truncate block" style={{ fontSize: 12, fontWeight: 500, color: C.text700, fontFamily: FONT, lineHeight: 1.4 }}>
-                              {g.vendor}
+                            <span className="flex items-center gap-1.5 min-w-0">
+                              <span className="truncate" style={{ fontSize: 12, fontWeight: 500, color: C.text700, fontFamily: FONT, lineHeight: 1.4 }}>
+                                {g.vendor}
+                              </span>
+                              {!isBaseCurrency(g.currency) && <CurrencyPill code={g.currency} note={CART_TAG_NOTE} />}
                             </span>
                             <span className="tabular-nums" style={{ fontSize: 11, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
                               {g.checkedCount} of {g.selectableCount} selected
@@ -1261,7 +1269,7 @@ export default function CartPage() {
 
                     {/* Multi-vendor info — white card + Vendor-blue icon chip, matching
                         the banner pattern used on the PO detail page. */}
-                    {vendorGroups.length > 1 && totalCheckedVendors > 1 && (
+                    {totalCheckedVendors > 0 && (
                       <div
                         className="mx-4 mb-3 flex items-start gap-3 rounded-md border bg-white shadow-sm px-3 py-2.5"
                         style={{ borderColor: C.border }}
@@ -1273,10 +1281,7 @@ export default function CartPage() {
                           <Info style={{ width: 12, height: 12, color: "#1E40AF" }} strokeWidth={2} />
                         </div>
                         <span style={{ fontSize: 12, fontWeight: 400, color: C.text600, fontFamily: FONT, lineHeight: 1.45 }}>
-                          <span style={{ fontWeight: 600, color: C.text900 }} className="tabular-nums">
-                            {totalCheckedVendors} separate POs
-                          </span>{" "}
-                          will be created — one per vendor.
+                          {poPerVendorLine(vendorGroups.filter((g) => g.checkedCount > 0))}
                         </span>
                       </div>
                     )}

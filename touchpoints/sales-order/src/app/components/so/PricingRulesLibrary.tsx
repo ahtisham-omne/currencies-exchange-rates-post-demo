@@ -107,7 +107,7 @@ import {
   Maximize2,
   Minimize2,
   CirclePlus,
-  DollarSign,
+  Banknote,
   ChartColumn,
   Check,
   Lock,
@@ -124,6 +124,20 @@ import { toast } from "sonner";
 import { ConfirmationModal } from "../ConfirmationModal";
 import { getAvatarTint } from "./avatarTints";
 import { Textarea } from "../ui/textarea";
+import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
+import { moneyPrefix } from "@/app/currency/money";
+import { isFixedAmountText } from "./pricingRulesData";
+
+/* ── Rules are in the base currency (Currency Touchpoints Map, 24 Nov 2026) ──
+ * A pricing rule is created in the company's base currency, whatever it
+ * is, with no currency of its own: value thresholds and fixed amounts are
+ * PKR. The templates and seeded rules below were written in USD; their
+ * amounts are restated at the spec's fixed ×280 ($1,000 → ₨280,000), the
+ * same in every module. Percentages and quantity (volume) tiers don't
+ * change. On an order in another currency a value threshold is checked in
+ * base and a fixed amount converts at the order's rate. */
+const RULE_CURRENCY = BASE_CURRENCY;
+const RULE_PREFIX = moneyPrefix(RULE_CURRENCY);
 
 // ── Inlined preset data + types (formerly imported from partnerConstants) ──
 type PricingRuleBasis = "value" | "volume";
@@ -142,14 +156,14 @@ interface PricingRulePreset {
   warningText?: string;
 }
 const PRICING_RULE_PRESETS: PricingRulePreset[] = [
-  { id: "pr-1", name: "Standard Discount – Value (Single-Tier)", category: "discount", basis: "value", tierType: "single", tiers: [{ minValue: "$1,000", maxValue: "$25,000", discount: "10%" }], description: "10% off on orders over $1,000", aboutText: "Straightforward, commonly used model where a fixed percentage discount is applied once the total purchase value exceeds a defined threshold." },
+  { id: "pr-1", name: "Standard Discount – Value (Single-Tier)", category: "discount", basis: "value", tierType: "single", tiers: [{ minValue: "₨280,000", maxValue: "₨7,000,000", discount: "10%" }], description: "10% off on orders over ₨280,000", aboutText: "Straightforward, commonly used model where a fixed percentage discount is applied once the total purchase value exceeds a defined threshold." },
   { id: "pr-2", name: "Standard Discount – Volume (Single-Tier)", category: "discount", basis: "volume", tierType: "single", tiers: [{ minValue: "100 EA", maxValue: "500 EA", discount: "10%" }], description: "10% off on orders of 100+ units", aboutText: "Volume-based single-tier discount that applies a fixed percentage when the order quantity meets or exceeds a set threshold." },
-  { id: "pr-3", name: "Tiered Discount – Value (Multi-Tier)", category: "discount", basis: "value", tierType: "multiple", tiers: [{ minValue: "$1,000", maxValue: "$4,999", discount: "10%" }, { minValue: "$5,000", maxValue: "$9,999", discount: "10%" }, { minValue: "$10,000", maxValue: "$24,999", discount: "10%" }, { minValue: "$25,000", maxValue: "$50,000", discount: "10%" }], description: "10% off at each tier from $1K to $25K", aboutText: "Multi-tier discount that applies at distinct value thresholds — useful when you want the discount percentage to scale with order size." },
+  { id: "pr-3", name: "Tiered Discount – Value (Multi-Tier)", category: "discount", basis: "value", tierType: "multiple", tiers: [{ minValue: "₨280,000", maxValue: "₨1,399,999", discount: "10%" }, { minValue: "₨1,400,000", maxValue: "₨2,799,999", discount: "10%" }, { minValue: "₨2,800,000", maxValue: "₨6,999,999", discount: "10%" }, { minValue: "₨7,000,000", maxValue: "₨14,000,000", discount: "10%" }], description: "10% off at each tier from ₨280K to ₨7M", aboutText: "Multi-tier discount that applies at distinct value thresholds — useful when you want the discount percentage to scale with order size." },
   { id: "pr-4", name: "Tiered Discount – Volume (Multi-Tier)", category: "discount", basis: "volume", tierType: "multiple", tiers: [{ minValue: "35 EA", maxValue: "100 EA", discount: "5%" }, { minValue: "100 EA", maxValue: "250 EA", discount: "10%" }, { minValue: "250 EA", maxValue: "500 EA", discount: "15%" }, { minValue: "500 EA", maxValue: "1,000 EA", discount: "20%" }], description: "Increasing discount by quantity bracket", aboutText: "Quantity-based tiers that grow the discount as volume increases — encourages larger orders." },
-  { id: "pr-5", name: "Standard Premium – Value (Single-Tier)", category: "premium", basis: "value", tierType: "single", tiers: [{ minValue: "$0", maxValue: "$5,000", discount: "8%" }], description: "8% premium for expedited / rush orders", aboutText: "Adds a flat premium percentage to qualifying orders — typically rush, custom, or non-standard processing." },
+  { id: "pr-5", name: "Standard Premium – Value (Single-Tier)", category: "premium", basis: "value", tierType: "single", tiers: [{ minValue: "₨0", maxValue: "₨1,400,000", discount: "8%" }], description: "8% premium for expedited / rush orders", aboutText: "Adds a flat premium percentage to qualifying orders — typically rush, custom, or non-standard processing." },
   { id: "pr-6", name: "Standard Premium – Volume (Single-Tier)", category: "premium", basis: "volume", tierType: "single", tiers: [{ minValue: "1 EA", maxValue: "20 EA", discount: "12%" }], description: "12% premium for small-batch orders", aboutText: "Premium applied to low-volume orders to recover fixed handling overhead." },
-  { id: "pr-7", name: "Tiered Premium – Value (Multi-Tier)", category: "premium", basis: "value", tierType: "multiple", tiers: [{ minValue: "$0", maxValue: "$200", discount: "10%" }, { minValue: "$200", maxValue: "$500", discount: "7%" }, { minValue: "$500", maxValue: "$1,000", discount: "5%" }, { minValue: "$1,000", maxValue: "$5,000", discount: "3%" }], description: "Premium scales down as value grows", aboutText: "Multi-tier premium that fades as the order grows in value — common for handling-fee structures." },
-  { id: "pr-8", name: "Tiered Premium – Volume (Multi-Tier)", category: "premium", basis: "volume", tierType: "multiple", tiers: [{ minValue: "1 EA", maxValue: "25 EA", discount: "$50" }, { minValue: "25 EA", maxValue: "50 EA", discount: "$25" }, { minValue: "50 EA", maxValue: "100 EA", discount: "$15" }, { minValue: "100 EA", maxValue: "250 EA", discount: "$10" }], description: "Flat handling premium per quantity bracket", aboutText: "Fixed-rate per-unit premium that decreases with order volume." },
+  { id: "pr-7", name: "Tiered Premium – Value (Multi-Tier)", category: "premium", basis: "value", tierType: "multiple", tiers: [{ minValue: "₨0", maxValue: "₨56,000", discount: "10%" }, { minValue: "₨56,000", maxValue: "₨140,000", discount: "7%" }, { minValue: "₨140,000", maxValue: "₨280,000", discount: "5%" }, { minValue: "₨280,000", maxValue: "₨1,400,000", discount: "3%" }], description: "Premium scales down as value grows", aboutText: "Multi-tier premium that fades as the order grows in value — common for handling-fee structures." },
+  { id: "pr-8", name: "Tiered Premium – Volume (Multi-Tier)", category: "premium", basis: "volume", tierType: "multiple", tiers: [{ minValue: "1 EA", maxValue: "25 EA", discount: "₨14,000" }, { minValue: "25 EA", maxValue: "50 EA", discount: "₨7,000" }, { minValue: "50 EA", maxValue: "100 EA", discount: "₨4,200" }, { minValue: "100 EA", maxValue: "250 EA", discount: "₨2,800" }], description: "Flat handling premium per quantity bracket", aboutText: "Fixed-rate per-unit premium that decreases with order volume." },
 ];
 
 // ── Stubbed AttachmentFile + ActivityFeedItemType (formerly imported) ──
@@ -494,12 +508,12 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-preset-disc-val-single",
     name: "Standard Discount – Value (Single-Tier)",
     category: "discount", basis: "value", tierType: "single",
-    description: "10% off on orders over $1,000",
+    description: "10% off on orders over ₨280,000",
     aboutText: "The Standard Discount – Value (Single-Tier) pricing rule is a straightforward model where a fixed percentage discount is applied once the total purchase value exceeds a defined threshold. Commonly used for repeat customers.",
     isPreset: true, status: "Active", scope: "vendor",
     validFrom: "1 Jan 2025", validTo: "30 Jun 2025", hasDateLimit: true, durationDays: 180,
     createdBy: "Ahtisham Ahmad", createdDate: "15 Jan 2025",
-    tiers: [{ minQty: "$1,000", maxQty: "$25,000", discount: "10%" }],
+    tiers: [{ minQty: "₨280,000", maxQty: "₨7,000,000", discount: "10%" }],
     itemCount: 12, categoryCount: 12, partnerCount: 8,
   },
   {
@@ -518,16 +532,16 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-preset-disc-val-multi",
     name: "Tiered Discount – Value (Multi-Tier)",
     category: "discount", basis: "value", tierType: "multiple",
-    description: "10% off at each tier from $1K to $25K",
+    description: "10% off at each tier from ₨280K to ₨7M",
     aboutText: "A multi-tier value-based discount model where different discount percentages are applied at various purchase value thresholds. Encourages larger order values with increasing savings.",
     isPreset: true, status: "Active", scope: "vendor",
     validFrom: "1 Mar 2025", validTo: "31 Dec 2025", hasDateLimit: true, durationDays: 305,
     createdBy: "Marcus Obi", createdDate: "28 Feb 2025",
     tiers: [
-      { minQty: "$1,000", maxQty: "$4,999", discount: "10%" },
-      { minQty: "$5,000", maxQty: "$9,999", discount: "10%", isFixRate: false },
-      { minQty: "$10,000", maxQty: "$24,999", discount: "10%" },
-      { minQty: "$25,000", maxQty: "$50,000", discount: "10%" },
+      { minQty: "₨280,000", maxQty: "₨1,399,999", discount: "10%" },
+      { minQty: "₨1,400,000", maxQty: "₨2,799,999", discount: "10%", isFixRate: false },
+      { minQty: "₨2,800,000", maxQty: "₨6,999,999", discount: "10%" },
+      { minQty: "₨7,000,000", maxQty: "₨14,000,000", discount: "10%" },
     ],
     itemCount: 15, categoryCount: 14, partnerCount: 12,
   },
@@ -553,12 +567,12 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-preset-prem-val-single",
     name: "Standard Premium – Value (Single-Tier)",
     category: "premium", basis: "value", tierType: "single",
-    description: "10% surcharge on orders over $1,000",
+    description: "10% surcharge on orders over ₨280,000",
     aboutText: "A value-based premium surcharge applied to exclusive product lines and VIP offerings. Automate pricing increases to enhance exclusivity and maximize profitability.",
     isPreset: true, status: "Active", scope: "customer",
     validFrom: "1 Apr 2025", validTo: "30 Sep 2025", hasDateLimit: true, durationDays: 182,
     createdBy: "Sarah Chen", createdDate: "25 Mar 2025",
-    tiers: [{ minQty: "$1,000", maxQty: "$25,000", discount: "10%" }],
+    tiers: [{ minQty: "₨280,000", maxQty: "₨7,000,000", discount: "10%" }],
     itemCount: 6, categoryCount: 10, partnerCount: 4,
   },
   {
@@ -577,15 +591,15 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-preset-prem-val-multi",
     name: "Tiered Premium – Value (Multi-Tier)",
     category: "premium", basis: "value", tierType: "multiple",
-    description: "10% surcharge at each tier from $1K to $10K",
+    description: "10% surcharge at each tier from ₨280K to ₨2.8M",
     aboutText: "A multi-tier value-based premium model where different surcharges are applied at decreasing purchase value thresholds. Protects margins on smaller deals.",
     isPreset: true, status: "Active", scope: "vendor",
     validFrom: "5 Feb 2025", validTo: "5 Nov 2025", hasDateLimit: true, durationDays: 273,
     createdBy: "Ahtisham Ahmad", createdDate: "1 Feb 2025",
     tiers: [
-      { minQty: "$1,000", maxQty: "$4,999", discount: "10%" },
-      { minQty: "$5,000", maxQty: "$9,999", discount: "10%" },
-      { minQty: "$10,000", maxQty: "$25,000", discount: "10%" },
+      { minQty: "₨280,000", maxQty: "₨1,399,999", discount: "10%" },
+      { minQty: "₨1,400,000", maxQty: "₨2,799,999", discount: "10%" },
+      { minQty: "₨2,800,000", maxQty: "₨7,000,000", discount: "10%" },
     ],
     itemCount: 9, categoryCount: 10, partnerCount: 6,
   },
@@ -612,12 +626,12 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-custom-disc-val-single",
     name: "Q2 Loyalty Value Discount",
     category: "discount", basis: "value", tierType: "single",
-    description: "12% off on orders over $2,500 for loyal partners",
+    description: "12% off on orders over ₨700,000 for loyal partners",
     aboutText: "A custom single-tier value-based discount created specifically for Q2 2025 to reward long-standing partners who consistently place high-value orders. Fully configurable tiers and settings.",
     isPreset: false, status: "Active", scope: "vendor",
     validFrom: "1 Apr 2025", validTo: "30 Jun 2025", hasDateLimit: true, durationDays: 90,
     createdBy: "Ahtisham Ahmad", createdDate: "20 Mar 2025",
-    tiers: [{ minQty: "$2,500", maxQty: "$45,000", discount: "12%" }],
+    tiers: [{ minQty: "₨700,000", maxQty: "₨12,600,000", discount: "12%" }],
     itemCount: 7, categoryCount: 10, partnerCount: 6,
   },
   {
@@ -636,16 +650,16 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-custom-disc-val-multi",
     name: "Annual Value-Based Savings Plan",
     category: "discount", basis: "value", tierType: "multiple",
-    description: "Progressive savings: 3% at $750, 8% at $3K, 14% at $10K",
+    description: "Progressive savings: 3% at ₨210,000, 8% at ₨840K, 14% at ₨2.8M",
     aboutText: "A comprehensive multi-tier value-based savings program designed for annual contracts. Each tier offers increasing discounts to incentivize higher purchase commitments throughout the year.",
     isPreset: false, status: "Active", scope: "vendor",
     validFrom: "1 Jan 2025", validTo: "31 Dec 2025", hasDateLimit: true, durationDays: 365,
     createdBy: "Marcus Obi", createdDate: "28 Dec 2024",
     tiers: [
-      { minQty: "$750", maxQty: "$2,999", discount: "3%" },
-      { minQty: "$3,000", maxQty: "$9,999", discount: "8%" },
-      { minQty: "$10,000", maxQty: "$24,999", discount: "14%" },
-      { minQty: "$25,000", maxQty: "$100,000", discount: "19%", isFixRate: true },
+      { minQty: "₨210,000", maxQty: "₨839,999", discount: "3%" },
+      { minQty: "₨840,000", maxQty: "₨2,799,999", discount: "8%" },
+      { minQty: "₨2,800,000", maxQty: "₨6,999,999", discount: "14%" },
+      { minQty: "₨7,000,000", maxQty: "₨28,000,000", discount: "19%", isFixRate: true },
     ],
     itemCount: 22, categoryCount: 13, partnerCount: 15,
   },
@@ -671,12 +685,12 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-custom-prem-val-single",
     name: "Expedited Processing Fee",
     category: "premium", basis: "value", tierType: "single",
-    description: "18% surcharge for rush orders under $5,000",
+    description: "18% surcharge for rush orders under ₨1,400,000",
     aboutText: "Custom premium rule applying an expedited processing surcharge on orders requiring priority handling. Covers additional logistics and labor costs for rush fulfillment.",
     isPreset: false, status: "Active", scope: "vendor",
     validFrom: "1 Mar 2025", validTo: "28 Feb 2026", hasDateLimit: false, durationDays: 365,
     createdBy: "Ahtisham Ahmad", createdDate: "25 Feb 2025",
-    tiers: [{ minQty: "$50", maxQty: "$5,000", discount: "18%" }],
+    tiers: [{ minQty: "₨14,000", maxQty: "₨1,400,000", discount: "18%" }],
     itemCount: 4, categoryCount: 10, partnerCount: 11,
   },
   {
@@ -695,15 +709,15 @@ const HARDCODED_RULES: HardcodedRuleDef[] = [
     id: "hc-custom-prem-val-multi",
     name: "VIP Exclusive Tiered Markup",
     category: "premium", basis: "value", tierType: "multiple",
-    description: "5% on $1K+, 10% on $5K+, 18% on $20K+ exclusives",
+    description: "5% on ₨280K+, 10% on ₨1.4M+, 18% on ₨5.6M+ exclusives",
     aboutText: "A multi-tier value-based premium for exclusive product lines available only through VIP channels. Higher-value orders carry progressively higher premiums reflecting product exclusivity.",
     isPreset: false, status: "Active", scope: "customer",
     validFrom: "15 Jan 2025", validTo: "15 Jan 2026", hasDateLimit: false, durationDays: 365,
     createdBy: "Marcus Obi", createdDate: "10 Jan 2025",
     tiers: [
-      { minQty: "$1,000", maxQty: "$4,999", discount: "5%" },
-      { minQty: "$5,000", maxQty: "$19,999", discount: "10%" },
-      { minQty: "$20,000", maxQty: "$75,000", discount: "18%", isFixRate: true },
+      { minQty: "₨280,000", maxQty: "₨1,399,999", discount: "5%" },
+      { minQty: "₨1,400,000", maxQty: "₨5,599,999", discount: "10%" },
+      { minQty: "₨5,600,000", maxQty: "₨21,000,000", discount: "18%", isFixRate: true },
     ],
     itemCount: 3, categoryCount: 10, partnerCount: 4,
   },
@@ -742,14 +756,14 @@ function generatePricingRules(vendor: Vendor, cfg?: VendorConfigData): PricingRu
     const fmt = (d: Date) => d.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
 
     const srcTiers = p?.tiers.map((t) => ({ minValue: t.minValue, maxValue: t.maxValue, discount: t.discount }))
-      || [{ minValue: cr.basis === "volume" ? "35 EA" : "$1,000", maxValue: cr.basis === "volume" ? "500 EA" : "$32,000", discount: "13%" }];
+      || [{ minValue: cr.basis === "volume" ? "35 EA" : "₨280,000", maxValue: cr.basis === "volume" ? "500 EA" : "₨8,960,000", discount: "13%" }];
     const tiers: TierData[] = srcTiers.map((t) => ({ minQty: t.minValue, maxQty: t.maxValue, discount: t.discount }));
     if ((p?.tierType === "multiple") && (p?.totalTiers || 1) > 1) {
       for (let ti = 1; ti < Math.min(p.totalTiers, 4); ti++) {
         const base = parseInt(srcTiers[0]?.maxValue.replace(/[^0-9]/g, "") || "100") * (ti + 1);
         tiers.push({
-          minQty: p.basis === "volume" ? `${base} EA` : `$${base.toLocaleString()}`,
-          maxQty: p.basis === "volume" ? `${base * 2} EA` : `$${(base * 2).toLocaleString()}`,
+          minQty: p.basis === "volume" ? `${base} EA` : `${RULE_PREFIX}${base.toLocaleString()}`,
+          maxQty: p.basis === "volume" ? `${base * 2} EA` : `${RULE_PREFIX}${(base * 2).toLocaleString()}`,
           discount: `${parseInt(srcTiers[0]?.discount || "5") + ti * 3}%`,
           isFixRate: ti === 1 && rng() > 0.7,
         });
@@ -3179,10 +3193,10 @@ export function PricingRulesLibrary({
   const exploreCards = useMemo<PricingRule[]>(() => {
     const expandedTiers: Record<string, TierData[]> = {
       "pr-3": [
-        { minQty: "$ 500", maxQty: "$ 2,300", discount: "5%" },
-        { minQty: "$ 2,300", maxQty: "$ 5,000", discount: "10%" },
-        { minQty: "$ 5,000", maxQty: "$ 10,000", discount: "15%" },
-        { minQty: "$ 10,000", maxQty: "$ 25,000", discount: "20%" },
+        { minQty: "₨ 140,000", maxQty: "₨ 644,000", discount: "5%" },
+        { minQty: "₨ 644,000", maxQty: "₨ 1,400,000", discount: "10%" },
+        { minQty: "₨ 1,400,000", maxQty: "₨ 2,800,000", discount: "15%" },
+        { minQty: "₨ 2,800,000", maxQty: "₨ 7,000,000", discount: "20%" },
       ],
       "pr-4": [
         { minQty: "35 EA", maxQty: "100 EA", discount: "5%" },
@@ -3191,16 +3205,16 @@ export function PricingRulesLibrary({
         { minQty: "500 EA", maxQty: "1,000 EA", discount: "20%" },
       ],
       "pr-7": [
-        { minQty: "$ 0", maxQty: "$ 200", discount: "10%" },
-        { minQty: "$ 200", maxQty: "$ 500", discount: "7%" },
-        { minQty: "$ 500", maxQty: "$ 1,000", discount: "5%" },
-        { minQty: "$ 1,000", maxQty: "$ 5,000", discount: "3%" },
+        { minQty: "₨ 0", maxQty: "₨ 56,000", discount: "10%" },
+        { minQty: "₨ 56,000", maxQty: "₨ 140,000", discount: "7%" },
+        { minQty: "₨ 140,000", maxQty: "₨ 280,000", discount: "5%" },
+        { minQty: "₨ 280,000", maxQty: "₨ 1,400,000", discount: "3%" },
       ],
       "pr-8": [
-        { minQty: "1 EA", maxQty: "25 EA", discount: "$50" },
-        { minQty: "25 EA", maxQty: "50 EA", discount: "$25" },
-        { minQty: "50 EA", maxQty: "100 EA", discount: "$15" },
-        { minQty: "100 EA", maxQty: "250 EA", discount: "$10" },
+        { minQty: "1 EA", maxQty: "25 EA", discount: "₨14,000" },
+        { minQty: "25 EA", maxQty: "50 EA", discount: "₨7,000" },
+        { minQty: "50 EA", maxQty: "100 EA", discount: "₨4,200" },
+        { minQty: "100 EA", maxQty: "250 EA", discount: "₨2,800" },
       ],
     };
     const mk = (id: string, ruleNo: string, name: string, cat: "discount"|"premium", basis: "value"|"volume", tierType: "single"|"multiple", tiers: TierData[], desc: string, about: string, preset: boolean, by: string, scope: "vendor"|"customer"|"both"): PricingRule => {
@@ -3214,14 +3228,14 @@ export function PricingRulesLibrary({
       return mk(p.id, `PRE-${(p.id.split("-")[1] || "0").padStart(3, "0")}`, p.name, p.category as "discount" | "premium", p.basis, p.tierType, tiers, p.description, p.aboutText || "", true, "System", "both");
     });
     const byMe: PricingRule[] = [
-      mk("cust-me-1", "CUS-001", "Early Payment Discount", "discount", "value", "single", [{ minQty: "$ 5,000", maxQty: "$ 50,000", discount: "8%" }], "8% discount for payments made within 10 days of invoice", "Encourages early payment by offering a percentage discount when partners pay invoices within a specified early window.", false, "Ahtisham Ahmad", "vendor"),
+      mk("cust-me-1", "CUS-001", "Early Payment Discount", "discount", "value", "single", [{ minQty: "₨ 1,400,000", maxQty: "₨ 14,000,000", discount: "8%" }], "8% discount for payments made within 10 days of invoice", "Encourages early payment by offering a percentage discount when partners pay invoices within a specified early window.", false, "Ahtisham Ahmad", "vendor"),
       mk("cust-me-2", "CUS-002", "Rush Order Premium", "premium", "volume", "single", [{ minQty: "1 EA", maxQty: "50 EA", discount: "12%" }], "12% surcharge on expedited orders under 50 units", "Applies a premium surcharge for rush orders requiring expedited processing and shipping for small quantities.", false, "Ahtisham Ahmad", "vendor"),
       mk("cust-me-3", "CUS-003", "Seasonal Volume Discount", "discount", "volume", "multiple", [{ minQty: "100 EA", maxQty: "300 EA", discount: "5%" }, { minQty: "300 EA", maxQty: "750 EA", discount: "10%" }, { minQty: "750 EA", maxQty: "2,000 EA", discount: "18%" }], "Tiered discounts for Q4 seasonal bulk ordering", "A multi-tier seasonal promotion offering increasing discounts at higher volume breakpoints during the Q4 ordering season.", false, "Ahtisham Ahmad", "both"),
     ];
     const byOthers: PricingRule[] = [
-      mk("cust-oth-1", "CUS-004", "VIP Client Premium", "premium", "value", "single", [{ minQty: "$ 0", maxQty: "$ 10,000", discount: "15%" }], "15% premium for exclusive VIP-tier partnerships", "A value-based premium applied to VIP client orders, reflecting the enhanced service level and priority handling.", false, "Sarah Chen", "customer"),
-      mk("cust-oth-2", "CUS-005", "Loyalty Tier Discount", "discount", "value", "multiple", [{ minQty: "$ 10,000", maxQty: "$ 25,000", discount: "3%" }, { minQty: "$ 25,000", maxQty: "$ 75,000", discount: "7%" }, { minQty: "$ 75,000", maxQty: "$ 200,000", discount: "12%" }], "Progressive discounts based on cumulative order value", "Rewards long-term partners with increasing discounts as their cumulative purchase value crosses defined thresholds.", false, "Marcus Obi", "both"),
-      mk("cust-oth-3", "CUS-006", "Small Batch Surcharge", "premium", "volume", "single", [{ minQty: "1 EA", maxQty: "20 EA", discount: "$75" }], "Flat $75 handling fee for orders under 20 units", "Covers additional handling and logistics costs incurred when processing small batch orders below the minimum efficient quantity.", false, "Elena Volkov", "vendor"),
+      mk("cust-oth-1", "CUS-004", "VIP Client Premium", "premium", "value", "single", [{ minQty: "₨ 0", maxQty: "₨ 2,800,000", discount: "15%" }], "15% premium for exclusive VIP-tier partnerships", "A value-based premium applied to VIP client orders, reflecting the enhanced service level and priority handling.", false, "Sarah Chen", "customer"),
+      mk("cust-oth-2", "CUS-005", "Loyalty Tier Discount", "discount", "value", "multiple", [{ minQty: "₨ 2,800,000", maxQty: "₨ 7,000,000", discount: "3%" }, { minQty: "₨ 7,000,000", maxQty: "₨ 21,000,000", discount: "7%" }, { minQty: "₨ 21,000,000", maxQty: "₨ 56,000,000", discount: "12%" }], "Progressive discounts based on cumulative order value", "Rewards long-term partners with increasing discounts as their cumulative purchase value crosses defined thresholds.", false, "Marcus Obi", "both"),
+      mk("cust-oth-3", "CUS-006", "Small Batch Surcharge", "premium", "volume", "single", [{ minQty: "1 EA", maxQty: "20 EA", discount: "₨21,000" }], "Flat ₨21,000 handling fee for orders under 20 units", "Covers additional handling and logistics costs incurred when processing small batch orders below the minimum efficient quantity.", false, "Elena Volkov", "vendor"),
     ];
     return [...presetRules, ...byMe, ...byOthers];
   }, []);
@@ -3287,11 +3301,13 @@ export function PricingRulesLibrary({
     setCreateItemsTab("items");
     setCreateTiers(r.tiers.length > 0
       ? r.tiers.map((t) => ({
-          discount: t.discount,
-          fixRate: t.discount.includes("$"),
+          /* The fields carry their own ₨ / % / unit adornments, so they
+             take the number alone ("₨14,000" → "14000"). */
+          discount: (t.discount || "").replace(/[^0-9.]/g, ""),
+          fixRate: isFixedAmountText(t.discount),
           qtyLimits: !!(t.minQty || t.maxQty),
-          minQty: t.minQty || "",
-          maxQty: t.maxQty || "",
+          minQty: (t.minQty || "").replace(/[^0-9.]/g, ""),
+          maxQty: (t.maxQty || "").replace(/[^0-9.]/g, ""),
         }))
       : [makeTier()]
     );
@@ -3957,7 +3973,8 @@ export function PricingRulesLibrary({
                   const parseNum = (s: string) => (s || "").replace(/[^0-9.]/g, "");
                   const parsedTiers = (tpl.tiers || []).map((t) => ({
                     discount: parseNum(t.discount),
-                    fixRate: false,
+                    // "₨14,000" is a fixed amount in base, not 14,000%.
+                    fixRate: isFixedAmountText(t.discount),
                     qtyLimits: Boolean(t.minValue || t.maxValue),
                     minQty: parseNum(t.minValue || ""),
                     maxQty: parseNum(t.maxValue || ""),
@@ -4175,7 +4192,7 @@ export function PricingRulesLibrary({
                                 <p className="text-slate-500">Measure thresholds by units ordered or order value.</p>
                                 <div className="mt-2 px-2.5 py-2 rounded-lg bg-slate-50 border border-muted">
                                   <p className="text-[10px] text-slate-400 tracking-wide" style={{ fontWeight: 600 }}>EXAMPLE</p>
-                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over $10K.</p>
+                                  <p className="text-[11px] text-slate-700 mt-1"><span className="text-primary" style={{ fontWeight: 600 }}>Volume</span>: 500+ units. <span className="text-primary" style={{ fontWeight: 600 }}>Value</span>: orders over ₨2.8M.</p>
                                 </div>
                               </TooltipContent>
                             </Tooltip>
@@ -4199,10 +4216,31 @@ export function PricingRulesLibrary({
                                 }`}
                                 style={{ fontWeight: createBasis === b ? 600 : 500 }}
                               >
-                                {b === "volume" ? <ChartColumn className="w-3.5 h-3.5" /> : <DollarSign className="w-3.5 h-3.5" />}
+                                {b === "volume" ? <ChartColumn className="w-3.5 h-3.5" /> : <Banknote className="w-3.5 h-3.5" />}
                                 {b === "volume" ? "Volume-Based" : "Value-Based"}
                               </button>
                             ))}
+                          </div>
+                        </div>
+                        {/* Currency — read-only: a rule is in the base
+                            currency, with no currency of its own (spec:
+                            "Currency  PKR · base currency  locked"). */}
+                        <div className="col-span-2">
+                          <div className="flex items-center gap-1 mb-1.5">
+                            <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>Currency</label>
+                            <InfoTooltip>
+                              {`Pricing rules are in ${RULE_CURRENCY}, the base currency, and apply to orders in any currency. On an order in another currency, a value threshold is checked in ${RULE_CURRENCY} and a fixed amount converts at the order's rate.`}
+                            </InfoTooltip>
+                          </div>
+                          <div
+                            className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 flex items-center gap-2 text-[13px] cursor-not-allowed"
+                            aria-readonly="true"
+                            title={`${getCurrency(RULE_CURRENCY)?.name ?? RULE_CURRENCY}, the base currency`}
+                          >
+                            <span className="text-slate-700" style={{ fontWeight: 600 }}>{RULE_CURRENCY}</span>
+                            <span className="text-slate-500">· base currency</span>
+                            <Lock className="w-3 h-3 text-slate-400 ml-auto" />
+                            <span className="text-[11px] text-slate-400" style={{ fontWeight: 500 }}>locked</span>
                           </div>
                         </div>
                         {/* Row 2: Description (full width) */}
@@ -4313,23 +4351,23 @@ export function PricingRulesLibrary({
                               <div>
                                 <div className="flex items-center justify-between mb-1.5">
                                   <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>
-                                    {isDis ? "Discount" : "Premium"} {tier.fixRate ? "Amount (USD)" : "Rate"}
+                                    {isDis ? "Discount" : "Premium"} {tier.fixRate ? `Amount (${RULE_CURRENCY})` : "Rate"}
                                   </label>
                                   <PctAmountToggle
                                     isFixed={tier.fixRate}
                                     onChange={(fixed) => updateTier(idx, { fixRate: fixed })}
                                     percentTooltip={`${isDis ? "Discount" : "Premium"} applied as a percentage of the line value.`}
-                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in USD, the currency the rule book is written in.`}
+                                    amountTooltip={`${isDis ? "Discount" : "Premium"} applied as a fixed amount in ${RULE_CURRENCY}, the base currency. On an order in another currency it converts at the order's rate.`}
                                   />
                                 </div>
                                 <div className="relative">
                                   {tier.fixRate && (
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{RULE_PREFIX}</span>
                                   )}
                                   <Input
                                     value={tier.discount}
                                     onChange={(e) => updateTier(idx, { discount: e.target.value })}
-                                    placeholder={tier.fixRate ? "e.g. 25.00" : "e.g. 50"}
+                                    placeholder={tier.fixRate ? "e.g. 7,000" : "e.g. 50"}
                                     className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${tier.fixRate ? "pl-7 pr-3" : "pr-8"}`}
                                   />
                                   {!tier.fixRate && (
@@ -4351,7 +4389,7 @@ export function PricingRulesLibrary({
                                   <span onClick={(e) => e.stopPropagation()}>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "Restricts this tier to orders within a specific quantity range. When enabled, the tier only applies when the order quantity falls between Min and Max."
-                                      : "Restricts this tier to orders within a specific dollar-value range. When enabled, the tier only applies when the order total falls between Min and Max."}</InfoTooltip>
+                                      : `Restricts this tier to orders within a specific value range, in ${RULE_CURRENCY}. When enabled, the tier only applies when the order total in ${RULE_CURRENCY} falls between Min and Max.`}</InfoTooltip>
                                   </span>
                                 </label>
                               </div>
@@ -4362,38 +4400,38 @@ export function PricingRulesLibrary({
                               <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-muted">
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
-                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Min Qty" : "Min Order Value (USD)"}</label>
+                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Min Qty" : `Min Order Value (${RULE_CURRENCY})`}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The smallest order quantity at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."
-                                      : "The smallest order value (in USD) at which this tier starts to apply. Orders below this value fall into a lower tier or get no adjustment."}</InfoTooltip>
+                                      : `The smallest order value (in ${RULE_CURRENCY}, the base currency) at which this tier starts to apply. An order in another currency is checked at its value in ${RULE_CURRENCY}. Orders below this value fall into a lower tier or get no adjustment.`}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{RULE_PREFIX}</span>
                                     )}
                                     <Input
                                       value={tier.minQty}
                                       onChange={(e) => updateTier(idx, { minQty: e.target.value })}
-                                      placeholder={createBasis === "volume" ? "e.g. 100" : "e.g. 1,000"}
+                                      placeholder={createBasis === "volume" ? "e.g. 100" : "e.g. 280,000"}
                                       className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createBasis === "value" ? "pl-7" : ""}`}
                                     />
                                   </div>
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-1 mb-1.5">
-                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Max Qty" : "Max Order Value (USD)"}</label>
+                                    <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>{createBasis === "volume" ? "Max Qty" : `Max Order Value (${RULE_CURRENCY})`}</label>
                                     <InfoTooltip>{createBasis === "volume"
                                       ? "The largest order quantity this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."
-                                      : "The largest order value (in USD) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment."}</InfoTooltip>
+                                      : `The largest order value (in ${RULE_CURRENCY}, the base currency) this tier covers. Orders above this value roll into the next tier or stop receiving this adjustment.`}</InfoTooltip>
                                   </div>
                                   <div className="relative">
                                     {createBasis === "value" && (
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">$</span>
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">{RULE_PREFIX}</span>
                                     )}
                                     <Input
                                       value={tier.maxQty}
                                       onChange={(e) => updateTier(idx, { maxQty: e.target.value })}
-                                      placeholder={createBasis === "volume" ? "e.g. 500" : "e.g. 5,000"}
+                                      placeholder={createBasis === "volume" ? "e.g. 500" : "e.g. 1,400,000"}
                                       className={`rounded-lg border-border bg-white text-[13px] h-9 text-foreground placeholder:text-slate-400 focus:border-primary focus:ring-1 focus:ring-primary/20 ${createBasis === "value" ? "pl-7" : ""}`}
                                     />
                                   </div>
@@ -4428,7 +4466,7 @@ export function PricingRulesLibrary({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] text-slate-700 truncate" style={{ fontWeight: 600 }}>{createName || "Untitled Rule"}</p>
-                      <p className="text-[11px] text-slate-500 truncate">{createCategory === "discount" ? "Discount" : "Premium"} · {createBasis === "volume" ? "Volume-Based" : "Value-Based"} · {createTiers.length} tier{createTiers.length !== 1 ? "s" : ""}{createTiers[0]?.discount ? ` · ${createTiers[0].discount}${createTiers[0].fixRate ? "$" : "%"}` : ""}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{createCategory === "discount" ? "Discount" : "Premium"} · {createBasis === "volume" ? "Volume-Based" : "Value-Based"} · {createTiers.length} tier{createTiers.length !== 1 ? "s" : ""}{createTiers[0]?.discount ? ` · ${createTiers[0].fixRate ? `${RULE_PREFIX}${createTiers[0].discount}` : `${createTiers[0].discount}%`}` : ""}</p>
                     </div>
                     <button
                       onClick={() => setCreateStep(1)}

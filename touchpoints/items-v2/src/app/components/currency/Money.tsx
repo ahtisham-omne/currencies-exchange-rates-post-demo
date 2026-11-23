@@ -84,6 +84,59 @@ export function Money({
   if (!fx || isBaseCurrency(code) || !value) {
     return <span className={`tabular-nums ${className}`}>{text}</span>;
   }
+  return <FxHover text={text} value={value} code={code} fx={fx} className={className} dateLabel={dateLabel} role={role} />;
+}
+
+/**
+ * An amount kept in `currency`, shown in the base currency: the vendor list,
+ * the Sales tab (Currency Touchpoints Map, 24 Nov 2026). A foreign amount
+ * gets the dotted underline and the same rate card as Money: the currency,
+ * the amount in it, the base figure and the rate. A base amount is plain.
+ */
+export function BaseMoney({
+  value,
+  currency,
+  fx,
+  className = '',
+  dateLabel,
+  role = 'vendor currency',
+}: {
+  /** The amount in `currency`. */
+  value: number;
+  currency: string | null | undefined;
+  fx?: MoneyFx | null;
+  className?: string;
+  dateLabel?: string;
+  role?: string;
+}) {
+  const code = (currency || BASE_CURRENCY).toUpperCase();
+  // No rate to convert at: the amount stays in its own currency, never relabelled as base.
+  if (!fx || isBaseCurrency(code)) {
+    return <span className={`tabular-nums ${className}`}>{formatMoney(value, code)}</span>;
+  }
+  const text = formatMoney(toBase(value, fx.rate), BASE_CURRENCY);
+  if (!value) return <span className={`tabular-nums ${className}`}>{text}</span>;
+  return <FxHover text={text} value={value} code={code} fx={fx} className={className} dateLabel={dateLabel} role={role} />;
+}
+
+/** The dotted-underline trigger and the rate card, for Money and BaseMoney. */
+function FxHover({
+  text,
+  value,
+  code,
+  fx,
+  className,
+  dateLabel,
+  role,
+}: {
+  text: React.ReactNode;
+  value: number;
+  code: string;
+  fx: MoneyFx;
+  className: string;
+  dateLabel?: string;
+  role?: string;
+}) {
   return (
     <HoverCard openDelay={200} closeDelay={80}>
       <HoverCardTrigger asChild>

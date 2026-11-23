@@ -204,6 +204,10 @@ const PRICING_RULES = CUSTOMER_PRICING_RULES.map((r): {
   id: string;
   name: string;
   discount: number;
+  /** A fixed-amount rule's amount per unit, in the base currency (PKR;
+   *  Currency Touchpoints Map, 24 Nov 2026); null for a % rule. Converted
+   *  to the order's currency at its rate (useRuleMoney().factor). */
+  flatAmount: number | null;
   description: string;
   minQuantity: number;
   status: 'applied' | 'pending' | 'opportunity';
@@ -224,7 +228,8 @@ const PRICING_RULES = CUSTOMER_PRICING_RULES.map((r): {
     id: r.id,
     name: r.name,
     description: r.description,
-    discount: isFlat$ ? sign * t0.rate : sign * t0.rate, // configurator math only uses % currently
+    discount: sign * t0.rate, // % for a % rule; for a fixed one, flatAmount carries the math
+    flatAmount: isFlat$ ? t0.rate : null,
     minQuantity: t0.minQty,
     status: 'applied',
     type: r.type,
@@ -264,7 +269,9 @@ import {
   findUomById,
 } from '../../data/uomSets';
 import { useDocCurrency, useDocMoney } from "@/app/components/currency/docCurrencyContext";
-import { formatAmount } from "@/app/currency/money";
+import { useRuleMoney } from "@/app/components/currency/useRuleMoney";
+import { formatAmount, moneyPrefix } from "@/app/currency/money";
+import { RULE_AMOUNT_CURRENCY } from "@/app/currency/soFx";
 const UNITS_OF_MEASURE = UOM_SETS.discrete.map((u) => ({ ...u, abbreviation: u.name }));
 
 /* Fallback seed for the unbound case only.
@@ -305,6 +312,9 @@ export function LineItemConfigModal({
      their digits-only parsing can't take a symbol such as "د.إ". */
   const formatCurrency = useDocMoney();
   const { currency: docCurrency } = useDocCurrency();
+  /* Fixed rule amounts are written in base (PKR) and converted to the
+     order's currency at its rate. */
+  const ruleMoney = useRuleMoney();
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   // Item peek modal — opens when user taps the product thumbnail in the
   // configurator's right-panel product card.
@@ -864,10 +874,17 @@ export function LineItemConfigModal({
 
   // Pricing calculations
   const baseSubtotal = formData.quantity * formData.unitPrice;
+  /* A rule's signed amount on this line (+ discount, − premium): a % of the
+     line, or a fixed amount per unit written in base (PKR) at the order's
+     rate (24 Nov 2026; before, a fixed rule was read as a %). */
+  const ruleLineAmount = (rule: (typeof PRICING_RULES)[number]): number =>
+    rule.flatAmount != null
+      ? Math.sign(rule.discount) * rule.flatAmount * ruleMoney.factor * formData.quantity
+      : baseSubtotal * rule.discount / 100;
   const appliedRulesDiscounts = formData.appliedRules
     .map(entry => {
       const rule = PRICING_RULES.find(r => r.id === entry.ruleId);
-      if (!rule) return { id: entry.ruleId, name: '', amount: 0, percentage: 0, isApplied: entry.isApplied, unappliedReason: entry.unappliedReason };
+      if (!rule) return { id: entry.ruleId, name: '', amount: 0, percentage: 0, flatAmount: null as number | null, fullAmount: 0, isApplied: entry.isApplied, unappliedReason: entry.unappliedReason };
       // Active = applied AND meets min quantity threshold. Calculations skip rules
       // where isApplied === false (unapplied stays in list but contributes 0).
       const meetsThreshold = formData.quantity >= rule.minQuantity;
@@ -875,8 +892,12 @@ export function LineItemConfigModal({
       return {
         id: rule.id,
         name: rule.name,
-        amount: isActive ? (baseSubtotal * rule.discount / 100) : 0,
+        amount: isActive ? ruleLineAmount(rule) : 0,
         percentage: rule.discount,
+        /** Fixed rules: the per-unit amount in base; null for % rules. */
+        flatAmount: rule.flatAmount,
+        /** What the rule would take off (or add) on this line if active. */
+        fullAmount: ruleLineAmount(rule),
         isActive,
         isPending: entry.isApplied && !meetsThreshold,
         isApplied: entry.isApplied,
@@ -1167,7 +1188,7 @@ export function LineItemConfigModal({
     const rule = PRICING_RULES.find(r => r.id === ruleId);
     if (!rule || rule.discount <= 0) return 0;
     if (formData.quantity < rule.minQuantity) return 0;
-    return baseSubtotal * rule.discount / 100;
+    return ruleLineAmount(rule);
   };
 
   // Apply or re-apply a rule by id. Existing entry → flip isApplied=true and
@@ -2404,8 +2425,9 @@ export function LineItemConfigModal({
                           </div>
                           <div className="flex items-center gap-3 flex-shrink-0 mt-[2px]">
                             <div className="text-right flex items-baseline justify-end gap-2" style={{ minWidth: 130 }}>
-                              <span className={`text-[12px] ${percentageColor}`} style={{ fontWeight: 600, textDecoration: isDisabled ? 'line-through' : undefined }}>{isPremium ? '+' : '-'}{Math.abs(rule.percentage)}%</span>
-                              <span className={`text-[11px] ${amountColor}`} style={{ fontWeight: 500, opacity: 0.8, textDecoration: isDisabled ? 'line-through' : undefined }}>{isPremium ? '+' : '-'}{rule.isActive ? formatCurrency(Math.abs(rule.amount)) : formatCurrency(baseSubtotal * Math.abs(rule.percentage) / 100)}</span>
+                              {/* A fixed rule shows its amount per unit, in base ("₨56,000/unit"). */}
+                              <span className={`text-[12px] ${percentageColor}`} style={{ fontWeight: 600, textDecoration: isDisabled ? 'line-through' : undefined }}>{isPremium ? '+' : '-'}{rule.flatAmount != null ? `${ruleMoney.tierShort({ rate: rule.flatAmount, unit: '$' })}/unit` : `${Math.abs(rule.percentage)}%`}</span>
+                              <span className={`text-[11px] ${amountColor}`} style={{ fontWeight: 500, opacity: 0.8, textDecoration: isDisabled ? 'line-through' : undefined }}>{isPremium ? '+' : '-'}{rule.isActive ? formatCurrency(Math.abs(rule.amount)) : formatCurrency(Math.abs(rule.fullAmount ?? 0))}</span>
                             </div>
                             {!readOnly && (
                               /* Partner Switch component replaces the
@@ -3134,7 +3156,7 @@ export function LineItemConfigModal({
             // New rule — cap-aware apply.
             const fullRule = PRICING_RULES.find(pr => pr.id === libRule.id);
             const incremental = fullRule && fullRule.discount > 0 && formData.quantity >= fullRule.minQuantity
-              ? baseSubtotal * fullRule.discount / 100
+              ? ruleLineAmount(fullRule)
               : 0;
             const exceeds = baseSubtotal > 0 && (totalActiveDiscountAmount + incremental) > baseSubtotal;
             return {
@@ -3235,7 +3257,8 @@ export function LineItemConfigModal({
             tiers: r.tiers.map((t) => ({
               minQty: String(t.minQty),
               maxQty: t.maxQty === null ? '∞' : String(t.maxQty),
-              discount: `${t.rate}${t.unit}`,
+              // "4%", or a fixed amount in base: "₨56,000".
+              discount: t.unit === '%' ? `${t.rate}%` : `${moneyPrefix(RULE_AMOUNT_CURRENCY)}${t.rate.toLocaleString('en-US')}`,
             })),
             createdBy: 'System',
             createdDate: r.validFrom,

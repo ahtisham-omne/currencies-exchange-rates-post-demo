@@ -85,3 +85,20 @@ export function formatRateDate(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
 }
+
+/* Currency names as a plural, for a printed document's footnote ("United
+ * States Dollars", "Euros"); a name whose last word has no plural in English
+ * keeps it ("Japanese Yen", "Renminbi"). Purchase Orders words it the same. */
+const PLURAL_S = new Set(['Dollar', 'Euro', 'Rupee', 'Franc', 'Peso', 'Dinar', 'Dirham', 'Riyal', 'Rial', 'Shilling', 'Ruble', 'Mark', 'Shekel', 'Real', 'Pound']);
+export function currencyNamePlural(name: string): string {
+  const last = name.split(' ').pop() ?? '';
+  return PLURAL_S.has(last) ? `${name}s` : name;
+}
+
+/** "All amounts in United States Dollars (USD).": the footnote a printed
+ *  document carries (Currency Touchpoints Map, 24 Nov 2026). */
+export function currencyFootnote(code: string | null | undefined): string {
+  const c = (code || BASE_CURRENCY).toUpperCase();
+  const name = getCurrency(c)?.name;
+  return name ? `All amounts in ${currencyNamePlural(name)} (${c}).` : `All amounts in ${c}.`;
+}

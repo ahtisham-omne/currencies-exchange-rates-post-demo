@@ -65,14 +65,14 @@ import { localTodayIso } from '@/app/lib/dueBucket';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, rateSentence } from '@/app/currency/money';
 import { RATE_TYPE_LABEL } from '@/app/currency/rates';
-import { paymentFx, settledCurrencyOf } from '@/app/currency/paymentFx';
-import { paymentLedger, configAccounts, type PaymentLedger } from '@/app/currency/paymentLedger';
-import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
+import { paymentFx, paymentRateLocked, settledCurrencyOf } from '@/app/currency/paymentFx';
+import { paymentLedger, type PaymentLedger } from '@/app/currency/paymentLedger';
+import { CurrencyChip, CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
 import { DocCurrencyProvider, DocMoney } from '@/app/components/currency/DocCurrency';
 import { useDocOtherText } from '@/app/components/currency/docCurrencyContext';
-import { setDocView, useDocViewOf } from '@/app/components/currency/docView';
-import { PaymentCurrencyConfigDialog, PaymentCurrencySummary } from '@/app/components/currency/PaymentCurrencyConfig';
+import type { DocView } from '@/app/components/currency/docCurrencyContext';
+import { PaymentCurrencyBlock, PaymentCurrencyConfigDialog } from '@/app/components/currency/PaymentCurrencyConfig';
 import { useApPermissions, useApSettings } from '@/app/hooks/useApSettings';
 import { palette } from '@/styles/tokens';
 import { CollapseReveal } from '@/app/components/ui/collapse-reveal';
@@ -276,8 +276,10 @@ export function PaymentDetailScreen({
     () => (ledger === 'ap' ? paymentLedger(payment, invoices) : null),
     [payment, invoices, ledger],
   );
-  const viewKey = `payment:${payment.id}`;
-  const view = useDocViewOf(viewKey);
+  // Every amount in the base currency, the invoices' on hover (Currency
+  // Touchpoints Map, 24 Nov 2026: no Base / Invoice Currency toggle on
+  // documents; the header keeps a currency tag and the Currency button).
+  const view: DocView = 'base';
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const apSettings = useApSettings();
   const apPerms = useApPermissions();
@@ -604,6 +606,11 @@ export function PaymentDetailScreen({
                           <VendorQuickCard vendor={payment.vendor} description={payment.memo} />
                         </HoverCardContent>
                       </HoverCard>
+                      {/* The payment's currency tag, on a foreign-currency
+                          payment only (Currency Touchpoints Map). */}
+                      {ledger === 'ap' && !isBaseCurrency(payment.currency) && (
+                        <CurrencyPill code={payment.currency} note="What the vendor received. Amounts on this page are in the base currency; hover one for this currency." />
+                      )}
 
                       {!isScrolled && payment.linkedPO && (
                         /* PO number is a link (user 10/5): black at rest,
@@ -659,16 +666,17 @@ export function PaymentDetailScreen({
 
                 {/* Right: Fullscreen + Actions + primary CTA */}
                 <div className="flex items-center shrink-0 transition-all duration-250" style={{ gap: isScrolled ? 6 : 8 }}>
-                  {/* The Base Currency | Vendor Currency toggle and the
-                      Currency button (Currency & Exchange Rates). */}
+                  {/* The Currency button: the payment's currency
+                      configuration. No Base / Invoice Currency toggle. */}
                   {ledger === 'ap' && (
                     <CurrencyHeaderControls
                       currency={payment.currency}
                       view={view}
-                      onViewChange={(v) => setDocView(viewKey, v)}
+                      onViewChange={() => {}}
                       onOpenConfig={() => setCurrencyOpen(true)}
                       what="payment"
                       compact={isScrolled}
+                      toggle={false}
                     />
                   )}
                   <Tooltip>
@@ -924,10 +932,12 @@ export function PaymentDetailScreen({
           onOpenChange={setCurrencyOpen}
           readOnly
           documentLabel={payment.paymentNumber}
+          invoiceLabel={payment.appliedInvoices.map((a) => a.invoiceNumber).join(', ') || undefined}
+          posted={paymentRateLocked(payment)}
           vendorName={payment.vendor}
           currency={ledgerFx.currency}
           vendorReceives={payment.amount}
-          accounts={configAccounts(ledgerFx.currency, payment.bankAccount, ledgerFx.account?.type)}
+          accounts={PAY_FROM_ACCOUNTS}
           value={{ accountId: payment.bankAccount, bankTook: ledgerFx.converts ? ledgerFx.cost : null }}
           youPayIn={ledgerFx.youPayIn}
           paymentDate={payment.paymentDate}
@@ -1526,22 +1536,25 @@ function PaymentDetailSidebar({
             </div>
           </div>
         )}
-        {/* CURRENCY (Currency & Exchange Rates): what the vendor received,
-            the account it came from, the bank's conversion against the
-            day's rate, what A/P carried and the realized FX Gain/Loss. */}
+        {/* The currency block (Currency Touchpoints Map, 24 Nov 2026): what
+            the vendor received, what you paid (what the bank took from a
+            base account, else the same amount and its base equivalent), the
+            FX variance against the invoice rate (+ gain, − loss) and the
+            payment date's rate. Locked once the payment posted. */}
         {ledgerFx && !isBaseCurrency(ledgerFx.currency) && onViewCurrency && (
           <div className="mt-3 pt-3 border-t border-slate-100">
-            <PaymentCurrencySummary
+            <PaymentCurrencyBlock
               currency={ledgerFx.currency}
               vendorReceives={payment.amount}
               account={ledgerFx.account ?? null}
               bankTook={ledgerFx.converts ? ledgerFx.cost : null}
               rate={ledgerFx.rate}
               paymentDate={payment.paymentDate}
-              dayRate={ledgerFx.dayRate}
-              carried={ledgerFx.realized != null ? ledgerFx.carried : undefined}
+              lines={ledgerFx.lines}
               realized={ledgerFx.realized}
-              locked={['Paid', 'Unapplied', 'Partially Applied', 'Fully Applied'].includes(payment.status)}
+              locked={paymentRateLocked(payment)}
+              past={paymentRateLocked(payment)}
+              qualifier="payment date"
               onViewConfig={onViewCurrency}
             />
           </div>

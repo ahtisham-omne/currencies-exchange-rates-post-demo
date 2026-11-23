@@ -1341,8 +1341,11 @@ interface VendorCellProps {
   description?: string;
   density: DensityOption;
   searchQuery?: string;
+  /** Beside the name: a foreign-currency return's currency tag (RMA list,
+   *  2026-11-24). */
+  tag?: ReactNode;
 }
-export function VendorCell({ vendor, description, density, searchQuery }: VendorCellProps) {
+export function VendorCell({ vendor, description, density, searchQuery, tag }: VendorCellProps) {
   const [fullCardOpen, setFullCardOpen] = useState(false);
   const isComfort = density === 'comfort';
   return (
@@ -1383,13 +1386,20 @@ export function VendorCell({ vendor, description, density, searchQuery }: Vendor
         >
           {/* Color = text-foreground (matches partner Partners column exactly).
               Hover → primary blue + underline, same as Created By name. */}
-          <span
-            className={`truncate text-foreground transition-colors group-hover/vn:text-primary group-hover/vn:underline ${
-              isComfort ? 'text-[13px]' : 'text-sm'
-            }`}
-            style={{ fontWeight: 500 }}
-          >
-            {highlightText(vendor, searchQuery)}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span
+              className={`truncate text-foreground transition-colors group-hover/vn:text-primary group-hover/vn:underline ${
+                isComfort ? 'text-[13px]' : 'text-sm'
+              }`}
+              style={{ fontWeight: 500 }}
+            >
+              {highlightText(vendor, searchQuery)}
+            </span>
+            {tag && (
+              <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                {tag}
+              </span>
+            )}
           </span>
           {isComfort && description && (
             <span className="text-[11px] text-muted-foreground truncate">

@@ -162,19 +162,29 @@ export function convertOn(amount: number, from: string, to: string, day: Date | 
 export const DESIGN_CURRENCY = 'USD';
 export const LAST_SYNC_DAY = LAST_SYNC.slice(0, 10);
 
-/* ── Pricing-rule flat amounts ────────────────────────────────────────
- * Rule tiers are quantity bands; a "$" tier takes a flat amount off (or
- * adds it to) each unit. The rule book writes those amounts in USD, as
- * Partners, Purchase Orders and Sales Orders do; on a quote they are
- * converted to its currency at the mid-market cross rate on its quote
- * date. Not at the quote's own rate: that is the rate to base, and
- * changing it (mid-market to corporate, a rate typed on the quote) must
- * not change the quote's total. */
-export const RULE_AMOUNT_CURRENCY = 'USD';
+/* ── Pricing-rule fixed amounts (Currency Touchpoints Map, Partners 5–6) ──
+ * Pricing rules are written in the base currency, with no currency of
+ * their own: value thresholds and fixed amounts are PKR (the rule book's
+ * USD seeds restated ×280, currency/ruleBook.ts). Rule tiers on a quote are
+ * quantity bands; a fixed-amount tier takes an amount off (or adds it to)
+ * each unit. On a quote in another currency that amount converts to the
+ * quote's currency at the quote's own rate (this replaced the earlier
+ * "USD at the quote date's mid-market cross rate"), so a rate change moves
+ * it too. */
+export const RULE_AMOUNT_CURRENCY = BASE_CURRENCY;
 
-export function ruleAmountFactor(fx: { currency: string; rateDate: string }): number {
-  if (fx.currency.toUpperCase() === RULE_AMOUNT_CURRENCY) return 1;
-  const usd = rateOn(RULE_AMOUNT_CURRENCY, fx.rateDate, 'mid').rate ?? 1;
+/** One unit of the rule book's currency (base) in the quote's currency, at the quote's rate. */
+export function ruleAmountFactor(fx: { currency: string; rate: number }): number {
+  if (isBaseCurrency(fx.currency)) return 1;
+  return fx.rate > 0 ? 1 / fx.rate : 1;
+}
+
+/** One of the design's dollars (its mock line set and demo seeds, written
+ *  in USD) in the quote's currency: the mid-market cross rate on the quote
+ *  date, so a rate change alone never restates them. */
+export function designAmountFactor(fx: { currency: string; rateDate: string }): number {
+  if (fx.currency.toUpperCase() === DESIGN_CURRENCY) return 1;
+  const usd = rateOn(DESIGN_CURRENCY, fx.rateDate, 'mid').rate ?? 1;
   const doc = rateOn(fx.currency, fx.rateDate, 'mid').rate ?? 1;
   return crossRate(usd, doc);
 }

@@ -22,7 +22,8 @@ import {
 } from "../../items-v3";
 import { CarrierIcon } from "./CarrierIcon";
 import type { VendorContact } from "../../../context/purchasing/types";
-import { formatWhole } from "../../../currency/vendorFx";
+import { vendorRate, type VendorRate } from "../../../currency/vendorFx";
+import { BaseMoney } from "../../currency/Money";
 
 /* Deterministic location thumbnails + site-type mock for the Partner Locations
    cell and its "+N more" overflow (ported from VendorsListPage's LOC_PHOTOS_PL
@@ -166,12 +167,17 @@ export function CountryCell({ country, countryFlag }: { country?: string; countr
   );
 }
 
-/* Credit Limit — right-aligned, in the partner's currency with its code
-   (spec 4.2): "¥2,896,000 JPY". */
-export function CreditLimitCell({ creditLimit, currency }: { creditLimit?: number; currency?: string }) {
+/* Credit Limit — right-aligned, in the base currency like every amount on the
+   list (Currency Touchpoints Map, 24 Nov 2026). The partner keeps the limit in
+   its own currency; a foreign one has the rate card on hover with that figure
+   ("¥5,793,448 JPY") and the rate. `fx` is the vendor's rate on this item;
+   without it, today's mid-market rate. */
+export function CreditLimitCell({ creditLimit, currency, fx }: { creditLimit?: number; currency?: string; fx?: VendorRate }) {
+  if (creditLimit == null) return <span className="text-sm tabular-nums text-foreground">—</span>;
+  const code = currency || "USD";
   return (
     <span className="text-sm tabular-nums text-foreground">
-      {creditLimit != null ? formatWhole(creditLimit, currency || "USD") : "—"}
+      <BaseMoney value={creditLimit} currency={code} fx={fx ?? vendorRate(code)} role="partner currency" />
     </span>
   );
 }

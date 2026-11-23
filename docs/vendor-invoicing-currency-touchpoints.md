@@ -473,3 +473,67 @@ Mahreen's changes to the invoice detail page and Vendor Payments.
 
 "FX Gain/Loss" is gone from the payment screens' copy elsewhere too (the invoice table column, tooltips, the payment page's GL note): a gain posts to FX Gain, a loss to FX Loss.
 
+
+## 13. (24 Nov 2026) Currency Touchpoints Map
+
+The product team's *Currency Touchpoints Map* (Receiving 3–4, Vendor invoices 1–5, Vendor payments 1–3), in this module's patterns. Paths are under `touchpoints/vendor-invoicing/src/app/`.
+
+Where the map differs from earlier rounds, the map wins:
+
+- No Base Currency | Invoice Currency toggle on documents (§9.3, §12 A). Pages are in PKR, with the document's currency on hover; the header carries a currency tag and the Currency button.
+- A currency block sits above Total Due (create and edit) and above Total Payment (Record Payment). Mahreen's 20 Nov rounds (§11 2, §12 3) had removed the Currency cards from both screens.
+- Invoices to Pay reads in the invoice's currency again: the Total Payment in its header, the Terms line and the vendor credit bar. §12 3 had moved them to PKR.
+- "FX variance" (+ gain, − loss) replaces "FX difference" and "FX Gain/Loss" in the blocks and dialogs. The Invoices to Pay column is now "FX Variance".
+- The pay-from pickers list only accounts in the base currency or the invoice's currency. Under §10.1 rule 4, the other accounts were listed greyed with the reason.
+- Vendor invoices take the posting date's rate by default. Settings › Module Defaults gains "Posting date", now the default; the default was the vendor invoice date (§8). The other bases stay available.
+- Currency and Exchange Rate leave the invoice page's General Information. The map's mark on that field reads "Currency moves to the summary".
+
+### 13.1 Shared pieces
+
+| File | What it holds |
+|---|---|
+| `components/currency/CurrencyBlock.tsx` (new) | `CurrencyBlock`, the one block for invoices and payments, built on Purchase Orders' `POCurrencySummary`. It has the CURRENCY label, the rate type chip, the lock chip, rows of flag + "amount CODE", the FX variance row and the Rate row. Also `LockChip` (Locked green, Unlocked amber `#92400E` on `#FFFBEB`, with a title saying when it locks), `RateTypeChip`, `rateLine`, `signedVariance`, `varianceHex`, and the lock and FX variance titles. |
+| `components/currency/PayFromAccountPicker.tsx` (new) | The "1010 · JPMorgan Operating · PKR ▾" picker beside "You pay". It lists the eligible accounts only, each with flag, label, code and balance, and shows a locked face when read-only. |
+| `components/currency/PostingDateRatePrompt.tsx` (new) | The "Posting date changed Nov 23 → Nov 25, 2026" prompt. It offers "Keep the current rate 1 USD = … PKR" or "Use Nov 25's rate 1 USD = … PKR", with Cancel and Apply. |
+| `currency/payFrom.ts` (new) | "You pay" is an account. `payFromAccountsFor` returns the bank and cash accounts in base or in the invoice's currency. `defaultPayFromId` gives 1010, or the first account in the invoice's currency when the PO's You pay in asks for it. Also `eligiblePayFromId` and `invoicePayFrom`. |
+| `data/mockInvoices.ts` | `Invoice.payFromAccount`. Its currency is saved as `youPayIn`, so the earlier rule-5 logic keeps working. |
+| `currency/invoiceFx.ts` | `invoiceRateLocked` and `POSTED_INVOICE_STATUSES`. Approved onward is locked. Draft, Pending Approval, Rejected and Exception are unlocked. A pre-invoice locks once it is paid. |
+| `currency/paymentFx.ts` | `paymentRateLocked`, true for Paid, the applied prepayment statuses and Reversed. Scheduled is unlocked. |
+| `currency/money.ts` | `currencyNamePlural` and `currencyFootnote`, which writes "All amounts in United States Dollars (USD)." |
+| `hooks/useApSettings.ts`, `components/ApSettingsModal.tsx`, `components/currency/MoneyOnDates.tsx` | The `postingDate` rate basis, now the default |
+| `currency/paymentLedger.ts` | `configAccounts` removed. The dialogs now list every eligible account. |
+
+### 13.2 Vendor invoices
+
+| # | Touchpoint | Where |
+|---|---|---|
+| R3 | Receiving picker. Receiving Value is in PKR at the receiving date's rate; the hover shows the vendor-currency amount and that rate. A foreign PO's receivings carry a currency tag. Prepaid chips were already in PKR. | `components/VendorSelectionModalNested.tsx` (`ReceivingMoney`, `ReceivingCurrencyTag`) |
+| R4 | Receiving to invoice FX variance in the configuration: "Received … · 1 USD = … PKR", then "Invoice posts/posted … · 1 USD = … PKR", then "FX variance · posts to FX Loss −₨…". The sign was already right in `fxVariance.ts`: paying more is −, paying less is +. | `components/currency/InvoiceCurrencyConfig.tsx` (FX variance section, `VarianceCard`, `varianceRatesText`) |
+| 1 | Invoices list: a currency tag after the vendor on foreign invoices, in the table and the card view. Amounts and KPIs were already in PKR. | `components/InvoiceDataTable.tsx` (`VendorCell` `currency`), `components/InvoiceListScreen.tsx` |
+| 2 | Create Vendor Invoice. The vendor's currency tag sits after the vendor pill. The Currency button no longer shows the code. A currency block sits above Total Due: Vendor invoiced, [Prepaid], You pay, [Base equivalent], [FX variance] and Rate · posting date. You pay in PKR equals Total Due. | `components/CreateInvoiceScreen.tsx` (header, `InvoiceCurrencyBlock` in the sidebar footer, `payFromAccountId`, `invoiceFxFields`) |
+| 3 | Invoice Currency Configuration. The subtitle reads "INV-000221 · from PO-1003". Sections: Vendor invoiced (amount and currency, with the existing conversion when the currency changes); Prepayment (kept); You pay (≈ PKR at the invoice rate, or the invoice-currency amount, with the account picker and a Base equivalent line); Rate (Mid-market / Corporate switch, the corporate input, the rate card "Nov 23, 2026 · posting date", the vs PO chip, and "[Unlocked] locks when the invoice posts"); FX variance. Buttons: Reset to default, Cancel and Apply. The amber lock note is gone, replaced by the lock line. | `components/currency/InvoiceCurrencyConfig.tsx` (`InvoiceCurrencyConfigDialog`) |
+| 4 | Edit Invoice (and edit-and-resubmit). The tag, the Currency button and the invoice number show in the header. The invoice keeps its saved rate (`heldRate`). When the date the rate is taken on changes and the new date's rate differs, the prompt asks which rate to use. Cancel restores the date. The FX variance follows the rate applied. Changing the currency or rate type in the configuration replaces the kept rate, and so does "Use Nov 25's rate" there. On Create the rate simply follows the posting date, since a new invoice has no rate of its own yet. | `CreateInvoiceScreen.tsx` (`heldRate`, `onRateDateFieldChange`, `PostingDateRatePrompt`) |
+| 5 | Invoice page. The Base / Invoice Currency toggle is gone and the view is pinned to PKR. A currency tag sits after the vendor pill. The Invoice Summary (in PKR) ends with the currency block: Vendor invoiced, [Prepaid], You pay, [Base equivalent], FX variance (only with a receiving) and Rate. The block is Unlocked until posted, then Locked. "Invoice Total" reads "Total Due" when nothing reduces it. | `components/InvoiceDetailScreen.tsx`, `invoice-details/InvoiceDetailSidebar.tsx` (`InvoiceCurrencyBlock`) |
+| — | Edited invoices save `payFromAccount` and `youPayIn` | `App.tsx` (`mergeEditedInvoice`) |
+| — | Printed invoice (Print / Export) in the invoice's currency: "Invoice Total (USD)", "Balance Due (USD)" and the footnote. It printed $ before. | `lib/invoicePdf.ts`, `invoice-details/InvoiceDocumentModal.tsx` |
+
+### 13.3 Vendor payments
+
+| # | Touchpoint | Where |
+|---|---|---|
+| 1 | Record Payment header: the vendor and its currency tag after the title, and the Currency button. A helper under Payment Date reads "Sets the rate: 1 USD = ₨… PKR, mid-market" ("Sets the estimate" from a base account). Invoices to Pay is in the invoice's currency. The right panel's Pay-From Account shows the account's currency. The picker lists only base or invoice-currency accounts. Bank Took on the form is labelled "You Pay (PKR)". | `components/payments/RecordPaymentFlow.tsx`, `payments/PayFromAccountModal.tsx`, `components/currency/PaymentCurrencyFields.tsx` (`label`) |
+| 1 | Currency block above Total Payment. From a base account it shows Vendor receives, You pay (what the bank took), FX variance and Rate · from the two amounts. From an invoice-currency account it shows Vendor receives, You pay, Base equivalent, FX variance and Rate · payment date. It is Unlocked. | `RecordPaymentFlow.tsx` (pinned footer), `components/currency/PaymentCurrencyConfig.tsx` (`PaymentCurrencyBlock`) |
+| 1 | The payment's default account is the invoices' own pay-from account when they all name one and it fits the method. Otherwise the earlier rule-5 logic applies. | `RecordPaymentFlow.tsx` (`payFromWantFor`, `deriveAccountId` `preferId`) |
+| 1 | Payment Currency Configuration. The subtitle reads "PMT-000301 · INV-000221". Sections: Pay from; Vendor receives ("USD · invoice currency"); You pay (the editable Bank took, or the same amount with its Base equivalent); Vendor credit (kept); Rate (the bank's rate "from the two amounts · date", or mid-market on the payment date, compared with mid-market, and "[Unlocked] locks when the payment posts"); FX variance ("invoice rate 279.5200 → 280.2200"). Buttons: Reset to default, Cancel and Apply. | `PaymentCurrencyConfig.tsx` (`PaymentCurrencyConfigDialog`) |
+| 2 | Payment History: a currency tag after the vendor on foreign payments, in the table and the card view. Amounts were already in PKR with the hover. | `components/PaymentDataTable.tsx`, `components/PaymentsScreen.tsx` |
+| 3 | Payment page. The toggle is gone and the view is pinned to PKR. A tag sits after the vendor. The Payment Summary ends with the block: Vendor received, You paid, [Base equivalent], FX variance and Rate · payment date. It is Locked once posted. | `components/PaymentDetailScreen.tsx` |
+| — | Remittance advice: "Total Paid (GBP)" and "All amounts in Pound Sterling (GBP)." The "Currency: GBP, as invoiced" row stays. | `lib/remittanceAdvice.ts` |
+
+### 13.4 Open points
+
+- Both FX postings still use their existing accounts: an invoice's FX variance posts to 5215 FX Variance, a payment's to 7150 Realized FX Gain/Loss. The UI says "posts to FX Gain / FX Loss", as the map does. Separate FX Gain and FX Loss accounts would change the chart of accounts and the journals, so that is left for a decision.
+- An invoice with no receiving (standalone or pre-invoice) shows no FX variance row. Its rate difference is realized on the payment.
+- The posting-date prompt appears only when the new date's rate differs from the kept one. After the last sync (10 Apr 2026) every day takes the same rate. An invoice whose saved rate predates that, or a date before it, shows the prompt.
+- `components/currency/docView.ts` and the toggle in `CurrencyHeaderControls` are kept, but nothing uses them now.
+- Payment runs use the same pay-from picker (`PayFromAccountModal`), so their Proposal picker now lists only eligible accounts too. The Execute stage's own account select and the runs' totals are unchanged.
+- The FX demo invoices (INV-000217 to INV-000220, `data/mockInvoices.ts`) are posted on their vendor invoice date, so their stamped rate is now labelled the posting date's (`rateBasis: 'postingDate'`): the block reads "Rate … · posting date", as the map writes it. The rate itself didn't change.

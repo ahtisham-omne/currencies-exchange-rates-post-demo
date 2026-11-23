@@ -146,6 +146,7 @@ export function SalesKpiStrip() {
                   tooltip={kpi.tooltip}
                   change={computed.change}
                   changeColor={computed.changeColor}
+                  note={computed.note}
                   moveCard={moveKpi}
                   onRemove={() => handleToggleKpi(kpi.key)}
                 />

@@ -10,7 +10,7 @@
  */
 import React from 'react';
 import {
-  ArrowDownRight, ArrowUpRight, Globe, Users, DollarSign, ScanLine, ShieldCheck,
+  ArrowDownRight, ArrowUpRight, Globe, Users, Banknote, ScanLine, ShieldCheck,
   Package, ShoppingCart, Wrench, Check,
 } from 'lucide-react';
 import type { AdvancedConfig } from './ItemConfigurationMaster';
@@ -317,7 +317,8 @@ export function SellingSummaryStrip({ config }: { config: AdvancedConfig }) {
 
       <div className="flex flex-col items-center gap-2">
         <div className="relative flex items-center justify-center" style={{ width: 64, height: 64, borderRadius: 14, backgroundColor: 'rgba(34, 197, 94, 0.07)' }}>
-          <DollarSign style={{ width: 32, height: 32, color: '#22C55E' }} />
+          {/* Item prices are in the base currency (PKR): a currency-free icon, not $. */}
+          <Banknote style={{ width: 32, height: 32, color: '#22C55E' }} />
           <span className="absolute flex items-center justify-center" style={{ top: -4, right: -4, width: 22, height: 22, borderRadius: '50%', backgroundColor: '#22C55E', fontSize: 11, fontWeight: 700, color: 'white', fontFamily: FONT }}>{priceCount}</span>
         </div>
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', fontFamily: FONT, color: '#374151' }}>PRICE POINTS</span>

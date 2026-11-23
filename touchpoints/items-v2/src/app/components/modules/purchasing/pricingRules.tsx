@@ -20,6 +20,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ruleAmount } from "../../../currency/ruleMoney";
 
 export interface PricingRuleOption {
   id: string;
@@ -32,15 +33,18 @@ export interface PricingRuleOption {
   maxValue: string;
 }
 
+/* Rules are in the base currency (Currency Touchpoints Map, Partners 5–6).
+   The reference wrote the value amounts in USD; each is restated ×280
+   (ruleAmount: $1,000 → ₨280,000). Percentages and unit counts are as they were. */
 export const PRICING_RULES: PricingRuleOption[] = [
-  { id: "pr-1", type: "discount", name: "Standard Discount", description: "10% off on orders over $1,000", discountLabel: "Discount", discountValue: "10%", minValue: "$1,000", maxValue: "$32,000" },
+  { id: "pr-1", type: "discount", name: "Standard Discount", description: `10% off on orders over ${ruleAmount(1000)}`, discountLabel: "Discount", discountValue: "10%", minValue: ruleAmount(1000), maxValue: ruleAmount(32000) },
   { id: "pr-2", type: "discount", name: "Standard Discount", description: "15% off on orders of 100+ units", discountLabel: "Discount", discountValue: "10%", minValue: "100 EA", maxValue: "300 EA" },
-  { id: "pr-3", type: "discount", name: "Tiered Discount", description: "5% off over $500, 10% over $1,000", discountLabel: "Discount", discountValue: "5%", minValue: "$500", maxValue: "$2,300" },
+  { id: "pr-3", type: "discount", name: "Tiered Discount", description: `5% off over ${ruleAmount(500)}, 10% over ${ruleAmount(1000)}`, discountLabel: "Discount", discountValue: "5%", minValue: ruleAmount(500), maxValue: ruleAmount(2300) },
   { id: "pr-4", type: "discount", name: "Tiered Discount", description: "5% off over 50 units, 10% over 100", discountLabel: "Discount", discountValue: "10%", minValue: "35 EA", maxValue: "500 EA" },
-  { id: "pr-5", type: "premium", name: "Standard Premium", description: "Add 10% surcharge on orders under $200", discountLabel: "Discount", discountValue: "30%", minValue: "$200", maxValue: "$12,000" },
-  { id: "pr-6", type: "premium", name: "Standard Premium", description: "Add $50 for orders under 10 units", discountLabel: "Discount", discountValue: "16%", minValue: "10 EA", maxValue: "400 EA" },
-  { id: "pr-7", type: "premium", name: "Tiered Premium", description: "5% surcharge under $500, 10% under $200", discountLabel: "Discount", discountValue: "—", minValue: "—", maxValue: "—" },
-  { id: "pr-8", type: "premium", name: "Tiered Premium", description: "Add $25 for <50 units, $50 for <25 units", discountLabel: "Discount", discountValue: "—", minValue: "—", maxValue: "—" },
+  { id: "pr-5", type: "premium", name: "Standard Premium", description: `Add 10% surcharge on orders under ${ruleAmount(200)}`, discountLabel: "Discount", discountValue: "30%", minValue: ruleAmount(200), maxValue: ruleAmount(12000) },
+  { id: "pr-6", type: "premium", name: "Standard Premium", description: `Add ${ruleAmount(50)} for orders under 10 units`, discountLabel: "Discount", discountValue: "16%", minValue: "10 EA", maxValue: "400 EA" },
+  { id: "pr-7", type: "premium", name: "Tiered Premium", description: `5% surcharge under ${ruleAmount(500)}, 10% under ${ruleAmount(200)}`, discountLabel: "Discount", discountValue: "—", minValue: "—", maxValue: "—" },
+  { id: "pr-8", type: "premium", name: "Tiered Premium", description: `Add ${ruleAmount(25)} for <50 units, ${ruleAmount(50)} for <25 units`, discountLabel: "Discount", discountValue: "—", minValue: "—", maxValue: "—" },
 ];
 
 export const RULE_FILTERS = [

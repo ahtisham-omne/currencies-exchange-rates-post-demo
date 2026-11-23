@@ -57,6 +57,12 @@ import {
   InitialAvatar,
 } from "../../items-v3";
 import type { ColumnConfig } from "../../items-v3";
+import { isBaseCurrency } from "@/app/currency/currencies";
+import { RATE_PROVIDER, rateOn } from "@/app/currency/rates";
+import { fromUsd } from "@/app/currency/vendorFx";
+import { baseMoney } from "@/app/currency/itemMoney";
+import { BaseMoney, type MoneyFx } from "../../currency/Money";
+import { CurrencyPill } from "../../currency/CurrencyChip";
 
 /* ─── Data shape ─── */
 type SalesOrderPriority = "Low" | "Standard" | "High";
@@ -74,7 +80,9 @@ interface SalesOrder {
   poc: string;
   additionalPocs?: { name: string; role?: string; email?: string }[];
   salesRep: string;
-  orderValue: string;
+  /** The order's currency, the customer's. The amounts below are in it. */
+  currency: string;
+  orderValue: number;
   orderDate: string;
   shipBy: string;
   deliveryDate: string;
@@ -83,8 +91,8 @@ interface SalesOrder {
   isLate?: boolean;
   status: SalesOrderStatus;
   /* Columns ported from Sales-Order-V5 listing */
-  invoicedAmount: string;   // "$X" or "" for none
-  paymentsMade: string;     // "$X" or "" for none
+  invoicedAmount: number | null;   // null for none
+  paymentsMade: number | null;     // null for none
   requestedOn: string;      // customer-requested date
   confirmationDate: string; // "" until non-Draft/Pending
   priority: SalesOrderPriority;
@@ -151,16 +159,19 @@ function SOStatusPill({ status }: { status: SalesOrderStatus }) {
   );
 }
 
-/* Mock data — preserved from legacy SalesOverview.tsx (lines 128-204), with status added. */
-const SALES_ORDERS: SalesOrder[] = [
+/* Mock data — preserved from legacy SalesOverview.tsx (lines 128-204), with status added.
+   Each order now has the customer's currency (Currency Touchpoints Map, Items
+   5): SO-2026-001 USD, SO-2026-004 EUR, the others PKR. The design writes the
+   amounts in $; they are restated in the order's currency below. */
+const SALES_ORDERS: SalesOrder[] = ([
   {
     id: "1", salesOrderNumber: "SO-2026-001", quoteNumber: "QT-2026-1001",
     customerName: "Precision Parts Ltd.", poc: "Kevin",
     additionalPocs: [{ name: "Marissa Cole", role: "Procurement Lead", email: "marissa.cole@precisionparts.com" }],
-    salesRep: "James Rodriquez", orderValue: "$20,850",
+    salesRep: "James Rodriquez", currency: "USD", orderValue: 20850,
     orderDate: "2025-12-17", shipBy: "2025-12-29", deliveryDate: "2026-01-03",
     createdOn: "2025-12-17", createdBy: "Sarah Wilson", status: "Active",
-    invoicedAmount: "$8,500", paymentsMade: "$5,000",
+    invoicedAmount: 8500, paymentsMade: 5000,
     requestedOn: "2025-12-15", confirmationDate: "2025-12-19",
     priority: "High", tags: ["Rush", "Repeat"],
     lastUpdatedOn: "2026-01-12", lastUpdatedBy: "James Rodriquez",
@@ -175,10 +186,10 @@ const SALES_ORDERS: SalesOrder[] = [
   {
     id: "2", salesOrderNumber: "SO-2026-002", quoteNumber: "QT-2026-1002",
     customerName: "MegaCorp Inc.", poc: "Jim",
-    salesRep: "David Park", orderValue: "$11,225",
+    salesRep: "David Park", currency: "PKR", orderValue: 11225,
     orderDate: "2025-12-16", shipBy: "2026-02-20", deliveryDate: "2026-02-25",
     createdOn: "2025-12-16", createdBy: "Emily Chen", status: "Pending Approval",
-    invoicedAmount: "", paymentsMade: "",
+    invoicedAmount: null, paymentsMade: null,
     requestedOn: "2025-12-14", confirmationDate: "",
     priority: "Standard", tags: ["New Customer"],
     lastUpdatedOn: "2025-12-18", lastUpdatedBy: "Emily Chen",
@@ -192,10 +203,10 @@ const SALES_ORDERS: SalesOrder[] = [
     id: "3", salesOrderNumber: "SO-2026-003", quoteNumber: "QT-2026-1003",
     customerName: "BuildIt Construction", poc: "Robert",
     additionalPocs: [{ name: "Sandra Liu", role: "Site Manager", email: "sandra.liu@buildit.com" }],
-    salesRep: "Emily Chen", orderValue: "$557,555",
+    salesRep: "Emily Chen", currency: "PKR", orderValue: 557555,
     orderDate: "2025-11-08", shipBy: "2025-11-19", deliveryDate: "2025-11-24",
     createdOn: "2025-11-08", createdBy: "Robert Zhang", status: "Completed",
-    invoicedAmount: "$557,555", paymentsMade: "$557,555",
+    invoicedAmount: 557555, paymentsMade: 557555,
     requestedOn: "2025-11-06", confirmationDate: "2025-11-10",
     priority: "Standard", tags: ["Bulk"],
     lastUpdatedOn: "2025-12-28", lastUpdatedBy: "Robert Zhang",
@@ -221,10 +232,10 @@ const SALES_ORDERS: SalesOrder[] = [
       { name: "Priya Nair", role: "Buyer", email: "priya.nair@acme.com" },
       { name: "Tom Becker", role: "Warehouse Ops", email: "tom.becker@acme.com" },
     ],
-    salesRep: "James Rodriquez", orderValue: "$167,875",
+    salesRep: "James Rodriquez", currency: "EUR", orderValue: 167875,
     orderDate: "2025-10-15", shipBy: "2026-01-18", deliveryDate: "2026-01-23",
     createdOn: "2025-10-15", createdBy: "Priya Nair", status: "Overdue", isLate: true,
-    invoicedAmount: "$80,000", paymentsMade: "$40,000",
+    invoicedAmount: 80000, paymentsMade: 40000,
     requestedOn: "2025-10-13", confirmationDate: "2025-10-17",
     priority: "High", tags: ["Rush", "VIP", "Escalated"],
     lastUpdatedOn: "2026-01-05", lastUpdatedBy: "Priya Nair",
@@ -239,7 +250,39 @@ const SALES_ORDERS: SalesOrder[] = [
       { itemCode: "SOL-VALV-24V", itemName: "24V Solenoid Valve" },
     ],
   },
-];
+] as SalesOrder[]).map(inOrderCurrency);
+
+/* The design's $ amounts in the order's currency, at the last sync's
+   mid-market rate (as the qualified vendors' amounts are restated). A USD
+   order keeps the design's figures. */
+function inOrderCurrency(row: SalesOrder): SalesOrder {
+  const to = (n: number | null) => (n == null ? null : fromUsd(n, row.currency));
+  return { ...row, orderValue: to(row.orderValue) ?? 0, invoicedAmount: to(row.invoicedAmount), paymentsMade: to(row.paymentsMade) };
+}
+
+/* The order's rate to base: mid-market on the order date, the rate the order
+   locks when confirmed. Order value, invoiced and paid show in base at it,
+   and the hover gives the amount in the order's currency. Null for a base
+   (PKR) order, which shows plain PKR. */
+function orderFx(row: SalesOrder): MoneyFx | null {
+  if (isBaseCurrency(row.currency)) return null;
+  const q = rateOn(row.currency, row.orderDate, "mid");
+  return q.rate ? { rate: q.rate, rateType: "mid", rateDate: row.orderDate, source: RATE_PROVIDER } : null;
+}
+
+/** An order amount in base: the hover card on a foreign order. */
+function OrderAmount({ row, value, className }: { row: SalesOrder; value: number; className?: string }) {
+  return (
+    <BaseMoney
+      value={value}
+      currency={row.currency}
+      fx={orderFx(row)}
+      dateLabel="order date"
+      role="order currency"
+      className={className}
+    />
+  );
+}
 
 /* ─── Column config + widths ─── */
 const SALES_ORDER_COLUMNS: ColumnConfig[] = [
@@ -272,9 +315,10 @@ const SO_COLUMN_WIDTHS: Record<string, number> = {
   status:           150,
   poc:              140,
   salesRep:         180,
-  orderValue:       110,
-  invoicedAmount:   140,
-  paymentsMade:     140,
+  // Amounts in base (₨) to the cent, the order value with its currency tag.
+  orderValue:       200,
+  invoicedAmount:   160,
+  paymentsMade:     160,
   requestedOn:      120,
   shipBy:           140,
   deliveryDate:     120,
@@ -419,9 +463,16 @@ export function SalesOverviewTable() {
           </div>
         );
       case "orderValue":
+        /* In base, with the currency tag on a foreign order (Currency
+           Touchpoints Map, Items 5): "₨5,8xx,xxx.xx USD". */
         return (
-          <span className={`${cellTextSize} font-medium text-foreground tabular-nums`}>
-            {row.orderValue}
+          <span className="inline-flex items-center gap-1.5 max-w-full">
+            <OrderAmount row={row} value={row.orderValue} className={`${cellTextSize} font-medium text-foreground`} />
+            {!isBaseCurrency(row.currency) && (
+              <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                <CurrencyPill code={row.currency} note="The order's currency" />
+              </span>
+            )}
           </span>
         );
       case "shipBy":
@@ -440,24 +491,24 @@ export function SalesOverviewTable() {
       case "status":
         return <SOStatusPill status={row.status} />;
       case "invoicedAmount": {
-        const hasVal = !!row.invoicedAmount;
+        const hasVal = row.invoicedAmount != null;
         return (
           <span
             className={`${cellTextSize} tabular-nums whitespace-nowrap`}
             style={{ fontWeight: 500, color: hasVal ? "#0F172A" : "#94A3B8" }}
           >
-            {hasVal ? row.invoicedAmount : "—"}
+            {hasVal ? <OrderAmount row={row} value={row.invoicedAmount} /> : "—"}
           </span>
         );
       }
       case "paymentsMade": {
-        const hasVal = !!row.paymentsMade;
+        const hasVal = row.paymentsMade != null;
         return (
           <span
             className={`${cellTextSize} tabular-nums whitespace-nowrap`}
             style={{ fontWeight: 500, color: hasVal ? "#0F172A" : "#94A3B8" }}
           >
-            {hasVal ? row.paymentsMade : "—"}
+            {hasVal ? <OrderAmount row={row} value={row.paymentsMade} /> : "—"}
           </span>
         );
       }
@@ -551,8 +602,9 @@ export function SalesOverviewTable() {
                       <WarehouseIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <span>On-Hand: <b>{previewTokens.onHand.toLocaleString()}</b></span>
                     </div>
+                    {/* An item price, in the base currency like every item price. */}
                     <span className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>
-                      ${previewTokens.unitPrice.toFixed(2)}
+                      {baseMoney(previewTokens.unitPrice)}
                       <span className="text-slate-400 ml-1" style={{ fontWeight: 400 }}>/ unit</span>
                     </span>
                   </div>

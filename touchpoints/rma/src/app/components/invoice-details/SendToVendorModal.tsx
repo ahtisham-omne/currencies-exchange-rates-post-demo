@@ -7,7 +7,7 @@
  * going and what credit is expected, rather than with pricing and delivery.
  */
 import { formatMoney as moneyIn } from '@/app/currency/money';
-import { getCurrency } from '@/app/currency/currencies';
+import { currencyFootnote, getCurrency } from '@/app/currency/currencies';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Paperclip, Printer, Send, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/app/components/ui/dialog';
@@ -595,8 +595,13 @@ export function SendToVendorModal({
               </div>
             ))}
             <div style={{ borderTop: `2px solid ${DOC.fg}`, marginTop: 8, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <span style={{ fontSize: 16, fontWeight: 700 }}>{settlementCopy.totalLabel}</span>
+              {/* Labelled with the currency code (2026-11-24): "Refund Expected (USD)". */}
+              <span style={{ fontSize: 16, fontWeight: 700 }}>{settlementCopy.totalLabel} ({currency.toUpperCase()})</span>
               <span style={{ fontSize: 20, fontWeight: 700 }}>{money(expectedCredit)}</span>
+            </div>
+            {/* The document prints in the return's currency, and says so. */}
+            <div style={{ marginTop: 8, fontSize: 11, color: DOC.muted, textAlign: 'right' }}>
+              {currencyFootnote(currency)}
             </div>
           </div>
         </div>

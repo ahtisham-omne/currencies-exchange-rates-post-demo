@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import type { Payment } from '@/app/data/mockPayments';
-import { formatMoneyPdf } from '@/app/currency/money';
+import { currencyFootnote, formatMoneyPdf } from '@/app/currency/money';
 import { settledCurrencyOf } from '@/app/currency/paymentFx';
 
 // Remittance advice — a digital check stub the payer sends the vendor listing
@@ -187,13 +187,15 @@ function renderAdvicePage(doc: jsPDF, payment: Payment, opts: RemittanceOptions)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(20);
-  doc.text('Total Paid', cInvoice, y);
+  doc.text(`Total Paid (${currency})`, cInvoice, y);
   doc.text(fmt(total), cPaid, y, { align: 'right' });
   doc.setFont('helvetica', 'normal');
   y += 16;
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text(`All amounts are in ${currency}, the currency of your invoices and what you receive.`, cInvoice, y);
+  // The spec's footnote (Currency Touchpoints Map, 24 Nov 2026), the
+  // currency of the vendor's invoices and what they receive.
+  doc.text(currencyFootnote(currency), cInvoice, y);
 
   // ── Footer ──
   doc.setFontSize(8);

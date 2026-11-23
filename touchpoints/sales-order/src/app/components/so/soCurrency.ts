@@ -3,6 +3,7 @@ import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { formatRate, rateSentence } from "@/app/currency/money";
 import { rateOn, type RateType } from "@/app/currency/rates";
 import { crossRate, localTodayIso, roundTo, soFx, type SoFxFields } from "@/app/currency/soFx";
+import { getCompanyAccount, resolveReceiveAccount, type CompanyAccount } from "@/app/currency/companyAccounts";
 
 /** A choice made in the order's currency configuration. */
 export interface SOCurrencyChoice {
@@ -10,8 +11,34 @@ export interface SOCurrencyChoice {
   rateType: RateType;
   exchangeRate: number;
   rateEdited?: boolean;
-  /** "You receive"; unchanged when left out. */
+  /** "You receive" as a bare currency (an older choice); unchanged when left out. */
   settlementCurrency?: string;
+  /** "You receive": the pay-to account (currency/companyAccounts.ts). Its
+   *  currency becomes the order's `settlementCurrency`. */
+  payToAccount?: string;
+}
+
+/* ── When the order's rate locks (Currency Touchpoints Map, 24 Nov 2026) ──
+ * "Draft order: rate unlocked. Confirmed order: locked." An order is
+ * confirmed once it leaves Draft (submitted for review, or released), the
+ * same point the Currency Configuration has always turned read-only. */
+
+/** When the order's rate locks, in the spec's words. */
+export const SO_LOCK_EVENT = "locks when the order is confirmed";
+
+/** Is the order's rate locked? It is once the order is confirmed (leaves Draft). */
+export const soRateLocked = (so: Pick<SalesOrder, "status">) => so.status !== "Draft";
+
+/** The lock chip's tooltip: when it locks, or since when it is locked. */
+export function soLockTitle(so: Pick<SalesOrder, "status">): string {
+  return soRateLocked(so)
+    ? `Locked since the order was confirmed (${so.status}), so the total doesn't move with the market. New versions keep this rate unless you switch to today's.`
+    : "Unlocked while the order is a Draft. It locks when the order is confirmed (submitted for review or released), so the total doesn't move with the market.";
+}
+
+/** The account an order is received into (its pay-to account, resolved). */
+export function soReceiveAccount(so: SoFxFields & { settlementCurrency?: string; payToAccount?: string }): CompanyAccount {
+  return resolveReceiveAccount(soFx(so).currency, so.payToAccount, so.settlementCurrency);
 }
 
 /**
@@ -20,19 +47,27 @@ export interface SOCurrencyChoice {
  * between the two rates; documents already raised keep their currency. A
  * rate change alone converts nothing; it only changes what the order is
  * worth in base. Flat one-time adjustments live on the SO page and are
- * converted there with `factor`.
+ * converted there with `factor`. "You receive" is an account in the base
+ * currency or the order's: a currency change drops an account in the old
+ * currency for the default (base) one.
  */
 export function withSOCurrency(so: SalesOrder, next: SOCurrencyChoice): { updates: Partial<SalesOrder>; factor: number } {
   const before = soFx(so);
   const code = next.currency.toUpperCase();
   const rate = isBaseCurrency(code) ? 1 : next.exchangeRate;
+  const account =
+    next.payToAccount || next.settlementCurrency
+      ? resolveReceiveAccount(code, next.payToAccount, next.settlementCurrency)
+      : code !== before.currency
+        ? resolveReceiveAccount(code, so.payToAccount, so.settlementCurrency)
+        : null;
   const rateFields = {
     currency: code,
     exchangeRate: rate,
     rateType: next.rateType,
     rateDate: before.rateDate,
     rateEdited: next.rateType === "corporate" && !!next.rateEdited,
-    ...(next.settlementCurrency && { settlementCurrency: next.settlementCurrency.toUpperCase() }),
+    ...(account && { payToAccount: account.id, settlementCurrency: account.currency }),
   };
   if (code === before.currency) return { updates: rateFields, factor: 1 };
   const factor = crossRate(before.rate, rate);
@@ -54,27 +89,32 @@ export function withSOCurrency(so: SalesOrder, next: SOCurrencyChoice): { update
 
 /* ── The order's rate fields ─────────────────────────────────────────── */
 
-export type SORateFields = Required<Pick<SalesOrder, "currency" | "exchangeRate" | "rateType" | "rateDate" | "rateEdited" | "settlementCurrency">>;
+export type SORateFields = Required<Pick<SalesOrder, "currency" | "exchangeRate" | "rateType" | "rateDate" | "rateEdited" | "settlementCurrency" | "payToAccount">>;
 
 /** The currency fields an order carries, as `soFx` resolves them. */
-export function soRateFields(so: SoFxFields & { settlementCurrency?: string }): SORateFields {
+export function soRateFields(so: SoFxFields & { settlementCurrency?: string; payToAccount?: string }): SORateFields {
   const fx = soFx(so);
+  const account = soReceiveAccount(so);
   return {
     currency: fx.currency,
     exchangeRate: fx.rate,
     rateType: fx.rateType,
     rateDate: fx.rateDate,
     rateEdited: !!so.rateEdited,
-    settlementCurrency: (so.settlementCurrency ?? BASE_CURRENCY).toUpperCase(),
+    settlementCurrency: account.currency,
+    payToAccount: account.id,
   };
 }
 
+const accountName = (id: string) => getCompanyAccount(id)?.label ?? id;
+
 /** "USD → EUR · 1 EUR = 304.8150 PKR", "1 USD = 278.5200 → 279.0000 PKR",
- *  "PKR → USD" (what the customer pays unchanged, only "You receive"). */
+ *  "1010 · JPMorgan Operating → 1040 · Global FX Settlement" (what the
+ *  customer pays unchanged, only "You receive"). */
 export function describeRateChange(before: SORateFields, after: SORateFields): string {
   const from = before.currency.toUpperCase();
   const to = after.currency.toUpperCase();
-  const pays = before.settlementCurrency !== after.settlementCurrency ? `${before.settlementCurrency} → ${after.settlementCurrency}` : null;
+  const pays = before.payToAccount !== after.payToAccount ? `${accountName(before.payToAccount)} → ${accountName(after.payToAccount)}` : null;
   if (from === to && before.exchangeRate === after.exchangeRate && before.rateType === after.rateType && pays) return pays;
   if (from !== to) {
     return isBaseCurrency(to) ? `${from} → ${to}` : `${from} → ${to} · ${rateSentence(to, after.exchangeRate)}`;
@@ -84,12 +124,15 @@ export function describeRateChange(before: SORateFields, after: SORateFields): s
 
 /* ── A new version's rate: the one locked in, or today's ──────────────
  * Ported from the earlier Sales Orders touchpoint's revert prompt ("Restore
- * locked rate" / "Refresh to today's rate") in Purchase Orders' wording. An
- * order keeps the rate stamped on it (its order date's) from version to
- * version. Applying the current rate restamps it with today's rate of the
- * same type (finance's corporate rate, when that's the type and one is set;
- * otherwise mid-market). Amounts stay in the order's currency, so what the
- * customer pays is unchanged; only what the order is worth in base moves. */
+ * locked rate" / "Refresh to today's rate"), in the Currency Touchpoints
+ * Map's words since 24 Nov 2026 ("Keep version {n}'s rate" / "Use today's
+ * rate"). An order keeps the rate stamped on it (its order date's) from
+ * version to version. Applying the current rate restamps it with today's
+ * rate of the same type (finance's corporate rate, when that's the type and
+ * one is set; otherwise mid-market). Prices stay in the order's currency, so
+ * what the customer pays is unchanged, apart from fixed pricing-rule amounts
+ * (written in base, converted at the order's rate); what the order is worth
+ * in base moves. */
 /** A new version's rate: the one it locked in, or today's of either type
  *  (corporate only when one is set; Mahreen, 2026-11-20). */
 export type VersionRateChoice = "locked" | "current-mid" | "current-corporate";
@@ -136,12 +179,18 @@ export function versionRateFields(so: SalesOrder, versionNumber: number): SORate
   const own = soRateFields(so);
   const v = (so.versions ?? []).find((x) => x.number === versionNumber);
   if (!v || v.exchangeRate == null || (v.currency ?? "").toUpperCase() !== own.currency) return own;
+  // The account the version was received into; one stamped before accounts carries only its currency.
+  const account =
+    v.payToAccount || v.settlementCurrency
+      ? resolveReceiveAccount(own.currency, v.payToAccount, v.settlementCurrency)
+      : getCompanyAccount(own.payToAccount) ?? resolveReceiveAccount(own.currency, own.payToAccount);
   return {
     currency: own.currency,
     exchangeRate: v.exchangeRate,
     rateType: v.rateType ?? own.rateType,
     rateDate: v.rateDate ?? own.rateDate,
     rateEdited: !!v.rateEdited,
-    settlementCurrency: (v.settlementCurrency ?? own.settlementCurrency).toUpperCase(),
+    settlementCurrency: account.currency,
+    payToAccount: account.id,
   };
 }

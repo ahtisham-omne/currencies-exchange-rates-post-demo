@@ -147,6 +147,12 @@ export interface RMAActionPayload {
     reference: string;
     method?: string;
     depositedToAccountId?: string;
+    /** Into a PKR account: what it came to in PKR, at `rate`. */
+    bankReceived?: number;
+    /** The rate the vendor settled at, of the configured type, on the day the
+     *  money landed (2026-11-24). */
+    rate?: number;
+    rateType?: 'mid' | 'corporate';
     description?: string;
     fileName?: string;
     /** The user confirmed a short settlement should be written off. */

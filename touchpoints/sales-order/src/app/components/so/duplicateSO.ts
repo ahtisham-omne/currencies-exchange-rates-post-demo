@@ -70,7 +70,7 @@ function buildVersions(
     const maxV = sourceVersions[0]?.number ?? source.version?.number ?? 1;
     /* The copy takes today's rate (createSO), so the source's per-version
        rates (soCurrency.ts stampVersionRate) don't come with it. */
-    const stamped = sourceVersions.map(({ currency: _c, exchangeRate: _r, rateType: _t, rateDate: _d, rateEdited: _e, settlementCurrency: _s, ...v }) => ({ ...v, label: 'Superseded' as const }));
+    const stamped = sourceVersions.map(({ currency: _c, exchangeRate: _r, rateType: _t, rateDate: _d, rateEdited: _e, settlementCurrency: _s, payToAccount: _a, ...v }) => ({ ...v, label: 'Superseded' as const }));
     const newTop: SOVersion = { number: maxV + 1, label: 'Latest', date: dateStr };
     return { versions: [...stamped, newTop], current: newTop };
   }
@@ -125,8 +125,9 @@ export function buildDuplicateSOPayload(
     lines,
     warehouse: source.warehouse,
     currency,
-    /* Same customer: "You receive" comes with the copy; another customer
-       starts from the base currency. */
+    /* Same customer: "You receive" (the pay-to account) comes with the copy;
+       another customer starts from the default base-currency account. */
+    ...(!options.newCustomerId && source.payToAccount && { payToAccount: source.payToAccount }),
     ...(!options.newCustomerId && source.settlementCurrency && { settlementCurrency: source.settlementCurrency }),
     paymentTerms: source.paymentTerms,
     shippingAddress: source.shippingAddress,

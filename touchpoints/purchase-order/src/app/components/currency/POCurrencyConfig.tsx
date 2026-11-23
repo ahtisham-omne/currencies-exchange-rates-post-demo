@@ -1,152 +1,93 @@
 import * as React from "react";
-import { Lock, RotateCcw, Settings2 } from "lucide-react";
+import { Check, ChevronDown, Lock, LockOpen, RotateCcw, Settings2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../ui/dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { FONT } from "../designTokens";
 import { computePOPricing } from "../poOrderPricing";
-import { withPOCurrency, type POCurrencyChoice, type PurchaseOrderData } from "../poStore";
+import { isPORateLocked, withPOCurrency, type POCurrencyChoice, type PurchaseOrderData } from "../poStore";
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
-import { formatMoney, formatRate, formatRateDate, moneyPrefix } from "@/app/currency/money";
-import { crossRate, poFx, vendorCurrency } from "@/app/currency/poFx";
+import { DEFAULT_PAY_FROM, getCompanyAccount, payFromAccountsFor, resolvePayFrom } from "@/app/currency/companyAccounts";
+import { formatMoney, formatRate, formatRateDate } from "@/app/currency/money";
+import { poFx, vendorCurrency } from "@/app/currency/poFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
+import { CurrencyBlock, LockChip, RateTypeChip, type CurrencyBlockRow } from "./CurrencyBlock";
 import { linkProvider } from "./ProviderLink";
 import { CurrencyPicker, POCurrencyConfirmDialog, RateTypeToggle, type POCurrencyChange } from "./POCurrencyFields";
 
-/* ── The PO's currency: Order Summary card and Currency Configuration ──
+export { RateTypeChip } from "./CurrencyBlock";
+
+/* ── The PO's currency: Order Summary block and Currency Configuration ──
  * Ported from the earlier Purchase Orders touchpoint (POSummaryRateBadge,
- * POCurrencyConfigModal) onto the redesign's currency model:
+ * POCurrencyConfigModal) onto the redesign's currency model, then laid out
+ * as the Currency Touchpoints Map draws it (Purchase Orders 3–4, 24 Nov):
  *  - "Vendor receives": the PO's currency, the vendor's by default (spec 4.2).
  *    Changing it converts every line at the PO date's rates, after the same
  *    confirmation the redesign shows (POCurrencyConfirmDialog).
- *  - "You pay": the currency the PO is settled in, the base currency unless
- *    set here.
+ *  - "You pay": the company bank or cash account the PO is paid from, in the
+ *    base currency or the PO's (companyAccounts), 1010 by default. Paying
+ *    from a base account, the amount is the base total at the PO's rate.
  *  - The rate: the PO date's, mid-market (read-only) or corporate (finance's,
- *    which can be changed on the PO).
+ *    which can be changed on the PO). Unlocked while the PO is a Draft or
+ *    Sent; it locks when the PO is confirmed (isPORateLocked), and then the
+ *    configuration is read-only.
  * Every change goes through the page's edit guard and version history. */
 
 const RATE_HEX: Record<RateType, string> = { mid: "#7C3AED", corporate: "#B45309" };
-const RATE_TINT: Record<RateType, string> = { mid: "rgba(124,58,237,0.08)", corporate: "rgba(180,83,9,0.10)" };
 
-/** "Rs 645.20 PKR": an amount with its code, as the card writes it. */
-const withCode = (n: number, code: string) => {
-  const t = formatMoney(n, code);
-  return t.includes(code) ? t : `${t} ${code}`;
-};
-
-/** One unit of `code` in base on the PO's rate date, or the PO's own rate for its currency. */
-function rateToBase(code: string, po: PurchaseOrderData, type: RateType = "mid"): number {
-  const fx = poFx(po);
-  if (isBaseCurrency(code)) return 1;
-  if (code === fx.currency) return fx.rate;
-  const q = rateOn(code, fx.rateDate, type);
-  return q.rate ?? rateOn(code, fx.rateDate, "mid").rate ?? 1;
-}
-
-export function RateTypeChip({ type }: { type: RateType }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]"
-      style={{ color: RATE_HEX[type], backgroundColor: RATE_TINT[type], fontWeight: 600 }}
-    >
-      <span className="inline-block w-1 h-1 rounded-full" style={{ backgroundColor: RATE_HEX[type] }} />
-      {RATE_TYPE_LABEL[type]}
-    </span>
-  );
+/** What the PO's lock chip says on hover. */
+export function poLockTitle(po: Pick<PurchaseOrderData, "confirmationDate">, locked: boolean): string {
+  if (!locked) return "Locks when the PO is confirmed";
+  return po.confirmationDate
+    ? `Locked when the PO was confirmed on ${formatRateDate(po.confirmationDate)}`
+    : "Locked when the PO was confirmed";
 }
 
 /* ── Order Summary: CURRENCY ───────────────────────────────────────── */
 
 export function POCurrencySummary({ po, total, onViewConfig }: { po: PurchaseOrderData; total: number; onViewConfig: () => void }) {
   const fx = poFx(po);
-  const pay = (po.settlementCurrency ?? BASE_CURRENCY).toUpperCase();
-  const payRate = rateToBase(pay, po);
-  const payTotal = pay === fx.currency ? total : total * crossRate(fx.rate, payRate);
-  const locked = po.status !== "Draft";
-  const sentOn = po.sentDate ? formatRateDate(po.sentDate) : null;
+  const account = resolvePayFrom(fx.currency, po.payFromAccount, po.settlementCurrency);
+  const locked = isPORateLocked(po);
+  const base = toBase(total, fx.rate);
+  const payInBase = isBaseCurrency(account.currency);
 
-  const rows: { label: string; code: string; amount: number }[] = [{ label: "Vendor receives", code: fx.currency, amount: total }];
-  if (pay !== fx.currency) rows.push({ label: "You pay", code: pay, amount: payTotal });
-  if (!fx.isBase && !isBaseCurrency(pay)) rows.push({ label: "Base equivalent", code: BASE_CURRENCY, amount: toBase(total, fx.rate) });
-
-  const rates: { from: string; to: string; rate: number }[] = [];
-  if (!fx.isBase) rates.push({ from: fx.currency, to: BASE_CURRENCY, rate: fx.rate });
-  if (!isBaseCurrency(pay) && pay !== fx.currency) rates.push({ from: pay, to: BASE_CURRENCY, rate: payRate });
+  // Vendor receives / You pay / Base equivalent (only when paying from a non-base account).
+  const rows: CurrencyBlockRow[] = [
+    { label: "Vendor receives", code: fx.currency, amount: total },
+    { label: "You pay", code: account.currency, amount: payInBase ? base : total, title: `From ${account.label}` },
+  ];
+  if (!payInBase) rows.push({ label: "Base equivalent", code: BASE_CURRENCY, amount: base });
 
   return (
-    <div className="border-t border-muted pt-3 mt-3 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[9.5px] uppercase text-slate-400" style={{ fontWeight: 600, letterSpacing: "0.06em" }}>
-          Currency
-        </span>
-        <div className="flex items-center gap-1.5">
-          {!fx.isBase && (
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <span className="cursor-help">
-                  <RateTypeChip type={fx.rateType} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[240px] text-[11px]">
-                {fx.rateType === "mid"
-                  ? `The mid-market rate on ${formatRateDate(fx.rateDate)}, the PO date · ${RATE_PROVIDER}`
-                  : po.rateEdited
-                    ? `A corporate rate entered on this PO (${formatRateDate(fx.rateDate)})`
-                    : `Finance's corporate rate in effect on ${formatRateDate(fx.rateDate)}, the PO date`}
-              </TooltipContent>
-            </Tooltip>
-          )}
-          {locked && !fx.isBase && (
-            <span
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]"
-              style={{ color: "#047857", backgroundColor: "#ECFDF5", fontWeight: 600 }}
-              title={sentOn ? `Sent on ${sentOn}. New versions keep this rate unless today's is applied.` : "New versions keep this rate unless today's is applied."}
+    <div className="border-t border-muted pt-3 mt-3">
+      <CurrencyBlock
+        isBase={fx.isBase}
+        rateType={fx.rateType}
+        rateTypeTip={
+          fx.rateType === "mid"
+            ? `The mid-market rate on ${formatRateDate(fx.rateDate)}, the PO date · ${RATE_PROVIDER}`
+            : po.rateEdited
+              ? `A corporate rate entered on this PO (${formatRateDate(fx.rateDate)})`
+              : `Finance's corporate rate in effect on ${formatRateDate(fx.rateDate)}, the PO date`
+        }
+        lock={{ locked, title: poLockTitle(po, locked) }}
+        rows={rows}
+        rate={{ code: fx.currency, rate: fx.rate }}
+        footer={
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onViewConfig}
+              className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 hover:text-primary cursor-pointer"
+              style={{ fontWeight: 500 }}
             >
-              <Lock className="w-2.5 h-2.5" />
-              Locked
-            </span>
-          )}
-        </div>
-      </div>
-
-      {rows.map((r) => (
-        <div key={r.label} className="flex items-center justify-between gap-2">
-          <p className="text-slate-400" style={{ fontSize: 10, fontWeight: 500 }}>{r.label}</p>
-          <p className="flex items-center gap-1.5 text-slate-700 tabular-nums" style={{ fontSize: 12, fontWeight: 500 }}>
-            <CurrencyFlag code={r.code} size={11} />
-            {withCode(r.amount, r.code)}
-          </p>
-        </div>
-      ))}
-
-      {rates.length > 0 ? (
-        <div className="border-t border-slate-100 pt-2 space-y-0.5">
-          {rates.map((r) => (
-            <div key={r.from} className="flex items-center justify-between gap-2">
-              <p className="text-slate-400" style={{ fontSize: 10, fontWeight: 500 }}>{r === rates[0] ? "Rate" : ""}</p>
-              <p className="text-slate-500 tabular-nums" style={{ fontSize: 11 }}>
-                1 {r.from} = {moneyPrefix(BASE_CURRENCY)}{formatRate(r.rate)} {r.to}
-              </p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-slate-400" style={{ fontSize: 10.5 }}>
-          {BASE_CURRENCY} is the base currency, so there's no conversion.
-        </p>
-      )}
-
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={onViewConfig}
-          className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 hover:text-primary cursor-pointer"
-          style={{ fontWeight: 500 }}
-        >
-          <Settings2 className="w-3 h-3" />
-          View configuration
-        </button>
-      </div>
+              <Settings2 className="w-3 h-3" />
+              View configuration
+            </button>
+          </div>
+        }
+      />
     </div>
   );
 }
@@ -162,8 +103,8 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-/** The amount (read-only) beside the currency it's in. */
-function AmountRow({ amount, code, picker }: { amount: number; code: string; picker: React.ReactNode }) {
+/** The amount (read-only) beside what it's in: a currency, or an account. */
+function AmountRow({ amount, code, approx, picker }: { amount: number; code: string; approx?: boolean; picker: React.ReactNode }) {
   return (
     <div className="flex items-stretch gap-2">
       <div
@@ -171,14 +112,118 @@ function AmountRow({ amount, code, picker }: { amount: number; code: string; pic
         style={{ fontWeight: 500 }}
         aria-readonly="true"
       >
-        <span className="truncate">{formatMoney(amount, code)}</span>
+        <span className="truncate">
+          {approx ? "≈ " : ""}
+          {formatMoney(amount, code)}
+        </span>
       </div>
-      <div className="w-[200px] shrink-0">{picker}</div>
+      <div className="w-[248px] shrink-0">{picker}</div>
     </div>
   );
 }
 
-function RateCard({ from, rate, type, date, source }: { from: string; rate: number; type: RateType; date: string; source: string }) {
+const PICKER = "h-10 w-full rounded-md px-2.5 flex items-center gap-1.5 text-[12px]";
+
+/** "1010 · JPMorgan Operating · PKR ▾": bank and cash accounts in the base
+ *  currency or the PO's. */
+function PayFromPicker({
+  value,
+  currency,
+  onPick,
+  disabled,
+}: {
+  value: string;
+  /** The PO's currency (as drafted in the dialog). */
+  currency: string;
+  onPick: (accountId: string) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const accounts = payFromAccountsFor(currency);
+  const current = getCompanyAccount(value) ?? accounts[0];
+  const body = (
+    <span className="flex items-center gap-1.5 min-w-0">
+      <CurrencyFlag code={current.currency} />
+      <span className="truncate text-slate-700" style={{ fontWeight: 500 }}>{current.label}</span>
+      <span className="shrink-0 text-slate-400">· {current.currency}</span>
+    </span>
+  );
+  if (disabled) {
+    return (
+      <div className={`${PICKER} border border-slate-200 bg-slate-50 cursor-not-allowed`} aria-label="Pay from account">
+        {body}
+        <Lock className="w-3 h-3 text-slate-300 shrink-0 ml-auto" />
+      </div>
+    );
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Pay from account"
+          className={`${PICKER} bg-white border border-border hover:border-primary/45 focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none justify-between cursor-pointer transition-colors`}
+        >
+          {body}
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[300px] p-0 rounded-lg z-[200]" style={{ fontFamily: FONT }}>
+        <div className="max-h-[280px] overflow-y-auto py-1" role="listbox" aria-label="Pay from account">
+          {accounts.map((a) => {
+            const selected = a.id === current.id;
+            return (
+              <button
+                key={a.id}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  setOpen(false);
+                  if (!selected) onPick(a.id);
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] cursor-pointer transition-colors ${
+                  selected ? "bg-primary/[0.06] text-primary" : "hover:bg-slate-50 text-foreground"
+                }`}
+              >
+                <CurrencyFlag code={a.currency} />
+                <span className="flex-1 min-w-0">
+                  <span className="block truncate" style={{ fontWeight: 600 }}>{a.label}</span>
+                  <span className="block truncate text-[10.5px] text-slate-400" style={{ fontWeight: 400 }}>
+                    {a.type === "cash" ? "Cash on hand" : `${a.bankName} ••${a.accountMask}`}
+                  </span>
+                </span>
+                <span className="shrink-0 text-[11px] text-slate-500" style={{ fontWeight: 600 }}>{a.currency}</span>
+                {selected && <Check className="w-3.5 h-3.5 shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+        <p className="px-3 py-2 border-t border-slate-100 text-[10.5px] text-slate-400">
+          {isBaseCurrency(currency)
+            ? `Bank and cash accounts in ${BASE_CURRENCY}, the base currency.`
+            : `Bank and cash accounts in ${BASE_CURRENCY}, the base currency, or ${currency}, the PO's.`}
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function RateCard({
+  from,
+  rate,
+  type,
+  date,
+  source,
+  lock,
+}: {
+  from: string;
+  rate: number;
+  type: RateType;
+  date: string;
+  source: string;
+  lock: { locked: boolean; title: string };
+}) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
       <div className="flex items-center gap-1.5 text-[11px]">
@@ -190,7 +235,12 @@ function RateCard({ from, rate, type, date, source }: { from: string; rate: numb
         <div>1 {from} = {formatRate(rate)} {BASE_CURRENCY}</div>
         <div className="text-slate-500" style={{ fontWeight: 400 }}>1 {BASE_CURRENCY} = {formatRate(1 / rate)} {from}</div>
       </div>
-      <p className="mt-1 text-[10.5px] text-slate-400">Rate on {formatRateDate(date)}, the PO date</p>
+      {/* "Nov 23, 2026 · PO date  [Unlocked] locks when the PO is confirmed" */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] text-slate-400">
+        <span className="tabular-nums">{formatRateDate(date)} · PO date</span>
+        <LockChip locked={lock.locked} title={lock.title} />
+        <span>{lock.locked ? "locked when the PO was confirmed" : "locks when the PO is confirmed"}</span>
+      </div>
     </div>
   );
 }
@@ -210,10 +260,12 @@ export function POCurrencyConfigDialog({
 }) {
   const fx = poFx(po);
   const vendorDefault = vendorCurrency(po.vendor.name);
-  const savedPay = (po.settlementCurrency ?? BASE_CURRENCY).toUpperCase();
+  const savedAccount = resolvePayFrom(fx.currency, po.payFromAccount, po.settlementCurrency).id;
+  const locked = isPORateLocked(po);
+  const lock = { locked, title: poLockTitle(po, locked) };
 
   const [currency, setCurrency] = React.useState(fx.currency);
-  const [pay, setPay] = React.useState(savedPay);
+  const [accountId, setAccountId] = React.useState(savedAccount);
   const [type, setType] = React.useState<RateType>(fx.rateType);
   const [rateText, setRateText] = React.useState<string | null>(null);
   const [confirming, setConfirming] = React.useState(false);
@@ -221,7 +273,7 @@ export function POCurrencyConfigDialog({
   React.useEffect(() => {
     if (!open) return;
     setCurrency(fx.currency);
-    setPay(savedPay);
+    setAccountId(savedAccount);
     setType(fx.rateType);
     setRateText(null);
     setConfirming(false);
@@ -246,19 +298,23 @@ export function POCurrencyConfigDialog({
   // Preview totals in the draft currency.
   const previewPo = sameCurrency ? po : withPOCurrency(po, { currency, rateType: type, exchangeRate: rate });
   const vendorTotal = computePOPricing(previewPo).total;
-  const payRate = isBaseCurrency(pay) ? 1 : pay === currency ? rate : rateOn(pay, fx.rateDate, "mid").rate ?? 1;
-  const payTotal = pay === currency ? vendorTotal : vendorTotal * crossRate(rate, payRate);
+  const baseTotal = foreign ? toBase(vendorTotal, rate) : vendorTotal;
+  // The pay-from account, while it is allowed for the drafted currency (else 1010).
+  const account = resolvePayFrom(currency, accountId);
+  const payInBase = isBaseCurrency(account.currency);
 
   const dirty =
-    currency !== fx.currency || pay !== savedPay || (foreign && (type !== fx.rateType || Math.abs(rate - fx.rate) > 1e-9));
+    currency !== fx.currency || account.id !== savedAccount || (foreign && (type !== fx.rateType || Math.abs(rate - fx.rate) > 1e-9));
 
   const finish = (next: POCurrencyChoice, subject: string) => {
     onChange({ next, subject });
     onOpenChange(false);
   };
 
+  const readOnly = !canEdit || locked;
+
   const save = () => {
-    if (!canEdit || !dirty) {
+    if (readOnly || !dirty) {
       onOpenChange(false);
       return;
     }
@@ -268,25 +324,23 @@ export function POCurrencyConfigDialog({
     }
     const rateChanged = foreign && (type !== fx.rateType || Math.abs(rate - fx.rate) > 1e-9);
     finish(
-      { currency, rateType: type, exchangeRate: rate, rateEdited, settlementCurrency: pay },
+      { currency, rateType: type, exchangeRate: rate, rateEdited, payFromAccount: account.id },
       rateChanged ? "Exchange rate" : "You pay",
     );
   };
 
   const reset = () => {
     setCurrency(vendorDefault);
-    setPay(BASE_CURRENCY);
+    setAccountId(DEFAULT_PAY_FROM);
     setType("mid");
     setRateText(null);
   };
-
-  const readOnly = !canEdit;
 
   return (
     <>
       <Dialog open={open && !confirming} onOpenChange={onOpenChange}>
         <DialogContent
-          className="sm:max-w-[560px] p-0 gap-0 overflow-hidden !rounded-2xl border-0"
+          className="sm:max-w-[600px] p-0 gap-0 overflow-hidden !rounded-2xl border-0"
           style={{ fontFamily: FONT, boxShadow: "0 24px 48px -12px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05)" }}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
@@ -300,15 +354,12 @@ export function POCurrencyConfigDialog({
                   <DialogTitle className="text-slate-900" style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>
                     Currency Configuration
                   </DialogTitle>
-                  {readOnly && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]" style={{ color: "#047857", backgroundColor: "#ECFDF5", fontWeight: 600 }}>
-                      <Lock className="w-2.5 h-2.5" />
-                      Locked
-                    </span>
-                  )}
+                  {locked && <LockChip locked title={lock.title} />}
                 </div>
                 <DialogDescription className="text-slate-500" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                  Applies to PO {po.poNumber} only. The vendor's default currency ({vendorDefault}) doesn't change.
+                  {readOnly && !locked
+                    ? `PO ${po.poNumber} can't be changed now, so its currency is read-only.`
+                    : `Applies to PO ${po.poNumber} only. The vendor's default currency (${vendorDefault}) doesn't change.`}
                 </DialogDescription>
               </div>
             </div>
@@ -343,32 +394,28 @@ export function POCurrencyConfigDialog({
 
             <Section label="You pay">
               <AmountRow
-                amount={payTotal}
-                code={pay}
-                picker={
-                  <CurrencyPicker
-                    value={pay}
-                    onPick={setPay}
-                    disabled={readOnly}
-                    vendorDefault={currency}
-                    ariaLabel="You pay currency"
-                    className="!mt-0 !h-10"
-                  />
-                }
+                amount={payInBase ? baseTotal : vendorTotal}
+                code={account.currency}
+                approx={payInBase && foreign}
+                picker={<PayFromPicker value={account.id} currency={currency} onPick={setAccountId} disabled={readOnly} />}
               />
-              {!isBaseCurrency(pay) && (
+              {!payInBase && (
                 <p className="text-[11px] text-slate-600 tabular-nums">
-                  ≈ {formatMoney(toBase(payTotal, payRate), BASE_CURRENCY)} {BASE_CURRENCY}
+                  ≈ {formatMoney(baseTotal, BASE_CURRENCY)} {BASE_CURRENCY}
                   <span className="text-slate-400"> in the base currency</span>
                 </p>
               )}
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                The currency you pay this PO in. Defaults to your base currency.
+                {!foreign
+                  ? `The bank or cash account this PO is paid from, in ${BASE_CURRENCY}.`
+                  : payInBase
+                    ? `The bank or cash account this PO is paid from, in ${BASE_CURRENCY} or ${currency}. In ${BASE_CURRENCY}, the amount is an estimate at the PO's rate.`
+                    : `Paid in ${currency} from a ${currency} account, so what the vendor receives is what you pay.`}
               </p>
             </Section>
 
             {foreign && (
-              <Section label="Exchange rate">
+              <Section label="Rate">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-slate-500">Rate type</span>
                   {readOnly ? (
@@ -414,6 +461,7 @@ export function POCurrencyConfigDialog({
                   rate={rate}
                   type={type}
                   date={fx.rateDate}
+                  lock={lock}
                   source={
                     type === "mid"
                       ? RATE_PROVIDER
@@ -424,19 +472,19 @@ export function POCurrencyConfigDialog({
                           : `No corporate rate for ${currency}; enter one`
                   }
                 />
-                {!isBaseCurrency(pay) && pay !== currency && (
-                  <RateCard from={pay} rate={payRate} type="mid" date={fx.rateDate} source={RATE_PROVIDER} />
-                )}
               </Section>
             )}
 
-            <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-[11.5px] leading-relaxed" style={{ backgroundColor: "#FFFBEB", color: "#92400E", border: "1px solid #FDE68A" }}>
-              <Lock className="w-3 h-3 mt-[3px] shrink-0" />
-              <span>
-                This rate is locked so the PO total doesn't move with the market. New versions keep it unless you switch
-                to today's rate.
-              </span>
-            </div>
+            {foreign && (
+              <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-[11.5px] leading-relaxed" style={{ backgroundColor: "#FFFBEB", color: "#92400E", border: "1px solid #FDE68A" }}>
+                {locked ? <Lock className="w-3 h-3 mt-[3px] shrink-0" /> : <LockOpen className="w-3 h-3 mt-[3px] shrink-0" />}
+                <span>
+                  {locked
+                    ? "This rate locked when the PO was confirmed, so the PO total doesn't move with the market. New versions keep it unless you switch to today's rate."
+                    : "The rate is taken on the PO date and locks when the PO is confirmed. Until then you can change its type or the corporate rate here."}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between gap-2 border-t border-[#EEF2F6] bg-white px-5 py-3">
@@ -482,7 +530,7 @@ export function POCurrencyConfigDialog({
           onCancel={() => setConfirming(false)}
           onConfirm={(next) => {
             setConfirming(false);
-            finish({ ...next, settlementCurrency: pay }, "Currency");
+            finish({ ...next, payFromAccount: account.id }, "Currency");
           }}
         />
       )}

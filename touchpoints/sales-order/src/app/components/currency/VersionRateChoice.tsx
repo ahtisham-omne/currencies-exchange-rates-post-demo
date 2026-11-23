@@ -9,12 +9,14 @@ const FONT = "Inter, system-ui, sans-serif";
 
 /* ── A new version's rate: the locked one, or today's ─────────────────
  * Ported from the earlier Sales Orders touchpoint's revert prompt ("Restore
- * locked rate from V{n}" / "Refresh to today's rate"), in the words Purchase
- * Orders uses: "Use locked rate from V{n} or apply current rate?". Shown when
- * a version is started and when one is reverted to, on an order in a foreign
- * currency. Each option names its rate; today's can be mid-market or
- * corporate when a corporate rate is set (Mahreen, 2026-11-20). The
- * customer's amounts don't change either way; the base-currency totals do. */
+ * locked rate from V{n}" / "Refresh to today's rate"). Worded as the
+ * Currency Touchpoints Map has it since 24 Nov 2026: "Keep version {n}'s
+ * rate" / "Use today's rate" (before: "Use locked rate from V{n}" / "Apply
+ * current rate"). Shown when a version is started and when one is reverted
+ * to, on an order in a foreign currency. Each option names its rate; today's
+ * can be mid-market or corporate when a corporate rate is set (Mahreen,
+ * 2026-11-20). The customer's prices don't change either way; the
+ * base-currency totals do. */
 
 export interface VersionRateOptions {
   /** The rate the version locked in: "Mid-market · 1 USD = 278.5200 PKR ·
@@ -22,7 +24,7 @@ export interface VersionRateOptions {
   locked: string;
   /** Today's rate of each type; corporate only when a corporate rate is set. */
   today: { mid: TodayRate; corporate?: TodayRate | undefined };
-  /** The type "Apply current rate" starts on: the locked rate's, when today
+  /** The type "Use today's rate" starts on: the locked rate's, when today
    *  has one of that type. */
   defaultType: RateType;
 }
@@ -80,11 +82,11 @@ export function VersionRateChoice({
   const today = (type === "corporate" && corporate) || options.today.mid;
   const pickToday = (t: RateType) => onChange(t === "corporate" ? "current-corporate" : "current-mid");
   const cards = [
-    { key: "locked", active: value === "locked", title: `Use locked rate from V${fromVersion}`, sub: options.locked, pick: () => onChange("locked") },
+    { key: "locked", active: value === "locked", title: `Keep version ${fromVersion}'s rate`, sub: options.locked, pick: () => onChange("locked") },
     {
       key: "current",
       active: value !== "locked",
-      title: "Apply current rate",
+      title: "Use today's rate",
       sub: today.differs ? today.line : `${today.line} · same as V${fromVersion}`,
       pick: () => pickToday(type),
     },
@@ -95,7 +97,7 @@ export function VersionRateChoice({
         Exchange rate
       </p>
       <p className="text-[11.5px] text-slate-500 mt-0.5">
-        Use locked rate from V{fromVersion} or apply current rate?
+        Keep version {fromVersion}'s rate or use today's?
       </p>
       <div className="mt-2 flex flex-col gap-2" role="radiogroup" aria-label="Exchange rate for the new version">
         {cards.map((c) => (

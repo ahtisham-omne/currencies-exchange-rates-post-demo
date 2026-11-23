@@ -21,3 +21,13 @@ export const PO_CURRENCY: Record<string, string> = {
   '11152': 'GBP',
   '11153': 'EUR',
 };
+
+/** The rate type a PO was placed at, where it isn't mid-market (Company
+ *  Setup's default). A return settles at today's rate of its PO's type
+ *  (Currency Touchpoints Map, 2026-11-24: "Rate type follows the PO").
+ *  Crestwood's pound orders are on finance's corporate rate, so RMA-01016
+ *  opens on Corporate. */
+export const PO_RATE_TYPE: Record<string, 'mid' | 'corporate'> = {
+  '11151': 'corporate',
+  '11152': 'corporate',
+};

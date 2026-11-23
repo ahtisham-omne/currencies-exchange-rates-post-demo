@@ -426,7 +426,7 @@ export const PAYMENT_COLUMNS: ColumnDef<Payment>[] = [
     filterType: 'text',
     getValue: (row) => row.vendor,
     render: (row, ctx) => (
-      <VendorCell vendor={row.vendor} description={row.memo} density={ctx.density} searchQuery={ctx.searchQuery} />
+      <VendorCell vendor={row.vendor} description={row.memo} density={ctx.density} searchQuery={ctx.searchQuery} currency={row.currency} />
     ),
   },
   {

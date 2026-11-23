@@ -45,7 +45,9 @@ import {
 import type { QualifiedVendor } from "../../../context/purchasing/types";
 import { InitialAvatar } from "../../items-v3/InitialAvatar";
 import { PriorityChip } from "../../items-v3/PriorityChip";
-import { Money } from "../../currency/Money";
+import { BaseMoney } from "../../currency/Money";
+import { CurrencyPill } from "../../currency/CurrencyChip";
+import { isBaseCurrency } from "../../../currency/currencies";
 import { qvRate } from "../../../currency/vendorFx";
 
 interface QVCardProps {
@@ -110,9 +112,17 @@ function SortableQVCard({
         {/* Vendor identity */}
         <InitialAvatar name={qv.vendorName} size="md" />
         <div className="flex-1 min-w-0">
-          <p className="text-[13px] text-slate-700 truncate" style={{ fontWeight: 600 }}>
-            {qv.vendorName}
-          </p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="text-[13px] text-slate-700 truncate" style={{ fontWeight: 600 }}>
+              {qv.vendorName}
+            </p>
+            {/* Currency tag on a vendor that isn't in the base currency. */}
+            {!isBaseCurrency(qv.currency) && (
+              <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                <CurrencyPill code={qv.currency} note="The vendor's currency, from the partner" />
+              </span>
+            )}
+          </div>
           <p className="text-[11px] text-slate-500 truncate leading-relaxed mt-0.5" style={{ fontWeight: 400 }}>
             {qv.location}
           </p>
@@ -120,9 +130,9 @@ function SortableQVCard({
 
         {/* Price + UOM */}
         <div className="flex items-baseline gap-1 shrink-0 px-3 border-l border-border/60">
-          {/* In the vendor's currency (spec 4.1); the hover gives the base equivalent. */}
+          {/* In the base currency; the hover gives the vendor's own price and the rate. */}
           <span className="text-[15px] text-slate-700 tabular-nums" style={{ fontWeight: 700 }}>
-            <Money value={qv.pricePerUnit} currency={qv.currency} fx={qvRate(qv)} />
+            <BaseMoney value={qv.pricePerUnit} currency={qv.currency} fx={qvRate(qv)} />
           </span>
           <span className="text-[12px] text-slate-500 tabular-nums" style={{ fontWeight: 600 }}>
             / {qv.vendorUOM}

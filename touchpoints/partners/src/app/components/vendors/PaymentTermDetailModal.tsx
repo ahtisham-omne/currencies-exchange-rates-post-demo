@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { getAvatarTint } from "../../utils/avatarTints";
+import { PaymentTermCurrencyTable } from "../currency/PaymentTermCurrency";
 import {
   type PaymentTermPreset,
   CREATE_PT_TYPES,
@@ -303,6 +304,9 @@ interface PaymentTermDetailModalProps {
   onDisable?: (term: PaymentTermPreset) => void;
   onApply?: (term: PaymentTermPreset) => void;
   onDuplicate?: (term: PaymentTermPreset) => void;
+  /** The partner's (or group's) currency, for the "On a USD PO" comparison;
+   *  base or none shows a US-dollar PO as the example. */
+  partnerCurrency?: string | null;
 }
 
 /* Card chrome that visually mirrors the Partner Details ContentCard. */
@@ -335,7 +339,7 @@ function ModalContentCard({
   );
 }
 
-function PaymentTermDetailModal({ term, open, onClose, mode = "create", onDisable, onApply, onDuplicate }: PaymentTermDetailModalProps) {
+function PaymentTermDetailModal({ term, open, onClose, mode = "create", onDisable, onApply, onDuplicate, partnerCurrency }: PaymentTermDetailModalProps) {
   const [tab, setTab] = useState("setup");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -669,7 +673,7 @@ function PaymentTermDetailModal({ term, open, onClose, mode = "create", onDisabl
                 terms are editable. Editing a term that was cloned from a template
                 surfaces a "create new version" confirm before saving. */}
             {tab === "setup" && (
-              <PaymentTermSetupTab term={term} isEditing={isEditing} onStopEditing={() => setIsEditing(false)} />
+              <PaymentTermSetupTab term={term} isEditing={isEditing} onStopEditing={() => setIsEditing(false)} partnerCurrency={partnerCurrency} />
             )}
 
             {/* Partners Tab */}
@@ -1122,7 +1126,7 @@ export { PaymentTermDetailModal };
    Footer carries the term metadata (Created by / Updated) that used to
    live in the modal header.
    ──────────────────────────────────────────────────────────────────── */
-function PaymentTermSetupTab({ term, isEditing = false, onStopEditing }: { term: PaymentTermPreset; isEditing?: boolean; onStopEditing?: () => void }) {
+function PaymentTermSetupTab({ term, isEditing = false, onStopEditing, partnerCurrency }: { term: PaymentTermPreset; isEditing?: boolean; onStopEditing?: () => void; partnerCurrency?: string | null }) {
   const isCustom = term.id.startsWith("pt-custom-");
   const isPreset = !isCustom;
   // Heuristic: any custom term whose name shares a duration with a stock
@@ -1405,7 +1409,6 @@ function PaymentTermSetupTab({ term, isEditing = false, onStopEditing }: { term:
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">%</span>
                     </div>
                   </LockedField>
-                  <p className="text-[10px] text-slate-400 mt-1">Payment-term discounts are percent-only.</p>
                 </div>
                 <div>
                   <Label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>Eligible Payment Period</Label>
@@ -1425,6 +1428,39 @@ function PaymentTermSetupTab({ term, isEditing = false, onStopEditing }: { term:
                   </LockedField>
                 </div>
               </div>
+            </div>
+          );
+        })()}
+
+        {/* ── In any currency (Partners §4): days and percentages only, so the
+              term reads the same on a document in the partner's currency. ── */}
+        {(() => {
+          // "100% of the total…" → 100; a template that leaves it open ("A (X)% prepayment…") → X.
+          const prepayPct = term.category === "prepayment" ? (term.description.match(/(\d+(?:\.\d+)?)%/)?.[1] ?? (/\(X\)%/.test(term.description) ? "X" : "100")) : undefined;
+          const hasEarlyDiscount = !!(term.applyDiscount || editDiscountPct);
+          return (
+            <div>
+              <div className="flex items-center gap-1.5 mb-3">
+                <span className="text-sm text-foreground" style={{ fontWeight: 600 }}>In Any Currency</span>
+                <Tooltip>
+                  <TooltipTrigger asChild><span><Info className="w-3.5 h-3.5 text-slate-300 cursor-help" /></span></TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={6} className="max-w-[260px] text-[11px] leading-[1.5] z-[300]">
+                    <p className="text-slate-500">Payment terms are days and percentages only, with no fixed amounts, so the same term applies to a document in any currency.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <PaymentTermCurrencyTable
+                partnerCurrency={partnerCurrency}
+                term={{
+                  category: term.category === "net" ? "net" : term.category === "prepayment" ? "prepayment" : "split",
+                  duration: editDuration,
+                  discountPercent: hasEarlyDiscount ? editDiscountPct : undefined,
+                  discountPeriod: hasEarlyDiscount ? editDiscountPeriod : undefined,
+                  prepayPercent: prepayPct,
+                  trigger: triggerLabel,
+                  milestones: splitMilestones,
+                }}
+              />
             </div>
           );
         })()}

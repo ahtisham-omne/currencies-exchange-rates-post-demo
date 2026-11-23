@@ -152,7 +152,7 @@ export default function POVersionRevertModal({
               fontFamily: FONT,
             }}
           >
-            Revert to V{version}
+            Restore version {version}
           </span>
         </div>
 
@@ -168,7 +168,7 @@ export default function POVersionRevertModal({
                 fontFamily: FONT,
               }}
             >
-              Revert to V{version}?
+              Restore version {version}
             </AlertDialogTitle>
           </AlertDialogHeader>
           <AlertDialogDescription
@@ -181,7 +181,7 @@ export default function POVersionRevertModal({
               fontFamily: FONT,
             }}
           >
-            V{version} will become the current version of this purchase order.
+            Version {version} will become the current version of this purchase order.
             Its existing status is preserved. The next material change starts a
             new version.
           </AlertDialogDescription>
@@ -200,7 +200,7 @@ export default function POVersionRevertModal({
             >
               <div className="flex items-center justify-between" style={{ gap: 8 }}>
                 <span style={{ fontSize: 11, fontWeight: 600, color: "#64748B", lineHeight: 1 }}>
-                  V{version} total
+                  Version {version} total
                 </span>
                 <span className="inline-flex items-baseline tabular-nums" style={{ gap: 6, lineHeight: 1 }}>
                   {!fx.isBase && (
@@ -245,7 +245,7 @@ export default function POVersionRevertModal({
                 fontFamily: FONT,
               }}
             >
-              Reason for revert{" "}
+              Reason for restoring{" "}
               <span style={{ color: "#94A3B8", fontWeight: 400 }}>(optional)</span>
             </label>
             <textarea
@@ -298,7 +298,7 @@ export default function POVersionRevertModal({
                 fontFamily: FONT,
               }}
             >
-              Revert to V{version}
+              Restore
             </button>
             <button
               type="button"

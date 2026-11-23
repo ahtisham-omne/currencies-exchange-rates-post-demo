@@ -1,6 +1,8 @@
 // Sales KPI catalog — sibling to ItemDashKpis. Sales-specific semantics.
 // Categories: Revenue / Orders / Customers. Tooltips surface the
 // secondary detail that legacy KPI cards rendered as a sub-line.
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { baseCompact } from "@/app/currency/itemMoney";
 
 export type SalesKpiCategory = "Revenue" | "Orders" | "Customers";
 
@@ -14,7 +16,7 @@ export interface SalesKpiDef {
 
 export const SALES_KPI_DEFS: SalesKpiDef[] = [
   // ── Revenue ──
-  { key: "total_revenue",     label: "Total Revenue",      category: "Revenue",   iconName: "DollarSign",    tooltip: "Gross sales-order value across the selected period. Includes booked + invoiced revenue." },
+  { key: "total_revenue",     label: "Total Revenue",      category: "Revenue",   iconName: "Banknote",      tooltip: "Gross sales-order value across the selected period, in PKR, the base currency. Includes booked + invoiced revenue." },
   { key: "revenue_at_risk",   label: "Revenue at Risk",    category: "Revenue",   iconName: "TrendingDown",  tooltip: "Open order value flagged by overdue, on-hold, or stockout risk. 3 orders at risk." },
   { key: "avg_order_value",   label: "Avg Order Value",    category: "Revenue",   iconName: "BarChart3",     tooltip: "Total revenue divided by total orders in the selected period." },
   { key: "top_customer_value",label: "Top Customer Value", category: "Revenue",   iconName: "Star",          tooltip: "Revenue contributed by the single highest-spending customer in the selected period." },
@@ -47,18 +49,22 @@ export const SALES_KPI_CATEGORY_ORDER: SalesKpiCategory[] = [
  *  for the 5 defaults, fills new catalog KPIs with realistic mock data. */
 export function computeSalesKpiValue(
   key: string,
-): { value: string; change?: string; changeColor?: string } {
+): { value: string; change?: string; changeColor?: string; note?: string } {
+  /* Money KPIs are in the base currency, with no hover (Currency Touchpoints
+     Map, Items 5): every order counts at its own rate. The design's USD
+     figures are restated in PKR at the last sync's mid-market rate. */
+  const inBase = `in ${BASE_CURRENCY}`;
   switch (key) {
     // 5 legacy defaults — values match the previous SalesKpiStrip exactly.
-    case "total_revenue":      return { value: "$6,186,595", change: "+12.5%", changeColor: "hsl(var(--success))" };
+    case "total_revenue":      return { value: baseCompact(6186595), change: "+12.5%", changeColor: "hsl(var(--success))", note: `all orders, ${inBase}` };
     case "total_orders":       return { value: "60",         change: "-10.5%", changeColor: "hsl(var(--destructive))" };
     case "pending_approval":   return { value: "14",         change: "+5.1%",  changeColor: "hsl(var(--success))" };
     case "overdue_orders":     return { value: "2",          change: "+15.0%", changeColor: "hsl(var(--destructive))" };
-    case "revenue_at_risk":    return { value: "$174,575",   change: "-5.4%",  changeColor: "hsl(var(--success))" };
+    case "revenue_at_risk":    return { value: baseCompact(174575), change: "-5.4%",  changeColor: "hsl(var(--success))", note: `open orders, ${inBase}` };
     // Extended catalog — mocked.
-    case "avg_order_value":    return { value: "$103,110",   change: "+8.2%",  changeColor: "hsl(var(--success))" };
-    case "top_customer_value": return { value: "$842,300" };
-    case "lost_value":         return { value: "$58,400",    change: "-2.1%",  changeColor: "hsl(var(--success))" };
+    case "avg_order_value":    return { value: baseCompact(103110), change: "+8.2%",  changeColor: "hsl(var(--success))", note: `per order, ${inBase}` };
+    case "top_customer_value": return { value: baseCompact(842300), note: `top customer, ${inBase}` };
+    case "lost_value":         return { value: baseCompact(58400),  change: "-2.1%",  changeColor: "hsl(var(--success))", note: `cancelled orders, ${inBase}` };
     case "fulfillment_rate":   return { value: "94.5%",      change: "+1.8%",  changeColor: "hsl(var(--success))" };
     case "quote_to_order":     return { value: "32.6%",      change: "+3.4%",  changeColor: "hsl(var(--success))" };
     case "active_customers":   return { value: "47",         change: "+6",     changeColor: "hsl(var(--success))" };

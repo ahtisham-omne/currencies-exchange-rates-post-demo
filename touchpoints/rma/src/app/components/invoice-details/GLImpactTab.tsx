@@ -1,8 +1,11 @@
 import { formatMoney as moneyIn, formatRateDate, rateSentence } from '@/app/currency/money';
-import { BASE_CURRENCY } from '@/app/currency/currencies';
-import { toBase } from '@/app/currency/rates';
-import { ProviderLink } from '@/app/components/currency/ProviderLink';
-import { returnFx, returnReceipts } from '@/app/currency/returnCurrency';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { RATE_TYPE_LABEL, type MoneyFx } from '@/app/currency/rates';
+import { ProviderLink, linkProvider } from '@/app/components/currency/ProviderLink';
+import { BaseMoney } from '@/app/components/currency/Money';
+import { returnReceipts } from '@/app/currency/returnCurrency';
+import { returnSettlementFx, settlementMoneyFx } from '@/app/currency/returnSettlement';
+import { fxVarianceColor, signedBase } from '@/app/components/currency/ReturnCurrencyConfig';
 import { useMemo, useState } from 'react';
 import {
   ArrowLeftRight,
@@ -73,42 +76,19 @@ function formatMoney(amount: number, currency: string) {
   return moneyIn(amount, currency);
 }
 
-/* A return in another currency books in it and shows PKR (the base) under
-   each amount, at the receiving-day rate: sending goods back reverses their
-   receipt, and a receipt reverses at the rate it was booked at. An exchange
-   difference is in PKR only. */
+/* GL Impact is in PKR, the base currency (Currency Touchpoints Map,
+   2026-11-24). A return in another currency books every step at the
+   receiving rate, the rate its receipt was booked at, with the return's own
+   amount on hover; what the vendor settles is worth today's rate (the
+   settlement day's once settled), and the gap is its own FX variance step,
+   in PKR only. It replaces Mahreen's two-currency ledger of 2026-11-20 (the
+   PO's currency with PKR under each amount). */
 
-/** One side of a step in PKR: each amount converted, the paisa split so the
- *  side still adds up to its total in PKR and the step stays balanced
- *  (Debit = Credit) in both currencies. */
-function baseSplit(values: (number | undefined)[], rate: number): (number | undefined)[] {
-  const amounts = values.map((v) => v ?? 0);
-  const totalCents = Math.round(amounts.reduce((sum, v) => sum + v, 0) * rate * 100);
-  const raw = amounts.map((v) => v * rate * 100);
-  const cents = raw.map((r) => Math.floor(r));
-  let left = totalCents - cents.reduce((sum, c) => sum + c, 0);
-  const order = raw.map((r, i) => [r - Math.floor(r), i] as const).sort((a, b) => b[0] - a[0]);
-  for (const [, i] of order) {
-    if (left <= 0) break;
-    if (amounts[i]) {
-      cents[i] = (cents[i] ?? 0) + 1;
-      left--;
-    }
-  }
-  return values.map((v, i) => (v ? (cents[i] ?? 0) / 100 : undefined));
-}
-
-/** An amount in the return's currency, and its PKR under it. */
-function InBoth({ value, currency, base }: { value: number; currency: string; base?: number | undefined }) {
-  if (base === undefined) return <>{formatMoney(value, currency)}</>;
-  return (
-    <>
-      <span className="block">{formatMoney(value, currency)}</span>
-      <span className="block text-[10.5px] text-slate-400 tabular-nums" style={{ fontWeight: 500 }}>
-        {formatMoney(base, BASE_CURRENCY)}
-      </span>
-    </>
-  );
+/** A ledger amount in PKR: the return's own amount and the receiving rate on
+ *  hover where it has one; the FX variance and the totals are plain PKR. */
+function GLMoney({ base, doc, currency, fx }: { base: number; doc?: number | undefined; currency: string; fx: MoneyFx | null }) {
+  if (doc === undefined || !fx || isBaseCurrency(currency)) return <>{formatMoney(base, BASE_CURRENCY)}</>;
+  return <BaseMoney value={doc} currency={currency} fx={fx} baseValue={base} role="Return currency" />;
 }
 
 // One color per account, shared between the journal table legend and the
@@ -499,12 +479,15 @@ function formatPostedDate(iso: string): string {
  */
 function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
   const round2 = (n: number) => Math.round(n * 100) / 100;
-  const entries = useMemo<GLEntry[]>(() => buildRMAGLEntries(rma), [rma]);
+  // The receiving rate and the settle rate (today's of the configured type,
+  // or the settlement day's), and every amount the ledger posts, in PKR.
+  const settle = useMemo(() => returnSettlementFx(rma), [rma]);
+  const entries = useMemo<GLEntry[]>(() => buildRMAGLEntries(rma, settle), [rma, settle]);
   const clearing = returnsPendingBalance(entries);
-  // A return in another currency: PKR at the receiving-day rate.
-  const fx = useMemo(() => returnFx(rma), [rma]);
+  // A return in another currency: its amount and the receiving rate on hover.
+  const fx = settle.receiving;
   const receipts = useMemo(() => (fx ? returnReceipts(rma) : []), [fx, rma]);
-  const usd = (n: number) => (fx ? toBase(n, fx.rate) : undefined);
+  const settleFx = settle.foreign ? settlementMoneyFx(settle) : null;
 
   if (entries.length === 0) {
     return (
@@ -556,8 +539,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
     entries.forEach((entry) => {
       if (filter === 'posted' && !entry.posted) return;
       if (filter === 'projected' && entry.posted) return;
-      // In the return's currency; the exchange difference is PKR only.
-      if (entry.baseOnly) return;
+      // Every step is in PKR now, the FX variance with them (2026-11-24).
       entry.postings.forEach((posting) => {
         const at = byAccount.get(posting.account.code) ?? {
           code: posting.account.code,
@@ -630,8 +612,8 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
               Written off
             </p>
             <p className="text-[11px] mt-0.5" style={{ color: '#BE123C' }}>
-              The vendor refused the return, so {formatMoney(settlement.writtenOff, currency)} left
-              the books as a write-off loss.
+              The vendor refused the return, so {formatMoney(settle.base.writtenOff, BASE_CURRENCY)} left
+              the books as a write-off loss, at the receiving rate.
             </p>
           </div>
         </div>
@@ -648,7 +630,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
               Closed with nothing back
             </p>
             <p className="text-[11px] mt-0.5" style={{ color: '#BE123C' }}>
-              {formatMoney(settlement.writtenOff, currency)} of these goods was already billed and
+              {formatMoney(settle.base.writtenOff, BASE_CURRENCY)} of these goods was already billed and
               claims no credit, so it posted to {GL_ACCOUNTS.writeOffLoss.name}.
             </p>
           </div>
@@ -669,7 +651,9 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
               {formatMoney(settlement.received ?? 0, currency)} of{' '}
               {formatMoney(settlement.expected, currency)} came back. The{' '}
               {formatMoney(settlement.loss, currency)} gap posted to{' '}
-              {GL_ACCOUNTS.settlementLoss.name}, and the price on the return is untouched.
+              {GL_ACCOUNTS.settlementLoss.name}
+              {settle.foreign ? ` as ${formatMoney(settle.base.loss, BASE_CURRENCY)} at the receiving rate` : ''}, and the price on the
+              return is untouched.
             </p>
           </div>
         </div>
@@ -801,8 +785,9 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
             <ArrowLeftRight className="w-3.5 h-3.5 shrink-0 mt-px" style={{ color: '#7C3AED' }} />
             <div className="text-[11px] text-slate-600 leading-snug">
               <p>
-                In <span style={{ fontWeight: 600 }}>{currency}</span>, the PO's currency, with {BASE_CURRENCY} under each amount at the
-                receiving-day rate. Sending goods back reverses their receipt, and a receipt reverses at the rate it was booked at.
+                In <span style={{ fontWeight: 600 }}>{BASE_CURRENCY}</span>, the base currency, with the {currency} amount on hover. The
+                goods ship back and reverse at the receiving rate, the rate their receipt was booked at. What the vendor settles is worth
+                the settlement rate, and the gap is the FX variance.
               </p>
               {receipts.map((r) => (
                 <p key={r.grnNumber} className="tabular-nums mt-0.5 text-slate-500">
@@ -813,6 +798,13 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
               {receipts.length > 1 && fx.breakdown && (
                 <p className="mt-0.5 text-slate-500">Each receipt's share converts at its own rate, {rateSentence(currency, fx.rate)} across them.</p>
               )}
+              <p className="tabular-nums mt-0.5 text-slate-500">
+                <span style={{ fontWeight: 600 }} className="text-slate-700">{settle.locked ? 'Vendor settled' : 'Vendor settles'}</span>{' '}
+                {settle.locked ? formatRateDate(settle.rateDate) : 'today'} ·{' '}
+                <span style={{ fontWeight: 600 }} className="text-slate-700">{rateSentence(currency, settle.settleRate)}</span> ·{' '}
+                {RATE_TYPE_LABEL[settle.rateType]}, {settle.rateType === 'mid' ? <ProviderLink /> : linkProvider(settle.rateSource.replace(/^Set by/, 'set by'))}
+                {settle.locked ? '' : ', until the vendor settles'}
+              </p>
             </div>
           </div>
         )}
@@ -820,17 +812,18 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
         {/* What the goods were worth against what came back for them. The
             journal says it in postings; this says it in one line, because
             the gap is the thing a reviewer is looking for and it should not
-            have to be read off three tables. */}
+            have to be read off three tables. In PKR (2026-11-24), with the
+            FX variance beside the loss. */}
         {(settlement.received !== null || settlement.writtenOff > 0.004) && (
-          <div className="px-4 py-3 border-b border-slate-100 grid grid-cols-3 gap-3">
+          <div className={`px-4 py-3 border-b border-slate-100 grid gap-3 ${settle.foreign ? 'grid-cols-4' : 'grid-cols-3'}`}>
             <div className="min-w-0">
               <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400" style={{ fontWeight: 700 }}>
                 Return value
               </p>
               <p className="text-[13px] tabular-nums text-foreground mt-0.5" style={{ fontWeight: 700 }}>
-                <InBoth value={settlement.value} currency={currency} base={usd(settlement.value)} />
+                <GLMoney base={settle.base.value} doc={settle.parts.value} currency={currency} fx={fx} />
               </p>
-              <p className="text-[10px] text-slate-400 mt-px">At the original PO price</p>
+              <p className="text-[10px] text-slate-400 mt-px">{settle.foreign ? 'At the receiving rate' : 'At the original PO price'}</p>
             </div>
             <div className="min-w-0">
               <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400" style={{ fontWeight: 700 }}>
@@ -842,16 +835,31 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
               >
                 {settlement.received === null
                   ? 'Not recorded'
-                  : <InBoth value={settlement.received} currency={currency} base={usd(settlement.received)} />}
+                  : <GLMoney base={settle.foreign ? settle.settlesNow : settle.parts.settles} doc={settle.parts.settles} currency={currency} fx={settleFx} />}
               </p>
               <p className="text-[10px] text-slate-400 mt-px">
                 {settlement.kind === 'refused'
                   ? 'The vendor refused the return'
                   : settlement.received === null
                     ? 'No amount captured against the credit'
-                    : 'Recorded against the return'}
+                    : settle.foreign
+                      ? 'Credit note and refund, at the settlement rate'
+                      : 'Recorded against the return'}
               </p>
             </div>
+            {settle.foreign && (
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400" style={{ fontWeight: 700 }}>
+                  FX variance
+                </p>
+                <p className="text-[13px] tabular-nums mt-0.5" style={{ fontWeight: 700, color: fxVarianceColor(settle.fxVariance) }}>
+                  {signedBase(settle.fxVariance)}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-px">
+                  {Math.abs(settle.fxVariance) < 0.005 ? 'The rates agree' : settle.fxVariance > 0 ? GL_ACCOUNTS.fxGain.name : GL_ACCOUNTS.fxLoss.name}
+                </p>
+              </div>
+            )}
             <div className="min-w-0">
               <p className="text-[10px] uppercase tracking-[0.08em] text-slate-400" style={{ fontWeight: 700 }}>
                 Loss recognised
@@ -864,7 +872,12 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                     settlement.loss + settlement.writtenOff > 0.004 ? '#BE123C' : '#047857',
                 }}
               >
-                <InBoth value={round2(settlement.loss + settlement.writtenOff)} currency={currency} base={usd(round2(settlement.loss + settlement.writtenOff))} />
+                <GLMoney
+                  base={round2(settle.base.loss + settle.base.writtenOff)}
+                  doc={round2(settle.parts.loss + settle.parts.writtenOff)}
+                  currency={currency}
+                  fx={fx}
+                />
               </p>
               <p className="text-[10px] text-slate-400 mt-px">
                 {settlement.loss > 0.004 && settlement.writtenOff > 0.004
@@ -883,11 +896,9 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
           {shown.map((entry, idx) => {
           const open = closed[entry.id] !== true;
           const entryDebits = round2(entry.postings.reduce((n, p) => n + (p.debit ?? 0), 0));
-          // An exchange difference is in PKR only: no amount in the PO's currency.
-          const stepCurrency = entry.baseOnly ? BASE_CURRENCY : currency;
-          const stepBase = (n: number) => (entry.baseOnly ? undefined : usd(n));
-          const debitsUsd = fx && !entry.baseOnly ? baseSplit(entry.postings.map((p) => p.debit), fx.rate) : null;
-          const creditsUsd = fx && !entry.baseOnly ? baseSplit(entry.postings.map((p) => p.credit), fx.rate) : null;
+          // In PKR; a posting with an amount in the return's currency shows it
+          // on hover at the receiving rate. The FX variance has none.
+          const pkr = (n: number) => formatMoney(round2(n), BASE_CURRENCY);
           const entryCredits = round2(entry.postings.reduce((n, p) => n + (p.credit ?? 0), 0));
           return (
             <div
@@ -942,7 +953,12 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                     className="text-[12px] tabular-nums text-foreground text-right"
                     style={{ fontWeight: 600 }}
                   >
-                    <InBoth value={entryDebits} currency={stepCurrency} base={stepBase(entryDebits)} />
+                    {entry.id === 'fx-variance' ? (
+                      // Signed, + gain / − loss, as the spec writes it.
+                      <span style={{ color: fxVarianceColor(settle.fxVariance) }}>{signedBase(settle.fxVariance)}</span>
+                    ) : (
+                      pkr(entryDebits)
+                    )}
                   </span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`}
@@ -1013,14 +1029,14 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums">
                           {posting.debit ? (
-                            <span className="text-foreground" style={{ fontWeight: 600 }}><InBoth value={posting.debit} currency={stepCurrency} base={debitsUsd?.[pIdx]} /></span>
+                            <span className="text-foreground" style={{ fontWeight: 600 }}><GLMoney base={posting.debit} doc={entry.baseOnly ? undefined : posting.doc} currency={currency} fx={fx} /></span>
                           ) : (
                             <span className="text-slate-200">-</span>
                           )}
                         </td>
                         <td className="px-4 py-2 pr-3.5 text-right tabular-nums">
                           {posting.credit ? (
-                            <span className="text-foreground" style={{ fontWeight: 600 }}><InBoth value={posting.credit} currency={stepCurrency} base={creditsUsd?.[pIdx]} /></span>
+                            <span className="text-foreground" style={{ fontWeight: 600 }}><GLMoney base={posting.credit} doc={entry.baseOnly ? undefined : posting.doc} currency={currency} fx={fx} /></span>
                           ) : (
                             <span className="text-slate-200">-</span>
                           )}
@@ -1047,10 +1063,10 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                       </span>
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums text-foreground" style={{ fontWeight: 700 }}>
-                      <InBoth value={entry.postings.reduce((s, p) => s + (p.debit ?? 0), 0)} currency={stepCurrency} base={stepBase(entry.postings.reduce((s, p) => s + (p.debit ?? 0), 0))} />
+                      {pkr(entry.postings.reduce((s, p) => s + (p.debit ?? 0), 0))}
                     </td>
                     <td className="px-4 py-2 pr-3.5 text-right tabular-nums text-foreground" style={{ fontWeight: 700 }}>
-                      <InBoth value={entry.postings.reduce((s, p) => s + (p.credit ?? 0), 0)} currency={stepCurrency} base={stepBase(entry.postings.reduce((s, p) => s + (p.credit ?? 0), 0))} />
+                      {pkr(entry.postings.reduce((s, p) => s + (p.credit ?? 0), 0))}
                     </td>
                   </tr>
                 </tfoot>
@@ -1152,7 +1168,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                         <td className="px-4 py-2 text-right tabular-nums">
                           {row.debit > 0.004 ? (
                             <span className="text-foreground" style={{ fontWeight: 600 }}>
-                              <InBoth value={row.debit} currency={currency} base={usd(row.debit)} />
+                              {formatMoney(row.debit, BASE_CURRENCY)}
                             </span>
                           ) : (
                             <span className="text-slate-200">-</span>
@@ -1161,7 +1177,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                         <td className="px-4 py-2 text-right tabular-nums">
                           {row.credit > 0.004 ? (
                             <span className="text-foreground" style={{ fontWeight: 600 }}>
-                              <InBoth value={row.credit} currency={currency} base={usd(row.credit)} />
+                              {formatMoney(row.credit, BASE_CURRENCY)}
                             </span>
                           ) : (
                             <span className="text-slate-200">-</span>
@@ -1178,7 +1194,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
                               style={{ fontWeight: 700, color: up ? '#047857' : '#E11D48' }}
                             >
                               <Arrow className="w-3 h-3" />
-                              <span className="text-right"><InBoth value={Math.abs(net)} currency={currency} base={usd(Math.abs(net))} /></span>
+                              <span className="text-right">{formatMoney(Math.abs(net), BASE_CURRENCY)}</span>
                             </span>
                           )}
                         </td>
@@ -1259,7 +1275,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
             </span>
           ) : (
             <span className="text-[13px] tabular-nums text-foreground shrink-0" style={{ fontWeight: 700 }}>
-              <InBoth value={clearing} currency={currency} base={usd(clearing)} />
+              {formatMoney(clearing, BASE_CURRENCY)}
             </span>
           )}
         </div>

@@ -156,7 +156,7 @@ export interface SOVersion {
   canDuplicate?: boolean;
   /** The currency and rate this version took (see store.tsx
    *  `stampVersionRate`): kept when a version is started or reverted to, so
-   *  "Use locked rate from V{n}" knows V{n}'s rate. Seeded versions have
+   *  "Keep version {n}'s rate" knows V{n}'s rate. Seeded versions have
    *  none and read the order's. */
   currency?: string;
   exchangeRate?: number;
@@ -164,6 +164,8 @@ export interface SOVersion {
   rateDate?: string;
   rateEdited?: boolean;
   settlementCurrency?: string;
+  /** The account "You receive" was, with the rate (currency/companyAccounts.ts). */
+  payToAccount?: string;
 }
 
 /* Point of contact captured on creation + when changing customer.
@@ -206,9 +208,15 @@ export interface SalesOrder {
   rateDate?: string;
   /** A corporate rate typed on this order instead of finance's. */
   rateEdited?: boolean;
-  /** "You receive": the currency the order is settled in. The base currency
-   *  unless set in the order's currency configuration. */
+  /** "You receive": the currency the order is settled in, the pay-to
+   *  account's (`payToAccount`). The base currency unless set in the
+   *  order's currency configuration. */
   settlementCurrency?: string;
+  /** "You receive" (24 Nov 2026): the bank or cash account the customer's
+   *  payment goes to, in the base currency or the order's own
+   *  (currency/companyAccounts.ts); `settlementCurrency` is its currency.
+   *  Unset means the default base-currency account, 1010. */
+  payToAccount?: string;
   paymentTerms: string;
   shippingAddress: string;
   /** Bill-to address captured at creation. Optional because older

@@ -235,7 +235,7 @@ export function POPriceBreakdownHoverCard({
                         /* The quantity band this line met: "Tier 25–49 units · 7% off". */
                         sub={
                           r.tier
-                            ? `Tier ${tierBand(r.tier)} · ${tierText(r.tier)} ${r.type === "discount" ? "off" : "premium"}${
+                            ? `Tier ${tierBand(r.tier, r.basis)} · ${tierText(r.tier)} ${r.type === "discount" ? "off" : "premium"}${
                                 r.tier.unit !== "%" ? " per unit" : ""
                               }`
                             : undefined

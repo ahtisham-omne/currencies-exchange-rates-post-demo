@@ -15,6 +15,14 @@
  * difference is recognised rather than in a quietly restated line.
  *
  * Repair is out of scope, and `ReturnType` carries no such option.
+ *
+ * In PKR, the base currency (Currency Touchpoints Map, 2026-11-24). A return in
+ * another currency books every step at the receiving rate, the rate its
+ * receipt was booked at, except what the vendor settles: that is worth
+ * today's rate (the settlement day's once settled), and the gap posts as its
+ * own FX variance step to FX Gain or FX Loss. Goods never invoiced reverse
+ * their accrual at the receiving rate, with no FX, and RMA Settlement Loss
+ * only takes what the vendor didn't pay.
  */
 
 import type { RMA, RMALineItem } from './mockRMAs';
@@ -22,23 +30,29 @@ import { authorizedQty } from './mockRMAs';
 import { invoiceSplitForRMALine } from './receiptInvoiceStatus';
 import type { ReturnBucket } from './rmaReturnAllocation';
 import { PAY_FROM_ACCOUNTS } from './mockPayments';
-import { returnFx } from '@/app/currency/returnCurrency';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { formatMoney, rateSentence } from '@/app/currency/money';
+import { splitToBase, toBase } from '@/app/currency/rates';
 
 export interface GLAccount {
   code: string;
   name: string;
 }
 
+/** Amounts in PKR, the base currency. */
 export interface GLPosting {
   account: GLAccount;
   debit?: number;
   credit?: number;
+  /** The same amount in the return's currency, where it has one (the FX
+   *  variance has none): what the hover shows. */
+  doc?: number;
 }
 
 export interface GLEntry {
   id: string;
-  /** Amounts already in the base currency (PKR), with nothing in the return's
-   *  currency: the exchange difference on a refund (Mahreen, 2026-11-20). */
+  /** In the base currency only, with no amount in the return's currency: the
+   *  FX variance step. */
   baseOnly?: boolean;
   /** Step heading, the event that books the entry. */
   title: string;
@@ -67,8 +81,9 @@ export const GL_ACCOUNTS = {
    *  Agreed before the money moves, so it is a cost of the return rather than
    *  a shortfall on it. */
   vendorCharges: { code: '6830', name: 'RMA Vendor Charges' },
-  /** A refund or credit landing at another rate than the receipt it reverses
-   *  was booked at. Separate accounts, never "FX Gain/Loss" (Mahreen). */
+  /** What the vendor settles, worth more or less at the settlement rate than
+   *  the receipt it reverses was booked at: the FX variance. Separate
+   *  accounts, never "FX Gain/Loss" (Mahreen). */
   fxGain: { code: '4910', name: 'FX Gain' },
   fxLoss: { code: '6910', name: 'FX Loss' },
 } as const satisfies Record<string, GLAccount>;
@@ -380,48 +395,190 @@ function scenarioTotals(rma: RMA): Map<RMAGLScenario, number> {
   return byScenario;
 }
 
-/** Ordered journal entries for a return. Empty while the return is a draft,
- *  since nothing is committed to post yet. */
-export function buildRMAGLEntries(rma: RMA): GLEntry[] {
+/** What a return's value divides into once the vendor settles, or is expected
+ *  to, in the return's currency. The Return Summary's rows, the currency
+ *  block and GL Impact all read it, so they never disagree on a figure.
+ *
+ *  `settlesCredit + settlesCash + charges + loss` is everything that was
+ *  invoiced; with `reverses`, `replacement` and `writtenOff` it adds back to
+ *  `value`. */
+export interface RMASettlementParts {
+  /** Every line at the original PO price. */
+  value: number;
+  /** The vendor's credit note against the payable, after charges: the share on
+   *  an open invoice, plus the paid share where the return takes a credit. */
+  settlesCredit: number;
+  /** The paid share coming back as cash, after charges: what was received once
+   *  the return settled, what is due until then. */
+  settlesCash: number;
+  /** What the vendor settles in money: credit note and cash. The amount the FX
+   *  variance is taken on. */
+  settles: number;
+  /** What the vendor keeps back by agreement. */
+  charges: number;
+  /** A short settlement's gap, written off to RMA Settlement Loss. */
+  loss: number;
+  /** Goods never invoiced: their accrual reverses, nothing comes back. */
+  reverses: number;
+  replacement: number;
+  /** Billed goods closed with nothing back, or the whole return when the
+   *  vendor refused it. */
+  writtenOff: number;
+  refused: boolean;
+  /** The paid share, before charges (the Refund or Credit row). */
+  paid: number;
+  /** The open-invoice share, before charges (the Vendor credit row). */
+  credit: number;
+  /** The return takes a credit on goods already paid for. */
+  takesCreditOnPaid: boolean;
+}
+
+export function rmaSettlementParts(rma: RMA): RMASettlementParts {
+  const byScenario = scenarioTotals(rma);
+  const value = round2([...byScenario.values()].reduce((s, v) => s + v, 0));
+  const takesCreditOnPaid = rma.creditTerms?.refundOrCredit === 'Credit';
+  const paidGross = round2(byScenario.get('credit-paid') ?? 0);
+  const creditGross = round2(byScenario.get('credit-unpaid') ?? 0);
+  const empty = {
+    value,
+    settlesCredit: 0,
+    settlesCash: 0,
+    settles: 0,
+    charges: 0,
+    loss: 0,
+    reverses: 0,
+    replacement: 0,
+    writtenOff: 0,
+    refused: false,
+    paid: paidGross,
+    credit: creditGross,
+    takesCreditOnPaid,
+  };
+  if (rma.refusedDate) return { ...empty, writtenOff: value, refused: true };
+  // A credit taken on paid goods books like a credit on an open invoice: the
+  // payable drops and no cash moves.
+  if (takesCreditOnPaid && byScenario.has('credit-paid')) {
+    byScenario.set('credit-unpaid', round2(creditGross + paidGross));
+    byScenario.delete('credit-paid');
+  }
+  const split = moneySplit(rma, byScenario);
+  const paidBack =
+    rma.creditAmountReceived === undefined || !rma.settledDate
+      ? null
+      : Math.min(round2(rma.creditAmountReceived), split.cashDue);
+  const settlesCash = paidBack ?? split.cashDue;
+  const settlesCredit = split.creditDue;
+  return {
+    ...empty,
+    settlesCredit,
+    settlesCash,
+    settles: round2(settlesCredit + settlesCash),
+    charges: split.charges,
+    loss: paidBack === null ? 0 : Math.max(0, round2(split.cashDue - paidBack)),
+    reverses: round2((byScenario.get('accrual') ?? 0) + (byScenario.get('accrual-noclaim') ?? 0)),
+    replacement: round2(byScenario.get('replacement') ?? 0),
+    writtenOff: round2(byScenario.get('write-off') ?? 0),
+  };
+}
+
+/** The same parts in PKR at the receiving rate, the paisa split so they add
+ *  up to the Return value's own conversion exactly. */
+export interface RMASettlementBase {
+  value: number;
+  settlesCredit: number;
+  settlesCash: number;
+  /** What the vendor settles, at the receiving rate: what it clears off 1255. */
+  settles: number;
+  charges: number;
+  loss: number;
+  reverses: number;
+  replacement: number;
+  writtenOff: number;
+}
+
+export function rmaSettlementBase(parts: RMASettlementParts, receivingRate: number): RMASettlementBase {
+  const value = toBase(parts.value, receivingRate);
+  // What the vendor settles is its own conversion, so the FX variance is
+  // exactly settled × (settle rate − receiving rate) and reads zero when the
+  // two rates agree. The other parts share what is left of the Return value.
+  const settles = Math.min(value, toBase(parts.settles, receivingRate));
+  const [settlesCredit = 0, settlesCash = 0] = splitToBase([parts.settlesCredit, parts.settlesCash], receivingRate, settles);
+  const [charges = 0, loss = 0, reverses = 0, replacement = 0, writtenOff = 0] = splitToBase(
+    [parts.charges, parts.loss, parts.reverses, parts.replacement, parts.writtenOff],
+    receivingRate,
+    round2(value - settles),
+  );
+  return { value, settlesCredit, settlesCash, settles, charges, loss, reverses, replacement, writtenOff };
+}
+
+/** The two rates a return's ledger needs (returnSettlement.ts works them out). */
+export interface RMAGLRates {
+  /** The return's currency. */
+  currency: string;
+  /** PKR per one unit on the receiving day (each receipt's, blended). */
+  receivingRate: number;
+  /** PKR per one unit the vendor settles at: today's of the configured type
+   *  while the return is open, the settlement day's once settled. */
+  settleRate: number;
+}
+
+/** The FX variance on what the vendor settles, split between the payable (the
+ *  credit note) and the bank (the cash), so each carries its own share. */
+function fxVarianceSplit(parts: RMASettlementParts, base: RMASettlementBase, settleRate: number) {
+  const now = toBase(parts.settles, settleRate);
+  const creditNow = toBase(parts.settlesCredit, settleRate);
+  const cashNow = round2(now - creditNow);
+  return {
+    total: round2(now - base.settles),
+    onCredit: round2(creditNow - base.settlesCredit),
+    onCash: round2(cashNow - base.settlesCash),
+  };
+}
+
+/** What the vendor settles is worth this much more (+) or less (−) in PKR at
+ *  the settlement rate than at the receiving rate: settled amount × (settle
+ *  rate − receiving rate), to the paisa the ledger posts. */
+export function rmaFxVariance(parts: RMASettlementParts, base: RMASettlementBase, settleRate: number): number {
+  return fxVarianceSplit(parts, base, settleRate).total;
+}
+
+/** Ordered journal entries for a return, in PKR. Empty while the return is a
+ *  draft, since nothing is committed to post yet.
+ *
+ *  1 · Goods ship back: 1255 ← 1200 Inventory, at the receiving rate.
+ *  2 · Vendor settles: clears 1255 at the receiving rate, against the payable
+ *      (credit note) and the refund receivable, with agreed charges and any
+ *      short-payment loss beside them.
+ *      Vendor refunds cash: the receivable clears into the bank.
+ *  3 · FX variance: what was settled, at the settlement rate less the
+ *      receiving rate, to FX Gain (+) or FX Loss (−).
+ *  4 · Accrual reversed: 2150 AP Accrual at the receiving rate, no FX.
+ *  Then a replacement or a write-off where the return ends that way. */
+export function buildRMAGLEntries(rma: RMA, rates: RMAGLRates): GLEntry[] {
   if (rma.status === 'Draft') return [];
 
-  const byScenario = scenarioTotals(rma);
-  const total = round2([...byScenario.values()].reduce((s, v) => s + v, 0));
-  if (total <= 0.004) return [];
+  const parts = rmaSettlementParts(rma);
+  if (parts.value <= 0.004) return [];
+  const code = rates.currency.toUpperCase();
+  const foreign = !isBaseCurrency(code);
+  const r = foreign ? rates.receivingRate : 1;
+  const base = rmaSettlementBase(parts, r);
 
   const shipped = Boolean(rma.shippedDate);
   const settled = Boolean(rma.settledDate);
   const refunded = Boolean(rma.cashRefundedDate);
-  const refused = Boolean(rma.refusedDate);
-  /** The resolution the return chose, which only paid goods leave open. A
-   *  return that never recorded one is read as taking the money back, the
-   *  same reading the settlement step defaults to. */
-  const takesCreditOnPaid = rma.creditTerms?.refundOrCredit === 'Credit';
-
-  // A return that takes a credit on goods it already paid for books the same
-  // entry as one crediting an invoice still open: the payable drops, no cash
-  // moves. Kept apart they printed as two steps with one title and one
-  // account, which reads as the same thing posted twice. The choice itself is
-  // still asked and answered against the paid figure, which
-  // `rmaScenarioValues` keeps whole.
-  if (takesCreditOnPaid) {
-    const paid = byScenario.get('credit-paid');
-    if (paid !== undefined) {
-      byScenario.set('credit-unpaid', round2((byScenario.get('credit-unpaid') ?? 0) + paid));
-      byScenario.delete('credit-paid');
-    }
-  }
+  const atReceiving = foreign ? ` at the receiving rate, ${rateSentence(code, r)}` : '';
 
   const entries: GLEntry[] = [
     {
       id: 'ship',
       title: 'Goods ship back',
-      trigger: 'Posts when the return physically leaves on the shipment.',
+      trigger: `Posts when the return physically leaves on the shipment, valued${atReceiving || ' at the original PO price'}.`,
       posted: shipped,
       ...(shipped && rma.shippedDate ? { date: rma.shippedDate } : {}),
       postings: [
-        { account: GL_ACCOUNTS.inventoryAtVendor, debit: total },
-        { account: GL_ACCOUNTS.inventoryOnHand, credit: total },
+        { account: GL_ACCOUNTS.inventoryAtVendor, debit: base.value, doc: parts.value },
+        { account: GL_ACCOUNTS.inventoryOnHand, credit: base.value, doc: parts.value },
       ],
     },
   ];
@@ -429,222 +586,147 @@ export function buildRMAGLEntries(rma: RMA): GLEntry[] {
   // The vendor refused the lot. Nothing is coming back and nothing is owed,
   // so whatever each line was heading for stops mattering: one entry clears
   // the holding account and takes the hit.
-  if (refused) {
+  if (parts.refused) {
     entries.push({
       id: 'refused',
       title: 'Vendor refused the return',
-      trigger:
-        'The goods are gone and nothing is coming back, so the value is written off.',
+      trigger: 'The goods are gone and nothing is coming back, so the value is written off.',
       posted: true,
       ...(rma.refusedDate ? { date: rma.refusedDate } : {}),
       postings: [
-        { account: GL_ACCOUNTS.writeOffLoss, debit: total },
-        { account: GL_ACCOUNTS.inventoryAtVendor, credit: total },
+        { account: GL_ACCOUNTS.writeOffLoss, debit: base.value, doc: parts.value },
+        { account: GL_ACCOUNTS.inventoryAtVendor, credit: base.value, doc: parts.value },
       ],
     });
     return entries;
   }
 
-  // A recorded settlement is one figure against the whole return, so where a
-  // return ends several ways at once the shortfall is spread across the ones
-  // that settle in money, in proportion to what each is worth.
-  // Agreed charges come off the cash first and post as a cost of the return,
-  // never as a loss. The cash is the only share a settlement can leave
-  // short: the open-invoice share is a credit note against the payable.
-  const split = moneySplit(rma, byScenario);
-  const paidBack =
-    // A part payment on a return still open is not the final figure, so the
-    // projected entries keep the full value rather than booking a loss.
-    rma.creditAmountReceived === undefined || !rma.settledDate
-      ? null
-      : Math.min(round2(rma.creditAmountReceived), split.cashDue);
-  const shareOf = (scenario: RMAGLScenario): { received: number; charged: number; loss: number } => {
-    if (scenario === 'credit-unpaid') {
-      return { received: split.creditDue, charged: split.chargesOnCredit, loss: 0 };
-    }
-    // A return taking a credit on paid goods has no cash to come short.
-    if (paidBack === null || takesCreditOnPaid) {
-      return { received: split.cashDue, charged: split.chargesOnPaid, loss: 0 };
-    }
-    return {
-      received: paidBack,
-      charged: split.chargesOnPaid,
-      loss: Math.max(0, round2(split.cashDue - paidBack)),
-    };
-  };
+  // ── 2 · Vendor settles ──────────────────────────────────────────────
+  const invoiced = round2(parts.settles + parts.charges + parts.loss);
+  if (invoiced > 0.004) {
+    const postings: GLPosting[] = [];
+    if (base.settlesCredit > 0.004)
+      postings.push({ account: GL_ACCOUNTS.apTrade, debit: base.settlesCredit, doc: parts.settlesCredit });
+    if (base.settlesCash > 0.004)
+      postings.push({ account: GL_ACCOUNTS.vendorCredits, debit: base.settlesCash, doc: parts.settlesCash });
+    if (base.charges > 0.004) postings.push({ account: GL_ACCOUNTS.vendorCharges, debit: base.charges, doc: parts.charges });
+    if (base.loss > 0.004) postings.push({ account: GL_ACCOUNTS.settlementLoss, debit: base.loss, doc: parts.loss });
+    const cleared = round2(base.settlesCredit + base.settlesCash + base.charges + base.loss);
+    postings.push({ account: GL_ACCOUNTS.inventoryAtVendor, credit: cleared, doc: invoiced });
+    const said: string[] = [`Clears 1255${atReceiving}.`];
+    if (parts.settlesCredit > 0.004 && parts.settlesCash > 0.004)
+      said.push('The credit note lowers the payable, and the paid share is owed back as a refund.');
+    else if (parts.settlesCredit > 0.004)
+      said.push(
+        parts.takesCreditOnPaid && parts.paid > 0.004
+          ? 'A credit note lowers the payable; what was already paid sits on the vendor account for a future invoice.'
+          : 'A credit note lowers the payable. No cash moves.',
+      );
+    else if (parts.settlesCash > 0.004) said.push('The invoice was already paid, so the credit is owed back as a refund.');
+    if (parts.charges > 0.004) said.push(`${formatMoney(parts.charges, code)} is kept back as agreed vendor charges.`);
+    if (parts.loss > 0.004)
+      said.push(
+        `They settled ${formatMoney(parts.settlesCash, code)} of ${formatMoney(round2(parts.settlesCash + parts.loss), code)} in cash, so the gap is a loss.`,
+      );
+    entries.push({
+      id: 'settle',
+      title: `Vendor settles ${formatMoney(parts.settles, code)}`,
+      trigger: said.join(' '),
+      posted: settled,
+      ...(settled && rma.settledDate ? { date: rma.settledDate } : {}),
+      postings,
+    });
+  }
 
-  for (const scenario of SCENARIO_ORDER) {
-    const raw = byScenario.get(scenario);
-    if (raw === undefined) continue;
-    const amount = round2(raw);
-    if (amount <= 0.004) continue;
+  if (base.settlesCash > 0.004) {
+    entries.push({
+      id: 'refund',
+      title: 'Vendor refunds cash',
+      trigger: `Posts when the refund lands and clears the receivable${foreign ? ', at the receiving rate it was booked at' : ''}.`,
+      posted: refunded,
+      ...(refunded && rma.cashRefundedDate ? { date: rma.cashRefundedDate } : {}),
+      postings: [
+        { account: payFromAccount(rma), debit: base.settlesCash, doc: parts.settlesCash },
+        { account: GL_ACCOUNTS.vendorCredits, credit: base.settlesCash, doc: parts.settlesCash },
+      ],
+    });
+  }
 
-    /** The resolution entry. Where the vendor settled short, the money side
-     *  carries what they gave and the gap sits beside it as a loss, so the
-     *  credit to the holding account is still the full value of the goods. */
-    const settledStep = (title: string, trigger: string, debit: GLAccount): GLEntry => {
-      const { received, charged, loss } = shareOf(scenario);
-      // Nothing came back: the whole value is the loss, with no zero line.
-      const postings: GLPosting[] = received > 0.004 ? [{ account: debit, debit: received }] : [];
-      if (charged > 0.004) postings.push({ account: GL_ACCOUNTS.vendorCharges, debit: charged });
-      if (loss > 0.004) postings.push({ account: GL_ACCOUNTS.settlementLoss, debit: loss });
-      postings.push({ account: GL_ACCOUNTS.inventoryAtVendor, credit: amount });
-      const chargeNote =
-        charged > 0.004 ? ` ${grouped(charged)} is kept back as agreed vendor charges.` : '';
-      return {
-        id: `${scenario}-settle`,
-        title,
-        trigger:
-          loss > 0.004
-            ? `${trigger}${chargeNote} They settled ${grouped(received)} of ${grouped(round2(amount - charged))}, so the gap is recognised as a loss.`
-            : `${trigger}${chargeNote}`,
+  // ── 3 · FX variance ─────────────────────────────────────────────────
+  if (foreign && parts.settles > 0.004) {
+    const fx = fxVarianceSplit(parts, base, rates.settleRate);
+    if (Math.abs(fx.total) >= 0.005) {
+      const gain = fx.total > 0;
+      const bank = payFromAccount(rma);
+      const sides: GLPosting[] = [];
+      const side = (account: GLAccount, amount: number) => {
+        if (Math.abs(amount) < 0.005) return;
+        sides.push(amount > 0 ? { account, debit: amount } : { account, credit: -amount });
+      };
+      side(GL_ACCOUNTS.apTrade, fx.onCredit);
+      side(bank, fx.onCash);
+      const postings: GLPosting[] = gain
+        ? [...sides, { account: GL_ACCOUNTS.fxGain, credit: fx.total }]
+        : [{ account: GL_ACCOUNTS.fxLoss, debit: -fx.total }, ...sides];
+      entries.push({
+        id: 'fx-variance',
+        baseOnly: true,
+        title: `FX variance · ${gain ? GL_ACCOUNTS.fxGain.name : GL_ACCOUNTS.fxLoss.name}`,
+        trigger: `${formatMoney(parts.settles, code)} settled at ${rateSentence(code, rates.settleRate)} against the receiving rate, ${rateSentence(code, r)}: ${formatMoney(Math.abs(fx.total), BASE_CURRENCY)} ${gain ? 'more' : 'less'} than booked, to ${gain ? GL_ACCOUNTS.fxGain.name : GL_ACCOUNTS.fxLoss.name}.`,
         posted: settled,
         ...(settled && rma.settledDate ? { date: rma.settledDate } : {}),
         postings,
-      };
-    };
-
-    if (scenario === 'credit-unpaid') {
-      entries.push(
-        settledStep(
-          'Vendor credit note against the payable',
-          'Posts when the vendor issues the credit note. No cash moves, the payable drops.',
-          GL_ACCOUNTS.apTrade,
-        ),
-      );
-    } else if (scenario === 'credit-paid') {
-      // Money is already out of the door, so this is the one place the return
-      // had a choice, and the ledger projects the path it chose rather than
-      // both. Taking the credit stops at the vendor's account; taking the
-      // refund carries on to the bank.
-      if (takesCreditOnPaid) {
-        entries.push(
-          settledStep(
-            'Vendor credit note against the payable',
-            'The invoice was already paid, and this return takes a credit, so it sits on the vendor account for a future invoice.',
-            GL_ACCOUNTS.apTrade,
-          ),
-        );
-      } else {
-        const { received } = shareOf(scenario);
-        entries.push(
-          settledStep(
-            'Vendor credit note on the paid invoice',
-            'The invoice was already paid, so the credit becomes a receivable from the vendor.',
-            GL_ACCOUNTS.vendorCredits,
-          ),
-          {
-            id: 'credit-paid-refund',
-            title: 'Vendor refunds cash',
-            trigger: 'Posts when the refund lands and clears the receivable.',
-            posted: refunded,
-            ...(refunded && rma.cashRefundedDate ? { date: rma.cashRefundedDate } : {}),
-            postings: [
-              { account: payFromAccount(rma), debit: received },
-              { account: GL_ACCOUNTS.vendorCredits, credit: received },
-            ],
-          },
-        );
-      }
-    } else if (scenario === 'replacement') {
-      entries.push({
-        id: 'replacement-settle',
-        title: 'Replacement goods received',
-        trigger: 'No money moves. The books balance when the replacement stock arrives.',
-        posted: settled,
-        ...(settled && rma.settledDate ? { date: rma.settledDate } : {}),
-        postings: [
-          { account: GL_ACCOUNTS.inventoryOnHand, debit: amount },
-          { account: GL_ACCOUNTS.inventoryAtVendor, credit: amount },
-        ],
-      });
-    } else if (scenario === 'accrual') {
-      // Never billed, so nothing was paid and no invoice stands to be
-      // credited. The accrual comes off in full whatever the vendor sends,
-      // and a short settlement elsewhere on the return never reaches it.
-      entries.push({
-        id: 'accrual-settle',
-        title: 'Goods-receipt accrual reversed',
-        trigger:
-          'The goods were never billed, so there is no invoice to credit. The goods-receipt accrual comes off instead.',
-        posted: settled,
-        ...(settled && rma.settledDate ? { date: rma.settledDate } : {}),
-        postings: [
-          { account: GL_ACCOUNTS.apAccrual, debit: amount },
-          { account: GL_ACCOUNTS.inventoryAtVendor, credit: amount },
-        ],
-      });
-    } else if (scenario === 'accrual-noclaim') {
-      // Nothing was billed and nothing is claimed back, so there is no
-      // credit to be short-paid here: the accrual simply comes off and the
-      // return costs nobody anything.
-      entries.push({
-        id: 'accrual-noclaim-settle',
-        title: 'Goods-receipt accrual reversed',
-        trigger:
-          'The goods were never billed and the return claims nothing back, so the accrual comes off and no money moves.',
-        posted: settled,
-        ...(settled && rma.settledDate ? { date: rma.settledDate } : {}),
-        postings: [
-          { account: GL_ACCOUNTS.apAccrual, debit: amount },
-          { account: GL_ACCOUNTS.inventoryAtVendor, credit: amount },
-        ],
-      });
-    } else {
-      entries.push({
-        id: 'write-off-settle',
-        title: 'Return closed with nothing back',
-        trigger:
-          'The goods were already billed and no credit is coming, so the value is written off.',
-        posted: settled,
-        ...(settled && rma.settledDate ? { date: rma.settledDate } : {}),
-        postings: [
-          { account: GL_ACCOUNTS.writeOffLoss, debit: amount },
-          { account: GL_ACCOUNTS.inventoryAtVendor, credit: amount },
-        ],
       });
     }
   }
 
-  const fxStep = exchangeDifferenceStep(rma);
-  if (fxStep) entries.push(fxStep);
+  // ── 4 · Accrual reversed ────────────────────────────────────────────
+  // Never billed, so nothing was paid and no invoice stands to be credited.
+  // The accrual comes off in full at the receiving rate whatever the vendor
+  // sends: no FX, and a short settlement elsewhere never reaches it.
+  if (base.reverses > 0.004) {
+    entries.push({
+      id: 'accrual-settle',
+      title: 'Accrual reversed',
+      trigger: `The goods were never invoiced, so the goods-receipt accrual comes off instead${atReceiving}. No FX: nothing is settled for them.`,
+      posted: settled,
+      ...(settled && rma.settledDate ? { date: rma.settledDate } : {}),
+      postings: [
+        { account: GL_ACCOUNTS.apAccrual, debit: base.reverses, doc: parts.reverses },
+        { account: GL_ACCOUNTS.inventoryAtVendor, credit: base.reverses, doc: parts.reverses },
+      ],
+    });
+  }
+
+  if (base.replacement > 0.004) {
+    entries.push({
+      id: 'replacement-settle',
+      title: 'Replacement goods received',
+      trigger: 'No money moves. The books balance when the replacement stock arrives.',
+      posted: settled,
+      ...(settled && rma.settledDate ? { date: rma.settledDate } : {}),
+      postings: [
+        { account: GL_ACCOUNTS.inventoryOnHand, debit: base.replacement, doc: parts.replacement },
+        { account: GL_ACCOUNTS.inventoryAtVendor, credit: base.replacement, doc: parts.replacement },
+      ],
+    });
+  }
+
+  if (base.writtenOff > 0.004) {
+    entries.push({
+      id: 'write-off-settle',
+      title: 'Return closed with nothing back',
+      trigger: 'The goods were already billed and no credit is coming, so the value is written off.',
+      posted: settled,
+      ...(settled && rma.settledDate ? { date: rma.settledDate } : {}),
+      postings: [
+        { account: GL_ACCOUNTS.writeOffLoss, debit: base.writtenOff, doc: parts.writtenOff },
+        { account: GL_ACCOUNTS.inventoryAtVendor, credit: base.writtenOff, doc: parts.writtenOff },
+      ],
+    });
+  }
 
   return entries;
-}
-
-/** A refund in another currency landing at a different rate than the receipt
- *  it reverses was booked at (Mahreen, 2026-11-20): the cash comes in at the
- *  settlement's rate, the receipt reverses at its receiving-day rate, and the
- *  gap posts in PKR to FX Gain (more PKR than booked) or FX Loss (less). Null
- *  when nothing landed at another rate. */
-export function exchangeDifferenceStep(rma: RMA): GLEntry | null {
-  const fx = returnFx(rma);
-  if (!fx) return null;
-  const withRate = (rma.settlementEntries ?? []).filter((e) => e.amount > 0 && e.rate);
-  if (withRate.length === 0) return null;
-  const diff = round2(withRate.reduce((s, e) => s + e.amount * (e.rate! - fx.rate), 0));
-  if (Math.abs(diff) < 0.005) return null;
-  const cash = payFromAccount(rma);
-  const gain = diff > 0;
-  return {
-    id: 'exchange-difference',
-    baseOnly: true,
-    title: 'Exchange difference',
-    trigger: gain
-      ? 'The refund landed at a higher rate than the receipt it reverses was booked at: more PKR than booked, an FX Gain.'
-      : 'The refund landed at a lower rate than the receipt it reverses was booked at: less PKR than booked, an FX Loss.',
-    posted: Boolean(rma.cashRefundedDate),
-    ...(rma.cashRefundedDate ? { date: rma.cashRefundedDate } : {}),
-    postings: gain
-      ? [
-          { account: cash, debit: diff },
-          { account: GL_ACCOUNTS.fxGain, credit: diff },
-        ]
-      : [
-          { account: GL_ACCOUNTS.fxLoss, debit: -diff },
-          { account: cash, credit: -diff },
-        ],
-  };
 }
 
 /** What is left sitting in the holding account across the posted entries. A

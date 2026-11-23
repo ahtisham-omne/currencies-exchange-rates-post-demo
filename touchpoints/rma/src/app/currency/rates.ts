@@ -22,6 +22,30 @@ export const RATE_TYPE_LABEL: Record<RateType, string> = {
 
 export const RATE_PROVIDER = 'Open Exchange Rates';
 
+/** Company Setup's default rate type, for a PO that names none. */
+export const DEFAULT_RATE_TYPE: RateType = 'mid';
+
+/** Finance's corporate rates, effective from a date: the same rates Purchase
+ *  Orders holds (its CORPORATE_RATES), so a return settled at the corporate
+ *  rate reads the figure its PO module shows (Currency Touchpoints Map,
+ *  2026-11-24: "Rate: today, mid-market or corporate"). */
+export interface CorporateRate {
+  code: string;
+  rate: number;
+  effectiveDate: string;
+  setBy: string;
+  note: string;
+}
+
+export const CORPORATE_RATES: CorporateRate[] = [
+  { code: 'USD', rate: 279.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
+  { code: 'EUR', rate: 305.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
+  { code: 'GBP', rate: 356.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
+  { code: 'AED', rate: 76.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
+  { code: 'SAR', rate: 74.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
+  { code: 'CNY', rate: 38.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
+];
+
 /** The provider's last sync; mid-market history ends on this day. */
 const LAST_SYNC_DAY = '2026-04-10';
 const HISTORY_DAYS = 6 * 365;
@@ -109,6 +133,40 @@ export function midRateOn(code: string, isoDate: string): number {
   return series[idx] ?? 1;
 }
 
+/** The corporate rate in effect on a day, if finance has set one. */
+export function corporateRateOn(code: string, isoDate: string): CorporateRate | undefined {
+  const day = isoDate.slice(0, 10);
+  return CORPORATE_RATES.filter((r) => r.code === code.toUpperCase() && r.effectiveDate <= day).sort((a, b) =>
+    b.effectiveDate.localeCompare(a.effectiveDate),
+  )[0];
+}
+
+export interface RateQuote {
+  /** Rupees per one unit. */
+  rate: number;
+  /** The type asked for, or mid-market where no corporate rate is set. */
+  type: RateType;
+  /** The day the rate is for. */
+  date: string;
+  /** The provider, or who set the corporate rate. */
+  source: string;
+  /** Corporate was asked for and none is set for the day: mid-market stands. */
+  fellBack?: boolean;
+}
+
+/** The rate of a type on a day. A corporate rate finance hasn't set falls back
+ *  to the day's mid-market rate, and says so. The base is always 1. */
+export function rateOn(code: string, isoDate: string, type: RateType): RateQuote {
+  const date = isoDate.slice(0, 10);
+  if (isBaseCurrency(code)) return { rate: 1, type, date, source: 'Base currency' };
+  if (type === 'corporate') {
+    const corp = corporateRateOn(code, date);
+    if (corp) return { rate: corp.rate, type, date, source: `Set by ${corp.setBy}` };
+    return { rate: midRateOn(code, date), type: 'mid', date, source: RATE_PROVIDER, fellBack: true };
+  }
+  return { rate: midRateOn(code, date), type, date, source: RATE_PROVIDER };
+}
+
 /** A rate and what it is, for the money hover (Money.tsx). */
 export interface MoneyFx {
   /** Rupees (the base) per one unit of the amount's currency. */
@@ -133,12 +191,43 @@ export function fxOn(code: string, isoDate: string, dateLabel: string): MoneyFx 
   return { rate: midRateOn(code, isoDate), rateType: 'mid', rateDate: isoDate.slice(0, 10), source: RATE_PROVIDER, dateLabel };
 }
 
+/** A quoted rate as the hover reads it. */
+export const fxOfQuote = (q: RateQuote, dateLabel: string, provisional = false): MoneyFx => ({
+  rate: q.rate,
+  rateType: q.type,
+  rateDate: q.date,
+  source: q.source,
+  dateLabel,
+  ...(provisional ? { provisional: true } : {}),
+});
+
 /** Today's rate, for an amount not posted yet (an open return's value). */
 export const fxToday = (code: string): MoneyFx => ({ ...fxOn(code, todayIso(), 'today'), provisional: true });
 
 /** An amount in the base currency, at a rate, to the paisa. */
 export function toBase(amount: number, rate: number | null | undefined): number {
   return Math.round(amount * (rate ?? 1) * 100) / 100;
+}
+
+/** Parts of one amount in the base currency, each at `rate`, the paisa split
+ *  (largest remainder first) so the parts add up to `total` exactly: the
+ *  amount's own conversion unless given. What keeps a journal step balanced
+ *  and the Return Summary's rows adding back to its Return value. */
+export function splitToBase(parts: number[], rate: number, total?: number): number[] {
+  const totalCents = Math.round((total ?? toBase(parts.reduce((s, v) => s + v, 0), rate)) * 100);
+  const raw = parts.map((v) => v * rate * 100);
+  const cents = raw.map((r) => Math.floor(r + 1e-9));
+  let left = totalCents - cents.reduce((s, c) => s + c, 0);
+  const order = raw.map((r, i) => [r - Math.floor(r + 1e-9), i] as const).sort((a, b) => b[0] - a[0]);
+  for (let pass = 0; left !== 0 && pass < 4; pass++) {
+    for (const [, i] of order) {
+      if (left === 0) break;
+      if (!parts[i]) continue;
+      cents[i] = (cents[i] ?? 0) + (left > 0 ? 1 : -1);
+      left += left > 0 ? -1 : 1;
+    }
+  }
+  return cents.map((c, i) => (parts[i] ? c / 100 : 0));
 }
 
 export { BASE_CURRENCY };

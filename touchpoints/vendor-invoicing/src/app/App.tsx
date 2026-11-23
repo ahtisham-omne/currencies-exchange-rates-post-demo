@@ -1624,6 +1624,10 @@ export default function App() {
                         rateDate: edited.rateDate,
                         rateEdited: edited.rateEdited,
                         rateBasis: edited.rateBasis ?? inv.rateBasis,
+                        // The account it's paid from and its currency
+                        // (Currency Touchpoints Map, 24 Nov 2026).
+                        payFromAccount: edited.payFromAccount ?? inv.payFromAccount,
+                        youPayIn: edited.youPayIn ?? inv.youPayIn,
                         // A cleared description stays cleared (Mahreen 10/10).
                         description: edited.description ?? inv.description,
                         amount: edited.amount,

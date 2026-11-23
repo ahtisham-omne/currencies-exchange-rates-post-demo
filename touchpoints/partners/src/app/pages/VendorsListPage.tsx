@@ -30,9 +30,10 @@ import { CurrencyAmount } from "../components/currency/CurrencyAmount";
 import { RateKpiValue } from "../components/currency/RateKpiValue";
 import { BASE_CURRENCY } from "../currency/currencies";
 import { formatCompactMoney } from "../currency/money";
-import { toBaseNow } from "../currency/partnerCurrency";
+import { currencySettingsFromConfig, toBaseNow } from "../currency/partnerCurrency";
 import { partnerAmount, type CurrencyView } from "../currency/partnerAmounts";
-import { usePartnerCurrencyOf } from "../currency/usePartnerCurrency";
+import { usePartnerCurrencyInfo, usePartnerCurrencyOf } from "../currency/usePartnerCurrency";
+import { CurrencyPill } from "../components/currency/CurrencyPill";
 import { appUrl } from "@/embedding";
 import { InsightsRangeMenu, InsightsRefresh, InsightsResetButton, type InsightsRange } from "../components/vendors/InsightsControls";
 import {
@@ -328,6 +329,18 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
   const listingMoney = (v: Vendor, amount: number | undefined, column: MoneyColumn) => (
     <CurrencyAmount {...partnerAmount(amount ?? 0, currencyOf(v), columnCurrencyView[column])} />
   );
+  /** The currency tag after every partner's name, base currency included (Currency Touchpoints Map). */
+  const currencyInfoOf = usePartnerCurrencyInfo();
+  const partnerCurrencyTag = (v: Vendor) => {
+    const info = currencyInfoOf(v);
+    const groupName = info.group?.name ?? v.partnerGroupName;
+    return (
+      <CurrencyPill
+        code={info.code}
+        note={info.source === "partner" ? "Set on this partner" : `Inherited from ${groupName ?? "its partner group"}`}
+      />
+    );
+  };
 
   const [searchQuery, setSearchQuery] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
@@ -399,19 +412,46 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
       const configPaymentTerm = data.configPaymentTerm as Record<string, unknown> | undefined;
       const configPricingRules = data.configPricingRules as any[] | undefined;
       const configPointsOfContact = data.configPointsOfContact as any[] | undefined;
-      // A partner has one currency (spec 4.2), saved with its credit limit.
-      // An override made in either side's Billing & Shipping is kept (the
-      // vendor side's first). Left as inherited, no currency is saved, so the
-      // partner follows its group's.
+      // A partner has one currency (spec 4.2) and one default exchange rate,
+      // saved with its credit limit. An override made in either side's
+      // Billing & Shipping is kept (the vendor side's first). Left as
+      // inherited, nothing is saved, so the partner follows its group's.
       const customerSideConfig = (data.customerConfig as Record<string, unknown> | undefined) ?? {};
       const configuredSides = [data as Record<string, unknown>, customerSideConfig].filter((c) => c.configCreditLimit);
-      const overrideSide = configuredSides.find((c) => c.currencyInherited === false);
+      const currencySettings = currencySettingsFromConfig(data);
       const sideCreditLimit = configuredSides[0]?.configCreditLimit as Record<string, unknown> | undefined;
       const configCreditLimit = sideCreditLimit && {
         ...sideCreditLimit,
-        currency: (overrideSide?.configCreditLimit as { currency?: string } | undefined)?.currency,
+        currency: currencySettings?.currency,
+        rateType: currencySettings?.rateType,
       };
       const configShipping = data.configShipping as Record<string, unknown> | undefined;
+
+      // Edit Partner: the currency settings are saved onto the partner being
+      // edited (the design's edit flow saves nothing else yet), instead of
+      // creating a second partner.
+      const editingId = editingVendor?.id as string | undefined;
+      const edited = editingId ? getVendor(editingId) : undefined;
+      if (edited) {
+        if (currencySettings) {
+          const prev = edited.configData?.creditLimitConfig;
+          updateVendor(edited.id, {
+            configData: {
+              ...(edited.configData ?? {}),
+              creditLimitConfig: {
+                maxCreditLimit: prev?.maxCreditLimit ?? edited.creditLimit ?? 0,
+                warningThreshold: prev?.warningThreshold ?? 0,
+                enforcement: prev?.enforcement ?? "none",
+                ...(prev ?? {}),
+                currency: currencySettings.currency,
+                rateType: currencySettings.rateType,
+              },
+            },
+          });
+        }
+        toast.success(`Partner "${edited.displayName}" updated`);
+        return;
+      }
 
       // Build initials from partner name
       const nameParts = name.split(" ").filter(Boolean);
@@ -503,7 +543,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
         duration: 5000,
       });
     },
-    [addVendor, navigate, spawnedForCarrierCreation]
+    [addVendor, getVendor, updateVendor, editingVendor, navigate, spawnedForCarrierCreation]
   );
 
   const activeFilterCount = useMemo(() => countActiveFilters(advFilters), [advFilters]);
@@ -2183,9 +2223,12 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                               <div className="flex items-center gap-3 min-w-0">
                                 <LogoAvatar logoUrl={icon.logoUrl} initials={icon.initials} bg={icon.bg} size={cardSize === "large" ? "lg" : cardSize === "small" ? "sm" : "md"} />
                                 <div className="min-w-0">
-                                  <p className="text-sm truncate" style={{ fontWeight: 500 }}>
-                                    {highlightText(vendor.displayName)}
-                                  </p>
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <p className="text-sm truncate" style={{ fontWeight: 500 }}>
+                                      {highlightText(vendor.displayName)}
+                                    </p>
+                                    {partnerCurrencyTag(vendor)}
+                                  </div>
                                   <p className="text-xs text-muted-foreground">{highlightText(vendor.code)}</p>
                                 </div>
                               </div>
@@ -2435,6 +2478,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                       <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-1.5 min-w-0">
                                           <span className={`${isRelaxed ? "text-[13px]" : "text-sm"} block truncate`} style={{ fontWeight: 500, color: '#1E293B' }}>{highlightText(vendor.displayName)}</span>
+                                          {partnerCurrencyTag(vendor)}
                                           {embedded && embeddedPrimaryPartnerIds?.has(vendor.id) && (
                                             <PrimaryPill size="xs" className="shrink-0" />
                                           )}

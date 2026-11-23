@@ -41,6 +41,7 @@ import {
   Upload,
   Package,
   FolderOpen,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -62,12 +63,16 @@ import { CATALOG, type CatalogItem } from "./catalogData";
 import { useRuleMoney } from "./currency/useRuleMoney";
 import { currencyDecimals, moneyPrefix } from "@/app/currency/money";
 import { RULE_AMOUNT_CURRENCY } from "@/app/currency/poFx";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { CurrencyFlag } from "./currency/CurrencyChip";
 
 export interface POCreatePricingRulePrefill {
   name?: string;
   description?: string;
   type?: "discount" | "premium";
   tiers?: PricingRuleTier[];
+  /** Volume (quantity bands) or value (order values in base). */
+  basis?: "volume" | "value";
   appliesToItemCodes?: string[];
   validFrom?: string;
   validTo?: string | null;
@@ -112,12 +117,13 @@ const makeTier = (): TierDraft => ({
   maxQty: "",
 });
 
-/* A fixed-amount tier is stored with unit "$": a flat amount per unit,
-   written in USD (RULE_AMOUNT_CURRENCY) and converted on each PO. */
+/* A fixed-amount tier is stored with unit "$": a flat amount per unit, in
+   the base currency (RULE_AMOUNT_CURRENCY; rules have no currency of their
+   own) and converted to each PO's currency at its rate. */
 const tierUnit = (fixRate: boolean): PricingRuleTier["unit"] => (fixRate ? "$" : "%");
 
 /* Compact %/$ pill toggle — inlined from SO's PctAmountToggle. The
-   amount side reads as USD, the currency rule amounts are written in. */
+   amount side reads as the base currency, the one rule amounts are in. */
 function PctAmountToggle({
   isFixed,
   onChange,
@@ -177,8 +183,8 @@ export function POCreatePricingRuleModal({
   onCreated,
 }: POCreatePricingRuleModalProps) {
   const isEditMode = !!editingRuleId;
-  /* Flat tier amounts are typed in USD; on a PO in another currency the
-     input previews what one comes to there. */
+  /* Flat tier amounts are typed in the base currency; on a PO in another
+     currency the input previews what one comes to there. */
   const { tierConverted, tierText } = useRuleMoney();
   const [step, setStep] = useState<1 | 2>(1);
   const [fullscreen, setFullscreen] = useState(false);
@@ -228,10 +234,10 @@ export function POCreatePricingRuleModal({
       setName(prefill.name ?? "");
       setDescription(prefill.description ?? "");
       setCategory(prefill.type ?? "discount");
-      /* Basis is inferred from the first tier's unit: % → volume,
-         $ → value. Matches SO's `basis` field semantics. */
-      const firstUnit = prefill.tiers?.[0]?.unit;
-      setBasis(firstUnit === "$" ? "value" : "volume");
+      /* The rule's own basis (volume unless it says value). A flat "$"
+         amount per unit is not a value basis: its tiers are still
+         quantity bands. */
+      setBasis(prefill.basis ?? "volume");
       setLimitDate(!!(prefill.validFrom || prefill.validTo));
       setValidFrom(prefill.validFrom ?? "");
       setValidTo(prefill.validTo ?? "");
@@ -403,10 +409,12 @@ export function POCreatePricingRuleModal({
       .map((t) => {
         const parsed = parseFloat(t.rate);
         if (Number.isNaN(parsed) || parsed <= 0) return null;
-        // A USD amount keeps USD's minor units.
+        // A base-currency amount keeps its minor units.
         const rate = t.fixRate ? Number(parsed.toFixed(currencyDecimals(RULE_AMOUNT_CURRENCY))) : parsed;
-        const minQty = t.qtyLimits ? parseFloat(t.minQty) || 1 : 1;
-        const maxQty = t.qtyLimits && t.maxQty.trim() ? parseFloat(t.maxQty) : null;
+        // Order values may be typed with separators ("700,000").
+        const num = (v: string) => parseFloat(v.replace(/,/g, ""));
+        const minQty = t.qtyLimits ? num(t.minQty) || 1 : 1;
+        const maxQty = t.qtyLimits && t.maxQty.trim() ? num(t.maxQty) : null;
         return {
           minQty,
           maxQty,
@@ -444,6 +452,7 @@ export function POCreatePricingRuleModal({
           description,
           type: category,
           tiers: parsedTiers,
+          basis,
           appliesToItemCodes,
           validFrom: limitDate ? validFrom : undefined,
           validTo: limitDate ? validTo : null,
@@ -453,6 +462,7 @@ export function POCreatePricingRuleModal({
           description,
           type: category,
           tiers: parsedTiers,
+          basis,
           appliesToItemCodes,
           validFrom: limitDate ? validFrom : undefined,
           validTo: limitDate ? validTo : null,
@@ -737,6 +747,28 @@ export function POCreatePricingRuleModal({
                         </div>
                       </div>
 
+                      {/* Currency — rules are in the base currency, so there is
+                          no picker (Currency Touchpoints Map, Partners 5–6). */}
+                      <div>
+                        <label className="text-[12px] text-slate-900 mb-1.5 block" style={{ fontWeight: 600 }}>
+                          Currency
+                        </label>
+                        <div
+                          className="h-9 max-w-[320px] rounded-lg border border-slate-200 bg-slate-50 px-3 flex items-center gap-2 text-[13px] cursor-not-allowed select-none"
+                          aria-readonly="true"
+                          title="Pricing rules are in the base currency"
+                        >
+                          <CurrencyFlag code={BASE_CURRENCY} />
+                          <span className="text-slate-700" style={{ fontWeight: 500 }}>{BASE_CURRENCY}</span>
+                          <span className="text-slate-400">· base currency</span>
+                          <Lock className="w-3 h-3 text-slate-300 ml-auto shrink-0" />
+                        </div>
+                        <p className="mt-1.5 text-[11px] text-slate-400 leading-snug">
+                          Fixed amounts and order values are in {BASE_CURRENCY}. On a PO in another currency, an order value is
+                          checked in {BASE_CURRENCY} and a fixed amount is converted at the PO's rate.
+                        </p>
+                      </div>
+
                       {/* Date range */}
                       <div>
                         <div className="flex items-center gap-2.5">
@@ -799,7 +831,7 @@ export function POCreatePricingRuleModal({
 
                     <div className="space-y-2.5">
                       {tiers.map((tier, idx) => {
-                        /* "≈ €13.71" beside a USD amount when this PO is in another currency. */
+                        /* "≈ $15.08" beside a base amount when this PO is in another currency. */
                         const typedRate = parseFloat(tier.rate);
                         const ratePreview =
                           tier.fixRate && typedRate > 0 ? tierConverted({ rate: typedRate, unit: tierUnit(true) }) : null;
@@ -857,7 +889,7 @@ export function POCreatePricingRuleModal({
                                   <Input
                                     value={tier.rate}
                                     onChange={(e) => updateTier(idx, { rate: e.target.value })}
-                                    placeholder={tier.fixRate ? "e.g. 25.00" : "e.g. 5"}
+                                    placeholder={tier.fixRate ? "e.g. 7,000" : "e.g. 5"}
                                     className={`rounded-lg border-slate-200 bg-white text-[13px] h-9 ${
                                       tier.fixRate ? (ratePreview ? "pl-11 pr-24" : "pl-11 pr-3") : "pr-8"
                                     }`}
@@ -902,7 +934,7 @@ export function POCreatePricingRuleModal({
                             </div>
                             {tier.fixRate && (
                               <p className="mt-1.5 text-[11px] text-slate-400 leading-snug">
-                                Amounts are written in {RULE_AMOUNT_CURRENCY} and converted to each PO's currency at its rate.
+                                Amounts are in {RULE_AMOUNT_CURRENCY}, the base currency, and converted to each PO's currency at its rate.
                               </p>
                             )}
 
@@ -916,7 +948,7 @@ export function POCreatePricingRuleModal({
                                     {basis === "volume" ? "Min Qty" : "Min Order Value"}
                                   </label>
                                   <div className="relative">
-                                    {/* Order values are in USD, like every rule amount. */}
+                                    {/* Order values are in the base currency, like every rule amount. */}
                                     {basis === "value" && (
                                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400" style={{ fontWeight: 500 }}>
                                         {RULE_AMOUNT_CURRENCY}
@@ -925,7 +957,7 @@ export function POCreatePricingRuleModal({
                                     <Input
                                       value={tier.minQty}
                                       onChange={(e) => updateTier(idx, { minQty: e.target.value })}
-                                      placeholder={basis === "volume" ? "e.g. 10" : "e.g. 1,000"}
+                                      placeholder={basis === "volume" ? "e.g. 10" : "e.g. 210,000"}
                                       className={`rounded-lg border-slate-200 bg-white text-[13px] h-9 ${
                                         basis === "value" ? "pl-11" : ""
                                       }`}
@@ -948,7 +980,7 @@ export function POCreatePricingRuleModal({
                                     <Input
                                       value={tier.maxQty}
                                       onChange={(e) => updateTier(idx, { maxQty: e.target.value })}
-                                      placeholder={basis === "volume" ? "e.g. 50" : "e.g. 5,000"}
+                                      placeholder={basis === "volume" ? "e.g. 50" : "e.g. 700,000"}
                                       className={`rounded-lg border-slate-200 bg-white text-[13px] h-9 ${
                                         basis === "value" ? "pl-11" : ""
                                       }`}

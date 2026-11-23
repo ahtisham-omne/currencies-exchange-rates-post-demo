@@ -97,7 +97,8 @@ import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { fxToday } from '@/app/currency/rates';
 import { viewMoney } from '@/app/components/currency/returnView';
 import { CreateReturnCurrencyDialog } from '@/app/components/currency/ReturnCurrencyConfig';
-import { Settings2 as CurrencyIcon } from 'lucide-react';
+import { Lock, Settings2 as CurrencyIcon } from 'lucide-react';
+import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import {
   ItemImageWithPreview,
@@ -163,6 +164,9 @@ export interface ResolutionTarget {
   /** The return's currency: the PO currency of the receipts picked for this
    *  vendor. Paid, Total and Total Charges read in it. */
   currency?: string | undefined;
+  /** "PO-11151": the PO that currency comes from. It can't change
+   *  (Currency Touchpoints Map, 2026-11-24). */
+  currencyPO?: string | null | undefined;
 }
 
 export interface ResolutionAnswer {
@@ -636,8 +640,21 @@ export function ReturnResolutionStep({
                         )}
                       </div>
                     </div>
-                    {/* The return's currency, its PO's, and its amounts in it. */}
+                    {/* The return's currency, fixed to its PO's ("Return
+                        currency USD · from PO-11233", 2026-11-24), and the
+                        Currency button with its amounts in it. */}
                     {target.currency && (
+                      <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[11.5px] text-slate-500 cursor-default"
+                        title="A return is in its PO's currency, so it can't change. Goods from a PO in another currency go on a separate return."
+                      >
+                        <span style={{ fontWeight: 500 }}>Return currency</span>
+                        <CurrencyFlag code={target.currency} size={12} />
+                        <span className="text-slate-700" style={{ fontWeight: 600 }}>{target.currency}</span>
+                        {target.currencyPO && <span className="text-slate-500">· from {target.currencyPO}</span>}
+                        <Lock className="w-3 h-3 text-slate-300" />
+                      </span>
                       <button
                         type="button"
                         onClick={() => setCurrencyFor(target.vendorCode)}
@@ -647,9 +664,8 @@ export function ReturnResolutionStep({
                       >
                         <CurrencyIcon className="w-3.5 h-3.5" />
                         Currency
-                        <span className="text-slate-400">·</span>
-                        <span className="text-slate-700" style={{ fontWeight: 600 }}>{target.currency}</span>
                       </button>
+                      </div>
                     )}
                   </div>
 
@@ -1304,6 +1320,7 @@ export function ReturnResolutionStep({
               if (!o) setCurrencyFor(null);
             }}
             currency={t.currency}
+            po={t.currencyPO}
             value={Math.round(its.reduce((n, i) => n + (i.value ?? 0), 0) * 100) / 100}
             paid={Math.round(its.reduce((n, i) => n + (i.paidValue ?? 0), 0) * 100) / 100 || (t.paidValue ?? 0)}
             charges={Math.round((charges[t.vendorCode] ?? []).reduce((n, c) => n + (c.amount || 0), 0) * 100) / 100}

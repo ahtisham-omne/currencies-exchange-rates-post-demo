@@ -25,9 +25,13 @@ import {
   UserPlus,
   XCircle,
   Target,
+  Banknote,
   type LucideIcon,
 } from "lucide-react";
-import { baseCompact, baseMoney, baseWhole } from "@/app/currency/itemMoney";
+import { baseCompact, baseMoney } from "@/app/currency/itemMoney";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { formatMoney as formatInCurrency } from "@/app/currency/money";
+import { usdToBase } from "@/app/currency/vendorFx";
 
 export type ItemDashKpiCategory = "Inventory" | "Financial" | "Operational";
 
@@ -50,10 +54,13 @@ export const ITEM_DASH_KPI_DEFS: ItemDashKpiDef[] = [
   { key: "reorder_point",    label: "Reorder Point",     category: "Inventory",   iconName: "Package",     subtitle: "Trigger threshold",      tooltip: "Stock level at which a replenishment PO is automatically suggested. Configured in the Inventory tab." },
   { key: "stock_health",     label: "Stock Health",      category: "Inventory",   iconName: "Activity",    subtitle: "Composite status",       tooltip: "Composite health score combining stock level, days of supply, and demand trend. Flags items at risk of stockout." },
   // ── Financial ──
-  { key: "avg_cost",         label: "Avg Cost",          category: "Financial",   iconName: "DollarSign",  subtitle: "Weighted average",       tooltip: "Weighted-average landed cost across receipts in the selected period. Mocked — pulls from costing layer in production." },
-  { key: "total_value",      label: "Total Value",       category: "Financial",   iconName: "BarChart3",   subtitle: "On-hand × avg cost",     tooltip: "On-hand quantity multiplied by weighted-average cost. Mocked total inventory valuation for this item." },
-  { key: "last_purchase",    label: "Last Purchase Price", category: "Financial", iconName: "DollarSign",  subtitle: "Most recent receipt",    tooltip: "Unit price on the most recently received PO line. Tracked vs avg cost to surface price drift." },
-  { key: "last_sale_price",  label: "Last Sale Price",   category: "Financial",   iconName: "DollarSign",  subtitle: "Most recent SO",         tooltip: "Net unit price on the most recent shipped sales order line for this item." },
+  /* Item cost and stock value are in the base currency (Currency Touchpoints
+     Map, Items 3): a receipt from a vendor in another currency is converted
+     at the rate on its date. A currency-free icon, not $. */
+  { key: "avg_cost",         label: "Avg Cost",          category: "Financial",   iconName: "Banknote",    subtitle: "Weighted average",       tooltip: "Weighted-average landed cost across receipts in the selected period, in PKR, the base currency. Mocked — pulls from costing layer in production." },
+  { key: "total_value",      label: "Total Value",       category: "Financial",   iconName: "BarChart3",   subtitle: "On-hand × avg cost",     tooltip: "On-hand quantity multiplied by weighted-average cost, in PKR, the base currency. Mocked total inventory valuation for this item." },
+  { key: "last_purchase",    label: "Last Purchase Price", category: "Financial", iconName: "Banknote",    subtitle: "Most recent receipt",    tooltip: "Unit price on the most recently received PO line, in PKR, the base currency. Tracked vs avg cost to surface price drift." },
+  { key: "last_sale_price",  label: "Last Sale Price",   category: "Financial",   iconName: "Banknote",    subtitle: "Most recent SO",         tooltip: "Net unit price on the most recent shipped sales order line for this item, in PKR, the base currency." },
   // ── Operational ──
   { key: "open_po",          label: "Open Purchase Orders", category: "Operational", iconName: "ShoppingCart", subtitle: "Active POs",          tooltip: `Open purchase orders containing this item. 3 Active · Value ${baseCompact(12500)}.` },
   { key: "open_so",          label: "Open Sales Orders", category: "Operational", iconName: "Users",       subtitle: "Active SOs",             tooltip: "Open sales orders containing this item. 5 active · Total demand 450 EA." },
@@ -74,28 +81,27 @@ export const DEFAULT_ITEM_DASH_KPIS: string[] = [
   "avg_lead_time",
 ];
 
-/* Item amounts are in the base currency (see currency/itemMoney.ts):
-   whole amounts, as the design shows them. */
-const formatMoney = baseWhole;
-
 /** Compute a value string for an item KPI. Mocked where source-of-truth
- *  data isn't yet wired in — same posture as the legacy widgets. */
+ *  data isn't yet wired in — same posture as the legacy widgets.
+ *  Avg Cost and Total Value are in the base currency, to the cent ("₨6,823.74",
+ *  "₨1,692,287.52"): the design's USD cost is restated in PKR (usdToBase), and
+ *  the value is on-hand × that base cost, so the two agree. */
 export function computeItemDashKpiValue(
   key: string,
   item: any,
 ): { value: string; change?: string; changeColor?: string } {
   const onHand = Number(item?.onHand ?? item?.stock ?? item?.quantity ?? 248);
   const available = Math.max(0, onHand - 32);
-  const avgCost = Number(item?.avgCost ?? item?.cost ?? 24);
-  const totalValue = onHand * avgCost;
+  const avgCost = usdToBase(Number(item?.avgCost ?? item?.cost ?? 24));
+  const totalValue = Math.round(onHand * avgCost * 100) / 100;
   switch (key) {
     case "on_hand_qty":     return { value: `${onHand} EA` };
     case "available":       return { value: `${available} EA`, change: "↗ 4%", changeColor: "hsl(var(--success))" };
     case "on_order":        return { value: "120 EA" };
     case "reorder_point":   return { value: "75 EA" };
     case "stock_health":    return { value: "Healthy", change: "98%", changeColor: "hsl(var(--success))" };
-    case "avg_cost":        return { value: formatMoney(avgCost) };
-    case "total_value":     return { value: formatMoney(totalValue) };
+    case "avg_cost":        return { value: formatInCurrency(avgCost, BASE_CURRENCY) };
+    case "total_value":     return { value: formatInCurrency(totalValue, BASE_CURRENCY) };
     case "last_purchase":   return { value: baseMoney(24.5), change: "↗ 2%", changeColor: "hsl(var(--destructive))" };
     case "last_sale_price": return { value: baseMoney(32) };
     case "open_po":         return { value: "3" };
@@ -110,7 +116,7 @@ export function computeItemDashKpiValue(
 const ICON_MAP: Record<string, LucideIcon> = {
   Boxes, TrendingUp, TrendingDown, AlertCircle, DollarSign, BarChart3, ShoppingCart,
   Users, Clock, Package, MapPin, Truck, Warehouse, Activity, Calendar, Star,
-  Percent, Repeat, CheckCircle2, UserPlus, XCircle, Target,
+  Percent, Repeat, CheckCircle2, UserPlus, XCircle, Target, Banknote,
 };
 
 export function ItemDashKpiIcon({

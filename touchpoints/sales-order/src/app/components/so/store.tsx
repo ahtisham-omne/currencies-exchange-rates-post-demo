@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import type {
   SalesOrder, SOLine, SOStatus, Shipment, ShipmentStatus, ShipmentLine,
   WarehouseInventory, Allocation, CatalogItem, ActivityEntry, InventoryMovement,
@@ -8,10 +8,12 @@ import type {
   SORejectionReason,
 } from "./types";
 import { ARCHIVABLE_STATES } from "./types";
-import { DESIGN_CURRENCY, convertOn, customerCurrency, stampSoRate } from "@/app/currency/soFx";
+import { DESIGN_CURRENCY, convertOn, customerCurrency, localTodayIso, stampSoRate } from "@/app/currency/soFx";
+import { resolveReceiveAccount } from "@/app/currency/companyAccounts";
 import { formatWhole } from "./soMoney";
 import { describeRateChange, soRateFields, stampVersionRate, todaysRateType, versionRateFields, withCurrentRate, type VersionRateChoice } from "./soCurrency";
 import { seedLineItemAttachments } from "./lineItemAttachmentsStore";
+import { QUOTE_TO_SO_EVENT, QUOTE_TO_SO_STORAGE_KEY, readQuoteConversions, salesOrderFromQuote } from "./quoteConversions";
 import { getCustomerDefaults, SAMPLE_EMPTY_CUSTOMER } from "@/app/components/shared/customerDefaults";
 import { getMissingFields, type FieldRule } from "@/app/components/shared/fieldRequirements";
 import { SHIPMENT_CARRIERS, DEFAULT_SHIPMENT } from "./ShipmentMethodModal";
@@ -1727,13 +1729,46 @@ export function hasOverAllocation(so: SalesOrder): boolean {
   return so.lines.some(l => !l.cancelled && l.allocatedQty > l.orderedQty);
 }
 
+/* ── An order made from a quote (Currency Touchpoints Map, 24 Nov 2026) ──
+ * It keeps the quote's currency configuration: the currency (fixed), the
+ * rate, its type and the pay-to account. Converting asks whether to keep the
+ * quote's rate or use today's ("Keep the quote's rate" / "Use today's
+ * rate"); the choice comes over as `rateChoice` ("quote" | "today"). Quotes
+ * is its own app and hands nothing over at runtime yet, so every field here
+ * is read defensively: missing means the quote's rate, a base-currency
+ * account. */
+export type QuoteRateChoice = "quote" | "today";
+/** Order numbers already created from a converted quote, this page load. */
+const importedQuoteOrders = new Set<string>();
+/** Orders for conversions not yet imported this page load, newest first. */
+function importQuoteConversions(): SalesOrder[] {
+  const added: SalesOrder[] = [];
+  for (const entry of readQuoteConversions()) {
+    if (importedQuoteOrders.has(entry.soNumber)) continue;
+    importedQuoteOrders.add(entry.soNumber);
+    added.unshift(buildSalesOrder(salesOrderFromQuote(entry)));
+  }
+  return added;
+}
+export interface SOFromQuoteFields {
+  rateChoice?: QuoteRateChoice | string;
+  /** The same choice under the Quotes module's name, if it uses this one. */
+  quoteRateChoice?: QuoteRateChoice | string;
+}
+
+/** Did the conversion pick today's rate over the quote's? */
+function quoteWantsTodaysRate(partial: SOFromQuoteFields): boolean {
+  const raw = String(partial.rateChoice ?? partial.quoteRateChoice ?? "").toLowerCase();
+  return raw.startsWith("today") || raw.startsWith("current");
+}
+
 // ===== Store Context =====
 interface SOStore {
   salesOrders: SalesOrder[];
   shipments: Shipment[];
   inventory: WarehouseInventory[];
   // SO Actions (closeSO removed)
-  createSO: (so: Partial<SalesOrder>) => SalesOrder;
+  createSO: (so: Partial<SalesOrder> & SOFromQuoteFields) => SalesOrder;
   updateSO: (id: string, updates: Partial<SalesOrder>) => void;
   markUnconfirmed: (id: string) => void;
   confirmSO: (id: string) => ConfirmValidation;
@@ -1794,6 +1829,101 @@ export function useSOStore(): SOStore {
 
 let shipmentCounter = 105;
 let soCounter = 30;
+/** A new order from a partial (the create dialog, a copy, a converted quote, an import). */
+function buildSalesOrder(partial: Partial<SalesOrder> & SOFromQuoteFields): SalesOrder {
+  const id = `SO-${String(soCounter++).padStart(3, "0")}`;
+  /* The quote's currency and rate when converted from one (spec 4.3), or
+     today's rate in its currency when the conversion chose it; else the
+     customer's default at the rate on the order date. */
+  const rateFields = partial.currency && partial.exchangeRate
+    ? partial.sourceQuoteRef && quoteWantsTodaysRate(partial)
+      ? stampSoRate(partial.currency, localTodayIso(), partial.rateType)
+      : { currency: partial.currency, exchangeRate: partial.exchangeRate, rateType: partial.rateType, rateDate: partial.rateDate, rateEdited: partial.rateEdited }
+    : stampSoRate(partial.currency || customerCurrency(partial.customer), partial.orderDate || new Date().toISOString().split("T")[0], partial.rateType);
+  /* "You receive": the pay-to account the copy or quote carries (or, from
+     an older copy, its currency), as long as it can take the order's
+     currency; else the default base-currency account. */
+  const incomingAccount = typeof partial.payToAccount === "string" ? partial.payToAccount : undefined;
+  const receiveAccount = incomingAccount || partial.settlementCurrency
+    ? resolveReceiveAccount(rateFields.currency, incomingAccount, partial.settlementCurrency)
+    : null;
+  const incomingLines = (partial.lines || []).map((l, j) => ({
+    ...l,
+    id: l.id || `SOL-${Date.now()}-${j}-${Math.random().toString(36).slice(2, 6)}`,
+    allocatedQty: l.allocatedQty ?? 0,
+    pickedQty: l.pickedQty ?? 0,
+    shippedQty: l.shippedQty ?? 0,
+    deliveredQty: l.deliveredQty ?? 0,
+    taxRate: l.taxRate ?? 0.08,
+    allocations: l.allocations ?? [],
+    cancelled: l.cancelled ?? false,
+    cancelledQty: l.cancelledQty ?? 0,
+    readyToPick: l.readyToPick ?? false,
+  }));
+  const total = incomingLines.length > 0
+    ? incomingLines.reduce((s, l) => s + l.orderedQty * l.unitPrice * (1 + l.taxRate), 0)
+    : (partial.total || 0);
+  const so: SalesOrder = {
+    id,
+    /* Normally the store numbers the order itself. A legacy import
+       passes the number its old system printed, and keeping it is the
+       point of that import, so an incoming number wins. */
+    soNumber: partial.soNumber || `SO-000-000-${id.split("-")[1]}`,
+    customer: partial.customer || "",
+    customerInitials: partial.customerInitials || (partial.customer || "").split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase(),
+    customerId: partial.customerId,
+    pocs: partial.pocs,
+    primaryPocId: partial.primaryPocId,
+    orderDate: partial.orderDate || new Date().toISOString().split("T")[0].replace(/-/g, "/"),
+    warehouse: partial.warehouse || "Main Warehouse",
+    ...rateFields,
+    ...(receiveAccount && { payToAccount: receiveAccount.id, settlementCurrency: receiveAccount.currency }),
+    /* `??` not `||`: an explicit "" means "not set" (e.g. a name-only
+       customer) and must stay empty instead of becoming Net 30. */
+    paymentTerms: partial.paymentTerms ?? "Net 30",
+    shippingAddress: partial.shippingAddress ?? "",
+    billingAddress: partial.billingAddress,
+    paymentMethod: partial.paymentMethod,
+    /* Same reasoning as the number: an order that shipped in the
+       legacy system should not arrive here as a fresh Draft. */
+    status: partial.status || "Draft",
+    description: partial.description || "",
+    lines: incomingLines,
+    shipmentIds: [],
+    activityLog: [
+      { id: `ACT-${Date.now()}`, timestamp: new Date().toLocaleString(), user: "Current User", action: "Created", details: "Sales Order created" },
+      ...(incomingLines.length > 0 ? [{ id: `ACT-${Date.now()}-l`, timestamp: new Date().toLocaleString(), user: "Current User", action: "Lines Added", details: `${incomingLines.length} line item(s) added during creation` }] : []),
+    ],
+    inventoryMovements: [],
+    linkedTransactions: [],
+    attachments: [],
+    pickRecords: [],
+    salesRep: partial.salesRep ?? "Current User",
+    createdDate: new Date().toISOString().split("T")[0].replace(/-/g, "/"),
+    total,
+    /* ── Deal Information fields ── */
+    sourceQuoteRef: partial.sourceQuoteRef || "",
+    rfqRef: partial.rfqRef || "",
+    tags: partial.tags || [],
+    internalNotes: partial.internalNotes || "",
+    warehouses: partial.warehouses || [partial.warehouse || "Main Warehouse"],
+    requestedDeliveryDate: partial.requestedDeliveryDate || "",
+    freightMethod: partial.freightMethod || "FOB Origin",
+    salesReps: partial.salesReps ?? (partial.salesRep === "" ? [] : [{ name: partial.salesRep || "Current User", primary: true }]),
+    /* ── Versioning & Priority ── */
+    version: partial.version || { number: 1, label: "Latest", date: new Date().toISOString().split("T")[0].replace(/-/g, "/") },
+    priority: partial.priority || "Standard",
+    versions: partial.versions || [{ number: 1, label: "Latest", date: new Date().toISOString().split("T")[0].replace(/-/g, "/") }],
+    /* ── Sourcing & Production ── */
+    procurementOrders: partial.procurementOrders || [],
+    backorders: partial.backorders || [],
+    sourcingStatus: partial.sourcingStatus || "Not Started",
+    legacyImport: partial.legacyImport,
+    createdViaUI: true,
+  };
+  return so;
+}
+
 
 /* ── One-time adjustments on imported orders ──
    An order brought in from a legacy file can arrive with discounts and
@@ -1812,7 +1942,10 @@ export function getImportedAdjustments(soId: string): unknown[] | undefined {
 }
 
 export function SOStoreProvider({ children }: { children: ReactNode }) {
-  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(() => _initData.sos);
+  /* Quotes converted in the Quotes app are orders from the first render
+     (quoteConversions.ts), so an order opened straight from its link exists
+     before the page reads it. */
+  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(() => [...importQuoteConversions(), ..._initData.sos]);
   const [shipments, setShipments] = useState<Shipment[]>(() => _initData.shipments);
   const [inventory, setInventory] = useState<WarehouseInventory[]>(initialInventory);
 
@@ -1906,89 +2039,28 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
   };
 
   // ===== SO Actions =====
-  const createSO = useCallback((partial: Partial<SalesOrder>): SalesOrder => {
-    const id = `SO-${String(soCounter++).padStart(3, "0")}`;
-    const incomingLines = (partial.lines || []).map((l, j) => ({
-      ...l,
-      id: l.id || `SOL-${Date.now()}-${j}-${Math.random().toString(36).slice(2, 6)}`,
-      allocatedQty: l.allocatedQty ?? 0,
-      pickedQty: l.pickedQty ?? 0,
-      shippedQty: l.shippedQty ?? 0,
-      deliveredQty: l.deliveredQty ?? 0,
-      taxRate: l.taxRate ?? 0.08,
-      allocations: l.allocations ?? [],
-      cancelled: l.cancelled ?? false,
-      cancelledQty: l.cancelledQty ?? 0,
-      readyToPick: l.readyToPick ?? false,
-    }));
-    const total = incomingLines.length > 0
-      ? incomingLines.reduce((s, l) => s + l.orderedQty * l.unitPrice * (1 + l.taxRate), 0)
-      : (partial.total || 0);
-    const so: SalesOrder = {
-      id,
-      /* Normally the store numbers the order itself. A legacy import
-         passes the number its old system printed, and keeping it is the
-         point of that import, so an incoming number wins. */
-      soNumber: partial.soNumber || `SO-000-000-${id.split("-")[1]}`,
-      customer: partial.customer || "",
-      customerInitials: partial.customerInitials || (partial.customer || "").split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase(),
-      customerId: partial.customerId,
-      pocs: partial.pocs,
-      primaryPocId: partial.primaryPocId,
-      orderDate: partial.orderDate || new Date().toISOString().split("T")[0].replace(/-/g, "/"),
-      warehouse: partial.warehouse || "Main Warehouse",
-      /* The quote's currency and rate when converted from one (spec 4.3),
-         else the customer's default at the rate on the order date. */
-      ...(partial.currency && partial.exchangeRate
-        ? { currency: partial.currency, exchangeRate: partial.exchangeRate, rateType: partial.rateType, rateDate: partial.rateDate, rateEdited: partial.rateEdited }
-        : stampSoRate(partial.currency || customerCurrency(partial.customer), partial.orderDate || new Date().toISOString().split("T")[0], partial.rateType)),
-      /* "You receive": base unless the copy or quote carries one. */
-      ...(partial.settlementCurrency && { settlementCurrency: partial.settlementCurrency }),
-      /* `??` not `||`: an explicit "" means "not set" (e.g. a name-only
-         customer) and must stay empty instead of becoming Net 30. */
-      paymentTerms: partial.paymentTerms ?? "Net 30",
-      shippingAddress: partial.shippingAddress ?? "",
-      billingAddress: partial.billingAddress,
-      paymentMethod: partial.paymentMethod,
-      /* Same reasoning as the number: an order that shipped in the
-         legacy system should not arrive here as a fresh Draft. */
-      status: partial.status || "Draft",
-      description: partial.description || "",
-      lines: incomingLines,
-      shipmentIds: [],
-      activityLog: [
-        { id: `ACT-${Date.now()}`, timestamp: new Date().toLocaleString(), user: "Current User", action: "Created", details: "Sales Order created" },
-        ...(incomingLines.length > 0 ? [{ id: `ACT-${Date.now()}-l`, timestamp: new Date().toLocaleString(), user: "Current User", action: "Lines Added", details: `${incomingLines.length} line item(s) added during creation` }] : []),
-      ],
-      inventoryMovements: [],
-      linkedTransactions: [],
-      attachments: [],
-      pickRecords: [],
-      salesRep: partial.salesRep ?? "Current User",
-      createdDate: new Date().toISOString().split("T")[0].replace(/-/g, "/"),
-      total,
-      /* ── Deal Information fields ── */
-      sourceQuoteRef: partial.sourceQuoteRef || "",
-      rfqRef: partial.rfqRef || "",
-      tags: partial.tags || [],
-      internalNotes: partial.internalNotes || "",
-      warehouses: partial.warehouses || [partial.warehouse || "Main Warehouse"],
-      requestedDeliveryDate: partial.requestedDeliveryDate || "",
-      freightMethod: partial.freightMethod || "FOB Origin",
-      salesReps: partial.salesReps ?? (partial.salesRep === "" ? [] : [{ name: partial.salesRep || "Current User", primary: true }]),
-      /* ── Versioning & Priority ── */
-      version: partial.version || { number: 1, label: "Latest", date: new Date().toISOString().split("T")[0].replace(/-/g, "/") },
-      priority: partial.priority || "Standard",
-      versions: partial.versions || [{ number: 1, label: "Latest", date: new Date().toISOString().split("T")[0].replace(/-/g, "/") }],
-      /* ── Sourcing & Production ── */
-      procurementOrders: partial.procurementOrders || [],
-      backorders: partial.backorders || [],
-      sourcingStatus: partial.sourcingStatus || "Not Started",
-      legacyImport: partial.legacyImport,
-      createdViaUI: true,
-    };
+  const createSO = useCallback((partial: Partial<SalesOrder> & SOFromQuoteFields): SalesOrder => {
+    const so = buildSalesOrder(partial);
     setSalesOrders(prev => [so, ...prev]);
     return so;
+  }, []);
+
+  /* Quotes converted in the Quotes app become orders here, once each
+     (quoteConversions.ts): on load, and when the Quotes app records one
+     while this app is open. The order number is the one the convert dialog
+     announced, so an order already on the list is not added again. */
+  useEffect(() => {
+    const importConversions = () => {
+      const added = importQuoteConversions();
+      if (added.length > 0) setSalesOrders(prev => [...added, ...prev]);
+    };
+    const onStorage = (e: StorageEvent) => { if (e.key === QUOTE_TO_SO_STORAGE_KEY) importConversions(); };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(QUOTE_TO_SO_EVENT, importConversions);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(QUOTE_TO_SO_EVENT, importConversions);
+    };
   }, []);
 
   const updateSO = useCallback((id: string, updates: Partial<SalesOrder>) => {
@@ -2450,7 +2522,7 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
       const next = today ? { ...restored, ...today.updates } : restored;
       const after = soRateFields(next);
       const rateDetail =
-        before.exchangeRate === after.exchangeRate && before.rateType === after.rateType && before.settlementCurrency === after.settlementCurrency
+        before.exchangeRate === after.exchangeRate && before.rateType === after.rateType && before.payToAccount === after.payToAccount
           ? null
           : `${describeRateChange(before, after)} · ${today ? "today's rate applied" : `V${fromVersion}'s locked rate restored`}`;
       // Update the labels: target becomes "Latest", others lose "Latest"
