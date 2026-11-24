@@ -635,7 +635,7 @@ function TypeCard({ selected, color, bg, border, Icon, title, subtitle, onClick 
 
 function BasisToggle({ basis, setBasis, accent }: { basis: PricingRuleBasis; setBasis: (b: PricingRuleBasis) => void; accent: { color: string; bg: string; border: string } }) {
   return (
-    <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Rule basis">
       {([
         { key: "volume" as const, label: "Volume-Based", Icon: Layers },
         { key: "value" as const, label: "Value-Based", Icon: () => <span className="text-[11px]" style={{ fontWeight: 700 }}>$</span> },
@@ -645,13 +645,13 @@ function BasisToggle({ basis, setBasis, accent }: { basis: PricingRuleBasis; set
           <button
             key={opt.key}
             type="button"
+            role="radio"
+            aria-checked={active}
             onClick={() => setBasis(opt.key)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${active ? "shadow-sm" : "hover:bg-white/60"}`}
-            style={{
-              fontWeight: active ? 600 : 500,
-              color: active ? accent.color : "#334155",
-              backgroundColor: active ? accent.bg : undefined,
-            }}
+            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+              active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
+            }`}
+            style={{ fontWeight: active ? 500 : 400 }}
           >
             <opt.Icon className="w-3.5 h-3.5" />
             {opt.label}
@@ -695,16 +695,20 @@ function TierRow({ index, tier, isDis, accent, canRemove, onRemove, onPatch }: {
         <div>
           <div className="flex items-center justify-between mb-1">
             <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>{isDis ? "Discount" : "Premium"} Rate</span>
-            <div className="inline-flex items-center rounded-md bg-slate-50 border border-border/60 p-0.5">
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Amount type">
               {(["%", "$"] as const).map((opt) => {
                 const active = tier.amountType === opt;
                 return (
                   <button
                     key={opt}
                     type="button"
+                    role="radio"
+                    aria-checked={active}
                     onClick={() => onPatch({ amountType: opt })}
-                    className={`inline-flex items-center justify-center w-6 h-5 rounded-sm text-[10.5px] cursor-pointer transition-colors ${active ? "shadow-sm" : "hover:bg-white"}`}
-                    style={{ fontWeight: 600, color: active ? "var(--primary)" : "#64748B", backgroundColor: active ? "#FFFFFF" : "transparent" }}
+                    className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                      active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
+                    }`}
+                    style={{ fontWeight: active ? 500 : 400 }}
                   >
                     {opt}
                   </button>

@@ -1,5 +1,4 @@
 import * as React from "react";
-import { Settings2 } from "lucide-react";
 import { FONT } from "../designTokens";
 import { isBaseCurrency } from "@/app/currency/currencies";
 import { CurrencyPill } from "./CurrencyChip";
@@ -16,7 +15,7 @@ export function POCurrencyHeaderControls({
   vendorName,
   currency,
   compact,
-  onOpenConfig,
+  onOpenConfig: _onOpenConfig,
 }: {
   vendorName: string;
   /** The PO's currency (the vendor's, unless changed on the PO). */
@@ -37,16 +36,8 @@ export function POCurrencyHeaderControls({
         {vendorName}
       </span>
       {foreign && <CurrencyPill code={currency} note="This PO's currency. Amounts show in the base currency; hover one for the vendor's." />}
-      <button
-        type="button"
-        onClick={onOpenConfig}
-        aria-label="Open currency configuration"
-        className="inline-flex items-center gap-1 rounded-md border border-border bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-800 transition-colors cursor-pointer shrink-0"
-        style={{ height: compact ? 22 : 26, padding: compact ? "0 6px" : "0 8px", fontSize: compact ? 10.5 : 11.5, fontWeight: 500 }}
-      >
-        <Settings2 className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />
-        Currency
-      </button>
+      {/* No Currency button here (25 Nov 2026): the configuration opens from
+          the Order Summary's currency card. */}
     </div>
   );
 }

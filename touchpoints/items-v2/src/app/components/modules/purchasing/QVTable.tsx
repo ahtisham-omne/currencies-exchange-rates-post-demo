@@ -68,7 +68,7 @@ import { cn } from "@/lib/utils";
 import { PriorityChip } from "../../items-v3/PriorityChip";
 import { VendorPrice } from "../../currency/VendorPrice";
 import { BaseMoney } from "../../currency/Money";
-import { CurrencyPill } from "../../currency/CurrencyChip";
+import { CurrencyCodeCell } from "../../currency/CurrencyCodeCell";
 import { formatMoney, rateSentence } from "../../../currency/money";
 import { RATE_TYPE_LABEL } from "../../../currency/rates";
 import { BASE_CURRENCY, isBaseCurrency } from "../../../currency/currencies";
@@ -101,6 +101,8 @@ interface ColDef {
 export const COLUMNS: ColDef[] = [
   { key: "priority",           label: "Priority",                      width: 120 },
   { key: "partner",            label: "Partner",                       sortable: true, width: 240 },
+  /* The vendor's currency, from the partner, as the Currency Library draws it. */
+  { key: "currency",           label: "Currency",                      sortable: true, width: 264 },
   /* The price sits next to the vendor, so it shows without scrolling
      (Currency Touchpoints Map, Items 2, 24 Nov 2026). */
   { key: "unitsPricing",       label: "Units & Pricing",               width: 260 },
@@ -444,14 +446,14 @@ function renderCell(
             <p className="text-sm truncate" style={{ fontWeight: 500, color: "#1E293B" }}>
               {qv.vendorName}
             </p>
-            {/* Currency tag on a vendor that isn't in the base currency. */}
-            {!isBaseCurrency(qv.currency) && (
-              <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                <CurrencyPill code={qv.currency} note="The vendor's currency, from the partner" />
-              </span>
-            )}
           </div>
         </div>
+      );
+    case "currency":
+      return (
+        <span className="inline-flex whitespace-nowrap max-w-full text-sm">
+          <CurrencyCodeCell code={qv.currency} title="The vendor's currency, from the partner" />
+        </span>
       );
     case "location":
       return (

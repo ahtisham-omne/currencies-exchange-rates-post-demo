@@ -4,6 +4,8 @@ import { ChevronDown, FileText, RotateCcw, Check, Eye, Send, CheckCircle2, Clock
 import { toast } from 'sonner';
 import { ConfirmDiscardModal } from '../shared/ConfirmDiscardModal';
 import { StateTransitionOverlay } from '../shared/StateTransitionOverlay';
+import { RevertRateBox } from '@/app/components/currency/RevertRateBox';
+import type { SalesOrder } from './types';
 
 type VersionStatus = 'draft' | 'pending_review' | 'cleared' | 'partially_shipped' | 'shipped';
 
@@ -28,6 +30,8 @@ interface SOVersionDropdownProps {
   onEditAsDraft?: (fromVersion: number, originalStatus: 'draft' | 'pending_review' | 'cleared' | 'partially_shipped' | 'shipped') => void;
   materialChangesCount?: number;
   isScrolled?: boolean;
+  /** The order, for the revert confirm's Exchange rate box (foreign currency only). */
+  so?: SalesOrder;
 }
 
 const statusConfig: Record<VersionStatus, { label: string; bg: string; color: string; icon: typeof Send }> = {
@@ -111,6 +115,7 @@ export function SOVersionDropdown({
   onEditAsDraft,
   materialChangesCount,
   isScrolled = false,
+  so,
 }: SOVersionDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [versions, setVersions] = useState<Version[]>(
@@ -468,6 +473,7 @@ export function SOVersionDropdown({
       {pendingRevert && (
         <RevertConfirmModal
           version={pendingRevert.version}
+          so={so}
           onClose={() => setPendingRevert(null)}
           onConfirm={() => {
             const target = pendingRevert;
@@ -509,8 +515,13 @@ export function SOVersionDropdown({
    ConfirmDiscardModal banner + glow icon + h-11 stacked buttons,
    plus an optional revert-reason textarea. All three entry points
    share one piece of chrome. */
-function RevertConfirmModal({ version, onClose, onConfirm }: {
-  version: number; onClose: () => void; onConfirm: (reason: string) => void;
+function RevertConfirmModal({ version, so, onClose, onConfirm }: {
+  version: number;
+  /** The order, for the Exchange rate box (foreign currency only). This
+   *  dropdown's version list carries no totals, so the box shows the rate
+   *  rows only. */
+  so?: SalesOrder;
+  onClose: () => void; onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState('');
   return (
@@ -524,6 +535,8 @@ function RevertConfirmModal({ version, onClose, onConfirm }: {
       cancelLabel="Cancel"
       onConfirm={() => onConfirm(reason.trim())}
     >
+      {/* Exchange rate — the restored version takes today's rate. */}
+      <RevertRateBox so={so} version={version} />
       <div>
         <label
           className="block"

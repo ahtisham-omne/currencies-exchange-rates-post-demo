@@ -1,4 +1,5 @@
 import type { DataTableEmptyConfig } from '@/app/components/data-table/DataTable';
+import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { Fragment, useMemo, type ReactNode } from 'react';
 import { partnerVendorUrl } from '@/app/data/mockVendors';
 import { formatUsDate, formatUsDateTime, overdueDaysOf, overdueLabel, isInvoiceOverdue, MOST_OVERDUE_SORT_KEY } from '@/app/lib/dueBucket';
@@ -34,7 +35,7 @@ import {
 } from '@/app/components/ui/dropdown-menu';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/ui/hover-card';
 import { BaseMoney } from '@/app/components/currency/Money';
-import { CurrencyFlag, CurrencyPill } from '@/app/components/currency/CurrencyChip';
+import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { rateOn } from '@/app/currency/rates';
 import { localTodayIso } from '@/app/lib/dueBucket';
@@ -1469,7 +1470,8 @@ interface VendorCellProps {
    *  never squeeze the name. */
   descriptionAddon?: ReactNode;
   /** The record's currency: a foreign one gets a currency tag after the
-   *  name (Currency Touchpoints Map, 24 Nov 2026); base gets none. */
+   *  name. Card view only (the invoice list's cards); listing tables show
+   *  the currency in their own Currency column instead (24 Nov 2026). */
   currency?: string;
 }
 export function VendorCell({ vendor, description, density, searchQuery, descriptionAddon, currency }: VendorCellProps) {
@@ -1672,8 +1674,24 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
         description={row.description}
         density={ctx.density}
         searchQuery={ctx.searchQuery}
-        currency={row.currency}
       />
+    ),
+  },
+  {
+    key: 'currency',
+    label: 'Currency',
+    minWidth: 160,
+    defaultWidth: 264,
+    sortable: true,
+    filterType: 'multiselect',
+    uniqueValues: (rows) => Array.from(new Set(rows.map((r) => r.currency))).sort(),
+    getValue: (row) => row.currency,
+    // The Currency Library's cell: the ISO code pill, then the name.
+    searchText: (row) => `${row.currency} ${getCurrency(row.currency)?.name ?? ''}`,
+    render: (row, { searchQuery }) => (
+      <span className="inline-flex whitespace-nowrap max-w-full">
+        <CurrencyCodeCell code={row.currency} highlight={(t) => highlightText(t, searchQuery)} />
+      </span>
     ),
   },
   {
@@ -1977,25 +1995,6 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     getValue: (row) => row.apAccount,
     // Searchable, so it highlights like every other matched cell (10/9/26).
     render: (row, { searchQuery }) => <span className="text-muted-foreground">{highlightText(row.apAccount, searchQuery)}</span>,
-  },
-  {
-    key: 'currency',
-    label: 'Currency',
-    minWidth: 90,
-    defaultWidth: 120,
-    sortable: true,
-    filterType: 'multiselect',
-    uniqueValues: (rows) => Array.from(new Set(rows.map((r) => r.currency))).sort(),
-    getValue: (row) => row.currency,
-    // Flag + code, as the Currency & Exchange Rates module shows a currency;
-    // the name rides the tooltip.
-    searchText: (row) => `${row.currency} ${getCurrency(row.currency)?.name ?? ''}`,
-    render: (row, { searchQuery }) => (
-      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-        <CurrencyFlag code={row.currency} size={16} />
-        <span>{highlightText(row.currency, searchQuery)}</span>
-      </span>
-    ),
   },
   {
     key: 'description',

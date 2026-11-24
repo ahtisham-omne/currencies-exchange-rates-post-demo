@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import React from "react";
 import type { Quote } from "@/app/types/quote";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
-import { toQuoteBase } from "@/app/currency/qFx";
+import { quoteFx, toQuoteBase } from "@/app/currency/qFx";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/app/components/ui/popover";
@@ -41,7 +41,7 @@ export interface SortConfig { key: string; direction: "asc" | "desc"; }
 
 export function getFilterType(columnKey: string): FilterType {
   switch (columnKey) {
-    case "status": case "priority": case "salesRep": case "customer": return "multiselect";
+    case "status": case "priority": case "salesRep": case "customer": case "currency": return "multiselect";
     case "totalValue": return "range";
     case "createdDate": case "expiryDate": case "requestedDate": case "respondBy": case "confirmationDate": case "lastUpdatedDate": return "date";
     default: return "text";
@@ -76,6 +76,7 @@ export function getUniqueValues(columnKey: string, quotes: Quote[]): string[] {
         const name = typeof q.customer === "string" ? q.customer : q.customer?.name;
         if (name) valuesSet.add(name); break;
       }
+      case "currency": valuesSet.add(quoteFx(q).currency); break;
     }
   });
   return Array.from(valuesSet).sort();
@@ -509,6 +510,7 @@ export function applyColumnFilters(quotes: Quote[], columnFilters: ColumnFilterS
         }
         case "status": if (filter.values.length > 0 && !filter.values.includes(q.status)) return false; break;
         case "priority": if (filter.values.length > 0 && !filter.values.includes(q.priority)) return false; break;
+        case "currency": if (filter.values.length > 0 && !filter.values.includes(quoteFx(q).currency)) return false; break;
         case "salesRep": {
           const name = typeof q.salesRep === "string" ? q.salesRep : q.salesRep?.name || "";
           if (filter.values.length > 0 && !filter.values.includes(name)) return false;

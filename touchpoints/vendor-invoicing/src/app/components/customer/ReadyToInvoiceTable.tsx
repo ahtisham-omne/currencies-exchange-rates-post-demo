@@ -1,4 +1,5 @@
 import { useTableStates, type DataTableEmptyConfig } from '@/app/components/data-table/DataTable';
+import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { TableEmptyState, CardSkeletonGrid, TableStaleBanner } from '@/app/components/ui/table-empty-state';
 import { Fragment, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { DndProvider } from 'react-dnd';
@@ -663,13 +664,13 @@ export function ReadyToInvoiceTable({ rows, canCreate, onCreateInvoice, invoices
     {
       key: 'currency',
       label: 'Currency',
-      minWidth: 90,
-      defaultWidth: 120,
+      minWidth: 160,
+      defaultWidth: 264,
       sortable: true,
       filterType: 'multiselect',
       uniqueValues: (list) => Array.from(new Set(list.map((r) => r.currency))).sort(),
       getValue: (r) => r.currency,
-      render: (r, { searchQuery: q }) => <span className="text-muted-foreground">{highlightText(r.currency, q)}</span>,
+      render: (r, { searchQuery: q }) => <span className="inline-flex whitespace-nowrap max-w-full"><CurrencyCodeCell code={r.currency} highlight={(t) => highlightText(t, q)} /></span>,
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [canCreate, rows, billing]);

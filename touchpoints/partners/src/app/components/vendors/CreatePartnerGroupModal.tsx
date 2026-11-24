@@ -1405,11 +1405,13 @@ export function CreatePartnerGroupModal({ open, onOpenChange, onPartnerCreated, 
                               className="pl-9 h-9 text-[13px]"
                             />
                           </div>
-                          <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
+                          <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="View">
                             <button
+                              role="radio"
+                              aria-checked={false}
                               onClick={() => setMemberView("browse")}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] text-slate-500 hover:text-slate-700 transition-all cursor-pointer"
-                              style={{ fontWeight: 500 }}
+                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                              style={{ fontWeight: 400 }}
                             >
                               <Users className="w-3.5 h-3.5 text-slate-400" />
                               Browse Partners
@@ -1418,9 +1420,11 @@ export function CreatePartnerGroupModal({ open, onOpenChange, onPartnerCreated, 
                               </span>
                             </button>
                             <button
+                              role="radio"
+                              aria-checked={true}
                               onClick={() => setMemberView("added")}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground transition-all cursor-pointer"
-                              style={{ fontWeight: 600 }}
+                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap bg-[#EDF4FF] text-[#0A77FF] transition-colors cursor-pointer"
+                              style={{ fontWeight: 500 }}
                             >
                               <Check className="w-3.5 h-3.5 text-emerald-500" />
                               Added Partners
@@ -1535,29 +1539,31 @@ export function CreatePartnerGroupModal({ open, onOpenChange, onPartnerCreated, 
                       lockedPrimaryIds={lockedPrimaryIds}
                       currentGroup={editingGroupIdForLock ? { id: editingGroupIdForLock, name: partnerName || "this group" } : null}
                       toolbarExtras={editMode ? (
-                        <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
+                        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="View">
                           <button
+                            role="radio" aria-checked={memberView === "browse"}
                             onClick={() => setMemberView("browse")}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${
-                              memberView === "browse" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"
+                            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                              memberView === "browse" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                             }`}
-                            style={{ fontWeight: memberView === "browse" ? 600 : 500 }}
+                            style={{ fontWeight: memberView === "browse" ? 500 : 400 }}
                           >
                             <Users className={`w-3.5 h-3.5 ${memberView === "browse" ? "text-primary" : "text-slate-400"}`} />
                             Browse Partners
                             <span
-                              className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${memberView === "browse" ? "bg-accent text-primary" : "bg-border text-slate-500"}`}
+                              className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${memberView === "browse" ? "bg-[#0A77FF]/10 text-[#0A77FF]" : "bg-border text-slate-500"}`}
                               style={{ fontWeight: 600 }}
                             >
                               {vendors.length}
                             </span>
                           </button>
                           <button
+                            role="radio" aria-checked={memberView === "added"}
                             onClick={() => setMemberView("added")}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${
-                              memberView === "added" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"
+                            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                              memberView === "added" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                             }`}
-                            style={{ fontWeight: memberView === "added" ? 600 : 500 }}
+                            style={{ fontWeight: memberView === "added" ? 500 : 400 }}
                           >
                             <Check className={`w-3.5 h-3.5 ${memberView === "added" ? "text-emerald-500" : "text-slate-400"}`} />
                             Added Partners
@@ -4597,7 +4603,7 @@ export function ConfigPageContent({
   selectedGroup,
   partnerName,
   configDataRef,
-  onGoToSection,
+  onGoToSection: _onGoToSection,
 }: {
   sectionId: string;
   configType: "vendor" | "customer";
@@ -5932,7 +5938,7 @@ export function ConfigPageContent({
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Currency</span>
                         <InfoTooltip>{`The default currency of every ${configType === "customer" ? "customer" : "vendor"} in this group. Each one inherits it and can override it. Until it is set, it is the base currency (${BASE_CURRENCY}).`}</InfoTooltip>
                       </div>
-                      <Pencil className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Pencil className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                     {currObj ? (
                       <div className="flex items-center gap-2.5">
@@ -6026,7 +6032,7 @@ export function ConfigPageContent({
                     <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Pay To</span>
                     <InfoTooltip>{configType === "customer" ? "The entity that receives payment from this customer. Defaults to your company, since the customer pays you. Change this if payments should route to a different party, such as a billing agent or parent company." : "The entity that receives payment for this vendor's transactions. Defaults to this vendor. Change this if payments go to a different party, such as a parent company or billing agent."}</InfoTooltip>
                   </div>
-                  <Pencil className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <Pencil className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
                 {ptObj ? (
                   <div className="flex items-center gap-2.5">
@@ -6054,7 +6060,7 @@ export function ConfigPageContent({
                     <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Ship To</span>
                     <InfoTooltip>{configType === "customer" ? "The default delivery destination for goods ordered by this customer. Defaults to the customer's address. Change this if items are regularly shipped to a different location." : "The default delivery destination for goods ordered from this vendor. Defaults to your company. Change this if items are regularly shipped to a different location."}</InfoTooltip>
                   </div>
-                  <Pencil className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <Pencil className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
                 {stObj ? (
                   <div className="flex items-start gap-2.5">
@@ -6093,7 +6099,7 @@ export function ConfigPageContent({
                     <span className={`text-[11px] ${allowAltFunding ? "text-slate-500" : "text-slate-400"}`} style={{ fontWeight: 500 }}>Funded By</span>
                     <InfoTooltip>{configType === "customer" ? "The entity that funds purchases made by this customer. Defaults to the customer. Change this only if another entity (such as a parent company or partner) is responsible for financing these transactions." : "The entity that funds purchases from this vendor. Defaults to your company. Change this only if another entity (such as a parent company or partner) is responsible for financing these transactions."}</InfoTooltip>
                   </div>
-                  <Pencil className={`w-3 h-3 text-slate-300 opacity-0 ${allowAltFunding ? "group-hover:opacity-100" : ""} transition-opacity`} />
+                  <Pencil className={`w-3 h-3 text-primary opacity-0 ${allowAltFunding ? "group-hover:opacity-100" : ""} transition-opacity`} />
                 </div>
                 {/* Selection */}
                 <div className={`mt-2 ${allowAltFunding ? "" : "opacity-30"}`}>
@@ -6611,20 +6617,7 @@ export function ConfigPageContent({
                 <span className="text-slate-600 truncate">{getCurrency(creditCurrency)?.name}</span>
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Set in{" "}
-                {onGoToSection ? (
-                  <button
-                    type="button"
-                    onClick={() => onGoToSection(configType === "customer" ? "customer_billing" : "billing_shipping")}
-                    className="text-primary underline underline-offset-2 hover:opacity-80 cursor-pointer"
-                    style={{ fontWeight: 500 }}
-                  >
-                    Billing &amp; Shipping
-                  </button>
-                ) : (
-                  "Billing & Shipping"
-                )}
-                . Change it there.
+                Inherited from Billing &amp; Shipping.
               </p>
             </div>
             {/* Maximum Credit Limit */}
@@ -7561,7 +7554,7 @@ export function ConfigPageContent({
                     </div>
 
                     {/* Type toggle — inline with search, each tab has a hover tooltip */}
-                    <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5 shrink-0">
+                    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Payment term type">
                       {([
                         { key: "net", label: "Net", color: "rgb(var(--primary))", bg: "#EBF3FF", icon: Receipt, tip: "Payment is due a fixed number of days after an event (invoice date, delivery, etc.).", example: <><span className="text-primary" style={{ fontWeight: 600 }}>Net 30</span>, full payment due 30 days after invoice.</> },
                         { key: "prepayment", label: "Pre", color: "rgb(var(--violet))", bg: "#F5F3FF", icon: Clock, tip: "Full or partial payment required before goods are shipped or services rendered.", example: <><span className="text-violet" style={{ fontWeight: 600 }}>50% upfront</span> before production starts.</> },
@@ -7574,16 +7567,18 @@ export function ConfigPageContent({
                             <TooltipTrigger asChild>
                               <button
                                 onClick={() => setPtTypeFilters(cat.key)}
-                                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${
-                                  active ? "shadow-sm" : "hover:bg-white/60"
+                                role="radio"
+                                aria-checked={active}
+                                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                  active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                                 }`}
-                                style={{ fontWeight: active ? 600 : 500, color: active ? cat.color : "#334155", backgroundColor: active ? cat.bg : undefined }}
+                                style={{ fontWeight: active ? 500 : 400 }}
                               >
                                 <cat.icon className="w-3.5 h-3.5" />
                                 {cat.label}
                                 <span
                                   className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
-                                  style={{ fontWeight: 600, color: active ? cat.color: "rgb(var(--muted-foreground))", backgroundColor: active ? `${cat.color}15` : "rgb(var(--border))" }}
+                                  style={{ fontWeight: 600, color: active ? "#0A77FF" : "rgb(var(--muted-foreground))", backgroundColor: active ? "rgba(10,119,255,0.1)" : "rgb(var(--border))" }}
                                 >
                                   {count}
                                 </span>
@@ -8050,7 +8045,7 @@ export function ConfigPageContent({
                     </div>
 
                     {/* Type toggle — inline with search, each tab has a hover tooltip */}
-                    <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5 shrink-0">
+                    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Rule category">
                       {([
                         { key: "discount", label: "Discounts", color: "#047857", bg: "#ECFDF5", icon: TrendingDown, tip: "Reduce unit price when quantity or value thresholds are met.", example: <><span className="text-green-600" style={{ fontWeight: 600 }}>10% off</span> on orders over 500 units.</> },
                         { key: "premium", label: "Premiums", color: "rgb(var(--violet))", bg: "#F5F3FF", icon: TrendingUp, tip: "Markup on base price for express or value-added services.", example: <><span className="text-violet" style={{ fontWeight: 600 }}>15% markup</span> for expedited and priority shipping.</> },
@@ -8062,16 +8057,18 @@ export function ConfigPageContent({
                             <TooltipTrigger asChild>
                               <button
                                 onClick={() => setPrTypeFilters(cat.key)}
-                                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${
-                                  active ? "shadow-sm" : "hover:bg-white/60"
+                                role="radio"
+                                aria-checked={active}
+                                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                  active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                                 }`}
-                                style={{ fontWeight: active ? 600 : 500, color: active ? cat.color : "#334155", backgroundColor: active ? cat.bg : undefined }}
+                                style={{ fontWeight: active ? 500 : 400 }}
                               >
                                 <cat.icon className="w-3.5 h-3.5" />
                                 {cat.label}
                                 <span
                                   className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
-                                  style={{ fontWeight: 600, color: active ? cat.color: "rgb(var(--muted-foreground))", backgroundColor: active ? `${cat.color}15` : "rgb(var(--border))" }}
+                                  style={{ fontWeight: 600, color: active ? "#0A77FF" : "rgb(var(--muted-foreground))", backgroundColor: active ? "rgba(10,119,255,0.1)" : "rgb(var(--border))" }}
                                 >
                                   {count}
                                 </span>
@@ -10367,7 +10364,7 @@ export function ConfigPageContent({
                                   <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>
                                     Packaging
                                   </label>
-                                  <div className="inline-flex rounded-md bg-muted p-0.5">
+                                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Packaging">
                                     {(["standard", "custom"] as const).map((m) => {
                                       const isSelected = row.packagingMode === m;
                                       return (
@@ -10375,10 +10372,12 @@ export function ConfigPageContent({
                                           key={m}
                                           type="button"
                                           onClick={() => updateCsmRow(row.id, { packagingMode: m })}
-                                          className={`px-2.5 h-7 rounded-sm text-[11px] transition-all cursor-pointer ${
-                                            isSelected ? "bg-white shadow-sm text-foreground" : "text-slate-500 hover:text-slate-700"
+                                          role="radio"
+                                          aria-checked={isSelected}
+                                          className={`px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                            isSelected ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                                           }`}
-                                          style={{ fontWeight: isSelected ? 600 : 500 }}
+                                          style={{ fontWeight: isSelected ? 500 : 400 }}
                                         >
                                           {m === "standard" ? "Standard" : "Custom"}
                                         </button>

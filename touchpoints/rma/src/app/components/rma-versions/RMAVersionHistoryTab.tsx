@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 
 import type { RMAVersionEntry } from '@/app/data/rmaVersions';
 import { versionPalette as C } from './rmaVersionDisplay';
-import { LockChip } from '@/app/components/currency/ReturnCurrencyConfig';
 import {
   EMPTY_RMA_VERSION_FILTERS,
   filterRMAVersions,
@@ -151,9 +150,6 @@ export default function RMAVersionHistoryTab({
               {rate.sentence}
               <span style={{ color: C.text500, fontWeight: 400 }}> · {rate.qualifier}</span>
             </span>
-            {rate.locked && (
-              <LockChip locked title="Locked since the first shipment. Every version values its lines at this receiving rate, so a new version doesn't move them." />
-            )}
           </div>
         )}
 

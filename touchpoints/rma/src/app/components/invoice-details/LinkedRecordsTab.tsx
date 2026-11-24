@@ -3,7 +3,7 @@ import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { toBase } from '@/app/currency/rates';
 import { linkedRecordFx, returnSettlementFx } from '@/app/currency/returnSettlement';
 import { BaseMoney } from '@/app/components/currency/Money';
-import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
+import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { useMemo, useState } from 'react';
 import {
   Wallet,
@@ -518,15 +518,19 @@ export function LinkedRecordsTab({
                     <thead>
                       <tr className="border-b border-border bg-white">
                         {[
-                          { col: 'Reference', width: '13%', align: 'text-left', hide: '' },
-                          { col: 'Item', width: '23%', align: 'text-left', hide: '' },
-                          { col: 'Description', width: '14%', align: 'text-left', hide: 'hidden sm:table-cell' },
-                          { col: 'Status', width: '10%', align: 'text-left', hide: '' },
-                          { col: 'Date', width: '10%', align: 'text-left', hide: 'hidden md:table-cell' },
-                          { col: 'Amount', width: '9%', align: 'text-right', hide: '' },
-                          { col: 'Files', width: '8%', align: 'text-left', hide: '' },
-                          { col: 'Last Updated By', width: '7%', align: 'text-left', hide: 'hidden lg:table-cell' },
-                          { col: 'Created By', width: '7%', align: 'text-left', hide: 'hidden lg:table-cell' },
+                          { col: 'Reference', width: '11%', align: 'text-left', hide: '' },
+                          // The record's currency, right after the record it
+                          // is on. The table is laid out in shares, so this
+                          // is its share of ~264px on a full-width tab.
+                          { col: 'Currency', width: '18%', align: 'text-left', hide: '' },
+                          { col: 'Item', width: '17%', align: 'text-left', hide: '' },
+                          { col: 'Description', width: '10%', align: 'text-left', hide: 'hidden sm:table-cell' },
+                          { col: 'Status', width: '9%', align: 'text-left', hide: '' },
+                          { col: 'Date', width: '8%', align: 'text-left', hide: 'hidden md:table-cell' },
+                          { col: 'Amount', width: '8%', align: 'text-right', hide: '' },
+                          { col: 'Files', width: '6%', align: 'text-left', hide: '' },
+                          { col: 'Last Updated By', width: '6%', align: 'text-left', hide: 'hidden lg:table-cell' },
+                          { col: 'Created By', width: '6%', align: 'text-left', hide: 'hidden lg:table-cell' },
                         ].map((c) => (
                           <th
                             key={c.col}
@@ -561,13 +565,16 @@ export function LinkedRecordsTab({
                                 >
                                   {highlightText(r.reference, query)}
                                 </button>
-                                {/* The return's currency, on every record with
-                                    an amount (2026-11-24): "PO-11233 EUR". */}
-                                {isRma && settle?.foreign && r.amount > 0 && (
-                                  <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                                    <CurrencyPill code={invoice.currency} note={`In ${invoice.currency}, the return's currency. The amount reads in ${BASE_CURRENCY}.`} />
-                                  </span>
-                                )}
+                              </span>
+                            </td>
+                            {/* The record's currency, on every row, the base
+                                currency included. */}
+                            <td className="py-2.5 px-4">
+                              <span className="inline-flex whitespace-nowrap max-w-full">
+                                <CurrencyCodeCell
+                                  code={invoice.currency}
+                                  {...(isRma ? { title: `The return's currency. The amount reads in ${BASE_CURRENCY}.` } : {})}
+                                />
                               </span>
                             </td>
                             {/* Which of the lines this document is about.

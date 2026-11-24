@@ -490,7 +490,7 @@ function ImportSetupStep({ spec, data, onChange, highlightMissingFile, correctio
 /* Header preview switch between the two states of the partner import. */
 function ImportStateToggle({ blocked, onChange }: { blocked: boolean; onChange: (blocked: boolean) => void }) {
   return (
-    <div role="radiogroup" aria-label="Import state" className="inline-flex items-center p-0.5 rounded-[8px] border border-border bg-[#F8FAFC]">
+    <div role="radiogroup" aria-label="Import state" className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5">
       {([
         { value: false, label: "Enabled" },
         { value: true, label: "Blocked" },
@@ -504,10 +504,10 @@ function ImportStateToggle({ blocked, onChange }: { blocked: boolean; onChange: 
             aria-checked={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "h-7 px-2.5 rounded-[6px] transition-colors cursor-pointer",
-              active ? "bg-white text-foreground shadow-sm" : "text-[#64748B] hover:text-foreground",
+              "px-2 py-1 rounded-md whitespace-nowrap transition-colors cursor-pointer",
+              active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted",
             )}
-            style={{ fontSize: "12px", fontWeight: active ? 600 : 500 }}
+            style={{ fontSize: "12px", fontWeight: active ? 500 : 400 }}
           >
             {opt.label}
           </button>

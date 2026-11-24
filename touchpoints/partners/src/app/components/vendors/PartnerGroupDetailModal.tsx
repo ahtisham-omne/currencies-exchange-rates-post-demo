@@ -875,7 +875,7 @@ export function SetupTab({
               when the group is single-scope (auto-selecting the relevant
               tab). */}
           {groupHasVendorScope && groupHasCustomerScope && (
-            <div className="inline-flex items-center rounded-lg bg-muted p-0.5 mb-2.5">
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 mb-2.5" role="radiogroup" aria-label="Profile side">
               {([
                 {
                   key: "vendor" as const,
@@ -898,11 +898,13 @@ export function SetupTab({
                     <TooltipTrigger asChild>
                       <button
                         type="button"
+                        role="radio"
+                        aria-checked={isActive}
                         onClick={() => setActiveSubTab(tab.key)}
-                        className={`inline-flex items-center justify-center px-4 py-1.5 rounded-md text-[13px] transition-all cursor-pointer ${
-                          isActive ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)]" : "text-slate-500 hover:text-slate-700"
+                        className={`inline-flex items-center justify-center px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                          isActive ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                         }`}
-                        style={{ fontWeight: isActive ? 600 : 500, color: isActive ? tab.color : undefined }}
+                        style={{ fontWeight: isActive ? 500 : 400 }}
                       >
                         {tab.label}
                       </button>
@@ -2736,29 +2738,31 @@ export function AddPartnersToGroupModal({
                   },
                 } : undefined}
                 toolbarExtras={
-                  <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
+                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="View">
                     <button
+                      role="radio" aria-checked={view === "browse"}
                       onClick={() => setView("browse")}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${
-                        view === "browse" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                        view === "browse" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                       }`}
-                      style={{ fontWeight: view === "browse" ? 600 : 500 }}
+                      style={{ fontWeight: view === "browse" ? 500 : 400 }}
                     >
                       <Users className={`w-3.5 h-3.5 ${view === "browse" ? "text-primary" : "text-slate-400"}`} />
                       Browse Partners
                       <span
-                        className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${view === "browse" ? "bg-accent text-primary" : "bg-border text-slate-500"}`}
+                        className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${view === "browse" ? "bg-[#0A77FF]/10 text-[#0A77FF]" : "bg-border text-slate-500"}`}
                         style={{ fontWeight: 600 }}
                       >
                         {candidateVendors.length}
                       </span>
                     </button>
                     <button
+                      role="radio" aria-checked={view === "added"}
                       onClick={() => setView("added")}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${
-                        view === "added" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                        view === "added" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                       }`}
-                      style={{ fontWeight: view === "added" ? 600 : 500 }}
+                      style={{ fontWeight: view === "added" ? 500 : 400 }}
                     >
                       <Check className={`w-3.5 h-3.5 ${view === "added" ? "text-emerald-500" : "text-slate-400"}`} />
                       Added Partners

@@ -175,13 +175,13 @@ export const VENDOR_CURRENCIES: Record<string, string> = {
   'General Motors (GM)': 'USD',
   'Ford Motor Company': 'USD',
   'Tesla, Inc.': 'USD',
-  'Rivian Automotive': 'USD',
+  'Rivian Automotive': 'PKR', // trades in the base currency (25 Nov 2026)
   'Lucid Motors': 'USD',
   'Chrysler (Stellantis N.V.)': 'EUR',
   // Japanese OEMs
   'Toyota Technical Center (TTC)': 'JPY',
   'Honda Motor Co., Ltd. (USA)': 'JPY',
-  'Nissan North America': 'JPY',
+  'Nissan North America': 'PKR', // trades in the base currency (25 Nov 2026)
   // European OEMs
   'BMW of North America': 'EUR',
   // Tier-1 suppliers, extended network
@@ -194,9 +194,9 @@ export const VENDOR_CURRENCIES: Record<string, string> = {
   'Schaeffler Group': 'EUR',
   'BorgWarner Inc.': 'USD',
   'Dana Incorporated': 'USD',
-  'Magna International': 'CAD',
+  'Magna International': 'PKR', // trades in the base currency (25 Nov 2026)
   'Aptiv PLC': 'USD',
-  'Hyundai Mobis': 'KRW',
+  'Hyundai Mobis': 'PKR', // trades in the base currency (25 Nov 2026)
   'Sensata Technologies': 'USD',
   'Eaton Corporation': 'USD',
   'Parker Hannifin': 'USD',

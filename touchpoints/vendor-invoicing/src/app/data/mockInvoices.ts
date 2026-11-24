@@ -1169,7 +1169,7 @@ function fxDemoInvoice(opts: {
     ...(opts.youPayIn ? { youPayIn: opts.youPayIn } : {}),
     apAccount: FX_DEMO.apAccount,
     description: opts.description ?? (opts.prepayment
-      ? 'Bearings for the conveyor line, half prepaid on order. FX Variance example: the prepaid half keeps its locked rate.'
+      ? 'Bearings for the conveyor line, half prepaid on order. FX Variance example: the prepaid half keeps the rate it was paid at.'
       : 'Bearings for the conveyor line, received Oct 5 and invoiced Oct 16. FX Variance example: no prepayment.'),
     postingDate: invoicedOn,
     linkedPOs: [opts.poNumber],

@@ -8,12 +8,11 @@ import { SOStatusBadge } from './StatusBadge';
 import { StateTransitionOverlay } from '@/app/components/shared/StateTransitionOverlay';
 import type { SalesOrder, SOStatus } from './types';
 import { useDesignMoney, useDocView } from "@/app/components/currency/docCurrencyContext";
-import { VersionRateChoice as VersionRateChoiceCards, versionRateOptions } from "@/app/components/currency/VersionRateChoice";
+import { RevertRateBox } from "@/app/components/currency/RevertRateBox";
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { toBase } from "@/app/currency/rates";
 import { versionRateFields, type VersionRateChoice } from "./soCurrency";
 import { formatWhole } from "./soMoney";
-import { summarizeSO } from "./summarizeSO";
 
 /* Right-pane "Order Status" badge mapping.
    The version's internal status (draft / pending-review / cleared /
@@ -650,11 +649,12 @@ export function VersionHistoryModal({ soNumber, currentVersion, onClose, onRever
       {showRevertConfirm && versionToRevert !== null && (
         <RevertConfirmModal
           version={versionToRevert}
-          rate={(() => {
-            if (!so) return undefined;
-            const s = summarizeSO(so);
-            const options = versionRateOptions({ ...so, ...versionRateFields(so, versionToRevert) }, s.grandTotal);
-            return options ?? undefined;
+          so={so}
+          /* The version's Grand Total as this modal shows it (the design's
+             figure, in the order's currency). */
+          total={(() => {
+            const entry = versions.find(v => v.version === versionToRevert);
+            return entry ? design.amount(entry.snapshot.grandTotal) : undefined;
           })()}
           onClose={() => { setShowRevertConfirm(false); setVersionToRevert(null); }}
           onConfirm={(reason: string, rateChoice: VersionRateChoice) => handleRevert(versionToRevert, reason, rateChoice)}
@@ -1156,14 +1156,15 @@ function CompareView({ v1, v2, formatFor, changeKindConfig: ctCfg, versionStatus
 }
 
 // ── Revert Confirm Modal ──────────────────────────────────────────
-function RevertConfirmModal({ version, rate, onClose, onConfirm }: {
+function RevertConfirmModal({ version, so, total, onClose, onConfirm }: {
   version: number;
-  /** A foreign-currency order: V{version}'s locked rate, or today's. */
-  rate?: import("@/app/components/currency/VersionRateChoice").VersionRateOptions;
-  onClose: () => void; onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
+  /** The order and the version's total, for the Exchange rate box (foreign currency only). */
+  so?: SalesOrder; total?: number;
+  onClose: () => void;
+  /** The store applies today's rate whatever is passed ("locked" kept for the callers). */
+  onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
 }) {
   const [reason, setReason] = useState('');
-  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
   // Routes through the shared `ConfirmDiscardModal` so the listing-level
   // revert (this) and the detail-page version-tab revert use the same
   // Partner v7 chrome (gradient banner, glow icon, h-11 stacked buttons).
@@ -1176,13 +1177,10 @@ function RevertConfirmModal({ version, rate, onClose, onConfirm }: {
       description={`V${version} will become the latest version of this sales order. Its existing status is preserved. The next material change starts a new version.`}
       confirmLabel={`Revert to V${version}`}
       cancelLabel="Cancel"
-      onConfirm={() => onConfirm(reason.trim(), rate ? rateChoice : 'locked')}
+      onConfirm={() => onConfirm(reason.trim(), 'locked')}
     >
-      {rate && (
-        <div style={{ marginBottom: 14 }}>
-          <VersionRateChoiceCards fromVersion={version} options={rate} value={rateChoice} onChange={setRateChoice} />
-        </div>
-      )}
+      {/* Exchange rate — the restored version takes today's rate. */}
+      <RevertRateBox so={so} version={version} total={total} />
       <div>
         <label
           className="block"

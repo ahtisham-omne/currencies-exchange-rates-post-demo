@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { formatUsDate } from '@/app/lib/dueBucket';
 import { 
   MoreHorizontal, 
@@ -201,7 +202,7 @@ export function AdvancedInvoiceTable({
     { id: 'amount', label: 'Amount', width: 160, minWidth: 120, visible: true, resizable: true, sortable: true },
     // Linked Records sits after Amount (feedback 7/16/26).
     { id: 'linkedRecords', label: 'Linked Records', width: 280, minWidth: 200, visible: true, resizable: true, sortable: false },
-    { id: 'currency', label: 'Currency', width: 120, minWidth: 90, visible: true, resizable: true, sortable: true },
+    { id: 'currency', label: 'Currency', width: 264, minWidth: 160, visible: true, resizable: true, sortable: true },
     { id: 'description', label: 'Description', width: 300, minWidth: 200, visible: true, resizable: true, sortable: true },
     { id: 'updatedBy', label: 'Last Updated By', width: 180, minWidth: 140, visible: true, resizable: true, sortable: true },
     { id: 'updatedDate', label: 'Last Updated On', width: 160, minWidth: 120, visible: true, resizable: true, sortable: true },
@@ -833,7 +834,7 @@ export function AdvancedInvoiceTable({
                         </div>
                       )}
                       {column.id === 'currency' && (
-                        <span className="text-muted-foreground">{invoice.currency}</span>
+                        <span className="inline-flex whitespace-nowrap max-w-full"><CurrencyCodeCell code={invoice.currency} /></span>
                       )}
                       {column.id === 'createdDate' && (
                         <span className="text-muted-foreground">{formatUsDate(invoice.createdDate)}</span>

@@ -181,19 +181,18 @@ export function ReturnSelectItemsStep({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Which way in. */}
       <div className="shrink-0 px-4 sm:px-5 pt-3">
-        <div className="inline-flex items-center gap-0.5 rounded-lg border border-[#E8ECF1] bg-[#F7F9FC] p-0.5">
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Find items by">
           {BASES.map((b) => (
             <button
               key={b.key}
               type="button"
+              role="radio"
+              aria-checked={basis === b.key}
               onClick={() => setBasis(b.key)}
-              aria-pressed={basis === b.key}
-              className={`h-7 rounded-md px-3 text-[12px] transition-colors ${
-                basis === b.key
-                  ? 'bg-white text-primary shadow-[0_1px_2px_rgba(15,23,42,0.06)]'
-                  : 'text-slate-500 hover:text-foreground'
+              className={`px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                basis === b.key ? 'bg-[#EDF4FF] text-[#0A77FF]' : 'text-muted-foreground hover:bg-muted'
               }`}
-              style={{ fontWeight: 600 }}
+              style={{ fontWeight: basis === b.key ? 500 : 400 }}
             >
               {b.label}
             </button>

@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { useState, useEffect, useMemo, useCallback, useRef, cloneElement, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -102,7 +103,6 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/app/
 import { format } from 'date-fns';
 import { BaseMoney } from '@/app/components/currency/Money';
 import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
-import { CurrencyFlag, CurrencyTag } from '@/app/components/currency/CurrencyChip';
 import { currentRateFor, customerCurrency, quoteFx, stampQuoteRate, toQuoteBase } from '@/app/currency/qFx';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
@@ -148,6 +148,10 @@ const MAIN_STATUS_PILLS: { key: QuickFilter; label: string; showCount: boolean }
 const COLUMN_DEFS: (ColSelectorConfig & { minWidth: string; sortable?: boolean; align?: 'left' | 'right' })[] = [
   { key: 'quoteNumber', label: 'Quote No', minWidth: '260px', sortable: true },
   { key: 'customer', label: 'Customer Name', minWidth: '210px', sortable: true },
+  /* The quote's currency (spec 4.3), right after the customer it comes
+     from. Shown by default, base included; Quote Value is in base, the
+     quote's currency on its hover. */
+  { key: 'currency', label: 'Currency', minWidth: '264px', sortable: true },
   { key: 'primaryPoC', label: 'Point of Contact', minWidth: '210px', sortable: true },
   { key: 'status', label: 'Status', minWidth: '180px', sortable: true },
   // Items column — Partner v7 parity. Renders a thumbnail + the first item
@@ -158,9 +162,6 @@ const COLUMN_DEFS: (ColSelectorConfig & { minWidth: string; sortable?: boolean; 
   // a specific warehouse happens in the Sales Order.
   { key: 'items', label: 'Line Items', minWidth: '220px', sortable: true },
   { key: 'totalValue', label: 'Quote Value', minWidth: '130px', sortable: true, align: 'right' },
-  /* The quote's currency (spec 4.3), as Vendor Invoicing has. Optional:
-     hidden by default; Quote Value is in base, the quote's currency on its hover. */
-  { key: 'currency', label: 'Currency', minWidth: '100px', sortable: true },
   { key: 'deliveryLocation', label: 'Delivery Location', minWidth: '180px', sortable: true },
   { key: 'requestedDate', label: 'Requested On', minWidth: '120px', sortable: true },
   { key: 'respondBy', label: 'Respond By', minWidth: '120px', sortable: true },
@@ -192,7 +193,7 @@ const COLUMN_DEFS: (ColSelectorConfig & { minWidth: string; sortable?: boolean; 
 
 /* Columns opted-out of the default listing view. Users can toggle
    them on via the column configurator (both grid + kanban). */
-const HIDDEN_BY_DEFAULT_COLUMNS = new Set<string>(['rejectedAt', 'rejectedBy', 'currency']);
+const HIDDEN_BY_DEFAULT_COLUMNS = new Set<string>(['rejectedAt', 'rejectedBy']);
 
 const CURRENT_USER_NAME = CURRENT_USER_REP.name;
 
@@ -1736,10 +1737,7 @@ export function QuotesListPage() {
                               );
                             }
                             case 'customer': {
-                              /* The quote's currency tag after the customer, only on a
-                                 quote in a foreign currency (Currency Touchpoints Map,
-                                 Quotes 1); Quote Value stays in base with the hover. */
-                              const quoteCurrencyCode = quoteFx(quote).currency;
+                              /* The quote's currency reads in its own Currency column. */
                               return (
                                 <TableCell key={colKey}>
                                   <CustomerCellRich
@@ -1753,9 +1751,6 @@ export function QuotesListPage() {
                                       location: customerLoc ? { name: customerLoc, isPrimary: true } : undefined,
                                     }}
                                     density={isRelaxed ? 'comfortable' : 'compact'}
-                                    after={quoteCurrencyCode === BASE_CURRENCY ? undefined : (
-                                      <CurrencyTag code={quoteCurrencyCode} note="The quote's currency. Quote Value is in the base currency; hover it for the customer's amount." />
-                                    )}
                                   />
                                 </TableCell>
                               );
@@ -1795,7 +1790,7 @@ export function QuotesListPage() {
                                amounts, so rows compare whatever currency they're in; the
                                customer's amount (the quote's currency) and the rate on hover. */
                             case 'totalValue': { const qfx = quoteFx(quote); return <TableCell key={colKey} className="text-right"><BaseMoney value={quote.totalValue || 0} currency={qfx.currency} fx={qfx.isBase ? null : qfx} className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--foreground)' }} /></TableCell>; }
-                            case 'currency': { const code = quoteFx(quote).currency; return <TableCell key={colKey}><span className="inline-flex items-center gap-1.5 whitespace-nowrap" style={{ fontSize: '13px', color: '#64748B' }}><CurrencyFlag code={code} />{code}</span></TableCell>; }
+                            case 'currency': { const code = quoteFx(quote).currency; return <TableCell key={colKey}><span className="inline-flex whitespace-nowrap max-w-full" style={{ fontSize: '13px' }}><CurrencyCodeCell code={code} title="The quote's currency. Quote Value is in the base currency; hover it for the customer's amount." /></span></TableCell>; }
                             case 'deliveryLocation':
                               return (
                                 <TableCell key={colKey}>

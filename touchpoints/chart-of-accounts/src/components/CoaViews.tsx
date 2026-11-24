@@ -356,7 +356,7 @@ export function CoaLensTable({ view, rows, density, collapsed, onToggleSection, 
           <th>Account</th>
           <th style={{ width: 120 }}>Type</th>
           <th>Statement classification</th>
-          <th style={{ width: 110 }}>Currency</th>
+          <th style={{ width: 264 }}>Currency</th>
           <th className="!text-right" style={{ width: 150 }}>Balance</th>
           <th className="!text-right" style={{ width: 150 }}>FX Balance</th>
           <th style={{ width: 110 }}>Status</th>

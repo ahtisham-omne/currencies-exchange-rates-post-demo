@@ -8,15 +8,13 @@ import {
   AlertDialogDescription,
 } from "./ui/alert-dialog";
 import { FONT } from "./designTokens";
-import type { POVersionSnapshot, VersionRateChoice } from "./poStore";
-import { VersionRateChoice as VersionRateChoiceCards, versionRateOptions } from "./currency/VersionRateChoice";
-import { useDocView } from "./currency/docCurrencyContext";
-import { formatCurrency, rateTypeText, useDocFx, versionFx } from "./poVersionDisplay";
+import { currentRateFor, type POVersionSnapshot, type VersionRateChoice } from "./poStore";
+import { useDocFx, versionFx } from "./poVersionDisplay";
+import { RateTypeChip } from "./currency/CurrencyBlock";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
-import { formatRate, rateSentence } from "@/app/currency/money";
+import { formatMoney, rateSentence } from "@/app/currency/money";
 import type { PoFx } from "@/app/currency/poFx";
 import { toBase } from "@/app/currency/rates";
-import { CurrencyFlag } from "./currency/CurrencyChip";
 
 /**
  * Revert-to-version confirmation modal — ported from the Sales Orders V5
@@ -34,31 +32,21 @@ import { CurrencyFlag } from "./currency/CurrencyChip";
  *   - Centered title + description
  *   - Optional Reason textarea (buyer-supplied context)
  *   - Stacked buttons: red confirm (h-11) on top, grey Cancel below
+ *
+ * Currency & Exchange Rates (25 Nov 2026): a restored version always takes
+ * today's rate (revertPOToVersion applies it). On a foreign-currency PO an
+ * "Exchange rate" box under the description says so: today's rate with its
+ * type, and the PO's total in the base currency before and after.
  */
 interface POVersionRevertModalProps {
   version: number;
   onClose: () => void;
-  /** With the rate the PO takes: the version's locked one, or today's. */
+  /** The store applies today's rate whatever is passed ("locked" kept for the callers). */
   onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
-  /** The version being restored. When given, its total is shown in its
-      own currency, with a note when reverting changes the PO's currency
-      or rate (the snapshot's are restored with it). */
+  /** The version being restored: its total and rate, for the Exchange rate box. */
   snapshot?: POVersionSnapshot;
-  /** The PO's currency and rate now. Defaults to the PO page's (DocCurrency). */
+  /** The PO's currency and rate now. Defaults to the PO page's. */
   currentFx?: PoFx | null;
-}
-
-/* What reverting does to the PO's currency or rate, if anything. */
-function rateChangeNote(fx: PoFx, now: PoFx): string | null {
-  if (fx.currency !== now.currency) {
-    return fx.isBase
-      ? `Puts the PO back in ${fx.currency} (now ${now.currency}); no conversion.`
-      : `Puts the PO back in ${fx.currency} (now ${now.currency}) at ${rateSentence(fx.currency, fx.rate)} · ${rateTypeText(fx)}.`;
-  }
-  if (fx.isBase) return null;
-  const typeChanged = fx.rateType !== now.rateType;
-  if (formatRate(fx.rate) === formatRate(now.rate) && !typeChanged) return null;
-  return `Restores the rate ${rateSentence(fx.currency, fx.rate)} · ${rateTypeText(fx)} (now ${formatRate(now.rate)}${typeChanged ? `, ${rateTypeText(now)}` : ""}).`;
 }
 
 /* Positioning — kills shadcn's translate-50% centering and re-centers
@@ -94,24 +82,15 @@ export default function POVersionRevertModal({
   currentFx,
 }: POVersionRevertModalProps) {
   const [reason, setReason] = useState("");
-  const [rateChoice, setRateChoice] = useState<VersionRateChoice>("locked");
-  const view = useDocView();
   const docFx = useDocFx();
-  const nowFx = currentFx ?? docFx;
-  const fx = snapshot ? versionFx(snapshot, nowFx) : null;
-  // Only a snapshot that recorded its currency restores one.
-  const note = fx && nowFx && snapshot?.currency ? rateChangeNote(fx, nowFx) : null;
-  // A foreign version: keep its locked rate, or apply today's.
-  const rateOptions = fx && snapshot && !fx.isBase
-    ? versionRateOptions({ ...snapshot, currency: fx.currency, exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate }, snapshot.total)
+  const fx = snapshot ? versionFx(snapshot, currentFx ?? docFx) : null;
+  // Today's rate of the version's own type (mid-market when no corporate rate is set).
+  const today = fx && !fx.isBase
+    ? currentRateFor({ currency: fx.currency, exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate })
     : null;
-  // The page's view: base (vendor amount beside it) or the vendor's (base beside it).
-  const showBase = !!fx && !fx.isBase && view.inBase;
 
   return (
     <AlertDialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      {/* No outside-click close: Radix's AlertDialog blocks it (its own
-          onInteractOutside wins), so the old handler never ran. */}
       <AlertDialogContent
         className="p-0 gap-0 overflow-hidden border-0"
         style={positioningStyle}
@@ -152,7 +131,7 @@ export default function POVersionRevertModal({
               fontFamily: FONT,
             }}
           >
-            Restore version {version}
+            Revert to V{version}
           </span>
         </div>
 
@@ -168,7 +147,7 @@ export default function POVersionRevertModal({
                 fontFamily: FONT,
               }}
             >
-              Restore version {version}
+              Revert to V{version}?
             </AlertDialogTitle>
           </AlertDialogHeader>
           <AlertDialogDescription
@@ -181,54 +160,28 @@ export default function POVersionRevertModal({
               fontFamily: FONT,
             }}
           >
-            Version {version} will become the current version of this purchase order.
+            V{version} will become the current version of this purchase order.
             Its existing status is preserved. The next material change starts a
             new version.
           </AlertDialogDescription>
 
-          {/* The version's total in its own currency (base equivalent
-              inline: a hover card would sit under this z-14000 layer). */}
-          {fx && snapshot && (
+          {/* Exchange rate — the restored version takes today's rate. */}
+          {fx && snapshot && today && (
             <div
               className="w-full mt-5 rounded-lg border text-left"
-              style={{
-                borderColor: "#E2E8F0",
-                backgroundColor: "#F8FAFC",
-                padding: "10px 12px",
-                fontFamily: FONT,
-              }}
+              style={{ borderColor: "#E2E8F0", backgroundColor: "#FFFFFF", padding: "10px 12px", fontFamily: FONT }}
             >
               <div className="flex items-center justify-between" style={{ gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#64748B", lineHeight: 1 }}>
-                  Version {version} total
-                </span>
-                <span className="inline-flex items-baseline tabular-nums" style={{ gap: 6, lineHeight: 1 }}>
-                  {!fx.isBase && (
-                    <span style={{ fontSize: 11, fontWeight: 400, color: "#94A3B8" }}>
-                      ≈ {showBase ? formatCurrency(snapshot.total, fx.currency) : formatCurrency(toBase(snapshot.total, fx.rate), BASE_CURRENCY)}
-                    </span>
-                  )}
-                  <span
-                    className="inline-flex items-center"
-                    style={{ gap: 5, fontSize: 13, fontWeight: 600, color: "#0F172A" }}
-                  >
-                    <CurrencyFlag code={showBase ? BASE_CURRENCY : fx.currency} size={11} />
-                    {showBase ? formatCurrency(toBase(snapshot.total, fx.rate), BASE_CURRENCY) : formatCurrency(snapshot.total, fx.currency)}
-                  </span>
-                </span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#64748B" }}>Exchange rate</span>
+                <RateTypeChip type={today.rateType} />
               </div>
-              {note && (
-                <div style={{ fontSize: 11, color: "#64748B", lineHeight: 1.5, marginTop: 6 }}>
-                  {note}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* The rate the PO takes: V{version}'s locked one, or today's. */}
-          {rateOptions && (
-            <div className="w-full mt-5">
-              <VersionRateChoiceCards fromVersion={version} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
+              <div className="tabular-nums" style={{ fontSize: 13, color: "#0F172A", marginTop: 4 }}>
+                Today's rate: <span style={{ fontWeight: 600 }}>{rateSentence(fx.currency, today.exchangeRate)}</span>
+              </div>
+              <div className="tabular-nums" style={{ fontSize: 12.5, color: "#64748B", marginTop: 2 }}>
+                {BASE_CURRENCY} total: {formatMoney(toBase(snapshot.total, fx.rate), BASE_CURRENCY)} →{" "}
+                <span style={{ fontWeight: 600, color: "#0F172A" }}>{formatMoney(toBase(snapshot.total, today.exchangeRate), BASE_CURRENCY)}</span>
+              </div>
             </div>
           )}
 
@@ -245,7 +198,7 @@ export default function POVersionRevertModal({
                 fontFamily: FONT,
               }}
             >
-              Reason for restoring{" "}
+              Reason for revert{" "}
               <span style={{ color: "#94A3B8", fontWeight: 400 }}>(optional)</span>
             </label>
             <textarea
@@ -284,7 +237,7 @@ export default function POVersionRevertModal({
           <div className="w-full mt-7 flex flex-col gap-2.5">
             <button
               type="button"
-              onClick={() => onConfirm(reason.trim(), rateOptions ? rateChoice : "locked")}
+              onClick={() => onConfirm(reason.trim(), "locked")}
               className="w-full transition-all"
               style={{
                 height: 44,
@@ -298,7 +251,7 @@ export default function POVersionRevertModal({
                 fontFamily: FONT,
               }}
             >
-              Restore
+              Revert to V{version}
             </button>
             <button
               type="button"

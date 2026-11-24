@@ -67,7 +67,7 @@ import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { CurrencyPill } from "./currency/CurrencyChip";
 import { CART_TAG_NOTE, poPerVendorLine } from "./currency/cartCurrency";
 import { formatMoney } from "@/app/currency/money";
-import { poFx, ruleAmountFactorToday, toBaseToday, vendorCurrency, type PoFx } from "@/app/currency/poFx";
+import { poFx, ruleAmountFactorToday, toBaseToday, todayFx, vendorCurrency, type PoFx } from "@/app/currency/poFx";
 
 /* ═══════════════════════════════════════════════════════════════
    DESIGN CONSTANTS — Partners-aligned (mirrors PO detail page)
@@ -1149,7 +1149,8 @@ export default function CartPage() {
                           </div>
                           <span className="shrink-0 flex flex-col items-end">
                             <span className="tabular-nums" style={{ fontSize: 12, fontWeight: 600, color: C.text900, fontFamily: FONT, lineHeight: 1.4 }}>
-                              {formatMoney(toBaseToday(g.checkedTotal, g.currency), BASE_CURRENCY)}
+                              {/* In PKR; a foreign vendor's subtotal shows its own currency and today's rate on hover. */}
+                              <BaseMoney value={g.checkedTotal} currency={g.currency} fx={todayFx(g.currency)} dateLabel="today" role="Vendor currency" />
                             </span>
                           </span>
                         </div>

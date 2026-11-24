@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/ui/hover-card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { highlightText } from '@/app/components/InvoiceDataTable';
@@ -217,12 +218,11 @@ export function CurrencyTotals({
   );
 }
 
-/** Flag + code, the invoice listing's Currency cell. */
+/** The Currency Library's cell (code pill + name), the listings' Currency cell. */
 export function CurrencyCell({ code, searchQuery }: { code: string; searchQuery?: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-muted-foreground whitespace-nowrap">
-      <CurrencyFlag code={code} size={16} />
-      <span>{highlightText(code, searchQuery)}</span>
+    <span className="inline-flex whitespace-nowrap max-w-full">
+      <CurrencyCodeCell code={code} highlight={(t) => highlightText(t, searchQuery)} />
     </span>
   );
 }

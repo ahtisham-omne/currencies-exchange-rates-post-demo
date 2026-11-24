@@ -263,24 +263,26 @@ export function ManagePartnersModal({
               )}
             </div>
 
-            <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="View">
               {(['browse', 'added'] as const).map(v => {
                 const active = view === v;
                 const Icon = v === 'browse' ? Users : Check;
                 const count = v === 'browse' ? available.length : assigned.length;
                 const iconActiveColor = v === 'browse' ? 'text-primary' : 'text-emerald-500';
                 const badgeClass = active
-                  ? (v === 'browse' ? 'bg-accent text-primary' : 'bg-emerald-50 text-emerald-600')
+                  ? (v === 'browse' ? 'bg-[#0A77FF]/10 text-[#0A77FF]' : 'bg-emerald-50 text-emerald-600')
                   : 'bg-border text-slate-500';
                 return (
                   <button
                     key={v}
+                    role="radio"
+                    aria-checked={active}
                     onClick={() => setView(v)}
                     className={cn(
-                      'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all',
+                      'inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer',
                       active
-                        ? 'bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground font-semibold'
-                        : 'text-slate-500 hover:text-slate-700 font-medium',
+                        ? 'bg-[#EDF4FF] text-[#0A77FF] font-medium'
+                        : 'text-muted-foreground hover:bg-muted font-normal',
                     )}
                     style={{ fontFamily: FONT }}
                   >

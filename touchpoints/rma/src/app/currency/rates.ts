@@ -46,8 +46,9 @@ export const CORPORATE_RATES: CorporateRate[] = [
   { code: 'CNY', rate: 38.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
 ];
 
-/** The provider's last sync; mid-market history ends on this day. */
-const LAST_SYNC_DAY = '2026-04-10';
+/** The provider's last sync (as Purchase Orders has it); mid-market history ends on this day. */
+export const LAST_SYNC = '2026-04-10T14:30:00Z';
+const LAST_SYNC_DAY = LAST_SYNC.slice(0, 10);
 const HISTORY_DAYS = 6 * 365;
 
 // [rate, 24h change %] for the hand-seeded pairs (as Purchase Orders seeds them).
@@ -152,6 +153,8 @@ export interface RateQuote {
   source: string;
   /** Corporate was asked for and none is set for the day: mid-market stands. */
   fellBack?: boolean;
+  /** Corporate only: the day the corporate rate took effect. */
+  effectiveDate?: string;
 }
 
 /** The rate of a type on a day. A corporate rate finance hasn't set falls back
@@ -161,7 +164,7 @@ export function rateOn(code: string, isoDate: string, type: RateType): RateQuote
   if (isBaseCurrency(code)) return { rate: 1, type, date, source: 'Base currency' };
   if (type === 'corporate') {
     const corp = corporateRateOn(code, date);
-    if (corp) return { rate: corp.rate, type, date, source: `Set by ${corp.setBy}` };
+    if (corp) return { rate: corp.rate, type, date, source: `Set by ${corp.setBy}`, effectiveDate: corp.effectiveDate };
     return { rate: midRateOn(code, date), type: 'mid', date, source: RATE_PROVIDER, fellBack: true };
   }
   return { rate: midRateOn(code, date), type, date, source: RATE_PROVIDER };

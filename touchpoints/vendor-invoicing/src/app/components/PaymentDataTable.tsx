@@ -1,4 +1,5 @@
 import type { DataTableEmptyConfig } from '@/app/components/data-table/DataTable';
+import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { Fragment, useMemo, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -34,7 +35,6 @@ import { BASE_CURRENCY, getCurrency } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
 import { paymentFx, toPaymentBase } from '@/app/currency/paymentFx';
 import { BaseMoney } from '@/app/components/currency/Money';
-import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
 import { getRowActionGroups, type PaymentActionId } from '@/app/data/paymentActions';
 import { actionToneClass, type ActionTone } from '@/app/lib/actionMenuTone';
 import {
@@ -426,7 +426,24 @@ export const PAYMENT_COLUMNS: ColumnDef<Payment>[] = [
     filterType: 'text',
     getValue: (row) => row.vendor,
     render: (row, ctx) => (
-      <VendorCell vendor={row.vendor} description={row.memo} density={ctx.density} searchQuery={ctx.searchQuery} currency={row.currency} />
+      <VendorCell vendor={row.vendor} description={row.memo} density={ctx.density} searchQuery={ctx.searchQuery} />
+    ),
+  },
+  {
+    key: 'currency',
+    label: 'Currency',
+    minWidth: 160,
+    defaultWidth: 264,
+    sortable: true,
+    filterType: 'multiselect',
+    uniqueValues: (rows) => Array.from(new Set(rows.map((r) => r.currency))).sort(),
+    getValue: (row) => row.currency,
+    // The Currency Library's cell: the ISO code pill, then the name.
+    searchText: (row) => `${row.currency} ${getCurrency(row.currency)?.name ?? ''}`,
+    render: (row, { searchQuery }) => (
+      <span className="inline-flex whitespace-nowrap max-w-full">
+        <CurrencyCodeCell code={row.currency} highlight={(t) => highlightText(t, searchQuery)} />
+      </span>
     ),
   },
   {
@@ -527,24 +544,6 @@ export const PAYMENT_COLUMNS: ColumnDef<Payment>[] = [
         <BaseMoney value={row.amount} currency={row.currency} fx={paymentFx(row)} role="Invoice currency" dateLabel="payment date">
           {highlightAmount(formatMoney(toPaymentBase(row, row.amount), BASE_CURRENCY), searchQuery)}
         </BaseMoney>
-      </span>
-    ),
-  },
-  {
-    key: 'currency',
-    label: 'Currency',
-    minWidth: 90,
-    defaultWidth: 120,
-    sortable: true,
-    filterType: 'multiselect',
-    uniqueValues: (rows) => Array.from(new Set(rows.map((r) => r.currency))).sort(),
-    getValue: (row) => row.currency,
-    // Flag + code, as the invoice listing shows a currency; the name rides the search.
-    searchText: (row) => `${row.currency} ${getCurrency(row.currency)?.name ?? ''}`,
-    render: (row, { searchQuery }) => (
-      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-        <CurrencyFlag code={row.currency} size={16} />
-        <span>{highlightText(row.currency, searchQuery)}</span>
       </span>
     ),
   },

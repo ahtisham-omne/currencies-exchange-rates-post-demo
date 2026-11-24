@@ -200,7 +200,7 @@ export function accrualDescription(v: FxVariance): string {
   const parts = ['Received, not invoiced, at the receiving rate'];
   if (prepaid > 0.004) {
     parts[0] = v.restForeign > 0.004 ? 'Received, not invoiced: the unpaid part at the receiving rate' : 'Received, not invoiced';
-    parts.push(`${formatMoney(prepaid, v.currency)} prepaid at its locked rate`);
+    parts.push(`${formatMoney(prepaid, v.currency)} prepaid at the rate it was paid at`);
   }
   return parts.join(' · ');
 }

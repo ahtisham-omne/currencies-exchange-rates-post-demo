@@ -199,22 +199,22 @@ export function ItemPurchasingTab({ itemId }: ItemPurchasingTabProps) {
      Pricing Rules' literal `px-4 pt-2.5 pb-2`. */
   const primaryToggleRow = (
     <div className="flex items-center justify-between gap-3 px-4 pt-2.5 pb-2">
-      <div className="inline-flex items-center rounded-lg bg-muted p-0.5">
+      <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Purchasing view">
         {PRIMARY_TABS.map((t) => {
           const isActive = primaryTab === t.key;
           return (
             <button
               key={t.key}
               type="button"
+              role="radio"
+              aria-checked={isActive}
               onClick={() => setPrimaryTab(t.key)}
-              className={`inline-flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] transition-all cursor-pointer ${
-                isActive
-                  ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)]"
-                  : "text-slate-500 hover:text-slate-700"
+              className={`inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                isActive ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
               }`}
-              style={{ fontWeight: isActive ? 600 : 500, color: isActive ? t.color : undefined }}
+              style={{ fontWeight: isActive ? 500 : 400 }}
             >
-              <t.icon className="w-3.5 h-3.5" style={{ color: isActive ? t.color : "#94A3B8" }} />
+              <t.icon className="w-3.5 h-3.5" />
               {t.label}
             </button>
           );

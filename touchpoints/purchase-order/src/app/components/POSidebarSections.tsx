@@ -48,9 +48,6 @@ import type { PaymentTermTemplate } from "./PaymentTermsDialog";
 import { resolvePaymentMethodByName } from "./PaymentMethodDialog";
 import type { PaymentMethod, PaymentMethodType } from "./PaymentMethodDialog";
 import { PARTNER_LOCATION_ITEMS } from "./partnerLocationData";
-import { CurrencyFlag } from "./currency/CurrencyChip";
-import { getCurrency } from "@/app/currency/currencies";
-import { vendorCurrency } from "@/app/currency/poFx";
 
 /* ═══════════════════════════════════════════════════════════════
    TYPOGRAPHY — CSS variable-bound, Inter only
@@ -355,7 +352,7 @@ export function VendorInfoCard({
   shippedToVendors,
   fundedByVendors,
   defaultOpen = true,
-  poCurrency,
+  poCurrency: _poCurrency,
 }: {
   vendor: POVendor;
   recipient: PORecipient;
@@ -376,9 +373,6 @@ export function VendorInfoCard({
   poCurrency?: string;
 }) {
   const contacts = getVendorContacts(vendor.name);
-  /* The vendor's default currency, from the partner record (spec 4.2): the
-     reason the PO opened in it. */
-  const defaultCurrency = vendorCurrency(vendor.name);
   const vendorInitials = getInitials(vendor.name);
 
   /* Resolve secondary contacts from names */
@@ -498,31 +492,6 @@ export function VendorInfoCard({
               );
             })()}
           </div>
-        </div>
-
-        {/* ── Default currency (spec 4.2) — the partner record's, so the
-            buyer can see why the PO opened in it. DashInfoLabel row recipe:
-            10/500 slate-400 label, 12/500 slate-700 value. ── */}
-        <div className="mt-3 flex items-start justify-between gap-3 border-t border-muted pt-2.5">
-          <div className="min-w-0">
-            <p className="text-slate-400" style={{ fontSize: 10, fontWeight: 500, fontFamily: FONT }}>
-              Default currency
-            </p>
-            <p className="text-slate-500 truncate" style={{ fontSize: 10, fontWeight: 400, fontFamily: FONT, marginTop: 2 }}>
-              {!poCurrency || poCurrency === defaultCurrency
-                ? "This PO opened in it"
-                : `This PO was changed to ${poCurrency}`}
-            </p>
-          </div>
-          <p
-            className="flex items-center gap-1.5 text-slate-700 shrink-0"
-            style={{ fontSize: 12, fontWeight: 500, fontFamily: FONT }}
-            title={getCurrency(defaultCurrency)?.name}
-          >
-            <CurrencyFlag code={defaultCurrency} />
-            {defaultCurrency}
-            <span className="text-slate-500" style={{ fontWeight: 400 }}>{getCurrency(defaultCurrency)?.name}</span>
-          </p>
         </div>
 
         {/* ── Three collapsible sub-sections: Contact / Shipping & Billing /

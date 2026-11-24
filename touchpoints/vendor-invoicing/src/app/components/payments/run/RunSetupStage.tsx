@@ -487,14 +487,14 @@ export function RunSetupStage({
     {
       key: 'currency',
       label: 'Currency',
-      // Narrow: flag + code is all it holds, and the pool must still fit.
-      minWidth: 80,
-      defaultWidth: 100,
+      // The library's code pill + name; the name truncates when the pool is tight.
+      minWidth: 140,
+      defaultWidth: 220,
       sortable: true,
       filterType: 'multiselect',
       uniqueValues: (list) => [...new Set(list.map(currencyOf))].sort(),
       getValue: (r) => currencyOf(r),
-      // Flag + code, the invoice listing's Currency cell; the name searches too.
+      // The Currency Library's cell (code pill + name); the name searches too.
       searchText: (r) => `${currencyOf(r)} ${getCurrency(currencyOf(r))?.name ?? ''}`,
       render: (r, { searchQuery }) => <CurrencyCell code={currencyOf(r)} searchQuery={searchQuery} />,
     },

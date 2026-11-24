@@ -5,7 +5,7 @@ import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/curre
 import { currencyDecimals, formatRate, formatRateDate, rateSentence } from '@/app/currency/money';
 import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, corporateRateOn, type RateType } from '@/app/currency/rates';
 import { priceFromBase, priceInBase, pricePrefix, type VendorRate } from '@/app/currency/vendorFx';
-import { CurrencyFlag } from './CurrencyChip';
+import { CurrencyFlag, currencyChipLabel } from './CurrencyChip';
 import { linkProvider } from './ProviderLink';
 
 /* ── Qualified-vendor prices in the Edit Vendors drawer ───────────────
@@ -174,9 +174,10 @@ export function VendorPriceFields({
   );
 }
 
-/** Mid-market | Corporate, as the Exchange Rates module names them. With
- *  `corporateDisabled` (the reason), Corporate shows but can't be picked and
- *  the reason rides a tooltip. */
+/** Mid-market | Corporate, as the Exchange Rates module names them, drawn
+ *  frameless like Chart of Accounts' period presets (the chosen option is a
+ *  light-blue pill). With `corporateDisabled` (the reason), Corporate shows
+ *  but can't be picked and the reason rides a tooltip. */
 function RateTypeToggle({
   value,
   onChange,
@@ -187,7 +188,7 @@ function RateTypeToggle({
   corporateDisabled?: string;
 }) {
   return (
-    <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-px shrink-0" role="radiogroup" aria-label="Rate type">
+    <span className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Rate type">
       {(['mid', 'corporate'] as RateType[]).map((t) => {
         const disabled = t === 'corporate' && !!corporateDisabled;
         const button = (
@@ -198,14 +199,14 @@ function RateTypeToggle({
             aria-checked={value === t}
             disabled={disabled}
             onClick={() => !disabled && value !== t && onChange(t)}
-            className={`px-2 py-px rounded text-[10.5px] transition-colors ${
+            className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors ${
               disabled
-                ? 'text-slate-300 cursor-not-allowed'
+                ? 'text-muted-foreground opacity-50 cursor-not-allowed'
                 : value === t
-                  ? 'bg-white text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] cursor-pointer'
-                  : 'text-slate-500 hover:text-foreground cursor-pointer'
+                  ? 'bg-[#EDF4FF] text-[#0A77FF] cursor-pointer'
+                  : 'text-muted-foreground hover:bg-muted cursor-pointer'
             }`}
-            style={{ fontWeight: value === t ? 600 : 500, color: value === t ? RATE_TONE[t].ink : undefined }}
+            style={{ fontWeight: value === t ? 500 : 400 }}
           >
             {RATE_TYPE_LABEL[t]}
           </button>
@@ -233,8 +234,9 @@ function RateTypeToggle({
  *  Corporate switch, then "1 EUR = 304.8150 PKR · Open Exchange Rates,
  *  updated Apr 10, 2026, 7:30 PM". The switch always shows for a foreign
  *  vendor; Corporate is disabled until finance sets a corporate rate for the
- *  currency. On Corporate the rate can be typed for this vendor and reset to
- *  finance's. */
+ *  currency. The corporate rate is finance's and read-only here (it's set in
+ *  Currency Library & Exchange Rates); a rate typed for a vendor earlier
+ *  can still be put back to finance's. */
 export function VendorRateCard({
   fx,
   onRateTypeChange,
@@ -251,8 +253,6 @@ export function VendorRateCard({
   /** How many selling units the vendor has; with more than one, says they all convert at this rate. */
   unitCount?: number;
 }) {
-  const [rateDraft, setRateDraft] = React.useState<string | null>(null);
-
   if (isBaseCurrency(fx.currency)) {
     return (
       <p className="mt-1.5 text-[10.5px] text-slate-500" style={{ lineHeight: 1.45 }}>
@@ -267,13 +267,6 @@ export function VendorRateCard({
   // Corporate can be picked only where finance has set a corporate rate for
   // the currency; without one the price stays on mid-market (vendorRate).
   const canSwitch = !!finance;
-
-  const commitRate = () => {
-    if (rateDraft == null) return;
-    const r = Number(rateDraft);
-    setRateDraft(null);
-    if (Number.isFinite(r) && r > 0 && r !== fx.rate) onRateChange(String(r));
-  };
 
   // Where the rate comes from and when, after the rate itself.
   const source = corporate
@@ -301,21 +294,9 @@ export function VendorRateCard({
         <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: tone.dot }} aria-hidden />
         {corporate ? (
           <span className="inline-flex items-center gap-1 text-slate-700" style={{ fontWeight: 600 }}>
-            1 {fx.currency} =
-            <input
-              inputMode="decimal"
-              aria-label={`Corporate rate, ${BASE_CURRENCY} per 1 ${fx.currency}`}
-              value={rateDraft ?? formatRate(fx.rate).replace(/,/g, '')}
-              onChange={(e) => setRateDraft(e.target.value.replace(/[^\d.]/g, ''))}
-              onBlur={commitRate}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                if (e.key === 'Escape') setRateDraft(null);
-              }}
-              className="w-[84px] h-6 px-1.5 rounded-md border border-amber-200 bg-white text-[11.5px] tabular-nums outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
-              style={{ fontWeight: 600 }}
-            />
-            {BASE_CURRENCY}
+            {/* Finance's rate, read-only: corporate rates are set in Currency
+                Library & Exchange Rates, not per vendor. */}
+            <span className="whitespace-nowrap">{rateSentence(fx.currency, fx.rate)}</span>
             {fx.edited && (
               <button
                 type="button"
@@ -397,8 +378,7 @@ export function VendorCurrencyChip({ fx }: { fx: VendorRate }) {
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-[240px] text-[11px]">
-          {name}, inherited from the partner. This vendor's prices are entered in it; the price in {BASE_CURRENCY}
-          converts using the exchange rate.
+          {currencyChipLabel(fx.currency)}
         </TooltipContent>
       </Tooltip>
       <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>

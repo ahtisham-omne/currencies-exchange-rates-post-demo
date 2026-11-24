@@ -19,8 +19,8 @@ import {
   ChevronDown,
   ChevronLeft,
   Plus,
-  Banknote,
-  Globe,
+  Landmark,
+  Handshake,
 } from "lucide-react";
 import { partnerCurrencyOf, toBaseNow } from "@/app/currency/partnerCurrency";
 import type { CurrencyView } from "@/app/currency/partnerAmounts";
@@ -79,6 +79,8 @@ export function getFilterType(columnKey: string): FilterType {
     case "vendor_sub_types":
     case "customer_sub_types":
     case "partner_group":
+    // A partner's currency (its own, else its group's): a short set of ISO codes.
+    case "currency":
     case "services":
     case "carrier_vendor":
     case "carrier_customer":
@@ -254,6 +256,8 @@ export const vendorCellValue: CellAccessor<Vendor> = (v, columnKey) => {
     case "partner_locations": return v.partnerLocations;
     case "global_contacts": return (v.globalPointOfContacts || []).map((c) => c.name);
     case "partner_group": return v.partnerGroup;
+    // Its own currency, else its primary group's, as the Currency column shows it.
+    case "currency": return partnerCurrencyOf(v);
     // Money columns filter and sort on the base-currency amount (each
     // partner's is in its own currency).
     case "net_profit": return toBaseNow(v.netProfitMargin, partnerCurrencyOf(v));
@@ -359,7 +363,7 @@ export function ColumnHeaderMenu({
   onFilterChange,
   currencyView,
   onCurrencyViewChange,
-  currencyNote,
+  currencyNote: _currencyNote,
   children,
 }: ColumnHeaderMenuProps) {
   const [open, setOpen] = useState(false);
@@ -548,8 +552,8 @@ export function ColumnHeaderMenu({
                     Show values as
                   </div>
                   {([
-                    ["base", "Base currency", Banknote],
-                    ["partner", "Partner currency", Globe],
+                    ["base", "Base currency", Landmark],
+                    ["partner", "Partner currency", Handshake],
                   ] as const).map(([value, text, Icon]) => (
                     <button
                       key={value}
@@ -564,7 +568,6 @@ export function ColumnHeaderMenu({
                       {currencyView === value && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
                     </button>
                   ))}
-                  {currencyNote && <p className="px-2.5 pt-0.5 pb-1 text-[10.5px] leading-snug text-muted-foreground/70">{currencyNote}</p>}
                 </>
               )}
 

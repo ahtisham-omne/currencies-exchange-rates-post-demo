@@ -132,19 +132,21 @@ function PctAmountToggle({
   onChange: (fixed: boolean) => void;
 }) {
   return (
-    <div className="inline-flex items-center rounded-md bg-slate-50 border border-slate-200 p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Amount type">
       {(["pct", "amt"] as const).map((key) => {
         const active = (key === "amt") === isFixed;
         return (
           <button
             key={key}
             type="button"
+            role="radio"
+            aria-checked={active}
             onClick={() => onChange(key === "amt")}
             title={key === "pct" ? "Percentage" : `Fixed amount per unit (${RULE_AMOUNT_CURRENCY})`}
-            className={`inline-flex items-center justify-center w-[26px] h-[22px] rounded text-[11px] transition-all cursor-pointer ${
-              active ? "bg-white shadow-sm text-slate-800" : "text-slate-500 hover:text-slate-700"
+            className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+              active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
             }`}
-            style={{ fontWeight: active ? 600 : 500 }}
+            style={{ fontWeight: active ? 500 : 400 }}
           >
             {key === "pct" ? "%" : moneyPrefix(RULE_AMOUNT_CURRENCY).trim()}
           </button>

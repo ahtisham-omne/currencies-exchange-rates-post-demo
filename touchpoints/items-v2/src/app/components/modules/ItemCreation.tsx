@@ -794,7 +794,7 @@ export function ItemCreation({ onCancel, onSave }: ItemCreationProps) {
                                              </SelectContent>
                                          </Select>
                                      </div>
-                                     <p className="text-sm text-muted-foreground">Base price, in {BASE_CURRENCY}. A quote in another currency converts this price at the quote's rate. Advanced pricing rules may override this value.</p>
+                                     <p className="text-sm text-muted-foreground">Base price, in {BASE_CURRENCY}. Advanced pricing rules may override this value.</p>
                                  </div>
                              </div>
                          </TabsContent>

@@ -72,10 +72,7 @@ import { SALES_REP_ROSTER, findRosterRep } from '../shared/salesRepRoster';
 import { toast } from 'sonner';
 import { QuoteCurrencySummary } from '@/app/components/currency/QuoteCurrencyConfig';
 import { DocMoney } from '@/app/components/currency/DocCurrency';
-import { useDocView, useDocWhole } from '@/app/components/currency/docCurrencyContext';
-import { BASE_CURRENCY } from '@/app/currency/currencies';
-import { formatMoney, formatRate } from '@/app/currency/money';
-import { toBase } from '@/app/currency/rates';
+import { useDocWhole } from '@/app/components/currency/docCurrencyContext';
 import type { QuoteFx } from '@/app/currency/qFx';
 
 /* Sidebar reps come from the shared roster so a rep picked during
@@ -660,7 +657,6 @@ export function RightSidebar({
   /* Whole amounts as the design shows them, in the page's currency: base
      (the quote page pins it; the customer's amount is on hover). */
   const fmtCurrency = useDocWhole();
-  const { inBase } = useDocView();
   // ── Collapse state (sub-sections) ──
   const [showAddressDetail, setShowAddressDetail] = useState(false);
   const [showPaymentShipping, setShowPaymentShipping] = useState(false);
@@ -1539,23 +1535,6 @@ export function RightSidebar({
             </p>
             <p className="text-slate-500 mt-1 truncate" style={{ fontSize: 11, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' }}>
               5 items
-              {/* The total in the currency not shown: what the customer pays
-                  (base view), or what it's worth in base, at the quote's rate. */}
-              {quoteFxInfo && !quoteFxInfo.isBase && (
-                <span className="tabular-nums" title={`At 1 ${quoteFxInfo.currency} = ${formatRate(quoteFxInfo.rate)} ${BASE_CURRENCY}`}>
-                  {inBase ? (
-                    <>
-                      {' · ≈ '}{formatMoney(liveGrandTotal, quoteFxInfo.currency)}
-                      <span className="text-slate-400"> {quoteFxInfo.currency} · customer currency</span>
-                    </>
-                  ) : (
-                    <>
-                      {' · ≈ '}{formatMoney(toBase(liveGrandTotal, quoteFxInfo.rate), BASE_CURRENCY)}
-                      <span className="text-slate-400"> {BASE_CURRENCY} · base currency</span>
-                    </>
-                  )}
-                </span>
-              )}
             </p>
           </div>
 
@@ -1683,7 +1662,7 @@ export function RightSidebar({
           </div>
 
           {/* CURRENCY — Customer pays / You receive / Base equivalent /
-              Rate, the lock, and the way into the quote's currency
+              Rate, and the way into the quote's currency
               configuration (Currency Touchpoints Map, Quotes 4). */}
           {quoteFxInfo && onViewCurrencyConfig && (
             <QuoteCurrencySummary

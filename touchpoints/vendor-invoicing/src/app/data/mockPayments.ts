@@ -342,11 +342,14 @@ export const PAY_FROM_ACCOUNTS: PayFromAccount[] = [
   { id: '1050-EUR Settlement', label: '1050 · EUR Settlement', balance: 210_000, type: 'bank', creditGl: '1050 EUR Settlement', bankName: 'Deutsche Bank', accountMask: '5512', accountTypeLabel: 'Checking', currency: 'EUR' },
   { id: '1060-GBP Settlement', label: '1060 · GBP Settlement', balance: 145_000, type: 'bank', creditGl: '1060 GBP Settlement', bankName: 'Barclays', accountMask: '9034', accountTypeLabel: 'Checking', currency: 'GBP' },
   { id: '1070-AED Settlement', label: '1070 · AED Settlement', balance: 680_000, type: 'bank', creditGl: '1070 AED Settlement', bankName: 'Emirates NBD', accountMask: '3307', accountTypeLabel: 'Checking', currency: 'AED' },
+  { id: '1075-CAD Settlement', label: '1075 · CAD Settlement', balance: 125_000, type: 'bank', creditGl: '1075 CAD Settlement', bankName: 'RBC Royal Bank', accountMask: '6120', accountTypeLabel: 'Checking', currency: 'CAD' },
+  { id: '1080-JPY Settlement', label: '1080 · JPY Settlement', balance: 18_500_000, type: 'bank', creditGl: '1080 JPY Settlement', bankName: 'MUFG Bank', accountMask: '4418', accountTypeLabel: 'Checking', currency: 'JPY' },
+  { id: '1085-CNY Settlement', label: '1085 · CNY Settlement', balance: 880_000, type: 'bank', creditGl: '1085 CNY Settlement', bankName: 'Bank of China', accountMask: '2963', accountTypeLabel: 'Checking', currency: 'CNY' },
 ];
 
 /** The settlement accounts added for foreign currencies; the seed generator
  *  keeps to the accounts it always drew from, so no seed sequence changes. */
-const FX_SETTLEMENT_IDS = new Set(['1050-EUR Settlement', '1060-GBP Settlement', '1070-AED Settlement']);
+const FX_SETTLEMENT_IDS = new Set(['1050-EUR Settlement', '1060-GBP Settlement', '1070-AED Settlement', '1075-CAD Settlement', '1080-JPY Settlement', '1085-CNY Settlement']);
 // Bank-only subset kept for the data generator + any bank-specific consumers.
 export const BANK_ACCOUNTS = PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank');
 

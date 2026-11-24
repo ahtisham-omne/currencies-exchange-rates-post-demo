@@ -1,24 +1,29 @@
 import type { Invoice } from '@/app/data/mockInvoices';
 import { PAY_FROM_ACCOUNTS, type PayFromAccount } from '@/app/data/mockPayments';
 import { BASE_CURRENCY, isBaseCurrency } from './currencies';
-import { canPayFrom, youPayInOf } from './paymentRules';
+import { youPayInOf } from './paymentRules';
 
 /* ── "You pay" is an account (Currency Touchpoints Map, 24 Nov 2026) ───
- * An invoice says which account it will be paid from: a bank or cash
- * account in the base currency or in the invoice's own currency, nothing
- * else (paymentRules rule 3). The choice is stored on the invoice
- * (`payFromAccount`), and its currency is the invoice's "You pay in"
- * (`youPayIn`), so a payment of it starts from that account. Default: 1010,
- * the base operating account, unless the PO asked to pay in the invoice's
- * currency, then the first account in that currency. */
+ * An invoice says which account it will be paid from: any bank or cash
+ * account, in any currency (25 Nov 2026, as on a PO), listed base-currency
+ * ones first, then those in the invoice's own currency, then the rest. The
+ * choice is stored on the invoice (`payFromAccount`); its "You pay in"
+ * (`youPayIn`) is the invoice's currency when the account is in it, else
+ * the base, so a payment of it starts from an account that may pay
+ * (paymentRules rule 3). Default: 1010, the base operating account, unless
+ * the PO asked to pay in the invoice's currency, then the first account in
+ * that currency. */
 
 /** The base operating account a new document pays from by default. */
 export const DEFAULT_PAY_FROM_ID = '1010-Operating';
 
-/** Bank and cash accounts that can pay a document in this currency: in the
- *  base currency or in that currency, in the ledger's order. */
+/** Bank and cash accounts a document in this currency can name: every one,
+ *  in any currency, base-currency ones first, then those in that currency,
+ *  then the rest (each group in the ledger's order). */
 export function payFromAccountsFor(currency: string): PayFromAccount[] {
-  return PAY_FROM_ACCOUNTS.filter((a) => (a.type === 'bank' || a.type === 'cash') && canPayFrom(a.currency, currency));
+  const code = (currency || BASE_CURRENCY).toUpperCase();
+  const rank = (a: PayFromAccount) => (isBaseCurrency(a.currency) ? 0 : a.currency.toUpperCase() === code ? 1 : 2);
+  return PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank' || a.type === 'cash').sort((a, b) => rank(a) - rank(b));
 }
 
 /** The default account for a document in this currency, given the currency

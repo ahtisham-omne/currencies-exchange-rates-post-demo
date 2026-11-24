@@ -8,9 +8,9 @@ import { CurrencyFlag } from './CurrencyChip';
 
 /* ── Pay-from account picker (Currency Touchpoints Map, 24 Nov 2026) ────
  * "1010 · JPMorgan Operating · PKR ▾": the account a document is paid
- * from, beside its "You pay" amount in a Currency Configuration. Only the
- * accounts that may pay are listed (the base currency, or the document's
- * own): the caller passes them in. Each row is flag, label and code, with
+ * from, beside its "You pay" amount in a Currency Configuration. The caller
+ * passes the accounts to list (an invoice: every one; a payment: the base
+ * currency or the invoices' own). Each row is flag, label and code, with
  * the balance in the account's currency. Read-only shows it locked. */
 
 const iconFor = (a: Pick<PayFromAccount, 'type'>) => (a.type === 'cash' ? Banknote : a.type === 'card' ? Wallet : Landmark);
@@ -76,7 +76,7 @@ export function PayFromAccountPicker({
           {accounts.map((a) => {
             const Icon = iconFor(a);
             const selected = a.id === value;
-            const converts = isBaseCurrency(a.currency) && !isBaseCurrency(documentCurrency);
+            const same = a.currency.toUpperCase() === documentCurrency.toUpperCase();
             return (
               <button
                 key={a.id}
@@ -99,7 +99,7 @@ export function PayFromAccountPicker({
                     <span className="text-[10.5px] text-slate-500 shrink-0" style={{ fontWeight: 600 }}>{a.currency}</span>
                   </span>
                   <span className="block text-[10.5px] text-slate-400 truncate">
-                    {converts ? 'The bank converts' : isBaseCurrency(documentCurrency) ? 'No conversion' : 'Nothing converts'} · {formatMoney(a.balance, a.currency)}
+                    {!same ? 'The bank converts' : isBaseCurrency(documentCurrency) ? 'No conversion' : 'Nothing converts'} · {formatMoney(a.balance, a.currency)}
                   </span>
                 </span>
                 {selected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}

@@ -2456,16 +2456,16 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
               </div>
 
               {/* View toggle */}
-              <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
-                <button onClick={() => setCatModalView("browse")} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${catModalView === "browse" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"}`} style={{ fontWeight: catModalView === "browse" ? 600 : 500 }}>
-                  <Layers className={`w-3.5 h-3.5 ${catModalView === "browse" ? "text-primary" : "text-slate-400"}`} />
+              <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup">
+                <button role="radio" aria-checked={catModalView === "browse"} onClick={() => setCatModalView("browse")} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${catModalView === "browse" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`} style={{ fontWeight: catModalView === "browse" ? 500 : 400 }}>
+                  <Layers className={`w-3.5 h-3.5`} />
                   Browse Categories
-                  <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${catModalView === "browse" ? "bg-accent text-primary" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{availableCats.length}</span>
+                  <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${catModalView === "browse" ? "bg-white text-[#0A77FF]" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{availableCats.length}</span>
                 </button>
-                <button onClick={() => setCatModalView("added")} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${catModalView === "added" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"}`} style={{ fontWeight: catModalView === "added" ? 600 : 500 }}>
-                  <Check className={`w-3.5 h-3.5 ${catModalView === "added" ? "text-success" : "text-slate-400"}`} />
+                <button role="radio" aria-checked={catModalView === "added"} onClick={() => setCatModalView("added")} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${catModalView === "added" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`} style={{ fontWeight: catModalView === "added" ? 500 : 400 }}>
+                  <Check className={`w-3.5 h-3.5`} />
                   Added Categories
-                  <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${catModalView === "added" ? "bg-emerald-50 text-success" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{allCats.length}</span>
+                  <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${catModalView === "added" ? "bg-white text-[#0A77FF]" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{allCats.length}</span>
                 </button>
               </div>
 
@@ -2749,16 +2749,16 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                     <button onClick={() => setPmSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"><X className="w-3.5 h-3.5" /></button>
                   )}
                 </div>
-                <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
-                  <button onClick={() => setPartnerModalView("browse")} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${partnerModalView === "browse" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"}`} style={{ fontWeight: partnerModalView === "browse" ? 600 : 500 }}>
-                    <Users className={`w-3.5 h-3.5 ${partnerModalView === "browse" ? "text-primary" : "text-slate-400"}`} />
+                <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup">
+                  <button role="radio" aria-checked={partnerModalView === "browse"} onClick={() => setPartnerModalView("browse")} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${partnerModalView === "browse" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`} style={{ fontWeight: partnerModalView === "browse" ? 500 : 400 }}>
+                    <Users className={`w-3.5 h-3.5`} />
                     Browse Partners
-                    <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${partnerModalView === "browse" ? "bg-accent text-primary" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{availablePartnerVendors.length}</span>
+                    <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${partnerModalView === "browse" ? "bg-white text-[#0A77FF]" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{availablePartnerVendors.length}</span>
                   </button>
-                  <button onClick={() => setPartnerModalView("added")} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${partnerModalView === "added" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"}`} style={{ fontWeight: partnerModalView === "added" ? 600 : 500 }}>
-                    <Check className={`w-3.5 h-3.5 ${partnerModalView === "added" ? "text-success" : "text-slate-400"}`} />
+                  <button role="radio" aria-checked={partnerModalView === "added"} onClick={() => setPartnerModalView("added")} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${partnerModalView === "added" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`} style={{ fontWeight: partnerModalView === "added" ? 500 : 400 }}>
+                    <Check className={`w-3.5 h-3.5`} />
                     Assigned Partners
-                    <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${partnerModalView === "added" ? "bg-emerald-50 text-success" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{assignedVendors.length}</span>
+                    <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${partnerModalView === "added" ? "bg-white text-[#0A77FF]" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{assignedVendors.length}</span>
                   </button>
                 </div>
                 <div className="flex items-center gap-2 ml-auto shrink-0">
@@ -3585,7 +3585,7 @@ export function PricingRulesLibrary({
               hover tooltip explaining the category, mirroring the
               Browse Templates modal + the partner-creation form so
               users get the same explanation everywhere. */}
-          <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5 shrink-0">
+          <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup">
             {([
               {
                 key: "discount" as CategoryView,
@@ -3611,18 +3611,18 @@ export function PricingRulesLibrary({
               return (
                 <Tooltip key={cat.key}>
                   <TooltipTrigger asChild>
-                    <button
+                    <button role="radio" aria-checked={active}
                       onClick={() => { setCategoryView(cat.key); setQuickFilter("all"); setCurrentPage(1); }}
-                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${
-                        active ? "shadow-sm" : "hover:bg-white/60"
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                        active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                       }`}
-                      style={{ fontWeight: active ? 600 : 500, color: active ? cat.color : "#334155", backgroundColor: active ? cat.bg : undefined }}
+                      style={{ fontWeight: active ? 500 : 400 }}
                     >
                       <cat.icon className="w-3.5 h-3.5" />
                       {cat.label}
                       <span
                         className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
-                        style={{ fontWeight: 600, color: active ? cat.color: "var(--muted-foreground)", backgroundColor: active ? `${cat.color}15` : "var(--border)" }}
+                        style={{ fontWeight: 600, color: active ? "#0A77FF" : "var(--muted-foreground)", backgroundColor: active ? "#FFFFFF" : "var(--border)" }}
                       >
                         {count}
                       </span>
@@ -4716,7 +4716,7 @@ export function PricingRulesLibrary({
 
                   {/* Type toggle — same hover tooltips as the
                       canonical creation-form Browse Templates modal. */}
-                  <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5 shrink-0">
+                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup">
                     {([
                       { key: "discount", label: "Discounts", color: "#047857", bg: "#ECFDF5", icon: TrendingDown, tip: "Reduce unit price when quantity or value thresholds are met.", example: <><span className="text-green-600" style={{ fontWeight: 600 }}>10% off</span> on orders over 500 units.</> },
                       { key: "premium", label: "Premiums", color: "var(--violet)", bg: "#F5F3FF", icon: TrendingUp, tip: "Markup on base price for express or value-added services.", example: <><span className="text-violet" style={{ fontWeight: 600 }}>15% markup</span> for expedited and priority shipping.</> },
@@ -4726,18 +4726,18 @@ export function PricingRulesLibrary({
                       return (
                         <Tooltip key={cat.key}>
                           <TooltipTrigger asChild>
-                            <button
+                            <button role="radio" aria-checked={active}
                               onClick={() => setExploreCategoryTab(cat.key)}
-                              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${
-                                active ? "shadow-sm" : "hover:bg-white/60"
+                              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                               }`}
-                              style={{ fontWeight: active ? 600 : 500, color: active ? cat.color : "#334155", backgroundColor: active ? cat.bg : undefined }}
+                              style={{ fontWeight: active ? 500 : 400 }}
                             >
                               <cat.icon className="w-3.5 h-3.5" />
                               {cat.label}
                               <span
                                 className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
-                                style={{ fontWeight: 600, color: active ? cat.color: "var(--muted-foreground)", backgroundColor: active ? `${cat.color}15` : "var(--border)" }}
+                                style={{ fontWeight: 600, color: active ? "#0A77FF" : "var(--muted-foreground)", backgroundColor: active ? "#FFFFFF" : "var(--border)" }}
                               >
                                 {count}
                               </span>

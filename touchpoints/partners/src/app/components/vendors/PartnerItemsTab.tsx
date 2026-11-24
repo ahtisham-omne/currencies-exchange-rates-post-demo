@@ -2701,26 +2701,28 @@ export function AddItemModal({
             </div>
 
             {/* View toggle — after search */}
-            <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="View">
               <button
+                role="radio" aria-checked={view === "browse"}
                 onClick={() => setView("browse")}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${
-                  view === "browse" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"
+                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                  view === "browse" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                 }`}
-                style={{ fontWeight: view === "browse" ? 600 : 500 }}
+                style={{ fontWeight: view === "browse" ? 500 : 400 }}
               >
                 <Package className={`w-3.5 h-3.5 ${view === "browse" ? "text-primary" : "text-slate-400"}`} />
                 Browse Inventory
-                <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${view === "browse" ? "bg-accent text-primary" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>
+                <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${view === "browse" ? "bg-[#0A77FF]/10 text-[#0A77FF]" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>
                   {available.length}
                 </span>
               </button>
               <button
+                role="radio" aria-checked={view === "added"}
                 onClick={() => setView("added")}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${
-                  view === "added" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"
+                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                  view === "added" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                 }`}
-                style={{ fontWeight: view === "added" ? 600 : 500 }}
+                style={{ fontWeight: view === "added" ? 500 : 400 }}
               >
                 <Check className={`w-3.5 h-3.5 ${view === "added" ? "text-success" : "text-slate-400"}`} />
                 Added Items
@@ -5179,20 +5181,24 @@ export function AddItemModal({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[11px] text-slate-600 block mb-1.5" style={{ fontWeight: 600 }}>Type</label>
-                <div className="inline-flex w-full items-center rounded-lg bg-slate-50 border border-border/60 p-0.5">
+                <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Type">
                   <button
                     type="button"
+                    role="radio"
+                    aria-checked={newRuleType === "discount"}
                     onClick={() => setNewRuleType("discount")}
-                    className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] transition-all cursor-pointer ${newRuleType === "discount" ? "shadow-sm" : "hover:bg-white/60"}`}
-                    style={{ fontWeight: newRuleType === "discount" ? 600 : 500, color: newRuleType === "discount" ? "#047857" : "#334155", backgroundColor: newRuleType === "discount" ? "#ECFDF5" : undefined }}
+                    className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${newRuleType === "discount" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`}
+                    style={{ fontWeight: newRuleType === "discount" ? 500 : 400 }}
                   >
                     <TrendingDown className="w-3 h-3" /> Discount
                   </button>
                   <button
                     type="button"
+                    role="radio"
+                    aria-checked={newRuleType === "premium"}
                     onClick={() => setNewRuleType("premium")}
-                    className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] transition-all cursor-pointer ${newRuleType === "premium" ? "shadow-sm" : "hover:bg-white/60"}`}
-                    style={{ fontWeight: newRuleType === "premium" ? 600 : 500, color: newRuleType === "premium" ? "#6D28D9" : "#334155", backgroundColor: newRuleType === "premium" ? "#F5F3FF" : undefined }}
+                    className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${newRuleType === "premium" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`}
+                    style={{ fontWeight: newRuleType === "premium" ? 500 : 400 }}
                   >
                     <TrendingUp className="w-3 h-3" /> Premium
                   </button>
@@ -6528,7 +6534,7 @@ export function PartnerItemsTab({ vendor, hideHeader, compact, contextLabel, con
                 consistent with the rest of the module. */}
             {!hideHeader && !lockSubTab && (
             <div className="flex items-center justify-between gap-3 px-4 pt-2.5 pb-2 border-b border-border">
-              <div className="inline-flex items-center rounded-lg bg-muted p-0.5">
+              <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Item list">
               {/* Sub-tab palette: Sell = primary blue, Purchase = emerald.
                   Switched away from purple (#5B21B6) per stakeholder
                   feedback — blue + purple read as the same hue at a
@@ -6567,10 +6573,12 @@ export function PartnerItemsTab({ vendor, hideHeader, compact, contextLabel, con
                     <TooltipTrigger asChild>
                       <button
                         onClick={() => { setSubTab(t.key); setCurrentPage(1); }}
-                        className={`inline-flex items-center justify-center px-4 py-1.5 rounded-md text-[13px] transition-all cursor-pointer ${
-                          isActive ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)]" : "text-slate-500 hover:text-slate-700"
+                        role="radio"
+                        aria-checked={isActive}
+                        className={`inline-flex items-center justify-center px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                          isActive ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                         }`}
-                        style={{ fontWeight: isActive ? 600 : 500, color: isActive ? t.color : undefined }}
+                        style={{ fontWeight: isActive ? 500 : 400 }}
                       >
                         {t.label}
                       </button>
@@ -6620,7 +6628,7 @@ export function PartnerItemsTab({ vendor, hideHeader, compact, contextLabel, con
                 greyed out until its feed lands. */}
             {!hideHeader && subTab === "transactions" && (
               <div className="flex items-center justify-between gap-3 px-4 pt-2.5 pb-2 border-b border-border">
-                <div className="inline-flex items-center rounded-lg bg-muted p-0.5">
+                <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Transaction direction">
                   {([
                     {
                       key: "purchased" as TransactionDirection,
@@ -6655,14 +6663,16 @@ export function PartnerItemsTab({ vendor, hideHeader, compact, contextLabel, con
                           <button
                             onClick={() => { if (!isDisabled) setTransactionDirection(t.key); }}
                             disabled={isDisabled}
-                            className={`inline-flex items-center gap-1.5 justify-center px-4 py-1.5 rounded-md text-[13px] transition-all ${
+                            role="radio"
+                            aria-checked={isActive}
+                            className={`inline-flex items-center gap-1.5 justify-center px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors ${
                               isActive
-                                ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] cursor-pointer"
+                                ? "bg-[#EDF4FF] text-[#0A77FF] cursor-pointer"
                                 : isDisabled
-                                  ? "text-muted-foreground/50 cursor-not-allowed"
-                                  : "text-slate-500 hover:text-slate-700 cursor-pointer"
+                                  ? "text-muted-foreground opacity-50 cursor-not-allowed"
+                                  : "text-muted-foreground hover:bg-muted cursor-pointer"
                             }`}
-                            style={{ fontWeight: isActive ? 600 : 500, color: isActive ? t.color : undefined }}
+                            style={{ fontWeight: isActive ? 500 : 400 }}
                           >
                             {t.label}
                             {t.comingSoon && (

@@ -1,31 +1,34 @@
 import * as React from 'react';
-import { Lock, LockOpen, Settings2 } from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
-import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
+import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, formatRate, moneyPrefix } from '@/app/currency/money';
 import { RATE_TYPE_LABEL, type RateType } from '@/app/currency/rates';
 import { gainLossOf } from '@/app/currency/fxVariance';
 import { CurrencyFlag } from './CurrencyChip';
 
-/* ── The currency block (Currency Touchpoints Map, 24 Nov 2026) ─────────
+/* ── The currency block (Currency Touchpoints Map, 25 Nov 2026) ─────────
  * One block for every vendor invoice and payment surface: the create and
  * edit screen above Total Due, the invoice page's summary, Record Payment
  * above Total Payment and the payment page's summary. Built on Purchase
- * Orders' summary card (POCurrencySummary):
+ * Orders' Currency information card (POCurrencySummary, CurrencyBlock):
  *
- *   CURRENCY                          [● Mid-market] [Unlocked]
- *   Vendor invoiced                   $10,136.20 USD
- *   You pay                           ₨2,833,270.62 PKR
- *   Base equivalent                   ₨2,833,270.62 PKR   (paying from a non-base account)
- *   FX variance                       −₨10,136.20          (+ gain green, − loss red)
- *   ───────────────────────────────────────────
- *   Rate                1 USD = ₨279.5200 PKR · posting date
- *                                           ⚙ View configuration
+ *   CURRENCY INFORMATION
+ *   Vendor invoiced                            🇺🇸 $10,136.20 USD
+ *   You pay in                          🇵🇰 Pakistani Rupee (PKR)
+ *   Base equivalent                              ₨2,833,270.62 PKR
+ *   FX variance                                     −₨10,136.20   (+ gain green, − loss red)
+ *   Exchange rate             1 USD = ₨279.5200 PKR [● Mid-market]
+ *                                                    posting date
+ *                    [ ⚙ View currency configuration ]
  *
- * The lock chip is always shown on a foreign-currency document: Locked
- * (green) once it posts, Unlocked (amber) until then, its title saying
- * when it locks. A base-currency document keeps the short "no conversion"
- * line instead of rows. */
+ * "You pay in" names the pay-from account's currency (the account on
+ * hover); "Base equivalent" is always shown, without a flag. No lock on the
+ * rate (25 Nov 2026): the configuration becomes read-only once the document
+ * posts, but the exchange rate shows no lock of its own. The rate type chip
+ * sits after the rate and wraps under it in a narrow card.
+ * A base-currency document keeps the short "no conversion" line instead of
+ * rows. */
 
 const RATE_HEX: Record<RateType, string> = { mid: '#7C3AED', corporate: '#B45309' };
 const RATE_TINT: Record<RateType, string> = { mid: 'rgba(124,58,237,0.08)', corporate: 'rgba(180,83,9,0.10)' };
@@ -43,6 +46,12 @@ export const rateLine = (from: string, rate: number) => `1 ${from.toUpperCase()}
 export const amountWithCode = (n: number, code: string) => {
   const t = formatMoney(n, code);
   return t.includes(code) ? t : `${t} ${code}`;
+};
+
+/** "Pakistani Rupee (PKR)": a currency by name, as the block writes it. */
+export const currencyNameWithCode = (code: string) => {
+  const upper = code.toUpperCase();
+  return `${getCurrency(upper)?.name ?? upper} (${upper})`;
 };
 
 /** "+₨4,054.48" / "−₨10,136.20" / "₨0.00": an FX variance, signed with a real minus. */
@@ -70,80 +79,65 @@ export function RateTypeChip({ type }: { type: RateType }) {
   );
 }
 
-/** [🔒 Locked] green, or [🔓 Unlocked] amber; `title` says when it locks. */
-export function LockChip({ locked, title }: { locked: boolean; title?: string }) {
-  const Icon = locked ? Lock : LockOpen;
-  return (
-    <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap cursor-default"
-      style={locked ? { color: '#047857', backgroundColor: '#ECFDF5', fontWeight: 600 } : { color: '#92400E', backgroundColor: '#FFFBEB', fontWeight: 600 }}
-      title={title}
-    >
-      <Icon className="w-2.5 h-2.5" />
-      {locked ? 'Locked' : 'Unlocked'}
-    </span>
-  );
-}
-
 export interface CurrencyBlockRow {
   label: string;
   /** The currency the amount is in (its flag and code). */
   code: string;
-  amount: number;
+  /** The amount in `code`. Leave out to show the currency itself:
+   *  "Pakistani Rupee (PKR)" (the "You pay in" row). */
+  amount?: number;
   /** "−" for a deduction (a prepayment). */
   sign?: '−';
-  /** A hover note on the label. */
+  /** Shown on hover of the row, e.g. the pay-from account. */
   title?: string;
 }
 
 export interface CurrencyBlockProps {
   /** The document's currency. */
   currency: string;
-  /** The rate type chip; omitted while there's no rate. */
+  /** The rate type chip, after the rate; omitted while there's no rate. */
   rateType?: RateType | null;
   /** What the rate type chip's hover says. */
   rateTip?: React.ReactNode;
-  /** The lock chip. Shown on a foreign-currency document only. */
-  lock?: { locked: boolean; title: string } | null;
-  /** Vendor invoiced / You pay / Base equivalent…, in order. */
+  /** Vendor invoiced / You pay in / Base equivalent…, in order. */
   rows: CurrencyBlockRow[];
   /** The FX variance row, where the document has one. */
   variance?: { amount: number; title: string; label?: string } | null;
-  /** The Rate row: "1 USD = ₨279.5200 PKR · posting date". Null rate shows `pendingText`. */
+  /** The Exchange rate row: "1 USD = ₨279.5200 PKR", the qualifier
+   *  ("posting date") under it. Null rate shows `pendingText`. */
   rate?: { rate: number | null; qualifier?: string; pendingText?: string } | null;
   onViewConfig?: () => void;
   className?: string;
 }
 
-export function CurrencyBlock({ currency, rateType, rateTip, lock, rows, variance, rate, onViewConfig, className = '' }: CurrencyBlockProps) {
+export function CurrencyBlock({ currency, rateType, rateTip, rows, variance, rate, onViewConfig, className = '' }: CurrencyBlockProps) {
   const code = (currency || BASE_CURRENCY).toUpperCase();
   const isBase = isBaseCurrency(code);
+  const chip =
+    rateType &&
+    (rateTip ? (
+      <Tooltip delayDuration={200}>
+        <TooltipTrigger asChild>
+          <span className="cursor-help shrink-0">
+            <RateTypeChip type={rateType} />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[240px] text-[11px] z-[300]">
+          {rateTip}
+        </TooltipContent>
+      </Tooltip>
+    ) : (
+      <span className="shrink-0">
+        <RateTypeChip type={rateType} />
+      </span>
+    ));
   return (
     <div className={`space-y-2 ${className}`}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[9.5px] uppercase text-slate-400" style={{ fontWeight: 600, letterSpacing: '0.06em' }}>
-          Currency
+          Currency information
         </span>
-        {!isBase && (
-          <div className="flex items-center gap-1.5">
-            {rateType &&
-              (rateTip ? (
-                <Tooltip delayDuration={200}>
-                  <TooltipTrigger asChild>
-                    <span className="cursor-help">
-                      <RateTypeChip type={rateType} />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[260px] text-[11px] z-[300]">
-                    {rateTip}
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <RateTypeChip type={rateType} />
-              ))}
-            {lock && <LockChip locked={lock.locked} title={lock.title} />}
-          </div>
-        )}
+        {/* No lock on the rate (25 Nov 2026): just the title. */}
       </div>
 
       {isBase ? (
@@ -153,15 +147,22 @@ export function CurrencyBlock({ currency, rateType, rateTip, lock, rows, varianc
       ) : (
         <>
           {rows.map((r) => (
-            <div key={r.label} className="flex items-center justify-between gap-2">
-              <p className={`text-slate-400 shrink-0 ${r.title ? 'cursor-help' : ''}`} style={{ fontSize: 10, fontWeight: 500 }} title={r.title}>
+            <div key={r.label} className="flex items-center justify-between gap-2" title={r.title}>
+              <p className={`text-slate-400 shrink-0 ${r.title ? 'cursor-help' : ''}`} style={{ fontSize: 10, fontWeight: 500 }}>
                 {r.label}
               </p>
-              <p className="flex items-center gap-1.5 text-slate-700 tabular-nums min-w-0" style={{ fontSize: 12, fontWeight: 500 }}>
-                <CurrencyFlag code={r.code} size={11} />
+              <p className="flex items-center gap-1.5 text-slate-700 tabular-nums text-right min-w-0" style={{ fontSize: 12, fontWeight: 500 }}>
+                {/* A flag on the document's amount and the account's currency; the base equivalent reads plainly. */}
+                {(r.amount === undefined || r.code.toUpperCase() !== BASE_CURRENCY) && <CurrencyFlag code={r.code} size={11} />}
                 <span className="truncate">
-                  {r.sign ?? ''}
-                  {amountWithCode(r.amount, r.code)}
+                  {r.amount === undefined ? (
+                    currencyNameWithCode(r.code)
+                  ) : (
+                    <>
+                      {r.sign ?? ''}
+                      {amountWithCode(r.amount, r.code)}
+                    </>
+                  )}
                 </span>
               </p>
             </div>
@@ -177,16 +178,24 @@ export function CurrencyBlock({ currency, rateType, rateTip, lock, rows, varianc
             </div>
           )}
           {rate && (
-            <div className="border-t border-slate-100 pt-2 flex items-start justify-between gap-2">
-              <p className="text-slate-400 shrink-0" style={{ fontSize: 10, fontWeight: 500 }}>Rate</p>
-              {rate.rate == null ? (
-                <p className="text-slate-400 italic text-right" style={{ fontSize: 11 }}>{rate.pendingText ?? 'No rate yet'}</p>
-              ) : (
-                <p className="text-slate-500 tabular-nums text-right" style={{ fontSize: 11 }}>
-                  {rateLine(code, rate.rate)}
-                  {rate.qualifier ? <span className="text-slate-400"> · {rate.qualifier}</span> : null}
-                </p>
-              )}
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-slate-400 shrink-0 pt-0.5" style={{ fontSize: 10, fontWeight: 500 }}>Exchange rate</p>
+              <div className="flex flex-col items-end min-w-0">
+                {rate.rate == null ? (
+                  <p className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 text-right" style={{ fontSize: 12, fontWeight: 500 }}>
+                    <span className="text-slate-400 italic" style={{ fontSize: 11, fontWeight: 400 }}>{rate.pendingText ?? 'No rate yet'}</span>
+                    {chip}
+                  </p>
+                ) : (
+                  <p className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 text-slate-700 tabular-nums text-right" style={{ fontSize: 12, fontWeight: 500 }}>
+                    <span className="whitespace-nowrap">{rateLine(code, rate.rate)}</span>
+                    {chip}
+                  </p>
+                )}
+                {rate.rate != null && rate.qualifier && (
+                  <p className="text-slate-400 text-right" style={{ fontSize: 10 }}>{rate.qualifier}</p>
+                )}
+              </div>
             </div>
           )}
         </>
@@ -197,11 +206,11 @@ export function CurrencyBlock({ currency, rateType, rateTip, lock, rows, varianc
           <button
             type="button"
             onClick={onViewConfig}
-            className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 hover:text-primary cursor-pointer"
+            className="mt-1 w-full inline-flex items-center justify-center gap-1.5 h-8 rounded-lg border border-border bg-white text-[12px] text-primary hover:bg-primary/5 hover:border-primary/30 transition-colors cursor-pointer"
             style={{ fontWeight: 500 }}
           >
-            <Settings2 className="w-3 h-3" />
-            View configuration
+            <Settings2 className="w-3.5 h-3.5" />
+            View currency configuration
           </button>
         </div>
       )}
@@ -209,17 +218,7 @@ export function CurrencyBlock({ currency, rateType, rateTip, lock, rows, varianc
   );
 }
 
-/* ── What each block's lock chip and FX variance say ─────────────────── */
-
-export const INVOICE_LOCK_TITLE = {
-  locked: 'Locked when the invoice posted, at the posting-date rate.',
-  unlocked: 'Locks when the invoice posts.',
-};
-
-export const PAYMENT_LOCK_TITLE = {
-  locked: 'Locked when the payment posted.',
-  unlocked: 'Locks when the payment posts.',
-};
+/* ── What each block's FX variance says ───────────────────────────────── */
 
 export const INVOICE_FX_VARIANCE_TITLE =
   'Receiving booked the goods at the receiving-date rate; this invoice converts them at the posting-date rate. Paying less in the base currency is a gain (+) and posts to FX Gain; paying more is a loss (−) and posts to FX Loss.';

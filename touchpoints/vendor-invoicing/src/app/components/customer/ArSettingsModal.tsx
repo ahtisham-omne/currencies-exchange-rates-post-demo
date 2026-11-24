@@ -162,17 +162,25 @@ export function ArSettingsModal({ open, onOpenChange }: ArSettingsModalProps) {
                     <p className="text-[12.5px] text-foreground" style={{ fontWeight: 500 }}>Default</p>
                     <p className="text-[11px] text-slate-500 mt-0.5" style={{ fontWeight: 400 }}>What a new advance invoice starts as.</p>
                   </div>
-                  <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shrink-0">
-                    {(['Revenue', 'Deposit'] as const).map((v) => (
-                      <button
-                        key={v}
-                        onClick={() => updateArSettings({ preInvoiceDefault: v })}
-                        className={`h-7 px-3 rounded-md text-[12px] transition-colors ${settings.preInvoiceDefault === v ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-50'}`}
-                        style={{ fontWeight: 500 }}
-                      >
-                        {TREATMENT_LABEL[v]}
-                      </button>
-                    ))}
+                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Default for a new advance invoice">
+                    {(['Revenue', 'Deposit'] as const).map((v) => {
+                      const on = settings.preInvoiceDefault === v;
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          onClick={() => updateArSettings({ preInvoiceDefault: v })}
+                          className={`px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                            on ? 'bg-[#EDF4FF] text-[#0A77FF]' : 'text-muted-foreground hover:bg-muted'
+                          }`}
+                          style={{ fontWeight: on ? 500 : 400 }}
+                        >
+                          {TREATMENT_LABEL[v]}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}

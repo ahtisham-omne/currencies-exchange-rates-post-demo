@@ -1,4 +1,5 @@
 import { Fragment, useState, useMemo, useCallback, useEffect, cloneElement, useRef } from "react";
+import { CurrencyCodeCell } from "@/app/components/currency/CurrencyCodeCell";
 import { FlagImage, flagEmojiCode } from "../components/currency/FlagImage";
 import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -200,6 +201,9 @@ const QUICK_FILTER_OPTIONS: { key: QuickFilter; label: string; showCount: boolea
 const COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align?: "left" | "right" })[] = [
   { key: "partner_name", label: "Partners", minWidth: "280px", sortable: true },
   { key: "partner_type", label: "Partner Type", minWidth: "180px", sortable: true },
+  /* The partner's currency, as the Currency Library draws it: its own, or
+     its group's when inherited (the hover says which). */
+  { key: "currency", label: "Currency", minWidth: "264px", sortable: true },
   { key: "vendor_sub_types", label: "Vendor Sub-Types", minWidth: "220px" },
   { key: "customer_sub_types", label: "Customer Sub-Types", minWidth: "220px" },
   { key: "num_items", label: "No. of Items", minWidth: "240px", sortable: true },
@@ -329,7 +333,8 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
   const listingMoney = (v: Vendor, amount: number | undefined, column: MoneyColumn) => (
     <CurrencyAmount {...partnerAmount(amount ?? 0, currencyOf(v), columnCurrencyView[column])} />
   );
-  /** The currency tag after every partner's name, base currency included (Currency Touchpoints Map). */
+  /** The currency tag after a partner's name in card view, base currency
+   *  included. Cards have no columns; the table shows it in its Currency column. */
   const currencyInfoOf = usePartnerCurrencyInfo();
   const partnerCurrencyTag = (v: Vendor) => {
     const info = currencyInfoOf(v);
@@ -1050,6 +1055,7 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
           case "partner_type": aVal = (a.partnerTypes || []).join(","); bVal = (b.partnerTypes || []).join(","); break;
           case "num_items": aVal = (a.itemCodes || []).length; bVal = (b.itemCodes || []).length; break;
           case "partner_locations": aVal = (a.partnerLocations || []).length; bVal = (b.partnerLocations || []).length; break;
+          case "currency": aVal = currencyOf(a); bVal = currencyOf(b); break;
           // Money columns sort on the base-currency amount, whichever view is shown.
           case "net_profit": aVal = inBase(a, a.netProfitMargin); bVal = inBase(b, b.netProfitMargin); break;
           case "credit_limit": aVal = inBase(a, a.creditLimit); bVal = inBase(b, b.creditLimit); break;
@@ -2478,7 +2484,6 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                       <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-1.5 min-w-0">
                                           <span className={`${isRelaxed ? "text-[13px]" : "text-sm"} block truncate`} style={{ fontWeight: 500, color: '#1E293B' }}>{highlightText(vendor.displayName)}</span>
-                                          {partnerCurrencyTag(vendor)}
                                           {embedded && embeddedPrimaryPartnerIds?.has(vendor.id) && (
                                             <PrimaryPill size="xs" className="shrink-0" />
                                           )}
@@ -2924,6 +2929,20 @@ export function VendorsListPage({ embedded, embeddedVendors, embeddedDefaultColu
                                         </OverflowTooltip>
                                       )}
                                     </div>
+                                  </TableCell>
+                                );
+                              }
+                              case "currency": {
+                                const info = currencyInfoOf(vendor);
+                                const groupName = info.group?.name ?? vendor.partnerGroupName;
+                                return (
+                                  <TableCell key={colKey}>
+                                    <span className={`inline-flex whitespace-nowrap max-w-full ${isRelaxed ? "text-[13px]" : "text-sm"}`}>
+                                      <CurrencyCodeCell
+                                        code={info.code}
+                                        title={info.source === "partner" ? "Set on this partner" : `Inherited from ${groupName ?? "its partner group"}`}
+                                      />
+                                    </span>
                                   </TableCell>
                                 );
                               }

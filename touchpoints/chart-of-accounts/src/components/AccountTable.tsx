@@ -1,4 +1,5 @@
 import { Fragment, cloneElement, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ElementType, type ReactElement, type ReactNode } from 'react'
+import { LIBRARY_CURRENCY_NAMES } from '../lib/libraryCurrencyNames'
 import { useRememberedState } from '../lib/rememberedState'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
@@ -73,7 +74,7 @@ const SELECT_W = 52
 const FROZEN_FALLBACK_W: Record<string, number> = {
   type: 280, glType: 150, openingBalance: 150,
   runningBalance: 150,
-  fxBalance: 160, currency: 110, status: 120,
+  fxBalance: 160, currency: 264, status: 120,
   description: 240, effectiveDate: 120, posting: 120, dimensions: 160,
 }
 const isFrozenCol = (k: ColKey) => FROZEN_KEYS.includes(k)
@@ -1221,14 +1222,17 @@ export function BookedBaseTooltip({ code, base, booked, accountId, opening, chil
   return <Tooltip rich align="right" side="top" content={bookedBaseCard(code, base, booked, accountId, opening)}>{children}</Tooltip>
 }
 
-// Currency cell, flag + code chip. The full name lives in the title tooltip
-// rather than the cell, keeping the column compact.
+// Currency cell, as the Currency Library draws it (the shell's
+// coa/components/cells.tsx): the ISO code pill, then the currency's name
+// under the library's spelling ("Pound Sterling", "Renminbi"). The name
+// truncates in a narrow column, with the full name on hover.
 export function CurrencyCell({ code, q = '' }: { code: string; q?: string }) {
   const m = currencyMeta(code)
+  const name = LIBRARY_CURRENCY_NAMES[m.code] ?? m.name
   return (
-    <div className="flex items-center gap-1.5 min-w-0" title={m.name}>
-      <CurrencyFlag meta={m} className="text-base leading-none shrink-0" />
+    <div className="flex items-center gap-1.5 min-w-0" title={`${name} (${m.code})`}>
       <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-info-50 text-info-700 text-2xs font-semibold border border-info-100 shrink-0"><Marked text={m.code} q={q} /></span>
+      <span className="truncate min-w-0" style={{ color: '#1E293B', fontWeight: 400 }}><Marked text={name} q={q} /></span>
     </div>
   )
 }

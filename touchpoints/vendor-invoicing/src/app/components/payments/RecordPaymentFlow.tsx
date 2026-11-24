@@ -247,8 +247,8 @@ function InvoiceCurrencySwitch({
           </TooltipContent>
         </Tooltip>
       </span>
-      <span role="radiogroup" aria-label="Invoice currency" className="inline-flex items-stretch h-7 rounded-md border border-slate-200 bg-white overflow-hidden text-[11px]">
-        {counts.map(({ code, count }, i) => {
+      <span role="radiogroup" aria-label="Invoice currency" className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5">
+        {counts.map(({ code, count }) => {
           const on = code === value;
           return (
             <button
@@ -257,13 +257,14 @@ function InvoiceCurrencySwitch({
               role="radio"
               aria-checked={on}
               onClick={() => { if (!on) onChange(code); }}
-              className={`inline-flex items-center gap-1.5 px-2.5 cursor-pointer transition-colors ${i > 0 ? 'border-l border-slate-200' : ''} ${
-                on ? 'bg-primary/[0.06] text-primary' : 'text-slate-600 hover:bg-slate-50'
+              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                on ? 'bg-[#EDF4FF] text-[#0A77FF]' : 'text-muted-foreground hover:bg-muted'
               }`}
+              style={{ fontWeight: on ? 500 : 400 }}
             >
               <CurrencyFlag code={code} size={14} />
-              <span style={{ fontWeight: 600 }}>{code}</span>
-              <span className={on ? 'text-primary/70' : 'text-slate-400'} style={{ fontWeight: 500 }}>{count}</span>
+              <span>{code}</span>
+              <span className={on ? 'text-[#0A77FF]/70' : 'text-slate-400'}>{count}</span>
             </button>
           );
         })}

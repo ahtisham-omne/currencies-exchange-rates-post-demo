@@ -1,13 +1,13 @@
 import * as React from "react";
-import { Lock, LockOpen, RotateCcw, Settings2 } from "lucide-react";
+import { RotateCcw, Settings2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/app/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/app/components/ui/tooltip";
-import { SO_LOCK_EVENT, soLockTitle, soRateLocked, soReceiveAccount, type SOCurrencyChoice } from "@/app/components/so/soCurrency";
+import { soRateLocked, soReceiveAccount, type SOCurrencyChoice } from "@/app/components/so/soCurrency";
 import type { SalesOrder } from "@/app/components/so/types";
-import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "@/app/currency/currencies";
 import { formatMoney, formatRate, formatRateDate, moneyPrefix } from "@/app/currency/money";
 import { crossRate, customerCurrency, roundTo, soFx } from "@/app/currency/soFx";
-import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
+import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { DEFAULT_ACCOUNT_ID, getCompanyAccount, isEligibleAccount } from "@/app/currency/companyAccounts";
 import { CurrencyFlag } from "./CurrencyChip";
 import { linkProvider } from "./ProviderLink";
@@ -30,18 +30,19 @@ import {
  *    at the order date's rates, after the same confirmation the redesign
  *    shows (SOCurrencyConfirmDialog). An order made from a quote keeps the
  *    quote's currency: it can't change here.
- *  - "You receive": an account, not a bare currency. The bank or cash
+ *  - "You receive in": an account, not a bare currency. The bank or cash
  *    account the customer's payment goes to, in the base currency or the
- *    order's (companyAccounts.ts), with the amount it receives: "≈ ₨…" in
- *    base, the order's amount in the order's currency. "Base equivalent"
- *    shows only when it isn't the base currency.
- *  - The rate: the order date's (or the quote's), mid-market (read-only)
- *    or corporate (finance's, which can be changed on the order), with its
- *    date and an Unlocked / Locked chip: it locks when the order is
- *    confirmed, i.e. leaves Draft. A new version can take today's rate.
+ *    order's (companyAccounts.ts).
+ *  - "Base equivalent": the total in the base currency at the order's rate.
+ *  - "Exchange rate": the order date's (or the quote's), mid-market
+ *    (read-only) or corporate (finance's, which can be changed on the
+ *    order), with its date. A new version can take today's rate.
+ * Laid out as Purchase Orders has it (POCurrencyConfigDialog, 25 Nov 2026).
+ * The configuration is read-only once the order is confirmed (leaves
+ * Draft); the exchange rate shows no lock of its own anywhere (25 Nov 2026).
  * An order from a quote starts with the quote's configuration (currency,
  * rate, rate type, account); as a Draft its rate and account can still
- * change. (Until 24 Nov it was locked from the start, Mahreen 2026-11-20.) */
+ * change. */
 
 const FONT = "Inter, system-ui, sans-serif";
 
@@ -52,6 +53,12 @@ const RATE_TINT: Record<RateType, string> = { mid: "rgba(124,58,237,0.08)", corp
 const withCode = (n: number, code: string) => {
   const t = formatMoney(n, code);
   return t.includes(code) ? t : `${t} ${code}`;
+};
+
+/** "Pakistani Rupee (PKR)": a currency by name, as the block writes it. */
+const currencyNameWithCode = (code: string) => {
+  const upper = code.toUpperCase();
+  return `${getCurrency(upper)?.name ?? upper} (${upper})`;
 };
 
 export function RateTypeChip({ type }: { type: RateType }) {
@@ -66,41 +73,25 @@ export function RateTypeChip({ type }: { type: RateType }) {
   );
 }
 
-/** Locked (green) or Unlocked (amber): whether the order's rate can still change. */
-export function LockChip({ locked, title }: { locked: boolean; title?: string }) {
-  const Icon = locked ? Lock : LockOpen;
-  return (
-    <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap"
-      style={locked ? { color: "#047857", backgroundColor: "#ECFDF5", fontWeight: 600 } : { color: "#92400E", backgroundColor: "#FFFBEB", fontWeight: 600 }}
-      title={title}
-    >
-      <Icon className="w-2.5 h-2.5" />
-      {locked ? "Locked" : "Unlocked"}
-    </span>
-  );
-}
-
 /* ── Order Summary: CURRENCY ───────────────────────────────────────── */
 
 export function SOCurrencySummary({ so, total, onViewConfig }: { so: SalesOrder; total: number; onViewConfig: () => void }) {
   const fx = soFx(so);
   const account = soReceiveAccount(so);
-  const receiveInBase = isBaseCurrency(account.currency);
   const fromQuote = so.sourceQuoteRef || null;
-  const locked = soRateLocked(so);
   const baseTotal = toBase(total, fx.rate);
 
-  /* Customer pays / You receive / Base equivalent (only when receiving into
-     an account that isn't in base). A base-currency order has nothing to
-     convert: what the customer pays, and the short note. */
-  const rows: { label: string; code: string; amount: number; title?: string }[] = [{ label: "Customer pays", code: fx.currency, amount: total }];
+  /* Currency information (25 Nov 2026, as Purchase Orders has it): what the
+     customer pays, the currency you receive in (the pay-to account's, by
+     name), the base equivalent (always), then the exchange rate with its
+     type. A base-currency order has nothing to convert: what the customer
+     pays, and the short note. */
+  const rows: { label: string; code: string; amount?: number; title?: string }[] = [{ label: "Customer pays", code: fx.currency, amount: total }];
   if (!fx.isBase) {
-    rows.push({ label: "You receive", code: account.currency, amount: receiveInBase ? baseTotal : total, title: `Into ${account.label}` });
-    if (!receiveInBase) rows.push({ label: "Base equivalent", code: BASE_CURRENCY, amount: baseTotal });
+    rows.push({ label: "You receive in", code: account.currency, title: `Into ${account.label}` });
+    rows.push({ label: "Base equivalent", code: BASE_CURRENCY, amount: baseTotal });
   }
 
-  const LABEL: React.CSSProperties = { fontSize: 11, fontWeight: 500, color: "#64748B", fontFamily: FONT };
   const rateTip = fromQuote
     ? `The ${RATE_TYPE_LABEL[fx.rateType].toLowerCase()} rate from quote ${fromQuote} (${formatRateDate(fx.rateDate)}).`
     : fx.rateType === "mid"
@@ -113,41 +104,41 @@ export function SOCurrencySummary({ so, total, onViewConfig }: { so: SalesOrder;
     <div className="border-t border-muted pt-3 mt-3 space-y-2" style={{ fontFamily: FONT }}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[9.5px] uppercase text-slate-400" style={{ fontWeight: 600, letterSpacing: "0.06em" }}>
-          Currency
+          Currency information
         </span>
-        {!fx.isBase && (
-          <div className="flex items-center gap-1.5">
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <span className="cursor-help">
-                  <RateTypeChip type={fx.rateType} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[240px] text-[11px]">
-                {rateTip}
-              </TooltipContent>
-            </Tooltip>
-            <LockChip locked={locked} title={soLockTitle(so)} />
-          </div>
-        )}
+        {/* No lock on the rate (25 Nov 2026): the configuration locks with the
+            order, the exchange rate shows no lock of its own. */}
       </div>
 
       {rows.map((r) => (
         <div key={r.label} className="flex items-center justify-between gap-2" title={r.title}>
-          <p style={LABEL}>{r.label}</p>
-          <p className="flex items-center gap-1.5 text-slate-700 tabular-nums" style={{ fontSize: 12, fontWeight: 500 }}>
-            <CurrencyFlag code={r.code} size={11} />
-            {withCode(r.amount, r.code)}
+          <p className="text-slate-400 shrink-0" style={{ fontSize: 10, fontWeight: 500 }}>{r.label}</p>
+          <p className="flex items-center gap-1.5 text-slate-700 tabular-nums text-right min-w-0" style={{ fontSize: 12, fontWeight: 500 }}>
+            {/* A flag on the order's amount and the account's currency; the base equivalent reads plainly. */}
+            {r.label !== "Base equivalent" && <CurrencyFlag code={r.code} size={11} />}
+            <span className="truncate">{r.amount === undefined ? currencyNameWithCode(r.code) : withCode(r.amount, r.code)}</span>
           </p>
         </div>
       ))}
 
       {!fx.isBase ? (
-        <div className="border-t border-slate-100 pt-2">
-          <div className="flex items-center justify-between gap-2" title={rateTip}>
-            <p style={LABEL}>Rate</p>
-            <p className="text-slate-500 tabular-nums" style={{ fontSize: 11 }}>
-              1 {fx.currency} = {moneyPrefix(BASE_CURRENCY)}{formatRate(fx.rate)} {BASE_CURRENCY}
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-slate-400 shrink-0 pt-0.5" style={{ fontSize: 10, fontWeight: 500 }}>Exchange rate</p>
+          <div className="flex flex-col items-end min-w-0">
+            <p className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 text-slate-700 tabular-nums text-right" style={{ fontSize: 12, fontWeight: 500 }}>
+              <span className="whitespace-nowrap">
+                1 {fx.currency} = {moneyPrefix(BASE_CURRENCY)}{formatRate(fx.rate)} {BASE_CURRENCY}
+              </span>
+              <Tooltip delayDuration={200}>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help shrink-0">
+                    <RateTypeChip type={fx.rateType} />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[240px] text-[11px]">
+                  {rateTip}
+                </TooltipContent>
+              </Tooltip>
             </p>
           </div>
         </div>
@@ -161,11 +152,11 @@ export function SOCurrencySummary({ so, total, onViewConfig }: { so: SalesOrder;
         <button
           type="button"
           onClick={onViewConfig}
-          className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 hover:text-primary cursor-pointer"
+          className="mt-1 w-full inline-flex items-center justify-center gap-1.5 h-8 rounded-lg border border-border bg-white text-[12px] text-primary hover:bg-primary/5 hover:border-primary/30 transition-colors cursor-pointer"
           style={{ fontWeight: 500 }}
         >
-          <Settings2 className="w-3 h-3" />
-          View configuration
+          <Settings2 className="w-3.5 h-3.5" />
+          View currency configuration
         </button>
       </div>
     </div>
@@ -183,20 +174,38 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-/** The amount (read-only) beside the currency or account it's in. */
-function AmountRow({ text, picker, pickerWidth = 200 }: { text: string; picker: React.ReactNode; pickerWidth?: number }) {
+/** A read-only amount, as the dialog shows it. */
+function AmountBox({ text }: { text: string }) {
   return (
-    <div className="flex items-stretch gap-2">
-      <div
-        className="flex-1 min-w-0 h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center text-[15px] text-slate-500 tabular-nums cursor-default select-none"
-        style={{ fontWeight: 500 }}
-        aria-readonly="true"
-      >
-        <span className="truncate" title={text}>{text}</span>
-      </div>
-      <div className="shrink-0" style={{ width: pickerWidth }}>{picker}</div>
+    <div
+      className="flex-1 min-w-0 h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center text-[15px] text-slate-500 tabular-nums cursor-default select-none"
+      style={{ fontWeight: 500 }}
+      aria-readonly="true"
+    >
+      <span className="truncate" title={text}>{text}</span>
     </div>
   );
+}
+
+/** The amount (read-only) beside the currency it's in. */
+function AmountRow({ text, picker }: { text: string; picker: React.ReactNode }) {
+  return (
+    <div className="flex items-stretch gap-2">
+      <AmountBox text={text} />
+      <div className="w-[248px] shrink-0">{picker}</div>
+    </div>
+  );
+}
+
+/** The time of day the provider's rates sync, e.g. "7:30 PM". */
+const SYNC_TIME = new Date(LAST_SYNC).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+/** Under the rate (25 Nov 2026): when a mid-market rate was last updated,
+ *  or from when a corporate rate is in effect. Not the order date. */
+export function rateAsOfLine(type: RateType, date: string, effectiveDate?: string | null, entered?: boolean): string {
+  if (type === "mid") return `Rate updated as of ${formatRateDate(date)}, ${SYNC_TIME}`;
+  if (entered) return `Entered on this order · effective from ${formatRateDate(date)}`;
+  return `Effective from ${formatRateDate(effectiveDate ?? date)}`;
 }
 
 function RateCard({ from, rate, type, source, day }: { from: string; rate: number; type: RateType; source: string; day: string }) {
@@ -211,8 +220,11 @@ function RateCard({ from, rate, type, source, day }: { from: string; rate: numbe
         <div>1 {from} = {formatRate(rate)} {BASE_CURRENCY}</div>
         <div className="text-slate-500" style={{ fontWeight: 400 }}>1 {BASE_CURRENCY} = {formatRate(1 / rate)} {from}</div>
       </div>
-      {/* "Nov 23, 2026 · order date" */}
-      <p className="mt-1 text-[10.5px] text-slate-400 tabular-nums">{day}</p>
+      {/* rateAsOfLine: "Rate updated as of Apr 10, 2026, 7:30 PM" or
+          "Effective from Apr 1, 2026". The rate itself never locks
+          (25 Nov 2026); only the configuration does, once the order is
+          confirmed. */}
+      <div className="mt-1.5 text-[10.5px] text-slate-400 tabular-nums">{day}</div>
     </div>
   );
 }
@@ -290,11 +302,7 @@ export function SOCurrencyConfigDialog({
           ? totals.total
           : roundTo(currency, totals.total * crossRate(fx.rate, rate));
   const account = getCompanyAccount(accountId) ?? getCompanyAccount(DEFAULT_ACCOUNT_ID)!;
-  const receiveInBase = isBaseCurrency(account.currency);
   const baseTotal = toBase(customerTotal, rate);
-  const receiveText = receiveInBase
-    ? `${foreign ? "≈ " : ""}${formatMoney(baseTotal, BASE_CURRENCY)}`
-    : formatMoney(customerTotal, account.currency);
 
   const dirty = currency !== fx.currency || accountId !== savedAccount || rateChanged;
 
@@ -318,7 +326,7 @@ export function SOCurrencyConfigDialog({
     );
   };
 
-  /* Another currency: an account in the old one can't take it any more. */
+  /* Another currency: any account can still take it (25 Nov 2026). */
   const pickCurrency = (c: string) => {
     setCurrency(c);
     setRateText(null);
@@ -333,17 +341,18 @@ export function SOCurrencyConfigDialog({
     setRateText(null);
   };
 
-  const lockTitle = soLockTitle(so);
-  /* The day the rate is for: the order date, or for an order from a quote
-     the quote's rate date (its rate as it came over, or another type's on
-     that day). */
-  const rateDay = `${formatRateDate(fx.rateDate)} · ${fromQuote ? (rateChanged ? "quote date" : `from quote ${fromQuote}`) : "order date"}`;
+  /* The configuration is read-only once the order is confirmed; the rate
+     itself shows no lock (25 Nov 2026). */
+  const locked = soRateLocked(so);
+  /* Under the rate: when the mid-market rate was updated, or from when the
+     corporate rate is in effect (25 Nov 2026). */
+  const rateDay = rateAsOfLine(type, fx.rateDate, corpQuote.effectiveDate, rateEdited);
 
   return (
     <>
       <Dialog open={open && !confirming} onOpenChange={onOpenChange}>
         <DialogContent
-          className="sm:max-w-[580px] p-0 gap-0 overflow-hidden !rounded-2xl border-0"
+          className="sm:max-w-[600px] p-0 gap-0 overflow-hidden !rounded-2xl border-0"
           style={{ fontFamily: FONT, boxShadow: "0 24px 48px -12px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05)" }}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
@@ -355,13 +364,15 @@ export function SOCurrencyConfigDialog({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <DialogTitle className="text-slate-900" style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>
-                    Currency Configuration
+                    Currency configuration
                   </DialogTitle>
-                  <span className="text-[12px] text-slate-400 tabular-nums" style={{ fontWeight: 500 }}>{so.soNumber}</span>
-                  {readOnly && <LockChip locked title={lockTitle} />}
                 </div>
                 <DialogDescription className="text-slate-500" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                  Applies to order {so.soNumber} only. The customer's default currency ({customerDefault}) doesn't change.
+                  {locked
+                    ? "This order is confirmed, so its currency configuration can't be changed."
+                    : readOnly
+                      ? "This order can't be changed now, so its currency configuration is read-only."
+                      : "For this order only. The customer's currency stays the same."}
                 </DialogDescription>
               </div>
             </div>
@@ -383,48 +394,33 @@ export function SOCurrencyConfigDialog({
                 }
               />
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                {fromQuote ? (
-                  `From quote ${fromQuote}. The currency carries over from the quote and doesn't change.`
-                ) : (
-                  <>
-                    {currency !== customerDefault ? `Changed from ${customerDefault}, the customer's default. ` : "Defaults to the customer's currency. "}
-                    Changing it converts every line at the order date's rate.
-                  </>
-                )}
+                {fromQuote
+                  ? `From quote ${fromQuote}. The currency carries over from the quote and doesn't change.`
+                  : currency === customerDefault
+                    ? "Defaults to the customer's currency."
+                    : `Changed from ${customerDefault}, the customer's currency. Every line converts at the order date's rate.`}
               </p>
             </Section>
 
-            <Section label="You receive">
-              <AmountRow
-                text={receiveText}
-                pickerWidth={270}
-                picker={
-                  <AccountPicker
-                    value={accountId}
-                    docCurrency={currency}
-                    onPick={setAccountId}
-                    disabled={readOnly}
-                    ariaLabel="You receive into"
-                    className="!mt-0 !h-10"
-                  />
-                }
+            <Section label="You receive in">
+              <AccountPicker
+                value={accountId}
+                docCurrency={currency}
+                onPick={setAccountId}
+                disabled={readOnly}
+                ariaLabel="You receive into"
+                className="!mt-0 !h-10"
               />
-              {!receiveInBase && (
-                <p className="text-[11px] text-slate-600 tabular-nums">
-                  Base equivalent ≈ {formatMoney(baseTotal, BASE_CURRENCY)} {BASE_CURRENCY}
-                </p>
-              )}
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                {foreign
-                  ? `The bank or cash account the customer pays into, in ${BASE_CURRENCY} (the base currency) or ${currency}. Defaults to ${BASE_CURRENCY}.`
-                  : `The bank or cash account the customer pays into, in ${BASE_CURRENCY}, the base currency.`}
-              </p>
+            </Section>
+
+            <Section label="Base equivalent">
+              <AmountBox text={`${foreign ? "≈ " : ""}${formatMoney(baseTotal, BASE_CURRENCY)} ${BASE_CURRENCY}`} />
             </Section>
 
             {foreign && (
-              <Section label="Rate">
+              <section className="space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-slate-500">Rate type</span>
+                  <p className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>Exchange rate</p>
                   {readOnly ? (
                     <span className="ml-auto"><RateTypeChip type={type} /></span>
                   ) : (
@@ -463,9 +459,6 @@ export function SOCurrencyConfigDialog({
                     )}
                   </div>
                 ) : null}
-                {/* The rate, its day, and whether it can still change
-                    (spec: "1 USD = 278.5200 PKR · Nov 23, 2026 · order
-                    date · [Unlocked] locks when the order is confirmed"). */}
                 <RateCard
                   from={currency}
                   rate={rate}
@@ -481,11 +474,7 @@ export function SOCurrencyConfigDialog({
                           : `No corporate rate for ${currency}; enter one`
                   }
                 />
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-500" title={lockTitle}>
-                  <LockChip locked={readOnly} title={lockTitle} />
-                  <span>{readOnly ? `since the order was confirmed (${so.status})` : SO_LOCK_EVENT}</span>
-                </div>
-              </Section>
+              </section>
             )}
           </div>
 
@@ -499,7 +488,7 @@ export function SOCurrencyConfigDialog({
               title={fromQuote ? `The quote's currency, ${BASE_CURRENCY} account 1010 and the mid-market rate` : `The customer's currency, ${BASE_CURRENCY} account 1010 and the mid-market rate`}
             >
               <RotateCcw className="w-3 h-3" />
-              Reset to default
+              Reset
             </button>
             <div className="flex items-center gap-2">
               <button
@@ -517,7 +506,7 @@ export function SOCurrencyConfigDialog({
                   className="inline-flex h-9 items-center rounded-lg px-4 text-[12.5px] font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   style={{ backgroundColor: "#0A77FF" }}
                 >
-                  Save configuration
+                  Save
                 </button>
               )}
             </div>

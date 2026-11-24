@@ -842,27 +842,27 @@ export function ShipmentsTab({ shipments, soId: _soId, so, createdViaUI = false,
           resultCount={viewMode === "by-shipment" ? filtered.length : itemRows.length}
           resultLabel={viewMode === "by-shipment" ? SH_STR.tab.resultLabelShipments : SH_STR.tab.resultLabelItems}
           leftContent={
-            <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0" style={{ marginLeft: 4 }}>
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" style={{ marginLeft: 4 }}>
               {([
                 { key: "by-shipment", label: SH_STR.tab.viewByShipment,  count: shipments.length },
                 { key: "by-item",     label: SH_STR.tab.viewByLineItems, count: itemRows.length },
               ] as const).map(opt => {
                 const active = viewMode === opt.key;
                 return (
-                  <button
+                  <button role="radio" aria-checked={active}
                     key={opt.key}
                     onClick={() => setViewMode(opt.key)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${
+                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
                       active
-                        ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground"
-                        : "text-slate-500 hover:text-slate-700"
+                        ? "bg-[#EDF4FF] text-[#0A77FF]"
+                        : "text-muted-foreground hover:bg-muted"
                     }`}
-                    style={{ fontWeight: active ? 600 : 500 }}
+                    style={{ fontWeight: active ? 500 : 400 }}
                   >
                     {opt.label}
                     <span
                       className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${
-                        active ? "bg-accent text-primary" : "bg-border text-slate-500"
+                        active ? "bg-white text-[#0A77FF]" : "bg-border text-slate-500"
                       }`}
                       style={{ fontWeight: 600 }}
                     >

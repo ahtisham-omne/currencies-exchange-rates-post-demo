@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { GitBranch, AlertTriangle, ArrowRight } from 'lucide-react';
-import { VersionRateChoice as VersionRateChoiceCards, type VersionRateOptions } from '@/app/components/currency/VersionRateChoice';
 import type { VersionRateChoice } from '@/app/data/quoteStore';
 
 /* ════════════════════════════════════════════════════════════════════
@@ -17,9 +16,6 @@ import type { VersionRateChoice } from '@/app/data/quoteStore';
    trimmed reason; callers that don't care can ignore it.
 
    Version number is deterministic — always `currentVersion + 1`.
-
-   On a quote in a foreign currency it also asks which rate the new
-   version takes: the one locked in, or today's (VersionRateChoice).
    ════════════════════════════════════════════════════════════════════ */
 
 interface AutoVersionConfirmModalProps {
@@ -29,12 +25,10 @@ interface AutoVersionConfirmModalProps {
   newValue?: string;
   currentVersion: number;
   fromStatus: string;
-  /** Fires with the reason and the rate the new version takes ("locked"
-   *  when there's no choice to make). */
+  /** Fires with the reason and a rate choice ("locked"); the new version
+   *  takes today's rate whatever is passed (applyVersionRate). */
   onConfirm: (reason?: string, rateChoice?: VersionRateChoice) => void;
   onDiscard: () => void;
-  /** A foreign-currency quote: offer the locked rate or today's. */
-  rate?: { fromVersion: number; options: VersionRateOptions };
 }
 
 export function AutoVersionConfirmModal({
@@ -46,10 +40,8 @@ export function AutoVersionConfirmModal({
   fromStatus,
   onConfirm,
   onDiscard,
-  rate,
 }: AutoVersionConfirmModalProps) {
   const [reason, setReason] = useState('');
-  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
   /* Two-layer guard against double-version creation:
      · `isConfirming` (state) → re-renders the button as visually
        disabled so the user gets feedback.
@@ -65,7 +57,6 @@ export function AutoVersionConfirmModal({
   useEffect(() => {
     if (!isOpen) return;
     setReason('');
-    setRateChoice('locked');
     setIsConfirming(false);
     confirmingRef.current = false;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onDiscard(); };
@@ -219,13 +210,6 @@ export function AutoVersionConfirmModal({
             )}
           </div>
 
-          {/* The new version's rate (foreign-currency quote) */}
-          {rate && (
-            <div className="w-full mt-4">
-              <VersionRateChoiceCards fromVersion={rate.fromVersion} options={rate.options} value={rateChoice} onChange={setRateChoice} />
-            </div>
-          )}
-
           {/* Reason field — optional note logged with the new version */}
           <div className="w-full mt-4 text-left">
             <label
@@ -277,7 +261,7 @@ export function AutoVersionConfirmModal({
                     if (confirmingRef.current) return;
                     confirmingRef.current = true;
                     setIsConfirming(true);
-                    onConfirm(reason.trim(), rate ? rateChoice : 'locked');
+                    onConfirm(reason.trim(), 'locked');
                   }}
                   disabled={isDisabled}
                   className="w-full h-11 text-[14px] rounded-xl transition-colors flex items-center justify-center gap-2"

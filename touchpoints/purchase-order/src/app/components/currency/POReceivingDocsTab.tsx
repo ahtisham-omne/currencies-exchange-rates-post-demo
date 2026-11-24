@@ -6,14 +6,15 @@ import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatMoney, formatRateDate } from "@/app/currency/money";
 import { poFx } from "@/app/currency/poFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL } from "@/app/currency/rates";
-import { CurrencyPill } from "./CurrencyChip";
+import { CurrencyCodeCell } from "./CurrencyCodeCell";
 import { BaseMoney } from "./Money";
-import { CurrencyBlock, LockChip, blockRateText } from "./CurrencyBlock";
+import { CurrencyBlock, blockRateText } from "./CurrencyBlock";
 import { poReceivingDocs, type ReceivingDoc } from "./receivingDocs";
 
 /* ── Receiving Docs tab (Currency Touchpoints Map, Receiving 1–2) ──────
- * Receiving Doc | Completed | Value: each doc's value in the base currency
- * with the PO's currency tag and the rate hover, its rate ("Rate 1 USD =
+ * Receiving Doc | Currency | Completed | Value: each doc's currency (the
+ * PO's, in its own column), its value in the base currency with the rate
+ * hover, its rate ("Rate 1 USD =
  * ₨278.5200 PKR · receiving date") and its lock. A doc in progress takes
  * today's rate and is unlocked; a completed one is locked at its completion
  * day's rate. Opening a row shows what was received and the currency block:
@@ -21,7 +22,8 @@ import { poReceivingDocs, type ReceivingDoc } from "./receivingDocs";
  * "Received / Base value / Rate · Nov 20, 2026" (completed). The docs are
  * read from the PO's receiving data (receivingDocs.ts). */
 
-const COLS = "minmax(0,1fr) 200px 180px";
+// Receiving Doc | Currency (fits "United Arab Emirates Dirham") | Completed | Value
+const COLS = "minmax(0,1fr) 264px 200px 180px";
 
 const COL_HEADER: React.CSSProperties = {
   fontSize: 10,
@@ -44,7 +46,7 @@ function rateTypeTip(doc: ReceivingDoc): string {
   const source = doc.fx.rateType === "mid" ? ` · ${RATE_PROVIDER}` : "";
   return doc.status === "completed"
     ? `The ${type} rate on ${formatRateDate(doc.date)}, the receiving date${source}. The rate type follows the PO; nobody changes it by hand.`
-    : `Today's ${type} rate${source}. It locks when the receiving is completed. The rate type follows the PO.`;
+    : `Today's ${type} rate${source}. The rate type follows the PO.`;
 }
 
 function DocRow({ doc, isBase, open, onToggle }: { doc: ReceivingDoc; isBase: boolean; open: boolean; onToggle: () => void }) {
@@ -76,13 +78,19 @@ function DocRow({ doc, isBase, open, onToggle }: { doc: ReceivingDoc; isBase: bo
             <span className="text-slate-900 tabular-nums" style={{ fontSize: 13, fontWeight: 600, lineHeight: "18px" }}>
               {doc.number}
             </span>
-            {!isBase && <CurrencyPill code={doc.currency} note="The PO's currency. Values show in the base currency." />}
           </div>
           <p className="mt-0.5 pl-[22px] text-[11px] text-slate-500 tabular-nums truncate">
             {isBase
               ? `${doc.lines.length} line${doc.lines.length === 1 ? "" : "s"} · ${units.toLocaleString()} unit${units === 1 ? "" : "s"}`
               : <>Rate {blockRateText(doc.currency, doc.fx.rate)} · {completed ? "receiving date" : "today"}</>}
           </p>
+        </div>
+
+        {/* Currency — the PO's, base currency included. */}
+        <div className="min-w-0">
+          <span className="inline-flex whitespace-nowrap max-w-full" style={{ fontSize: 13, lineHeight: "18px" }}>
+            <CurrencyCodeCell code={doc.currency} title="The PO's currency. Values show in the base currency." />
+          </span>
         </div>
 
         {/* Completed */}
@@ -99,7 +107,7 @@ function DocRow({ doc, isBase, open, onToggle }: { doc: ReceivingDoc; isBase: bo
               </span>
             </span>
           )}
-          {!isBase && <LockChip locked={completed} title={lockTitle(doc)} />}
+
         </div>
 
         {/* Value */}
@@ -224,6 +232,7 @@ export function POReceivingDocsTab({ po }: { po: PurchaseOrderData }) {
             style={{ gridTemplateColumns: COLS, backgroundColor: "color-mix(in srgb, hsl(var(--muted)) 30%, transparent)" }}
           >
             <span style={{ ...COL_HEADER, paddingLeft: 22 }}>Receiving Doc</span>
+            <span style={COL_HEADER}>Currency</span>
             <span style={COL_HEADER}>Completed</span>
             <span style={{ ...COL_HEADER, textAlign: "right" }}>Value</span>
           </div>
@@ -233,6 +242,7 @@ export function POReceivingDocsTab({ po }: { po: PurchaseOrderData }) {
           {docs.length > 1 && (
             <div className="grid items-center gap-3 px-4 py-2.5 border-t border-border bg-slate-50/60" style={{ gridTemplateColumns: COLS }}>
               <span className="text-slate-500" style={{ fontSize: 12, fontWeight: 500, paddingLeft: 22 }}>Total received value</span>
+              <span />
               <span />
               <span className="text-right text-slate-900 tabular-nums" style={{ fontSize: 13, fontWeight: 700 }}>
                 {formatMoney(totalBase, BASE_CURRENCY)}

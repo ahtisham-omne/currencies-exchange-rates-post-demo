@@ -1,4 +1,4 @@
-import { BASE_CURRENCY, isBaseCurrency } from "./currencies";
+import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "./currencies";
 import { formatRate, moneyPrefix } from "./money";
 import { exampleDocumentCurrency, rateNow } from "./partnerCurrency";
 import { toBase, type RateType } from "./rates";
@@ -23,11 +23,13 @@ const PREFIX = moneyPrefix(RULE_CURRENCY);
 /** The base currency's symbol, for the % / ₨ switch on a tier. */
 export const RULE_SYMBOL = PREFIX.trim();
 /** The fixed side of a tier's % / ₨ switch. */
-export const RULE_FIXED_TOOLTIP = (kind: "Discount" | "Premium") =>
-  `${kind} applied as a fixed amount in ${RULE_CURRENCY}, converted to a document's currency at the document's rate.`;
+export const RULE_FIXED_TOOLTIP = (_kind: "Discount" | "Premium") =>
+  `Fixed amount in ${getCurrency(RULE_CURRENCY)?.name ?? RULE_CURRENCY}s (${RULE_CURRENCY}), your base currency`;
 
 /** One line for forms and tooltips. */
-export const RULE_CURRENCY_NOTE = `Value thresholds and fixed amounts are in ${RULE_CURRENCY}. A document in another currency is checked in ${RULE_CURRENCY} at the document's rate.`;
+export const RULE_CURRENCY_NOTE = `All money amounts in this rule are in ${RULE_CURRENCY}.`;
+/** The Currency field's info tooltip. */
+export const RULE_CURRENCY_TOOLTIP = `Pricing rules always use ${RULE_CURRENCY}, your base currency. They still work on orders in other currencies. The amounts are converted to the order's currency.`;
 
 /** A rule amount: "₨210,000", "₨14,000.50". */
 export function formatRuleAmount(n: number): string {

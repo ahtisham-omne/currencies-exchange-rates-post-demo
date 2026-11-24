@@ -48,11 +48,10 @@ import {
 import { ItemImageWithPreview, ItemQuickViewModal } from '@/app/components/invoice-details/ItemQuickView';
 import { imageForSku } from '@/app/lib/itemImages';
 import { palette } from '@/styles/tokens';
-import { isBaseCurrency } from '@/app/currency/currencies';
 import { toBase } from '@/app/currency/rates';
 import { returnFx, rmaCurrency, rmaCurrencyPO } from '@/app/currency/returnCurrency';
 import { BaseMoney } from '@/app/components/currency/Money';
-import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
+import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { returnValueOf } from '@/app/components/currency/ReturnCurrencyConfig';
 
 // ─── STATUS palette — mirrors the vendor-invoicing STATUS_STYLES pattern
@@ -493,14 +492,28 @@ export const RMA_COLUMNS: ColumnDef<RMA>[] = [
         description={row.notes ?? `Source ${poLabel(row.sourcePO)}`}
         density={density}
         searchQuery={searchQuery}
-        // The return's currency on a foreign-currency return (2026-11-24);
-        // a PKR return gets none.
-        tag={
-          isBaseCurrency(rmaCurrency(row)) ? undefined : (
-            <CurrencyPill code={rmaCurrency(row)} note={`The return's currency, from PO-${rmaCurrencyPO(row)}.`} />
-          )
-        }
       />
+    ),
+  },
+  {
+    // The return's currency, from its source PO, right after the vendor.
+    // Every return shows one, PKR included; Return value is in PKR with the
+    // return's own amount on hover.
+    key: 'currency',
+    label: 'Currency',
+    minWidth: 160,
+    defaultWidth: 264,
+    sortable: true,
+    filterType: 'multiselect',
+    uniqueValues: (rows) => Array.from(new Set(rows.map((r) => rmaCurrency(r)))).sort(),
+    getValue: (row) => rmaCurrency(row),
+    // The Currency Library's cell: the ISO code pill, then the name.
+    render: (row, { density }) => (
+      <span
+        className={`inline-flex whitespace-nowrap max-w-full ${density === 'comfort' ? 'text-[13px]' : 'text-sm'}`}
+      >
+        <CurrencyCodeCell code={rmaCurrency(row)} title={`The return's currency, from PO-${rmaCurrencyPO(row)}.`} />
+      </span>
     ),
   },
   {

@@ -738,6 +738,7 @@ function PartnerGroupDetailsPageInner() {
                 embeddedDefaultColumnVisibility={{
                   partner_name: true,
                   partner_type: true,
+                  currency: true,
                   vendor_sub_types: true,
                   customer_sub_types: true,
                   num_items: true,
@@ -2091,18 +2092,18 @@ function ResizableChartCard({
               hovered ? "opacity-100 translate-x-0" : "opacity-0 translate-x-2 pointer-events-none"
             }`}
           >
-            <div className="flex items-center h-7 rounded-lg border border-border bg-slate-50 p-0.5 gap-0.5">
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Widget size">
               {(["sm", "md", "lg"] as const).map((s) => (
                 <button
                   key={s}
                   onClick={(e) => { e.stopPropagation(); onSizeChange(s); }}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className={`h-6 px-2.5 rounded-md text-[11px] cursor-pointer transition-all ${
-                    size === s
-                      ? "bg-white text-primary shadow-sm border border-border"
-                      : "text-slate-400 hover:text-slate-700 hover:bg-white/60 border border-transparent"
+                  role="radio"
+                  aria-checked={size === s}
+                  className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                    size === s ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                   }`}
-                  style={{ fontWeight: size === s ? 600 : 500 }}
+                  style={{ fontWeight: size === s ? 500 : 400 }}
                 >
                   {s === "sm" ? "Small" : s === "md" ? "Medium" : "Large"}
                 </button>
@@ -2548,16 +2549,18 @@ function CustomizeWidgetsPanel({
                                 <p className="text-[12px] text-foreground truncate" style={{ fontWeight: 600 }} title={w.label}>{w.label}</p>
                                 <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-snug" title={w.description}>{w.description}</p>
                                 {isActive && (
-                                  <div className="mt-2 flex items-center h-6 rounded-md border border-border bg-slate-50 p-0.5 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                                  <div className="mt-2 inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Widget size" onClick={(e) => e.stopPropagation()}>
                                     {(["sm", "md", "lg"] as const).map((s) => (
                                       <button
                                         key={s}
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); onWidgetSizeChange(w.key, s); }}
-                                        className={`flex-1 h-5 rounded text-[10px] transition-all duration-150 cursor-pointer ${
-                                          sz === s ? "bg-white text-primary shadow-sm" : "text-slate-400 hover:text-slate-700"
+                                        role="radio"
+                                        aria-checked={sz === s}
+                                        className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                                          sz === s ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                                         }`}
-                                        style={{ fontWeight: sz === s ? 600 : 500 }}
+                                        style={{ fontWeight: sz === s ? 500 : 400 }}
                                       >
                                         {({ sm: "SM", md: "MD", lg: "LG" } as const)[s]}
                                       </button>

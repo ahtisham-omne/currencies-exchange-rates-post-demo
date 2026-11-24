@@ -8,6 +8,7 @@ import { RATE_TYPE_LABEL } from "@/app/currency/rates";
 import {
   RULE_CURRENCY,
   RULE_CURRENCY_NOTE,
+  RULE_CURRENCY_TOOLTIP,
   baseRateSentence,
   formatRuleAmount,
   ruleDocumentExample,
@@ -31,7 +32,7 @@ export function RuleCurrencyField({ height = "h-9", showInfo = true }: { height?
         <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>Currency</label>
         {showInfo && (
           <InfoTooltip>
-            {`Pricing rules are created in the base currency (${RULE_CURRENCY}), so there is no currency to pick. ${RULE_CURRENCY_NOTE} Fixed amounts are converted to the document's currency at that rate.`}
+            {RULE_CURRENCY_TOOLTIP}
           </InfoTooltip>
         )}
       </div>

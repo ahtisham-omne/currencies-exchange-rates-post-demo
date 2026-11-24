@@ -19,7 +19,7 @@ import {
 } from '../shared/filterModal';
 import { useDesignMoney } from '@/app/components/currency/docCurrencyContext';
 import { useVersionMoney } from '@/app/components/currency/versionMoney';
-import { VersionRateChoice as VersionRateChoiceCards, useVersionRateOptions } from '@/app/components/currency/VersionRateChoice';
+import { RevertRateBox } from '@/app/components/currency/VersionRateChoice';
 import type { VersionRateChoice } from '@/app/data/quoteStore';
 import { formatRate, formatRateDate } from '@/app/currency/money';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
@@ -795,7 +795,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                         <Clock style={{ width: '12px', height: '12px', color: 'var(--muted-foreground)' }} />
                         <span className="tabular-nums" style={{ fontSize: '12px', color: 'var(--muted-foreground)', lineHeight: '1' }}>Valid until {ver.snapshot.validUntil}</span>
                       </div>
-                      {/* The rate this version locked in (foreign-currency quote),
+                      {/* The rate this version took (foreign-currency quote),
                           as the earlier touchpoint showed it. */}
                       {(() => {
                         const vfx = vm.fxOf(ver.version);
@@ -805,7 +805,7 @@ export function VersionHistoryTab({ quoteNumber = 'Q-000-000-000', customerName 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <Scale style={{ width: '12px', height: '12px', color: hex }} />
                             <span className="tabular-nums" style={{ fontSize: '12px', color: 'var(--muted-foreground)', lineHeight: '1' }}>
-                              Rate locked: 1 {vm.currency} = {formatRate(vfx.rate)} {BASE_CURRENCY}
+                              Rate: 1 {vm.currency} = {formatRate(vfx.rate)} {BASE_CURRENCY}
                               <span style={{ color: hex, fontWeight: 600, marginLeft: '6px' }}>{RATE_TYPE_LABEL[vfx.rateType]}</span>
                               <span style={{ color: '#94A3B8', marginLeft: '6px' }}>· {formatRateDate(vfx.rateDate)}</span>
                             </span>
@@ -1167,15 +1167,12 @@ function CompareView({ v1, v2, money, onClose }: {
 // ── Revert Confirm Modal — Partner red-themed discard chrome ─────
 function RevertConfirmModal({ version, total, onClose, onConfirm }: {
   version: number;
-  /** The version's total (the quote's currency), for the rate choice. */
+  /** The version's total (the quote's currency), for the Exchange rate box. */
   total?: number;
   onClose: () => void;
   onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
 }) {
   const [reason, setReason] = useState('');
-  // A foreign-currency quote: V{version}'s locked rate, or today's.
-  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
-  const rateOptions = useVersionRateOptions(version, total);
 
   return (
     <ConfirmDiscardModal
@@ -1186,13 +1183,10 @@ function RevertConfirmModal({ version, total, onClose, onConfirm }: {
       description={`V${version} will become the latest version of this quote. Its existing status is preserved. The next material change will auto-create a new version.`}
       confirmLabel={`Revert to V${version}`}
       cancelLabel="Cancel"
-      onConfirm={() => onConfirm(reason.trim(), rateOptions ? rateChoice : 'locked')}
+      onConfirm={() => onConfirm(reason.trim(), 'locked')}
     >
-      {rateOptions && (
-        <div style={{ marginBottom: 14 }}>
-          <VersionRateChoiceCards fromVersion={version} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
-        </div>
-      )}
+      {/* Exchange rate — the restored version takes today's rate (applyVersionRate). */}
+      <RevertRateBox version={version} total={total} />
       <div>
         <label
           className="block"

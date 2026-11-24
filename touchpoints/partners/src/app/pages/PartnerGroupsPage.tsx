@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CurrencyCodeCell } from "@/app/components/currency/CurrencyCodeCell";
 import { FlagImage, flagEmojiCode } from "../components/currency/FlagImage";
 import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -137,7 +138,6 @@ type TemplateType = "vendor" | "customer" | "both";
 type GroupStatus = "Active" | "Inactive" | "Archived";
 
 import type { CreatedByPerson } from "../data/currentUser";
-import { CurrencyPill } from "../components/currency/CurrencyPill";
 import { groupCurrencyOf, groupRateTypeOf } from "../currency/partnerCurrency";
 import { RATE_TYPE_LABEL } from "../currency/rates";
 export type { CreatedByPerson };
@@ -190,7 +190,7 @@ const COLUMN_DEFS: (ColumnConfig & { minWidth: string; sortable?: boolean; align
   { key: "group", label: "Partner Groups", minWidth: "320px", sortable: true },
   { key: "type", label: "Partner Group Type", minWidth: "200px", sortable: true },
   // The group's default currency, which its partners inherit (spec 4.2).
-  { key: "currency", label: "Currency", minWidth: "130px", sortable: true },
+  { key: "currency", label: "Currency", minWidth: "264px", sortable: true },
   { key: "partners", label: "Linked Partners", minWidth: "220px", sortable: true },
   { key: "description", label: "Description", minWidth: "280px" },
   { key: "last_updated_by", label: "Last Updated By", minWidth: "220px", sortable: true },
@@ -2996,7 +2996,7 @@ function GroupsListingTable({
                         const code = groupCurrencyOf(g);
                         const origin = g.template?.currency ? "Set on the group" : "Base currency by default";
                         return (
-                          <CurrencyPill code={code} note={`${origin} · ${RATE_TYPE_LABEL[groupRateTypeOf(g)]} rate by default`} />
+                          <CurrencyCodeCell code={code} title={`${origin} · ${RATE_TYPE_LABEL[groupRateTypeOf(g)]} rate by default`} />
                         );
                       })()}
                       {key === "country" && (

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { GitBranch, AlertTriangle, ArrowRight } from 'lucide-react';
-import { VersionRateChoice as VersionRateChoiceCards, type VersionRateOptions } from '@/app/components/currency/VersionRateChoice';
 import type { VersionRateChoice } from './soCurrency';
 
 /* ════════════════════════════════════════════════════════════════════
@@ -26,13 +25,10 @@ interface AutoVersionConfirmModalProps {
   newValue?: string;
   currentVersion: number;
   fromStatus: string;
-  /** Fires with the reason and the rate the version takes ("locked" when
-   *  there's no choice to make). */
+  /** Fires with the reason and "locked": the store applies today's rate to
+   *  every new or restored version (createVersionDraft / revertToVersion). */
   onConfirm: (reason?: string, rateChoice?: VersionRateChoice) => void;
   onDiscard: () => void;
-  /** A foreign-currency order: offer the locked rate (of the current
-   *  version, or of the one reverted to) or today's. */
-  rate?: { fromVersion: number; options: VersionRateOptions };
 }
 
 export function AutoVersionConfirmModal({
@@ -44,15 +40,8 @@ export function AutoVersionConfirmModal({
   fromStatus,
   onConfirm,
   onDiscard,
-  rate,
 }: AutoVersionConfirmModalProps) {
   const [reason, setReason] = useState('');
-  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
-  /* Back to the locked rate each time the prompt opens (only then: the
-     effect below re-runs whenever the parent re-renders). */
-  useEffect(() => {
-    if (isOpen) setRateChoice('locked');
-  }, [isOpen]);
   /* Two-layer guard against double-version creation — see Quote
      module's AutoVersionConfirmModal for the rationale. The ref is
      the synchronous latch that blocks the second `click` event from
@@ -98,12 +87,9 @@ export function AutoVersionConfirmModal({
         onMouseDown={(e) => e.stopPropagation()}
         style={{
           width: 480, maxWidth: '90vw',
-          /* The rate choice makes it taller: scroll on a short screen. */
-          maxHeight: 'calc(100vh - 32px)',
           background: '#FFFFFF',
           borderRadius: 16,
-          overflowX: 'hidden',
-          overflowY: 'auto',
+          overflow: 'hidden',
           boxShadow: '0 24px 80px -12px rgba(0,0,0,0.25)',
         }}
       >
@@ -219,13 +205,6 @@ export function AutoVersionConfirmModal({
             )}
           </div>
 
-          {/* The version's rate (foreign-currency order) */}
-          {rate && (
-            <div className="w-full mt-4">
-              <VersionRateChoiceCards fromVersion={rate.fromVersion} options={rate.options} value={rateChoice} onChange={setRateChoice} />
-            </div>
-          )}
-
           {/* Reason field — optional note logged with the new version */}
           <div className="w-full mt-4 text-left">
             <label
@@ -273,7 +252,7 @@ export function AutoVersionConfirmModal({
                     if (confirmingRef.current) return;
                     confirmingRef.current = true;
                     setIsConfirming(true);
-                    onConfirm(reason.trim(), rate ? rateChoice : 'locked');
+                    onConfirm(reason.trim(), 'locked');
                   }}
                   disabled={isDisabled}
                   className="w-full h-11 text-[14px] rounded-xl transition-colors flex items-center justify-center gap-2"

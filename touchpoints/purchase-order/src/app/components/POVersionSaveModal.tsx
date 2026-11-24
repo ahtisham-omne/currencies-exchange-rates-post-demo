@@ -17,7 +17,7 @@
  *     about to be created
  */
 import React from "react";
-import { VersionRateChoice as VersionRateChoiceCards, type VersionRateOptions } from "./currency/VersionRateChoice";
+import type { VersionRateOptions } from "./currency/VersionRateChoice";
 import type { VersionRateChoice } from "./poStore";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Save, X, Plus, Minus, GitBranch } from "lucide-react";
@@ -83,13 +83,10 @@ export default function POVersionSaveModal({
   rate,
 }: POVersionSaveModalProps) {
   const hasChanges = changes.length > 0;
-  const [rateChoice, setRateChoice] = React.useState<VersionRateChoice>("locked");
-  React.useEffect(() => {
-    if (open) setRateChoice("locked");
-  }, [open]);
+  void rate; // kept for the callers; the store applies today's rate on save
   const handleConfirm = () => {
     if (!hasChanges) return;
-    onConfirm(rate ? rateChoice : "locked");
+    onConfirm("locked");
     onOpenChange(false);
   };
   const handleCancel = () => onOpenChange(false);
@@ -253,12 +250,8 @@ export default function POVersionSaveModal({
             )}
           </div>
 
-          {/* ─── The new version's rate (foreign-currency PO) ─── */}
-          {rate && hasChanges && (
-            <div className="w-full mt-5">
-              <VersionRateChoiceCards fromVersion={rate.fromVersion} options={rate.options} value={rateChoice} onChange={setRateChoice} />
-            </div>
-          )}
+          {/* No exchange-rate card (25 Nov 2026): a new version always takes
+              today's rate, which the store applies on save. */}
 
           {/* ─── Actions — Save Version (primary, full-width) + Cancel (muted) ─── */}
           <div className="w-full mt-6 flex flex-col gap-2">

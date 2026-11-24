@@ -96,7 +96,7 @@ export function PostingDateRatePrompt({
                 <span className="text-[12px] text-slate-500 tabular-nums">{dateChangeText(prompt.from, prompt.to)}</span>
               </div>
               <DialogDescription className="text-slate-500" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                The invoice keeps its rate unless you take the new date's. The rate stays unlocked until the invoice posts.
+                The invoice keeps its rate unless you take the new date's.
               </DialogDescription>
             </div>
           </div>

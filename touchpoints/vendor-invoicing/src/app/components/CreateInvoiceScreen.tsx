@@ -160,7 +160,6 @@ import { RATE_BASIS_DATE_LABEL, rateSourceLabel } from '@/app/currency/invoiceFx
 import { eligiblePayFromId, invoicePayFrom, payFromAccountById } from '@/app/currency/payFrom';
 import { paidRateText } from '@/app/currency/paidRate';
 import { CurrencyFlag, CurrencyPill } from '@/app/components/currency/CurrencyChip';
-import { INVOICE_LOCK_TITLE, LockChip } from '@/app/components/currency/CurrencyBlock';
 import { DocCurrencyProvider, DocMoney } from '@/app/components/currency/DocCurrency';
 import { docViewOf, type DocView } from '@/app/components/currency/docCurrencyContext';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
@@ -2597,8 +2596,8 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
               ? 'Every line needs a GL account and an amount above $0.00 before the invoice can submit.'
               : onlyTarget === 'invoice-exchange-rate-field'
                 ? rateOverLimit
-                  ? 'The exchange rate is past what your role can change. Fix it in Currency Configuration.'
-                  : 'Enter the exchange rate in Currency Configuration.'
+                  ? 'The exchange rate is past what your role can change. Fix it in the currency configuration.'
+                  : 'Enter the exchange rate in the currency configuration.'
                 : 'Fill in the highlighted required fields.',
       });
       // Let the section expand before scrolling to it. FOCUS lands on the
@@ -3326,9 +3325,8 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                 {ledger === 'ap' && !invoiceIsBase && (
                   <CurrencyPill code={invoiceCurrency} note={poCurrency ? 'The invoice currency, from the PO. Amounts here are in the base currency; hover one for this currency.' : "The invoice currency, from the vendor. Amounts here are in the base currency; hover one for this currency."} />
                 )}
-                {/* Editing: the rate stays unlocked until the invoice posts
-                    (Currency Touchpoints Map, Vendor invoices 4). */}
-                {ledger === 'ap' && isEdit && !invoiceIsBase && <LockChip locked={false} title={INVOICE_LOCK_TITLE.unlocked} />}
+                {/* No Unlocked chip while editing: the rate shows no lock
+                    anywhere (25 Nov 2026). */}
                 {/* What the invoice draws from, in the payment run's
                     segmented pill (user 10/10): POs | receivings | items.
                     Inventory and pre-invoice only; standalone has none. */}

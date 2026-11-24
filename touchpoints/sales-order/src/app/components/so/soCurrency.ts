@@ -18,23 +18,14 @@ export interface SOCurrencyChoice {
   payToAccount?: string;
 }
 
-/* ── When the order's rate locks (Currency Touchpoints Map, 24 Nov 2026) ──
- * "Draft order: rate unlocked. Confirmed order: locked." An order is
- * confirmed once it leaves Draft (submitted for review, or released), the
- * same point the Currency Configuration has always turned read-only. */
+/* ── When the order's currency configuration turns read-only ──────────
+ * An order is confirmed once it leaves Draft (submitted for review, or
+ * released); from then on its currency configuration can't change. The
+ * exchange rate itself shows no lock anywhere (25 Nov 2026): no Locked /
+ * Unlocked chip, no "locks when…" text. */
 
-/** When the order's rate locks, in the spec's words. */
-export const SO_LOCK_EVENT = "locks when the order is confirmed";
-
-/** Is the order's rate locked? It is once the order is confirmed (leaves Draft). */
+/** Is the order's currency configuration fixed? It is once the order is confirmed (leaves Draft). */
 export const soRateLocked = (so: Pick<SalesOrder, "status">) => so.status !== "Draft";
-
-/** The lock chip's tooltip: when it locks, or since when it is locked. */
-export function soLockTitle(so: Pick<SalesOrder, "status">): string {
-  return soRateLocked(so)
-    ? `Locked since the order was confirmed (${so.status}), so the total doesn't move with the market. New versions keep this rate unless you switch to today's.`
-    : "Unlocked while the order is a Draft. It locks when the order is confirmed (submitted for review or released), so the total doesn't move with the market.";
-}
 
 /** The account an order is received into (its pay-to account, resolved). */
 export function soReceiveAccount(so: SoFxFields & { settlementCurrency?: string; payToAccount?: string }): CompanyAccount {
@@ -47,9 +38,8 @@ export function soReceiveAccount(so: SoFxFields & { settlementCurrency?: string;
  * between the two rates; documents already raised keep their currency. A
  * rate change alone converts nothing; it only changes what the order is
  * worth in base. Flat one-time adjustments live on the SO page and are
- * converted there with `factor`. "You receive" is an account in the base
- * currency or the order's: a currency change drops an account in the old
- * currency for the default (base) one.
+ * converted there with `factor`. "You receive" is an account in any
+ * currency (25 Nov 2026): a currency change keeps it.
  */
 export function withSOCurrency(so: SalesOrder, next: SOCurrencyChoice): { updates: Partial<SalesOrder>; factor: number } {
   const before = soFx(so);

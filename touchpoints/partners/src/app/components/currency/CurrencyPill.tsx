@@ -9,8 +9,14 @@ import { CurrencyFlag } from "./CurrencyFlag";
  * Purchase Orders and Vendor Invoicing touchpoints put after a vendor's name.
  * The name, and where the currency comes from, ride the tooltip.
  */
-export function CurrencyPill({ code, note, className = "" }: { code: string; note?: string; className?: string }) {
-  const cur = getCurrency(code);
+/** The chip's hover, one line (25 Nov 2026): "Partner's currency: US Dollar (USD)". */
+export function currencyChipLabel(code: string, party = "Partner"): string {
+  const upper = code.toUpperCase();
+  const name = upper === "USD" ? "US Dollar" : getCurrency(upper)?.name ?? upper;
+  return `${party}'s currency: ${name} (${upper})`;
+}
+
+export function CurrencyPill({ code, note: _note, party, className = "" }: { code: string; note?: string; party?: string; className?: string }) {
   const upper = code.toUpperCase();
   return (
     <Tooltip delayDuration={250}>
@@ -24,17 +30,22 @@ export function CurrencyPill({ code, note, className = "" }: { code: string; not
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="z-[300]">
-        <span style={{ fontWeight: 600 }}>{cur?.name ?? upper}</span>
-        {isBaseCurrency(upper) && <span className="text-slate-500"> · base currency</span>}
-        {note && <span className="block text-slate-500">{note}</span>}
+        {currencyChipLabel(upper, party)}
       </TooltipContent>
     </Tooltip>
   );
 }
 
+/** What each rate type means, on hover of its option. */
+const RATE_TYPE_TIP: Record<RateType, string> = {
+  mid: "Midpoint of global buy and sell rates. Updated from your rate provider at each sync.",
+  corporate: "Fixed rate set by your company. Applies until a new rate takes effect.",
+};
+
 /**
- * Mid-market | Corporate, the segmented switch the document touchpoints use
- * for a rate type. `disabled` keeps it readable but fixed.
+ * Mid-market | Corporate, the switch the document touchpoints use for a rate
+ * type. Drawn frameless like Chart of Accounts' period presets: the chosen
+ * option is a light-blue pill. `disabled` keeps it readable but fixed.
  */
 export function RateTypeToggle({
   value,
@@ -46,26 +57,33 @@ export function RateTypeToggle({
   disabled?: boolean;
 }) {
   return (
-    <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-px shrink-0" role="radiogroup" aria-label="Default exchange rate">
-      {(["mid", "corporate"] as RateType[]).map((t) => (
-        <button
-          key={t}
-          type="button"
-          role="radio"
-          aria-checked={value === t}
-          disabled={disabled}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (value !== t) onChange(t);
-          }}
-          className={`px-2 py-0.5 rounded text-[10.5px] transition-colors ${
-            value === t ? "bg-white text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.06)]" : "text-slate-500 hover:text-foreground"
-          } ${disabled ? "cursor-default" : "cursor-pointer"}`}
-          style={{ fontWeight: value === t ? 600 : 500 }}
-        >
-          {RATE_TYPE_LABEL[t]}
-        </button>
-      ))}
+    <span className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Default exchange rate">
+      {(["mid", "corporate"] as RateType[]).map((t) => {
+        const active = value === t;
+        return (
+          <Tooltip key={t} delayDuration={250}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={active}
+                disabled={disabled}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (value !== t) onChange(t);
+                }}
+                className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors ${
+                  active ? "bg-[#EDF4FF] text-[#0A77FF]" : disabled ? "text-muted-foreground" : "text-muted-foreground hover:bg-muted"
+                } ${disabled ? (active ? "cursor-default" : "opacity-50 cursor-not-allowed") : "cursor-pointer"}`}
+                style={{ fontWeight: active ? 500 : 400 }}
+              >
+                {RATE_TYPE_LABEL[t]}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[240px] text-[11px] leading-snug">{RATE_TYPE_TIP[t]}</TooltipContent>
+          </Tooltip>
+        );
+      })}
     </span>
   );
 }

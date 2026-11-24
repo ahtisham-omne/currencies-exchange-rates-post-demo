@@ -29,7 +29,7 @@ const ROLE_HELPER: Record<ApRole, string> = {
 };
 
 const RATE_DATE_OPTIONS: { value: RateDateBasis; helper: string }[] = [
-  { value: 'postingDate', helper: 'The rate on the date the invoice posts to the ledger, today by default. The rate locks when the invoice posts.' },
+  { value: 'postingDate', helper: 'The rate on the date the invoice posts to the ledger, today by default.' },
   { value: 'invoiceDate', helper: 'The rate on the date printed on the vendor’s invoice.' },
   { value: 'receivingDate', helper: 'The rate on the date the goods were received. With several receivings, the Receiving Trigger setting picks the date.' },
   { value: 'poDate', helper: 'The rate on the purchase order’s date, the rate the PO was raised at.' },

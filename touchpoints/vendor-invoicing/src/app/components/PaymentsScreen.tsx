@@ -145,6 +145,9 @@ const PAYMENT_COLUMN_CATALOG: { key: string; label: string }[] = [
   { key: 'paymentNumber', label: 'Payment ID' },
   { key: 'type', label: 'Type' },
   { key: 'vendor', label: 'Vendor' },
+  // Currency sits right after Vendor, visible by default (24 Nov 2026): the
+  // listing shows each payment's currency here, not as a tag in the vendor cell.
+  { key: 'currency', label: 'Currency' },
   { key: 'reference', label: 'Reference' },
   { key: 'paymentMethod', label: 'Payment Method' },
   { key: 'checkPrint', label: 'Check Print' },
@@ -152,7 +155,6 @@ const PAYMENT_COLUMN_CATALOG: { key: string; label: string }[] = [
   { key: 'paymentDate', label: 'Payment Date' },
   { key: 'appliedTo', label: 'Applied To' },
   { key: 'amount', label: 'Amount' },
-  { key: 'currency', label: 'Currency' },
   { key: 'status', label: 'Status' },
   { key: 'memo', label: 'Description' },
   { key: 'updatedBy', label: 'Last Updated By' },
@@ -535,10 +537,8 @@ export function PaymentsScreen({
   // rearrangements never persist.
   const [columnDrawerOpen, setColumnDrawerOpen] = useState(false);
   const [columnOrder, setColumnOrder] = useState<string[]>(() => PAYMENT_COLUMN_CATALOG.map((c) => c.key));
-  // Currency starts hidden (Currency Touchpoints Map, 24 Nov 2026): the vendor
-  // cell carries the currency tag and Amount is in base with the hover card.
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'currency'])),
+    Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, true])),
   );
   // Column drawer Reset restores this default view and remounts the
   // table so dragged widths snap back too (10/9/26).
@@ -1968,7 +1968,7 @@ export function PaymentsScreen({
           open={columnDrawerOpen}
           onOpenChange={setColumnDrawerOpen}
           defaultColumnOrder={PAYMENT_COLUMN_CATALOG.map((c) => c.key)}
-          defaultColumnVisibility={Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'currency']))}
+          defaultColumnVisibility={Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, true]))}
           onReset={() => setColumnResetKey((k) => k + 1)}
         />
       </div>

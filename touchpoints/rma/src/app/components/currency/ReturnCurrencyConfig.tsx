@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, ChevronDown, Lock, LockOpen, Settings2 } from 'lucide-react';
+import { Check, ChevronDown, Lock, Settings2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/app/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/app/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
@@ -7,8 +7,8 @@ import { authorizedQty, type RMA } from '@/app/data/mockRMAs';
 import type { PayFromAccount } from '@/app/data/mockPayments';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, formatRate, formatRateDate, rateSentence } from '@/app/currency/money';
-import { RATE_PROVIDER, RATE_TYPE_LABEL, fxToday, rateOn, todayIso, toBase, type RateType } from '@/app/currency/rates';
-import { accountCurrency, depositAccountsFor, returnSettlementFx, type ReturnSettlementFx } from '@/app/currency/returnSettlement';
+import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, fxToday, rateOn, todayIso, toBase, type RateType } from '@/app/currency/rates';
+import { accountCurrency, receiveInAccountsFor, returnSettlementFx, type ReturnSettlementFx } from '@/app/currency/returnSettlement';
 import { CurrencyFlag } from './CurrencyChip';
 import { linkProvider } from './ProviderLink';
 
@@ -18,8 +18,9 @@ import { linkProvider } from './ProviderLink';
  *  - The return's currency is its PO's and can't change.
  *  - Its goods reverse at the receiving rate. What the vendor settles is worth
  *    today's rate, of the PO's type (mid-market or corporate, changeable
- *    here), until the vendor settles; then it is locked at that day's rate.
- *  - "Deposited to" is an account in the base currency or the return's.
+ *    here), until the vendor settles; then it is that day's rate. No lock on
+ *    the rate (25 Nov 2026): the configuration is read-only once settled.
+ *  - "Deposited to" is any bank or cash account, base-currency ones first.
  *  - The gap between the two rates on what is settled is the FX variance:
  *    + to FX Gain, − to FX Loss.
  * This replaces Mahreen's read-only configuration of 2026-11-20, which held
@@ -63,27 +64,6 @@ export function RateTypeChip({ type }: { type: RateType }) {
   );
 }
 
-/** Locked (green) once the vendor settles, Unlocked (amber) until then. */
-export function LockChip({ locked, title }: { locked: boolean; title: string }) {
-  const Icon = locked ? Lock : LockOpen;
-  return (
-    <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] cursor-help"
-      style={locked ? { color: '#047857', backgroundColor: '#ECFDF5', fontWeight: 600 } : { color: '#92400E', backgroundColor: '#FFFBEB', fontWeight: 600 }}
-      title={title}
-    >
-      <Icon className="w-2.5 h-2.5" />
-      {locked ? 'Locked' : 'Unlocked'}
-    </span>
-  );
-}
-
-/** What the chip's tooltip says. */
-export function lockTitle(s: ReturnSettlementFx): string {
-  if (s.locked) return `Locked at the rate on ${formatRateDate(s.settledOn)}, the day the vendor settled.`;
-  return "Locks when the vendor settles. Until then it is today's rate.";
-}
-
 /** "1 EUR = ₨304.8150 PKR · today" or "· Nov 23, 2026" once settled. */
 export function settleRateLine(s: ReturnSettlementFx): string {
   return `${rateSentence(s.currency, s.settleRate)} · ${s.locked ? formatRateDate(s.rateDate) : 'today'}`;
@@ -96,24 +76,35 @@ export function fxVarianceTitle(s: ReturnSettlementFx): string {
   )}. A gain posts to FX Gain, a loss to FX Loss.`;
 }
 
-/* ── Return Summary: CURRENCY ──────────────────────────────────────── */
+/* ── Return Summary: CURRENCY INFORMATION ─────────────────────────────
+ * Built on Purchase Orders' Currency information card (POCurrencySummary,
+ * 25 Nov 2026): what the vendor settles, the currency you receive in (the
+ * deposit account's, the account on hover), the base equivalent (always
+ * shown, no flag), the FX variance, then the exchange rate with its rate
+ * type and, under it, today or the settlement day. */
 
-function Row({ label, code, children }: { label: string; code?: string | undefined; children: React.ReactNode }) {
+/** "Pakistani Rupee (PKR)": a currency by name, as the block writes it. */
+export const currencyNameWithCode = (code: string) => {
+  const upper = code.toUpperCase();
+  return `${getCurrency(upper)?.name ?? upper} (${upper})`;
+};
+
+function Row({ label, code, title, flag = true, children }: { label: string; code?: string | undefined; title?: string | undefined; flag?: boolean; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <p className="text-slate-400" style={{ fontSize: 10, fontWeight: 500 }}>{label}</p>
-      <p className="flex items-center gap-1.5 text-slate-700 tabular-nums" style={{ fontSize: 12, fontWeight: 500 }}>
-        {code && <CurrencyFlag code={code} size={11} />}
-        {children}
+    <div className="flex items-center justify-between gap-2" title={title}>
+      <p className={`text-slate-400 shrink-0 ${title ? 'cursor-help' : ''}`} style={{ fontSize: 10, fontWeight: 500 }}>{label}</p>
+      <p className="flex items-center gap-1.5 text-slate-700 tabular-nums text-right min-w-0" style={{ fontSize: 12, fontWeight: 500 }}>
+        {flag && code && <CurrencyFlag code={code} size={11} />}
+        <span className="truncate">{children}</span>
       </p>
     </div>
   );
 }
 
-/** The return's currency block: what the vendor settles, what comes back and
- *  into which account's currency, the FX variance against the receiving rate,
- *  and the rate. Open: Unlocked, today's rate. Settled: Locked, the
- *  settlement day's rate. */
+/** The return's currency block: what the vendor settles, the currency it
+ *  comes back in, its base equivalent, the FX variance against the receiving
+ *  rate, and the exchange rate. Open: today's rate. Settled: the settlement
+ *  day's rate. No lock on the rate (25 Nov 2026). */
 export function ReturnCurrencyBlock({ rma, onViewConfig }: { rma: RMA; onViewConfig: () => void }) {
   const s = returnSettlementFx(rma);
   const link = (
@@ -121,36 +112,23 @@ export function ReturnCurrencyBlock({ rma, onViewConfig }: { rma: RMA; onViewCon
       <button
         type="button"
         onClick={onViewConfig}
-        className="inline-flex items-center gap-1 text-[10.5px] text-slate-500 hover:text-primary cursor-pointer"
+        className="mt-1 w-full inline-flex items-center justify-center gap-1.5 h-8 rounded-lg border border-border bg-white text-[12px] text-primary hover:bg-primary/5 hover:border-primary/30 transition-colors cursor-pointer"
         style={{ fontWeight: 500 }}
       >
-        <Settings2 className="w-3 h-3" />
-        View configuration
+        <Settings2 className="w-3.5 h-3.5" />
+        View currency configuration
       </button>
     </div>
   );
+  const accountTitle = s.account
+    ? `${s.locked ? 'Deposited to' : 'Deposits to'} ${s.account.label} (${s.accountCurrency})`
+    : undefined;
   return (
     <div className="border-t border-slate-100 pt-3 mt-3 space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[9.5px] uppercase text-slate-400" style={{ fontWeight: 600, letterSpacing: '0.06em' }}>
-          Currency
+          Currency information
         </span>
-        {s.foreign && rma.status !== 'Cancelled' && (
-          <div className="flex items-center gap-1.5">
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <span className="cursor-help">
-                  <RateTypeChip type={s.rateType} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[240px] text-[11px]">
-                {s.rateType === 'mid' ? `The mid-market rate · ${RATE_PROVIDER}` : `Finance's corporate rate · ${s.rateSource.replace(/^Set by/, 'set by')}`}
-                {s.chosenType === s.poRateType ? `, the PO's rate type (${s.po}).` : `, changed from the PO's ${RATE_TYPE_LABEL[s.poRateType].toLowerCase()}.`}
-              </TooltipContent>
-            </Tooltip>
-            <LockChip locked={s.locked} title={lockTitle(s)} />
-          </div>
-        )}
       </div>
 
       {!s.foreign ? (
@@ -173,14 +151,17 @@ export function ReturnCurrencyBlock({ rma, onViewConfig }: { rma: RMA; onViewCon
           <Row label={s.locked ? 'Vendor settled' : 'Vendor settles'} code={s.currency}>
             {withCode(s.parts.settles, s.currency)}
           </Row>
-          <Row label={s.locked ? 'Came back' : 'Comes back today'} code={s.comesBack.currency}>
-            {withCode(s.comesBack.amount, s.comesBack.currency)}
+          <Row label={s.locked ? 'You received in' : 'You receive in'} code={s.accountCurrency} title={accountTitle}>
+            {currencyNameWithCode(s.accountCurrency)}
           </Row>
-          {s.baseEquivalent != null && (
-            <Row label="Base equivalent" code={BASE_CURRENCY}>
-              {withCode(s.baseEquivalent, BASE_CURRENCY)}
-            </Row>
-          )}
+          <Row
+            label="Base equivalent"
+            code={BASE_CURRENCY}
+            flag={false}
+            title={s.locked ? 'What came back, in the base currency' : "What comes back today, in the base currency, at today's rate"}
+          >
+            {withCode(s.settlesNow, BASE_CURRENCY)}
+          </Row>
           <div className="flex items-center justify-between gap-2">
             <p className="text-slate-400" style={{ fontSize: 10, fontWeight: 500 }}>FX variance</p>
             <p
@@ -191,11 +172,25 @@ export function ReturnCurrencyBlock({ rma, onViewConfig }: { rma: RMA; onViewCon
               {signedBase(s.fxVariance)}
             </p>
           </div>
-          <div className="border-t border-slate-100 pt-2">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-slate-400" style={{ fontSize: 10, fontWeight: 500 }}>Rate</p>
-              <p className="text-slate-500 tabular-nums" style={{ fontSize: 11 }}>
-                {settleRateLine(s)}
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-slate-400 shrink-0 pt-0.5" style={{ fontSize: 10, fontWeight: 500 }}>Exchange rate</p>
+            <div className="flex flex-col items-end min-w-0">
+              <p className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 text-slate-700 tabular-nums text-right" style={{ fontSize: 12, fontWeight: 500 }}>
+                <span className="whitespace-nowrap">{rateSentence(s.currency, s.settleRate)}</span>
+                <Tooltip delayDuration={200}>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help shrink-0">
+                      <RateTypeChip type={s.rateType} />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[240px] text-[11px]">
+                    {s.rateType === 'mid' ? `The mid-market rate · ${RATE_PROVIDER}` : `Finance's corporate rate · ${s.rateSource.replace(/^Set by/, 'set by')}`}
+                    {s.chosenType === s.poRateType ? `, the PO's rate type (${s.po}).` : `, changed from the PO's ${RATE_TYPE_LABEL[s.poRateType].toLowerCase()}.`}
+                  </TooltipContent>
+                </Tooltip>
+              </p>
+              <p className="text-slate-400 text-right" style={{ fontSize: 10 }}>
+                {s.locked ? formatRateDate(s.rateDate) : 'today'}
               </p>
             </div>
           </div>
@@ -254,8 +249,8 @@ function AccountLabel({ account }: { account: PayFromAccount }) {
   );
 }
 
-/** The bank or cash account the money comes back to: only accounts in the
- *  base currency or the return's own are listed. */
+/** The bank or cash account the money comes back to: any, in any currency,
+ *  base-currency ones first, then the return's own, then the rest. */
 export function DepositAccountPicker({
   currency,
   value,
@@ -268,7 +263,7 @@ export function DepositAccountPicker({
   disabled: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
-  const accounts = depositAccountsFor(currency);
+  const accounts = receiveInAccountsFor(currency);
   if (disabled || !value) {
     return (
       <div className={LOCKED_FIELD}>
@@ -314,9 +309,6 @@ export function DepositAccountPicker({
             );
           })}
         </div>
-        <p className="border-t border-slate-100 px-3 py-2 text-[10.5px] text-slate-400">
-          Accounts in {BASE_CURRENCY} or {currency.toUpperCase()} only.
-        </p>
       </PopoverContent>
     </Popover>
   );
@@ -325,22 +317,27 @@ export function DepositAccountPicker({
 /** Mid-market | Corporate, as the Exchange Rates module names them. */
 export function RateTypeToggle({ value, onChange, corporateAvailable }: { value: RateType; onChange: (t: RateType) => void; corporateAvailable: boolean }) {
   return (
-    <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-px" role="radiogroup" aria-label="Rate type">
+    <span className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Rate type">
       {(['mid', 'corporate'] as RateType[]).map((t) => {
         const off = t === 'corporate' && !corporateAvailable;
+        const on = value === t;
         return (
           <button
             key={t}
             type="button"
             role="radio"
-            aria-checked={value === t}
+            aria-checked={on}
             disabled={off}
             onClick={() => value !== t && onChange(t)}
             title={off ? "Finance hasn't set a corporate rate for today" : undefined}
-            className={`px-1.5 py-px rounded text-[10px] cursor-pointer transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-              value === t ? 'bg-white text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.06)]' : 'text-slate-500 hover:text-foreground'
+            className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors ${
+              off
+                ? `${on ? 'bg-[#EDF4FF] text-[#0A77FF]' : 'text-muted-foreground'} opacity-50 cursor-not-allowed`
+                : on
+                  ? 'bg-[#EDF4FF] text-[#0A77FF] cursor-pointer'
+                  : 'text-muted-foreground hover:bg-muted cursor-pointer'
             }`}
-            style={{ fontWeight: value === t ? 600 : 500 }}
+            style={{ fontWeight: on ? 500 : 400 }}
           >
             {RATE_TYPE_LABEL[t]}
           </button>
@@ -348,6 +345,18 @@ export function RateTypeToggle({ value, onChange, corporateAvailable }: { value:
       })}
     </span>
   );
+}
+
+/** The time of day the provider's rates sync, e.g. "7:30 PM". */
+const SYNC_TIME = new Date(LAST_SYNC).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+/** Under the rate (25 Nov 2026, as POCurrencyConfig's): when a mid-market
+ *  rate was last updated, or from when a corporate rate is in effect. Not
+ *  the settlement date or today. */
+export function rateAsOfLine(type: RateType, date: string, effectiveDate?: string | null, entered?: boolean): string {
+  if (type === 'mid') return `Rate updated as of ${formatRateDate(date)}, ${SYNC_TIME}`;
+  if (entered) return `Entered on this return · effective from ${formatRateDate(date)}`;
+  return `Effective from ${formatRateDate(effectiveDate ?? date)}`;
 }
 
 export interface ReturnCurrencyChange {
@@ -380,13 +389,22 @@ export function ReturnCurrencyConfigDialog({
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const s = returnSettlementFx(rma, { rateType: type, accountId });
+  // The configuration is read-only once the vendor settles; the rate itself
+  // shows no lock (25 Nov 2026).
   const readOnly = !canEdit || s.locked;
   const code = s.currency;
-  const cur = getCurrency(code);
   const corporateAvailable = !s.foreign || !rateOn(code, todayIso(), 'corporate').fellBack;
   const dirty = type !== saved.chosenType || (s.account?.id ?? null) !== (saved.account?.id ?? null);
-  const inBase = isBaseCurrency(s.accountCurrency);
   const receipts = s.receiving?.breakdown?.length ?? 0;
+
+  const description = s.locked
+    ? "The vendor has settled this return, so its currency configuration can't be changed."
+    : readOnly
+      ? "This return can't be changed now, so its currency configuration is read-only."
+      : "For this return only. Its currency is its PO's.";
+  // "Rate updated as of Nov 25, 2026, 7:30 PM" / "Effective from Apr 01, 2026"
+  // (25 Nov 2026: not "Rate on settlement date: …").
+  const rateDateLine = rateAsOfLine(s.rateType, s.rateDate, rateOn(code, s.rateDate, 'corporate').effectiveDate);
 
   const apply = () => {
     if (readOnly || !dirty || !s.account) {
@@ -400,7 +418,7 @@ export function ReturnCurrencyConfigDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-[580px] p-0 gap-0 overflow-hidden !rounded-2xl border-0"
+        className="sm:max-w-[600px] p-0 gap-0 overflow-hidden !rounded-2xl border-0"
         style={{ boxShadow: '0 24px 48px -12px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05)' }}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
@@ -413,8 +431,8 @@ export function ReturnCurrencyConfigDialog({
               <DialogTitle className="text-slate-900" style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>
                 Currency configuration
               </DialogTitle>
-              <DialogDescription className="text-slate-500 tabular-nums" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                {rma.rmaNumber} · from {s.po}
+              <DialogDescription className="text-slate-500" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
+                {description}
               </DialogDescription>
             </div>
           </div>
@@ -429,68 +447,35 @@ export function ReturnCurrencyConfigDialog({
                 <div className={LOCKED_FIELD}>
                   <CurrencyFlag code={code} size={18} />
                   <span className="text-slate-700" style={{ fontWeight: 500 }}>{code}</span>
-                  <span className="text-slate-400">· locked</span>
+                  <span className="text-slate-400">· from the PO</span>
                   <Lock className="w-3 h-3 text-slate-300 shrink-0 ml-auto" />
                 </div>
               }
             />
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              {cur?.name ?? code}, the return's currency: its PO's ({s.po}). It can't change; goods from a PO in another currency go on a
-              separate return.
+              From the PO, {s.po}. Goods from a PO in another currency go on a separate return.
             </p>
           </Section>
 
-          <Section label="Deposited to">
-            <AmountRow
-              amount={s.comesBack.amount}
-              code={s.comesBack.currency}
-              prefix={inBase && s.foreign && !s.locked ? '≈ ' : ''}
-              side={<DepositAccountPicker currency={code} value={s.account} onPick={setAccountId} disabled={readOnly} />}
-            />
-            {s.baseEquivalent != null && (
-              <p className="text-[11px] text-slate-600 tabular-nums">
-                Base equivalent {withCode(s.baseEquivalent, BASE_CURRENCY)}
-              </p>
-            )}
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              {s.foreign
-                ? `An account in ${BASE_CURRENCY} or ${code} only. Into ${BASE_CURRENCY}, ${formatMoney(s.parts.settles, code)} comes back at the rate below.`
-                : `An account in ${BASE_CURRENCY}, the base currency.`}
-            </p>
+          <Section label={s.locked ? 'You received in' : 'You receive in'}>
+            <DepositAccountPicker currency={code} value={s.account} onPick={setAccountId} disabled={readOnly} />
+          </Section>
+
+          <Section label="Base equivalent">
+            <div
+              className="h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center text-[15px] text-slate-500 tabular-nums cursor-default select-none"
+              style={{ fontWeight: 500 }}
+              aria-readonly="true"
+            >
+              <span className="truncate">
+                {s.foreign && !s.locked ? '≈ ' : ''}
+                {withCode(s.settlesNow, BASE_CURRENCY)}
+              </span>
+            </div>
           </Section>
 
           {s.foreign ? (
             <>
-              <Section
-                label="Rate"
-                aside={readOnly ? <RateTypeChip type={s.rateType} /> : <RateTypeToggle value={type} onChange={setType} corporateAvailable={corporateAvailable} />}
-              >
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-[13px] text-slate-800 tabular-nums" style={{ fontWeight: 600 }}>
-                      1 {code} = {formatRate(s.settleRate)} {BASE_CURRENCY}
-                    </span>
-                    <span className="text-[11px] text-slate-500">{s.locked ? formatRateDate(s.rateDate) : 'today'}</span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RATE_HEX[s.rateType] }} />
-                    <span style={{ color: RATE_HEX[s.rateType], fontWeight: 600 }}>{RATE_TYPE_LABEL[s.rateType]}</span>
-                    <span>· {s.rateType === 'mid' ? linkProvider(RATE_PROVIDER) : s.rateSource.replace(/^Set by/, 'set by')}</span>
-                    {s.rateFellBack && <span className="text-amber-700">· no corporate rate is set, so mid-market stands</span>}
-                  </div>
-                  <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2 text-[11px] text-slate-500">
-                    <span className="tabular-nums">
-                      {formatRateDate(s.rateDate)} · {s.locked ? 'settlement date' : 'today'}
-                    </span>
-                    <LockChip locked={s.locked} title={lockTitle(s)} />
-                    <span>{s.locked ? 'locked when the vendor settled' : 'locks when the vendor settles'}</span>
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Defaults to the PO's rate type ({RATE_TYPE_LABEL[s.poRateType]}). Taken on the day the vendor settles.
-                </p>
-              </Section>
-
               <Section label="FX variance">
                 <div className="flex items-baseline justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
                   <span className="text-[15px] tabular-nums" style={{ fontWeight: 700, color: fxVarianceColor(s.fxVariance) }}>
@@ -504,6 +489,35 @@ export function ReturnCurrencyConfigDialog({
                 <p className="text-[11px] text-slate-500 leading-relaxed">
                   {formatMoney(s.parts.settles, code)} settled × (settle rate − receiving rate). A gain posts to FX Gain, a loss to FX Loss.
                   {s.parts.reverses > 0.004 ? ` The ${formatMoney(s.parts.reverses, code)} not invoiced reverses at the receiving rate, with no FX.` : ''}
+                </p>
+              </Section>
+
+              <Section
+                label="Exchange rate"
+                aside={readOnly ? <RateTypeChip type={s.rateType} /> : <RateTypeToggle value={type} onChange={setType} corporateAvailable={corporateAvailable} />}
+              >
+                {/* The rate card (POCurrencyConfig's): type and source, the
+                    rate and its inverse, then the date line. No lock on the
+                    rate (25 Nov 2026). */}
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                  <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RATE_HEX[s.rateType] }} />
+                    <span style={{ color: RATE_HEX[s.rateType], fontWeight: 600 }}>{RATE_TYPE_LABEL[s.rateType]}</span>
+                    <span className="text-slate-500">· {s.rateType === 'mid' ? linkProvider(RATE_PROVIDER) : s.rateSource.replace(/^Set by/, 'set by')}</span>
+                    {s.rateFellBack && <span className="text-amber-700">· no corporate rate is set, so mid-market stands</span>}
+                  </div>
+                  <div className="mt-1.5 text-[12px] text-slate-700 tabular-nums leading-5" style={{ fontWeight: 500 }}>
+                    <div>
+                      1 {code} = {formatRate(s.settleRate)} {BASE_CURRENCY}
+                    </div>
+                    <div className="text-slate-500" style={{ fontWeight: 400 }}>
+                      1 {BASE_CURRENCY} = {formatRate(1 / s.settleRate)} {code}
+                    </div>
+                  </div>
+                  <div className="mt-1.5 text-[10.5px] text-slate-400 tabular-nums">{rateDateLine}</div>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Defaults to the PO's rate type ({RATE_TYPE_LABEL[s.poRateType]}). Taken on the day the vendor settles.
                 </p>
               </Section>
             </>
@@ -528,7 +542,7 @@ export function ReturnCurrencyConfigDialog({
               className="inline-flex h-9 items-center rounded-lg px-4 text-[12.5px] font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               style={{ backgroundColor: '#0A77FF' }}
             >
-              Apply
+              Save
             </button>
           )}
         </div>

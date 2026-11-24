@@ -224,7 +224,8 @@ function InfoTooltip({
   );
 }
 
-/** ./PctAmountToggle — % / amount segmented toggle, ported 1:1; the amount
+/** ./PctAmountToggle — % / amount switch, drawn frameless like Chart of
+ *  Accounts' period presets (the chosen side is a light-blue pill); the amount
  *  side shows the base currency's symbol (₨), as rules are in PKR. */
 function PctAmountToggle({
   isFixed,
@@ -240,14 +241,16 @@ function PctAmountToggle({
   className?: string;
 }) {
   return (
-    <div className={`inline-flex items-center h-[22px] rounded-full bg-muted p-0.5 ${className}`}>
+    <div className={`inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 ${className}`} role="radiogroup" aria-label="Value type">
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
+            role="radio"
+            aria-checked={!isFixed}
             onClick={() => onChange(false)}
-            className={`px-2 h-[18px] rounded-full text-[10px] transition-all ${!isFixed ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            style={{ fontWeight: 600 }}
+            className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${!isFixed ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`}
+            style={{ fontWeight: !isFixed ? 500 : 400 }}
           >
             %
           </button>
@@ -260,9 +263,11 @@ function PctAmountToggle({
         <TooltipTrigger asChild>
           <button
             type="button"
+            role="radio"
+            aria-checked={isFixed}
             onClick={() => onChange(true)}
-            className={`px-2 h-[18px] rounded-full text-[10px] transition-all ${isFixed ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            style={{ fontWeight: 600 }}
+            className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${isFixed ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`}
+            style={{ fontWeight: isFixed ? 500 : 400 }}
             aria-label={`Fixed amount in ${RULE_CURRENCY}`}
           >
             {moneyPrefix(RULE_CURRENCY).trim()}
@@ -1593,7 +1598,7 @@ export function PricingRuleCreateModal({
                   </div>
 
                   {/* Type toggle */}
-                  <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5 shrink-0">
+                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Rule category">
                     {([
                       { key: "discount", label: "Discounts", color: "#047857", bg: "#ECFDF5", icon: TrendingDown, tip: "Reduce unit price when quantity or value thresholds are met.", example: <><span className="text-green-600" style={{ fontWeight: 600 }}>10% off</span> on orders over 500 units.</> },
                       { key: "premium", label: "Premiums", color: "hsl(var(--violet))", bg: "#F5F3FF", icon: TrendingUp, tip: "Markup on base price for express or value-added services.", example: <><span className="text-violet" style={{ fontWeight: 600 }}>15% markup</span> for expedited and priority shipping.</> },
@@ -1605,16 +1610,18 @@ export function PricingRuleCreateModal({
                           <TooltipTrigger asChild>
                             <button
                               onClick={() => setExploreCategoryTab(cat.key)}
-                              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${
-                                active ? "shadow-sm" : "hover:bg-white/60"
+                              role="radio"
+                              aria-checked={active}
+                              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                               }`}
-                              style={{ fontWeight: active ? 600 : 500, color: active ? cat.color : "#334155", backgroundColor: active ? cat.bg : undefined }}
+                              style={{ fontWeight: active ? 500 : 400 }}
                             >
                               <cat.icon className="w-3.5 h-3.5" />
                               {cat.label}
                               <span
                                 className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
-                                style={{ fontWeight: 600, color: active ? cat.color: "hsl(var(--muted-foreground))", backgroundColor: active ? `${cat.color}15` : "hsl(var(--border))" }}
+                                style={{ fontWeight: 600, color: active ? "#0A77FF" : "hsl(var(--muted-foreground))", backgroundColor: active ? "rgba(10,119,255,0.1)" : "hsl(var(--border))" }}
                               >
                                 {count}
                               </span>

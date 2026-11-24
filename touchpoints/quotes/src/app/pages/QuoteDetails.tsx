@@ -79,7 +79,7 @@ import type { QuoteCurrencyChange, QuoteCurrencyTotals } from '@/app/components/
 import { QuoteCurrencyConfigDialog } from '@/app/components/currency/QuoteCurrencyConfig';
 import { QuoteCurrencyHeaderControls } from '@/app/components/currency/QuoteCurrencyHeaderControls';
 import { CurrencyTag } from '@/app/components/currency/CurrencyChip';
-import { VersionRateChoice as VersionRateChoiceCards, useVersionRateOptions, versionRateOptions } from '@/app/components/currency/VersionRateChoice';
+import { RevertRateBox } from '@/app/components/currency/VersionRateChoice';
 import { useQuoteVersionFx } from '@/app/components/currency/versionMoney';
 import { formatMoney, formatRate } from '@/app/currency/money';
 import { BASE_CURRENCY, currencyLabel } from '@/app/currency/currencies';
@@ -346,9 +346,9 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
     const own = rateStamp;
     const onRecord = fromVersion != null && viewKey ? getVersionRate(viewKey, fromVersion) : undefined;
     const locked = onRecord && onRecord.currency === fx.currency ? onRecord : own;
-    const todayType = todaysRateType(choice);
-    if (todayType) restampRate({ ...currentRateFor(locked, todayType), rateEdited: false });
-    else if (locked !== own) restampRate(locked);
+    // A new or restored version always takes today's rate (25 Nov 2026), of
+    // the picked type, else of the version's own type.
+    restampRate({ ...currentRateFor(locked, todaysRateType(choice) ?? locked.rateType), rateEdited: false });
   };
 
   // Sales order number — populated when quote is converted to SO
@@ -892,14 +892,6 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
   const quoteNow: Quote | undefined = quote
     ? { ...quote, ...fxFields, currency: fx.currency, exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate }
     : undefined;
-  /* A new version's rate options (the locked rate, or today's); null on a
-     base-currency quote. */
-  const newVersionRate = (() => {
-    const options = versionRateOptions({ currency: fx.currency, rate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate }, summaryTotal);
-    return options ? { fromVersion: quoteVersion, options } : undefined;
-  })();
-  /* Edit as V{n+1} on a quote in a foreign currency asks for the rate first. */
-  const [editAsConfirm, setEditAsConfirm] = useState(false);
 
   /** Called when user confirms auto-version creation from the confirmation modal */
   const handleAutoVersionConfirmed = useCallback((reason?: string, rateChoice: VersionRateChoice = 'locked') => {
@@ -1112,8 +1104,8 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
     doRevertToVersion(fromVersion, originalStatus, rateChoice);
   };
 
-  /* Edit as V{n+1}: a new draft from the confirmed version, at its locked
-     rate or today's (asked first on a quote in a foreign currency). */
+  /* Edit as V{n+1}: a new draft from the confirmed version, at today's
+     rate (applyVersionRate). */
   const startNewDraftVersion = (rateChoice: VersionRateChoice = 'locked') => {
     applyVersionRate(rateChoice);
     const newVersion = quoteVersion + 1;
@@ -1498,7 +1490,6 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                             viewingVersion={viewingVersion}
                             onViewVersion={setViewingVersion}
                             onEditAsDraft={quoteStatus !== 'converted' ? handleEditAsDraft : undefined}
-                            rateTotal={summaryTotal}
                             materialChangesCount={materialChangesInDraft}
                             /* Seed the dropdown's roster from the quote
                                record so it reflects the same version
@@ -2169,9 +2160,8 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                   {!(outdatedBannerVisible && quoteStatus === 'draft') && quoteStatus === 'confirmed' && (
                     <button
                       onClick={() => {
-                        // A foreign-currency quote asks which rate the new draft takes.
-                        if (fx.isBase) startNewDraftVersion();
-                        else setEditAsConfirm(true);
+                        // The new draft takes today's rate (applyVersionRate); nothing to ask.
+                        startNewDraftVersion('locked');
                       }}
                       style={{
                         display: 'flex', alignItems: 'center', gap: '6px',
@@ -2639,7 +2629,6 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       {headerRevertConfirm && (
         <HeaderRevertConfirmModal
           version={headerRevertConfirm.version}
-          total={summaryTotal}
           onClose={() => setHeaderRevertConfirm(null)}
           onConfirm={(_reason, rateChoice) => {
             const target = headerRevertConfirm.version;
@@ -2810,23 +2799,9 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
         newValue={autoVersionConfirm.newValue}
         currentVersion={quoteVersion}
         fromStatus={autoVersionConfirm.fromStatus}
-        rate={newVersionRate}
         onConfirm={handleAutoVersionConfirmed}
         onDiscard={handleAutoVersionDiscarded}
       />
-
-      {/* Edit as V{n+1} on a quote in a foreign currency: the new draft's rate. */}
-      {editAsConfirm && (
-        <EditAsVersionConfirmModal
-          fromVersion={quoteVersion}
-          total={summaryTotal}
-          onClose={() => setEditAsConfirm(false)}
-          onConfirm={(rateChoice) => {
-            setEditAsConfirm(false);
-            startNewDraftVersion(rateChoice);
-          }}
-        />
-      )}
 
       {/* ── The quote's Currency Configuration (header Currency button and
            Quote Summary's View configuration) ── */}
@@ -2981,7 +2956,6 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
         isOpen={showReactivateChoice}
         recordLabel={quoteNumber}
         newVersionNumber={quoteVersion + 1}
-        rate={newVersionRate}
         defaultEffectiveFrom={new Date()}
         defaultValidTill={(() => {
           const d = new Date();
@@ -3026,17 +3000,12 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
    textarea. Pulled out as its own component so the parent stays
    tidy and so the reason state's lifecycle is scoped to one open
    instance. */
-function HeaderRevertConfirmModal({ version, total, onClose, onConfirm }: {
+function HeaderRevertConfirmModal({ version, onClose, onConfirm }: {
   version: number;
-  /** The quote's total, for the rate choice's base totals. */
-  total?: number;
   onClose: () => void;
   onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
 }) {
   const [reason, setReason] = useState('');
-  // A foreign-currency quote: V{version}'s locked rate, or today's.
-  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
-  const rateOptions = useVersionRateOptions(version, total);
   return (
     <ConfirmDiscardModal
       open
@@ -3046,13 +3015,10 @@ function HeaderRevertConfirmModal({ version, total, onClose, onConfirm }: {
       description={`V${version} will become the latest version of this quote. Its existing status is preserved. The next material change starts a new version.`}
       confirmLabel={`Revert to V${version}`}
       cancelLabel="Cancel"
-      onConfirm={() => onConfirm(reason.trim(), rateOptions ? rateChoice : 'locked')}
+      onConfirm={() => onConfirm(reason.trim(), 'locked')}
     >
-      {rateOptions && (
-        <div style={{ marginBottom: 14 }}>
-          <VersionRateChoiceCards fromVersion={version} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
-        </div>
-      )}
+      {/* Exchange rate — the restored version takes today's rate (applyVersionRate). */}
+      <RevertRateBox version={version} />
       <div>
         <label
           className="block"
@@ -3080,39 +3046,6 @@ function HeaderRevertConfirmModal({ version, total, onClose, onConfirm }: {
           onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none'; }}
         />
       </div>
-    </ConfirmDiscardModal>
-  );
-}
-
-/* ── Edit as a new version ───────────────────────────────────────────
-   On a quote in a foreign currency, Edit as V{n+1} first asks which rate
-   the new draft takes: V{n}'s locked rate, or today's. Same chrome as the
-   revert confirmation above, in the module's primary (blue) variant. */
-function EditAsVersionConfirmModal({ fromVersion, total, onClose, onConfirm }: {
-  fromVersion: number;
-  /** The quote's total, for the rate choice's base totals. */
-  total?: number;
-  onClose: () => void;
-  onConfirm: (rateChoice: VersionRateChoice) => void;
-}) {
-  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
-  const rateOptions = useVersionRateOptions(undefined, total);
-  const next = fromVersion + 1;
-  return (
-    <ConfirmDiscardModal
-      open
-      onOpenChange={(o) => { if (!o) onClose(); }}
-      variant="primary"
-      badge={`New version · V${next}`}
-      title={`Edit as V${next}?`}
-      description={`V${fromVersion} stays as the customer confirmed it. Your changes go on a new V${next} draft.`}
-      confirmLabel={`Edit as V${next}`}
-      cancelLabel="Cancel"
-      onConfirm={() => onConfirm(rateOptions ? rateChoice : 'locked')}
-    >
-      {rateOptions && (
-        <VersionRateChoiceCards fromVersion={fromVersion} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
-      )}
     </ConfirmDiscardModal>
   );
 }

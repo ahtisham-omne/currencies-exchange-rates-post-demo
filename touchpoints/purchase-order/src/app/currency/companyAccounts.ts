@@ -26,6 +26,9 @@ export const COMPANY_ACCOUNTS: CompanyAccount[] = [
   { id: '1050-EUR Settlement', label: '1050 · EUR Settlement', type: 'bank', currency: 'EUR', bankName: 'Deutsche Bank', accountMask: '5512' },
   { id: '1060-GBP Settlement', label: '1060 · GBP Settlement', type: 'bank', currency: 'GBP', bankName: 'Barclays', accountMask: '9034' },
   { id: '1070-AED Settlement', label: '1070 · AED Settlement', type: 'bank', currency: 'AED', bankName: 'Emirates NBD', accountMask: '3307' },
+  { id: '1075-CAD Settlement', label: '1075 · CAD Settlement', type: 'bank', currency: 'CAD', bankName: 'RBC Royal Bank', accountMask: '6120' },
+  { id: '1080-JPY Settlement', label: '1080 · JPY Settlement', type: 'bank', currency: 'JPY', bankName: 'MUFG Bank', accountMask: '4418' },
+  { id: '1085-CNY Settlement', label: '1085 · CNY Settlement', type: 'bank', currency: 'CNY', bankName: 'Bank of China', accountMask: '2963' },
 ];
 
 /** 1010 · JPMorgan Operating, in the base currency. */
@@ -34,11 +37,13 @@ export const DEFAULT_PAY_FROM = '1010-Operating';
 export const getCompanyAccount = (id: string | null | undefined): CompanyAccount | undefined =>
   id ? COMPANY_ACCOUNTS.find((a) => a.id === id) : undefined;
 
-/** The accounts a document in `docCurrency` can be paid from: base-currency
- *  ones, then those in the document's currency. */
+/** The accounts a document in `docCurrency` can be paid from: every bank and
+ *  cash account, in any currency (25 Nov 2026), listed base-currency ones
+ *  first, then those in the document's currency, then the rest. */
 export function payFromAccountsFor(docCurrency: string): CompanyAccount[] {
   const code = (docCurrency || BASE_CURRENCY).toUpperCase();
-  return COMPANY_ACCOUNTS.filter((a) => isBaseCurrency(a.currency) || a.currency === code);
+  const rank = (a: CompanyAccount) => (isBaseCurrency(a.currency) ? 0 : a.currency === code ? 1 : 2);
+  return [...COMPANY_ACCOUNTS].sort((a, b) => rank(a) - rank(b));
 }
 
 /** The account a document is paid from: the one chosen when it is still

@@ -2326,7 +2326,7 @@ export function ItemDetail({ item: initialItem, onBack, onEdit, scrollContainerR
                        {/* Sub-tab strip — Partners literal segmented pill + right-side toolbar */}
                        <div className="flex items-center justify-between gap-3 px-4 pt-2.5 pb-2 border-b border-border">
                            {/* LEFT — segmented pill */}
-                           <TabsList className="inline-flex items-center rounded-lg bg-muted p-0.5 h-auto">
+                           <TabsList className="inline-flex items-center gap-1 rounded-none bg-transparent p-0 h-auto">
                                {([
                                    { key: "overview", label: "Inventory Overview", icon: Boxes, color: "#1E40AF" },
                                    { key: "transactions", label: "Transactions", icon: History, color: "#5B21B6" },
@@ -2334,10 +2334,10 @@ export function ItemDetail({ item: initialItem, onBack, onEdit, scrollContainerR
                                    <TabsTrigger
                                        key={t.key}
                                        value={t.key}
-                                       className="inline-flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] transition-all cursor-pointer text-slate-500 hover:text-slate-700 data-[state=active]:bg-white data-[state=active]:shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] data-[state=active]:font-semibold"
+                                       className="inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-normal whitespace-nowrap transition-colors cursor-pointer text-muted-foreground hover:bg-muted data-[state=active]:bg-[#EDF4FF] data-[state=active]:text-[#0A77FF] data-[state=active]:font-medium data-[state=active]:shadow-none data-[state=active]:hover:bg-[#EDF4FF]"
                                        style={{ ['--active-color' as any]: t.color }}
                                    >
-                                       <t.icon className="w-3.5 h-3.5" style={{ color: t.color }} />
+                                       <t.icon className="w-3.5 h-3.5" />
                                        <span style={{ color: 'inherit' }}>{t.label}</span>
                                    </TabsTrigger>
                                ))}

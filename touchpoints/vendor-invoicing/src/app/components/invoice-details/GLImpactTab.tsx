@@ -343,9 +343,9 @@ export function GLImpactTab({
                     locked rate, so the rate difference on the goods shows as
                     its own FX Variance line, both rates and dates named. */}
                 {lines.some((l) => l.accountCode === FX_VARIANCE_CODE)
-                  ? ' AP Accrual clears at what receiving booked and any prepayment at its locked rate; the rate difference on the goods is the FX Variance line.'
+                  ? ' AP Accrual clears at what receiving booked and any prepayment at the rate it was paid at; the rate difference on the goods is the FX Variance line.'
                   : lines.some((l) => l.accountCode === ADVANCES_CODE && l.credit)
-                    ? ' The prepayment clears Advance Payments at its locked rate.'
+                    ? ' The prepayment clears Advance Payments at the rate it was paid at.'
                     : ''}
               </p>
             )}

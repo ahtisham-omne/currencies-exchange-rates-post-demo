@@ -88,13 +88,12 @@ import { RunIssuesPanel, MoveLineModal } from './RunIssuesPanel';
 import { RUN_CANCEL_OVERRIDE, RUN_HOLD_OVERRIDE } from './runReasonConfigs';
 import { RunStatusPill, DueDatePill, humanDate, openInvoiceTab, exportRunCsv } from './runUi';
 import { BaseMoney, Money } from '@/app/components/currency/Money';
-import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
-import { BASE_CURRENCY } from '@/app/currency/currencies';
+import { BASE_CURRENCY, getCurrency } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
 import { toBase } from '@/app/currency/rates';
 import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
 import { paymentFx, toPaymentBase } from '@/app/currency/paymentFx';
-import { CurrencyTotals, amountsText, totalText } from './runMoney';
+import { CurrencyCell, CurrencyTotals, amountsText, totalText } from './runMoney';
 import { SegmentedCountPill } from '@/app/components/SegmentedCountPill';
 
 /* ── Payment run detail page (8/4/26 restructure) ────────────────────
@@ -2151,10 +2150,13 @@ function RunLinkedRecordsTab({
 // menu. Weights stay at 500 or lighter, nothing bold. Detail page
 // ONLY; the authoring modal keeps its card composition.
 // ══════════════════════════════════════════════════════════════════
-type PayTableCol = 'vendor' | 'method' | 'status' | 'payment' | 'net';
+type PayTableCol = 'vendor' | 'currency' | 'method' | 'status' | 'payment' | 'net';
 
-const PAY_COLS: { key: PayTableCol; label: string; alignRight?: boolean; sortable?: boolean }[] = [
+const PAY_COLS: { key: PayTableCol; label: string; alignRight?: boolean; sortable?: boolean; width?: number }[] = [
   { key: 'vendor', label: 'Vendor', sortable: true },
+  // The payment's currency in its own column, right after Vendor (24 Nov
+  // 2026), not as a tag in the vendor cell: a vendor paid in two reads apart.
+  { key: 'currency', label: 'Currency', sortable: true, width: 264 },
   { key: 'method', label: 'Payment Method', sortable: true },
   { key: 'status', label: 'Status', sortable: true },
   { key: 'payment', label: 'Payment Record' },
@@ -2275,6 +2277,8 @@ function RunPaymentsTable({
       if (!q) return true;
       return (
         r.group.vendor.toLowerCase().includes(q) ||
+        r.currency.toLowerCase().includes(q) ||
+        (getCurrency(r.currency)?.name ?? '').toLowerCase().includes(q) ||
         r.accountLabel.toLowerCase().includes(q) ||
         r.group.methodType.toLowerCase().includes(q) ||
         (r.savedMethod ? methodSummary(r.savedMethod).toLowerCase().includes(q) : false) ||
@@ -2284,6 +2288,7 @@ function RunPaymentsTable({
     });
     const accessor: Record<PayTableCol, (r: PayRow) => string | number> = {
       vendor: (r) => r.group.vendor,
+      currency: (r) => r.currency,
       method: (r) => r.group.methodType,
       status: (r) => r.payment?.status ?? '',
       payment: (r) => r.payment?.paymentNumber ?? '',
@@ -2338,7 +2343,7 @@ function RunPaymentsTable({
       shownCount === 0 && query.trim()
         ? findSearchSuggestion(
             query,
-            allRows.flatMap((r) => [r.group.vendor, r.accountLabel, r.group.methodType, r.payment?.paymentNumber, ...r.glines.map((l) => l.invoiceNumber)]),
+            allRows.flatMap((r) => [r.group.vendor, r.currency, r.accountLabel, r.group.methodType, r.payment?.paymentNumber, ...r.glines.map((l) => l.invoiceNumber)]),
           )
         : null,
     [shownCount, query, allRows],
@@ -2395,6 +2400,7 @@ function RunPaymentsTable({
     return (
       <th
         className={`p-0 ${col.alignRight ? 'text-right' : 'text-left'} ${dragOverCol === col.key ? 'bg-blue-50/70' : ''} transition-colors`}
+        style={col.width ? { width: col.width, minWidth: col.width } : undefined}
         draggable
         onDragStart={(e) => {
           dragColRef.current = col.key;
@@ -2498,15 +2504,18 @@ function RunPaymentsTable({
                 <span className="block text-[13px] text-foreground truncate" style={{ fontWeight: 500 }}>
                   {highlightText(r.group.vendor, query)}
                 </span>
-                {/* The payment's currency rides the count (Currency &
-                    Exchange Rates): a vendor paid in two reads apart. */}
                 <span className="flex items-center gap-1 text-[10.5px] text-slate-400" style={{ fontWeight: 400 }}>
-                  {r.glines.length} invoice{r.glines.length === 1 ? '' : 's'} ·
-                  <CurrencyChip code={r.currency} size={12} />
+                  {r.glines.length} invoice{r.glines.length === 1 ? '' : 's'}
                   {r.credit > 0.004 && <span className="text-purple-600">· vendor credit applied</span>}
                 </span>
               </span>
             </span>
+          </td>
+        );
+      case 'currency':
+        return (
+          <td key={key} className="px-2.5 py-2">
+            <CurrencyCell code={r.currency} searchQuery={query} />
           </td>
         );
       case 'method': {

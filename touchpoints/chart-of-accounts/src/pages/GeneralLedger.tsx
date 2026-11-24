@@ -1899,8 +1899,8 @@ export default function GeneralLedgerPage() {
      beside it quote the same rate. */
   const lineFxCell = (key: 'currency' | 'fxAmount' | 'rate', t: Transaction) => {
     switch (key) {
-      // The chart's cell, flag and code chip, so a currency reads the same in
-      // every table of the module (Mahad, 2026-10-09: *"I want the same UI"*).
+      // The chart's cell, the library's code pill and name, so a currency
+      // reads the same in every table of the module (Mahad, 2026-10-09: *"I want the same UI"*).
       case 'currency': return <td key={key} className={cn('px-4', padY)}><CurrencyCell code={t.entryCurrency ?? base} q={query} /></td>
       case 'fxAmount': {
         const fx = fxLine(t)

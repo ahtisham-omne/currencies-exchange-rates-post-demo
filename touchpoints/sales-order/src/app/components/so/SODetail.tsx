@@ -79,13 +79,11 @@ import type { SOLine, CancellationReason, SOPriority } from "./types";
 import { DocCurrencyProvider } from "@/app/components/currency/DocCurrency";
 import { SOCurrencyHeaderControls, SOHeaderCustomer } from "@/app/components/currency/SOCurrencyHeaderControls";
 import type { DocView } from "@/app/components/currency/docCurrencyContext";
-import { versionRateOptions } from "@/app/components/currency/VersionRateChoice";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatMoney } from "@/app/currency/money";
 import { toBase } from "@/app/currency/rates";
 import { DESIGN_CURRENCY, convertOn, roundTo, ruleAmountFactor, soFx } from "@/app/currency/soFx";
-import { versionRateFields, type VersionRateChoice } from "./soCurrency";
-import { summarizeSO } from "./summarizeSO";
+import type { VersionRateChoice } from "./soCurrency";
 import { ARCHIVABLE_STATES } from "./types";
 import { getLineItemImage } from "./lineItemImage";
 import { InactiveItemsWarningModal, type InactiveWarningMode } from "../shared/InactiveItemsWarningModal";
@@ -768,6 +766,7 @@ export function SODetail() {
 
                         <SOVersionDropdown
                           currentVersion={soVersion.number}
+                          so={so}
                           currentStatus={so.status}
                           onViewVersion={(v) => { /* TODO: hook up version viewing */ }}
                           /* Revert-as-draft locked once units ship.
@@ -2353,17 +2352,6 @@ export function SODetail() {
         newValue={pendingVersionChange?.newValue}
         currentVersion={soVersion.number}
         fromStatus={so.status}
-        /* A foreign-currency order: keep the locked rate (the current
-           version's, or the reverted-to version's) or apply today's. */
-        rate={(() => {
-          const fromVersion = pendingVersionChange?.isRevert && pendingVersionChange.revertToVersion != null
-            ? pendingVersionChange.revertToVersion
-            : soVersion.number;
-          const s = summarizeSO(so);
-          const total = s.subtotal + s.tax - (pricingAPI.totalDiscount - pricingAPI.totalPremium) + adjustmentsAPI.grandTotal.net + s.freight;
-          const options = versionRateOptions({ ...so, ...versionRateFields(so, fromVersion) }, total);
-          return options ? { fromVersion, options } : undefined;
-        })()}
         onConfirm={(_reason, rateChoice = "locked") => {
           setShowAutoVersionConfirm(false);
           setShowAutoVersionOverlay(true);

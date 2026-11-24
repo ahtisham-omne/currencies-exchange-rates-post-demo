@@ -49,8 +49,7 @@ import { ArrowRight } from "lucide-react";
 import { type SOCurrencyChange, type SOCurrencyTotals } from "@/app/components/currency/SOCurrencyFields";
 import { SOCurrencyConfigDialog, SOCurrencySummary } from "@/app/components/currency/SOCurrencyConfig";
 import { DocMoney } from "@/app/components/currency/DocCurrency";
-import { useDocOtherText, useDocView, useDocWhole } from "@/app/components/currency/docCurrencyContext";
-import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { useDocWhole } from "@/app/components/currency/docCurrencyContext";
 import { getCompanyAccount } from "@/app/currency/companyAccounts";
 import { isoDay, roundTo, ruleAmountFactor, soFx, stampSoRate } from "@/app/currency/soFx";
 import { describeRateChange, soRateFields, soRateLocked, withSOCurrency, type SOCurrencyChoice } from "./soCurrency";
@@ -1224,9 +1223,6 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
   /* Whole amounts as the design shows them, in the currency the page shows:
      base (spec 4.3; the header toggle is gone since 24 Nov 2026). */
   const fmtCurrency = useDocWhole();
-  const otherText = useDocOtherText();
-  const { inBase } = useDocView();
-  const fx = soFx(so);
 
   /* Currency, rate or "You receive" (the pay-to account) changed in the
      Currency Configuration. Another currency converts every price and
@@ -1521,14 +1517,6 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
             </p>
             <p className="text-slate-500 mt-1 truncate" style={{ fontSize: 11, fontWeight: 400, fontFamily: "Inter, system-ui, sans-serif" }}>
               {so.lines.length} item{so.lines.length !== 1 ? "s" : ""}
-              {/* The total in the currency not shown: what the customer pays
-                  (base view), or what it's worth in base. */}
-              {otherText(grandTotal) && (
-                <span className="tabular-nums">
-                  {" · "}{otherText(grandTotal)}
-                  <span className="text-slate-400"> {inBase ? `${fx.currency} · customer currency` : `${BASE_CURRENCY} · base currency`}</span>
-                </span>
-              )}
             </p>
           </div>
 

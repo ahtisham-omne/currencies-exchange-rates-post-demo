@@ -1,5 +1,4 @@
 import * as React from "react";
-import { Settings2 } from "lucide-react";
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "@/app/currency/currencies";
 import { customerCurrency } from "@/app/currency/soFx";
 import { CurrencyPill } from "./CurrencyChip";
@@ -68,16 +67,7 @@ export function SOCurrencyHeaderControls({
   /** The scrolled (compact) header. */
   compact?: boolean;
 }) {
-  return (
-    <button
-      type="button"
-      onClick={onOpenConfig}
-      aria-label="Open currency configuration"
-      className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 rounded-lg border border-border bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-800 transition-colors cursor-pointer text-[12px] ${compact ? "h-8" : "h-9"}`}
-      style={{ fontWeight: 500, fontFamily: FONT }}
-    >
-      <Settings2 className="w-3.5 h-3.5 text-slate-500" />
-      Currency
-    </button>
-  );
+  // No Currency button in the header (25 Nov 2026): the configuration opens
+  // from the summary's currency card (View configuration).
+  return null;
 }

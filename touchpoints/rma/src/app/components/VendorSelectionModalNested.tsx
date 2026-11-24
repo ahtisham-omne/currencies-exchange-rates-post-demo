@@ -1421,8 +1421,8 @@ export function VendorSelectionModalNested(props: VendorSelectionModalProps) {
                       selected in the others because they all key off the
                       same PO line. */}
                   <div
-                    className="inline-flex items-center h-7 rounded-md border border-border bg-white overflow-hidden"
-                    role="group"
+                    className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5"
+                    role="radiogroup"
                     aria-label="View results by"
                   >
                     {VIEW_OPTIONS.map((opt) => {
@@ -1431,14 +1431,13 @@ export function VendorSelectionModalNested(props: VendorSelectionModalProps) {
                         <button
                           key={opt.key}
                           type="button"
+                          role="radio"
+                          aria-checked={active}
                           onClick={() => setGroupBy(opt.key)}
-                          aria-pressed={active}
-                          className={`inline-flex items-center gap-1.5 h-full px-2.5 text-[12px] border-r border-border last:border-r-0 transition-colors ${
-                            active
-                              ? 'bg-primary/10 text-primary'
-                              : 'text-slate-600 hover:text-foreground hover:bg-slate-50'
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                            active ? 'bg-[#EDF4FF] text-[#0A77FF]' : 'text-muted-foreground hover:bg-muted'
                           }`}
-                          style={{ fontWeight: active ? 600 : 500 }}
+                          style={{ fontWeight: active ? 500 : 400 }}
                         >
                           <opt.Icon className="w-3.5 h-3.5" />
                           {opt.label}

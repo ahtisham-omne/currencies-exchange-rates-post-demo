@@ -33,7 +33,7 @@ function HeaderControls() {
     <div
       className="flex items-center gap-1.5 opacity-0 group-hover/widget:opacity-100 transition-opacity duration-200 shrink-0"
     >
-      <div className="flex items-center h-7 rounded-lg border border-border bg-slate-50 p-0.5 gap-0.5">
+      <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Widget size">
         {(["sm", "md", "lg"] as const).map((s) => (
           <button
             key={s}
@@ -41,12 +41,12 @@ function HeaderControls() {
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); onSizeChange(s); }}
             draggable={false}
-            className={`h-6 px-2.5 rounded-md text-[11px] cursor-pointer transition-all duration-150 ${
-              size === s
-                ? "bg-white text-primary shadow-sm border border-border"
-                : "text-slate-400 hover:text-slate-700 hover:bg-white/60 border border-transparent"
+            role="radio"
+            aria-checked={size === s}
+            className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+              size === s ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
             }`}
-            style={{ fontWeight: size === s ? 600 : 500 }}
+            style={{ fontWeight: size === s ? 500 : 400 }}
           >
             {s === "sm" ? "Small" : s === "md" ? "Medium" : "Large"}
           </button>

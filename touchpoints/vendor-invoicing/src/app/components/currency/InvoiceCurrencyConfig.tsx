@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/app/com
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, formatRate, formatRateDate, moneyPrefix, rateSentence } from '@/app/currency/money';
-import { RATE_PROVIDER, RATE_TYPE_LABEL, corporateRateOn, rateOn, toBase, type RateQuote, type RateType } from '@/app/currency/rates';
+import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, corporateRateOn, rateOn, toBase, type RateQuote, type RateType } from '@/app/currency/rates';
 import { fxVarianceOf, gainLossOf, type FxVariance, type LockedPrepayment, type ReceiptValue } from '@/app/currency/fxVariance';
 import { eligiblePayFromId, payFromAccountById, payFromAccountsFor } from '@/app/currency/payFrom';
 import { rateChangePct } from '@/app/hooks/useApSettings';
@@ -16,8 +16,6 @@ import { CurrencyPicker, PoRateCompare, RateTypeToggle, type CurrencySource } fr
 import {
   CurrencyBlock,
   INVOICE_FX_VARIANCE_TITLE,
-  INVOICE_LOCK_TITLE,
-  LockChip,
   RateTypeChip,
   signedVariance,
   varianceHex,
@@ -36,18 +34,19 @@ export { RateTypeChip } from './CurrencyBlock';
  *    line at the rate day's mid-market cross rate when applied
  *    (CreateInvoiceScreen). The vendor's default currency doesn't change.
  *  - "Prepayment": each one deducted at the rate it was paid at.
- *  - "You pay": the amount and the account it is paid from, in the base
- *    currency or the invoice's (currency/payFrom.ts). In base the amount is
- *    an estimate at the invoice rate; the payment records what the bank took.
- *  - "Rate": mid-market (read-only) or corporate (typed if the role may
+ *  - "You pay in": the currency of the account it is paid from (the
+ *    account on hover), any bank or cash account, base-currency ones first
+ *    (currency/payFrom.ts). "Base equivalent" is always shown: an estimate at
+ *    the invoice rate; the payment records what the bank took.
+ *  - "Exchange rate": mid-market (read-only) or corporate (typed if the role may
  *    change an invoice's rate, within its ± limit; Settings, Permissions), on
- *    the posting date (the module default), with the lock chip: unlocked
- *    until the invoice posts.
+ *    the posting date (the module default). No lock on the rate (25 Nov
+ *    2026); the configuration is read-only once the invoice posts.
  *  - "FX variance": receiving booked the goods at the receiving-date rate,
  *    the invoice converts them at the posting-date rate; the gap posts to FX
  *    Gain (+) or FX Loss (−) (currency/fxVariance.ts).
  * On the create and edit screen the dialog edits the form's currency, rate
- * and account (Apply writes them back). On a saved invoice it is read-only,
+ * and account (Save writes them back). On a saved invoice it is read-only,
  * and Edit Invoice is the way to change it while the invoice allows edits. */
 
 const RATE_HEX: Record<RateType, string> = { mid: '#7C3AED', corporate: '#B45309' };
@@ -117,7 +116,7 @@ export interface InvoiceCurrencyBlockProps {
   rateEdited?: boolean;
   /** The rate difference on received goods, at this rate. */
   variance?: FxVariance | null;
-  /** The invoice has posted: its rate is fixed. */
+  /** The invoice has posted. The block shows no lock (25 Nov 2026). */
   locked: boolean;
   /** The account it is paid from. */
   payFrom: Pick<PayFromAccount, 'label' | 'currency'>;
@@ -125,7 +124,7 @@ export interface InvoiceCurrencyBlockProps {
   className?: string;
 }
 
-/** Vendor invoiced / [Prepaid] / You pay / [Base equivalent] / [FX variance] / Rate. */
+/** Vendor invoiced / [Prepaid] / You pay in / Base equivalent / [FX variance] / Exchange rate. */
 export function InvoiceCurrencyBlock({
   currency,
   total,
@@ -139,7 +138,6 @@ export function InvoiceCurrencyBlock({
   rateMissing,
   rateEdited,
   variance,
-  locked,
   payFrom,
   onViewConfig,
   className = '',
@@ -149,15 +147,17 @@ export function InvoiceCurrencyBlock({
   const rest = Math.max(0, r2(total - Math.min(prepaid, total)));
   const restBase = toBase(rest, rate);
   const payInBase = isBaseCurrency(payFrom.currency);
+  // Currency information (25 Nov 2026): what the vendor invoiced, the
+  // currency you pay in (the pay-from account's, the account on hover), and
+  // the base equivalent, always shown.
   const rows: CurrencyBlockRow[] = [{ label: 'Vendor invoiced', code, amount: total }];
   if (prepaid > 0.004) rows.push({ label: 'Prepaid', code, amount: Math.min(prepaid, total), sign: '−', title: 'Deducted at the rate it was paid at.' });
   rows.push({
-    label: 'You pay',
-    code: payInBase ? BASE_CURRENCY : code,
-    amount: payInBase ? restBase : rest,
+    label: 'You pay in',
+    code: payInBase ? BASE_CURRENCY : payFrom.currency.toUpperCase(),
     title: `From ${payFrom.label} (${payFrom.currency})${pending ? ", at today's rate until it's paid" : ''}`,
   });
-  if (!payInBase) rows.push({ label: 'Base equivalent', code: BASE_CURRENCY, amount: restBase });
+  rows.push({ label: 'Base equivalent', code: BASE_CURRENCY, amount: restBase });
   const corporate = rateType === 'corporate' && rateDate ? corporateRateOn(code, rateDate) : undefined;
   const rateTip =
     rateType === 'mid'
@@ -173,7 +173,6 @@ export function InvoiceCurrencyBlock({
       currency={code}
       rateType={pending ? null : rateType}
       rateTip={rateTip}
-      lock={{ locked, title: locked ? INVOICE_LOCK_TITLE.locked : pending ? "A pre-invoice takes its rate when it's paid, and locks then." : INVOICE_LOCK_TITLE.unlocked }}
       rows={rows}
       variance={variance ? { amount: variance.amount, title: `${varianceRatesText(variance, dateLabel)}. ${INVOICE_FX_VARIANCE_TITLE}` } : null}
       rate={
@@ -227,8 +226,9 @@ export function AmountRow({ amount, code, side, prefix = '', sideWidth = 200 }: 
   );
 }
 
-/** A currency shown where a picker would be, locked (from the PO, or the base). */
-export function LockedCurrency({ code, note }: { code: string; note: string }) {
+/** A currency shown where a picker would be, fixed (from the PO, or the
+ *  base). `detail` replaces the currency's name ("· invoice currency"). */
+export function LockedCurrency({ code, note, detail }: { code: string; note: string; detail?: string }) {
   const cur = getCurrency(code);
   return (
     <Tooltip>
@@ -236,7 +236,7 @@ export function LockedCurrency({ code, note }: { code: string; note: string }) {
         <div className="h-10 w-full rounded-lg text-sm px-3 flex items-center gap-2 border border-slate-200 bg-slate-50 cursor-not-allowed">
           <CurrencyFlag code={code} size={18} />
           <span style={{ fontWeight: 500 }}>{code}</span>
-          <span className="text-slate-500 truncate">{cur?.name}</span>
+          <span className="text-slate-500 truncate">{detail ?? cur?.name}</span>
           <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0 ml-auto" />
         </div>
       </TooltipTrigger>
@@ -247,7 +247,21 @@ export function LockedCurrency({ code, note }: { code: string; note: string }) {
   );
 }
 
-/** One rate, as the Exchange Rates module writes it, with what it is for. */
+/** The time of day the provider's rates sync, e.g. "7:30 PM". */
+const SYNC_TIME = new Date(LAST_SYNC).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+/** Under the rate (25 Nov 2026, as POCurrencyConfig's): when a mid-market
+ *  rate was last updated, or from when a corporate rate is in effect. Not
+ *  the posting or payment date. */
+export function rateAsOfLine(type: RateType, date: string, effectiveDate?: string | null, entered?: boolean): string {
+  if (type === 'mid') return `Rate updated as of ${formatRateDate(date)}, ${SYNC_TIME}`;
+  if (entered) return `Entered on this invoice · effective from ${formatRateDate(date)}`;
+  return `Effective from ${formatRateDate(effectiveDate ?? date)}`;
+}
+
+/** One rate, as the Exchange Rates module writes it (POCurrencyConfig's
+ *  RateCard): the type and source, the rate, its inverse, then the line
+ *  under it (rateAsOfLine). No lock on the rate (25 Nov 2026). */
 export function RateCard({
   from,
   rate,
@@ -260,16 +274,16 @@ export function RateCard({
   rate: number;
   type: RateType;
   source: string;
-  /** "Nov 23, 2026 · payment date" */
+  /** The line under the rate (rateAsOfLine). */
   caption: React.ReactNode;
   /** What this rate converts, in `from` and base. */
   amount?: number;
 }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[11px]">
-        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RATE_HEX[type] }} />
-        <span style={{ color: RATE_HEX[type], fontWeight: 600 }}>{RATE_TYPE_LABEL[type]}</span>
+      <div className="flex items-center gap-1.5 text-[11px] min-w-0">
+        <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: RATE_HEX[type] }} />
+        <span className="shrink-0" style={{ color: RATE_HEX[type], fontWeight: 600 }}>{RATE_TYPE_LABEL[type]}</span>
         <span className="text-slate-500 truncate">· {linkProvider(source)}</span>
       </div>
       <div className="mt-1.5 flex items-start justify-between gap-3">
@@ -284,17 +298,7 @@ export function RateCard({
           </div>
         )}
       </div>
-      <div className="mt-1 text-[10.5px] text-slate-400">{caption}</div>
-    </div>
-  );
-}
-
-/** The lock line under a rate: "[Unlocked] locks when the invoice posts". */
-export function LockLine({ locked, text }: { locked: boolean; text: string }) {
-  return (
-    <div className="flex items-center gap-2 text-[11px] text-slate-500">
-      <LockChip locked={locked} />
-      <span>{text}</span>
+      <div className="mt-1.5 text-[10.5px] text-slate-400 tabular-nums">{caption}</div>
     </div>
   );
 }
@@ -374,7 +378,7 @@ export interface InvoiceCurrencyConfigDialogProps {
   readOnly?: boolean;
   /** The saved invoice's rate (read-only mode). */
   savedRate?: { rate: number; rateType: RateType; rateDate: string; edited?: boolean; source?: string };
-  /** A saved invoice that has posted (its rate is locked). */
+  /** A saved invoice that has posted: its configuration is read-only. */
   posted?: boolean;
   /** Read-only: open the invoice's edit screen, where currency and rate change. */
   onEdit?: () => void;
@@ -473,7 +477,7 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
   const prepaid = Math.min(shownTotal, r2(draftPrepayments.reduce((s, p) => s + p.amount, 0)));
   const rest = Math.max(0, r2(shownTotal - prepaid));
 
-  // You pay: an account in the base currency or the invoice's (rule 3).
+  // You pay: any bank or cash account, base-currency ones first (payFrom.ts).
   const accounts = payFromAccountsFor(currency);
   const effectiveAccountId = eligiblePayFromId(accountId, currency);
   const account = payFromAccountById(effectiveAccountId);
@@ -529,8 +533,29 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
   // The rate kept on an edit, from before the date changed.
   const keptFromEarlier = useHeld && heldRate != null && heldRate.rateDate !== rateDay;
   const outcome = variance ? gainLossOf(variance.amount) : 'none';
-  // "INV-000221 · from PO-000002"
-  const subtitle = source.kind === 'po' ? `${documentLabel} · from ${source.ref}` : documentLabel;
+  // The configuration is read-only once the invoice posts; the rate itself
+  // shows no lock (25 Nov 2026).
+  const description = posted
+    ? "This invoice is posted, so its currency configuration can't be changed."
+    : readOnly
+      ? onEdit
+        ? 'Edit the invoice to change its currency configuration.'
+        : "This invoice can't be changed now, so its currency configuration is read-only."
+      : "For this invoice only. The vendor's currency stays the same.";
+  // Where the currency comes from: the PO's, else the vendor's.
+  const defaultCurrency = source.kind === 'po' ? source.currency ?? value.currency : vendorDefault;
+  const currencyHelper = currencyChanged
+    ? `Changed from ${value.currency}. Saving converts every line at the ${formatRateDate(rateDay)} mid-market rate.`
+    : currency === defaultCurrency
+      ? source.kind === 'po'
+        ? `From the PO, ${source.ref}.`
+        : "Defaults to the vendor's currency."
+      : source.kind === 'po'
+        ? `Changed from ${defaultCurrency}, the PO's currency.`
+        : `Changed from ${vendorDefault}, the vendor's currency.`;
+  // "Rate updated as of Apr 10, 2026, 7:30 PM" / "Effective from Apr 1, 2026"
+  // (25 Nov 2026: not "Rate on posting date: …").
+  const rateDateLine = rateAsOfLine(draftType, draftDate, rateOn(currency, draftDate, 'corporate').effectiveDate, edited);
 
   // Receiving's side of the variance, one line per receiving rate.
   const receivedLines = variance
@@ -551,7 +576,7 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-[580px] p-0 gap-0 overflow-hidden !rounded-2xl border-0"
+        className="sm:max-w-[600px] p-0 gap-0 overflow-hidden !rounded-2xl border-0"
         style={{ boxShadow: '0 24px 48px -12px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05)' }}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
@@ -562,10 +587,10 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
             </div>
             <div className="min-w-0 flex-1">
               <DialogTitle className="text-slate-900" style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>
-                Currency Configuration
+                Currency configuration
               </DialogTitle>
               <DialogDescription className="text-slate-500" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                {subtitle}
+                {description}
               </DialogDescription>
             </div>
           </div>
@@ -576,6 +601,7 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
             <AmountRow
               amount={shownTotal}
               code={currency}
+              sideWidth={248}
               side={
                 readOnly ? (
                   <LockedCurrency code={currency} note="The currency this invoice was entered in. Edit the invoice to change it." />
@@ -592,12 +618,7 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
                 )
               }
             />
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              {source.kind === 'po' ? `Defaults to the currency on ${source.ref}.` : "Defaults to the vendor's currency."}
-              {readOnly ? '' : ' Change it if the vendor invoiced in another currency.'}
-              {` The vendor's default currency (${vendorDefault}) doesn't change.`}
-              {currencyChanged ? ` Applying converts every line from ${value.currency} at the ${formatRateDate(rateDay)} mid-market rate.` : ''}
-            </p>
+            <p className="text-[11px] text-slate-500 leading-relaxed">{currencyHelper}</p>
           </Section>
 
           {/* Each prepayment at the rate it was paid at (Mahreen, 2026-11-20). */}
@@ -619,52 +640,67 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
             </Section>
           )}
 
-          <Section label="You pay">
-            <div className="flex items-stretch gap-2">
-              <AmountBox
-                text={
-                  payInBase
-                    ? `${foreign ? '≈ ' : ''}${formatMoney(foreign ? restBase : rest, BASE_CURRENCY)}`
-                    : formatMoney(rest, currency)
-                }
-              />
-              <div className="w-[250px] shrink-0">
-                <PayFromAccountPicker
-                  value={effectiveAccountId}
-                  accounts={accounts}
-                  onChange={setAccountId}
-                  readOnly={readOnly}
-                  documentCurrency={currency}
-                  ariaLabel="You pay from account"
-                />
-              </div>
-            </div>
-            {!payInBase && foreign && (
-              <div className="flex items-center justify-between gap-2 px-0.5 text-[11.5px]">
-                <span className="text-slate-500">Base equivalent</span>
-                <span className="inline-flex items-center gap-1.5 tabular-nums text-slate-700" style={{ fontWeight: 600 }}>
-                  <CurrencyFlag code={BASE_CURRENCY} size={12} />
-                  {formatMoney(restBase, BASE_CURRENCY)} {BASE_CURRENCY}
-                </span>
-              </div>
-            )}
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              {!foreign
-                ? `${BASE_CURRENCY} is the base currency, so nothing converts.`
-                : pending
-                  ? payInBase
-                    ? `At today's rate. A pre-invoice posts when it's paid, and the payment records what the bank took.`
-                    : `Paid from a ${currency} account, so the vendor gets exactly what you pay.`
-                  : payInBase
-                    ? `${prepaid > 0.004 ? `The rest, ${formatMoney(rest, currency)}, ` : `${formatMoney(rest, currency)} `}at the invoice rate. The payment records what the bank took.`
-                    : `Paid from a ${currency} account, so the vendor gets exactly what you pay.`}
-              {' '}Only a {foreign ? `${BASE_CURRENCY} or ${currency}` : BASE_CURRENCY} account can pay this invoice.
-            </p>
+          <Section label="You pay in">
+            <PayFromAccountPicker
+              value={effectiveAccountId}
+              accounts={accounts}
+              onChange={setAccountId}
+              readOnly={readOnly}
+              documentCurrency={currency}
+              ariaLabel="You pay in account"
+            />
           </Section>
+
+          <Section label="Base equivalent">
+            <AmountBox text={`${foreign ? '≈ ' : ''}${formatMoney(restBase, BASE_CURRENCY)} ${BASE_CURRENCY}`} />
+            {foreign && pending && <p className="text-[11px] text-slate-500 leading-relaxed">At today's rate, until the pre-invoice is paid.</p>}
+          </Section>
+
+          {/* Receiving to invoice: what receiving booked, what the invoice
+              posts, and the gap (Currency Touchpoints Map, Receiving 4). */}
+          {variance && (
+            <Section label="FX variance">
+              <VarianceCard amount={variance.amount} caption={varianceRatesText(variance, dateLabel)}>
+                {variance.restForeign > 0.004 ? (
+                  <div className="mt-2 pt-2 border-t border-[#EEF2F6] space-y-1 text-[11px] tabular-nums">
+                    {receivedLines.map((l) => (
+                      <div key={l.rate} className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500 min-w-0 truncate">
+                          Received {Array.from(new Set(l.dates)).sort().map((d) => formatRateDate(d)).join(', ')} · 1 {currency} = {formatRate(l.rate)} {BASE_CURRENCY}
+                        </span>
+                        <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>{formatMoney(l.base, BASE_CURRENCY)}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-500 min-w-0 truncate">
+                        Invoice {posted ? 'posted' : 'posts'} {formatRateDate(draftDate)} · 1 {currency} = {formatRate(variance.invoiceRate)} {BASE_CURRENCY}
+                      </span>
+                      <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>{formatMoney(variance.restAtInvoice, BASE_CURRENCY)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-600" style={{ fontWeight: 600 }}>
+                        FX variance · posts to {outcome === 'gain' ? 'FX Gain' : outcome === 'loss' ? 'FX Loss' : 'nothing'}
+                      </span>
+                      <span className="shrink-0" style={{ fontWeight: 700, color: varianceHex(variance.amount) }}>{signedVariance(variance.amount)}</span>
+                    </div>
+                    {variance.prepaidGoods.length > 0 && (
+                      <p className="text-slate-400 leading-relaxed pt-0.5">
+                        The prepaid part keeps the rate it was paid at, so only the unpaid {formatMoney(variance.restForeign, currency)} is compared.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
+                    The prepayment covers all the goods at the rate it was paid at, so there's no FX variance.
+                  </p>
+                )}
+              </VarianceCard>
+            </Section>
+          )}
 
           {foreign && (
             <Section
-              label="Rate"
+              label="Exchange rate"
               right={
                 readOnly || pending ? (
                   !pending && <RateTypeChip type={draftType} />
@@ -720,28 +756,27 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
                       )}
                     </div>
                   )}
+                  {/* The rate card (POCurrencyConfig's): type and source, the
+                      rate and its inverse, then the date line. No lock on the
+                      rate (25 Nov 2026). */}
                   <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
                     <div className="flex items-center gap-1.5 text-[11px] min-w-0">
                       <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: RATE_HEX[draftType] }} />
                       <span className="shrink-0" style={{ color: RATE_HEX[draftType], fontWeight: 600 }}>{RATE_TYPE_LABEL[draftType]}</span>
                       <span className="text-slate-500 min-w-0">· {linkProvider(rateSource)}</span>
                     </div>
-                    <p className="mt-1.5 text-[13px] text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>
+                    <div className="mt-1.5 text-[12px] text-slate-700 tabular-nums leading-5" style={{ fontWeight: 500 }}>
                       {draftRate != null ? (
                         <>
-                          1 {currency} = {formatRate(draftRate)} {BASE_CURRENCY}
-                          <span className="text-slate-500 text-[12px]" style={{ fontWeight: 400 }}>
-                            {' '}· 1 {BASE_CURRENCY} = {(1 / draftRate).toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 })} {currency}
-                          </span>
+                          <div>1 {currency} = {formatRate(draftRate)} {BASE_CURRENCY}</div>
+                          <div className="text-slate-500" style={{ fontWeight: 400 }}>1 {BASE_CURRENCY} = {formatRate(1 / draftRate)} {currency}</div>
                         </>
                       ) : (
-                        <span className="text-slate-400" style={{ fontWeight: 400 }}>No rate yet</span>
+                        <div className="text-slate-400" style={{ fontWeight: 400 }}>No rate yet</div>
                       )}
-                    </p>
-                    <div className="mt-1 flex items-center gap-1.5 flex-wrap text-[10.5px] text-slate-400">
-                      <span>
-                        {formatRateDate(draftDate)} · {keptFromEarlier ? "the invoice's current rate" : dateLabel}
-                      </span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap text-[10.5px] text-slate-400 tabular-nums">
+                      <span>{rateDateLine}</span>
                       {poCompare && draftRate != null && (
                         <>
                           <span>·</span>
@@ -750,10 +785,6 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
                       )}
                     </div>
                   </div>
-                  <LockLine
-                    locked={posted}
-                    text={posted ? `locked when the invoice posted, at the ${formatRateDate(draftDate)} rate` : 'locks when the invoice posts'}
-                  />
                   {keptFromEarlier && heldRate && (
                     <p className="text-[11px] text-slate-500 leading-relaxed">
                       The invoice keeps its rate from {formatRateDate(heldRate.rateDate)}.{' '}
@@ -783,52 +814,6 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
               )}
             </Section>
           )}
-
-          {/* Receiving to invoice: what receiving booked, what the invoice
-              posts, and the gap (Currency Touchpoints Map, Receiving 4). */}
-          {variance && (
-            <Section label="FX variance">
-              <VarianceCard amount={variance.amount} caption={varianceRatesText(variance, dateLabel)}>
-                {variance.restForeign > 0.004 ? (
-                  <div className="mt-2 pt-2 border-t border-[#EEF2F6] space-y-1 text-[11px] tabular-nums">
-                    {receivedLines.map((l) => (
-                      <div key={l.rate} className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500 min-w-0 truncate">
-                          Received {Array.from(new Set(l.dates)).sort().map((d) => formatRateDate(d)).join(', ')} · 1 {currency} = {formatRate(l.rate)} {BASE_CURRENCY}
-                        </span>
-                        <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>{formatMoney(l.base, BASE_CURRENCY)}</span>
-                      </div>
-                    ))}
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-slate-500 min-w-0 truncate">
-                        Invoice {posted ? 'posted' : 'posts'} {formatRateDate(draftDate)} · 1 {currency} = {formatRate(variance.invoiceRate)} {BASE_CURRENCY}
-                      </span>
-                      <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>{formatMoney(variance.restAtInvoice, BASE_CURRENCY)}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-slate-600" style={{ fontWeight: 600 }}>
-                        FX variance · posts to {outcome === 'gain' ? 'FX Gain' : outcome === 'loss' ? 'FX Loss' : 'nothing'}
-                      </span>
-                      <span className="shrink-0" style={{ fontWeight: 700, color: varianceHex(variance.amount) }}>{signedVariance(variance.amount)}</span>
-                    </div>
-                    {variance.prepaidGoods.length > 0 && (
-                      <p className="text-slate-400 leading-relaxed pt-0.5">
-                        The prepaid part keeps the rate it was paid at, so only the unpaid {formatMoney(variance.restForeign, currency)} is compared.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
-                    The prepayment covers all the goods at the rate it was paid at, so there's no FX variance.
-                  </p>
-                )}
-              </VarianceCard>
-            </Section>
-          )}
-
-          {readOnly && onEdit && !posted && foreign && (
-            <p className="text-[11px] text-slate-500 leading-relaxed">Edit the invoice to change the currency, the rate or the account.</p>
-          )}
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-[#EEF2F6] bg-white px-5 py-3">
@@ -842,7 +827,7 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
               style={{ fontWeight: 500 }}
             >
               <RotateCcw className="w-3 h-3" />
-              Reset to default
+              Reset
             </button>
           )}
           <div className="flex items-center gap-2">
@@ -853,7 +838,9 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
             >
               {readOnly ? 'Close' : 'Cancel'}
             </button>
-            {readOnly && onEdit && (
+            {/* A saved invoice that still allows edits opens Edit Invoice,
+                where its currency configuration changes. */}
+            {readOnly && onEdit && !posted && (
               <button
                 type="button"
                 onClick={() => {
@@ -875,7 +862,7 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
                 className="inline-flex h-9 items-center rounded-lg px-4 text-[12.5px] font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 style={{ backgroundColor: '#0A77FF' }}
               >
-                Apply
+                Save
               </button>
             )}
           </div>

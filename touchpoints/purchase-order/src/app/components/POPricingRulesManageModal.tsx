@@ -379,7 +379,7 @@ export function POPricingRulesManageModal({
                 <span className="text-sm" style={{ fontWeight: 500 }}>Filters</span>
               </button>
 
-              <div className="inline-flex items-center rounded-lg bg-slate-50 border border-slate-200 p-0.5 shrink-0">
+              <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup">
                 {([
                   { key: "discount" as CategoryView, label: "Discounts", icon: TrendingDown, color: "#047857", bg: "#ECFDF5" },
                   { key: "premium" as CategoryView, label: "Premiums", icon: TrendingUp, color: "#6D28D9", bg: "#F5F3FF" },
@@ -387,14 +387,12 @@ export function POPricingRulesManageModal({
                   const active = categoryView === cat.key;
                   const count = categoryCounts[cat.key];
                   return (
-                    <button
+                    <button role="radio" aria-checked={active}
                       key={cat.key}
                       onClick={() => { setCategoryView(cat.key); setQuickFilter("all"); }}
-                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${active ? "shadow-sm" : "hover:bg-white/60"}`}
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`}
                       style={{
-                        fontWeight: active ? 600 : 500,
-                        color: active ? cat.color : "#334155",
-                        backgroundColor: active ? cat.bg : undefined,
+                        fontWeight: active ? 500 : 400,
                       }}
                     >
                       <cat.icon className="w-3.5 h-3.5" />
@@ -403,8 +401,8 @@ export function POPricingRulesManageModal({
                         className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
                         style={{
                           fontWeight: 600,
-                          color: active ? cat.color : "#64748B",
-                          backgroundColor: active ? `${cat.color}15` : "#E2E8F0",
+                          color: active ? "#0A77FF" : "#64748B",
+                          backgroundColor: active ? "#FFFFFF" : "#E2E8F0",
                         }}
                       >
                         {count}

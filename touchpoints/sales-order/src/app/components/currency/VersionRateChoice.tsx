@@ -76,98 +76,31 @@ export function VersionRateChoice({
   value: Choice;
   onChange: (choice: Choice) => void;
 }) {
-  const corporate = options.today.corporate;
-  /* Today's rate type: the one picked, else the one it starts on. */
-  const type: RateType = value === "current-corporate" && corporate ? "corporate" : value === "current-mid" ? "mid" : options.defaultType;
-  const today = (type === "corporate" && corporate) || options.today.mid;
-  const pickToday = (t: RateType) => onChange(t === "corporate" ? "current-corporate" : "current-mid");
-  const cards = [
-    { key: "locked", active: value === "locked", title: `Keep version ${fromVersion}'s rate`, sub: options.locked, pick: () => onChange("locked") },
-    {
-      key: "current",
-      active: value !== "locked",
-      title: "Use today's rate",
-      sub: today.differs ? today.line : `${today.line} · same as V${fromVersion}`,
-      pick: () => pickToday(type),
-    },
-  ];
+  /* A new version, or a restored one, always takes today's rate (25 Nov
+     2026): no "Keep version N's rate" choice. The type stays the version's
+     when today has one of that type (a corporate rate set), else mid-market. */
+  const todayChoice: Choice = options.defaultType === "corporate" && options.today.corporate ? "current-corporate" : "current-mid";
+  React.useEffect(() => {
+    if (value !== todayChoice) onChange(todayChoice);
+  }, [value, todayChoice]); // eslint-disable-line react-hooks/exhaustive-deps
+  const today = (todayChoice === "current-corporate" && options.today.corporate) || options.today.mid;
   return (
     <div className="w-full text-left" style={{ fontFamily: FONT }}>
       <p className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>
         Exchange rate
       </p>
       <p className="text-[11.5px] text-slate-500 mt-0.5">
-        Keep version {fromVersion}'s rate or use today's?
+        Uses today's rate. The customer's amounts don't change; the order's total in {BASE_CURRENCY} follows the rate.
       </p>
-      <div className="mt-2 flex flex-col gap-2" role="radiogroup" aria-label="Exchange rate for the new version">
-        {cards.map((c) => (
-          <div
-            key={c.key}
-            role="radio"
-            aria-checked={c.active}
-            tabIndex={0}
-            onClick={c.pick}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                c.pick();
-              }
-            }}
-            className="flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0A77FF]/25"
-            style={{
-              borderColor: c.active ? "var(--primary)" : "#E2E8F0",
-              backgroundColor: c.active ? "rgba(10,119,255,0.06)" : "#FFFFFF",
-            }}
-          >
-            <span
-              className="mt-0.5 flex items-center justify-center w-4 h-4 rounded-full shrink-0 border"
-              style={{
-                borderColor: c.active ? "var(--primary)" : "#CBD5E1",
-                backgroundColor: c.active ? "var(--primary)" : "#FFFFFF",
-              }}
-            >
-              {c.active && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-            </span>
-            <div className="flex-1 min-w-0">
-              <span className="block text-[12.5px] text-slate-800" style={{ fontWeight: 600 }}>
-                {c.title}
-              </span>
-              <span className="block text-[11px] text-slate-500 tabular-nums mt-0.5 leading-relaxed">{c.sub}</span>
-              {/* Today's rate as mid-market or corporate, when a corporate rate is set. */}
-              {c.key === "current" && corporate && (
-                <div
-                  role="radiogroup"
-                  aria-label="Today's rate type"
-                  className="mt-2 inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5"
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => e.stopPropagation()}
-                >
-                  {(["mid", "corporate"] as const).map((t) => {
-                    const on = type === t;
-                    return (
-                      <button
-                        key={t}
-                        type="button"
-                        role="radio"
-                        aria-checked={on}
-                        onClick={() => pickToday(t)}
-                        className="rounded px-2 py-0.5 text-[11px] transition-colors cursor-pointer"
-                        style={{
-                          backgroundColor: on ? "#FFFFFF" : "transparent",
-                          color: on ? "#0F172A" : "#64748B",
-                          fontWeight: on ? 600 : 500,
-                          boxShadow: on ? "0 1px 2px rgba(15,23,42,0.08)" : undefined,
-                        }}
-                      >
-                        {RATE_TYPE_LABEL[t]}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
+      <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5" aria-label="Exchange rate for the new version">
+        <span className="flex items-baseline justify-between gap-3">
+          <span className="text-[12.5px] text-slate-800" style={{ fontWeight: 600 }}>
+            Today's rate
+          </span>
+        </span>
+        <span className="block text-[11px] text-slate-500 tabular-nums mt-0.5 leading-relaxed">
+          {today.differs ? today.line : `${today.line} · same as version ${fromVersion}'s`}
+        </span>
       </div>
     </div>
   );

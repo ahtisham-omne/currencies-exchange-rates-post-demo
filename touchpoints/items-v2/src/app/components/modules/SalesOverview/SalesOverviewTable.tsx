@@ -62,7 +62,7 @@ import { RATE_PROVIDER, rateOn } from "@/app/currency/rates";
 import { fromUsd } from "@/app/currency/vendorFx";
 import { baseMoney } from "@/app/currency/itemMoney";
 import { BaseMoney, type MoneyFx } from "../../currency/Money";
-import { CurrencyPill } from "../../currency/CurrencyChip";
+import { CurrencyCodeCell } from "../../currency/CurrencyCodeCell";
 
 /* ─── Data shape ─── */
 type SalesOrderPriority = "Low" | "Standard" | "High";
@@ -289,6 +289,8 @@ const SALES_ORDER_COLUMNS: ColumnConfig[] = [
   { key: "salesOrderNumber", label: "Sales Order #" },
   { key: "quoteNumber",      label: "Quote #" },
   { key: "customerName",     label: "Customer Name" },
+  /* The order's currency (the customer's), as the Currency Library draws it. */
+  { key: "currency",         label: "Currency" },
   { key: "status",           label: "Order Status" },
   { key: "poc",              label: "POC" },
   { key: "salesRep",         label: "Sales Rep" },
@@ -315,8 +317,10 @@ const SO_COLUMN_WIDTHS: Record<string, number> = {
   status:           150,
   poc:              140,
   salesRep:         180,
-  // Amounts in base (₨) to the cent, the order value with its currency tag.
+  // Amounts in base (₨) to the cent.
   orderValue:       200,
+  // Fits "United Arab Emirates Dirham" after the code.
+  currency:         264,
   invoicedAmount:   160,
   paymentsMade:     160,
   requestedOn:      120,
@@ -463,16 +467,16 @@ export function SalesOverviewTable() {
           </div>
         );
       case "orderValue":
-        /* In base, with the currency tag on a foreign order (Currency
-           Touchpoints Map, Items 5): "₨5,8xx,xxx.xx USD". */
+        /* In base; the order's own currency is in the Currency column. */
         return (
           <span className="inline-flex items-center gap-1.5 max-w-full">
             <OrderAmount row={row} value={row.orderValue} className={`${cellTextSize} font-medium text-foreground`} />
-            {!isBaseCurrency(row.currency) && (
-              <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                <CurrencyPill code={row.currency} note="The order's currency" />
-              </span>
-            )}
+          </span>
+        );
+      case "currency":
+        return (
+          <span className={`inline-flex whitespace-nowrap max-w-full ${cellTextSize}`}>
+            <CurrencyCodeCell code={row.currency} title="The order's currency" />
           </span>
         );
       case "shipBy":

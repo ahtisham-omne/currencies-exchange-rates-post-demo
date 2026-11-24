@@ -205,7 +205,6 @@ import { CurrencyFlag } from "./currency/CurrencyChip";
 import { type POCurrencyChange } from "./currency/POCurrencyFields";
 import { POCurrencyConfigDialog, POCurrencySummary } from "./currency/POCurrencyConfig";
 import { POCurrencyHeaderControls } from "./currency/POCurrencyHeaderControls";
-import { withCode } from "./currency/CurrencyBlock";
 import { POReceivingDocsTab } from "./currency/POReceivingDocsTab";
 import { versionRateOptions } from "./currency/VersionRateChoice";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
@@ -6291,17 +6290,8 @@ export default function PurchaseOrderDraft() {
                       >
                         <DocMoney value={poPricing?.total ?? po.total} />
                       </p>
-                      {/* The total is in the base currency; under it, what the
-                          vendor receives in the PO's (Currency Touchpoints Map,
-                          Purchase Orders 3). */}
-                      {!fx.isBase && (
-                        <p className="text-slate-500 tabular-nums mt-0.5 truncate" style={{ fontSize: 11, fontWeight: 400 }}>
-                          Vendor receives{" "}
-                          <span className="text-slate-700" style={{ fontWeight: 500 }}>
-                            {withCode(poPricing?.total ?? po.total, fx.currency)}
-                          </span>
-                        </p>
-                      )}
+                      {/* What the vendor receives sits in Currency information
+                          below and on the total's hover (25 Nov 2026). */}
                       <p
                         className="text-slate-500 mt-1 truncate"
                         style={{ fontSize: 11, fontWeight: 400 }}

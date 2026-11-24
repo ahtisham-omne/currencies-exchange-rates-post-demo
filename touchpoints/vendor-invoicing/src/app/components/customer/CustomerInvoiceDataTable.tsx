@@ -1,4 +1,5 @@
 import type { DataTableEmptyConfig } from '@/app/components/data-table/DataTable';
+import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { useArPermissions } from '@/app/hooks/useArSettings';
 import {
@@ -1086,13 +1087,13 @@ export const CUSTOMER_INVOICE_COLUMNS: ColumnDef<CustomerInvoice>[] = [
   {
     key: 'currency',
     label: 'Currency',
-    minWidth: 90,
-    defaultWidth: 120,
+    minWidth: 160,
+    defaultWidth: 264,
     sortable: true,
     filterType: 'multiselect',
     uniqueValues: (rows) => Array.from(new Set(rows.map((r) => r.currency))).sort(),
     getValue: (row) => row.currency,
-    render: (row, { searchQuery }) => <span className="text-muted-foreground">{highlightText(row.currency, searchQuery)}</span>,
+    render: (row, { searchQuery }) => <span className="inline-flex whitespace-nowrap max-w-full"><CurrencyCodeCell code={row.currency} highlight={(t) => highlightText(t, searchQuery)} /></span>,
   },
   {
     key: 'description',

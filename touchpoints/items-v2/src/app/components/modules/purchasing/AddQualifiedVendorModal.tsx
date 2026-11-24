@@ -109,8 +109,7 @@ import { vendorCurrencyFor, vendorRate } from "../../../currency/vendorFx";
 import { formatMoney } from "../../../currency/money";
 import { DEFAULT_RATE_TYPE } from "../../../currency/rates";
 import { VendorCurrencyChip, VendorPriceFields, VendorRateCard, VendorUnitRateNote } from "../../currency/VendorPriceFields";
-import { CurrencyPill } from "../../currency/CurrencyChip";
-import { isBaseCurrency } from "../../../currency/currencies";
+import { CurrencyCodeCell } from "../../currency/CurrencyCodeCell";
 
 /* ──────────────────────────────────────────────────────────────
    buildQualifiedVendor — kept for existing callers (ProcurementSection,
@@ -1411,13 +1410,13 @@ export function AddQualifiedVendorModal({
           <div className="flex items-center gap-2.5 min-w-0">
             <VendorAvatar name={vendor.name} size="md" square />
             <p className="text-sm truncate" style={{ fontWeight: 600, color: "#1E293B" }}>{highlightText(vendor.name, search)}</p>
-            {/* Currency tag on a vendor that isn't in the base currency. */}
-            {vendor.currency && !isBaseCurrency(vendor.currency) && (
-              <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                <CurrencyPill code={vendor.currency} note="The vendor's currency, from the partner" />
-              </span>
-            )}
           </div>
+        </TableCell>
+        {/* Currency — the vendor's, from the partner (base currency included). */}
+        <TableCell style={{ width: 264, minWidth: 264, maxWidth: 264, overflow: "hidden" }}>
+          <span className="inline-flex whitespace-nowrap max-w-full text-sm">
+            <CurrencyCodeCell code={vendor.currency} title="The vendor's currency, from the partner" />
+          </span>
         </TableCell>
         {/* Partner Locations — interactive scope picker for addable/selected rows;
             read-only summary for already-qualified ones. Click-through stopped. */}
@@ -1818,6 +1817,7 @@ export function AddQualifiedVendorModal({
                         className="sticky left-[40px] z-20 bg-[#f8fafc] !pl-4"
                         style={{ boxShadow: STICKY_SHADOW, width: 240, minWidth: 240, maxWidth: 240 }}
                       >Vendor</TableHead>
+                      <TableHead className="!pl-4" style={{ width: 264, minWidth: 264, maxWidth: 264 }}>Currency</TableHead>
                       {/* Partner-identity columns (mirrors the QV listing, minus Priority). */}
                       <TableHead className="!pl-4" style={{ width: 260, minWidth: 260, maxWidth: 260 }}>Partner Locations</TableHead>
                       <TableHead className="!pl-4" style={{ width: 280, minWidth: 280, maxWidth: 280 }}>Points of Contact</TableHead>

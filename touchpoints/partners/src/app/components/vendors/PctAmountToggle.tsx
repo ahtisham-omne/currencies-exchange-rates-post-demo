@@ -11,9 +11,9 @@ interface PctAmountToggleProps {
 }
 
 /**
- * Shared % / $ segmented toggle with info tooltips.
- * Preserves the exact existing design — only adds hover tooltips that
- * explain the two modes. Use wherever a value can be entered as a
+ * Shared % / $ switch with info tooltips. Drawn frameless like Chart of
+ * Accounts' period presets: the chosen side is a light-blue pill. Hover
+ * tooltips explain the two modes. Use wherever a value can be entered as a
  * percentage or a fixed dollar amount.
  */
 export function PctAmountToggle({
@@ -25,14 +25,16 @@ export function PctAmountToggle({
   className = "",
 }: PctAmountToggleProps) {
   return (
-    <div className={`inline-flex items-center h-[22px] rounded-full bg-muted p-0.5 ${className}`}>
+    <div className={`inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 ${className}`} role="radiogroup" aria-label="Value type">
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
+            role="radio"
+            aria-checked={!isFixed}
             onClick={() => onChange(false)}
-            className={`px-2 h-[18px] rounded-full text-[10px] transition-all ${!isFixed ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            style={{ fontWeight: 600 }}
+            className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${!isFixed ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`}
+            style={{ fontWeight: !isFixed ? 500 : 400 }}
           >
             %
           </button>
@@ -45,9 +47,11 @@ export function PctAmountToggle({
         <TooltipTrigger asChild>
           <button
             type="button"
+            role="radio"
+            aria-checked={isFixed}
             onClick={() => onChange(true)}
-            className={`px-2 h-[18px] rounded-full text-[10px] transition-all ${isFixed ? "bg-white text-primary shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            style={{ fontWeight: 600 }}
+            className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${isFixed ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`}
+            style={{ fontWeight: isFixed ? 500 : 400 }}
           >
             {amountLabel}
           </button>

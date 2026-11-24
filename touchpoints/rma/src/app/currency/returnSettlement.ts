@@ -25,13 +25,17 @@ import { returnFx, rmaCurrency, rmaCurrencyPO, rmaPORateType } from './returnCur
  * Open return: unlocked. Settled (or refused): locked, at the settlement
  * day's rate.
  *
- * "Deposited to" is an account, not a bare currency: one in the base currency
- * or the return's (as QuickBooks deposits only into a home-currency account
- * or one in the transaction's currency). The money comes back in that
+ * "Deposited to" is an account, not a bare currency. The return's currency
+ * configuration ("You receive in") can name any bank or cash account, in any
+ * currency (25 Nov 2026, as a PO's "You pay in"), base-currency ones first.
+ * Logging the money that landed (LogSettlementModal) still takes only one in
+ * the base currency or the return's (as QuickBooks deposits only into a
+ * home-currency account or one in the transaction's currency): its posting
+ * converts at the bank only into the base. The money comes back in the
  * account's currency; an account not in PKR adds a Base equivalent. */
 
-/** Accounts a return's money can come back to: the base currency's, or the
- *  return's own. */
+/** Accounts a return's money can be logged as landing in: the base
+ *  currency's, or the return's own. */
 export function depositAccountsFor(currency: string): PayFromAccount[] {
   const code = currency.toUpperCase();
   return PAY_TO_ACCOUNTS.filter((a) => {
@@ -40,12 +44,24 @@ export function depositAccountsFor(currency: string): PayFromAccount[] {
   });
 }
 
+/** Accounts a return's currency configuration can name ("You receive in"):
+ *  every bank and cash account, in any currency, base-currency ones first,
+ *  then those in the return's currency, then the rest. */
+export function receiveInAccountsFor(currency: string): PayFromAccount[] {
+  const code = (currency || BASE_CURRENCY).toUpperCase();
+  const rank = (a: PayFromAccount) => {
+    const c = accountCurrency(a);
+    return isBaseCurrency(c) ? 0 : c === code ? 1 : 2;
+  };
+  return [...PAY_TO_ACCOUNTS].sort((a, b) => rank(a) - rank(b));
+}
+
 export const accountCurrency = (a: PayFromAccount | null | undefined) => (a?.currency ?? BASE_CURRENCY).toUpperCase();
 
-/** The account the configuration starts on: the return's own where it can
- *  take the money, else the first base-currency account (1010). */
+/** The account the configuration starts on: the one the return names, from
+ *  any currency, else the first base-currency account (1010). */
 export function defaultDepositAccount(rma: RMA): PayFromAccount | null {
-  const eligible = depositAccountsFor(rmaCurrency(rma));
+  const eligible = receiveInAccountsFor(rmaCurrency(rma));
   return eligible.find((a) => a.id === rma.payToAccountId) ?? eligible.find((a) => isBaseCurrency(accountCurrency(a))) ?? eligible[0] ?? null;
 }
 
@@ -132,7 +148,7 @@ export function returnSettlementFx(rma: RMA, draft?: SettlementDraft): ReturnSet
 
   // Where it lands: the account the settlement was logged into, else the one
   // picked here, else the return's own, else 1010.
-  const eligible = depositAccountsFor(currency);
+  const eligible = receiveInAccountsFor(currency);
   const logged = [...(rma.settlementEntries ?? [])].reverse().find((e) => e.depositedToAccountId)?.depositedToAccountId;
   const wanted = draft?.accountId !== undefined ? draft.accountId : (logged ?? rma.payToAccountId);
   const account = eligible.find((a) => a.id === wanted) ?? defaultDepositAccount(rma);
@@ -162,7 +178,13 @@ export function returnSettlementFx(rma: RMA, draft?: SettlementDraft): ReturnSet
     parts,
     base,
     settlesNow,
-    comesBack: inBase ? { amount: settlesNow, currency: BASE_CURRENCY } : { amount: parts.settles, currency: acctCode },
+    // An account in a third currency: what comes back, at that currency's
+    // mid-market rate on the same day.
+    comesBack: inBase
+      ? { amount: settlesNow, currency: BASE_CURRENCY }
+      : acctCode === currency
+        ? { amount: parts.settles, currency: acctCode }
+        : { amount: Math.round((settlesNow / rateOn(acctCode, quote.date, 'mid').rate) * 100) / 100, currency: acctCode },
     baseEquivalent: inBase ? null : settlesNow,
     fxVariance: foreign ? rmaFxVariance(parts, base, quote.rate) : 0,
   };

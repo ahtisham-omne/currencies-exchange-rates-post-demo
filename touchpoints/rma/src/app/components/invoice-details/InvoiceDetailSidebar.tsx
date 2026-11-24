@@ -6,7 +6,7 @@ import { accountCurrency, returnSettlementFx, settlementMoneyFx } from '@/app/cu
 import { useReturnView, viewMoney } from '@/app/components/currency/returnView';
 import { BaseMoney } from '@/app/components/currency/Money';
 import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
-import { LockChip, RateTypeChip, ReturnCurrencyBlock, lockTitle, settleRateLine } from '@/app/components/currency/ReturnCurrencyConfig';
+import { RateTypeChip, ReturnCurrencyBlock, settleRateLine } from '@/app/components/currency/ReturnCurrencyConfig';
 import React, { useEffect, useState } from 'react';
 import {
   Banknote,
@@ -1697,7 +1697,6 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                       <span className="flex items-center gap-1.5">
                         <span className="text-slate-500 tabular-nums" style={{ fontSize: 11 }}>{settleRateLine(settle)}</span>
                         <RateTypeChip type={settle.rateType} />
-                        <LockChip locked={settle.locked} title={lockTitle(settle)} />
                       </span>
                     </div>
                   ) : (
@@ -1714,7 +1713,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                         style={{ fontWeight: 500 }}
                       >
                         <Settings2 className="w-3 h-3" />
-                        {settle.locked || readOnly ? 'View configuration' : 'Change in configuration'}
+                        {settle.locked || readOnly ? 'View currency configuration' : 'Change in configuration'}
                       </button>
                     </div>
                   )}

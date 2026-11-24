@@ -1,5 +1,4 @@
 import * as React from "react";
-import { Settings2 } from "lucide-react";
 
 /* ── The quote header's Currency button ───────────────────────────────
  * Opens the quote's currency configuration. The Currency Touchpoints Map
@@ -20,18 +19,7 @@ export function QuoteCurrencyHeaderControls({
   /** The header has compressed on scroll. */
   compact?: boolean;
 }) {
-  const height = compact ? 32 : 36;
-  return (
-    <button
-      type="button"
-      onClick={onOpenConfig}
-      title="Currency configuration for this quote"
-      aria-label="Open currency configuration"
-      className="inline-flex items-center gap-1.5 px-2.5 rounded-lg border border-border bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-800 transition-colors cursor-pointer text-[11.5px] shrink-0"
-      style={{ height, fontWeight: 500, fontFamily: FONT }}
-    >
-      <Settings2 className="w-3.5 h-3.5" />
-      Currency
-    </button>
-  );
+  // No Currency button in the header (25 Nov 2026): the configuration opens
+  // from the summary's currency card (View configuration).
+  return null;
 }

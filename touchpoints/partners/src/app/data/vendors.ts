@@ -1656,7 +1656,7 @@ const _additionalVendors = generateAdditionalVendors();
  * so groups without one (Chassis & Suspension) give base-currency partners.
  * Applied last, so no seed sequence changes. */
 const PARTNER_CURRENCY: Record<string, string> = {
-  "v-001": "USD", "v-002": "CNY", "v-003": "MXN", "v-004": "MYR", "v-005": "EUR",
+  "v-001": "USD", "v-002": "PKR", "v-003": "MXN", "v-004": "MYR", "v-005": "EUR",
   "v-006": "EUR", "v-007": "EUR", "v-008": "LKR", "v-009": "RUB", "v-010": "GEL",
   "v-011": "USD", "v-012": "RSD", "v-013": "USD", "v-014": "SGD", "v-015": "USD",
   "v-016": "USD", "v-017": "USD", "v-018": "USD", "v-019": "AUD",

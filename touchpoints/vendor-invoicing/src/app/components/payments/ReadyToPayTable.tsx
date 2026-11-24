@@ -67,6 +67,9 @@ const READY_COLUMN_CATALOG: { key: string; label: string }[] = [
   { key: 'invoiceNumber', label: 'Invoice ID' },
   { key: 'type', label: 'Invoice Type' },
   { key: 'vendor', label: 'Vendor' },
+  // Currency right after Vendor, visible by default (24 Nov 2026), as on
+  // the Vendor Invoicing listing.
+  { key: 'currency', label: 'Currency' },
   { key: 'vendorInvoiceNumber', label: 'Vendor Invoice No.' },
   { key: 'invoiceDate', label: 'Vendor Invoice Date' },
   { key: 'dueDate', label: 'Due Date' },
@@ -80,7 +83,6 @@ const READY_COLUMN_CATALOG: { key: string; label: string }[] = [
   { key: 'discount', label: 'Discount' },
   { key: 'outstandingBalance', label: 'Amount Due' },
   { key: 'apAccount', label: 'A/P Account' },
-  { key: 'currency', label: 'Currency' },
   { key: 'description', label: 'Description' },
   { key: 'updatedBy', label: 'Last Updated By' },
   { key: 'updatedDate', label: 'Last Updated On' },
@@ -91,7 +93,7 @@ const READY_COLUMN_CATALOG: { key: string; label: string }[] = [
 const LOCKED_COLUMNS = ['invoiceNumber'];
 // All four audit columns show by default on every grid (Eli 10/5: "one
 // of the most common ways to find something"; last-modified joined 10/30).
-const DEFAULT_HIDDEN = new Set(['apAccount', 'currency', 'description']);
+const DEFAULT_HIDDEN = new Set(['apAccount', 'description']);
 
 // Currency & Exchange Rates: totals across invoices are in the base currency,
 // each invoice converted at its own rate.

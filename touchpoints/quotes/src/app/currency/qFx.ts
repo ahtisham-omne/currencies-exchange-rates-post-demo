@@ -191,9 +191,11 @@ export function designAmountFactor(fx: { currency: string; rateDate: string }): 
 
 /* ── A customer's default currency (spec 4.3, 4.2) ────────────────────
  * The partner record's default currency. The design's customers are all
- * US agencies trading in USD; six are seeded with another currency so the
- * listing shows quotes in different currencies, one of them in the base
- * currency. The same map as Sales Orders (with the design's spelling
+ * US agencies trading in USD; eight are seeded with another currency so the
+ * listing shows quotes in different currencies, three of them in the base
+ * currency (Valley Health Systems, and since 25 Nov 2026 Tri-County EMS
+ * Authority and Riverside Utility District: more base-currency quotes as
+ * edge cases). The same map as Sales Orders (with the design's spelling
  * "Valley Health System" here), so a quote and the order made from it
  * agree. A customer not listed trades in USD, as the design
  * priced every quote in $. */
@@ -206,6 +208,8 @@ export const CUSTOMER_CURRENCIES: Record<string, string> = {
   'Coastal Search & Rescue': 'JPY',
   'Valley Health Systems': BASE_CURRENCY,
   'Valley Health System': BASE_CURRENCY,
+  'Tri-County EMS Authority': BASE_CURRENCY,
+  'Riverside Utility District': BASE_CURRENCY,
 };
 
 export function customerCurrency(customerName: string | null | undefined): string {

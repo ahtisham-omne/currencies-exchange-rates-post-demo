@@ -131,7 +131,7 @@ export function CurrencyPicker({
 /** Mid-market | Corporate, as the Exchange Rates module names them. */
 export function RateTypeToggle({ value, onChange, corporateAvailable }: { value: RateType; onChange: (t: RateType) => void; corporateAvailable: boolean }) {
   return (
-    <span className="ml-auto inline-flex items-center rounded-md border border-slate-200 bg-slate-50 p-px" role="radiogroup" aria-label="Rate type">
+    <span className="ml-auto inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Rate type">
       {(["mid", "corporate"] as RateType[]).map((t) => (
         <button
           key={t}
@@ -140,10 +140,10 @@ export function RateTypeToggle({ value, onChange, corporateAvailable }: { value:
           aria-checked={value === t}
           onClick={() => value !== t && onChange(t)}
           title={t === "corporate" && !corporateAvailable ? "No corporate rate is set for this currency; enter one" : undefined}
-          className={`px-1.5 py-px rounded text-[10px] cursor-pointer transition-colors ${
-            value === t ? "bg-white text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.06)]" : "text-slate-500 hover:text-foreground"
+          className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+            value === t ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
           }`}
-          style={{ fontWeight: value === t ? 600 : 500 }}
+          style={{ fontWeight: value === t ? 500 : 400 }}
         >
           {RATE_TYPE_LABEL[t]}
         </button>

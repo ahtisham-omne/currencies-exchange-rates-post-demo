@@ -9,7 +9,7 @@ import { StateTransitionOverlay } from './shared/StateTransitionOverlay';
 import type { QuoteStatus } from '@/app/types/quote';
 import { useDesignMoney } from '@/app/components/currency/docCurrencyContext';
 import { useVersionMoney } from '@/app/components/currency/versionMoney';
-import { VersionRateChoice as VersionRateChoiceCards, useVersionRateOptions } from '@/app/components/currency/VersionRateChoice';
+import { RevertRateBox, useRevertRate } from '@/app/components/currency/VersionRateChoice';
 import type { VersionRateChoice } from '@/app/data/quoteStore';
 
 /* Right-pane "Order Status" badge mapping.
@@ -1287,15 +1287,16 @@ export function VersionHistoryModal({ quoteId, currentVersion, onClose, onRevert
 // ── Revert Confirm Modal ──────────────────────────────────────────
 function RevertConfirmModal({ version, total, onClose, onConfirm }: {
   version: number;
-  /** The version's total (the quote's currency), for the rate choice. */
+  /** The version's total (the quote's currency), for the Exchange rate box. */
   total?: number;
   onClose: () => void;
   onConfirm: (reason: string, rateChoice: VersionRateChoice) => void;
 }) {
   const [reason, setReason] = useState('');
-  // A foreign-currency quote: V{version}'s locked rate, or today's.
-  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
-  const rateOptions = useVersionRateOptions(version, total);
+  /* The restored version takes today's rate. The listing's revert
+     (revertRateFields) reads the choice literally, so name today's rate of
+     the version's type rather than "locked". */
+  const revertRate = useRevertRate(version);
   // Routes through the shared `ConfirmDiscardModal` (Partner v7 chrome:
   // gradient banner, glow icon, h-11 stacked buttons) — same component the
   // version tab's Revert button uses, so the modal looks identical wherever
@@ -1309,13 +1310,10 @@ function RevertConfirmModal({ version, total, onClose, onConfirm }: {
       description={`V${version} will become the latest version of this quote. Its existing status is preserved. The next material change will auto-create a new version.`}
       confirmLabel={`Revert to V${version}`}
       cancelLabel="Cancel"
-      onConfirm={() => onConfirm(reason.trim(), rateOptions ? rateChoice : 'locked')}
+      onConfirm={() => onConfirm(reason.trim(), revertRate ? revertRate.todayChoice : 'locked')}
     >
-      {rateOptions && (
-        <div style={{ marginBottom: 14 }}>
-          <VersionRateChoiceCards fromVersion={version} options={rateOptions} value={rateChoice} onChange={setRateChoice} />
-        </div>
-      )}
+      {/* Exchange rate — the restored version takes today's rate. */}
+      <RevertRateBox version={version} total={total} />
       <div>
         <label
           className="block"

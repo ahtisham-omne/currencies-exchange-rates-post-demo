@@ -1444,13 +1444,13 @@ export function ManageCategoriesModal({
             </div>
 
             {/* View toggle */}
-            <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
-              <button onClick={() => setCatModalView("browse")} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${catModalView === "browse" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"}`} style={{ fontWeight: catModalView === "browse" ? 600 : 500 }}>
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="View">
+              <button role="radio" aria-checked={catModalView === "browse"} onClick={() => setCatModalView("browse")} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${catModalView === "browse" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`} style={{ fontWeight: catModalView === "browse" ? 500 : 400 }}>
                 <Layers className={`w-3.5 h-3.5 ${catModalView === "browse" ? "text-primary" : "text-slate-400"}`} />
                 Browse Categories
-                <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${catModalView === "browse" ? "bg-accent text-primary" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{availableCats.length}</span>
+                <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${catModalView === "browse" ? "bg-[#0A77FF]/10 text-[#0A77FF]" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{availableCats.length}</span>
               </button>
-              <button onClick={() => setCatModalView("added")} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${catModalView === "added" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"}`} style={{ fontWeight: catModalView === "added" ? 600 : 500 }}>
+              <button role="radio" aria-checked={catModalView === "added"} onClick={() => setCatModalView("added")} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${catModalView === "added" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`} style={{ fontWeight: catModalView === "added" ? 500 : 400 }}>
                 <Check className={`w-3.5 h-3.5 ${catModalView === "added" ? "text-success" : "text-slate-400"}`} />
                 Added Categories
                 <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${catModalView === "added" ? "bg-emerald-50 text-success" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{allCats.length}</span>
@@ -2931,13 +2931,13 @@ export function PricingRuleDetailModal({ rule, open, onClose, mode = "create", o
                     <button onClick={() => setPmSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"><X className="w-3.5 h-3.5" /></button>
                   )}
                 </div>
-                <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
-                  <button onClick={() => setPartnerModalView("browse")} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${partnerModalView === "browse" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"}`} style={{ fontWeight: partnerModalView === "browse" ? 600 : 500 }}>
+                <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="View">
+                  <button role="radio" aria-checked={partnerModalView === "browse"} onClick={() => setPartnerModalView("browse")} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${partnerModalView === "browse" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`} style={{ fontWeight: partnerModalView === "browse" ? 500 : 400 }}>
                     <Users className={`w-3.5 h-3.5 ${partnerModalView === "browse" ? "text-primary" : "text-slate-400"}`} />
                     Browse Partners
-                    <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${partnerModalView === "browse" ? "bg-accent text-primary" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{availablePartnerVendors.length}</span>
+                    <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${partnerModalView === "browse" ? "bg-[#0A77FF]/10 text-[#0A77FF]" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{availablePartnerVendors.length}</span>
                   </button>
-                  <button onClick={() => setPartnerModalView("added")} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${partnerModalView === "added" ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground" : "text-slate-500 hover:text-slate-700"}`} style={{ fontWeight: partnerModalView === "added" ? 600 : 500 }}>
+                  <button role="radio" aria-checked={partnerModalView === "added"} onClick={() => setPartnerModalView("added")} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${partnerModalView === "added" ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"}`} style={{ fontWeight: partnerModalView === "added" ? 500 : 400 }}>
                     <Check className={`w-3.5 h-3.5 ${partnerModalView === "added" ? "text-success" : "text-slate-400"}`} />
                     Assigned Partners
                     <span className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${partnerModalView === "added" ? "bg-emerald-50 text-success" : "bg-border text-slate-500"}`} style={{ fontWeight: 600 }}>{assignedVendors.length}</span>
@@ -3579,7 +3579,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
       <div className="bg-card shrink-0">
         {/* Sub-tabs row */}
         <div className="flex items-center justify-between gap-3 px-4 pt-2.5 pb-2 border-b border-border">
-          <div className="inline-flex items-center rounded-lg bg-muted p-0.5">
+          <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Pricing rule side">
           {/* Same emerald swap as the Items tab — Customer side moves
               off purple so blue + customer don't read as one hue. */}
           {([
@@ -3606,10 +3606,12 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                 <TooltipTrigger asChild>
                   <button
                     onClick={() => { setSubTab(t.key); setCurrentPage(1); setQuickFilter("all"); setCategoryView("discount"); }}
-                    className={`inline-flex items-center justify-center px-4 py-1.5 rounded-md text-[13px] transition-all cursor-pointer ${
-                      active ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)]" : "text-slate-500 hover:text-slate-700"
+                    role="radio"
+                    aria-checked={active}
+                    className={`inline-flex items-center justify-center px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                      active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                     }`}
-                    style={{ fontWeight: active ? 600 : 500, color: active ? t.color : undefined }}
+                    style={{ fontWeight: active ? 500 : 400 }}
                   >
                     {t.label}
                   </button>
@@ -3706,7 +3708,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
               hover tooltip explaining the category, mirroring the
               Browse Templates modal + the partner-creation form so
               users get the same explanation everywhere. */}
-          <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5 shrink-0">
+          <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Rule category">
             {([
               {
                 key: "discount" as CategoryView,
@@ -3734,16 +3736,18 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => { setCategoryView(cat.key); setQuickFilter("all"); setCurrentPage(1); }}
-                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${
-                        active ? "shadow-sm" : "hover:bg-white/60"
+                      role="radio"
+                      aria-checked={active}
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                        active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                       }`}
-                      style={{ fontWeight: active ? 600 : 500, color: active ? cat.color : "#334155", backgroundColor: active ? cat.bg : undefined }}
+                      style={{ fontWeight: active ? 500 : 400 }}
                     >
                       <cat.icon className="w-3.5 h-3.5" />
                       {cat.label}
                       <span
                         className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
-                        style={{ fontWeight: 600, color: active ? cat.color: "rgb(var(--muted-foreground))", backgroundColor: active ? `${cat.color}15` : "rgb(var(--border))" }}
+                        style={{ fontWeight: 600, color: active ? "#0A77FF" : "rgb(var(--muted-foreground))", backgroundColor: active ? "rgba(10,119,255,0.1)" : "rgb(var(--border))" }}
                       >
                         {count}
                       </span>
@@ -4840,7 +4844,7 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
 
                   {/* Type toggle — same hover tooltips as the
                       canonical creation-form Browse Templates modal. */}
-                  <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5 shrink-0">
+                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Rule category">
                     {([
                       { key: "discount", label: "Discounts", color: "#047857", bg: "#ECFDF5", icon: TrendingDown, tip: "Reduce unit price when quantity or value thresholds are met.", example: <><span className="text-green-600" style={{ fontWeight: 600 }}>10% off</span> on orders over 500 units.</> },
                       { key: "premium", label: "Premiums", color: "rgb(var(--violet))", bg: "#F5F3FF", icon: TrendingUp, tip: "Markup on base price for express or value-added services.", example: <><span className="text-violet" style={{ fontWeight: 600 }}>15% markup</span> for expedited and priority shipping.</> },
@@ -4852,16 +4856,18 @@ export function PricingRulesTabNew({ vendor, cfg, flush, embeddedCreateOnly, emb
                           <TooltipTrigger asChild>
                             <button
                               onClick={() => setExploreCategoryTab(cat.key)}
-                              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${
-                                active ? "shadow-sm" : "hover:bg-white/60"
+                              role="radio"
+                              aria-checked={active}
+                              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                               }`}
-                              style={{ fontWeight: active ? 600 : 500, color: active ? cat.color : "#334155", backgroundColor: active ? cat.bg : undefined }}
+                              style={{ fontWeight: active ? 500 : 400 }}
                             >
                               <cat.icon className="w-3.5 h-3.5" />
                               {cat.label}
                               <span
                                 className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
-                                style={{ fontWeight: 600, color: active ? cat.color: "rgb(var(--muted-foreground))", backgroundColor: active ? `${cat.color}15` : "rgb(var(--border))" }}
+                                style={{ fontWeight: 600, color: active ? "#0A77FF" : "rgb(var(--muted-foreground))", backgroundColor: active ? "rgba(10,119,255,0.1)" : "rgb(var(--border))" }}
                               >
                                 {count}
                               </span>

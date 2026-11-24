@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { Settings2 } from 'lucide-react';
 import { isBaseCurrency } from '@/app/currency/currencies';
 import { CurrencyPill } from './CurrencyChip';
 
@@ -29,21 +28,7 @@ export function CurrencyHeaderControls({
   /** Something in the configuration needs attention (a missing rate). */
   alert?: boolean;
 }) {
-  const h = compact ? 'h-8' : 'h-9';
-  return (
-    <div className="flex items-center gap-1.5 shrink-0">
-      <button
-        type="button"
-        onClick={onOpenConfig}
-        aria-label={alert ? 'Open currency configuration: the exchange rate needs attention' : 'Open currency configuration'}
-        className={`inline-flex items-center gap-1.5 ${h} px-2.5 rounded-lg border bg-white shadow-sm hover:bg-slate-50 transition-colors cursor-pointer text-[11.5px] ${
-          alert ? 'border-red-300 text-red-600 hover:text-red-700' : 'border-border text-slate-500 hover:text-slate-800'
-        }`}
-        style={{ fontWeight: 500 }}
-      >
-        <Settings2 className="w-3.5 h-3.5" />
-        Currency
-      </button>
-    </div>
-  );
+  // No Currency button in the header (25 Nov 2026): the configuration opens
+  // from the summary's currency card (View configuration).
+  return null;
 }

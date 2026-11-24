@@ -1670,7 +1670,7 @@ export default function ItemsCatalogueModal({
                 <div className="flex items-center gap-2">
 
                   {/* View segmented control — always visible */}
-                  <div className="flex items-center h-8 rounded-[var(--radius)] border border-border/60 overflow-hidden p-0.5 gap-0.5" style={{ backgroundColor: "hsl(var(--muted))" }}>
+                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Group items">
                     {([
                       { value: "none" as const, label: "Items" },
                       { value: "vendor" as const, label: "By Vendor" },
@@ -1680,12 +1680,13 @@ export default function ItemsCatalogueModal({
                       return (
                         <button
                           key={opt.value}
-                          className={`flex items-center justify-center px-3 h-full text-nowrap cursor-pointer transition-all duration-150 rounded-[calc(var(--radius)-2px)] ${
-                            isActive
-                              ? "bg-background text-foreground shadow-[0_1px_3px_0_hsl(var(--foreground)/0.08)]"
-                              : "text-muted-foreground hover:text-foreground"
+                          type="button"
+                          role="radio"
+                          aria-checked={isActive}
+                          className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                            isActive ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                           }`}
-                          style={{ fontSize: "11px", fontWeight: isActive ? "var(--font-weight-semibold)" : "var(--font-weight-medium)", fontFamily: FONT }}
+                          style={{ fontWeight: isActive ? 500 : 400, fontFamily: FONT }}
                           onClick={() => setUserGroupBy(opt.value)}
                         >
                           {opt.label}

@@ -4757,7 +4757,7 @@ export function ConfigPageContent({
   locationContext = false,
   onSectionOverrideChange,
   suppressCarrierSectionHeader = false,
-  onGoToSection,
+  onGoToSection: _onGoToSection,
   currencyChangeGuard,
 }: {
   /** Edit Partner: the partner's saved currency and how many open documents
@@ -6405,7 +6405,7 @@ export function ConfigPageContent({
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <DollarSign className="w-3.5 h-3.5 text-slate-400" />
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Currency</span>
-                        <InfoTooltip>{configType === "customer" ? "The currency used for all transactions with this customer, including sales orders, invoices, and received payments." : "The currency used for all transactions with this vendor, including purchase orders, invoices, and payments."}</InfoTooltip>
+                        <InfoTooltip>The currency you use with this partner. It comes from the partner group, but you can change it here. It locks after your first transaction with this partner.</InfoTooltip>
                         {/* Inheritance indicator — group template takes precedence.
                             Suppressed in groupContext: the group IS the source of truth. */}
                         {!groupContext && selectedGroup && groupTemplateCurrency && currencyInherited && (
@@ -6437,7 +6437,7 @@ export function ConfigPageContent({
                           Revert to {selectedGroup.name}
                         </button>
                       ) : (
-                        <Pencil className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <Pencil className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                       )}
                     </div>
                     {currObj ? (
@@ -6471,7 +6471,7 @@ export function ConfigPageContent({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                           <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Default exchange rate</span>
-                          <InfoTooltip>{`The rate new documents with this ${configType === "customer" ? "customer" : "vendor"} start from: mid-market (synced from the rate provider) or corporate (set by finance). A document can still switch it.`}</InfoTooltip>
+                          <InfoTooltip>The rate used to convert this partner's amounts to your base currency.</InfoTooltip>
                           {!groupContext && selectedGroup && groupTemplateRateType && rateTypeInherited && (
                             <span
                               className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] border bg-[#EEF2FF] text-[#4338CA] border-[#E0E7FF]"
@@ -6572,7 +6572,7 @@ export function ConfigPageContent({
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Pay To</span>
                         <InfoTooltip>{configType === "customer" ? "The entity that receives payment from this customer. Defaults to your company, since the customer pays you. Change this if payments should route to a different party, such as a billing agent or parent company." : "The entity that receives payment for this vendor's transactions. Defaults to this vendor. Change this if payments go to a different party, such as a parent company or billing agent."}</InfoTooltip>
                       </div>
-                      <Pencil className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Pencil className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                     {ptObj ? (
                       <div className="flex items-center gap-2.5">
@@ -6600,7 +6600,7 @@ export function ConfigPageContent({
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Ship To</span>
                         <InfoTooltip>{configType === "customer" ? "The default delivery destination for goods ordered by this customer. Defaults to the customer's address. Change this if items are regularly shipped to a different location." : "The default delivery destination for goods ordered from this vendor. Defaults to your company. Change this if items are regularly shipped to a different location."}</InfoTooltip>
                       </div>
-                      <Pencil className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Pencil className="w-3 h-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                     {stObj ? (
                       <div className="flex items-start gap-2.5">
@@ -6641,7 +6641,7 @@ export function ConfigPageContent({
                         <span className={`text-[11px] ${allowAltFunding ? "text-slate-500" : "text-slate-400"}`} style={{ fontWeight: 500 }}>Funded By</span>
                         <InfoTooltip>{configType === "customer" ? "The entity that funds purchases made by this customer. Defaults to the customer. Change this only if another entity (such as a parent company or partner) is responsible for financing these transactions." : "The entity that funds purchases from this vendor. Defaults to your company. Change this only if another entity (such as a parent company or partner) is responsible for financing these transactions."}</InfoTooltip>
                       </div>
-                      <Pencil className={`w-3 h-3 text-slate-300 opacity-0 ${allowAltFunding ? "group-hover:opacity-100" : ""} transition-opacity`} />
+                      <Pencil className={`w-3 h-3 text-primary opacity-0 ${allowAltFunding ? "group-hover:opacity-100" : ""} transition-opacity`} />
                     </div>
                     <div className={`mt-2 ${allowAltFunding ? "" : "opacity-30"}`}>
                       {fbObj ? (
@@ -7193,20 +7193,7 @@ export function ConfigPageContent({
                 <span className="text-slate-600 truncate">{getCurrency(creditCurrency)?.name}</span>
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Set in{" "}
-                {onGoToSection ? (
-                  <button
-                    type="button"
-                    onClick={() => onGoToSection(configType === "customer" ? "customer_billing" : "billing_shipping")}
-                    className="text-primary underline underline-offset-2 hover:opacity-80 cursor-pointer"
-                    style={{ fontWeight: 500 }}
-                  >
-                    Billing &amp; Shipping
-                  </button>
-                ) : (
-                  "Billing & Shipping"
-                )}
-                . Change it there.
+                Inherited from Billing &amp; Shipping.
               </p>
             </div>
             {/* Maximum Credit Limit */}
@@ -8140,7 +8127,7 @@ export function ConfigPageContent({
                     </div>
 
                     {/* Type toggle — inline with search, each tab has a hover tooltip */}
-                    <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5 shrink-0">
+                    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Payment term type">
                       {([
                         { key: "net", label: "Net", color: "rgb(var(--primary))", bg: "#EBF3FF", icon: Receipt, tip: "Payment is due a fixed number of days after an event (invoice date, delivery, etc.).", example: <><span className="text-primary" style={{ fontWeight: 600 }}>Net 30</span>, full payment due 30 days after invoice.</> },
                         { key: "prepayment", label: "Pre", color: "rgb(var(--violet))", bg: "#F5F3FF", icon: Clock, tip: "Full or partial payment required before goods are shipped or services rendered.", example: <><span className="text-violet" style={{ fontWeight: 600 }}>50% upfront</span> before production starts.</> },
@@ -8153,16 +8140,18 @@ export function ConfigPageContent({
                             <TooltipTrigger asChild>
                               <button
                                 onClick={() => setPtTypeFilters(cat.key)}
-                                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${
-                                  active ? "shadow-sm" : "hover:bg-white/60"
+                                role="radio"
+                                aria-checked={active}
+                                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                  active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                                 }`}
-                                style={{ fontWeight: active ? 600 : 500, color: active ? cat.color : "#334155", backgroundColor: active ? cat.bg : undefined }}
+                                style={{ fontWeight: active ? 500 : 400 }}
                               >
                                 <cat.icon className="w-3.5 h-3.5" />
                                 {cat.label}
                                 <span
                                   className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
-                                  style={{ fontWeight: 600, color: active ? cat.color: "rgb(var(--muted-foreground))", backgroundColor: active ? `${cat.color}15` : "rgb(var(--border))" }}
+                                  style={{ fontWeight: 600, color: active ? "#0A77FF" : "rgb(var(--muted-foreground))", backgroundColor: active ? "rgba(10,119,255,0.1)" : "rgb(var(--border))" }}
                                 >
                                   {count}
                                 </span>
@@ -8623,7 +8612,7 @@ export function ConfigPageContent({
                     </div>
 
                     {/* Type toggle — inline with search, each tab has a hover tooltip */}
-                    <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5 shrink-0">
+                    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Rule category">
                       {([
                         { key: "discount", label: "Discounts", color: "#047857", bg: "#ECFDF5", icon: TrendingDown, tip: "Reduce unit price when quantity or value thresholds are met.", example: <><span className="text-green-600" style={{ fontWeight: 600 }}>10% off</span> on orders over 500 units.</> },
                         { key: "premium", label: "Premiums", color: "rgb(var(--violet))", bg: "#F5F3FF", icon: TrendingUp, tip: "Markup on base price for express or value-added services.", example: <><span className="text-violet" style={{ fontWeight: 600 }}>15% markup</span> for expedited and priority shipping.</> },
@@ -8635,16 +8624,18 @@ export function ConfigPageContent({
                             <TooltipTrigger asChild>
                               <button
                                 onClick={() => setPrTypeFilters(cat.key)}
-                                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${
-                                  active ? "shadow-sm" : "hover:bg-white/60"
+                                role="radio"
+                                aria-checked={active}
+                                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                  active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                                 }`}
-                                style={{ fontWeight: active ? 600 : 500, color: active ? cat.color : "#334155", backgroundColor: active ? cat.bg : undefined }}
+                                style={{ fontWeight: active ? 500 : 400 }}
                               >
                                 <cat.icon className="w-3.5 h-3.5" />
                                 {cat.label}
                                 <span
                                   className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
-                                  style={{ fontWeight: 600, color: active ? cat.color: "rgb(var(--muted-foreground))", backgroundColor: active ? `${cat.color}15` : "rgb(var(--border))" }}
+                                  style={{ fontWeight: 600, color: active ? "#0A77FF" : "rgb(var(--muted-foreground))", backgroundColor: active ? "rgba(10,119,255,0.1)" : "rgb(var(--border))" }}
                                 >
                                   {count}
                                 </span>
@@ -11079,7 +11070,7 @@ export function ConfigPageContent({
                                   <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>
                                     Packaging
                                   </label>
-                                  <div className="inline-flex rounded-md bg-muted p-0.5">
+                                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Packaging">
                                     {(["standard", "custom"] as const).map((m) => {
                                       const isSelected = row.packagingMode === m;
                                       return (
@@ -11087,10 +11078,12 @@ export function ConfigPageContent({
                                           key={m}
                                           type="button"
                                           onClick={() => updateCsmRow(row.id, { packagingMode: m })}
-                                          className={`px-2.5 h-7 rounded-sm text-[11px] transition-all cursor-pointer ${
-                                            isSelected ? "bg-white shadow-sm text-foreground" : "text-slate-500 hover:text-slate-700"
+                                          role="radio"
+                                          aria-checked={isSelected}
+                                          className={`px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                            isSelected ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                                           }`}
-                                          style={{ fontWeight: isSelected ? 600 : 500 }}
+                                          style={{ fontWeight: isSelected ? 500 : 400 }}
                                         >
                                           {m === "standard" ? "Standard" : "Custom"}
                                         </button>

@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { CurrencyCodeCell } from "@/app/components/currency/CurrencyCodeCell";
 import { FIELD_RULES, getMissingFields, joinLabels } from "@/app/components/shared/fieldRequirements";
 import { createPortal } from "react-dom";
 import { format } from "date-fns";
@@ -24,8 +25,7 @@ import { InsightsRangeMenu, InsightsRefresh, type InsightsRange } from "@/app/co
 import { summarizeSO } from "./summarizeSO";
 import { BaseMoney } from "@/app/components/currency/Money";
 import { BaseCurrencyNote } from "@/app/components/currency/BaseCurrencyNote";
-import { CurrencyFlag, CurrencyPill } from "@/app/components/currency/CurrencyChip";
-import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatCompactMoney, formatMoney } from "@/app/currency/money";
 import { soFx, toSOBase } from "@/app/currency/soFx";
 import { itemListPrice, txInOrderCurrency } from "./soMoney";
@@ -190,6 +190,10 @@ const COLUMN_DEFS: SOColumnDef[] = [
   { key: "so", label: "Sales Order #", minWidth: 220, sortable: true, locked: true },
   { key: "quote", label: "Quote #", minWidth: 130, sortable: true },
   { key: "customer", label: "Customer Name", minWidth: 210, sortable: true },
+  /* The order's currency, right after the customer it comes from. Shown
+     by default, base included; amounts are in base with the order's
+     currency on hover. */
+  { key: "currency", label: "Currency", minWidth: 264, sortable: true },
   { key: "status", label: "Order Status", minWidth: 200, sortable: true },
   /* Line Items sits right after Order Status so it matches the Quote
      listing's ordering (Quote uses `items` in the same slot). */
@@ -204,7 +208,6 @@ const COLUMN_DEFS: SOColumnDef[] = [
   { key: "delivery", label: "Delivery Date", minWidth: 130 },
   { key: "confirmation", label: "Confirmation Date", minWidth: 150 },
   { key: "priority", label: "Priority", minWidth: 100, sortable: true },
-  { key: "currency", label: "Currency", minWidth: 90 },
   /* Tags — chips + `+N` overflow. Positioned right before the audit
      block so both listings (Quote + SO) read the same. */
   { key: "tags", label: "Tags", minWidth: 200 },
@@ -223,15 +226,17 @@ const COLUMN_DEFS: SOColumnDef[] = [
 /* Default order places "customer" directly after "so" so the two
    pre-pinned columns sit visually adjacent on the left edge. Sticky
    positioning leaks visually when a non-frozen column scrolls between
-   two frozen ones, so they need to be neighbors in the column order. */
+   two frozen ones, so they need to be neighbors in the column order.
+   Currency follows the customer it comes from. */
 const DEFAULT_COLUMN_ORDER = (() => {
   const keys = COLUMN_DEFS.map(c => c.key);
-  const reordered = ["so", "customer", ...keys.filter(k => k !== "so" && k !== "customer")];
+  const lead = ["so", "customer", "currency"];
+  const reordered = [...lead, ...keys.filter(k => !lead.includes(k))];
   return reordered;
 })();
 /* Columns opted-out of the default listing view. Users can toggle
    them on via the column configurator. */
-const HIDDEN_BY_DEFAULT_COLUMNS = new Set(["currency"]);
+const HIDDEN_BY_DEFAULT_COLUMNS = new Set<string>([]);
 const DEFAULT_COLUMN_VISIBILITY: Record<string, boolean> = Object.fromEntries(
   COLUMN_DEFS.map(c => [c.key, !HIDDEN_BY_DEFAULT_COLUMNS.has(c.key)])
 );
@@ -1053,6 +1058,7 @@ export function SOList() {
           case "salesrep": aVal = a.salesRep; bVal = b.salesRep; break;
           case "value": aVal = toSOBase(a, summarizeSO(a).grandTotal); bVal = toSOBase(b, summarizeSO(b).grandTotal); break;
           case "priority": aVal = a.priority; bVal = b.priority; break;
+          case "currency": aVal = soFx(a).currency; bVal = soFx(b).currency; break;
           case "linecount": aVal = a.lines.length; bVal = b.lines.length; break;
           case "orderdate": aVal = a.orderDate; bVal = b.orderDate; break;
           case "createdon": aVal = a.createdDate; bVal = b.createdDate; break;
@@ -1191,7 +1197,7 @@ export function SOList() {
         return <span className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}><HighlightText text={so.sourceQuoteRef} search={search} /></span>;
       case "customer": {
         const tint = getAvatarTint(so.customer);
-        const orderCurrency = soFx(so).currency;
+        /* The order's currency reads in its own Currency column. */
         return (
           <div className="flex items-center gap-1.5 min-w-0">
             <CustomerHoverCard customerName={so.customer} customerInitials={so.customerInitials}>
@@ -1202,13 +1208,6 @@ export function SOList() {
                 <span className="truncate" style={{ fontWeight: 500, maxWidth: 160, fontSize: '13px', color: '#334155' }}><HighlightText text={so.customer} search={search} /></span>
               </div>
             </CustomerHoverCard>
-            {/* The order's currency tag, on a foreign-currency order only
-                (Currency Touchpoints Map: "Harbor Point Rescue USD"). */}
-            {!isBaseCurrency(orderCurrency) && (
-              <span className="shrink-0 inline-flex">
-                <CurrencyPill code={orderCurrency} note={`The order's currency. Amounts show in ${BASE_CURRENCY}; hover one for ${orderCurrency}.`} />
-              </span>
-            )}
           </div>
         );
       }
@@ -1532,7 +1531,10 @@ export function SOList() {
         return <span className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 400, color: '#334155' }}>{so.rejectedBy}</span>;
       }
       case "priority": return <PriorityBadge priority={so.priority} />;
-      case "currency": return <span className="whitespace-nowrap inline-flex items-center gap-1.5" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}><CurrencyFlag code={so.currency} />{so.currency}</span>;
+      case "currency": {
+        const orderCurrency = soFx(so).currency;
+        return <span className="inline-flex whitespace-nowrap max-w-full" style={{ fontSize: '13px' }}><CurrencyCodeCell code={orderCurrency} title={`The order's currency. Amounts show in ${BASE_CURRENCY}; hover one for ${orderCurrency}.`} /></span>;
+      }
       case "tags": {
         /* Tags cell — Partner Management chrome
            (PartnersVendorsListPage.tsx:1946). Explicit slate colors

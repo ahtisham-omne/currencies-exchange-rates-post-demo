@@ -108,7 +108,7 @@ function readStoredNumber(key: string, fallback: number, min: number, max: numbe
 export function PersonaToggle({ width }: { width?: number }) {
   const { persona, setPersona } = usePersona();
   return (
-    <div className="flex items-center rounded-lg bg-secondary/60 p-0.5" style={{ height: 32, width }}>
+    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="View as" style={{ height: 32, width }}>
       {([
         { key: "creator" as Persona, label: "Sales View" },
         { key: "reviewer" as Persona, label: "Approver View" },
@@ -117,17 +117,14 @@ export function PersonaToggle({ width }: { width?: number }) {
         return (
           <button
             key={p.key}
+            type="button"
+            role="radio"
+            aria-checked={isActive}
             onClick={() => setPersona(p.key)}
-            className="flex-1 flex items-center justify-center rounded-md transition-all text-[11px]"
-            style={{
-              height: 26,
-              fontWeight: isActive ? 600 : 400,
-              backgroundColor: isActive ? "#FFFFFF" : "transparent",
-              color: isActive ? "#0A77FF" : "#64748B",
-              boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-              cursor: "pointer",
-              border: "none",
-            }}
+            className={`${width ? "flex-1 " : ""}px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+              isActive ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
+            }`}
+            style={{ fontWeight: isActive ? 500 : 400, border: "none" }}
           >
             {p.label}
           </button>

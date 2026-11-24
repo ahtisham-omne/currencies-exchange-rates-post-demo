@@ -2481,9 +2481,9 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
       const updatedVersions = (so.versions || []).map(v =>
         v.number === so.version?.number ? stampVersionRate({ ...v, label: "Last Approved" as const }, so) : v
       );
-      /* The new version keeps the locked rate, or takes today's. */
-      const todayType = todaysRateType(rateChoice);
-      const today = todayType ? withCurrentRate(so, todayType) : null;
+      /* The new version always takes today's rate (25 Nov 2026), of the
+         picked type, else of the order's own type. */
+      const today = withCurrentRate(so, todaysRateType(rateChoice) ?? undefined);
       const next = today ? { ...so, ...today.updates } : so;
       const newVersion: SOVersion = stampVersionRate({ number: newVersionNum, label: "Latest", date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) }, next, true);
       return {
@@ -2517,14 +2517,14 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
       const before = soRateFields(so);
       const locked = versionRateFields(so, fromVersion);
       const restored = { ...so, ...locked };
-      const todayType = todaysRateType(rateChoice);
-      const today = todayType ? withCurrentRate(restored, todayType) : null;
+      // A restored version takes today's rate too (25 Nov 2026).
+      const today = withCurrentRate(restored, todaysRateType(rateChoice) ?? undefined);
       const next = today ? { ...restored, ...today.updates } : restored;
       const after = soRateFields(next);
       const rateDetail =
         before.exchangeRate === after.exchangeRate && before.rateType === after.rateType && before.payToAccount === after.payToAccount
           ? null
-          : `${describeRateChange(before, after)} · ${today ? "today's rate applied" : `V${fromVersion}'s locked rate restored`}`;
+          : `${describeRateChange(before, after)} · ${today ? "today's rate applied" : `V${fromVersion}'s rate restored`}`;
       // Update the labels: target becomes "Latest", others lose "Latest"
       const updatedVersions = allVersions.map(v => {
         const entry = v.number === so.version?.number && v.number !== fromVersion ? stampVersionRate(v, so) : v;

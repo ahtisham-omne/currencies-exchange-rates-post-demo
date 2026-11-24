@@ -74,6 +74,7 @@ function sortValue(v: QualifiedVendor, key: string): number | string {
   switch (key) {
     case "priority": return v.priority;
     case "partner": return v.vendorName.toLowerCase();
+    case "currency": return (v.currency ?? "").toUpperCase();
     case "location": return v.location.toLowerCase();
     case "country": return (v.country ?? "").toLowerCase();
     // Vendors quote in different currencies: money sorts on its base value.

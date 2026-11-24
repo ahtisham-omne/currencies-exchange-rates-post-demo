@@ -171,7 +171,7 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
             {/* The selling price is the base price (Currency Touchpoints Map,
                 Items 4). A price per currency is Eli's to decide. */}
             <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748B', fontFamily: FONT }}>
-              Base price, in {BASE_CURRENCY}. A quote in another currency converts this price at the quote's rate.
+              Base price, in {BASE_CURRENCY}.
             </p>
           </div>
         </ConfigCard>

@@ -915,8 +915,9 @@ export function recordPOVersion(
   const po = purchaseOrders.get(poId);
   if (!po) return null;
 
-  const todayType = payload.rateChoice ? todaysRateType(payload.rateChoice) : null;
-  const rateChange = todayType ? applyCurrentRate(po, todayType) : null;
+  // A new version always takes today's rate (25 Nov 2026), of the picked
+  // type, else of the PO's own type.
+  const rateChange = poFx(po).isBase ? null : applyCurrentRate(po, todaysRateType(payload.rateChoice ?? "locked") ?? undefined);
   if (rateChange) {
     applyComputedTotals(po);
     payload = {
@@ -1113,8 +1114,8 @@ export function revertPOToVersion(poId: string, version: number, reason: string,
   }));
   po.shippingFee = source.snapshot.shippingFee;
   restoreRateFields(po, source.snapshot);
-  const todayType = todaysRateType(rateChoice);
-  if (todayType) applyCurrentRate(po, todayType);
+  // A restored version takes today's rate too (25 Nov 2026).
+  if (!poFx(po).isBase) applyCurrentRate(po, todaysRateType(rateChoice) ?? undefined);
   applyComputedTotals(po);
 
   po.currentVersion = version;

@@ -168,6 +168,9 @@ const INVOICE_COLUMN_CATALOG: { key: string; label: string }[] = [
   { key: 'invoiceNumber', label: 'Invoice ID' },
   { key: 'type', label: 'Invoice Type' },
   { key: 'vendor', label: 'Vendor' },
+  // Currency sits right after Vendor, visible by default (24 Nov 2026): the
+  // listing shows each record's currency here, not as a tag in the vendor cell.
+  { key: 'currency', label: 'Currency' },
   { key: 'vendorInvoiceNumber', label: 'Vendor Invoice No.' },
   { key: 'invoiceDate', label: 'Vendor Invoice Date' },
   // The two dates the due date DERIVES from (9/22/26 review response,
@@ -184,7 +187,6 @@ const INVOICE_COLUMN_CATALOG: { key: string; label: string }[] = [
   // Linked Records sits after Amount (feedback 7/16/26).
   { key: 'linkedRecords', label: 'Linked Records' },
   { key: 'apAccount', label: 'A/P Account' },
-  { key: 'currency', label: 'Currency' },
   { key: 'description', label: 'Description' },
   { key: 'updatedBy', label: 'Last Updated By' },
   { key: 'updatedDate', label: 'Last Updated On' },
@@ -494,9 +496,7 @@ export function InvoiceListScreen({
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() =>
     // The derivation dates (Trigger / Posting) join the palette hidden by
     // default (9/22/26, Claude C13-X3) — one toggle away, no layout shift.
-    // Currency joins them (Currency Touchpoints Map, 24 Nov 2026): the vendor
-    // cell carries the currency tag and Amount is in base with the hover card.
-    Object.fromEntries(INVOICE_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'triggerDate' && c.key !== 'postingDate' && c.key !== 'currency'])),
+    Object.fromEntries(INVOICE_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'triggerDate' && c.key !== 'postingDate'])),
   );
   // Column drawer Reset restores this default view and remounts the
   // table so dragged widths snap back too (10/9/26).
@@ -2712,7 +2712,7 @@ export function InvoiceListScreen({
           open={columnDrawerOpen}
           onOpenChange={setColumnDrawerOpen}
           defaultColumnOrder={INVOICE_COLUMN_CATALOG.map((c) => c.key)}
-          defaultColumnVisibility={Object.fromEntries(INVOICE_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'triggerDate' && c.key !== 'postingDate' && c.key !== 'currency']))}
+          defaultColumnVisibility={Object.fromEntries(INVOICE_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'triggerDate' && c.key !== 'postingDate']))}
           onReset={() => setColumnResetKey((k) => k + 1)}
         />
       </div>

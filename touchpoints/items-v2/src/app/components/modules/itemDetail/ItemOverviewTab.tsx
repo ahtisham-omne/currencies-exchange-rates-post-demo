@@ -26,7 +26,6 @@ import {
 } from "./ItemDashKpis";
 import { DraggableKpiCard } from "./DraggableKpiCard";
 import { ItemDashCustomizePanel } from "./ItemDashCustomizePanel";
-import { BaseCurrencyNote } from "@/app/components/currency/BaseCurrencyNote";
 
 /* ── Physical-Inventory widget system (exact components + frame) ── */
 import { Chart, registerables } from "chart.js";
@@ -347,8 +346,6 @@ export function ItemOverviewTab({ item, widgetRenderers, widgetLabels, widgetMet
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          {/* Item cost and stock value are in the base currency (Currency Touchpoints Map, Items 3). */}
-          <BaseCurrencyNote />
           <span className="text-slate-300">|</span>
           <span className="text-[11px] text-slate-400" style={{ fontWeight: 400 }}>Updated {format(lastRefreshed, "h:mm a")}</span>
           <button

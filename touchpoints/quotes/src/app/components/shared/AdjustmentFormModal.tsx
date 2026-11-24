@@ -512,11 +512,13 @@ export function AdjustmentFormModal({
       style={{
         display: 'inline-flex',
         height: 38, flexShrink: 0,
+        alignItems: 'center', gap: 4, padding: '0 6px',
+        // The input's own frame closes around the switch, so the options sit
+        // inside the field as a suffix: frameless pills, no grey track.
         border: `1px solid ${FIELD_BORDER}`,
         borderLeftWidth: 0,
         borderTopRightRadius: 8, borderBottomRightRadius: 8,
-        backgroundColor: SURFACE_TONED,
-        overflow: 'hidden',
+        backgroundColor: SURFACE_WHITE,
       }}
     >
       {(['%', '$'] as const).map((unit) => {
@@ -528,17 +530,13 @@ export function AdjustmentFormModal({
             role="radio"
             aria-checked={active}
             onClick={() => setAmountType(unit)}
+            className={`inline-flex items-center justify-center px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+              active ? 'bg-[#EDF4FF] text-[#0A77FF]' : 'text-muted-foreground hover:bg-muted'
+            }`}
             style={{
-              minWidth: 30, padding: '0 6px',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 13, fontWeight: 600,
-              color: active ? TEXT_BODY : TEXT_MUTED,
-              backgroundColor: active ? SURFACE_WHITE : 'transparent',
-              border: 'none',
-              cursor: 'pointer',
+              minWidth: 26, border: 'none',
+              fontWeight: active ? 500 : 400,
               fontFamily: 'Inter, system-ui, sans-serif',
-              transition: 'background-color 100ms, color 100ms',
-              boxShadow: active ? `inset 0 0 0 1px ${FIELD_BORDER}` : 'none',
             }}
             title={unit === '%' ? 'Percentage' : 'Fixed amount'}
           >

@@ -8,6 +8,12 @@ interface PctAmountToggleProps {
   className?: string;
 }
 
+/* % | $ as Chart of Accounts draws its period presets: a frameless row of
+   options, the chosen one a light-blue pill. */
+const OPTION = 'px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer';
+const ON = 'bg-[#EDF4FF] text-[#0A77FF]';
+const OFF = 'text-muted-foreground hover:bg-muted';
+
 export function PctAmountToggle({
   isFixed,
   onChange,
@@ -16,14 +22,16 @@ export function PctAmountToggle({
   className = '',
 }: PctAmountToggleProps) {
   return (
-    <div className={`inline-flex items-center h-[22px] rounded-full bg-muted p-0.5 ${className}`}>
+    <div className={`inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 ${className}`} role="radiogroup" aria-label="Amount type">
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
+            role="radio"
+            aria-checked={!isFixed}
             onClick={() => onChange(false)}
-            className={`px-2 h-[18px] rounded-full text-[10px] transition-all ${!isFixed ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            style={{ fontWeight: 600 }}
+            className={`${OPTION} ${!isFixed ? ON : OFF}`}
+            style={{ fontWeight: !isFixed ? 500 : 400 }}
           >
             %
           </button>
@@ -36,9 +44,11 @@ export function PctAmountToggle({
         <TooltipTrigger asChild>
           <button
             type="button"
+            role="radio"
+            aria-checked={isFixed}
             onClick={() => onChange(true)}
-            className={`px-2 h-[18px] rounded-full text-[10px] transition-all ${isFixed ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            style={{ fontWeight: 600 }}
+            className={`${OPTION} ${isFixed ? ON : OFF}`}
+            style={{ fontWeight: isFixed ? 500 : 400 }}
           >
             $
           </button>

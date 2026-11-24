@@ -1460,35 +1460,32 @@ export function ContactsDirectoryPage({
                       </button>
                     );
                   })()}
-                  {/* Segmented Browse / Added toggle — Partner pattern. */}
+                  {/* Browse / Added switch — Chart of Accounts period-preset look. */}
                   {viewToggle && (
-                    <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
+                    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup">
                       {viewToggle.options.map((opt) => {
                         const isActive = opt.key === viewToggle.activeKey;
-                        const tone = opt.activeTone ?? 'primary';
                         const Icon = opt.icon;
-                        const iconColor = isActive
-                          ? (tone === 'success' ? 'var(--success)' : 'hsl(var(--primary))')
-                          : '#94A3B8';
-                        const countBg = isActive
-                          ? (tone === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'var(--accent)')
-                          : 'var(--border)';
-                        const countColor = isActive
-                          ? (tone === 'success' ? 'var(--success)' : 'hsl(var(--primary))')
-                          : '#64748B';
+                        // The chosen option is the light-blue pill (Chart of
+                        // Accounts' period presets); its icon and count follow
+                        // its text colour rather than a per-option tone.
+                        const countBg = isActive ? '#FFFFFF' : 'var(--border)';
+                        const countColor = isActive ? '#0A77FF' : '#64748B';
                         return (
                           <button
                             key={opt.key}
                             type="button"
+                            role="radio"
+                            aria-checked={isActive}
                             onClick={() => viewToggle.onChange(opt.key)}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${
+                            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
                               isActive
-                                ? 'bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground'
-                                : 'text-slate-500 hover:text-slate-700'
+                                ? 'bg-[#EDF4FF] text-[#0A77FF]'
+                                : 'text-muted-foreground hover:bg-muted'
                             }`}
-                            style={{ fontWeight: isActive ? 600 : 500 }}
+                            style={{ fontWeight: isActive ? 500 : 400 }}
                           >
-                            {Icon && <Icon className="w-3.5 h-3.5" style={{ color: iconColor }} />}
+                            {Icon && <Icon className="w-3.5 h-3.5" />}
                             {opt.label}
                             <span
                               className="text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center"

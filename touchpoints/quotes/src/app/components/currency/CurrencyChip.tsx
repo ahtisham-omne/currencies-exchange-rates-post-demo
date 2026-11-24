@@ -11,10 +11,16 @@ export function CurrencyFlag({ code, size = 13, className }: { code: string | nu
   return <FlagImage code={flag ?? (code ? code.slice(0, 2) : null)} className={className} style={{ fontSize: size }} />;
 }
 
+/** The chip's hover, one line (25 Nov 2026): "Vendor's currency: US Dollar (USD)". */
+export function currencyChipLabel(code: string, party: string = 'Customer'): string {
+  const upper = code.toUpperCase();
+  const name = upper === 'USD' ? 'US Dollar' : getCurrency(upper)?.name ?? upper;
+  return `${party}'s currency: ${name} (${upper})`;
+}
+
 /** A small rounded pill (flag + code) for a record's currency, e.g. a customer's
  *  default currency in a picker row. `note` explains where it comes from. */
-export function CurrencyPill({ code, note }: { code: string; note?: string }) {
-  const cur = getCurrency(code);
+export function CurrencyPill({ code, note: _note, party }: { code: string; note?: string; party?: string }) {
   return (
     <Tooltip delayDuration={250}>
       <TooltipTrigger asChild>
@@ -27,8 +33,7 @@ export function CurrencyPill({ code, note }: { code: string; note?: string }) {
         </span>
       </TooltipTrigger>
       <TooltipContent side="top">
-        <span style={{ fontWeight: 600 }}>{cur?.name ?? code}</span>
-        {note && <span className="block text-slate-500">{note}</span>}
+        {currencyChipLabel(code, party)}
       </TooltipContent>
     </Tooltip>
   );

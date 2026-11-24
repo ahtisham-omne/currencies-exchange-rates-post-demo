@@ -5,6 +5,7 @@ import { formatMoney, formatRateDate, rateSentence } from "@/app/currency/money"
 import { currentRateFor } from "@/app/currency/qFx";
 import { RATE_TYPE_LABEL, toBase, type RateType } from "@/app/currency/rates";
 import { useDocCurrency } from "./docCurrencyContext";
+import { RateTypeChip } from "./QuoteCurrencyConfig";
 
 const FONT = "Inter, system-ui, sans-serif";
 
@@ -167,7 +168,7 @@ export function RateChoiceCards({
                 <div
                   role="radiogroup"
                   aria-label="Today's rate type"
-                  className="mt-2 inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5"
+                  className="mt-2 inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5"
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => e.stopPropagation()}
                 >
@@ -180,13 +181,10 @@ export function RateChoiceCards({
                         role="radio"
                         aria-checked={on}
                         onClick={() => pickToday(t)}
-                        className="rounded px-2 py-0.5 text-[11px] transition-colors cursor-pointer"
-                        style={{
-                          backgroundColor: on ? "#FFFFFF" : "transparent",
-                          color: on ? "#0F172A" : "#64748B",
-                          fontWeight: on ? 600 : 500,
-                          boxShadow: on ? "0 1px 2px rgba(15,23,42,0.08)" : undefined,
-                        }}
+                        className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                          on ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
+                        }`}
+                        style={{ fontWeight: on ? 500 : 400 }}
                       >
                         {RATE_TYPE_LABEL[t]}
                       </button>
@@ -214,20 +212,36 @@ export function VersionRateChoice({
   value: Choice;
   onChange: (choice: Choice) => void;
 }) {
+  /* A new version, or a restored one, always takes today's rate (25 Nov
+     2026): no "Keep version N's rate" choice. The type stays the version's
+     when today has one of that type (a corporate rate set), else mid-market. */
+  const todayChoice: Choice = options.defaultType === "corporate" && options.today.corporate ? "current-corporate" : "current-mid";
+  React.useEffect(() => {
+    if (value !== todayChoice) onChange(todayChoice);
+  }, [value, todayChoice]); // eslint-disable-line react-hooks/exhaustive-deps
+  const today = (todayChoice === "current-corporate" && options.today.corporate) || options.today.mid;
   return (
-    <RateChoiceCards
-      copy={{
-        heading: "Exchange rate",
-        question: `Keep version ${fromVersion}'s rate or use today's?`,
-        keep: `Keep version ${fromVersion}'s rate`,
-        today: "Use today's rate",
-        same: `same as version ${fromVersion}`,
-        ariaLabel: "Exchange rate for the new version",
-      }}
-      options={options}
-      value={value}
-      onChange={onChange}
-    />
+    <div className="w-full text-left">
+      <p className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>
+        Exchange rate
+      </p>
+      <p className="text-[11.5px] text-slate-500 mt-0.5">
+        Uses today's rate. The customer's amounts don't change; the quote's total in {BASE_CURRENCY} follows the rate.
+      </p>
+      <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5" aria-label="Exchange rate for the new version">
+        <span className="flex items-baseline justify-between gap-3">
+          <span className="text-[12.5px] text-slate-800" style={{ fontWeight: 600 }}>
+            Today's rate
+          </span>
+          <span className="text-[12px] text-slate-700 tabular-nums whitespace-nowrap" style={{ fontWeight: 500 }}>
+            {today.rate}
+          </span>
+        </span>
+        <span className="block text-[11px] text-slate-500 tabular-nums mt-0.5 leading-relaxed">
+          {today.differs ? today.meta : `${today.meta} · same as version ${fromVersion}'s`}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -254,4 +268,54 @@ export function useVersionRateOptions(version?: number, total?: number): Version
   const fx = (version != null ? doc.versionFx?.(version) : null) ?? doc.fx;
   if (!fx) return null;
   return versionRateOptions({ currency: doc.currency, rate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate }, total);
+}
+
+/* ── Restoring a version: the Exchange rate box ───────────────────────
+ * A restored version always takes today's rate (25 Nov 2026), so the
+ * revert confirmations ask nothing: on a quote in a foreign currency they
+ * say so in a box under the description, as Purchase Orders'
+ * POVersionRevertModal does: today's rate with its type, and the total in
+ * the base currency before (at the version's rate) and after. */
+
+/** The rate a version kept and today's of the same type (mid-market when no
+ *  corporate rate is set); null on a base-currency quote. */
+export function useRevertRate(version: number) {
+  const doc = useDocCurrency();
+  const fx = doc.versionFx?.(version) ?? doc.fx;
+  if (!fx || isBaseCurrency(doc.currency)) return null;
+  const today = currentRateFor({ currency: doc.currency, exchangeRate: fx.rate, rateType: fx.rateType, rateDate: fx.rateDate });
+  /** The choice that names today's rate of that type, for callers whose
+   *  handlers take a choice literally (the listing's revert). */
+  const todayChoice: Choice = today.rateType === "corporate" ? "current-corporate" : "current-mid";
+  return { currency: doc.currency, rate: fx.rate, today, todayChoice };
+}
+
+/** "Exchange rate [chip] / Today's rate: 1 USD = 278.5200 PKR / PKR total:
+ *  ₨old → ₨new". The total row needs `total` (in the quote's currency). Sits
+ *  in ConfirmDiscardModal's children, whose wrapper puts it mt-5 under the
+ *  description; mb-5 keeps the reason field the same distance below. */
+export function RevertRateBox({ version, total }: { version: number; total?: number }) {
+  const r = useRevertRate(version);
+  if (!r) return null;
+  const withTotal = total != null && Number.isFinite(total);
+  return (
+    <div
+      className="w-full mb-5 rounded-lg border text-left"
+      style={{ borderColor: "#E2E8F0", backgroundColor: "#FFFFFF", padding: "10px 12px", fontFamily: FONT }}
+    >
+      <div className="flex items-center justify-between" style={{ gap: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#64748B" }}>Exchange rate</span>
+        <RateTypeChip type={r.today.rateType} />
+      </div>
+      <div className="tabular-nums" style={{ fontSize: 13, color: "#0F172A", marginTop: 4 }}>
+        Today's rate: <span style={{ fontWeight: 600 }}>{rateSentence(r.currency, r.today.exchangeRate)}</span>
+      </div>
+      {withTotal && (
+        <div className="tabular-nums" style={{ fontSize: 12.5, color: "#64748B", marginTop: 2 }}>
+          {BASE_CURRENCY} total: {formatMoney(toBase(total, r.rate), BASE_CURRENCY)} →{" "}
+          <span style={{ fontWeight: 600, color: "#0F172A" }}>{formatMoney(toBase(total, r.today.exchangeRate), BASE_CURRENCY)}</span>
+        </div>
+      )}
+    </div>
+  );
 }

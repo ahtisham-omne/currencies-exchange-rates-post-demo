@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Lock, LockOpen } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
 import { formatMoney, formatRate, moneyPrefix } from "@/app/currency/money";
 import { RATE_TYPE_LABEL, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
@@ -58,10 +58,18 @@ export function LockChip({ locked, title }: { locked: boolean; title?: string })
 export interface CurrencyBlockRow {
   label: string;
   code: string;
-  amount: number;
-  /** Shown on hover of the label, e.g. the pay-from account. */
+  /** The amount in `code`. Leave out to show the currency itself:
+   *  "Pakistani Rupee (PKR)" (the "You pay in" row). */
+  amount?: number;
+  /** Shown on hover of the row, e.g. the pay-from account. */
   title?: string;
 }
+
+/** "Pakistani Rupee (PKR)": a currency by name, as the block writes it. */
+export const currencyNameWithCode = (code: string) => {
+  const upper = code.toUpperCase();
+  return `${getCurrency(upper)?.name ?? upper} (${upper})`;
+};
 
 export function CurrencyBlock({
   isBase,
@@ -89,28 +97,10 @@ export function CurrencyBlock({
     <div className={`space-y-2 ${className}`}>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[9.5px] uppercase text-slate-400" style={{ fontWeight: 600, letterSpacing: "0.06em" }}>
-          Currency
+          Currency information
         </span>
-        {!isBase && (
-          <div className="flex items-center gap-1.5">
-            {rateType &&
-              (rateTypeTip ? (
-                <Tooltip delayDuration={200}>
-                  <TooltipTrigger asChild>
-                    <span className="cursor-help">
-                      <RateTypeChip type={rateType} />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[240px] text-[11px]">
-                    {rateTypeTip}
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <RateTypeChip type={rateType} />
-              ))}
-            {lock && <LockChip locked={lock.locked} title={lock.title} />}
-          </div>
-        )}
+        {/* No lock on the rate (25 Nov 2026): the configuration locks with the
+            document, the exchange rate shows no lock of its own. */}
       </div>
 
       {isBase ? (
@@ -120,23 +110,41 @@ export function CurrencyBlock({
       ) : (
         <>
           {rows.map((r) => (
-            <div key={r.label} className="flex items-center justify-between gap-2">
-              <p className="text-slate-400" style={{ fontSize: 10, fontWeight: 500 }} title={r.title}>
+            <div key={r.label} className="flex items-center justify-between gap-2" title={r.title}>
+              <p className="text-slate-400 shrink-0" style={{ fontSize: 10, fontWeight: 500 }}>
                 {r.label}
               </p>
-              <p className="flex items-center gap-1.5 text-slate-700 tabular-nums" style={{ fontSize: 12, fontWeight: 500 }}>
-                <CurrencyFlag code={r.code} size={11} />
-                {withCode(r.amount, r.code)}
+              <p className="flex items-center gap-1.5 text-slate-700 tabular-nums text-right min-w-0" style={{ fontSize: 12, fontWeight: 500 }}>
+                {/* A flag on the document's amount and the account's currency; the base equivalent reads plainly. */}
+                {(r.amount === undefined || r.code.toUpperCase() !== BASE_CURRENCY) && <CurrencyFlag code={r.code} size={11} />}
+                <span className="truncate">{r.amount === undefined ? currencyNameWithCode(r.code) : withCode(r.amount, r.code)}</span>
               </p>
             </div>
           ))}
           {rate && (
-            <div className="border-t border-slate-100 pt-2 flex items-center justify-between gap-2">
-              <p className="text-slate-400" style={{ fontSize: 10, fontWeight: 500 }}>Rate</p>
-              <p className="text-slate-500 tabular-nums text-right" style={{ fontSize: 11 }}>
-                {blockRateText(rate.code, rate.rate)}
-                {rate.qualifier ? ` · ${rate.qualifier}` : ""}
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-slate-400 shrink-0 pt-0.5" style={{ fontSize: 10, fontWeight: 500 }}>Exchange rate</p>
+              <div className="flex flex-col items-end min-w-0">
+              <p className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 text-slate-700 tabular-nums text-right" style={{ fontSize: 12, fontWeight: 500 }}>
+                <span className="whitespace-nowrap">{blockRateText(rate.code, rate.rate)}</span>
+                {rateType &&
+                  (rateTypeTip ? (
+                    <Tooltip delayDuration={200}>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-help shrink-0">
+                          <RateTypeChip type={rateType} />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[240px] text-[11px]">
+                        {rateTypeTip}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <span className="shrink-0"><RateTypeChip type={rateType} /></span>
+                  ))}
               </p>
+              {rate.qualifier && <p className="text-slate-400 text-right" style={{ fontSize: 10 }}>{rate.qualifier}</p>}
+              </div>
             </div>
           )}
         </>

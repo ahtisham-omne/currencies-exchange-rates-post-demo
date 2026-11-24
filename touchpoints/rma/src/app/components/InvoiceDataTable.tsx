@@ -1,4 +1,5 @@
 import { Fragment, useMemo, type ReactNode } from 'react';
+import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import {
   FileText,
   Truck,
@@ -1619,13 +1620,14 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
   {
     key: 'currency',
     label: 'Currency',
-    minWidth: 90,
-    defaultWidth: 120,
+    minWidth: 160,
+    defaultWidth: 264,
     sortable: true,
     filterType: 'multiselect',
     uniqueValues: (rows) => Array.from(new Set(rows.map((r) => r.currency))).sort(),
     getValue: (row) => row.currency,
-    render: (row) => <span className="text-muted-foreground">{row.currency}</span>,
+    // The Currency Library's cell: the ISO code pill, then the name.
+    render: (row) => <span className="inline-flex whitespace-nowrap max-w-full"><CurrencyCodeCell code={row.currency} /></span>,
   },
   {
     key: 'description',

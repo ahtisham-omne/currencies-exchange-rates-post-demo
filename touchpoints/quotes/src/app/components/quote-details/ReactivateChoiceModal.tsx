@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { RotateCcw, ArrowRight, Calendar as CalendarIcon } from 'lucide-react';
 import { DateEditModal } from '../quote-creation/DateEditModal';
 import { RelativeDateValue } from '@/app/components/shared/RelativeDateValue';
-import { VersionRateChoice as VersionRateChoiceCards, type VersionRateOptions } from '@/app/components/currency/VersionRateChoice';
 import type { VersionRateChoice } from '@/app/data/quoteStore';
 
 /**
@@ -33,11 +32,10 @@ interface Props {
   newVersionNumber: number;
   defaultEffectiveFrom: Date;
   defaultValidTill: Date;
-  /** With the rate the new draft takes: the locked one, or today's. */
+  /** With a rate choice ("locked"); the new draft takes today's rate
+   *  whatever is passed (applyVersionRate). */
   onConfirm: (effectiveFrom: string, expirationDate: string, rateChoice?: VersionRateChoice) => void;
   onCancel: () => void;
-  /** A foreign-currency quote: offer the locked rate or today's. */
-  rate?: { fromVersion: number; options: VersionRateOptions };
 }
 
 const toDDMMYYYY = (d: Date): string =>
@@ -101,9 +99,7 @@ export function ReactivateChoiceModal({
   defaultValidTill,
   onConfirm,
   onCancel,
-  rate,
 }: Props) {
-  const [rateChoice, setRateChoice] = useState<VersionRateChoice>('locked');
   const [effectiveConfig, setEffectiveConfig] = useState<DateConfig>({
     dateType: 'absolute', absoluteValue: toDDMMYYYY(defaultEffectiveFrom),
     relativeValue: '0', relativeUnit: 'days', whenSent: false,
@@ -127,10 +123,6 @@ export function ReactivateChoiceModal({
       setEditingField(null);
     }
   }, [isOpen, defaultEffectiveFrom, defaultValidTill]);
-  // Each opening starts on the locked rate.
-  useEffect(() => {
-    if (isOpen) setRateChoice('locked');
-  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -148,7 +140,7 @@ export function ReactivateChoiceModal({
     onConfirm(
       resolvedEffective ? toISODate(resolvedEffective) : '',
       resolvedExpiry ? toISODate(resolvedExpiry) : '',
-      rate ? rateChoice : 'locked',
+      'locked',
     );
   };
 
@@ -225,13 +217,6 @@ export function ReactivateChoiceModal({
                 />
               </div>
             </div>
-
-            {/* The new draft's rate (foreign-currency quote) */}
-            {rate && (
-              <div style={{ marginTop: 18 }}>
-                <VersionRateChoiceCards fromVersion={rate.fromVersion} options={rate.options} value={rateChoice} onChange={setRateChoice} />
-              </div>
-            )}
 
             <div className="w-full flex flex-col" style={{ marginTop: 22, gap: 10 }}>
               <button

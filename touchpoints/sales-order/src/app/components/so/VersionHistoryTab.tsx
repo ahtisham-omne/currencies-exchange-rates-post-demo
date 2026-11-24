@@ -20,6 +20,7 @@ import { compareNumbers, compareValueText, compareValuesDiffer, isNumericCompare
 import type { SalesOrder } from './types';
 import { getWarehouseNamesForSelection } from './WarehouseSelectionModal';
 import { useDocView, useDocWhole } from "@/app/components/currency/docCurrencyContext";
+import { RevertRateBox } from "@/app/components/currency/RevertRateBox";
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { rateSentence } from "@/app/currency/money";
 import { toBase } from "@/app/currency/rates";
@@ -882,6 +883,8 @@ export function VersionHistoryTab({ so, onEditAsDraft }: VersionHistoryTabProps)
       {showRevertConfirm !== null && (
         <RevertConfirmModal
           version={showRevertConfirm}
+          so={so}
+          total={versions.find(v => v.version === showRevertConfirm)?.snapshot.grandTotal}
           onClose={() => setShowRevertConfirm(null)}
           onConfirm={(reason: string) => handleRevert(showRevertConfirm, reason)}
         />
@@ -1025,8 +1028,11 @@ function CompareView({ v1, v2, formatFor, rateFor, onClose }: {
 }
 
 // ── Revert Confirm Modal ──────────────────────────────────────────
-function RevertConfirmModal({ version, onClose, onConfirm }: {
-  version: number; onClose: () => void; onConfirm: (reason: string) => void;
+function RevertConfirmModal({ version, so, total, onClose, onConfirm }: {
+  version: number;
+  /** The order and the version's total (its currency), for the Exchange rate box (foreign currency only). */
+  so?: SalesOrder; total?: number;
+  onClose: () => void; onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState('');
   return (
@@ -1040,6 +1046,8 @@ function RevertConfirmModal({ version, onClose, onConfirm }: {
       cancelLabel="Cancel"
       onConfirm={() => onConfirm(reason.trim())}
     >
+      {/* Exchange rate — the restored version takes today's rate. */}
+      <RevertRateBox so={so} version={version} total={total} />
       <div>
         <label
           className="block"

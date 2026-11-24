@@ -666,7 +666,7 @@ export function RunExecuteStage({
       key: 'invoices',
       label: 'Invoices',
       minWidth: 140,
-      defaultWidth: 190,
+      defaultWidth: 220,
       sortable: true,
       filterType: 'range',
       getValue: (g) => groupLines(run, g).length,
@@ -851,13 +851,13 @@ export function RunExecuteStage({
     {
       key: 'currency',
       label: 'Currency',
-      minWidth: 90,
-      defaultWidth: 110,
+      minWidth: 140,
+      defaultWidth: 220,
       sortable: true,
       filterType: 'multiselect',
       uniqueValues: (rows) => [...new Set(rows.map(groupCurrency))].sort(),
-      // The payment's currency (Currency & Exchange Rates): flag + code,
-      // the invoice listing's Currency cell.
+      // The payment's currency: the Currency Library's cell (code pill +
+      // name), as every listing's Currency column.
       getValue: (g) => groupCurrency(g),
       render: (g) => <CurrencyCell code={groupCurrency(g)} />,
     },

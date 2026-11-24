@@ -3,7 +3,7 @@ import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { formatMoney } from "@/app/currency/money";
 import { toBaseNow } from "@/app/currency/partnerCurrency";
 import { partnerAmount, shortAxisFormatter, type CurrencyStream, type CurrencyView } from "@/app/currency/partnerAmounts";
-import { InfoTooltip } from "@/app/components/ui/info-tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/app/components/ui/tooltip";
 import { CurrencyAmount } from "./CurrencyAmount";
 
 /* ── A partner profile's amounts ──────────────────────────────────────
@@ -51,12 +51,15 @@ export function useProfileMoney() {
   return React.useMemo(() => profileFormatters(value), [value]);
 }
 
-/** The Base / Partner currency switch. Hidden for a partner in the base currency. */
+/** The Base / Partner currency switch, in Chart of Accounts' pattern (the
+ *  period presets on its dashboard widgets, DetailInsights PeriodSelector):
+ *  plain 11px options, the chosen one on a light blue pill, no frame. What
+ *  each option shows rides its hover. Hidden for a partner in the base currency. */
 export function CurrencyViewToggle({
   view,
   onChange,
   partnerCurrency,
-  size = "md",
+  size: _size = "md",
 }: {
   view: CurrencyView;
   onChange: (view: CurrencyView) => void;
@@ -65,29 +68,33 @@ export function CurrencyViewToggle({
 }) {
   if (isBaseCurrency(partnerCurrency)) return null;
   const options: { value: CurrencyView; label: string; tip: string }[] = [
-    { value: "base", label: "Base Currency", tip: `Shows amounts in the company's base currency (${BASE_CURRENCY}), converted at today's mid-market rate.` },
-    { value: "partner", label: "Partner Currency", tip: `Shows amounts in this partner's currency (${partnerCurrency.toUpperCase()}).` },
+    { value: "base", label: "Base Currency", tip: "Show amounts in your base currency." },
+    { value: "partner", label: "Partner Currency", tip: "Show amounts in the currency set for this partner." },
   ];
   return (
-    <div className={`inline-flex items-center gap-0.5 rounded-lg border border-border p-0.5 bg-white shadow-sm shrink-0 ${size === "sm" ? "h-7" : "h-8"}`}>
-      {/* role="button" spans: each holds an ⓘ button, and buttons can't nest. */}
-      {options.map((o) => (
-        <span
-          key={o.value}
-          role="button"
-          tabIndex={0}
-          onClick={() => onChange(o.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onChange(o.value); } }}
-          aria-pressed={view === o.value}
-          className={`inline-flex items-center gap-1.5 rounded-md text-[11px] whitespace-nowrap cursor-pointer transition-colors ${size === "sm" ? "h-6 px-2" : "h-7 px-2.5"} ${
-            view === o.value ? "bg-accent text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-          }`}
-          style={{ fontWeight: view === o.value ? 600 : 500 }}
-        >
-          {o.label}
-          <InfoTooltip side="top" iconClassName="w-3 h-3">{o.tip}</InfoTooltip>
-        </span>
-      ))}
+    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Show amounts in">
+      {options.map((o) => {
+        const active = view === o.value;
+        return (
+          <Tooltip key={o.value} delayDuration={300}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => onChange(o.value)}
+                className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                  active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
+                }`}
+                style={{ fontWeight: active ? 500 : 400 }}
+              >
+                {o.label}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[240px] text-[11px] leading-snug">{o.tip}</TooltipContent>
+          </Tooltip>
+        );
+      })}
     </div>
   );
 }

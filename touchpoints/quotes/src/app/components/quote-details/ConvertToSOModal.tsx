@@ -397,7 +397,7 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
             )}
             {foreign && (
               <p style={{ fontSize: '11px', color: 'var(--muted-foreground)', margin: '8px 0 0', lineHeight: '1.4' }}>
-                Totals below are in {BASE_CURRENCY}, the base currency, at the rate picked. The order's rate locks when it is confirmed.
+                Totals below are in {BASE_CURRENCY}, the base currency, at the rate picked.
               </p>
             )}
           </TitledSection>

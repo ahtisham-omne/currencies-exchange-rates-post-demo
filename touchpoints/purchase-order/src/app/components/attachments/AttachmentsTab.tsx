@@ -2302,15 +2302,10 @@ export function AttachmentsTab({
           ];
           return (
             <div
-              className="inline-flex items-center animate-in fade-in-0 duration-150"
-              style={{
-                gap: 2,
-                padding: 3,
-                borderRadius: 10,
-                background: "#F3F4F6",
-                border: "1px solid #E5E7EB",
-                marginBottom: "var(--spacing-3)",
-              }}
+              className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 animate-in fade-in-0 duration-150"
+              role="radiogroup"
+              aria-label="Show attachments"
+              style={{ marginBottom: "var(--spacing-3)" }}
             >
               {seg.map((s) => {
                 const active = selectionFilter === s.key;
@@ -2319,29 +2314,13 @@ export function AttachmentsTab({
                   <button
                     key={s.key}
                     type="button"
+                    role="radio"
+                    aria-checked={active}
                     onClick={() => setSelectionFilter(s.key)}
-                    className="inline-flex items-center transition-all"
-                    style={{
-                      gap: 6,
-                      padding: "6px 12px",
-                      borderRadius: 7,
-                      border: "none",
-                      background: active ? "#FFFFFF" : "transparent",
-                      color: active ? "#1B6EF3" : "#6B7280",
-                      boxShadow: active ? "0 1px 2px 0 rgba(16,24,40,0.06), 0 1px 3px 0 rgba(16,24,40,0.08)" : "none",
-                      fontFamily: FONT,
-                      fontWeight: active ? 600 : 500,
-                      fontSize: 12,
-                      cursor: "pointer",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (active) return;
-                      e.currentTarget.style.color = "#1F2937";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (active) return;
-                      e.currentTarget.style.color = "#6B7280";
-                    }}
+                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                      active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
+                    }`}
+                    style={{ border: "none", fontFamily: FONT, fontWeight: active ? 500 : 400 }}
                   >
                     <Icon className="w-3.5 h-3.5" />
                     {s.label}
@@ -2355,8 +2334,8 @@ export function AttachmentsTab({
                         fontSize: 10,
                         fontWeight: 600,
                         fontVariantNumeric: "tabular-nums",
-                        background: active ? "#EFF6FF" : "#E5E7EB",
-                        color: active ? "#1B6EF3" : "#6B7280",
+                        background: active ? "#FFFFFF" : "#E5E7EB",
+                        color: active ? "#0A77FF" : "#6B7280",
                       }}
                     >
                       {s.count}

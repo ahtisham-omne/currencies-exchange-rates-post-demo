@@ -1276,18 +1276,19 @@ function DashWidget({
                 hovered ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-2 pointer-events-none'
               }`}
             >
-              <div className="flex items-center h-7 rounded-lg border border-border bg-slate-50 p-0.5 gap-0.5">
+              <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Widget size">
                 {(['sm', 'md', 'lg'] as const).map((s) => (
                   <button
                     key={s}
+                    type="button"
+                    role="radio"
+                    aria-checked={sz === s}
                     onClick={(e) => { e.stopPropagation(); onSizeChange(s); }}
                     onMouseDown={(e) => e.stopPropagation()}
-                    className={`h-6 px-2.5 rounded-md text-[11px] cursor-pointer transition-all duration-150 ${
-                      sz === s
-                        ? 'bg-white text-primary shadow-sm border border-border'
-                        : 'text-slate-400 hover:text-slate-700 hover:bg-white/60 border border-transparent'
+                    className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                      sz === s ? 'bg-[#EDF4FF] text-[#0A77FF]' : 'text-muted-foreground hover:bg-muted'
                     }`}
-                    style={{ fontWeight: sz === s ? 600 : 500 }}
+                    style={{ fontWeight: sz === s ? 500 : 400 }}
                   >
                     {s === 'sm' ? 'Small' : s === 'md' ? 'Medium' : 'Large'}
                   </button>
@@ -1633,16 +1634,18 @@ function CustomizePanel({
                               <p className="text-[12px] text-foreground truncate" style={{ fontWeight: 600 }} title={w.label}>{highlightText(w.label, searchQuery)}</p>
                               <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-snug" title={w.description}>{highlightText(w.description, searchQuery)}</p>
                               {isActive && (
-                                <div className="mt-2 flex items-center h-6 rounded-md border border-border bg-slate-50 p-0.5 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                                <div className="mt-2 inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Widget size" onClick={(e) => e.stopPropagation()}>
                                   {(['sm', 'md', 'lg'] as const).map((s) => (
                                     <button
                                       key={s}
                                       type="button"
+                                      role="radio"
+                                      aria-checked={sz === s}
                                       onClick={(e) => { e.stopPropagation(); onWidgetSizeChange(w.key, s); }}
-                                      className={`flex-1 h-5 rounded text-[10px] transition-all duration-150 cursor-pointer ${
-                                        sz === s ? 'bg-white text-primary shadow-sm' : 'text-slate-400 hover:text-slate-700'
+                                      className={`flex-1 px-2 py-0.5 rounded-md text-[11px] text-center whitespace-nowrap transition-colors cursor-pointer ${
+                                        sz === s ? 'bg-[#EDF4FF] text-[#0A77FF]' : 'text-muted-foreground hover:bg-muted'
                                       }`}
-                                      style={{ fontWeight: sz === s ? 600 : 500 }}
+                                      style={{ fontWeight: sz === s ? 500 : 400 }}
                                     >
                                       {({ sm: 'SM', md: 'MD', lg: 'LG' } as const)[s]}
                                     </button>

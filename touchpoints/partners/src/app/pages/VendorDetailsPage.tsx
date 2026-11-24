@@ -2225,17 +2225,17 @@ function ContentCard({ title, icon: Icon, count, children, action, headerExtras,
             }`}
           >
             {onSizeChange && currentSize && (
-              <div className="flex items-center h-7 rounded-lg border border-border bg-slate-50 p-0.5 gap-0.5">
+              <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Widget size">
                 {(["sm", "md", "lg"] as const).map((s) => (
                   <button
                     key={s}
                     onClick={(e) => { e.stopPropagation(); onSizeChange(s); }}
-                    className={`h-6 px-2.5 rounded-md text-[11px] cursor-pointer transition-all duration-150 ${
-                      currentSize === s
-                        ? "bg-white text-primary shadow-sm border border-border"
-                        : "text-slate-400 hover:text-slate-700 hover:bg-white/60 border border-transparent"
+                    role="radio"
+                    aria-checked={currentSize === s}
+                    className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                      currentSize === s ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                     }`}
-                    style={{ fontWeight: currentSize === s ? 600 : 500 }}
+                    style={{ fontWeight: currentSize === s ? 500 : 400 }}
                   >
                     {({ sm: "SM", md: "MD", lg: "LG" } as const)[s as "sm" | "md" | "lg"]}
                   </button>
@@ -2954,16 +2954,18 @@ function DashboardCustomizePanel({ open, onOpenChange, activeKpis, onToggleKpi, 
                               <p className="text-[12px] text-foreground truncate" style={{ fontWeight: 600 }} title={w.label}>{w.label}</p>
                               <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-snug" title={w.description}>{w.description}</p>
                               {isActive && (
-                                <div className="mt-2 flex items-center h-6 rounded-md border border-border bg-slate-50 p-0.5 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                                <div className="mt-2 inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Widget size" onClick={(e) => e.stopPropagation()}>
                                   {(["sm", "md", "lg"] as const).map((s) => (
                                     <button
                                       key={s}
                                       type="button"
                                       onClick={(e) => { e.stopPropagation(); onWidgetSizeChange(w.key, s); }}
-                                      className={`flex-1 h-5 rounded text-[10px] transition-all duration-150 cursor-pointer ${
-                                        sz === s ? "bg-white text-primary shadow-sm" : "text-slate-400 hover:text-slate-700"
+                                      role="radio"
+                                      aria-checked={sz === s}
+                                      className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                                        sz === s ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                                       }`}
-                                      style={{ fontWeight: sz === s ? 600 : 500 }}
+                                      style={{ fontWeight: sz === s ? 500 : 400 }}
                                     >
                                       {({ sm: "SM", md: "MD", lg: "LG" } as const)[s as "sm" | "md" | "lg"]}
                                     </button>
@@ -7705,16 +7707,18 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
                                                   <p className="text-[12px] text-foreground truncate" style={{ fontWeight: 600 }} title={def.label}>{def.label}</p>
                                                   <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-snug" title={def.description}>{def.description}</p>
                                                   {active && (
-                                                    <div className="mt-2 flex items-center h-6 rounded-md border border-border bg-slate-50 p-0.5 gap-0.5" onClick={(e) => e.stopPropagation()}>
+                                                    <div className="mt-2 inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Widget size" onClick={(e) => e.stopPropagation()}>
                                                       {(["sm", "md", "lg"] as const).map((s) => (
                                                         <button
                                                           key={s}
                                                           type="button"
                                                           onClick={(e) => { e.stopPropagation(); handleLocOvWidgetSize(def.key, s); }}
-                                                          className={`flex-1 h-5 rounded text-[10px] transition-all duration-150 cursor-pointer ${
-                                                            sz === s ? "bg-white text-primary shadow-sm" : "text-slate-400 hover:text-slate-700"
+                                                          role="radio"
+                                                          aria-checked={sz === s}
+                                                          className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                                                            sz === s ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                                                           }`}
-                                                          style={{ fontWeight: sz === s ? 600 : 500 }}
+                                                          style={{ fontWeight: sz === s ? 500 : 400 }}
                                                         >
                                                           {({ sm: "SM", md: "MD", lg: "LG" } as const)[s as "sm" | "md" | "lg"]}
                                                         </button>
@@ -9110,7 +9114,7 @@ function FreightLogisticsTab({ vendor, flush, locationName }: {
     <div className={`bg-card overflow-clip flex flex-col ${flush ? "flex-1 min-h-0" : "border border-border rounded-xl"}`} style={flush ? undefined : { minHeight: 400 }}>
       {/* Sub-tabs row — same blue / emerald palette as Items + Pricing Rules */}
       <div className="flex items-center justify-between gap-3 px-4 pt-2.5 pb-2 border-b border-border shrink-0">
-        <div className="inline-flex items-center rounded-lg bg-muted p-0.5">
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Freight and logistics side">
           {([
             {
               key: "vendor" as FLSubTab,
@@ -9133,12 +9137,14 @@ function FreightLogisticsTab({ vendor, flush, locationName }: {
                 <TooltipTrigger asChild>
                   <button
                     onClick={() => { setSubTab(t.key); setSearch(""); }}
-                    className={`inline-flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] transition-all cursor-pointer ${
-                      active ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)]" : "text-slate-500 hover:text-slate-700"
+                    role="radio"
+                    aria-checked={active}
+                    className={`inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                      active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                     }`}
-                    style={{ fontWeight: active ? 600 : 500, color: active ? t.color : undefined }}
+                    style={{ fontWeight: active ? 500 : 400 }}
                   >
-                    <Truck className="w-3.5 h-3.5" style={{ color: active ? t.color : "#94A3B8" }} />
+                    <Truck className="w-3.5 h-3.5" />
                     {t.label}
                   </button>
                 </TooltipTrigger>
@@ -10134,7 +10140,7 @@ function FreightLogisticsTab({ vendor, flush, locationName }: {
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-2">
                           <label className="text-[12px] text-foreground" style={{ fontWeight: 500 }}>Packaging</label>
-                          <div className="inline-flex rounded-md bg-muted p-0.5">
+                          <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Packaging">
                             {(["standard", "custom"] as const).map((m) => {
                               const isSelected = createFlMethodForm.packagingMode === m;
                               return (
@@ -10142,10 +10148,12 @@ function FreightLogisticsTab({ vendor, flush, locationName }: {
                                   key={m}
                                   type="button"
                                   onClick={() => setCreateFlMethodForm((p) => ({ ...p, packagingMode: m }))}
-                                  className={`px-2.5 h-7 rounded-sm text-[11px] transition-all cursor-pointer ${
-                                    isSelected ? "bg-white shadow-sm text-foreground" : "text-slate-500 hover:text-slate-700"
+                                  role="radio"
+                                  aria-checked={isSelected}
+                                  className={`px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                    isSelected ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                                   }`}
-                                  style={{ fontWeight: isSelected ? 600 : 500 }}
+                                  style={{ fontWeight: isSelected ? 500 : 400 }}
                                 >
                                   {m === "standard" ? "Standard" : "Custom"}
                                 </button>
@@ -10913,7 +10921,7 @@ function PaymentMethodsTab({ cfg, PAYMENT_TYPE_ICONS: _PAYMENT_TYPE_ICONS }: { c
           location for both sides; PaymentMethodsSection's own
           toolbar is hidden via hideToolbar. */}
       <div className="flex items-center justify-between gap-3 px-4 pt-2.5 pb-2 border-b border-border shrink-0">
-        <div className="inline-flex items-center rounded-lg bg-muted p-0.5">
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Payment method side">
           {([
             { key: "vendor" as PMSubTab, label: "Vendor Payment Methods", color: "#0548A3", tip: "How this partner pays you (or is paid by you) on this partner's invoices." },
             { key: "customer" as PMSubTab, label: "Customer Payment Methods", color: "#065F46", tip: "How you collect payment from this partner on outbound sales orders." },
@@ -10924,12 +10932,14 @@ function PaymentMethodsTab({ cfg, PAYMENT_TYPE_ICONS: _PAYMENT_TYPE_ICONS }: { c
                 <TooltipTrigger asChild>
                   <button
                     onClick={() => setSubTab(t.key)}
-                    className={`inline-flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-md text-[13px] transition-all cursor-pointer ${
-                      active ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)]" : "text-slate-500 hover:text-slate-700"
+                    role="radio"
+                    aria-checked={active}
+                    className={`inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                      active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                     }`}
-                    style={{ fontWeight: active ? 600 : 500, color: active ? t.color : undefined }}
+                    style={{ fontWeight: active ? 500 : 400 }}
                   >
-                    <CreditCard className="w-3.5 h-3.5" style={{ color: active ? t.color : "#94A3B8" }} />
+                    <CreditCard className="w-3.5 h-3.5" />
                     {t.label}
                   </button>
                 </TooltipTrigger>
@@ -11471,7 +11481,7 @@ function ContactsTab({ vendor, cfg }: { vendor: Vendor; cfg?: VendorConfigData }
             {/* Segmented scope control — mirrors the Items tab header
                 (Items They Sell / Items They Buy). Color cue per scope:
                 neutral for All, blue for Partner, emerald for Location. */}
-            <div className="inline-flex items-center rounded-lg bg-muted p-0.5">
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Contact scope">
               {([
                 { key: "all" as const, label: "All POCs", color: "#334155" },
                 { key: "partner" as const, label: "Partner POCs", color: "#0548A3" },
@@ -11482,10 +11492,12 @@ function ContactsTab({ vendor, cfg }: { vendor: Vendor; cfg?: VendorConfigData }
                   <button
                     key={t.key}
                     onClick={() => setPocScopeFilter(t.key)}
-                    className={`inline-flex items-center justify-center px-4 py-1.5 rounded-md text-[13px] transition-all cursor-pointer ${
-                      isActive ? "bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)]" : "text-slate-500 hover:text-slate-700"
+                    role="radio"
+                    aria-checked={isActive}
+                    className={`inline-flex items-center justify-center px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                      isActive ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                     }`}
-                    style={{ fontWeight: isActive ? 600 : 500, color: isActive ? t.color : undefined }}
+                    style={{ fontWeight: isActive ? 500 : 400 }}
                   >
                     {t.label}
                   </button>

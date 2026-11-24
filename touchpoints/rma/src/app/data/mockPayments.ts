@@ -249,6 +249,10 @@ export const PAY_FROM_ACCOUNTS: PayFromAccount[] = [
   { id: '1081-GBP Settlement', label: '1081 · GBP Settlement', currency: 'GBP', balance: 145_000, type: 'bank', creditGl: '1081 GBP Settlement', bankName: 'Barclays', accountMask: '2287', accountTypeLabel: 'Checking' },
   { id: '1082-EUR Settlement', label: '1082 · EUR Settlement', currency: 'EUR', balance: 210_000, type: 'bank', creditGl: '1082 EUR Settlement', bankName: 'Deutsche Bank', accountMask: '5510', accountTypeLabel: 'Checking' },
   { id: '1084-AED Settlement', label: '1084 · AED Settlement', currency: 'AED', balance: 680_000, type: 'bank', creditGl: '1084 AED Settlement', bankName: 'Emirates NBD', accountMask: '9034', accountTypeLabel: 'Checking' },
+  // As Purchase Orders and Vendor Invoicing have them (25 Nov 2026).
+  { id: '1075-CAD Settlement', label: '1075 · CAD Settlement', currency: 'CAD', balance: 125_000, type: 'bank', creditGl: '1075 CAD Settlement', bankName: 'RBC Royal Bank', accountMask: '6120', accountTypeLabel: 'Checking' },
+  { id: '1080-JPY Settlement', label: '1080 · JPY Settlement', currency: 'JPY', balance: 18_500_000, type: 'bank', creditGl: '1080 JPY Settlement', bankName: 'MUFG Bank', accountMask: '4418', accountTypeLabel: 'Checking' },
+  { id: '1085-CNY Settlement', label: '1085 · CNY Settlement', currency: 'CNY', balance: 880_000, type: 'bank', creditGl: '1085 CNY Settlement', bankName: 'Bank of China', accountMask: '2963', accountTypeLabel: 'Checking' },
   { id: '1040-FX Settlement', label: '1040 · Global FX Settlement', currency: 'USD', balance: 92_000, type: 'bank', creditGl: '1040 Global FX Settlement', bankName: 'Wells Fargo', accountMask: '7741', accountTypeLabel: 'Money Market' },
   // Bank-named disbursement accounts so the Pay-from default snaps to the
   // vendor's primary payment-method bank (e.g. a PNC Bank ACH method →
@@ -263,7 +267,9 @@ export const PAY_FROM_ACCOUNTS: PayFromAccount[] = [
 // The settlement accounts added on 2026-11-20 stay out of it, so the seeded
 // returns keep the accounts they had (mockRMAs picks by index).
 const ADDED_2026_11_20 = new Set(['1081-GBP Settlement', '1082-EUR Settlement', '1084-AED Settlement']);
-export const BANK_ACCOUNTS = PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank' && !ADDED_2026_11_20.has(a.id));
+/** Added 25 Nov 2026: kept out of every seed pool, so no seeded record moves. */
+const ADDED_2026_11_25 = new Set(['1075-CAD Settlement', '1080-JPY Settlement', '1085-CNY Settlement']);
+export const BANK_ACCOUNTS = PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank' && !ADDED_2026_11_20.has(a.id) && !ADDED_2026_11_25.has(a.id));
 /** Where a vendor credit lands. Money is coming back in, so a card payable is
  *  not a destination a return can settle to. */
 export const PAY_TO_ACCOUNTS = PAY_FROM_ACCOUNTS.filter((a) => a.type !== 'card');
@@ -329,7 +335,7 @@ function generatePayments(count: number): Payment[] {
     const method = methods[Math.floor(rand() * methods.length)];
     // Pick a pay-from account whose type matches the method (Card → Card
     // Payable, Cash → Petty Cash, bank methods → a bank account).
-    const acctPool = PAY_FROM_ACCOUNTS.filter((a) => a.type === accountTypeForMethod(method));
+    const acctPool = PAY_FROM_ACCOUNTS.filter((a) => a.type === accountTypeForMethod(method) && !ADDED_2026_11_25.has(a.id));
     const payFromPool = acctPool.length ? acctPool : BANK_ACCOUNTS;
     const bankAccount = payFromPool[Math.floor(rand() * payFromPool.length)].id;
     // rand() is drawn either way so the seeded stream stays identical

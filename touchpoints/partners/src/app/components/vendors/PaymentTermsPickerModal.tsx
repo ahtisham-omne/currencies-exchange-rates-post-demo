@@ -180,7 +180,7 @@ export function PaymentTermsPickerModal({
                   </div>
 
                   {/* Type toggle — inline with search, each tab has a hover tooltip */}
-                  <div className="inline-flex items-center rounded-lg bg-slate-50 border border-border/60 p-0.5 shrink-0">
+                  <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Payment term type">
                     {([
                       { key: "net", label: "Net", color: "rgb(var(--primary))", bg: "#EBF3FF", icon: Receipt, tip: "Payment is due a fixed number of days after an event (invoice date, delivery, etc.).", example: <><span className="text-primary" style={{ fontWeight: 600 }}>Net 30</span>, full payment due 30 days after invoice.</> },
                       { key: "prepayment", label: "Pre", color: "rgb(var(--violet))", bg: "#F5F3FF", icon: Clock, tip: "Full or partial payment required before goods are shipped or services rendered.", example: <><span className="text-violet" style={{ fontWeight: 600 }}>50% upfront</span> before production starts.</> },
@@ -193,16 +193,18 @@ export function PaymentTermsPickerModal({
                           <TooltipTrigger asChild>
                             <button
                               onClick={() => setPtTypeFilters(cat.key)}
-                              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[12px] transition-all cursor-pointer ${
-                                active ? "shadow-sm" : "hover:bg-white/60"
+                              role="radio"
+                              aria-checked={active}
+                              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
+                                active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
                               }`}
-                              style={{ fontWeight: active ? 600 : 500, color: active ? cat.color : "#334155", backgroundColor: active ? cat.bg : undefined }}
+                              style={{ fontWeight: active ? 500 : 400 }}
                             >
                               <cat.icon className="w-3.5 h-3.5" />
                               {cat.label}
                               <span
                                 className="text-[10px] rounded-full px-1.5 py-px min-w-[18px] text-center"
-                                style={{ fontWeight: 600, color: active ? cat.color : "rgb(var(--muted-foreground))", backgroundColor: active ? `${cat.color}15` : "rgb(var(--border))" }}
+                                style={{ fontWeight: 600, color: active ? "#0A77FF" : "rgb(var(--muted-foreground))", backgroundColor: active ? "rgba(10,119,255,0.1)" : "rgb(var(--border))" }}
                               >
                                 {count}
                               </span>

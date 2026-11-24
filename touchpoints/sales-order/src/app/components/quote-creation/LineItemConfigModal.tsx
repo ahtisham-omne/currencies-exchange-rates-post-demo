@@ -1500,31 +1500,31 @@ export function LineItemConfigModal({
                        modal's own underline tabs reads as two competing
                        levels of the same thing. Same control the
                        Shipments tab uses for "By Shipments / By Line
-                       Items" (Partners idiom: muted track, white raised
-                       active pill, count badge), which is the same job
+                       Items" (Chart of Accounts look: frameless row,
+                       light-blue active pill, count badge), which is the same job
                        of switching between two sets of the same list. */}
                   <div className="flex items-center px-5 pt-4 pb-3 shrink-0" style={{ gap: 12 }}>
-                    <div className="inline-flex items-center rounded-lg bg-muted p-0.5 shrink-0">
+                    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup">
                       {([
                         { key: 'included' as const, label: 'Included in this Order', count: lineAttachments.length },
                         { key: 'gallery' as const, label: 'Item Master Gallery', count: availableGalleryMedia.length },
                       ]).map((opt) => {
                         const active = attSubTab === opt.key;
                         return (
-                          <button
+                          <button role="radio" aria-checked={active}
                             key={opt.key}
                             onClick={() => switchAttSubTab(opt.key)}
-                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-all cursor-pointer ${
+                            className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] whitespace-nowrap transition-colors cursor-pointer ${
                               active
-                                ? 'bg-white shadow-[0_1px_3px_rgba(0,0,0,0.08)] text-foreground'
-                                : 'text-slate-500 hover:text-slate-700'
+                                ? 'bg-[#EDF4FF] text-[#0A77FF]'
+                                : 'text-muted-foreground hover:bg-muted'
                             }`}
-                            style={{ fontWeight: active ? 600 : 500 }}
+                            style={{ fontWeight: active ? 500 : 400 }}
                           >
                             {opt.label}
                             <span
                               className={`text-[10px] rounded-full px-1.5 py-px min-w-[16px] text-center ${
-                                active ? 'bg-accent text-primary' : 'bg-border text-slate-500'
+                                active ? 'bg-white text-[#0A77FF]' : 'bg-border text-slate-500'
                               }`}
                               style={{ fontWeight: 600 }}
                             >
