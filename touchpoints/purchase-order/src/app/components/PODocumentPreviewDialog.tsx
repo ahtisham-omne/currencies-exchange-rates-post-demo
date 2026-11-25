@@ -1,9 +1,12 @@
-import React, { useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Download, FileText, Printer, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { FONT } from "./designTokens";
 import type { PurchaseOrderData, POVersionEntry } from "./poStore";
 import { generatePrintHTML, printFx } from "./PrintPurchaseOrder";
+import { PrintCurrencySwitch } from "./currency/PrintCurrencySwitch";
+import type { DocView } from "./currency/docCurrencyContext";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
 
 /* ── Print / Download PO preview ──
    Shows the PO document (generatePrintHTML) inside the app so the buyer
@@ -11,7 +14,9 @@ import { generatePrintHTML, printFx } from "./PrintPurchaseOrder";
    document: "Print" for a printer, "Download PDF" for Save as PDF (the
    file name defaults to `PO-<number>`, the document title). Used by the
    PO detail Actions menu (Print / Download PO) and the listing row menu
-   (Print PO / Download PDF). */
+   (Print PO / Download PDF). On a foreign-currency PO the header's
+   Base Currency | Vendor Currency switch picks the currency the document
+   prints in: the vendor's (default) or the base currency at the PO's rate. */
 export function PODocumentPreviewDialog({
   open,
   onOpenChange,
@@ -26,13 +31,17 @@ export function PODocumentPreviewDialog({
   version?: POVersionEntry;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  // The currency the document prints in; each opening starts in the vendor's.
+  const [view, setView] = useState<DocView>("document");
+  useEffect(() => { if (open) setView("document"); }, [open]);
   const html = useMemo(
-    () => (open && po ? generatePrintHTML(po, version, { embedded: true }) : ""),
-    [open, po, version],
+    () => (open && po ? generatePrintHTML(po, version, { embedded: true, view }) : ""),
+    [open, po, version, view],
   );
   const versionLabel = po ? `Version ${version?.version ?? po.currentVersion}` : "";
   // The document's currency (the printed version's, else the PO's).
   const currency = po ? printFx(po, version).currency : "";
+  const printedIn = view === "base" ? BASE_CURRENCY : currency;
 
   const isPrint = mode === "print";
   const ActionIcon = isPrint ? Printer : Download;
@@ -60,11 +69,12 @@ export function PODocumentPreviewDialog({
                 {isPrint ? "Print" : "Download"} PO {po?.poNumber}
               </DialogTitle>
               <DialogDescription className="text-muted-foreground truncate" style={{ fontSize: 11, lineHeight: 1.4 }}>
-                {po?.vendor.name} · {versionLabel}{currency ? ` · ${currency}` : ""}{isPrint ? "" : " · PDF"}
+                {po?.vendor.name} · {versionLabel}{printedIn ? ` · ${printedIn}` : ""}{isPrint ? "" : " · PDF"}
               </DialogDescription>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <PrintCurrencySwitch currency={currency} view={view} onViewChange={setView} />
             <button
               type="button"
               onClick={runPrint}

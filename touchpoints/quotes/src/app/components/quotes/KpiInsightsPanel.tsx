@@ -47,7 +47,7 @@ export const DEFAULT_ACTIVE_KPIS = ["total_value", "sent_count", "expiring_soon"
 
 export function computeKpiValue(key: string, quotes: Quote[]): string {
   /* Quotes are in different currencies: money KPIs add them up in base,
-     each quote at its own rate (spec 4.3), and say so (BaseCurrencyNote). */
+     each quote at its own rate (spec 4.3). */
   const formatCompact = (val: number): string => formatCompactMoney(val, BASE_CURRENCY);
   const value = (q: Quote) => toQuoteBase(q, q.totalValue || 0);
   switch (key) {

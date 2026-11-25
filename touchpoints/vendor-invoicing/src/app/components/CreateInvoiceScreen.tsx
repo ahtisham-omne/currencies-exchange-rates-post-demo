@@ -1971,14 +1971,20 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
     setFreightAmount((prev: number) => conv(prev));
     setPoToInvoice((prev) => prev * k);
   };
-  // Which currency the form shows: the base currency, always (Mahreen,
-  // 2026-11-20: "keep the main screen light"); the invoice's own currency and
-  // its rate are in Currency Configuration. Amounts stay in the invoice's
-  // currency; an amount typed in base is converted at the invoice rate and
-  // rounded to the invoice currency's minor unit, and an input left untouched
-  // keeps what it holds. A customer invoice (ledger 'ar') keeps its own
-  // currency: the customer side's currency work is a later step.
-  const formView: DocView = ledger === 'ar' ? 'document' : 'base';
+  // Which currency the form shows. A vendor invoice opens in its own
+  // currency, the vendor's (the PO's, else the partner record's; 2026-11-25:
+  // "the creation screens should default to the vendor's currency"; only the
+  // listing pages stay in base), and the header's Base Currency | Invoice
+  // Currency toggle switches every amount to base and back. The view is the
+  // screen's, never an edit, and each new invoice opens in its own currency
+  // again. Amounts stay in the invoice's currency either way; in the base
+  // view an amount typed in base is converted at the invoice rate and rounded
+  // to the invoice currency's minor unit, and an input left untouched keeps
+  // what it holds. The rate and the FX difference are in Currency
+  // Configuration. A customer invoice (ledger 'ar') keeps its own currency,
+  // with no toggle: the customer side's currency work is a later step.
+  const [apFormView, setApFormView] = useState<DocView>('document');
+  const formView: DocView = ledger === 'ar' ? 'document' : apFormView;
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   const rateDateLabel = ratePending ? 'today' : RATE_BASIS_DATE_LABEL[rateAsOf.basis];
   const docFx: MoneyFx | null = invoiceIsBase
@@ -3323,7 +3329,14 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                     foreign-currency invoice only (Currency Touchpoints Map,
                     24 Nov 2026). The Currency button opens the configuration. */}
                 {ledger === 'ap' && !invoiceIsBase && (
-                  <CurrencyPill code={invoiceCurrency} note={poCurrency ? 'The invoice currency, from the PO. Amounts here are in the base currency; hover one for this currency.' : "The invoice currency, from the vendor. Amounts here are in the base currency; hover one for this currency."} />
+                  <CurrencyPill
+                    code={invoiceCurrency}
+                    note={`The invoice currency, from the ${poCurrency ? 'PO' : 'vendor'}. ${
+                      viewInBase
+                        ? 'Amounts here are in the base currency; hover one for this currency.'
+                        : 'Amounts here are in this currency; hover one for the base currency.'
+                    }`}
+                  />
                 )}
                 {/* No Unlocked chip while editing: the rate shows no lock
                     anywhere (25 Nov 2026). */}
@@ -3365,19 +3378,19 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-              {/* The Currency button opens the invoice's currency
-                  configuration; the tag after the vendor names the currency.
-                  No Base Currency | Invoice Currency toggle: the screen is in
-                  the base currency. */}
+              {/* The Base Currency | Invoice Currency toggle (on a
+                  foreign-currency invoice): the screen opens in the invoice's
+                  currency, the vendor's, and the toggle switches it to base and
+                  back. The tag after the vendor names the currency; the
+                  configuration opens from the currency card. */}
               {ledger === 'ap' && (
                 <span id="invoice-exchange-rate-field" className="contents">
                 <CurrencyHeaderControls
                   currency={invoiceCurrency}
                   view={formView}
-                  onViewChange={() => {}}
+                  onViewChange={setApFormView}
                   onOpenConfig={() => setCurrencyConfigOpen(true)}
                   compact
-                  toggle={false}
                   alert={rateError && (rateMissing || rateOverLimit)}
                 />
                 </span>
@@ -4703,10 +4716,11 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                   // as a different style than the creation
                                   // form) — integers stay bare, drafts win
                                   // while typing.
-                                  // Shown, and typed, in the page's currency (base
-                                  // by default): a price typed in base converts at
-                                  // the invoice rate to the invoice currency's
-                                  // minor unit; an untouched price keeps the stored one.
+                                  // Shown, and typed, in the page's currency (the
+                                  // invoice's by default): a price typed in base
+                                  // converts at the invoice rate to the invoice
+                                  // currency's minor unit; an untouched price keeps
+                                  // the stored one.
                                   value={
                                     priceDrafts[item.id] ??
                                     (item.unitPrice == null
@@ -6095,10 +6109,10 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                   </AccordionContent>
                 </AccordionItem>
 
-                {/* No Currency card here: the screen stays in the base
-                    currency, and the vendor's amount, the rate and the FX
-                    difference are in Currency Configuration (the header's
-                    Currency button; Mahreen, 2026-11-20). */}
+                {/* No Currency card here: the screen shows the invoice's
+                    currency (or base, from the header toggle), and the rate
+                    and the FX difference are in Currency Configuration
+                    (Mahreen, 2026-11-20). */}
 
                 {/* GL impact — placed just above Attachments so the
                     journal preview sits at the tail of the sidebar
@@ -6490,11 +6504,11 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                     onViewConfig={() => setCurrencyConfigOpen(true)}
                   />
                 )}
-                {/* Total Due in the shown currency, the base one (PKR): net of the
-                    slice adjustment and applied prepayments, at the invoice
-                    rate. The vendor's amount and the rate are in Currency
-                    Configuration (Mahreen, 2026-11-20). Compact (8/31/26): one
-                    step above the row values. */}
+                {/* Total Due in the shown currency (the invoice's by default,
+                    base from the header toggle, at the invoice rate): net of
+                    the slice adjustment and applied prepayments. The rate is
+                    in Currency Configuration (Mahreen, 2026-11-20). Compact
+                    (8/31/26): one step above the row values. */}
                 <div className="pt-2.5 border-t border-slate-100 flex justify-between items-baseline">
                   <span className="text-[12px] text-slate-500" style={{ fontWeight: 500 }}>Total Due</span>
                   <span className="text-[14px] text-foreground leading-none tracking-tight tabular-nums" style={{ fontWeight: 600 }}>

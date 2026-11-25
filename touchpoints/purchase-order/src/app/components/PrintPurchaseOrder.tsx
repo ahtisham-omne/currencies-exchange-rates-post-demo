@@ -9,9 +9,11 @@ import type { PurchaseOrderData, POVersionEntry } from "./poStore";
 import { getShipmentMethodLabel } from "./poStore";
 import { computePOPricing } from "./poOrderPricing";
 import { getPrintStatusBadgeStyle } from "./statusColors";
-import { getCurrency } from "@/app/currency/currencies";
-import { formatMoney } from "@/app/currency/money";
+import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
+import { formatMoney, rateSentence } from "@/app/currency/money";
 import { poFx, type PoFx } from "@/app/currency/poFx";
+import { toBase } from "@/app/currency/rates";
+import type { DocView } from "./currency/docCurrencyContext";
 
 
 /* ── Color tokens (mirrored from theme.css for inline use) ── */
@@ -53,12 +55,19 @@ function currencyPlural(name: string): string {
   return PLURAL_S.has(last) ? `${name}s` : name;
 }
 
-/** "All amounts in United States Dollars (USD)." The printed PO is the
-    vendor's document, in its currency, with no base-currency figures
-    (Currency Touchpoints Map, Purchase Orders 5). */
-function currencyFootnote(code: string): string {
+/** "All amounts in United States Dollars (USD)." By default the printed PO
+    is the vendor's document, in its currency (Currency Touchpoints Map,
+    Purchase Orders 5). Printed in the base currency instead (the print
+    preview's Base Currency | Vendor Currency switch, 25 Nov 2026), it says
+    what the amounts were converted from and at which rate. */
+function currencyName(code: string): string {
   const name = getCurrency(code)?.name;
-  return name ? `All amounts in ${currencyPlural(name)} (${code}).` : `All amounts in ${code}.`;
+  return name ? `${currencyPlural(name)} (${code})` : code;
+}
+function currencyFootnote(code: string, from?: { currency: string; rate: number }): string {
+  return from
+    ? `All amounts in ${currencyName(code)}, converted from ${currencyName(from.currency)} at ${rateSentence(from.currency, from.rate)}.`
+    : `All amounts in ${currencyName(code)}.`;
 }
 
 function fmtNow(): string {
@@ -72,8 +81,8 @@ function fmtNow(): string {
 }
 
 /* ── Main export: print via hidden iframe (no popup needed) ── */
-export function printPurchaseOrder(po: PurchaseOrderData, options?: { version?: POVersionEntry }): void {
-  const html = generatePrintHTML(po, options?.version);
+export function printPurchaseOrder(po: PurchaseOrderData, options?: { version?: POVersionEntry; view?: DocView }): void {
+  const html = generatePrintHTML(po, options?.version, { view: options?.view });
 
   // Remove any previous print iframe
   const existingFrame = document.getElementById("__po-print-frame__");
@@ -123,11 +132,13 @@ export function printPurchaseOrder(po: PurchaseOrderData, options?: { version?: 
 /** Standalone PO document HTML. `embedded` drops the screen-only Print
     Preview bar (the in-app Download preview has its own header) and
     titles the document `PO-<number>` so Save as PDF defaults to that
-    file name. */
+    file name. `view: "base"` prints every amount in the base currency,
+    converted at the PO's (or the printed version's) rate; the default is
+    the vendor's currency. */
 export function generatePrintHTML(
   po: PurchaseOrderData,
   selectedVersion?: POVersionEntry,
-  options?: { embedded?: boolean },
+  options?: { embedded?: boolean; view?: DocView },
 ): string {
   const embedded = !!options?.embedded;
   const sourceLineItems = selectedVersion
@@ -170,11 +181,14 @@ export function generatePrintHTML(
       }
     : po;
 
-  /* Every amount below is in the document's currency (JPY prints no
-     decimals, KWD three). */
+  /* Every amount below is worked out in the document's currency (JPY
+     prints no decimals, KWD three) and printed in it, or, when printing in
+     the base currency, converted at the document's rate. */
   const fx = printFx(po, selectedVersion);
   const cur = fx.currency;
-  const money = (n: number) => formatMoney(n, cur);
+  const inBase = options?.view === "base" && !fx.isBase;
+  const outCur = inBase ? BASE_CURRENCY : cur;
+  const money = (n: number) => formatMoney(inBase ? toBase(n, fx.rate) : n, outCur);
 
   /* Same pricing engine as the detail page + store, so the printed
      total matches: subtotal − line % − rules ± one-times (shipping is
@@ -478,7 +492,8 @@ export function generatePrintHTML(
       <div style="flex:1;border:1px solid ${C.border};border-radius:10px;padding:16px;">
         <div style="font-size:10px;font-weight:600;color:${C.muted};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Payment &amp; Delivery</div>
         ${paymentRow("Payment Terms", display.payment.paymentTerms)}
-        ${paymentRow("Currency", getCurrency(cur) ? `${getCurrency(cur)!.name} (${cur})` : cur)}
+        ${paymentRow("Currency", getCurrency(outCur) ? `${getCurrency(outCur)!.name} (${outCur})` : outCur)}
+        ${inBase ? paymentRow("Exchange rate", rateSentence(cur, fx.rate)) : ""}
         ${paymentRow("Pay To", display.payment.payTo)}
         ${paymentRow("Payment Method", display.payment.paymentMethod)}
         <div style="height:1px;background:${C.border};margin:8px 0;"></div>
@@ -496,11 +511,11 @@ export function generatePrintHTML(
         ${orderAdjNet !== 0 ? summaryRow("Order adjustments", signed(orderAdjNet), orderAdjNet < 0 ? C.accent : "#7C3AED") : ""}
         <div style="height:2px;background:${C.border};margin:10px 0;"></div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;">
-          <span style="font-size:14px;font-weight:600;color:${C.fg};">Grand Total (${esc(cur)})</span>
+          <span style="font-size:14px;font-weight:600;color:${C.fg};">Grand Total (${esc(outCur)})</span>
           <span style="font-size:20px;font-weight:700;color:${C.fg};">${money(pricing.total)}</span>
         </div>
         <!-- The document's currency, named -->
-        <div style="font-size:10px;color:#a1a1aa;line-height:1.5;margin-top:8px;">${esc(currencyFootnote(cur))}</div>
+        <div style="font-size:10px;color:#a1a1aa;line-height:1.5;margin-top:8px;">${esc(currencyFootnote(outCur, inBase ? { currency: cur, rate: fx.rate } : undefined))}</div>
       </div>
     </div>
 

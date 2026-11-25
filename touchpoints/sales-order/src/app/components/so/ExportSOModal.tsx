@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, Download, Mail, Settings2, EyeOff } from "lucide-react";
 import { Switch } from "@/app/components/ui/switch";
 import { useModalShortcuts, KbdHint } from "./ModalKeyboard";
@@ -7,7 +7,7 @@ import { useDiscardGuard } from "./ui/DiscardChangesDialog";
 import type { SalesOrder } from "./types";
 import { Button } from "./ui/Button";
 import {
-  PdfDocument, DEFAULT_SO_TERMS,
+  PdfDocument, DEFAULT_SO_TERMS, pdfDataInBase,
   type PdfDocumentData, type PdfLineItem, type PdfAdjustment, type PdfVisibility,
   type PdfLinePricingRule, type PdfLineAdjustment,
 } from "@/app/components/shared/pdfDocument";
@@ -15,6 +15,9 @@ import {
   getLineShipment, getLineComments, getHeaderMeta, getParties, getPaymentInfo, getItemPhoto, docPaymentTerms, docPaymentMethod,
 } from "./soDocumentData";
 import { getExternalLinksList } from "@/app/data/linksRepository";
+import { soFx } from "@/app/currency/soFx";
+import { PrintCurrencySwitch } from "@/app/components/currency/PrintCurrencySwitch";
+import type { DocView } from "@/app/components/currency/docCurrencyContext";
 
 const font: React.CSSProperties = {};
 const caption: React.CSSProperties = { ...font, fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" };
@@ -108,6 +111,15 @@ export function ExportSOModal({ open, so, onClose }: { open: boolean; so: SalesO
   /* Include-attachments toggle — when true, the download would bundle
      the SO's attachments alongside the PDF (zip). UI only for now. */
   const [includeAttachments, setIncludeAttachments] = useState(false);
+  /* The currency the document downloads in: the customer's by default,
+     each opening starting there, or the base currency at the order's rate
+     (the header's Base Currency | Customer Currency switch). */
+  const [view, setView] = useState<DocView>("document");
+  useEffect(() => {
+    if (open) setView("document");
+  }, [open]);
+  const fx = soFx(so);
+  const inBase = view === "base" && !fx.isBase;
 
   const toggleOption = (key: string) => {
     setOptions(prev => prev.map(o => o.key === key ? { ...o, enabled: !o.enabled } : o));
@@ -187,6 +199,7 @@ export function ExportSOModal({ open, so, onClose }: { open: boolean; so: SalesO
             </div>
           </div>
           <div className="flex items-center" style={{ gap: 8 }}>
+            <PrintCurrencySwitch currency={fx.currency} view={view} onViewChange={setView} />
             {VISIBILITY_OPTIONS_ENABLED && <button
               onClick={() => setShowOptions(!showOptions)}
               className={`flex items-center rounded-lg border transition-colors ${showOptions ? "bg-primary text-primary-foreground border-primary" : "border-border text-foreground-soft hover:bg-secondary"}`}
@@ -319,7 +332,7 @@ export function ExportSOModal({ open, so, onClose }: { open: boolean; so: SalesO
               amount: a.amount,
               kind: a.amount < 0 ? "discount" : "premium",
             }));
-            const data: PdfDocumentData = {
+            const docData: PdfDocumentData = {
               kind: "so",
               docNumber: `${so.soNumber.replace(/^SO-?/i, "") || so.soNumber}-V${meta.versionNum}`,
               statusLabel: so.status,
@@ -397,6 +410,9 @@ export function ExportSOModal({ open, so, onClose }: { open: boolean; so: SalesO
               signature: undefined,
               poweredBy: "Omne ERP",
             };
+            /* In the base currency (the header's switch), every amount
+               converted at the order's rate. */
+            const data = inBase ? pdfDataInBase(docData, fx) : docData;
             const visibility: PdfVisibility = {
               brand: showHeader,
               meta: true,

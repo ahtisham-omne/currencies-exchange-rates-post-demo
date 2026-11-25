@@ -6,7 +6,7 @@
 import type { SalesOrder, SOLine } from "./types";
 import { FIELD_RULES, isMissing } from "@/app/components/shared/fieldRequirements";
 import { isSparseCustomer } from "@/app/components/shared/customerDefaults";
-import { formatMoney } from "@/app/currency/money";
+import { formatMoney, rateSentence } from "@/app/currency/money";
 import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
 
 export const DOC_C = {
@@ -50,17 +50,33 @@ export function currencyNamePlural(name: string): string {
   return `${name}s`;
 }
 
+/** "United States Dollars (USD)": a currency named for the footnote. */
+function currencyFullName(code: string): string {
+  const name = getCurrency(code)?.name;
+  return name ? `${currencyNamePlural(name)} (${code})` : code;
+}
+
 /** How the printed order names its currency (Currency Touchpoints Map,
  *  24 Nov 2026): the total labelled with the code, "Total (USD)", and the
  *  footnote "All amounts in United States Dollars (USD)." (the name and
- *  code from the currency list). The order prints in its own currency. */
-export function docCurrencyLabels(currency: string | null | undefined): { code: string; totalLabel: string; footnote: string } {
+ *  code from the currency list). The order prints in its own currency;
+ *  printed in the base currency instead (the print preview's Base Currency |
+ *  Customer Currency switch, 25 Nov 2026), `convertedFrom` makes the footnote
+ *  say what the amounts were converted from and at which rate, as Purchase
+ *  Orders do: "…, converted from United States Dollars (USD) at 1 USD =
+ *  278.5200 PKR." */
+export function docCurrencyLabels(
+  currency: string | null | undefined,
+  convertedFrom?: { currency: string; rate: number },
+): { code: string; totalLabel: string; footnote: string } {
   const code = (currency || BASE_CURRENCY).toUpperCase();
-  const name = getCurrency(code)?.name;
+  const from = convertedFrom?.currency.toUpperCase();
   return {
     code,
     totalLabel: `Total (${code})`,
-    footnote: `All amounts in ${name ? `${currencyNamePlural(name)} (${code})` : code}.`,
+    footnote: from && convertedFrom
+      ? `All amounts in ${currencyFullName(code)}, converted from ${currencyFullName(from)} at ${rateSentence(from, convertedFrom.rate)}.`
+      : `All amounts in ${currencyFullName(code)}.`,
   };
 }
 

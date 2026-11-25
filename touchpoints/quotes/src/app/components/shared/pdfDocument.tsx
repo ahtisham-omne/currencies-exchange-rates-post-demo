@@ -24,8 +24,9 @@
  *     the columns align without a monospace font.
  */
 import React from "react";
-import { formatMoney } from "@/app/currency/money";
-import { currencyFootnote } from "@/app/currency/currencies";
+import { formatMoney, rateSentence } from "@/app/currency/money";
+import { BASE_CURRENCY, currencyFootnote, currencyNamePlural, getCurrency } from "@/app/currency/currencies";
+import { toBase } from "@/app/currency/rates";
 
 /* ─── Design tokens (kept local so the template survives theme drift) ─── */
 export const PDF_TOKENS = {
@@ -204,6 +205,10 @@ export interface PdfDocumentData {
   items: PdfLineItem[];
   /** Currency label ("USD", "EUR") used in totals row. */
   currency?: string;
+  /** Set when the document is printed in the base currency instead of
+   *  its own: the currency the amounts were converted from and the
+   *  document's rate. The totals then show the rate and say so. */
+  convertedFrom?: { currency: string; rate: number };
   /** UOM column header — usually "Unit"; some catalogs use "UOM". */
   unitLabel?: string;
   /** Total number of items in the source SO/Quote (for "1 to 4 of 8"). */
@@ -277,6 +282,55 @@ const ALL_ON: Required<PdfVisibility> = {
 export function fmtCurrency(n: number, currency = "USD"): string {
   /* The same symbols and minor units as the rest of the module ("¥" has none). */
   return formatMoney(n, currency);
+}
+
+/** "Pakistani Rupees (PKR)", as the footnote names a currency. */
+function currencyName(code: string): string {
+  const c = getCurrency(code);
+  return c ? `${currencyNamePlural(c.name)} (${c.code})` : code;
+}
+
+/**
+ * The same document printed in the base currency (print / download's
+ * Base Currency choice, 25 Nov 2026): every amount converted at the
+ * document's rate, the same way Purchase Orders prints it. Lines,
+ * pricing rules, adjustments, order-level rules and adjustments,
+ * subtotal, discounts, premiums, tax, freight and the total all convert;
+ * the document then names the base currency and the rate it used.
+ * A document already in the base currency comes back unchanged.
+ */
+export function pdfDataInBase(data: PdfDocumentData, rate: number): PdfDocumentData {
+  const from = (data.currency || "USD").toUpperCase();
+  if (from === BASE_CURRENCY) return data;
+  const conv = (n: number) => toBase(n, rate);
+  const optConv = (n: number | undefined) => (n == null ? n : conv(n));
+  return {
+    ...data,
+    currency: BASE_CURRENCY,
+    convertedFrom: { currency: from, rate },
+    items: data.items.map((it) => {
+      const unitPrice = conv(it.unitPrice);
+      /* A line with nothing applied stays price × quantity, so converting
+         its figures one by one doesn't open a breakdown it doesn't have. */
+      const plain = Math.abs(it.lineTotal - it.unitPrice * it.quantity) <= 0.005;
+      return {
+        ...it,
+        unitPrice,
+        lineTotal: plain ? Math.round(unitPrice * it.quantity * 100) / 100 : conv(it.lineTotal),
+        pricingRules: it.pricingRules?.map((r) => ({ ...r, amount: conv(r.amount) })),
+        adjustments: it.adjustments?.map((a) => ({ ...a, amount: conv(a.amount) })),
+      };
+    }),
+    pricingRules: data.pricingRules?.map((r) => ({ ...r, amount: conv(r.amount) })),
+    adjustments: data.adjustments?.map((a) => ({ ...a, amount: conv(a.amount) })),
+    subtotal: conv(data.subtotal),
+    discountsTotal: optConv(data.discountsTotal),
+    premiumsTotal: optConv(data.premiumsTotal),
+    adjustmentsTotal: optConv(data.adjustmentsTotal),
+    taxTotal: optConv(data.taxTotal),
+    freightTotal: optConv(data.freightTotal),
+    grandTotal: conv(data.grandTotal),
+  };
 }
 
 function statusToneStyles(tone: PdfDocumentData["statusTone"] = "info") {
@@ -888,6 +942,10 @@ function PdfPaymentTotals({ data }: { data: PdfDocumentData }) {
      names it, and a footnote says what every amount is in (Currency
      Touchpoints Map, Quotes 6). */
   const c = data.currency || "USD";
+  /* Printed in the base currency: the rate it was converted at sits with
+     the payment details, and the footnote says what it was converted from
+     (as Purchase Orders prints it). */
+  const from = data.convertedFrom;
   return (
     <div style={{ marginTop: 20, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 32 }}>
       <div style={{ paddingTop: 4, fontSize: 12, color: PDF_TOKENS.muted, lineHeight: 1.8 }}>
@@ -896,6 +954,9 @@ function PdfPaymentTotals({ data }: { data: PdfDocumentData }) {
         )}
         {data.paymentTerms && (
           <div>Payment Terms: <span style={{ fontWeight: 700, color: PDF_TOKENS.fg }}>{data.paymentTerms}</span></div>
+        )}
+        {from && (
+          <div>Exchange rate: <span style={{ fontWeight: 700, color: PDF_TOKENS.fg }}>{rateSentence(from.currency, from.rate, c.toUpperCase())}</span></div>
         )}
       </div>
       <div style={{ minWidth: 300 }}>
@@ -949,7 +1010,9 @@ function PdfPaymentTotals({ data }: { data: PdfDocumentData }) {
           <span style={{ fontSize: 19, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(data.grandTotal, c)}</span>
         </div>
         <div style={{ marginTop: 6, fontSize: 11, color: PDF_TOKENS.muted, textAlign: "right" }}>
-          {currencyFootnote(c.toUpperCase())}
+          {from
+            ? `All amounts in ${currencyName(c.toUpperCase())}, converted from ${currencyName(from.currency)} at ${rateSentence(from.currency, from.rate, c.toUpperCase())}.`
+            : currencyFootnote(c.toUpperCase())}
         </div>
       </div>
     </div>

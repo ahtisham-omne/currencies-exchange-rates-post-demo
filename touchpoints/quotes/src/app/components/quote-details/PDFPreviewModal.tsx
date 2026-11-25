@@ -27,6 +27,8 @@ import { PrintPageCount } from "../shared/printPages";
 import { getQuotePrintAttachments } from "./AttachmentsTab";
 import { Switch } from "@/app/components/ui/switch";
 import { adaptQuoteToPdfData, type LegacyQuoteInput } from "./quotePdfAdapter";
+import { PrintCurrencySwitch } from "../currency/PrintCurrencySwitch";
+import type { DocView } from "../currency/docCurrencyContext";
 import type { Quote } from "../../types/quote";
 
 interface PDFPreviewModalProps {
@@ -60,11 +62,17 @@ interface PDFPreviewModalProps {
 }
 
 export function PDFPreviewModal({ isOpen, onClose, quote, detail, mode = "download", isNewlyCreated = false }: PDFPreviewModalProps) {
-  const data = useMemo(() => adaptQuoteToPdfData(quote, detail), [quote, detail]);
+  /* Print in: the customer's currency (the quote's, the default) or the
+     base currency, converted at the quote's rate. Back to the customer's
+     each time the preview opens. */
+  const [view, setView] = useState<DocView>("document");
+  const data = useMemo(() => adaptQuoteToPdfData(quote, detail, { view }), [quote, detail, view]);
+  /* The quote's own currency, also while the document shows base. */
+  const quoteCurrencyCode = data.convertedFrom?.currency ?? data.currency ?? "";
   /* Include-attachments toggle — when true, the download would bundle
      the quote's attachments alongside the PDF (zip). UI only for now. */
   const [includeAttachments, setIncludeAttachments] = useState(false);
-  useEffect(() => { if (isOpen) setIncludeAttachments(false); }, [isOpen]);
+  useEffect(() => { if (isOpen) { setIncludeAttachments(false); setView("document"); } }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -100,7 +108,9 @@ export function PDFPreviewModal({ isOpen, onClose, quote, detail, mode = "downlo
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ── title + close, matching Partner modal chrome
-            (title on the left, close-only affordance on the right). */}
+            (title on the left, close-only affordance on the right). On a
+            quote in a foreign currency, the print currency switch sits
+            just left of close, where Purchase Orders has it. */}
         <div
           className="shrink-0 flex items-center justify-between"
           style={{ padding: "12px 20px", borderBottom: "1px solid #E2E8F0", background: "#FFFFFF" }}
@@ -111,7 +121,8 @@ export function PDFPreviewModal({ isOpen, onClose, quote, detail, mode = "downlo
               {data.kind === "quote" ? "Quote" : "Sales Order"} preview
             </span>
             <span style={{ fontSize: 11.5, color: "#64748B", marginTop: 2 }}>
-              {/* In the customer's currency, named, as the document prints it. */}
+              {/* In the currency the document prints in (the customer's,
+                  or base when chosen), named. */}
               {data.docNumber} · {(() => {
                 const code = (data.currency || "USD").toUpperCase();
                 const text = fmtCurrency(data.grandTotal, code);
@@ -119,6 +130,8 @@ export function PDFPreviewModal({ isOpen, onClose, quote, detail, mode = "downlo
               })()}
             </span>
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <PrintCurrencySwitch currency={quoteCurrencyCode} view={view} onViewChange={setView} />
           <button
             onClick={onClose}
             className="inline-flex items-center justify-center transition-colors"
@@ -129,6 +142,7 @@ export function PDFPreviewModal({ isOpen, onClose, quote, detail, mode = "downlo
           >
             <X style={{ width: 16, height: 16 }} />
           </button>
+          </div>
         </div>
 
         {/* ── Preview scroller ── */}

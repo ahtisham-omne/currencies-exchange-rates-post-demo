@@ -24,7 +24,8 @@
  *     the columns align without a monospace font.
  */
 import React from "react";
-import { formatMoney } from "@/app/currency/money";
+import { formatMoney, rateSentence } from "@/app/currency/money";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { docCurrencyLabels } from "@/app/components/so/soDocumentData";
 
 /* ─── Design tokens (kept local so the template survives theme drift) ─── */
@@ -204,6 +205,10 @@ export interface PdfDocumentData {
   items: PdfLineItem[];
   /** Currency label ("USD", "EUR") used in totals row. */
   currency?: string;
+  /** Set when the amounts were converted into `currency` (the base
+   *  currency) from the document's own: the footnote names the source
+   *  currency and the rate. See `pdfDataInBase`. */
+  convertedFrom?: { currency: string; rate: number };
   /** UOM column header — usually "Unit"; some catalogs use "UOM". */
   unitLabel?: string;
   /** Total number of items in the source SO/Quote (for "1 to 4 of 8"). */
@@ -277,6 +282,46 @@ const ALL_ON: Required<PdfVisibility> = {
 export function fmtCurrency(n: number, currency = "USD"): string {
   /* The same symbols and minor units as the rest of the module ("¥" has none). */
   return formatMoney(n, currency);
+}
+
+/**
+ * The same document with every amount in the base currency, converted at
+ * `from.rate` (base per one unit of the document's currency): line prices,
+ * pricing-rule and adjustment amounts, line totals, order-level rules and
+ * adjustments, and every total. The labels then read the base currency
+ * ("Total (PKR)") and the footnote says what the amounts were converted
+ * from and at which rate. Used by the print / download preview's Base
+ * Currency | Customer Currency switch (25 Nov 2026); the document itself
+ * renders the same either way.
+ */
+export function pdfDataInBase(data: PdfDocumentData, from: { currency: string; rate: number }): PdfDocumentData {
+  /* Converted unrounded and rounded once, as each figure is shown
+     (fmtCurrency): an item's "qty × price" line then still matches its
+     total, and the totals still add up, instead of drifting by a cent
+     where each figure was rounded before multiplying or adding (toBase). */
+  const cv = (n: number) => n * from.rate;
+  const cvOpt = (n: number | undefined) => (typeof n === "number" ? cv(n) : n);
+  return {
+    ...data,
+    currency: BASE_CURRENCY,
+    convertedFrom: { currency: from.currency.toUpperCase(), rate: from.rate },
+    items: data.items.map((it) => ({
+      ...it,
+      unitPrice: cv(it.unitPrice),
+      lineTotal: cv(it.lineTotal),
+      pricingRules: it.pricingRules?.map((r) => ({ ...r, amount: cv(r.amount) })),
+      adjustments: it.adjustments?.map((a) => ({ ...a, amount: cv(a.amount) })),
+    })),
+    pricingRules: data.pricingRules?.map((r) => ({ ...r, amount: cv(r.amount) })),
+    adjustments: data.adjustments?.map((a) => ({ ...a, amount: cv(a.amount) })),
+    subtotal: cv(data.subtotal),
+    discountsTotal: cvOpt(data.discountsTotal),
+    premiumsTotal: cvOpt(data.premiumsTotal),
+    adjustmentsTotal: cvOpt(data.adjustmentsTotal),
+    taxTotal: cvOpt(data.taxTotal),
+    freightTotal: cvOpt(data.freightTotal),
+    grandTotal: cv(data.grandTotal),
+  };
 }
 
 function statusToneStyles(tone: PdfDocumentData["statusTone"] = "info") {
@@ -894,6 +939,9 @@ function PdfPaymentTotals({ data }: { data: PdfDocumentData }) {
         {data.paymentTerms && (
           <div>Payment Terms: <span style={{ fontWeight: 700, color: PDF_TOKENS.fg }}>{data.paymentTerms}</span></div>
         )}
+        {data.convertedFrom && (
+          <div>Exchange rate: <span style={{ fontWeight: 700, color: PDF_TOKENS.fg }}>{rateSentence(data.convertedFrom.currency, data.convertedFrom.rate, c.toUpperCase())}</span></div>
+        )}
       </div>
       <div style={{ minWidth: 300 }}>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12 }}>
@@ -947,7 +995,7 @@ function PdfPaymentTotals({ data }: { data: PdfDocumentData }) {
           <span style={{ fontSize: 15, fontWeight: 700 }}>{docCurrencyLabels(c).totalLabel}</span>
           <span style={{ fontSize: 19, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(data.grandTotal, c)}</span>
         </div>
-        <div style={{ marginTop: 6, textAlign: "right", fontSize: 11, color: PDF_TOKENS.muted }}>{docCurrencyLabels(c).footnote}</div>
+        <div style={{ marginTop: 6, textAlign: "right", fontSize: 11, color: PDF_TOKENS.muted }}>{docCurrencyLabels(c, data.convertedFrom).footnote}</div>
       </div>
     </div>
   );

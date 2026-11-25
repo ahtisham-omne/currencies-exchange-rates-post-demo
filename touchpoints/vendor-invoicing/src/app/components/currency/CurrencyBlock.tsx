@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Settings2 } from 'lucide-react';
+import { Info, Settings2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, formatRate, moneyPrefix } from '@/app/currency/money';
@@ -102,7 +102,7 @@ export interface CurrencyBlockProps {
   /** Vendor invoiced / You pay in / Base equivalent…, in order. */
   rows: CurrencyBlockRow[];
   /** The FX variance row, where the document has one. */
-  variance?: { amount: number; title: string; label?: string } | null;
+  variance?: { amount: number; title: string; label?: string; tip?: React.ReactNode } | null;
   /** The Exchange rate row: "1 USD = ₨279.5200 PKR", the qualifier
    *  ("posting date") under it. Null rate shows `pendingText`. */
   rate?: { rate: number | null; qualifier?: string; pendingText?: string } | null;
@@ -169,9 +169,27 @@ export function CurrencyBlock({ currency, rateType, rateTip, rows, variance, rat
           ))}
           {variance && (
             <div className="flex items-center justify-between gap-2">
-              <p className="text-slate-400 shrink-0 cursor-help" style={{ fontSize: 10, fontWeight: 500 }} title={variance.title}>
-                {variance.label ?? 'FX variance'}
-              </p>
+              {variance.tip ? (
+                /* What FX variance means, on an info icon (vendor invoices,
+                   25 Nov 2026); the rates compared ride the amount's hover. */
+                <p className="text-slate-400 shrink-0 inline-flex items-center gap-1" style={{ fontSize: 10, fontWeight: 500 }}>
+                  {variance.label ?? 'FX variance'}
+                  <Tooltip delayDuration={200}>
+                    <TooltipTrigger asChild>
+                      <span tabIndex={0} className="inline-flex cursor-help text-slate-400 hover:text-slate-600" aria-label="What is FX variance?">
+                        <Info className="w-3 h-3" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[240px] text-[11px] z-[300]">
+                      {variance.tip}
+                    </TooltipContent>
+                  </Tooltip>
+                </p>
+              ) : (
+                <p className="text-slate-400 shrink-0 cursor-help" style={{ fontSize: 10, fontWeight: 500 }} title={variance.title}>
+                  {variance.label ?? 'FX variance'}
+                </p>
+              )}
               <p className="tabular-nums" style={{ fontSize: 12, fontWeight: 600, color: varianceHex(variance.amount) }} title={variance.title}>
                 {signedVariance(variance.amount)}
               </p>
@@ -220,8 +238,9 @@ export function CurrencyBlock({ currency, rateType, rateTip, rows, variance, rat
 
 /* ── What each block's FX variance says ───────────────────────────────── */
 
+/** The FX variance info tooltip on a vendor invoice (copy, 25 Nov 2026). */
 export const INVOICE_FX_VARIANCE_TITLE =
-  'Receiving booked the goods at the receiving-date rate; this invoice converts them at the posting-date rate. Paying less in the base currency is a gain (+) and posts to FX Gain; paying more is a loss (−) and posts to FX Loss.';
+  'The difference between the receiving-day rate and the invoice-date rate.';
 
 export const PAYMENT_FX_VARIANCE_TITLE =
   "What A/P carried at the invoice's rate against what this payment cost in the base currency. Costing less is a gain (+) and posts to FX Gain; costing more is a loss (−) and posts to FX Loss.";

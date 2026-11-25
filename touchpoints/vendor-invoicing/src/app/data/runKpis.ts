@@ -55,7 +55,7 @@ export const DEFAULT_RUN_KPI_KEYS = [
 
 // The band is in the base currency (Currency & Exchange Rates): each run's
 // payments convert at their own rate on its payment date before they add
-// up, and the band header carries the BaseCurrencyNote. KPI-sized, the way
+// up. KPI-sized, the way
 // the invoice insights write money.
 const money = (n: number) => formatCompactMoney(n, BASE_CURRENCY);
 // Shared midnight-anchored day count (9/22/26 review response): the old

@@ -16,6 +16,7 @@
  */
 import {
   DEFAULT_QUOTE_TERMS,
+  pdfDataInBase,
   type PdfDocumentData,
   type PdfLineItem,
   type PdfLinePricingRule,
@@ -25,6 +26,7 @@ import type { Quote } from "../../types/quote";
 import { FIELD_RULES } from "../shared/fieldRequirements";
 import { getExternalLinksList } from "../../data/linksRepository";
 import { customerCurrency, quoteFx } from "@/app/currency/qFx";
+import type { DocView } from "../currency/docCurrencyContext";
 
 export interface LegacyQuoteInput {
   quoteNumber: string;
@@ -37,6 +39,9 @@ export interface LegacyQuoteInput {
   status?: string;
   /** The quote's currency; without one the document is in the customer's default. */
   currency?: string;
+  /** The quote's rate to the base currency, for printing it in base.
+   *  Without one, the rate on today for its currency. */
+  exchangeRate?: number;
 }
 
 export interface QuotePdfDetail {
@@ -210,8 +215,32 @@ function fmtDate(d: Date | string | undefined): string {
 /**
  * Map a Quote (full or subset) + optional detail-page state into
  * the shared `PdfDocumentData` shape. Pure — no React refs.
+ *
+ * `view` is print / download's currency choice: "document" (the
+ * default) prints in the quote's currency, the customer's; "base"
+ * prints the same document with every amount converted to the base
+ * currency at the quote's rate. Send to Customer always uses the
+ * default.
  */
 export function adaptQuoteToPdfData(
+  quote: (Quote | LegacyQuoteInput) | undefined,
+  detail: QuotePdfDetail | undefined,
+  options?: { view?: DocView },
+): PdfDocumentData {
+  const data = buildQuotePdfData(quote, detail);
+  if (options?.view !== "base") return data;
+  const q = quote ?? ({} as Partial<Quote>);
+  const fx = "customer" in q
+    ? quoteFx(q as Quote)
+    : quoteFx({
+        currency: (q as LegacyQuoteInput).currency,
+        exchangeRate: (q as LegacyQuoteInput).exchangeRate,
+        customer: { name: (q as LegacyQuoteInput).customerName },
+      });
+  return fx.isBase ? data : pdfDataInBase(data, fx.rate);
+}
+
+function buildQuotePdfData(
   quote: (Quote | LegacyQuoteInput) | undefined,
   detail: QuotePdfDetail | undefined,
 ): PdfDocumentData {

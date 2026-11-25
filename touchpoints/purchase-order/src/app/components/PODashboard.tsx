@@ -48,7 +48,6 @@ import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 import { FONT } from "./designTokens";
-import { BaseCurrencyNote } from "./currency/BaseCurrencyNote";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatCompactMoney, formatMoney } from "@/app/currency/money";
 import { LAST_SYNC, midRateOn } from "@/app/currency/rates";
@@ -446,9 +445,6 @@ export default function PODashboard() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <span className="text-[#CBD5E1]">|</span>
-          {/* Money on this dashboard is in the base currency (spec 4.4). */}
-          <BaseCurrencyNote what="PO" />
           <span className="text-[#CBD5E1]">|</span>
           <span className="text-[11px] text-[#94A3B8]" style={{ fontWeight: 400 }}>
             Updated{" "}

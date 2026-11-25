@@ -24,7 +24,6 @@ import { DatePickerField } from "./date-picker-field";
 import { InsightsRangeMenu, InsightsRefresh, type InsightsRange } from "@/app/components/shared/InsightsControls";
 import { summarizeSO } from "./summarizeSO";
 import { BaseMoney } from "@/app/components/currency/Money";
-import { BaseCurrencyNote } from "@/app/components/currency/BaseCurrencyNote";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatCompactMoney, formatMoney } from "@/app/currency/money";
 import { soFx, toSOBase } from "@/app/currency/soFx";
@@ -1875,7 +1874,6 @@ export function SOList() {
                   onCustomChange={(from, to) => setInsightsCustom({ from, to })}
                 />
                 <InsightsRefresh toastLabel="Sales order insights refreshed" />
-                <BaseCurrencyNote />
               </div>
               <button onClick={() => setShowInsights(true)} className="inline-flex items-center gap-1 text-[11px] hover:bg-muted/50 px-2 py-0.5 rounded-md transition-colors cursor-pointer" style={{ fontWeight: 500, color: "hsl(var(--primary))" }}>
                 <Plus className="w-3 h-3" /> Add Insights
@@ -2637,7 +2635,6 @@ export function SOList() {
                 <div className="flex items-center justify-between mb-2.5">
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground" style={{ fontWeight: 500 }}>Performance Insights</span>
-                    <BaseCurrencyNote />
                   </div>
                   <button onClick={() => setInsightsCollapsed(true)} className="p-1.5 rounded-md hover:bg-muted/40 text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
                     <X className="w-3.5 h-3.5" />

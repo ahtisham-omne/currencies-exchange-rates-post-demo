@@ -55,8 +55,8 @@ export function CurrencyHeaderControls({
   what?: string;
   /** The scrolled (morphed) header: one step smaller. */
   compact?: boolean;
-  /** The Base Currency | Vendor Currency toggle. Off where the screen stays in
-   *  the base currency (creating a vendor invoice). */
+  /** The Base Currency | Invoice Currency toggle. Off where the screen stays
+   *  in one currency (the invoice and payment pages). */
   toggle?: boolean;
   /** The button names the currency: "Currency · AED". */
   showCode?: boolean;

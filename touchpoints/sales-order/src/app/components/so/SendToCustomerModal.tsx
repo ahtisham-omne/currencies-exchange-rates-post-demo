@@ -16,7 +16,7 @@ import {
 } from "./soDocumentData";
 import { StateTransitionOverlay } from "@/app/components/shared/StateTransitionOverlay";
 import {
-  PdfDocument, DEFAULT_SO_TERMS, getPdfPageCount,
+  PdfDocument, DEFAULT_SO_TERMS, getPdfPageCount, pdfDataInBase,
   type PdfDocumentData, type PdfLineItem, type PdfAdjustment, type PdfVisibility,
   type PdfLinePricingRule, type PdfLineAdjustment,
 } from "@/app/components/shared/pdfDocument";
@@ -25,6 +25,9 @@ import { getSOPrintAttachments } from "./AttachmentsTab";
 import { getExternalLinksList } from "@/app/data/linksRepository";
 import { FIELD_RULES } from "@/app/components/shared/fieldRequirements";
 import { formatMoney } from "@/app/currency/money";
+import { soFx } from "@/app/currency/soFx";
+import { PrintCurrencySwitch } from "@/app/components/currency/PrintCurrencySwitch";
+import type { DocView } from "@/app/components/currency/docCurrencyContext";
 
 /* ── Styling tokens ── */
 const caption: React.CSSProperties = { fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-medium)" };
@@ -166,8 +169,15 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
 
   const isPrint = mode === "print";
 
+  /* The currency the document prints in (print mode only): the customer's
+     by default, each opening starting there, or the base currency at the
+     order's rate. Sending always goes out in the customer's currency. */
+  const [printView, setPrintView] = useState<DocView>("document");
+  const fx = soFx(so);
+  const printInBase = isPrint && printView === "base" && !fx.isBase;
+
   useEffect(() => {
-    if (isOpen) { setSending(false); setSent(false); setActionMode("send"); setShowOptions(false); setOptions(DEFAULT_OPTIONS); setCurrentPage(1); setIncludeAttachments(false); }
+    if (isOpen) { setSending(false); setSent(false); setActionMode("send"); setShowOptions(false); setOptions(DEFAULT_OPTIONS); setCurrentPage(1); setIncludeAttachments(false); setPrintView("document"); }
   }, [isOpen]);
 
   const toggleOption = (key: string) => setOptions(prev => prev.map(o => o.key === key ? { ...o, enabled: !o.enabled } : o));
@@ -786,8 +796,10 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
 
 
   /* The preview's data and visibility, hoisted so the Print window's
-     page count reads the same document the preview renders. */
-  const previewData = soToPdfData(so, {
+     page count reads the same document the preview renders. Printing in
+     the base currency (the header's Base Currency | Customer Currency
+     switch, print mode only) converts every amount at the order's rate. */
+  const docData = soToPdfData(so, {
     showHeader: !!showHeader,
     showPricing: !!showPricing,
     showAdjustments: !!showAdjustments,
@@ -804,6 +816,7 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
     totalDiscounts,
     grandTotal,
   });
+  const previewData = printInBase ? pdfDataInBase(docData, fx) : docData;
   const previewVisibility: PdfVisibility = {
     brand: !!showHeader,
     meta: true,
@@ -878,6 +891,7 @@ export function SendToCustomerModal({ isOpen, so, isResend, mode = "send", onClo
             </div>
           </div>
           <div className="flex items-center" style={{ gap: 8 }}>
+            {isPrint && <PrintCurrencySwitch currency={fx.currency} view={printView} onViewChange={setPrintView} />}
             {VISIBILITY_OPTIONS_ENABLED && <button
               onClick={() => setShowOptions(!showOptions)}
               className={`flex items-center rounded-lg border transition-colors ${showOptions ? "bg-primary text-primary-foreground border-primary" : "border-border text-foreground-soft hover:bg-secondary"}`}

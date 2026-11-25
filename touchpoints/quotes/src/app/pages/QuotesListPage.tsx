@@ -102,7 +102,6 @@ import {
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/app/components/ui/tooltip';
 import { format } from 'date-fns';
 import { BaseMoney } from '@/app/components/currency/Money';
-import { BaseCurrencyNote } from '@/app/components/currency/BaseCurrencyNote';
 import { currentRateFor, customerCurrency, quoteFx, stampQuoteRate, toQuoteBase } from '@/app/currency/qFx';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
@@ -161,7 +160,7 @@ const COLUMN_DEFS: (ColSelectorConfig & { minWidth: string; sortable?: boolean; 
   // items. No warehouse column — items belong to the quote, allocation to
   // a specific warehouse happens in the Sales Order.
   { key: 'items', label: 'Line Items', minWidth: '220px', sortable: true },
-  { key: 'totalValue', label: 'Quote Value', minWidth: '130px', sortable: true, align: 'right' },
+  { key: 'totalValue', label: 'Quote Value', minWidth: '170px', sortable: true, align: 'right' }, // fits base amounts in the billions (₨1,234,567,890.12) without an ellipsis
   { key: 'deliveryLocation', label: 'Delivery Location', minWidth: '180px', sortable: true },
   { key: 'requestedDate', label: 'Requested On', minWidth: '120px', sortable: true },
   { key: 'respondBy', label: 'Respond By', minWidth: '120px', sortable: true },
@@ -1232,7 +1231,6 @@ export function QuotesListPage() {
                   onCustomChange={(from, to) => setInsightsCustom({ from, to })}
                 />
                 <InsightsRefresh toastLabel="Quote insights refreshed" />
-                <BaseCurrencyNote />
               </div>
               <button onClick={() => setInsightsPanelOpen(true)} className="inline-flex items-center gap-1 text-[11px] hover:bg-muted/50 px-2 py-0.5 rounded-md transition-colors cursor-pointer" style={{ fontWeight: 500, color: 'var(--primary)' }}>
                 <Plus className="w-3 h-3" /> Add Insights
@@ -2206,6 +2204,8 @@ export function QuotesListPage() {
                                             total: (quote as any).total || (quote as any).totalValue || 0,
                                             status: quote.status,
                                             currency: quoteFx(quote).currency,
+                                            /* Its rate, for printing it in the base currency. */
+                                            exchangeRate: quoteFx(quote).rate,
                                           },
                                           mode: 'print',
                                           isNewlyCreated: !!getCreatedQuote(quote.id),
@@ -2223,6 +2223,7 @@ export function QuotesListPage() {
                                             total: (quote as any).total || (quote as any).totalValue || 0,
                                             status: quote.status,
                                             currency: quoteFx(quote).currency,
+                                            exchangeRate: quoteFx(quote).rate,
                                           },
                                           mode: 'download',
                                           isNewlyCreated: !!getCreatedQuote(quote.id),

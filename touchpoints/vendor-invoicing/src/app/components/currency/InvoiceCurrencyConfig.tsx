@@ -174,7 +174,7 @@ export function InvoiceCurrencyBlock({
       rateType={pending ? null : rateType}
       rateTip={rateTip}
       rows={rows}
-      variance={variance ? { amount: variance.amount, title: `${varianceRatesText(variance, dateLabel)}. ${INVOICE_FX_VARIANCE_TITLE}` } : null}
+      variance={variance ? { amount: variance.amount, title: varianceRatesText(variance, dateLabel), tip: INVOICE_FX_VARIANCE_TITLE } : null}
       rate={
         pending
           ? { rate: null, pendingText: 'Set when paid' }
