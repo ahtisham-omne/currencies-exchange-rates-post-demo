@@ -9,10 +9,10 @@ import type { MoneyFx } from "./Money";
 /* ── The document's currency, and which one the page shows ────────────
  * A quote's amounts are kept in its currency, the customer's (spec 4.2,
  * 4.3), at a rate to the base currency taken on the quote date. The page
- * shows them in the base currency, the customer's amount riding the hover.
- * `view` could show the customer's instead; the quote page pins it to base
- * since the Currency Touchpoints Map (24 Nov 2026) dropped the header's
- * Base Currency | Customer Currency toggle. The quote page puts the currency, its rate and the view
+ * shows them in the base currency by default, the customer's amount riding
+ * the hover; the Base Currency | Customer Currency switch (back on 25 Nov
+ * 2026, in the Line Items toolbar, foreign-currency quotes only) flips that (`view`, kept per
+ * quote for the session in quoteView.ts). The quote page puts the currency, its rate and the view
  * here so the pieces (line rows, Quote Summary, hover cards, rule,
  * adjustment and freight modals, versions) don't each need a prop; creating
  * a quote does the same for the customer's currency at today's rate.

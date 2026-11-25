@@ -50,7 +50,7 @@ import { imageForSku } from '@/app/lib/itemImages';
 import { palette } from '@/styles/tokens';
 import { toBase } from '@/app/currency/rates';
 import { returnFx, rmaCurrency, rmaCurrencyPO } from '@/app/currency/returnCurrency';
-import { BaseMoney } from '@/app/components/currency/Money';
+import { BaseMoney, Money } from '@/app/components/currency/Money';
 import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { returnValueOf } from '@/app/components/currency/ReturnCurrencyConfig';
 
@@ -568,6 +568,10 @@ export const RMA_COLUMNS: ColumnDef<RMA>[] = [
     // rate their receipt was booked at (Currency Touchpoints Map,
     // 2026-11-24). A foreign-currency return shows its own amount and the
     // rate on hover; a PKR one is plain.
+    // The header menu's "Show values as" (25 Nov 2026, as the Partners
+    // listing) flips the column to the return's own currency, the PO's, with
+    // PKR and the rate on hover. Sorting and the range filter stay on PKR, so
+    // returns in different currencies still compare.
     key: 'returnValue',
     label: 'Return value',
     minWidth: 150,
@@ -576,14 +580,22 @@ export const RMA_COLUMNS: ColumnDef<RMA>[] = [
     filterType: 'range',
     filterable: true,
     align: 'right',
+    moneyColumn: true,
+    partyCurrencyLabel: 'Vendor currency',
     getValue: (row) => {
       const fx = returnFx(row);
       const value = returnValueOf(row);
       return fx ? toBase(value, fx.rate) : value;
     },
-    render: (row) => (
+    render: (row, { currencyView }) => (
       <span className="text-[13px] text-foreground tabular-nums" style={{ fontWeight: 500 }}>
-        <BaseMoney value={returnValueOf(row)} currency={rmaCurrency(row)} fx={returnFx(row)} role="Return currency" />
+        {currencyView === 'party' ? (
+          // No return page around the list, so Money reads in the return's
+          // currency (returnView.tsx) with the PKR card on hover.
+          <Money value={returnValueOf(row)} currency={rmaCurrency(row)} fx={returnFx(row)} role="Return currency" />
+        ) : (
+          <BaseMoney value={returnValueOf(row)} currency={rmaCurrency(row)} fx={returnFx(row)} role="Return currency" />
+        )}
       </span>
     ),
   },
@@ -824,6 +836,8 @@ export function RMADataTable({
       // so RMA #, Vendor, Status, etc. each expand proportionally instead
       // of the whole slack collapsing into the Vendor column.
       fillMode="spread"
+      // Return value's "Show values as" choice, kept for the session.
+      currencyViewKey="rma-list"
       getRowId={(rma) => rma.id}
       selectedIds={selectedIds}
       onSelectionChange={onSelectionChange}

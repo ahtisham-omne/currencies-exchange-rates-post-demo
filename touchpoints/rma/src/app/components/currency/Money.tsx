@@ -9,8 +9,9 @@ import { FX_ARROW_PADDING, FX_CARD_CLASS, FX_FLAG_PX, FxAlert, FxArrow, FxHead, 
 
 /* ── Money with its rate (as in the Vendor Invoicing touchpoint) ──────
  * In RMA a return keeps the currency of its PO, and PKR is the base. The
- * return's page shows every amount in PKR (2026-11-24: no Base | Vendor
- * Currency toggle), and the hover gives the PO's amount and the rate.
+ * return's page shows amounts in PKR on Base Currency (the PO's amount and
+ * the rate on hover) and in the PO's currency on Vendor Currency (PKR on
+ * hover): `Money` follows the page's view, `BaseMoney` is always PKR.
  *
  * An amount in a foreign currency wears a dotted underline, and hovering it
  * shows what it is in the base currency, at which rate, of which type, and for
@@ -62,10 +63,13 @@ export function MoneyCard({
   fx,
   dateLabel,
   role,
+  baseValue,
 }: {
   value: number;
   currency: string;
   fx: MoneyFx;
+  /** The PKR figure where it is a share of a larger conversion. */
+  baseValue?: number | undefined;
   /** What the rate date is, e.g. "posting date". Defaults to the fx's own
    *  label (the invoice's rate basis), else the posting date. */
   dateLabel?: string | undefined;
@@ -80,7 +84,7 @@ export function MoneyCard({
         <FxLine label={`In ${currency}`} value={withCode(formatMoney(value, currency), currency)} />
       </FxLines>
       <FxInset>
-        <FxLine strong label={`In ${BASE_CURRENCY} (base)`} value={withCode(formatMoney(toBase(value, fx.rate), BASE_CURRENCY), BASE_CURRENCY)} />
+        <FxLine strong label={`In ${BASE_CURRENCY} (base)`} value={withCode(formatMoney(baseValue ?? toBase(value, fx.rate), BASE_CURRENCY), BASE_CURRENCY)} />
         <RateNote currency={currency} fx={fx} dateLabel={dateLabel} />
         <FxRateType type={fx.rateType} label={RATE_TYPE_LABEL[fx.rateType]} source={fx.source} />
         {fx.provisional && <FxAlert>{fx.note ?? "Not settled yet: at today's rate until it is."}</FxAlert>}
@@ -210,6 +214,7 @@ export function Money({
   className = '',
   dateLabel,
   role = 'PO currency',
+  baseValue,
   children,
 }: {
   value: number;
@@ -218,13 +223,16 @@ export function Money({
   className?: string | undefined;
   dateLabel?: string | undefined;
   role?: string | undefined;
+  /** The PKR figure where it is a share of a larger conversion (a Return
+   *  Summary row), shown on Base Currency and in the hover. */
+  baseValue?: number | undefined;
   children?: React.ReactNode | undefined;
 }) {
   const code = (currency || BASE_CURRENCY).toUpperCase();
   // A return's page on Base Currency (returnView.tsx): PKR, the PO's amount on hover.
   const view = useReturnView();
   if (view === 'base' && fx && !isBaseCurrency(code)) {
-    return <BaseMoney value={value} currency={code} fx={fx} className={className} dateLabel={dateLabel} role={role} />;
+    return <BaseMoney value={value} currency={code} fx={fx} className={className} dateLabel={dateLabel} role={role} baseValue={baseValue} />;
   }
   const text = children ?? formatMoney(value, code);
   if (!fx || isBaseCurrency(code) || !value) {
@@ -232,7 +240,7 @@ export function Money({
   }
   return (
     <FxHover text={text} className={className}>
-      <MoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} />
+      <MoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} baseValue={baseValue} />
     </FxHover>
   );
 }

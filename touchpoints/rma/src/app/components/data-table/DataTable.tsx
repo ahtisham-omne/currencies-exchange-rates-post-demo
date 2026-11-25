@@ -47,6 +47,7 @@ import type {
   DensityOption,
   SortConfig,
 } from './types';
+import { useColumnCurrencyViews, type ColumnCurrencyView } from './columnCurrencyView';
 
 const CHECKBOX_COL_WIDTH = 44;
 const ACTIONS_COL_WIDTH = 60;
@@ -128,6 +129,10 @@ interface DataTableProps<T> {
    *    of the container, `flex` flags are ignored, and each resize moves
    *    ONLY the dragged column (the table scrolls if it overflows). */
   fillMode?: 'flex' | 'spread';
+  /** Where this table keeps its money columns' "Show values as" choice for
+   *  the session (columnCurrencyView.ts), so it outlives a remount. Without
+   *  it the money columns still switch, but only while the table is up. */
+  currencyViewKey?: string;
 }
 
 /** Generic data table shell. Ported from the partner-management module's
@@ -168,7 +173,18 @@ export function DataTable<T>({
   hideSelectionColumn = false,
   hidePagination = false,
   fillMode = 'flex',
+  currencyViewKey,
 }: DataTableProps<T>) {
+  /* ─── Money columns' "Show values as" (base until switched) ─── */
+  const [storedCurrencyViews, setStoredCurrencyView] = useColumnCurrencyViews(currencyViewKey);
+  const [localCurrencyViews, setLocalCurrencyViews] = useState<Record<string, ColumnCurrencyView>>({});
+  const currencyViewOf = (key: string): ColumnCurrencyView =>
+    (currencyViewKey ? storedCurrencyViews[key] : localCurrencyViews[key]) ?? 'base';
+  const changeCurrencyView = (key: string, view: ColumnCurrencyView) => {
+    if (currencyViewKey) setStoredCurrencyView(key, view);
+    else setLocalCurrencyViews((prev) => ({ ...prev, [key]: view }));
+  };
+
   /* ─── Column lookup ─── */
   const colByKey = useMemo(() => {
     const m = new Map<string, ColumnDef<T>>();
@@ -704,6 +720,13 @@ export function DataTable<T>({
                         formatValueLabel={def.formatValueLabel}
                         onFilterChange={onColumnFilterChange}
                         suppressOpenRef={suppressNextClickRef}
+                        {...(def.moneyColumn
+                          ? {
+                              currencyView: currencyViewOf(key),
+                              onCurrencyViewChange: (view: ColumnCurrencyView) => changeCurrencyView(key, view),
+                              ...(def.partyCurrencyLabel ? { partyCurrencyLabel: def.partyCurrencyLabel } : {}),
+                            }
+                          : {})}
                       >
                         <div
                           className={`inline-flex items-center gap-1 ${
@@ -872,7 +895,12 @@ export function DataTable<T>({
                         textOverflow: 'ellipsis',
                         ...(isDraggedCol ? { backgroundColor: 'rgba(10,119,255,0.035)' } : {}),
                       };
-                      const cellContent = def.render(row, { density, isSelected, searchQuery });
+                      const cellContent = def.render(row, {
+                        density,
+                        isSelected,
+                        searchQuery,
+                        ...(def.moneyColumn ? { currencyView: currencyViewOf(key) } : {}),
+                      });
                       const cellAlign = def.align === 'right' ? 'text-right' : '';
 
                       if (frozenColumns.has(key)) {

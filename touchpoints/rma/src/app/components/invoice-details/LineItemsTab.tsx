@@ -48,6 +48,7 @@ export function LineItemsTable<T>({
   subtotalLabel,
   subtotalValue,
   headerExtra,
+  toolbarExtra,
   rowHeight = 52,
   searchAccessor,
   searchPlaceholder = 'Search line items…',
@@ -72,6 +73,9 @@ export function LineItemsTable<T>({
   /** A return's value carries its dollars hover, so this takes a node. */
   subtotalValue: ReactNode;
   headerExtra?: ReactNode;
+  /** View controls on the right of the toolbar, beside Full screen and
+   *  Columns (a return's Base Currency | Vendor Currency switch). */
+  toolbarExtra?: ReactNode;
   /** Approx px per row — used to size the scroll area to content (capped at
    *  64vh). The DataTable's scroll container needs a definite height or it
    *  collapses in normal page flow. */
@@ -164,7 +168,7 @@ export function LineItemsTable<T>({
       <div className="shrink-0 flex items-center justify-between gap-3 px-4 pt-3.5 pb-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {searchAccessor && (
-            <div className="relative flex-1 max-w-xs">
+            <div className="relative flex-1 min-w-[180px] max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
               <Input
                 value={search}
@@ -195,6 +199,7 @@ export function LineItemsTable<T>({
             <span className="text-muted-foreground/70"> {countNoun}</span>
           </span>
           <div className="w-px h-5 bg-border/60 mx-1 hidden sm:block" />
+          {toolbarExtra}
           <button
             type="button"
             onClick={() => setFullScreen((v) => !v)}
@@ -207,7 +212,8 @@ export function LineItemsTable<T>({
             ) : (
               <Maximize2 className="w-[18px] h-[18px] text-muted-foreground/80" />
             )}
-            <span className="text-sm hidden md:inline" style={{ fontWeight: 500 }}>
+            {/* Icon only beside the currency switch, so the search keeps its width. */}
+            <span className={`text-sm ${toolbarExtra ? 'hidden' : 'hidden md:inline'}`} style={{ fontWeight: 500 }}>
               {fullScreen ? 'Exit full screen' : 'Full screen'}
             </span>
           </button>
@@ -844,12 +850,12 @@ function SerialLotCell({ serials, lots }: { serials?: string[]; lots?: RMALotAll
 // Amount table; everything else uses the inventory 3-way-match grid.
 // Kept hook-free so the conditional branch doesn't trip the Rules of Hooks
 // when the user navigates between a standalone and an inventory invoice.
-export function LineItemsTab({ invoice, subtotal, isPending, rma, readOnly = false }: { invoice: Invoice; subtotal: number; isPending: boolean; rma?: RMA; readOnly?: boolean }) {
+export function LineItemsTab({ invoice, subtotal, isPending, rma, readOnly = false, toolbarExtra }: { invoice: Invoice; subtotal: number; isPending: boolean; rma?: RMA; readOnly?: boolean; toolbarExtra?: ReactNode }) {
   // RMA mode reuses the InventoryLineItems shell — same DataTable, same
   // modals, same column selector — and only swaps the row source, column
   // labels, quick filters, storage key, and chrome strings.
   if (rma) {
-    return <InventoryLineItems invoice={invoice} subtotal={subtotal} isPending={isPending} rma={rma} readOnly={readOnly} />;
+    return <InventoryLineItems invoice={invoice} subtotal={subtotal} isPending={isPending} rma={rma} readOnly={readOnly} toolbarExtra={toolbarExtra} />;
   }
   if (invoice.type === 'Standalone') {
     return <StandaloneLineItems invoice={invoice} subtotal={subtotal} isPending={isPending} />;
@@ -857,7 +863,7 @@ export function LineItemsTab({ invoice, subtotal, isPending, rma, readOnly = fal
   return <InventoryLineItems invoice={invoice} subtotal={subtotal} isPending={isPending} />;
 }
 
-function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, readOnly = false }: { invoice: Invoice; subtotal: number; isPending: boolean; rma?: RMA; readOnly?: boolean }) {
+function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, readOnly = false, toolbarExtra }: { invoice: Invoice; subtotal: number; isPending: boolean; rma?: RMA; readOnly?: boolean; toolbarExtra?: ReactNode }) {
   const lines = useMemo(
     () => (rma ? rmaLinesToInvoiceLines(rma) : generateLines(invoice, subtotal)),
     [invoice, subtotal, rma],
@@ -1410,6 +1416,7 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending, rma, rea
         }
         subtotalValue={<Money value={lineAmountTotal} currency={invoice.currency} fx={returnRate} />}
         rowHeight={62}
+        toolbarExtra={toolbarExtra}
         title={rma ? 'Return Items' : 'Line Items'}
         searchAccessor={(l) => rma
           ? `${l.sku} ${l.productName} ${l.description} ${reasonOf(l.id)}`

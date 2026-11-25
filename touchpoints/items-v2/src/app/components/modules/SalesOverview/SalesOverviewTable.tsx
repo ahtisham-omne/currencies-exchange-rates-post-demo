@@ -17,7 +17,9 @@ import {
   Package,
   Layers,
   Warehouse as WarehouseIcon,
+  EyeOff,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   HoverCard,
   HoverCardTrigger,
@@ -61,7 +63,8 @@ import { isBaseCurrency } from "@/app/currency/currencies";
 import { RATE_PROVIDER, rateOn } from "@/app/currency/rates";
 import { fromUsd } from "@/app/currency/vendorFx";
 import { baseMoney } from "@/app/currency/itemMoney";
-import { BaseMoney, type MoneyFx } from "../../currency/Money";
+import { type MoneyFx } from "../../currency/Money";
+import { ColumnView, RowMoney, RowViewTable, ShowValuesAs, useColumnView } from "../../currency/RowCurrencyView";
 import { CurrencyCodeCell } from "../../currency/CurrencyCodeCell";
 
 /* ─── Data shape ─── */
@@ -270,10 +273,12 @@ function orderFx(row: SalesOrder): MoneyFx | null {
   return q.rate ? { rate: q.rate, rateType: "mid", rateDate: row.orderDate, source: RATE_PROVIDER } : null;
 }
 
-/** An order amount in base: the hover card on a foreign order. */
+/** An order amount in its column's view: base (the default), or the order's
+ *  own currency on the column's "Show values as: Customer currency"; the other
+ *  figure is on the hover of a foreign order. */
 function OrderAmount({ row, value, className }: { row: SalesOrder; value: number; className?: string }) {
   return (
-    <BaseMoney
+    <RowMoney
       value={value}
       currency={row.currency}
       fx={orderFx(row)}
@@ -281,6 +286,60 @@ function OrderAmount({ row, value, className }: { row: SalesOrder; value: number
       role="order currency"
       className={className}
     />
+  );
+}
+
+/* The amount columns, each with "Show values as" in its header menu. */
+const SO_MONEY_COLUMNS = new Set(["orderValue", "invoicedAmount", "paymentsMade"]);
+
+/* A money column's header menu, as the Partners listing draws it: the column
+   name, "Show values as" (Base currency | Customer currency), then Hide. The
+   table has no sort or filter yet, so those are not offered. */
+function SoMoneyHeader({ col, onHide }: { col: ColumnConfig; onHide?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const view = useColumnView(col.key);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        type="button"
+        className="inline-flex items-center cursor-pointer select-none hover:text-foreground transition-colors"
+      >
+        <span className="text-[13px] text-muted-foreground hover:text-foreground" style={{ fontWeight: 500 }}>
+          {col.label}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent align={col.key === "orderValue" ? "end" : "start"} sideOffset={4} className="p-0 rounded-lg shadow-lg border border-border/80 z-[200] w-[200px]">
+        <div className="px-3 pt-3 pb-2">
+          <div className="flex items-center gap-2 h-8 px-2.5 rounded-md border border-border bg-muted/30">
+            <span className="text-xs text-muted-foreground" style={{ fontWeight: 500 }}>{col.label}</span>
+          </div>
+        </div>
+        <div className="border-t border-border/60" />
+        <div className="py-1 px-1">
+          {view && (
+            <ShowValuesAs
+              view={view[0]}
+              onChange={(v) => { view[1](v); setOpen(false); }}
+              rowLabel="Customer currency"
+              divider={false}
+            />
+          )}
+          {onHide && (
+            <>
+              {view && <div className="border-t border-border/60 my-1" />}
+              <button
+                type="button"
+                onClick={() => { onHide(); setOpen(false); }}
+                className="flex items-center gap-2.5 w-full px-2.5 py-[7px] rounded-md text-[13px] text-foreground cursor-pointer transition-colors hover:bg-muted/60"
+              >
+                <EyeOff className="w-4 h-4 text-muted-foreground" />
+                <span style={{ fontWeight: 400 }}>Hide</span>
+              </button>
+            </>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -369,6 +428,10 @@ export function SalesOverviewTable() {
   const [soDensity, setSoDensity] = useState<SoDensity>("condensed");
   const [soPage, setSoPage] = useState(1);
   const [soPageSize, setSoPageSize] = useState(20);
+
+  /* Orders are in their customers' currencies, so the table has no one
+     currency to flip to: each money column's header menu shows its orders in
+     base (the default) or each in its own currency (RowCurrencyView). */
 
   const soFilteredRows = useMemo(
     () => SALES_ORDERS.filter((r) => soMatchesQuickFilter(r, soQuickFilter) && soMatchesSearch(r, soSearch)),
@@ -467,7 +530,7 @@ export function SalesOverviewTable() {
           </div>
         );
       case "orderValue":
-        /* In base; the order's own currency is in the Currency column. */
+        /* In the column's view (base by default); the order's own currency is in the Currency column. */
         return (
           <span className="inline-flex items-center gap-1.5 max-w-full">
             <OrderAmount row={row} value={row.orderValue} className={`${cellTextSize} font-medium text-foreground`} />
@@ -697,6 +760,7 @@ export function SalesOverviewTable() {
   };
 
   return (
+    <RowViewTable tableKey="sales-orders">
     <div className="flex flex-1 min-w-0 flex-col">
       {/* Toolbar Row 1: Search + Filters | count + Density + Columns */}
       <div className="flex items-center justify-between gap-3 px-4 pt-3.5 pb-2 shrink-0 flex-wrap">
@@ -851,9 +915,16 @@ export function SalesOverviewTable() {
                       overflow: "hidden",
                     }}
                   >
-                    <span className="text-[13px] text-muted-foreground" style={{ fontWeight: 500 }}>
-                      {col.label}
-                    </span>
+                    {SO_MONEY_COLUMNS.has(col.key) ? (
+                      <SoMoneyHeader
+                        col={col}
+                        onHide={SO_LOCKED_COLUMNS.includes(col.key) ? undefined : () => setSoColumnVisibility((prev) => ({ ...prev, [col.key]: false }))}
+                      />
+                    ) : (
+                      <span className="text-[13px] text-muted-foreground" style={{ fontWeight: 500 }}>
+                        {col.label}
+                      </span>
+                    )}
                   </TableHead>
                 );
               })}
@@ -887,7 +958,7 @@ export function SalesOverviewTable() {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {renderCell(col, row)}
+                      {SO_MONEY_COLUMNS.has(col.key) ? <ColumnView column={col.key}>{renderCell(col, row)}</ColumnView> : renderCell(col, row)}
                     </TableCell>
                   );
                 })}
@@ -965,5 +1036,6 @@ export function SalesOverviewTable() {
         onOpenChange={setSoColumnsOpen}
       />
     </div>
+    </RowViewTable>
   );
 }

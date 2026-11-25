@@ -428,8 +428,19 @@ export const mockQuotes = (() => {
   base.splice(2, 0, hero);
   applySparseCustomerSample(base);
   base.forEach(inCustomerCurrency);
+  pinFirstQuoteAsLatest(base);
   return base;
 })();
+
+/* The first example a user sees is in USD: Q-000-000-000 (Metro City Fire &
+   Rescue, a USD Draft) already leads the table, and it is touched last so it
+   also leads the board's Draft column ("Last updated", newest first) rather
+   than an AED quote. Patched after generation, so the seeded RNG sequence,
+   and every other quote, is unchanged. */
+function pinFirstQuoteAsLatest(quotes: Quote[]) {
+  const q = quotes.find((x) => x.quoteNumber === 'Q-000-000-000');
+  if (q) q.lastUpdated = new Date();
+}
 
 /* The design's quotes are written in USD. Each is put in its customer's
    default currency (spec 4.3) with the rate on its quote date, and its

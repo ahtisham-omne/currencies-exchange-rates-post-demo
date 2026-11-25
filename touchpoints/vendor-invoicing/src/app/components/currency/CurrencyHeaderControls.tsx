@@ -11,7 +11,7 @@ import type { DocView } from './docCurrencyContext';
  * foreign currency: on a base-currency one there's nothing to switch. The
  * view is the session's (docView.ts), never an edit. */
 
-function Segment({ active, onClick, label, tip }: { active: boolean; onClick: () => void; label: string; tip: string }) {
+export function Segment({ active, onClick, label, tip }: { active: boolean; onClick: () => void; label: string; tip: string }) {
   return (
     <Tooltip delayDuration={300}>
       <TooltipTrigger asChild>

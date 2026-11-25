@@ -1,14 +1,16 @@
 import * as React from 'react';
 import { isBaseCurrency } from '@/app/currency/currencies';
 import type { VendorRate } from '@/app/currency/vendorFx';
-import { BaseMoney } from './Money';
+import { RowMoney } from './RowCurrencyView';
 
 /* ── A vendor's price on the item's vendor list ───────────────────────
  * In the base currency, so vendors quoting in different currencies compare
  * at a glance (Currency Touchpoints Map, Items 2, 24 Nov 2026): "₨361,727.85
  * / km". A foreign vendor's price has the rate card on hover: the vendor's
  * own price in its currency, the base figure, and the rate it converts at
- * (the vendor's rate type, today). A base-currency vendor's price is plain. */
+ * (the vendor's rate type, today). A base-currency vendor's price is plain.
+ * On the column's "Show values as: Vendor currency" (25 Nov 2026) it shows in
+ * the vendor's own currency instead, the base figure on hover (RowCurrencyView). */
 export function VendorPrice({
   price,
   fx,
@@ -26,7 +28,7 @@ export function VendorPrice({
   return (
     <span className={`inline-flex min-w-0 truncate ${className}`}>
       <span className="truncate">
-        <BaseMoney value={price} currency={fx.currency} fx={isBase ? null : fx} className="text-foreground font-medium" />
+        <RowMoney value={price} currency={fx.currency} fx={isBase ? null : fx} className="text-foreground font-medium" />
         {uom && <span className="text-muted-foreground"> / {uom}</span>}
       </span>
     </span>

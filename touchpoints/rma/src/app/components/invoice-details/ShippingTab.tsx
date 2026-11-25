@@ -1,4 +1,5 @@
-import { formatMoney as moneyIn } from '@/app/currency/money';
+import { returnFx } from '@/app/currency/returnCurrency';
+import { Money } from '@/app/components/currency/Money';
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Truck } from 'lucide-react';
 import { LineItemsTable } from './LineItemsTab';
@@ -163,11 +164,6 @@ function formatDate(iso?: string) {
   });
 }
 
-/** In the return's (the PO's) currency, with its symbol: £30.23 (app/currency/money.ts). */
-function formatMoney(amount: number, currency: string) {
-  return moneyIn(amount, currency);
-}
-
 export function ShippingTab({ invoice, rma }: { invoice: Invoice; rma: RMA }) {
   // Nothing is staged until the first shipment leaves the dock, so a Draft,
   // Sent or Cancelled RMA, or an Approved one with no shipment in process,
@@ -284,7 +280,8 @@ export function ShippingTab({ invoice, rma }: { invoice: Invoice; rma: RMA }) {
       expandedIds={expandedIds}
       renderExpandedRow={(s) => <ShipmentLinesPanel shipment={s} />}
       subtotalLabel="Return value"
-      subtotalValue={formatMoney(totalValue, invoice.currency)}
+      // In the page's view (returnView.tsx), the other currency on hover.
+      subtotalValue={<Money value={totalValue} currency={invoice.currency} fx={returnFx(rma)} role="Return currency" />}
       rowHeight={58}
       title="Shipping"
       countNoun="shipments"

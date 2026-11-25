@@ -70,8 +70,10 @@ import { paymentLedger, type PaymentLedger } from '@/app/currency/paymentLedger'
 import { CurrencyChip, CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
 import { DocCurrencyProvider, DocMoney } from '@/app/components/currency/DocCurrency';
-import { useDocOtherText } from '@/app/components/currency/docCurrencyContext';
+import { docViewOf, useDocOtherText } from '@/app/components/currency/docCurrencyContext';
 import type { DocView } from '@/app/components/currency/docCurrencyContext';
+import { useDocViewOf } from '@/app/components/currency/docView';
+import { DocViewSwitch } from '@/app/components/currency/DocViewSwitch';
 import { PaymentCurrencyBlock, PaymentCurrencyConfigDialog } from '@/app/components/currency/PaymentCurrencyConfig';
 import { useApPermissions, useApSettings } from '@/app/hooks/useApSettings';
 import { palette } from '@/styles/tokens';
@@ -276,10 +278,21 @@ export function PaymentDetailScreen({
     () => (ledger === 'ap' ? paymentLedger(payment, invoices) : null),
     [payment, invoices, ledger],
   );
-  // Every amount in the base currency, the invoices' on hover (Currency
-  // Touchpoints Map, 24 Nov 2026: no Base / Invoice Currency toggle on
-  // documents; the header keeps a currency tag and the Currency button).
-  const view: DocView = 'base';
+  // Which currency the page's amounts show in: base by default, the other on
+  // hover. On a foreign-currency vendor payment the Base Currency | Vendor
+  // Currency switch on the Applied To card flips it (25 Nov 2026, detail-page
+  // currency switch), kept per payment for the session (docView.ts), a view
+  // only. Every amount here is the payment's own (each applied amount is a
+  // slice of it), so it is all in the payment's currency. GL Impact and the
+  // currency block stay as they are either way.
+  const currencyViewKey = `payment:${payment.id}`;
+  const storedView = useDocViewOf(currencyViewKey);
+  const canSwitchView = ledger === 'ap' && !isBaseCurrency(payment.currency || BASE_CURRENCY);
+  const view: DocView = canSwitchView ? storedView : 'base';
+  // The same view, for the header's sentence (it sits outside the page's
+  // DocCurrencyProvider).
+  const headerView = docViewOf({ currency: (payment.currency || BASE_CURRENCY).toUpperCase(), fx: ledger === 'ap' ? paymentFx(payment) : null, view });
+  const headerMoney = (n: number) => formatMoney(headerView.toView(n), headerView.viewCurrency);
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const apSettings = useApSettings();
   const apPerms = useApPermissions();
@@ -448,7 +461,7 @@ export function PaymentDetailScreen({
     const balanceClause = payment.status === 'Reversed'
       ? 'Reversed, the amounts returned to the invoices it covered'
       : isPrepay && payment.unappliedAmount > 0
-        ? `${formatMoney(payment.unappliedAmount, payment.currency)} still available as unapplied credit`
+        ? `${headerMoney(payment.unappliedAmount)} still available as unapplied credit`
         : posted ? 'Posted to the general ledger' : 'Not yet posted';
     const railAccount = isPrepay
       ? `Prepayment account ${payment.apAccount}`
@@ -609,7 +622,7 @@ export function PaymentDetailScreen({
                       {/* The payment's currency tag, on a foreign-currency
                           payment only (Currency Touchpoints Map). */}
                       {ledger === 'ap' && !isBaseCurrency(payment.currency) && (
-                        <CurrencyPill code={payment.currency} note="What the vendor received. Amounts on this page are in the base currency; hover one for this currency." />
+                        <CurrencyPill code={payment.currency} note={view === 'document' ? 'What the vendor received. Amounts on this page are in this currency; hover one for the base currency.' : 'What the vendor received. Amounts on this page are in the base currency; hover one for this currency.'} />
                       )}
 
                       {!isScrolled && payment.linkedPO && (
@@ -857,7 +870,7 @@ export function PaymentDetailScreen({
                       This {isPrepay ? 'prepayment' : 'payment'} was reversed
                     </p>
                     <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">
-                      {formatMoney(payment.amount, payment.currency)} returned to {bankLabel} via {payment.paymentMethod}
+                      <DocMoney value={payment.amount} /> returned to {bankLabel} via {payment.paymentMethod}
                       {payment.reference ? ` (ref ${payment.reference})` : ''}.
                       {payment.appliedInvoices.length > 0
                         ? ` The ${payment.appliedInvoices.length === 1 ? 'invoice it settled reopened' : `${payment.appliedInvoices.length} invoices it settled reopened`} for the reversed amount: ${payment.appliedInvoices.map((a) => a.invoiceNumber).join(', ')}.`
@@ -867,7 +880,24 @@ export function PaymentDetailScreen({
                   </div>
                 </div>
               )}
-              {activeTab === 'applied' && <AppliedToCard payment={payment} isPrepay={isPrepay} />}
+              {activeTab === 'applied' && (
+                <AppliedToCard
+                  payment={payment}
+                  isPrepay={isPrepay}
+                  // The page's currency switch (25 Nov 2026): top-right of
+                  // the Applied To card. Its one render site; none when the
+                  // payment is in PKR.
+                  currencySwitch={
+                    canSwitchView ? (
+                      <DocViewSwitch
+                        viewKey={currencyViewKey}
+                        partyLabel="Payment Currency"
+                        partyTip="Show amounts in the currency set for this payment."
+                      />
+                    ) : null
+                  }
+                />
+              )}
               {activeTab === 'gl-impact' && (
                 <GLImpactCard
                   glLines={glLines}
@@ -1044,7 +1074,7 @@ export function PaymentDetailScreen({
 // ══════════════════════════════════════════════════════════════════
 // Applied To card
 // ══════════════════════════════════════════════════════════════════
-function AppliedToCard({ payment, isPrepay }: { payment: Payment; isPrepay: boolean }) {
+function AppliedToCard({ payment, isPrepay, currencySwitch }: { payment: Payment; isPrepay: boolean; currencySwitch?: React.ReactNode }) {
   const location = useLocation();
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
@@ -1064,6 +1094,7 @@ function AppliedToCard({ payment, isPrepay }: { payment: Payment; isPrepay: bool
             <DocMoney value={payment.unappliedAmount} /> unapplied
           </span>
         )}
+        {currencySwitch}
       </div>
       {payment.appliedInvoices.length > 0 ? (
         <table className="w-full text-[12px]">

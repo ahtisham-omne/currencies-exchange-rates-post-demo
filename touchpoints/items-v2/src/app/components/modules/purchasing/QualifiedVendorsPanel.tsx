@@ -43,6 +43,7 @@ import { ColumnSelector, ColumnSelectorTrigger } from "../../items-v3/ColumnSele
 import { usePurchasing } from "../../../context/PurchasingContext";
 import type { QualifiedVendor } from "../../../context/purchasing/types";
 import { priceInBase, qvRate } from "../../../currency/vendorFx";
+import { RowViewTable } from "../../currency/RowCurrencyView";
 
 export interface QualifiedVendorsPanelProps {
   itemId: string;
@@ -57,6 +58,10 @@ export interface QualifiedVendorsPanelProps {
   onEditConfig?: (qv: QualifiedVendor) => void;
   /** Opens the Add Qualified Vendor modal — drives the empty-state CTA. */
   onAddVendor?: () => void;
+  /** "Show values as: Base currency | Vendor currency" in the money columns'
+   *  header menus. On the item detail page's Purchasing tab; off on the create
+   *  and configure screens, where amounts stay in base. */
+  currencySwitch?: boolean;
 }
 
 type Density = "condensed" | "comfort" | "card";
@@ -126,8 +131,14 @@ function partnerDetailUrl(vendorId: string): string {
   return `${PARTNER_MODULE_BASE}/vendors/${encodeURIComponent(toPartnerVendorId(vendorId))}`;
 }
 
-export function QualifiedVendorsPanel({ itemId, qvs, headerSlot, toolbarRightSlot, onEditConfig, onAddVendor }: QualifiedVendorsPanelProps) {
+export function QualifiedVendorsPanel({ itemId, qvs, headerSlot, toolbarRightSlot, onEditConfig, onAddVendor, currencySwitch = false }: QualifiedVendorsPanelProps) {
   const { reorderQVs, deleteQV } = usePurchasing();
+
+  /* Vendors quote in their own currencies, so the list has no one vendor
+     currency to flip to: each money column's header menu shows its rows in
+     base (the default) or each in its vendor's currency, the other on hover
+     (RowCurrencyView). The cards follow the Units & Pricing column's choice. */
+  const currencyTable = currencySwitch ? `qv:${itemId}` : null;
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -360,6 +371,7 @@ export function QualifiedVendorsPanel({ itemId, qvs, headerSlot, toolbarRightSlo
         )}
 
         {/* Body */}
+        <RowViewTable tableKey={currencyTable}>
         <div className={`flex-1 min-h-0 flex flex-col ${qvs.length > 0 ? "border-t border-border/60" : ""}`}>
           {qvs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 px-6 text-center flex-1 min-h-0">
@@ -472,6 +484,7 @@ export function QualifiedVendorsPanel({ itemId, qvs, headerSlot, toolbarRightSlo
             </div>
           )}
         </div>
+        </RowViewTable>
       </div>
 
       {/* Column selector drawer — slides in beside the table (Items Library parity) */}

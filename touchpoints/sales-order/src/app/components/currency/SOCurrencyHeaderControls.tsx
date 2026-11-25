@@ -1,16 +1,19 @@
 import * as React from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/app/components/ui/tooltip";
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "@/app/currency/currencies";
 import { customerCurrency } from "@/app/currency/soFx";
 import { CurrencyPill } from "./CurrencyChip";
+import type { DocView } from "./docCurrencyContext";
 
 /* ── The SO header's currency ──────────────────────────────────────────
  * Currency Touchpoints Map (24 Nov 2026): "SO-000-112 from Q-000-750 ·
- * Harbor Point Rescue [USD] [Currency]". The header carries the order's
- * currency tag, after the customer's name, and the Currency button, which
- * opens the order's currency configuration. There is no Base Currency |
- * Customer Currency toggle any more: every amount on the order is in the
- * base currency, the customer's on hover. A base-currency order gets no
- * tag. */
+ * Harbor Point Rescue [USD]". The header carries the order's currency tag,
+ * after the customer's name. Amounts show in the base currency by default,
+ * the customer's on hover; the Base Currency | Customer Currency switch
+ * (25 Nov 2026), which sits in the Line Items toolbar, not the header,
+ * flips that for the order for the session (docView.ts), never an edit.
+ * The currency configuration opens from the summary's currency card. A
+ * base-currency order gets neither tag nor switch. */
 
 const FONT = "Inter, system-ui, sans-serif";
 
@@ -20,6 +23,7 @@ export function SOHeaderCustomer({
   customer,
   currency,
   sourceQuoteRef,
+  view = "base",
   compact = false,
 }: {
   customer: string;
@@ -27,6 +31,8 @@ export function SOHeaderCustomer({
   currency: string;
   /** The quote the order was made from, if any. */
   sourceQuoteRef?: string;
+  /** Which currency the page shows amounts in. */
+  view?: DocView;
   /** The scrolled (compact) header. */
   compact?: boolean;
 }) {
@@ -34,9 +40,13 @@ export function SOHeaderCustomer({
   const foreign = !isBaseCurrency(code);
   if (!customer && !foreign) return null;
   const name = getCurrency(code)?.name ?? code;
+  const shown =
+    view === "document"
+      ? `Amounts show in ${code}; hover one for ${BASE_CURRENCY}.`
+      : `Amounts show in ${BASE_CURRENCY}; hover one for ${code}.`;
   const note = sourceQuoteRef
-    ? `The order's currency, from quote ${sourceQuoteRef}. Amounts show in ${BASE_CURRENCY}; hover one for ${code}.`
-    : `The order's currency${customerCurrency(customer) === code ? `, ${customer || "the customer"}'s default` : ""}. Amounts show in ${BASE_CURRENCY}; hover one for ${code}.`;
+    ? `The order's currency, from quote ${sourceQuoteRef}. ${shown}`
+    : `The order's currency${customerCurrency(customer) === code ? `, ${customer || "the customer"}'s default` : ""}. ${shown}`;
   return (
     <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full" style={{ fontFamily: FONT }}>
       {customer && (
@@ -58,16 +68,63 @@ export function SOHeaderCustomer({
   );
 }
 
-/** The Currency button: opens the order's currency configuration. */
-export function SOCurrencyHeaderControls({
-  onOpenConfig,
-  compact = false,
+/* Same segment and frame as Vendor Invoicing's CurrencyHeaderControls. */
+function Segment({ active, onClick, label, tip }: { active: boolean; onClick: () => void; label: string; tip: string }) {
+  return (
+    <Tooltip delayDuration={300}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={active}
+          onClick={onClick}
+          className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+            active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
+          }`}
+          style={{ fontWeight: active ? 500 : 400 }}
+        >
+          {label}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-[260px] text-[11.5px] leading-[1.5] z-[300]">
+        {tip}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** The Base Currency | Customer Currency switch, in the Line Items
+ *  toolbar (not the header). Only on an order in a foreign currency: on a
+ *  base-currency order there's nothing to switch. */
+export function SOCurrencyViewSwitch({
+  currency,
+  view,
+  onViewChange,
 }: {
-  onOpenConfig: () => void;
-  /** The scrolled (compact) header. */
-  compact?: boolean;
+  /** The order's currency (the customer's, unless changed on the order). */
+  currency: string;
+  view: DocView;
+  onViewChange: (view: DocView) => void;
 }) {
-  // No Currency button in the header (25 Nov 2026): the configuration opens
-  // from the summary's currency card (View configuration).
-  return null;
+  if (isBaseCurrency(currency.toUpperCase())) return null;
+  return (
+    <div
+      className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0"
+      role="radiogroup"
+      aria-label="Show amounts in"
+    >
+      <Segment
+        active={view === "base"}
+        onClick={() => onViewChange("base")}
+        label="Base Currency"
+        tip="Show amounts in your base currency."
+      />
+      <Segment
+        active={view === "document"}
+        onClick={() => onViewChange("document")}
+        label="Customer Currency"
+        tip="Show amounts in the currency set for this sales order."
+      />
+    </div>
+  );
 }

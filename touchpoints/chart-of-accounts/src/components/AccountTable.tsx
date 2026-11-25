@@ -1,9 +1,9 @@
-import { Fragment, cloneElement, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ElementType, type ReactElement, type ReactNode } from 'react'
+import { Fragment, cloneElement, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ElementType, type ReactElement, type ReactNode } from 'react'
 import { LIBRARY_CURRENCY_NAMES } from '../lib/libraryCurrencyNames'
 import { useRememberedState } from '../lib/rememberedState'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { MoreHorizontal, Lock, Pencil, ListFilter, CircleSlash, Archive, ArchiveRestore, Merge, Eye, EyeOff, Power, ArrowUp, ArrowDown, ArrowUpDown, ArrowLeftRight, Info, GripVertical, Plus, Minus, ChevronDown, ChevronRight, Filter, ChevronLeft, Search, X, Check, Wallet, BookPlus, CreditCard, Landmark, TrendingUp, TrendingDown, Snowflake, User, Trash2, CornerDownRight, FolderTree, GitBranch, Layers, BetweenHorizontalStart, BetweenHorizontalEnd } from 'lucide-react'
+import { MoreHorizontal, Lock, Pencil, ListFilter, CircleSlash, Archive, ArchiveRestore, Merge, Eye, EyeOff, Power, ArrowUp, ArrowDown, ArrowUpDown, ArrowLeftRight, Info, GripVertical, Plus, Minus, ChevronDown, ChevronRight, Filter, ChevronLeft, Search, X, Check, Wallet, BookPlus, CreditCard, Landmark, Handshake, TrendingUp, TrendingDown, Snowflake, User, Trash2, CornerDownRight, FolderTree, GitBranch, Layers, BetweenHorizontalStart, BetweenHorizontalEnd } from 'lucide-react'
 import { Account, AccountStatus, AccountType, StatementClassification, ACCOUNT_TYPE_META, categoryFirstNumber, CLASSIFICATIONS_BY_CATEGORY, CLASSIFICATION_DESCRIPTIONS, CLASSIFICATION_SPANS_CATEGORY, ALL_CLASSIFICATIONS, isCategoryRoot, GLAccountType, SELECTABLE_GL_ACCOUNT_TYPES, ALL_ACCOUNT_ROLES, isNumericAccountNumber, numberProtectionOn, classificationOverride } from '../types'
 
 // The filter/sort stand-in for an account with no role. Roles are optional, so
@@ -936,13 +936,34 @@ function fmtBalance(_a: Account, value: number, base: string) {
   return fmtMoney(value, symbolFor(base))
 }
 
+/* The chart's Running balance: "Show values as" in its header menu (25 Nov
+   2026, as the Partners listing has it). Base currency, the default, is the
+   figure the ledger holds, as the column has always read; Account currency
+   prints a posting account held in another currency in that currency, base on
+   the hover. A summary's total spans currencies, and a base account reads the
+   same either way, so those stay in base. Sort and filters read the base
+   figures either way. A small module store, so the list and the tree - which
+   remount on a layout switch - and the search all read the one choice. */
+let chartBalanceView: ColumnCurrencyView = 'base'
+const chartBalanceListeners = new Set<() => void>()
+export function setChartBalanceView(view: ColumnCurrencyView) {
+  chartBalanceView = view
+  chartBalanceListeners.forEach(l => l())
+}
+const subscribeChartBalanceView = (l: () => void) => { chartBalanceListeners.add(l); return () => { chartBalanceListeners.delete(l) } }
+const readChartBalanceView = () => chartBalanceView
+export const useChartBalanceView = () => useSyncExternalStore(subscribeChartBalanceView, readChartBalanceView, readChartBalanceView)
+/** Whether the Running balance prints this account in its own currency. */
+const runningInOwn = (a: Account, base: string, view: ColumnCurrencyView) => view === 'account' && a.isPosting && a.currencyCode !== base
+
 /** What a figure column prints for an account, as text - read by the cell and by
  *  the search alike, so a search finds the figure the reader sees. Empty where
  *  the cell prints a dash or nothing. */
-export function chartFigureText(k: 'openingBalance' | 'runningBalance' | 'fxBalance', a: Account, index: ChartIndex, base: string): string {
+export function chartFigureText(k: 'openingBalance' | 'runningBalance' | 'fxBalance', a: Account, index: ChartIndex, base: string, view: ColumnCurrencyView = chartBalanceView): string {
   if (k === 'fxBalance') return a.currencyCode !== base ? fmtMoney(currentOwnBalanceOf(a), symbolFor(a.currencyCode)) : ''
   const vals = chartRowValues(a, index)
   if (!vals) return ''
+  if (k === 'runningBalance' && runningInOwn(a, base, view)) return fmtMoney(currentOwnBalanceOf(a), symbolFor(a.currencyCode))
   return fmtBalance(a, k === 'openingBalance' ? vals.balance - vals.netChange : vals.current, base)
 }
 
@@ -2054,6 +2075,8 @@ function HeaderCell({ colKey, sort, onSortDir, dnd, dragging, hiding, width, onR
   const def = HEADER_DEFS[colKey]
   const heading = def.label
   const active = !!def.sortKey && sort?.key === def.sortKey
+  const balanceView = useChartBalanceView()
+  const money = colKey === 'runningBalance'
   const hasFilter = filterActive(filter)
   const baseWidthStyle = stickyStyle ? {} : (width ? { width, minWidth: width, maxWidth: width } : undefined)
   // Frozen header cells need an opaque fill (sticky cells can't be transparent);
@@ -2080,6 +2103,8 @@ function HeaderCell({ colKey, sort, onSortDir, dnd, dragging, hiding, width, onR
         onHide={onHide}
         onToggleFreeze={onToggleFreeze}
         frozen={frozen}
+        currencyView={money ? balanceView : undefined}
+        onCurrencyViewChange={money ? setChartBalanceView : undefined}
       >
         {/* Sorted / filtered headers go primary blue (Partner pattern) -
             never darker; idle sortable headers reveal a faint ⇅ on hover.
@@ -2520,7 +2545,12 @@ function FilterEditorBody({ label, filter, onFilterChange, uniqueValues }: {
 
 const operatorFor = (f: ColFilter) => (f.type === 'multiselect' ? 'is' : f.type === 'text' ? 'contains' : 'between')
 
-export function HeaderMenu({ label, sortable, currentSort, onSortDir, filter, onFilterChange, uniqueValues, align, onHide, onToggleFreeze, frozen, children }: {
+/* "Show values as" in a money column's header menu (25 Nov 2026), as the
+   Partners listing has it: Base currency, or the record's own currency - here
+   the account's. A read-only view choice per column, never an edit. */
+export type ColumnCurrencyView = 'base' | 'account'
+
+export function HeaderMenu({ label, sortable, currentSort, onSortDir, filter, onFilterChange, uniqueValues, align, onHide, onToggleFreeze, frozen, currencyView, onCurrencyViewChange, children }: {
   label: string
   sortable: boolean
   currentSort: 'asc' | 'desc' | null
@@ -2532,6 +2562,9 @@ export function HeaderMenu({ label, sortable, currentSort, onSortDir, filter, on
   onHide?: () => void
   onToggleFreeze?: () => void
   frozen?: boolean
+  /** A money column's view; with its setter, the menu offers "Show values as". */
+  currencyView?: ColumnCurrencyView
+  onCurrencyViewChange?: (view: ColumnCurrencyView) => void
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -2604,6 +2637,25 @@ export function HeaderMenu({ label, sortable, currentSort, onSortDir, filter, on
                       <span style={{ fontWeight: 400 }}>Sort descending</span>
                       {currentSort === 'desc' && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
                     </button>
+                  </>
+                )}
+                {/* Show values as - base or the account's currency (money columns) */}
+                {currencyView !== undefined && onCurrencyViewChange && (
+                  <>
+                    <div className="border-t border-border/60 my-1" />
+                    <div className="px-2.5 pt-1 pb-0.5 text-[10.5px] text-muted-foreground/70 uppercase tracking-wider" style={{ fontWeight: 600, letterSpacing: '0.04em' }}>
+                      Show values as
+                    </div>
+                    {([
+                      ['base', 'Base currency', Landmark],
+                      ['account', 'Account currency', Handshake],
+                    ] as const).map(([value, text, Icon]) => (
+                      <button key={value} type="button" onClick={() => { onCurrencyViewChange(value); setOpen(false) }} className={cn(itemCls, currencyView === value ? 'text-primary bg-primary/5' : 'text-foreground')}>
+                        <Icon className="w-4 h-4 text-muted-foreground" />
+                        <span style={{ fontWeight: 400 }}>{text}</span>
+                        {currencyView === value && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
+                      </button>
+                    ))}
                   </>
                 )}
                 {(onToggleFreeze || onHide) && <div className="border-t border-border/60 my-1" />}
@@ -2900,8 +2952,15 @@ function amountSortMap(rows: Account[], allAccounts: Account[]) {
 function RunningBalanceCell({ k, a, base, v, structural, padCls, style, q = '' }: {
   k: ColKey; a: Account; base: string; v: number | null; structural?: boolean; padCls: string; style?: CSSProperties; q?: string
 }) {
+  const view = useChartBalanceView()
   if (v == null) return <td key={k} className={cn('pl-4 pr-4 text-right text-sm', padCls)} style={style}><span className="text-fg-subtle">-</span></td>
   const nonBase = a.currencyCode !== base
+  // Account currency: what the account holds, with the booked base figure on the hover.
+  if (runningInOwn(a, base, view)) return (
+    <td key={k} className={cn('pl-4 pr-4 text-right text-sm font-medium whitespace-nowrap text-slate-700', structural && 'font-semibold', padCls)} style={style}>
+      <FxBalanceTooltip code={a.currencyCode} base={base} booked={v} own={currentOwnBalanceOf(a)} accountId={a.id}><span className="cursor-help"><Marked text={fmtMoney(currentOwnBalanceOf(a), symbolFor(a.currencyCode))} q={q} /></span></FxBalanceTooltip>
+    </td>
+  )
   return (
     <td key={k} className={cn('pl-4 pr-4 text-right text-sm font-medium whitespace-nowrap', nonBase ? 'text-slate-500' : 'text-slate-700', structural && 'font-semibold', padCls)} style={style}>
       {/* The converted figure is the one that needs the rate explained, because

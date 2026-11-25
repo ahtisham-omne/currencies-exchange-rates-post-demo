@@ -1,4 +1,7 @@
 import type { ReactNode } from 'react';
+import type { ColumnCurrencyView } from './columnCurrencyView';
+
+export type { ColumnCurrencyView };
 
 export type FilterType = 'multiselect' | 'text' | 'range' | 'date';
 export type DensityOption = 'condensed' | 'comfort' | 'card';
@@ -70,11 +73,24 @@ export interface ColumnDef<T> {
   getValue: (row: T) => unknown;
   /** Optional sort key override — useful when getValue returns a complex shape. */
   getSortValue?: (row: T) => string | number;
+  /** A money column of records in different currencies: its header menu
+   *  offers "Show values as" Base currency | `partyCurrencyLabel`, and the
+   *  renderer gets the chosen view as `ctx.currencyView`. getValue should
+   *  stay on the base figure so sorting and filtering compare like with like. */
+  moneyColumn?: boolean;
+  /** The record's own currency, as the option reads. Defaults to "Vendor currency". */
+  partyCurrencyLabel?: string;
   /** Cell renderer. Receives row + density context + optional active
    *  search query so renderers can highlight matching substrings. */
   render: (
     row: T,
-    ctx: { density: DensityOption; isSelected: boolean; searchQuery?: string }
+    ctx: {
+      density: DensityOption;
+      isSelected: boolean;
+      searchQuery?: string;
+      /** A money column's view, 'base' until switched in its header menu. */
+      currencyView?: ColumnCurrencyView;
+    }
   ) => ReactNode;
 }
 

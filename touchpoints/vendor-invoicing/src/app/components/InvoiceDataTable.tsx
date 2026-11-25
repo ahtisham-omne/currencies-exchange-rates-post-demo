@@ -34,7 +34,7 @@ import {
   DropdownMenuTrigger,
 } from '@/app/components/ui/dropdown-menu';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/ui/hover-card';
-import { BaseMoney } from '@/app/components/currency/Money';
+import { BaseMoney, Money } from '@/app/components/currency/Money';
 import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { rateOn } from '@/app/currency/rates';
@@ -1612,6 +1612,9 @@ function renderPaymentTerms(row: Invoice, searchQuery?: string): ReactNode {
 }
 
 /* ─── Column definitions ─── */
+/** Header tooltip for the money columns, true in either "Show values as". */
+const INVOICE_MONEY_TOOLTIP = `Base currency shows ${BASE_CURRENCY} at each invoice's own rate; Invoice currency shows the invoice's own amount (set it in this column's menu). Hover for the other figure. Sorting and filters use ${BASE_CURRENCY}.`;
+
 export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
   {
     key: 'invoiceNumber',
@@ -1854,7 +1857,8 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
   {
     key: 'amount',
     label: 'Amount',
-    tooltip: `In ${BASE_CURRENCY}, the base currency, each invoice at its own rate. Hover for the amount in the invoice's currency.`,
+    tooltip: INVOICE_MONEY_TOOLTIP,
+    currencyViewLabel: 'Invoice currency',
     minWidth: 120,
     defaultWidth: 160,
     sortable: true,
@@ -1868,11 +1872,18 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     getSortValue: (row) => toInvoiceBase(row, row.amount),
     searchText: (row) =>
       `${row.amount} ${formatMoney(row.amount, row.currency)} ${formatMoney(toInvoiceBase(row, row.amount), BASE_CURRENCY)}`,
-    render: (row, { searchQuery }) => (
-      <BaseMoney value={row.amount} currency={row.currency} fx={invoiceFx(row)} role="Invoice currency" className="text-foreground">
-        {highlightAmount(formatMoney(toInvoiceBase(row, row.amount), BASE_CURRENCY), searchQuery)}
-      </BaseMoney>
-    ),
+    // "Show values as" (header menu): Invoice currency prints the
+    // invoice's own amount with base on hover; sort/filter stay on base.
+    render: (row, { searchQuery, currencyView }) =>
+      currencyView === 'party' ? (
+        <Money value={row.amount} currency={row.currency} fx={invoiceFx(row)} className="text-foreground">
+          {highlightAmount(formatMoney(row.amount, row.currency), searchQuery)}
+        </Money>
+      ) : (
+        <BaseMoney value={row.amount} currency={row.currency} fx={invoiceFx(row)} role="Invoice currency" className="text-foreground">
+          {highlightAmount(formatMoney(toInvoiceBase(row, row.amount), BASE_CURRENCY), searchQuery)}
+        </BaseMoney>
+      ),
   },
   {
     key: 'discount',
@@ -1881,6 +1892,7 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     defaultWidth: 170,
     sortable: true,
     filterable: false,
+    currencyViewLabel: 'Invoice currency',
     getValue: (row) => {
       const terms = discountTermsFor(row);
       return terms && discountIsLive(terms) ? discountAmountOn(row.outstandingBalance, terms) : 0;
@@ -1896,7 +1908,7 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     // Early-pay discount from the invoice's PAYMENT TERM (8/28/26
     // evening), measured as of today on the listing; hover explains the
     // window with a worked example.
-    render: (row) => {
+    render: (row, { currencyView }) => {
       const terms = discountTermsFor(row);
       if (!terms || row.outstandingBalance <= 0) {
         return null;
@@ -1925,9 +1937,12 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] cursor-help whitespace-nowrap"
                 style={{ fontWeight: 600 }}
               >
-                {/* In base like the other money columns; the invoice's
-                    own currency is in the hover. */}
-                {terms.percent}% · {formatMoney(-toInvoiceBase(row, discount), BASE_CURRENCY)}
+                {/* In base like the other money columns (or the
+                    invoice's own currency when the column is set to
+                    it); both figures are in the hover. */}
+                {terms.percent}% · {currencyView === 'party'
+                  ? formatMoney(-discount, row.currency)
+                  : formatMoney(-toInvoiceBase(row, discount), BASE_CURRENCY)}
               </span>
             </HoverCardTrigger>
             <HoverCardContent side="top" align="start" className="w-[280px] p-3 rounded-xl border border-border shadow-lg bg-white z-[300]">
@@ -1957,7 +1972,8 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     minWidth: 120,
     defaultWidth: 160,
     sortable: true,
-    tooltip: `In ${BASE_CURRENCY}, the base currency, each invoice at its own rate. Hover for the amount in the invoice's currency.`,
+    tooltip: INVOICE_MONEY_TOOLTIP,
+    currencyViewLabel: 'Invoice currency',
     filterType: 'range',
     // In base at the row's rate, sorted and range-filtered on it (as Amount).
     getValue: (row) => toInvoiceBase(row, row.outstandingBalance),
@@ -1969,7 +1985,7 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     // Prepaid-origin note (9/2/26): an invoice that consumed a
     // prepayment at creation says so RIGHT WHERE its balance is read —
     // an inline violet wallet icon with the full math on hover.
-    render: (row, { searchQuery }) => (
+    render: (row, { searchQuery, currencyView }) => (
       <AmountWithPrepaidNote invoice={row}>
         <span
           className=""
@@ -1977,9 +1993,15 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
           // heavier font for money columns, design feedback 7/13/26).
           style={{ fontWeight: 400, color: row.outstandingBalance > 0 ? palette.slate[900] : palette.slate[400] }}
         >
-          <BaseMoney value={row.outstandingBalance} currency={row.currency} fx={invoiceFx(row)} role="Invoice currency">
-            {highlightAmount(formatMoney(toInvoiceBase(row, row.outstandingBalance), BASE_CURRENCY), searchQuery)}
-          </BaseMoney>
+          {currencyView === 'party' ? (
+            <Money value={row.outstandingBalance} currency={row.currency} fx={invoiceFx(row)}>
+              {highlightAmount(formatMoney(row.outstandingBalance, row.currency), searchQuery)}
+            </Money>
+          ) : (
+            <BaseMoney value={row.outstandingBalance} currency={row.currency} fx={invoiceFx(row)} role="Invoice currency">
+              {highlightAmount(formatMoney(toInvoiceBase(row, row.outstandingBalance), BASE_CURRENCY), searchQuery)}
+            </BaseMoney>
+          )}
         </span>
       </AmountWithPrepaidNote>
     ),
@@ -2093,6 +2115,9 @@ export function invoiceColumnValue(invoice: Invoice, columnKey: string): unknown
 
 interface InvoiceDataTableProps {
   invoices: Invoice[];
+  /** Which listing the money columns' "Show values as" choices belong to.
+   *  Defaults to the vendor invoices list. */
+  currencyViewScope?: string;
   /** UNFILTERED dataset for filter option lists — keeps every option
    *  visible while a multiselect filter is active. Defaults to `invoices`. */
   optionRows?: Invoice[];
@@ -2168,6 +2193,7 @@ export function InvoiceDataTable({
   promoteRowAction,
   emptyState,
   emptyConfig,
+  currencyViewScope = 'vendor-invoices',
 }: InvoiceDataTableProps) {
   const renderRowActions = useMemo(
     () =>
@@ -2291,6 +2317,7 @@ export function InvoiceDataTable({
       onRecordsPerPageChange={onRecordsPerPageChange}
       emptyState={emptyState}
       emptyConfig={emptyConfig}
+      currencyViewScope={currencyViewScope}
     />
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, Package, ChevronDown, ChevronsDown, ChevronsUp, Copy, X, Layers, Info, Pencil } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
@@ -1470,13 +1470,16 @@ interface ItemsTabTableCleanProps {
   lineFactor?: number;
   /** A currency change from Quote Summary: convert every line once. */
   conversion?: { id: number; factor: number; code: string } | null;
+  /** Rendered first in the toolbar's right-hand group (the quote page's
+   *  Base Currency | Customer Currency switch). */
+  toolbarExtra?: ReactNode;
 }
 
 function ItemsTable({
   quoteStatus, quoteId, attachmentQuoteKey, readOnly, onMaterialChange, onAskUserChange,
   customerName, pricingAPI, adjustmentsAPI,
   quoteDefaultFreight, lineFreightCosts, onSetLineFreightCost, onSeedLineFreightCosts,
-  onRequestPriceVersionConfirm, onLinesChange, lineFactor = 1, conversion,
+  onRequestPriceVersionConfirm, onLinesChange, lineFactor = 1, conversion, toolbarExtra,
 }: ItemsTabTableCleanProps) {
   const { currency: docCurrency } = useDocCurrency();
   /* Amounts in the page's currency: base by default, the customer's with
@@ -2186,6 +2189,7 @@ function ItemsTable({
           </Tooltip>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+          {toolbarExtra}
           {/* Bulk actions when items are selected */}
           {isEditable && selectedRows.size > 0 ? (
             <>
@@ -2616,7 +2620,7 @@ export function ItemsTabTableClean({
   quoteStatus, quoteId, attachmentQuoteKey, readOnly, onMaterialChange, onAskUserChange,
   customerName, pricingAPI, adjustmentsAPI,
   quoteDefaultFreight, lineFreightCosts, onSetLineFreightCost, onSeedLineFreightCosts,
-  onRequestPriceVersionConfirm, onLinesChange, lineFactor, conversion,
+  onRequestPriceVersionConfirm, onLinesChange, lineFactor, conversion, toolbarExtra,
 }: ItemsTabTableCleanProps) {
   return (
     <ItemsTable
@@ -2637,6 +2641,7 @@ export function ItemsTabTableClean({
       onLinesChange={onLinesChange}
       lineFactor={lineFactor}
       conversion={conversion}
+      toolbarExtra={toolbarExtra}
     />
   );
 }

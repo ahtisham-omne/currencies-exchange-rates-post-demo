@@ -1640,7 +1640,7 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
                     fontFamily: "Inter, system-ui, sans-serif",
                   }}
                 >
-                  {resolvedShipmentTotal > 0 ? "+" : ""}{fmtCurrency(resolvedShipmentTotal)}
+                  <DocMoney value={resolvedShipmentTotal}>{resolvedShipmentTotal > 0 ? "+" : ""}{fmtCurrency(resolvedShipmentTotal)}</DocMoney>
                 </p>
               </div>
             )}

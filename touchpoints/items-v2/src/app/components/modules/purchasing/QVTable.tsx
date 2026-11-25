@@ -67,7 +67,7 @@ import {
 import { cn } from "@/lib/utils";
 import { PriorityChip } from "../../items-v3/PriorityChip";
 import { VendorPrice } from "../../currency/VendorPrice";
-import { BaseMoney } from "../../currency/Money";
+import { ColumnView, RowMoney, ShowValuesAs, useColumnView, useRowView } from "../../currency/RowCurrencyView";
 import { CurrencyCodeCell } from "../../currency/CurrencyCodeCell";
 import { formatMoney, rateSentence } from "../../../currency/money";
 import { RATE_TYPE_LABEL } from "../../../currency/rates";
@@ -110,7 +110,8 @@ export const COLUMNS: ColDef[] = [
   { key: "location",           label: "Partner Locations",             sortable: true, width: 260 },
   { key: "pointOfContact",     label: "Points of Contact",                             width: 280 },
   { key: "country",            label: "Country",                       sortable: true, width: 200 },
-  /* Money is in the base currency, the vendor's own amount in the hover. */
+  /* Money is in the base currency, the vendor's own amount in the hover; the
+     column's "Show values as: Vendor currency" flips them (RowCurrencyView). */
   { key: "creditLimit",        label: "Credit Limit",                  sortable: true, align: "right", width: 170 },
   /* Captured-at-qualification columns (the important info). */
   { key: "leadTime",           label: "Lead Time",                     sortable: true, align: "right", width: 120 },
@@ -124,6 +125,9 @@ export const COLUMNS: ColDef[] = [
 ];
 
 const COLUMN_BY_KEY: Record<string, ColDef> = Object.fromEntries(COLUMNS.map((c) => [c.key, c]));
+/* The amount columns, each with "Show values as" in its header menu: in base
+   (the default) or in the vendor's currency, per column. */
+const MONEY_COLUMNS = new Set(["unitsPricing", "creditLimit", "lastPoPricePerUnit", "lastPoTotalAmount"]);
 const ACTIONS_COL_WIDTH = 60;
 
 /* Exported column metadata so QualifiedVendorsPanel can drive the
@@ -243,9 +247,14 @@ function UnitsPricingCell({ qv }: { qv: QualifiedVendor }) {
   const tiers = getUnitTiers(qv);
   const primary = tiers[0];
   const multi = tiers.length > 1;
-  // In the base currency; the hover gives the vendor's own price and the rate.
+  // In the column's view (base by default); the hover gives the other figure and the rate.
   const fx = qvRate(qv);
   const foreign = !isBaseCurrency(fx.currency);
+  const inVendor = useRowView() === "row";
+  const vendorText = (price: number) => {
+    const text = formatMoney(price, fx.currency);
+    return text.includes(fx.currency) ? text : `${text} ${fx.currency}`;
+  };
   return (
     <div className="flex items-center gap-2 min-w-0" onClick={(e) => e.stopPropagation()}>
       <span className="min-w-0 truncate text-sm">
@@ -277,7 +286,7 @@ function UnitsPricingCell({ qv }: { qv: QualifiedVendor }) {
               </p>
               {foreign && (
                 <p className="text-[10.5px] text-slate-400 mt-px truncate tabular-nums">
-                  In {BASE_CURRENCY} at {rateSentence(fx.currency, fx.rate)} · {RATE_TYPE_LABEL[fx.rateType]}
+                  {inVendor ? `In ${fx.currency}; ${BASE_CURRENCY}` : `In ${BASE_CURRENCY}`} at {rateSentence(fx.currency, fx.rate)} · {RATE_TYPE_LABEL[fx.rateType]}
                 </p>
               )}
             </div>
@@ -302,15 +311,14 @@ function UnitsPricingCell({ qv }: { qv: QualifiedVendor }) {
                       {toNum(t.lead) ? <span>· {toNum(t.lead)}d lead</span> : null}
                     </div>
                   </div>
-                  {/* Base first, as in the list; the vendor's own price under it. */}
+                  {/* The list's view first (base, or the vendor's own price); the other under it. */}
                   <span className="flex flex-col items-end shrink-0 tabular-nums">
                     <span className="text-[12.5px] text-emerald-700" style={{ fontWeight: 600 }}>
-                      {formatMoney(foreign ? priceInBase(t.price, fx.rate) : t.price, BASE_CURRENCY)}
+                      {foreign && inVendor ? vendorText(t.price) : formatMoney(foreign ? priceInBase(t.price, fx.rate) : t.price, BASE_CURRENCY)}
                     </span>
                     {foreign && t.price > 0 && (
                       <span className="text-[10.5px] text-slate-500">
-                        {formatMoney(t.price, fx.currency)}
-                        {formatMoney(t.price, fx.currency).includes(fx.currency) ? "" : ` ${fx.currency}`}
+                        {inVendor ? formatMoney(priceInBase(t.price, fx.rate), BASE_CURRENCY) : vendorText(t.price)}
                       </span>
                     )}
                   </span>
@@ -473,11 +481,11 @@ function renderCell(
     case "unitsPricing":
       return <UnitsPricingCell qv={qv} />;
     case "lastPoPricePerUnit":
-      return <span className="text-sm"><BaseMoney value={qv.lastPOPricePerUnit} currency={qv.currency} fx={qvRate(qv)} className="text-foreground" /></span>;
+      return <span className="text-sm"><RowMoney value={qv.lastPOPricePerUnit} currency={qv.currency} fx={qvRate(qv)} className="text-foreground" /></span>;
     case "lastPoTotalAmount":
       return (
         <span className="text-sm">
-          <BaseMoney value={qv.lastPOTotalAmount} currency={qv.currency} fx={qvRate(qv)} className="text-foreground" />
+          <RowMoney value={qv.lastPOTotalAmount} currency={qv.currency} fx={qvRate(qv)} className="text-foreground" />
         </span>
       );
     case "carrierVendor":
@@ -517,6 +525,9 @@ function QVColumnHeader({
 }) {
   const [open, setOpen] = useState(false);
   const isRight = col.align === "right";
+  // "Show values as" - money columns only, and only where the panel offers it.
+  const columnView = useColumnView(col.key);
+  const currencyView = MONEY_COLUMNS.has(col.key) ? columnView : null;
 
   const handleSortAsc = () => {
     if (currentSort !== "asc") onSort(col.key);
@@ -610,9 +621,17 @@ function QVColumnHeader({
                 <span style={{ fontWeight: 400 }}>Sort descending</span>
                 {currentSort === "desc" && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
               </button>
-              {!isLocked && onHide && <div className="border-t border-border/60 my-1" />}
             </>
           )}
+          {currencyView && (
+            <ShowValuesAs
+              view={currencyView[0]}
+              onChange={(v) => { currencyView[1](v); setOpen(false); }}
+              rowLabel="Vendor currency"
+              divider={!!col.sortable}
+            />
+          )}
+          {!isLocked && onHide && (col.sortable || currencyView) && <div className="border-t border-border/60 my-1" />}
           {!isLocked && onHide && (
             <button
               type="button"
@@ -688,17 +707,21 @@ function SortableRow({
               textOverflow: "ellipsis",
             }}
           >
-            {renderCell(
-              col,
-              qv,
-              {
-                dragHandleProps:
-                  col.key === "priority"
-                    ? ({ ref: setActivatorNodeRef, ...listeners, ...attributes } as any)
-                    : undefined,
-              },
-              { disableDrag },
-            )}
+            {(() => {
+              const cell = renderCell(
+                col,
+                qv,
+                {
+                  dragHandleProps:
+                    col.key === "priority"
+                      ? ({ ref: setActivatorNodeRef, ...listeners, ...attributes } as any)
+                      : undefined,
+                },
+                { disableDrag },
+              );
+              // A money column reads in its own "Show values as" view.
+              return MONEY_COLUMNS.has(col.key) ? <ColumnView column={col.key}>{cell}</ColumnView> : cell;
+            })()}
           </TableCell>
         );
       })}

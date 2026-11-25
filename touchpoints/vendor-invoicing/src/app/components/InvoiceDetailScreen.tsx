@@ -102,7 +102,9 @@ import { vendorCurrencyOf } from '@/app/currency/vendorCurrency';
 import { DocCurrencyProvider } from '@/app/components/currency/DocCurrency';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
 import { InvoiceCurrencyConfigDialog } from '@/app/components/currency/InvoiceCurrencyConfig';
-import type { DocView } from '@/app/components/currency/docCurrencyContext';
+import { useDocView, type DocView } from '@/app/components/currency/docCurrencyContext';
+import { useDocViewOf } from '@/app/components/currency/docView';
+import { DocViewSwitch } from '@/app/components/currency/DocViewSwitch';
 import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { useApPermissions } from '@/app/hooks/useApSettings';
 
@@ -834,11 +836,14 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
   const [activeTab, setActiveTab] = useState<TabKey>('line-items');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-  // Every amount on the page is in the base currency, the invoice's own on
-  // hover (Currency Touchpoints Map, 24 Nov 2026: no Base / Invoice Currency
-  // toggle on documents; the header keeps a currency tag and the Currency
-  // button, which opens the invoice's Currency Configuration).
-  const currencyView: DocView = 'base';
+  // Which currency the page's amounts show in: base by default, the other
+  // on hover. On a foreign-currency invoice the Base Currency | Vendor
+  // Currency switch on the Line Items toolbar flips it (25 Nov 2026,
+  // detail-page currency switch); the choice is kept per invoice for the
+  // session (docView.ts), a view only, never an edit. GL Impact stays in
+  // base either way.
+  const currencyViewKey = `invoice:${invoiceId}`;
+  const currencyView: DocView = useDocViewOf(currencyViewKey);
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   const apPerms = useApPermissions();
   const [creditMemoOpen, setCreditMemoOpen] = useState(false);
@@ -1701,7 +1706,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                       </HoverCard>
                       {/* The invoice's currency tag, on a foreign-currency
                           invoice only (Currency Touchpoints Map). */}
-                      {!pageFx.isBase && <CurrencyPill code={pageFx.currency} note="The invoice's currency. Amounts on this page are in the base currency; hover one for this currency." />}
+                      {!pageFx.isBase && <CurrencyPill code={pageFx.currency} note={currencyView === 'document' ? "The invoice's currency. Amounts on this page are in this currency; hover one for the base currency." : "The invoice's currency. Amounts on this page are in the base currency; hover one for this currency."} />}
 
                       {/* Status pills — read-only, TWO axes (Eli review
                           7/15/26): approval answers "whose desk is this
@@ -1905,8 +1910,9 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                     <TooltipContent className="z-[300]">{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</TooltipContent>
                   </Tooltip>
 
-                  {/* The Currency button: the invoice's currency
-                      configuration. No Base / Invoice Currency toggle. */}
+                  {/* No currency switch in the header (user, 25 Nov 2026):
+                      Base Currency | Invoice Currency sits on the Line Items
+                      toolbar instead (DocViewSwitch below). */}
                   <CurrencyHeaderControls
                     currency={pageFx.currency}
                     view={currencyView}
@@ -2143,7 +2149,21 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                 </>
               )}
               {activeTab === 'line-items' && (
-                <LineItemsTab invoice={invoice} subtotal={numbers.subtotal} isPending={isPending} />
+                <LineItemsTab
+                  invoice={invoice}
+                  subtotal={numbers.subtotal}
+                  isPending={isPending}
+                  // The page's currency switch (25 Nov 2026): on the Line
+                  // Items toolbar, beside Full Screen / density / Columns.
+                  // Hides itself on a PKR invoice. Its one render site.
+                  currencySwitch={
+                    <DocViewSwitch
+                      viewKey={currencyViewKey}
+                      partyLabel="Invoice Currency"
+                      partyTip="Show amounts in the currency set for this invoice."
+                    />
+                  }
+                />
               )}
               {activeTab === 'linked-records' && (
                 <LinkedRecordsTab
@@ -2805,7 +2825,7 @@ interface JourneyNode {
 
 const SCHEDULED_COLORS = { solid: '#0866E0', glow: 'color-mix(in srgb, #0866E0 18%, transparent)' };
 
-/** Whole units in the invoice's currency, for the compact journey tooltips. */
+/** Whole units in the page's shown currency, for the compact journey tooltips. */
 function journeyMoney(amount: number, currency: string) {
   return `${moneyPrefix(currency)}${Math.round(amount).toLocaleString('en-US')}`;
 }
@@ -2823,8 +2843,10 @@ function buildInvoiceJourney(args: {
   records: LinkedFinancialRecord[];
   appPayments: Payment[];
   paymentsContext: boolean;
+  /** An invoice amount in the page's shown currency (the header switch). */
+  money: (amount: number) => string;
 }): { approval: JourneyTrackState; payments: JourneyTrackState } {
-  const { invoice, status, records, appPayments, paymentsContext } = args;
+  const { invoice, status, records, appPayments, paymentsContext, money } = args;
   const isPre = invoice.type === 'Pre-Invoice';
   const total = invoice.amount;
   const history = invoice.actionHistory ?? [];
@@ -3016,7 +3038,7 @@ function buildInvoiceJourney(args: {
         label: prepaid ? 'Partially Prepaid' : 'Partially Paid',
         icon: prepaid ? Wallet : Banknote,
         colors: STEP_COLORS[prepaid ? 'Partially Prepaid' : 'Partially Paid'],
-        detail: `${paidCount} payment${paidCount === 1 ? '' : 's'} · ${journeyMoney(coverage, invoice.currency)} of ${journeyMoney(total, invoice.currency)} settled`,
+        detail: `${paidCount} payment${paidCount === 1 ? '' : 's'} · ${money(coverage)} of ${money(total)} settled`,
       });
     }
     // Reversals join the trail as completed events (9/4/26 Eli, BB-29 —
@@ -3031,7 +3053,7 @@ function buildInvoiceJourney(args: {
           label: ev.kind === 'prepayment' ? 'Prepayment Reversed' : 'Payment Reversed',
           icon: Undo2,
           colors: { solid: '#E11D48', glow: 'color-mix(in srgb, #E11D48 18%, transparent)' },
-          detail: `${ev.ref} · ${journeyMoney(ev.amount, invoice.currency)} returned to the balance`,
+          detail: `${ev.ref} · ${money(ev.amount)} returned to the balance`,
         });
       });
     // Live pending states render while they exist and disappear once
@@ -3044,7 +3066,7 @@ function buildInvoiceJourney(args: {
         label: coversRest ? 'Full Payment Scheduled' : 'Partial Payment Scheduled',
         icon: Clock,
         colors: SCHEDULED_COLORS,
-        detail: journeyMoney(scheduledTotal, invoice.currency),
+        detail: money(scheduledTotal),
       });
     }
   } else if (!cancelled && !archived) {
@@ -3190,7 +3212,10 @@ function JourneyTrack({ track, grow }: { track: JourneyTrackState; grow: boolean
 }
 
 function StatusWorkflowBar({ status, invoice, records, appPayments, paymentsContext = false }: { status: DisplayStatus; invoice: Invoice; records: LinkedFinancialRecord[]; appPayments: Payment[]; paymentsContext?: boolean }) {
-  const { approval, payments } = buildInvoiceJourney({ invoice, status, records, appPayments, paymentsContext });
+  // The journey tooltips' amounts follow the header's Base | Vendor switch.
+  const { viewCurrency, toView } = useDocView();
+  const money = (amount: number) => journeyMoney(toView(amount), viewCurrency);
+  const { approval, payments } = buildInvoiceJourney({ invoice, status, records, appPayments, paymentsContext, money });
   return (
     <div className="px-4 lg:px-5 py-2.5 overflow-x-auto">
       <div className="relative flex items-center w-full gap-3 py-1" style={{ minHeight: 32 }}>

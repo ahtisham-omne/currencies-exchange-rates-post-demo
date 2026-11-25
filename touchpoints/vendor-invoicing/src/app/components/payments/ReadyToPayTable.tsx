@@ -1126,6 +1126,7 @@ export function ReadyToPayTable({
                 searchQuery={searchQuery}
                 promoteRowAction="addPayment"
                 emptyConfig={readyEmptyConfig}
+                currencyViewScope="invoices-to-pay"
                 currentPage={currentPage}
                 recordsPerPage={recordsPerPage}
                 totalRows={sortedFiltered.length}

@@ -15,7 +15,8 @@ import { Payment } from '@/app/data/mockPayments';
 import { LinkedFinancialRecord } from '@/app/data/invoiceLinkedRecords';
 import { LineItemsTable } from './LineItemsTab';
 import { highlightText } from '@/app/components/InvoiceDataTable';
-import { formatMoney as formatInCurrency } from '@/app/currency/money';
+import { useDocMoney } from '@/app/components/currency/docCurrencyContext';
+import { DocMoney } from '@/app/components/currency/DocCurrency';
 
 // Payments tab — every money movement recorded against THIS invoice in one
 // place: posted payments, prepayments (anchored or applied), scheduled
@@ -72,8 +73,8 @@ export function prepaymentStatusLabel(status: string): string {
   return status;
 }
 
-// Each currency with its own symbol and decimals (Currency & Exchange Rates).
-const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
+// Amounts are the invoice's own, shown in the page's shown currency (base by
+// default, the vendor's on the Base | Vendor Currency switch) via DocMoney.
 
 const PAYMENT_COLUMN_CATALOG = [
   { key: 'reference', label: 'Payment No.' },
@@ -174,6 +175,8 @@ export function PaymentsTab({
   const hasPending = scheduledCount > 0;
   const pendingHeadline = `${scheduledCount} scheduled payment${scheduledCount === 1 ? '' : 's'}`;
 
+  // Re-renders the money cells when the page's shown currency changes.
+  const docMoney = useDocMoney();
   const columns = useMemo<ColumnDef<PaymentRow>[]>(() => [
     {
       key: 'reference', label: 'Payment No.', minWidth: 116, defaultWidth: 140, sortable: true,
@@ -246,12 +249,12 @@ export function PaymentsTab({
     {
       key: 'applied', label: 'Applied to Invoice', minWidth: 116, defaultWidth: 140, sortable: true, align: 'right',
       getValue: (r) => r.applied,
-      render: (r) => <span className="text-[12px] text-foreground" style={{ fontWeight: 600 }}>{formatMoney(r.applied, invoice.currency)}</span>,
+      render: (r) => <span className="text-[12px] text-foreground" style={{ fontWeight: 600 }}><DocMoney value={r.applied} /></span>,
     },
     {
       key: 'total', label: 'Amount', minWidth: 96, defaultWidth: 116, sortable: true, align: 'right',
       getValue: (r) => r.total,
-      render: (r) => <span className="text-[12px] text-slate-600">{formatMoney(r.total, invoice.currency)}</span>,
+      render: (r) => <span className="text-[12px] text-slate-600"><DocMoney value={r.total} /></span>,
     },
     {
       key: 'actions', label: 'Actions', minWidth: 64, defaultWidth: 64, sortable: false, resizable: false, align: 'right',
@@ -309,7 +312,7 @@ export function PaymentsTab({
         </DropdownMenu>
       ),
     },
-  ], [invoice.currency, onViewPayment, onViewCreditMemo, onContinuePayment]);
+  ], [docMoney, onViewPayment, onViewCreditMemo, onContinuePayment]);
 
   // Zero payments → pure empty state (user 10/1): the table chrome
   // (search, count, view controls, header row) is noise with nothing

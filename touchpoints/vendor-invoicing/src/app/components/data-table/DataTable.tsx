@@ -52,6 +52,7 @@ import type {
   SortConfig,
 } from './types';
 import { hiddenSearchHits, orderWithRevealed, listJoin, columnSearchText } from './tableSearch';
+import { useColumnCurrencyViews } from './columnCurrencyView';
 import {
   TableEmptyState,
   PinToViewport,
@@ -292,6 +293,10 @@ interface DataTableProps<T> {
    *    of the container, `flex` flags are ignored, and each resize moves
    *    ONLY the dragged column (the table scrolls if it overflows). */
   fillMode?: 'flex' | 'spread';
+  /** Which table the money columns' "Show values as" choices belong to
+   *  (kept for the session per scope + column). Columns opt in with
+   *  ColumnDef.currencyViewLabel. Defaults to 'table'. */
+  currencyViewScope?: string;
 }
 
 /** Generic data table shell. Ported from the partner-management module's
@@ -334,7 +339,10 @@ export function DataTable<T>({
   hideSelectionColumn = false,
   hidePagination = false,
   fillMode = 'flex',
+  currencyViewScope = 'table',
 }: DataTableProps<T>) {
+  /* ─── Money columns: "Show values as" (base | the record's own currency) ─── */
+  const [currencyViews, setCurrencyView] = useColumnCurrencyViews(currencyViewScope);
   /* ─── Column lookup ─── */
   const colByKey = useMemo(() => {
     const m = new Map<string, ColumnDef<T>>();
@@ -1108,6 +1116,9 @@ export function DataTable<T>({
                         formatValueLabel={def.formatValueLabel}
                         onFilterChange={onColumnFilterChange}
                         suppressOpenRef={suppressNextClickRef}
+                        currencyView={def.currencyViewLabel ? (currencyViews[key] ?? 'base') : undefined}
+                        currencyViewLabel={def.currencyViewLabel}
+                        onCurrencyViewChange={def.currencyViewLabel ? (view) => setCurrencyView(key, view) : undefined}
                       >
                         <div
                           className={
@@ -1367,7 +1378,12 @@ export function DataTable<T>({
                         textOverflow: 'ellipsis',
                         ...(isDraggedCol ? { backgroundColor: dragOutHide ? TINT_HIDE : TINT_MOVE } : {}),
                       };
-                      const cellContent = def.render(row, { density, isSelected, searchQuery });
+                      const cellContent = def.render(row, {
+                        density,
+                        isSelected,
+                        searchQuery,
+                        currencyView: def.currencyViewLabel ? (currencyViews[key] ?? 'base') : undefined,
+                      });
                       const cellAlign = def.align === 'right' ? 'text-right' : '';
 
                       if (frozenColumns.has(key)) {

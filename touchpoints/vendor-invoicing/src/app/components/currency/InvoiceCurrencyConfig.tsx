@@ -6,7 +6,8 @@ import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/curre
 import { formatMoney, formatRate, formatRateDate, moneyPrefix, rateSentence } from '@/app/currency/money';
 import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, corporateRateOn, rateOn, toBase, type RateQuote, type RateType } from '@/app/currency/rates';
 import { fxVarianceOf, gainLossOf, type FxVariance, type LockedPrepayment, type ReceiptValue } from '@/app/currency/fxVariance';
-import { eligiblePayFromId, payFromAccountById, payFromAccountsFor } from '@/app/currency/payFrom';
+import { eligiblePayFromId, payFromAccountsFor } from '@/app/currency/payFrom';
+import { PayFromAccountPicker } from './PayFromAccountPicker';
 import { rateChangePct } from '@/app/hooks/useApSettings';
 import type { InvoiceRateBasis } from '@/app/data/mockInvoices';
 import type { PayFromAccount } from '@/app/data/mockPayments';
@@ -21,7 +22,6 @@ import {
   varianceHex,
   type CurrencyBlockRow,
 } from './CurrencyBlock';
-import { PayFromAccountPicker } from './PayFromAccountPicker';
 
 export { RateTypeChip } from './CurrencyBlock';
 
@@ -480,8 +480,6 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
   // You pay: any bank or cash account, base-currency ones first (payFrom.ts).
   const accounts = payFromAccountsFor(currency);
   const effectiveAccountId = eligiblePayFromId(accountId, currency);
-  const account = payFromAccountById(effectiveAccountId);
-  const payInBase = !account || isBaseCurrency(account.currency);
   const amountRate = draftRate ?? rateOn(currency, rateDay, 'mid').rate ?? 1;
   const restBase = toBase(rest, amountRate);
 
@@ -532,7 +530,6 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
   const poCompare = po && !currencyChanged && draftRate != null && !pending ? po : null;
   // The rate kept on an edit, from before the date changed.
   const keptFromEarlier = useHeld && heldRate != null && heldRate.rateDate !== rateDay;
-  const outcome = variance ? gainLossOf(variance.amount) : 'none';
   // The configuration is read-only once the invoice posts; the rate itself
   // shows no lock (25 Nov 2026).
   const description = posted
@@ -548,7 +545,7 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
     ? `Changed from ${value.currency}. Saving converts every line at the ${formatRateDate(rateDay)} mid-market rate.`
     : currency === defaultCurrency
       ? source.kind === 'po'
-        ? `From the PO, ${source.ref}.`
+        ? "Defaults to the PO's currency."
         : "Defaults to the vendor's currency."
       : source.kind === 'po'
         ? `Changed from ${defaultCurrency}, the PO's currency.`
@@ -621,23 +618,30 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
             <p className="text-[11px] text-slate-500 leading-relaxed">{currencyHelper}</p>
           </Section>
 
-          {/* Each prepayment at the rate it was paid at (Mahreen, 2026-11-20). */}
+          {/* Each prepayment at the rate it was paid at (Mahreen, 2026-11-20),
+              then what's left to pay: one box under Vendor invoiced (25 Nov
+              2026 layout). */}
           {foreign && !pending && draftPrepayments.length > 0 && (
-            <Section label="Prepayment">
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
               {draftPrepayments.map((p, i) => (
-                <div key={`${p.invoiceNumber}-${i}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                <div key={`${p.invoiceNumber}-${i}`} className={i > 0 ? 'mt-2' : ''}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-[12px] text-slate-700" style={{ fontWeight: 600 }}>{p.invoiceNumber}</span>
+                    <span className="text-[12px] text-slate-700">Prepayment {p.invoiceNumber}</span>
                     <span className="text-[12px] tabular-nums text-violet-700" style={{ fontWeight: 600 }}>
-                      −{formatMoney(p.amount, currency)} <span className="text-slate-400" style={{ fontWeight: 400 }}>=</span> −{formatMoney(toBase(p.amount, p.rate), BASE_CURRENCY)}
+                      −{formatMoney(p.amount, currency)}
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
-                    Paid{p.rateDate ? ` ${formatRateDate(p.rateDate)}` : ''} at 1 {p.paid?.currency ?? currency} = {baseRate(p.paid?.rate ?? p.rate)} {BASE_CURRENCY}. It's deducted at the rate it was paid at, not the invoice rate.
+                  <p className="mt-0.5 text-[11px] text-slate-500 leading-relaxed tabular-nums">
+                    Deducted at its paid rate: 1 {p.paid?.currency ?? currency} = {baseRate(p.paid?.rate ?? p.rate)} {BASE_CURRENCY}
+                    {p.rateDate ? `, ${formatRateDate(p.rateDate)}` : ''}
                   </p>
                 </div>
               ))}
-            </Section>
+              <div className="mt-2 pt-2 border-t border-[#EEF2F6] flex items-center justify-between gap-3">
+                <span className="text-[12px] text-slate-800" style={{ fontWeight: 600 }}>Total due</span>
+                <span className="text-[12px] tabular-nums text-slate-800" style={{ fontWeight: 600 }}>{formatMoney(rest, currency)}</span>
+              </div>
+            </div>
           )}
 
           <Section label="You pay in">
@@ -655,48 +659,6 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
             <AmountBox text={`${foreign ? '≈ ' : ''}${formatMoney(restBase, BASE_CURRENCY)} ${BASE_CURRENCY}`} />
             {foreign && pending && <p className="text-[11px] text-slate-500 leading-relaxed">At today's rate, until the pre-invoice is paid.</p>}
           </Section>
-
-          {/* Receiving to invoice: what receiving booked, what the invoice
-              posts, and the gap (Currency Touchpoints Map, Receiving 4). */}
-          {variance && (
-            <Section label="FX variance">
-              <VarianceCard amount={variance.amount} caption={varianceRatesText(variance, dateLabel)}>
-                {variance.restForeign > 0.004 ? (
-                  <div className="mt-2 pt-2 border-t border-[#EEF2F6] space-y-1 text-[11px] tabular-nums">
-                    {receivedLines.map((l) => (
-                      <div key={l.rate} className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500 min-w-0 truncate">
-                          Received {Array.from(new Set(l.dates)).sort().map((d) => formatRateDate(d)).join(', ')} · 1 {currency} = {formatRate(l.rate)} {BASE_CURRENCY}
-                        </span>
-                        <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>{formatMoney(l.base, BASE_CURRENCY)}</span>
-                      </div>
-                    ))}
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-slate-500 min-w-0 truncate">
-                        Invoice {posted ? 'posted' : 'posts'} {formatRateDate(draftDate)} · 1 {currency} = {formatRate(variance.invoiceRate)} {BASE_CURRENCY}
-                      </span>
-                      <span className="text-slate-700 shrink-0" style={{ fontWeight: 500 }}>{formatMoney(variance.restAtInvoice, BASE_CURRENCY)}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-slate-600" style={{ fontWeight: 600 }}>
-                        FX variance · posts to {outcome === 'gain' ? 'FX Gain' : outcome === 'loss' ? 'FX Loss' : 'nothing'}
-                      </span>
-                      <span className="shrink-0" style={{ fontWeight: 700, color: varianceHex(variance.amount) }}>{signedVariance(variance.amount)}</span>
-                    </div>
-                    {variance.prepaidGoods.length > 0 && (
-                      <p className="text-slate-400 leading-relaxed pt-0.5">
-                        The prepaid part keeps the rate it was paid at, so only the unpaid {formatMoney(variance.restForeign, currency)} is compared.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
-                    The prepayment covers all the goods at the rate it was paid at, so there's no FX variance.
-                  </p>
-                )}
-              </VarianceCard>
-            </Section>
-          )}
 
           {foreign && (
             <Section
@@ -812,6 +774,40 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
                   )}
                 </>
               )}
+            </Section>
+          )}
+
+          {/* Receiving to invoice, after the rate (25 Nov 2026 layout): what
+              receiving booked, what the invoice posts, and the gap (Currency
+              Touchpoints Map, Receiving 4). */}
+          {variance && (
+            <Section label="FX variance">
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[12px] tabular-nums">
+                {variance.restForeign > 0.004 ? (
+                  <div className="space-y-1.5">
+                    {receivedLines.map((l) => (
+                      <div key={l.rate} className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500 min-w-0 truncate">
+                          Received {Array.from(new Set(l.dates)).sort().map((d) => formatRateDate(d)).join(", ")}
+                        </span>
+                        <span className="text-slate-700 shrink-0">1 {currency} = {baseRate(l.rate)} · {formatMoney(l.base, BASE_CURRENCY)}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-500 min-w-0 truncate">Invoiced {formatRateDate(draftDate)}</span>
+                      <span className="text-slate-700 shrink-0">1 {currency} = {baseRate(variance.invoiceRate)} · {formatMoney(variance.restAtInvoice, BASE_CURRENCY)}</span>
+                    </div>
+                    <div className="pt-1.5 border-t border-[#EEF2F6] flex items-center justify-between gap-3">
+                      <span className="text-slate-800" style={{ fontWeight: 600 }}>FX variance</span>
+                      <span className="shrink-0" style={{ fontWeight: 700, color: varianceHex(variance.amount) }}>{signedVariance(variance.amount)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    The prepayment covers all the goods at the rate it was paid at, so there's no FX variance.
+                  </p>
+                )}
+              </div>
             </Section>
           )}
         </div>

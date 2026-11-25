@@ -17,8 +17,11 @@ import {
   ChevronDown,
   ChevronLeft,
   Plus,
+  Landmark,
+  Handshake,
 } from "lucide-react";
 import { Checkbox } from "@/app/components/ui/checkbox";
+import type { ColumnCurrencyView } from "./columnCurrencyView";
 
 function highlightMatch(text: string, query: string): React.ReactNode {
   if (!query || query.trim().length === 0) return text;
@@ -105,7 +108,110 @@ interface ColumnHeaderMenuProps {
   onFilterChange?: (columnKey: string, filter: ColumnFilterState) => void;
   /** When set, swallow the next open attempt — set by parent right after a header drag. */
   suppressOpenRef?: React.MutableRefObject<boolean>;
+  /** Money columns only: the column's "Show values as" view (base or the
+   *  vendor's currency). Both this and the handler turn the section on. */
+  currencyView?: ColumnCurrencyView;
+  onCurrencyViewChange?: (view: ColumnCurrencyView) => void;
+  /** The record's own currency, as the option reads. Defaults to "Vendor currency". */
+  partyCurrencyLabel?: string;
   children: ReactNode;
+}
+
+/** The "Show values as" options of a money column's header menu, as in the
+ *  Partners listing: Base currency (Landmark) and the record's own currency
+ *  (Handshake), the active one with a blue dot. The caller draws the divider
+ *  above it. */
+export function ShowValuesAsOptions({
+  view,
+  onChange,
+  partyLabel = "Vendor currency",
+}: {
+  view: ColumnCurrencyView;
+  onChange: (view: ColumnCurrencyView) => void;
+  partyLabel?: string | undefined;
+}) {
+  return (
+    <>
+      <div
+        className="px-2.5 pt-1 pb-0.5 text-[10.5px] text-muted-foreground/70 uppercase tracking-wider"
+        style={{ fontWeight: 600, letterSpacing: "0.04em" }}
+      >
+        Show values as
+      </div>
+      {([
+        ["base", "Base currency", Landmark],
+        ["party", partyLabel, Handshake],
+      ] as const).map(([value, text, Icon]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onChange(value)}
+          className={`flex items-center gap-2.5 w-full px-2.5 py-[7px] rounded-md text-[13px] cursor-pointer transition-colors hover:bg-muted/60 ${
+            view === value ? "text-primary bg-primary/5" : "text-foreground"
+          }`}
+        >
+          <Icon className="w-4 h-4 text-muted-foreground" />
+          <span style={{ fontWeight: 400 }}>{text}</span>
+          {view === value && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
+        </button>
+      ))}
+    </>
+  );
+}
+
+/** A header menu with only "Show values as", for a money column of a plain
+ *  table that has no sort, filter or hide (a return's Linked Records). Same
+ *  trigger and panel as ColumnHeaderMenu. */
+export function MoneyColumnHeaderMenu({
+  label,
+  view,
+  onChange,
+  partyLabel,
+  align = "end",
+  children,
+}: {
+  label: string;
+  view: ColumnCurrencyView;
+  onChange: (view: ColumnCurrencyView) => void;
+  partyLabel?: string | undefined;
+  align?: "start" | "end";
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        type="button"
+        onClick={(e) => e.stopPropagation()}
+        className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-foreground transition-colors"
+      >
+        {children}
+      </PopoverTrigger>
+      <PopoverContent
+        align={align}
+        sideOffset={4}
+        className="p-0 rounded-lg shadow-lg border border-border/80 z-[200] w-[220px]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-3 pt-2.5 pb-1.5 flex items-center gap-1.5">
+          <span className="text-[11px] uppercase tracking-wide text-muted-foreground truncate" style={{ fontWeight: 600 }}>
+            {label}
+          </span>
+        </div>
+        <div className="border-t border-border/60" />
+        <div className="py-1 px-1">
+          <ShowValuesAsOptions
+            view={view}
+            partyLabel={partyLabel}
+            onChange={(next) => {
+              onChange(next);
+              setOpen(false);
+            }}
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export function ColumnHeaderMenu({
@@ -127,6 +233,9 @@ export function ColumnHeaderMenu({
   formatValueLabel,
   onFilterChange,
   suppressOpenRef,
+  currencyView,
+  onCurrencyViewChange,
+  partyCurrencyLabel,
   children,
 }: ColumnHeaderMenuProps) {
   const [open, setOpen] = useState(false);
@@ -289,6 +398,21 @@ export function ColumnHeaderMenu({
                     <span style={{ fontWeight: 400 }}>Sort descending</span>
                     {currentSort === "desc" && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
                   </button>
+                </>
+              )}
+
+              {/* Show values as — base or the vendor's currency (money columns) */}
+              {currencyView !== undefined && onCurrencyViewChange && (
+                <>
+                  <div className="border-t border-border/60 my-1" />
+                  <ShowValuesAsOptions
+                    view={currencyView}
+                    partyLabel={partyCurrencyLabel}
+                    onChange={(next) => {
+                      onCurrencyViewChange(next);
+                      setOpen(false);
+                    }}
+                  />
                 </>
               )}
 

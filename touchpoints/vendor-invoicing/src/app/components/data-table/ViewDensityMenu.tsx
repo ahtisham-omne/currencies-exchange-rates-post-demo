@@ -38,9 +38,11 @@ interface ViewDensityMenuProps {
   /** Sizes parked for a later phase (user 9/28: Large on invoices) —
    *  rendered greyed with a next-phase tooltip, never clickable. */
   disabledCardSizes?: CardSize[];
+  /** Icon only (the label shows on hover), for a crowded toolbar. */
+  compact?: boolean;
 }
 
-export function ViewDensityMenu({ density, onDensityChange, cardSize = 'medium', onCardSizeChange, hideCard = false, disabledCardSizes = [] }: ViewDensityMenuProps) {
+export function ViewDensityMenu({ density, onDensityChange, cardSize = 'medium', onCardSizeChange, hideCard = false, disabledCardSizes = [], compact = false }: ViewDensityMenuProps) {
   const TriggerIcon = DENSITY_ICON[density];
   const options = hideCard ? DENSITY_CONFIG.filter((d) => d.key !== 'card') : DENSITY_CONFIG;
   return (
@@ -49,9 +51,10 @@ export function ViewDensityMenu({ density, onDensityChange, cardSize = 'medium',
         <button
           type="button"
           className="inline-flex items-center justify-center h-9 gap-2 px-3 rounded-lg border border-border bg-white text-foreground shadow-sm hover:bg-muted/40 transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          title={compact ? DENSITY_CONFIG.find((d) => d.key === density)?.label : undefined}
         >
           <TriggerIcon className="w-[18px] h-[18px] text-muted-foreground/80" />
-          <span className="text-sm hidden md:inline" style={{ fontWeight: 500 }}>
+          <span className={`text-sm ${compact ? 'sr-only' : 'hidden md:inline'}`} style={{ fontWeight: 500 }}>
             {DENSITY_CONFIG.find((d) => d.key === density)?.label}
           </span>
           <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/60" />

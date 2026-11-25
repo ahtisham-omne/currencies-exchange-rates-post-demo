@@ -134,8 +134,12 @@ const VENDOR_CURRENCY_MIX: [string, number][] = [
 ];
 const MIX_TOTAL = VENDOR_CURRENCY_MIX.reduce((s, [, w]) => s + w, 0);
 
-/** Pinned so the demo's first screens show the range (the standalone picker leads with these). */
+/** Pinned so the demo's first screens show the range. Acme Corp (first in
+ *  both vendor pickers) and Global Corp (the payments list's first row, as
+ *  "Global Logistics Partners") are USD, so the first example is in dollars. */
 const PINNED_VENDOR_CURRENCY: Record<string, string> = {
+  'Acme Corp': 'USD',
+  'Global Corp': 'USD',
   'Superior Industries': 'EUR',
   'Acme Industries': 'USD',
   'Ultra Corp': 'GBP',

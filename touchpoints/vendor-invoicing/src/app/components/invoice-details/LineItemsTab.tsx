@@ -35,6 +35,7 @@ export function LineItemsTable<T>({
   storageKey,
   getRowId,
   headerExtra,
+  toolbarEnd,
   rowHeight = 52,
   searchAccessor,
   searchPlaceholder = 'Search line items…',
@@ -53,6 +54,9 @@ export function LineItemsTable<T>({
   storageKey: string;
   getRowId: (row: T) => string;
   headerExtra?: ReactNode;
+  /** Sits in the right-hand toolbar group, before Full Screen: the
+   *  detail page's Base Currency | Vendor Currency switch. */
+  toolbarEnd?: ReactNode;
   /** Approx px per row — sizes content-fitted tables (capped at 64vh).
    *  Ignored when fillViewport stretches the card instead. */
   rowHeight?: number;
@@ -183,7 +187,7 @@ export function LineItemsTable<T>({
       <div data-col-hide-edge className="shrink-0 flex items-center justify-between gap-3 px-4 pt-3.5 pb-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {searchAccessor && (
-            <div className="relative flex-1 max-w-xs">
+            <div className="relative flex-1 min-w-[140px] max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
               <Input
                 value={search}
@@ -214,6 +218,7 @@ export function LineItemsTable<T>({
             <span className="text-muted-foreground/70"> {countNoun}</span>
           </span>
           <div className="w-px h-5 bg-border/60 mx-1 hidden sm:block" />
+          {toolbarEnd}
           <button
             type="button"
             onClick={() => setFullScreen((v) => !v)}
@@ -226,7 +231,8 @@ export function LineItemsTable<T>({
             ) : (
               <Maximize2 className="w-[18px] h-[18px] text-muted-foreground/80" />
             )}
-            <span className="text-sm hidden md:inline" style={{ fontWeight: 500 }}>
+            {/* Icon only beside the currency switch, so the search keeps its width. */}
+            <span className={`text-sm ${toolbarEnd ? 'hidden' : 'hidden md:inline'}`} style={{ fontWeight: 500 }}>
               {fullScreen ? 'Exit Full Screen' : 'Full Screen'}
             </span>
           </button>
@@ -234,6 +240,7 @@ export function LineItemsTable<T>({
             density={density}
             onDensityChange={(next) => { if (next !== 'card') setDensity(next); }}
             hideCard
+            compact={!!toolbarEnd}
           />
           <ColumnSelectorTrigger
             visibleCount={visibleColumnCount}
@@ -585,7 +592,7 @@ function generateStandaloneLines(invoice: Invoice, subtotal: number): Standalone
 // Detail-page line items for a Standalone invoice — mirrors the create
 // form's GL Account · Description · Amount table instead of the inventory
 // 3-way-match grid.
-function StandaloneLineItems({ invoice, subtotal, isPending }: { invoice: Invoice; subtotal: number; isPending: boolean }) {
+function StandaloneLineItems({ invoice, subtotal, isPending, currencySwitch }: { invoice: Invoice; subtotal: number; isPending: boolean; currencySwitch?: ReactNode }) {
   const lines = useMemo(() => generateStandaloneLines(invoice, subtotal), [invoice, subtotal]);
   const total = lines.reduce((s, l) => s + l.amount, 0);
   const docMoney = useDocMoney();
@@ -650,6 +657,7 @@ function StandaloneLineItems({ invoice, subtotal, isPending }: { invoice: Invoic
       getRowId={(r) => r.id}
       rowHeight={33}
       title="Line Items"
+      toolbarEnd={currencySwitch}
       searchAccessor={(r) => `${r.glAccount} ${r.description}`}
       searchPlaceholder="Search by GL account or description…"
     />
@@ -736,14 +744,20 @@ export function ItemDescriptionWithToggle({ shortText, longText, searchQuery }: 
 // Amount table; everything else uses the inventory 3-way-match grid.
 // Kept hook-free so the conditional branch doesn't trip the Rules of Hooks
 // when the user navigates between a standalone and an inventory invoice.
-export function LineItemsTab({ invoice, subtotal, isPending }: { invoice: Invoice; subtotal: number; isPending: boolean }) {
+export function LineItemsTab({ invoice, subtotal, isPending, currencySwitch }: {
+  invoice: Invoice;
+  subtotal: number;
+  isPending: boolean;
+  /** The page's Base Currency | Invoice Currency switch, for the toolbar. */
+  currencySwitch?: ReactNode;
+}) {
   if (invoice.type === 'Standalone') {
-    return <StandaloneLineItems invoice={invoice} subtotal={subtotal} isPending={isPending} />;
+    return <StandaloneLineItems invoice={invoice} subtotal={subtotal} isPending={isPending} currencySwitch={currencySwitch} />;
   }
-  return <InventoryLineItems invoice={invoice} subtotal={subtotal} isPending={isPending} />;
+  return <InventoryLineItems invoice={invoice} subtotal={subtotal} isPending={isPending} currencySwitch={currencySwitch} />;
 }
 
-function InventoryLineItems({ invoice, subtotal, isPending: _isPending }: { invoice: Invoice; subtotal: number; isPending: boolean }) {
+function InventoryLineItems({ invoice, subtotal, isPending: _isPending, currencySwitch }: { invoice: Invoice; subtotal: number; isPending: boolean; currencySwitch?: ReactNode }) {
   const lines = useMemo(() => generateLines(invoice, subtotal), [invoice, subtotal]);
   // Offending-field highlight moved to the EDIT screen (BA 9/6): the
   // detail page states the exception in the banner + sidebar card; the
@@ -977,6 +991,7 @@ function InventoryLineItems({ invoice, subtotal, isPending: _isPending }: { invo
         getRowId={(l) => l.id}
         rowHeight={62}
         title="Line Items"
+        toolbarEnd={currencySwitch}
         searchAccessor={(l) => `${l.sku} ${l.productName} ${l.description} ${l.glAccount}`}
         searchPlaceholder="Search items…"
         quickFilters={[

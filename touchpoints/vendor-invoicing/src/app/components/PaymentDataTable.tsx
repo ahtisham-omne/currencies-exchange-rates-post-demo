@@ -34,7 +34,7 @@ import type { Payment } from '@/app/data/mockPayments';
 import { BASE_CURRENCY, getCurrency } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
 import { paymentFx, toPaymentBase } from '@/app/currency/paymentFx';
-import { BaseMoney } from '@/app/components/currency/Money';
+import { BaseMoney, Money } from '@/app/components/currency/Money';
 import { getRowActionGroups, type PaymentActionId } from '@/app/data/paymentActions';
 import { actionToneClass, type ActionTone } from '@/app/lib/actionMenuTone';
 import {
@@ -522,7 +522,8 @@ export const PAYMENT_COLUMNS: ColumnDef<Payment>[] = [
   {
     key: 'amount',
     label: 'Amount',
-    tooltip: `In ${BASE_CURRENCY}, the base currency, at each payment's rate (from a base account, the bank's). Hover for the amount in the invoices' currency.`,
+    tooltip: `Base currency shows ${BASE_CURRENCY} at each payment's rate (from a base account, the bank's); Payment currency shows what the vendor was paid (set it in this column's menu). Hover for the other figure. Sorting and filters use ${BASE_CURRENCY}.`,
+    currencyViewLabel: 'Payment currency',
     minWidth: 120,
     defaultWidth: 150,
     align: 'right',
@@ -539,11 +540,19 @@ export const PAYMENT_COLUMNS: ColumnDef<Payment>[] = [
     searchText: (row) => `${formatMoney(row.amount, row.currency)} ${formatMoney(toPaymentBase(row, row.amount), BASE_CURRENCY)}`,
     // Same weight as every other column (partner table pattern — no
     // heavier font for money columns, design feedback 7/13/26).
-    render: (row, { searchQuery }) => (
+    // "Show values as" (header menu): Payment currency prints the
+    // payment's own amount with base on hover; sort/filter stay on base.
+    render: (row, { searchQuery, currencyView }) => (
       <span className="text-foreground" style={{ fontWeight: 400 }}>
-        <BaseMoney value={row.amount} currency={row.currency} fx={paymentFx(row)} role="Invoice currency" dateLabel="payment date">
-          {highlightAmount(formatMoney(toPaymentBase(row, row.amount), BASE_CURRENCY), searchQuery)}
-        </BaseMoney>
+        {currencyView === 'party' ? (
+          <Money value={row.amount} currency={row.currency} fx={paymentFx(row)} role="payment currency" dateLabel="payment date">
+            {highlightAmount(formatMoney(row.amount, row.currency), searchQuery)}
+          </Money>
+        ) : (
+          <BaseMoney value={row.amount} currency={row.currency} fx={paymentFx(row)} role="Invoice currency" dateLabel="payment date">
+            {highlightAmount(formatMoney(toPaymentBase(row, row.amount), BASE_CURRENCY), searchQuery)}
+          </BaseMoney>
+        )}
       </span>
     ),
   },
@@ -857,6 +866,7 @@ export function PaymentDataTable({
       totalRows={totalRows}
       onPageChange={onPageChange}
       onRecordsPerPageChange={onRecordsPerPageChange}
+      currencyViewScope="payment-history"
     />
   );
 }

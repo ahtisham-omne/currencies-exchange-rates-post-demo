@@ -1,25 +1,72 @@
 import * as React from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/app/components/ui/tooltip";
+import { isBaseCurrency } from "@/app/currency/currencies";
+import type { DocView } from "./docCurrencyContext";
 
-/* ── The quote header's Currency button ───────────────────────────────
- * Opens the quote's currency configuration. The Currency Touchpoints Map
- * (24 Nov 2026) puts only a currency tag (after the quote number, on a
- * quote in a foreign currency) and this button in the header: the
- * Base Currency | Customer Currency toggle of 18 Nov is gone, and the page
- * shows every amount in base with the customer's amount on hover. Sized to
- * the header's buttons beside it (36px, 32px once the header compresses on
- * scroll). */
+/* ── The quote page's Base Currency | Customer Currency switch ────────
+ * Not in the document header (user, 25 Nov 2026): QuoteDetails renders it
+ * in the Line Items toolbar (ItemsTabTableClean's toolbarExtra), right-
+ * aligned before Add Line Item. The file keeps its old name. Switches every amount on the quote between
+ * the base currency and the customer's; the other one stays on hover. Only
+ * on a quote in a foreign currency: on a base-currency quote there's nothing
+ * to switch. A view choice kept for the session (quoteView.ts), never an
+ * edit. Same visual as the other document headers (vendor-invoicing's
+ * CurrencyHeaderControls). No Currency button here (25 Nov 2026): the
+ * configuration opens from the summary's currency card. */
 
-const FONT = "Inter, system-ui, sans-serif";
+function Segment({ active, onClick, label, tip }: { active: boolean; onClick: () => void; label: string; tip: string }) {
+  return (
+    <Tooltip delayDuration={300}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={active}
+          onClick={onClick}
+          className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+            active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
+          }`}
+          style={{ fontWeight: active ? 500 : 400 }}
+        >
+          {label}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-[260px] text-[11.5px] leading-[1.5] z-[300]">
+        {tip}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function QuoteCurrencyHeaderControls({
-  onOpenConfig,
-  compact = false,
+  currency,
+  view,
+  onViewChange,
 }: {
-  onOpenConfig: () => void;
-  /** The header has compressed on scroll. */
-  compact?: boolean;
+  /** The quote's currency (the customer's, unless changed on the quote). */
+  currency: string;
+  view: DocView;
+  onViewChange: (view: DocView) => void;
 }) {
-  // No Currency button in the header (25 Nov 2026): the configuration opens
-  // from the summary's currency card (View configuration).
-  return null;
+  if (isBaseCurrency(currency)) return null;
+  return (
+    <div
+      className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0"
+      role="radiogroup"
+      aria-label="Show amounts in"
+    >
+      <Segment
+        active={view === "base"}
+        onClick={() => onViewChange("base")}
+        label="Base Currency"
+        tip="Show amounts in your base currency."
+      />
+      <Segment
+        active={view === "document"}
+        onClick={() => onViewChange("document")}
+        label="Customer Currency"
+        tip="Show amounts in the currency set for this quote."
+      />
+    </div>
+  );
 }

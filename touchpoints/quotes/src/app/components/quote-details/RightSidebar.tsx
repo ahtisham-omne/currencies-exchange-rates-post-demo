@@ -655,7 +655,8 @@ export function RightSidebar({
   onViewCurrencyConfig,
 }: RightSidebarProps) {
   /* Whole amounts as the design shows them, in the page's currency: base
-     (the quote page pins it; the customer's amount is on hover). */
+     by default, the customer's with the Line Items toolbar's Base Currency |
+     Customer Currency switch; the other one is on hover (DocMoney). */
   const fmtCurrency = useDocWhole();
   // ── Collapse state (sub-sections) ──
   const [showAddressDetail, setShowAddressDetail] = useState(false);
@@ -1543,8 +1544,8 @@ export function RightSidebar({
             {/* Subtotal */}
             <div className="flex items-center justify-between">
               <p className="text-slate-400" style={{ fontSize: 10, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' }}>Subtotal</p>
-              <p className="text-slate-700 tabular-nums" style={{ fontSize: 12, fontWeight: 500, fontFamily: 'Inter, system-ui, sans-serif' }} title={fmtCurrency(subtotal)}>
-                {fmtCurrency(subtotal)}
+              <p className="text-slate-700 tabular-nums" style={{ fontSize: 12, fontWeight: 500, fontFamily: 'Inter, system-ui, sans-serif' }}>
+                <DocMoney value={subtotal}>{fmtCurrency(subtotal)}</DocMoney>
               </p>
             </div>
 
@@ -1564,9 +1565,8 @@ export function RightSidebar({
                     fontSize: 12, fontWeight: 500, fontFamily: 'Inter, system-ui, sans-serif',
                     color: pricingRulesNet > 0 ? '#7C3AED' : pricingRulesNet < 0 ? 'var(--success)' : '#475569',
                   }}
-                  title={`${pricingRulesNet > 0 ? '+' : pricingRulesNet < 0 ? '-' : ''}${fmtCurrency(Math.abs(pricingRulesNet))}`}
                 >
-                  {pricingRulesNet > 0 ? '+' : pricingRulesNet < 0 ? '-' : ''}{fmtCurrency(Math.abs(pricingRulesNet))}
+                  <DocMoney value={pricingRulesNet}>{pricingRulesNet > 0 ? '+' : pricingRulesNet < 0 ? '-' : ''}{fmtCurrency(Math.abs(pricingRulesNet))}</DocMoney>
                 </p>
               </div>
               {hasPricingRules ? (
@@ -1606,9 +1606,8 @@ export function RightSidebar({
                     fontSize: 12, fontWeight: 500, fontFamily: 'Inter, system-ui, sans-serif',
                     color: adjustmentNet > 0 ? '#7C3AED' : adjustmentNet < 0 ? 'var(--success)' : '#475569',
                   }}
-                  title={`${adjustmentNet > 0 ? '+' : adjustmentNet < 0 ? '-' : ''}${fmtCurrency(Math.abs(adjustmentNet))}`}
                 >
-                  {adjustmentNet > 0 ? '+' : adjustmentNet < 0 ? '-' : ''}{fmtCurrency(Math.abs(adjustmentNet))}
+                  <DocMoney value={adjustmentNet}>{adjustmentNet > 0 ? '+' : adjustmentNet < 0 ? '-' : ''}{fmtCurrency(Math.abs(adjustmentNet))}</DocMoney>
                 </p>
               </div>
               {hasAdjustments ? (

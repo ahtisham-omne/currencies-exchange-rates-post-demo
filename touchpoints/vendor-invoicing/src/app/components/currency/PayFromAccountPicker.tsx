@@ -60,7 +60,9 @@ export function PayFromAccountPicker({
     );
   }
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    /* modal: the list sits in a portal outside the dialog, whose scroll lock
+       would otherwise swallow the mouse wheel over it. */
+    <Popover modal open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"

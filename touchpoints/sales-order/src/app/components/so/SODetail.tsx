@@ -77,8 +77,9 @@ import {
 import { DateEditModal, type SODateType, type DateConfig } from "./ui/DateEditModal";
 import type { SOLine, CancellationReason, SOPriority } from "./types";
 import { DocCurrencyProvider } from "@/app/components/currency/DocCurrency";
-import { SOCurrencyHeaderControls, SOHeaderCustomer } from "@/app/components/currency/SOCurrencyHeaderControls";
+import { SOCurrencyViewSwitch, SOHeaderCustomer } from "@/app/components/currency/SOCurrencyHeaderControls";
 import type { DocView } from "@/app/components/currency/docCurrencyContext";
+import { setDocView, useDocViewOf } from "@/app/components/currency/docView";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatMoney } from "@/app/currency/money";
 import { toBase } from "@/app/currency/rates";
@@ -152,12 +153,15 @@ export function SODetail() {
   });
 
   const [activeTab, setActiveTab] = useState("lines");
-  /* Every amount on the page is in base, the customer's amount and the rate
-     on hover. The Base Currency | Customer Currency toggle is gone (Currency
-     Touchpoints Map, 24 Nov 2026: a currency tag and the Currency button in
-     the header, no toggle); the view plumbing stays, pinned to base. The
-     order's Currency Configuration dialog opens from the header. */
-  const soView: DocView = "base";
+  /* Which currency the page's amounts show in: base by default, the
+     customer's amount and the rate on hover. The Base Currency | Customer
+     Currency switch (25 Nov 2026, in the Line Items toolbar, only on an order
+     in a foreign currency) flips it; the choice is kept per order for the
+     session (docView.ts), never an edit. The order's Currency Configuration
+     dialog opens from the summary's currency card. */
+  const soViewKey = so ? `so:${so.id}` : undefined;
+  const soView: DocView = useDocViewOf(soViewKey);
+  const setSoView = (v: DocView) => { if (soViewKey) setDocView(soViewKey, v); };
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
 
   /* Track the right sidebar's live height so the Attachments tab card
@@ -422,7 +426,7 @@ export function SODetail() {
      can't legally proceed — we'd be invoicing a negative number. Used
      to gate stage transitions out of Draft. */
   const projectedTotal = pricingAPI.soSubtotal + adjustmentsAPI.grandTotal.net;
-  /* An order amount in the currency the page shows (base), for the toasts
+  /* An order amount in the currency the page shows, for the toasts
      and version prompts this page writes itself. */
   const pageMoney = (n: number) =>
     soView === "base" && fx && !fx.isBase ? formatMoney(toBase(n, fx.rate), BASE_CURRENCY) : formatMoney(n, so.currency);
@@ -950,6 +954,7 @@ export function SODetail() {
                           customer={so.customer}
                           currency={fx!.currency}
                           sourceQuoteRef={so.sourceQuoteRef}
+                          view={soView}
                           compact={isScrolled}
                         />
                       </div>
@@ -977,13 +982,6 @@ export function SODetail() {
 
                   {/* Right: Fullscreen + Actions dropdown + separator + CTA — mirrors Quotes' QuoteDetails header pattern */}
                   <div className="flex items-center shrink-0 max-md:w-full max-md:justify-end max-md:flex-wrap" style={{ gap: isScrolled ? 6 : 8 }}>
-                    {/* The Currency button: the order's currency
-                        configuration. No Base | Customer toggle (24 Nov
-                        2026); the page is always in base. */}
-                    <SOCurrencyHeaderControls
-                      onOpenConfig={() => setCurrencyConfigOpen(true)}
-                      compact={isScrolled}
-                    />
                     {/* Fullscreen toggle (nothing to widen on a phone) */}
                     <button
                       onClick={() => setIsFullscreen(!isFullscreen)}
@@ -1757,7 +1755,12 @@ export function SODetail() {
           <div className="flex-1 min-w-0 flex flex-col lg:pb-6">
             <div className="flex-1 flex flex-col min-h-0" style={{ paddingTop: 0 }}>
             {activeTab === "lines" && (
-              <SOLineGrid so={so} pricingAPI={pricingAPI} adjustmentsAPI={adjustmentsAPI} onAddLine={() => {
+              <SOLineGrid so={so} pricingAPI={pricingAPI} adjustmentsAPI={adjustmentsAPI}
+                /* Base Currency | Customer Currency: the Line Items
+                   toolbar's right-hand group (25 Nov 2026; not the
+                   header). Only on an order in a foreign currency. */
+                toolbarView={<SOCurrencyViewSwitch currency={fx!.currency} view={soView} onViewChange={setSoView} />}
+                onAddLine={() => {
                   if (requiresNewDraftFirst(so.status)) {
                     setPendingVersionChange({ fieldLabel: "Add Line Item", action: () => setShowAddLine(true) });
                     setAutoVersionField("Add Line Item");

@@ -28,6 +28,11 @@ export interface ColumnExtraSort {
   label: string;
 }
 
+/** How a money column shows its amounts (the column header menu's "Show
+ *  values as"): 'base' = in the base currency at each record's own rate
+ *  (the default), 'party' = in the record's own currency. */
+export type CurrencyView = 'base' | 'party';
+
 export interface QuickFilter {
   key: string;
   label: string;
@@ -86,13 +91,19 @@ export interface ColumnDef<T> {
   /** Set false for columns whose cell holds nothing to search (a yes/no flag,
    *  an icon). Defaults to true. */
   searchable?: boolean;
+  /** Money columns: the name of the record's own currency for the header
+   *  menu's "Show values as" section ("Invoice currency", "Payment
+   *  currency"). When set, the menu offers Base currency | this, and the
+   *  cell renderer gets the column's choice as `ctx.currencyView`. Sorting
+   *  and filtering stay on getValue (the base amount). */
+  currencyViewLabel?: string;
   /** Optional sort key override — useful when getValue returns a complex shape. */
   getSortValue?: (row: T) => string | number;
   /** Cell renderer. Receives row + density context + optional active
    *  search query so renderers can highlight matching substrings. */
   render: (
     row: T,
-    ctx: { density: DensityOption; isSelected: boolean; searchQuery?: string }
+    ctx: { density: DensityOption; isSelected: boolean; searchQuery?: string; currencyView?: CurrencyView }
   ) => ReactNode;
 }
 

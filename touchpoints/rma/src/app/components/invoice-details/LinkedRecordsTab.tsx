@@ -2,7 +2,10 @@ import { formatMoney as moneyIn } from '@/app/currency/money';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { toBase } from '@/app/currency/rates';
 import { linkedRecordFx, returnSettlementFx } from '@/app/currency/returnSettlement';
-import { BaseMoney } from '@/app/components/currency/Money';
+import { BaseMoney, Money } from '@/app/components/currency/Money';
+import { ReturnViewProvider } from '@/app/components/currency/returnView';
+import { MoneyColumnHeaderMenu } from '@/app/components/data-table/ColumnHeaderMenu';
+import { useColumnCurrencyViews } from '@/app/components/data-table/columnCurrencyView';
 import { CurrencyCodeCell } from '@/app/components/currency/CurrencyCodeCell';
 import { useMemo, useState } from 'react';
 import {
@@ -277,9 +280,17 @@ export function LinkedRecordsTab({
     );
   }, [records, query]);
 
-  // A return's records read in PKR, each at its own rate, with the return's
-  // currency tag and its amount on hover (Currency Touchpoints Map,
-  // 2026-11-24); the section totals add the PKR figures up.
+  // A return's records read in their Amount column's view, chosen from its
+  // header menu's "Show values as" (25 Nov 2026, as the Partners listing),
+  // per section and kept for the session; the Return Items switch no longer
+  // reaches this listing. Base currency (the default): PKR, each at its own
+  // rate, with the return's amount on hover, and the section total adds the
+  // PKR figures up. Vendor currency: the return's currency, the PO's, with
+  // PKR on hover; every record of a return is in that one currency, so the
+  // total adds those up.
+  const [amountViews, setAmountView] = useColumnCurrencyViews(isRma ? 'rma-linked-records' : null);
+  const amountViewOf = (type: GroupType) => amountViews[type] ?? 'base';
+  const inBaseFor = (type: GroupType) => isRma && amountViewOf(type) === 'base';
   const settle = useMemo(() => (rma ? returnSettlementFx(rma) : null), [rma]);
   const fxOf = (r: LinkedFinancialRecord) => (rma && settle ? linkedRecordFx(rma, r, settle) : null);
   const baseOf = (r: LinkedFinancialRecord) => {
@@ -294,12 +305,12 @@ export function LinkedRecordsTab({
         .filter((r) => r.type === type)
         .sort((a, b) => b.date.localeCompare(a.date));
       const total = Math.round(
-        items.reduce((s, r) => s + (!isExcludedRow(r) ? baseOf(r) : 0), 0) * 100,
+        items.reduce((s, r) => s + (!isExcludedRow(r) ? (inBaseFor(type) ? baseOf(r) : r.amount) : 0), 0) * 100,
       ) / 100;
       return { type, items, total };
     }).filter((g) => g.items.length > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredRecords, settle]);
+  }, [filteredRecords, settle, amountViews]);
 
   // Type pills — counts come from the unfiltered set so they stay stable
   // while searching.
@@ -466,7 +477,7 @@ export function LinkedRecordsTab({
                 </span>
                 {total > 0 && (
                   <span className="ml-auto text-foreground tabular-nums text-[13px]" style={{ fontWeight: 600 }}>
-                    {formatMoney(total, isRma ? BASE_CURRENCY : invoice.currency)}
+                    {formatMoney(total, inBaseFor(type) ? BASE_CURRENCY : invoice.currency)}
                   </span>
                 )}
                 {/* Stock with nothing behind it is a state, not an absence.
@@ -538,7 +549,21 @@ export function LinkedRecordsTab({
                             className={`py-2 px-4 text-[11px] text-muted-foreground/60 whitespace-nowrap ${c.align} ${c.hide}`}
                             style={{ width: c.width, fontWeight: 600 }}
                           >
-                            {c.col}
+                            {/* The Amount header opens "Show values as" on a
+                                return, whose records convert to PKR. */}
+                            {c.col === 'Amount' && isRma ? (
+                              <MoneyColumnHeaderMenu
+                                label={c.col}
+                                view={amountViewOf(type)}
+                                onChange={(view) => setAmountView(type, view)}
+                                partyLabel="Vendor currency"
+                              >
+                                {c.col}
+                                <ChevronDown className="w-3 h-3 text-muted-foreground/50" aria-hidden="true" />
+                              </MoneyColumnHeaderMenu>
+                            ) : (
+                              c.col
+                            )}
                           </th>
                         ))}
                         <th className="w-[4%]"><span className="sr-only">Actions</span></th>
@@ -573,7 +598,7 @@ export function LinkedRecordsTab({
                               <span className="inline-flex whitespace-nowrap max-w-full">
                                 <CurrencyCodeCell
                                   code={invoice.currency}
-                                  {...(isRma ? { title: `The return's currency. The amount reads in ${BASE_CURRENCY}.` } : {})}
+                                  {...(inBaseFor(type) ? { title: `The return's currency. The amount reads in ${BASE_CURRENCY}.` } : isRma ? { title: "The return's currency." } : {})}
                                 />
                               </span>
                             </td>
@@ -626,8 +651,14 @@ export function LinkedRecordsTab({
                                   style={{ fontWeight: 600 }}
                                   title={excluded ? (isRma ? 'Excluded from totals, this record no longer counts' : 'Excluded from totals, no longer counts toward the balance') : undefined}
                                 >
-                                  {isRma ? (
+                                  {isRma && inBaseFor(type) ? (
                                     <BaseMoney value={r.amount} currency={invoice.currency} fx={fxOf(r)} role="Return currency" />
+                                  ) : isRma ? (
+                                    // In the return's currency whatever the
+                                    // page around it shows, PKR on hover.
+                                    <ReturnViewProvider value="document">
+                                      <Money value={r.amount} currency={invoice.currency} fx={fxOf(r)} role="Return currency" />
+                                    </ReturnViewProvider>
                                   ) : (
                                     formatMoney(r.amount, invoice.currency)
                                   )}

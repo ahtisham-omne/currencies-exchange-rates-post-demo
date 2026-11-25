@@ -78,6 +78,7 @@ import { DocCurrencyProvider } from '@/app/components/currency/DocCurrency';
 import type { QuoteCurrencyChange, QuoteCurrencyTotals } from '@/app/components/currency/QuoteCurrencyFields';
 import { QuoteCurrencyConfigDialog } from '@/app/components/currency/QuoteCurrencyConfig';
 import { QuoteCurrencyHeaderControls } from '@/app/components/currency/QuoteCurrencyHeaderControls';
+import { setQuoteView, useQuoteView } from '@/app/components/currency/quoteView';
 import { CurrencyTag } from '@/app/components/currency/CurrencyChip';
 import { RevertRateBox } from '@/app/components/currency/VersionRateChoice';
 import { useQuoteVersionFx } from '@/app/components/currency/versionMoney';
@@ -191,12 +192,13 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
      customer's amounts for them stay as they are. */
   const quoteDay = isoDay(quote?.createdDate ?? fx.rateDate);
   const designFx = { currency: fx.currency, rateDate: quoteDay };
-  /* The quote's Currency configuration dialog (header Currency button and
-     Quote Summary's View configuration). The page shows every amount in
-     base, the customer's on hover: the Currency Touchpoints Map (24 Nov)
-     drops the Base Currency | Customer Currency toggle, so the view is
-     pinned to base. */
+  /* The quote's Currency configuration dialog (Quote Summary's View
+     configuration). The page shows every amount in base by default, the
+     customer's on hover; the header's Base Currency | Customer Currency
+     switch (25 Nov 2026, Line Items toolbar, on a foreign-currency quote) flips that for this
+     quote for the session (quoteView.ts), never an edit. */
   const viewKey = propQuoteId ?? quote?.id;
+  const quoteView = useQuoteView(viewKey);
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   /* The design's line set (QUOTE_LINES) and its demo seeds are written in
      USD: this is what one of those dollars is in the quote's currency. It
@@ -1294,7 +1296,7 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
       rateDate={quoteDay}
       dateLabel={fx.rateDate === quoteDay ? 'quote date' : fx.rateDate > quoteDay ? 'version date' : "original quote's date"}
       role="customer currency"
-      view="base"
+      view={fx.isBase ? 'base' : quoteView}
       versionFx={versionFx}
     >
     {/* Page chrome — Partner Management `VendorDetailsPage` parity.
@@ -1626,13 +1628,6 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
 
                     {/* Right: Fullscreen + Actions dropdown + separator + CTA — Partner pattern */}
                     <div className="flex items-center shrink-0 max-md:w-full max-md:justify-end max-md:flex-wrap" style={{ gap: isScrolled ? 6 : 8 }}>
-                      {/* The quote's currency configuration. No Base |
-                          Customer toggle: amounts are in base, the
-                          customer's on hover (Currency Touchpoints Map). */}
-                      <QuoteCurrencyHeaderControls
-                        onOpenConfig={() => setCurrencyConfigOpen(true)}
-                        compact={isScrolled}
-                      />
                       {/* Fullscreen toggle (nothing to widen on a phone) */}
                       <button
                         onClick={() => setIsFullscreen(!isFullscreen)}
@@ -2262,6 +2257,17 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
                       onLinesChange={setLiveLines}
                       lineFactor={designFactor}
                       conversion={conversion}
+                      /* Base Currency | Customer Currency (foreign-currency
+                         quotes only), in the Line Items toolbar beside Add
+                         Line Item: a view choice for the session, never an
+                         edit. Moves anywhere by moving this one prop. */
+                      toolbarExtra={
+                        <QuoteCurrencyHeaderControls
+                          currency={fx.currency}
+                          view={quoteView}
+                          onViewChange={(v) => { if (viewKey) setQuoteView(viewKey, v); }}
+                        />
+                      }
                     />
                   )}
                   {activeTab === 'overview' && (

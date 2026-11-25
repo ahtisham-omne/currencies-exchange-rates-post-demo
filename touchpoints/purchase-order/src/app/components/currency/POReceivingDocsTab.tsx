@@ -7,9 +7,11 @@ import { formatMoney, formatRateDate } from "@/app/currency/money";
 import { poFx } from "@/app/currency/poFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL } from "@/app/currency/rates";
 import { CurrencyCodeCell } from "./CurrencyCodeCell";
-import { BaseMoney } from "./Money";
+import { BaseMoney, Money } from "./Money";
+import { setReceivingValueView, useReceivingValueView } from "./receivingDocsView";
 import { CurrencyBlock, blockRateText } from "./CurrencyBlock";
 import { poReceivingDocs, type ReceivingDoc } from "./receivingDocs";
+import { ColumnHeaderMenu } from "../pocColumnHeaderMenu";
 
 /* ── Receiving Docs tab (Currency Touchpoints Map, Receiving 1–2) ──────
  * Receiving Doc | Currency | Completed | Value: each doc's currency (the
@@ -20,7 +22,25 @@ import { poReceivingDocs, type ReceivingDoc } from "./receivingDocs";
  * day's rate. Opening a row shows what was received and the currency block:
  * "Received so far / Base value / Rate · today" (in progress) or
  * "Received / Base value / Rate · Nov 20, 2026" (completed). The docs are
- * read from the PO's receiving data (receivingDocs.ts). */
+ * read from the PO's receiving data (receivingDocs.ts).
+ *
+ * Values show in the Value column's own view, chosen from its header menu
+ * ("Show values as: Base currency | Vendor currency", the Partners listing's
+ * money-column menu, 25 Nov 2026; foreign-currency POs only): base at each
+ * receiving date's rate (the vendor's amount on hover), or the PO's currency
+ * (base on hover). Base by default, kept per PO for the session
+ * (receivingDocsView.ts) and apart from the Line Items switch: neither flips
+ * the other. The expanded lines and the total row follow it; every doc is in
+ * the PO's one currency. The currency block shows both. */
+
+/** A receiving amount in the Value column's view. */
+function DocValue({ value, doc, inBase }: { value: number; doc: ReceivingDoc; inBase: boolean }) {
+  return inBase ? (
+    <BaseMoney value={value} currency={doc.currency} fx={doc.fx} dateLabel="receiving date" role="Vendor currency" />
+  ) : (
+    <Money value={value} currency={doc.currency} fx={doc.fx} dateLabel="receiving date" role="vendor currency" />
+  );
+}
 
 // Receiving Doc | Currency (fits "United Arab Emirates Dirham") | Completed | Value
 const COLS = "minmax(0,1fr) 264px 200px 180px";
@@ -49,7 +69,7 @@ function rateTypeTip(doc: ReceivingDoc): string {
     : `Today's ${type} rate${source}. The rate type follows the PO.`;
 }
 
-function DocRow({ doc, isBase, open, onToggle }: { doc: ReceivingDoc; isBase: boolean; open: boolean; onToggle: () => void }) {
+function DocRow({ doc, isBase, inBase, open, onToggle }: { doc: ReceivingDoc; isBase: boolean; inBase: boolean; open: boolean; onToggle: () => void }) {
   const completed = doc.status === "completed";
   const units = doc.lines.reduce((s, l) => s + l.qty, 0);
   return (
@@ -89,7 +109,7 @@ function DocRow({ doc, isBase, open, onToggle }: { doc: ReceivingDoc; isBase: bo
         {/* Currency — the PO's, base currency included. */}
         <div className="min-w-0">
           <span className="inline-flex whitespace-nowrap max-w-full" style={{ fontSize: 13, lineHeight: "18px" }}>
-            <CurrencyCodeCell code={doc.currency} title="The PO's currency. Values show in the base currency." />
+            <CurrencyCodeCell code={doc.currency} title={inBase ? "The PO's currency. Values show in the base currency." : "The PO's currency. Values show in it; hover one for the base currency."} />
           </span>
         </div>
 
@@ -113,7 +133,7 @@ function DocRow({ doc, isBase, open, onToggle }: { doc: ReceivingDoc; isBase: bo
         {/* Value */}
         <div className="text-right">
           <span className="text-slate-900 tabular-nums" style={{ fontSize: 13, fontWeight: 600 }}>
-            <BaseMoney value={doc.value} currency={doc.currency} fx={doc.fx} dateLabel="receiving date" role="Vendor currency" />
+            <DocValue value={doc.value} doc={doc} inBase={inBase} />
           </span>
         </div>
       </div>
@@ -144,7 +164,7 @@ function DocRow({ doc, isBase, open, onToggle }: { doc: ReceivingDoc; isBase: bo
                   {l.qty.toLocaleString()} <span className="text-slate-400">{l.uom}</span>
                 </p>
                 <p className="text-right text-slate-700 tabular-nums" style={{ fontSize: 12, fontWeight: 500 }}>
-                  <BaseMoney value={l.value} currency={doc.currency} fx={doc.fx} dateLabel="receiving date" role="Vendor currency" />
+                  <DocValue value={l.value} doc={doc} inBase={inBase} />
                 </p>
               </div>
             ))}
@@ -173,6 +193,9 @@ function DocRow({ doc, isBase, open, onToggle }: { doc: ReceivingDoc; isBase: bo
 export function POReceivingDocsTab({ po }: { po: PurchaseOrderData }) {
   const docs = React.useMemo(() => poReceivingDocs(po), [po]);
   const fx = poFx(po);
+  // The Value column's own view; a base-currency PO is always in base.
+  const columnView = useReceivingValueView(po.id);
+  const inBase = fx.isBase || columnView === "base";
   const [openKeys, setOpenKeys] = React.useState<Set<string>>(() => new Set(docs.length === 1 ? [docs[0].key] : []));
   const toggle = (key: string) =>
     setOpenKeys((prev) => {
@@ -182,6 +205,7 @@ export function POReceivingDocsTab({ po }: { po: PurchaseOrderData }) {
       return next;
     });
   const totalBase = docs.reduce((s, d) => s + d.baseValue, 0);
+  const totalDoc = docs.reduce((s, d) => s + d.value, 0);
   const inProgress = docs.filter((d) => d.status !== "completed").length;
 
   return (
@@ -211,7 +235,9 @@ export function POReceivingDocsTab({ po }: { po: PurchaseOrderData }) {
         <span className="text-slate-500 truncate" style={{ fontSize: 11 }}>
           {fx.isBase
             ? `Valued in ${BASE_CURRENCY}, the base currency`
-            : `Valued in ${BASE_CURRENCY} at each receiving date's ${RATE_TYPE_LABEL[fx.rateType].toLowerCase()} rate`}
+            : inBase
+              ? `Valued in ${BASE_CURRENCY} at each receiving date's ${RATE_TYPE_LABEL[fx.rateType].toLowerCase()} rate`
+              : `Valued in ${fx.currency}, the PO's currency`}
         </span>
       </div>
 
@@ -222,7 +248,9 @@ export function POReceivingDocsTab({ po }: { po: PurchaseOrderData }) {
           </div>
           <p className="text-slate-700" style={{ fontSize: 14, fontWeight: 600 }}>Nothing received yet</p>
           <p className="text-slate-400 mt-1 max-w-sm leading-relaxed" style={{ fontSize: 12.5 }}>
-            Each receiving doc shows here with its value in {BASE_CURRENCY}, at the rate on its receiving date.
+            {inBase
+              ? <>Each receiving doc shows here with its value in {BASE_CURRENCY}, at the rate on its receiving date.</>
+              : <>Each receiving doc shows here with its value in {fx.currency}, the PO's currency.</>}
           </p>
         </div>
       ) : (
@@ -234,10 +262,25 @@ export function POReceivingDocsTab({ po }: { po: PurchaseOrderData }) {
             <span style={{ ...COL_HEADER, paddingLeft: 22 }}>Receiving Doc</span>
             <span style={COL_HEADER}>Currency</span>
             <span style={COL_HEADER}>Completed</span>
-            <span style={{ ...COL_HEADER, textAlign: "right" }}>Value</span>
+            {fx.isBase ? (
+              <span style={{ ...COL_HEADER, textAlign: "right" }}>Value</span>
+            ) : (
+              <ColumnHeaderMenu
+                columnKey="value"
+                label="Value"
+                sortConfig={null}
+                onSort={() => {}}
+                onHideColumn={() => {}}
+                isLocked
+                currencyView={columnView}
+                onCurrencyViewChange={(v) => setReceivingValueView(po.id, v)}
+              >
+                <span className="w-full text-right" style={COL_HEADER}>Value</span>
+              </ColumnHeaderMenu>
+            )}
           </div>
           {docs.map((doc) => (
-            <DocRow key={doc.key} doc={doc} isBase={fx.isBase} open={openKeys.has(doc.key)} onToggle={() => toggle(doc.key)} />
+            <DocRow key={doc.key} doc={doc} isBase={fx.isBase} inBase={inBase} open={openKeys.has(doc.key)} onToggle={() => toggle(doc.key)} />
           ))}
           {docs.length > 1 && (
             <div className="grid items-center gap-3 px-4 py-2.5 border-t border-border bg-slate-50/60" style={{ gridTemplateColumns: COLS }}>
@@ -245,7 +288,7 @@ export function POReceivingDocsTab({ po }: { po: PurchaseOrderData }) {
               <span />
               <span />
               <span className="text-right text-slate-900 tabular-nums" style={{ fontSize: 13, fontWeight: 700 }}>
-                {formatMoney(totalBase, BASE_CURRENCY)}
+                {inBase ? formatMoney(totalBase, BASE_CURRENCY) : formatMoney(totalDoc, fx.currency)}
               </span>
             </div>
           )}

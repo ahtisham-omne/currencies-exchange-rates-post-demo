@@ -204,7 +204,8 @@ import { useDocCurrency, useDocMoney, useDocOtherText, useDocView } from "./curr
 import { CurrencyFlag } from "./currency/CurrencyChip";
 import { type POCurrencyChange } from "./currency/POCurrencyFields";
 import { POCurrencyConfigDialog, POCurrencySummary } from "./currency/POCurrencyConfig";
-import { POCurrencyHeaderControls } from "./currency/POCurrencyHeaderControls";
+import { POCurrencyHeaderControls, POCurrencyViewSwitch } from "./currency/POCurrencyHeaderControls";
+import { setPOView, usePOView } from "./currency/poView";
 import { POReceivingDocsTab } from "./currency/POReceivingDocsTab";
 import { versionRateOptions } from "./currency/VersionRateChoice";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
@@ -1567,10 +1568,10 @@ function LineItemsPanel({
   const [editingPriceValue, setEditingPriceValue] = useState<string>("");
 
   /* Prices are kept in the PO's currency (spec 4.3) and shown, and typed, in
-     the page's: base by default, the vendor's with the header toggle. A price
+     the page's: base by default, the vendor's with the Line Items switch. A price
      typed in base is converted at the PO's rate and rounded to the vendor
      currency's minor unit. Plain digits: a number input can't take "1,245.00". */
-  const { currency } = useDocCurrency();
+  const { currency, view: docView } = useDocCurrency();
   const { viewCurrency, toView, fromView, decimals: priceDecimals } = useDocView();
   const docMoney = useDocMoney();
   const otherText = useDocOtherText();
@@ -1684,6 +1685,16 @@ function LineItemsPanel({
             {totalUnits.toLocaleString()} units
           </span>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+        {/* Base Currency | Vendor Currency (foreign-currency POs only;
+            25 Nov 2026). The one render site of the switch: it flips every
+            amount on the PO page, not only this table, and is a view kept
+            per PO for the session (poView.ts), never an edit. */}
+        <POCurrencyViewSwitch
+          currency={currency}
+          view={docView ?? "base"}
+          onViewChange={(v) => setPOView(po.id, v)}
+        />
         {canEdit && (
           /* Add Items — Partners' canonical card-header CTA (`Partners/.../
              DataTableStyleReference`): filled primary `bg-primary text-white
@@ -1714,6 +1725,7 @@ function LineItemsPanel({
             Add Items
           </button>
         )}
+        </div>
       </div>
 
       {/* ── Duplicate-flow qualification banner — visible when any line
@@ -4259,11 +4271,11 @@ export default function PurchaseOrderDraft() {
      route through the SO-style confirmation modal instead of firing
      `revertPOToVersion` immediately). */
   const [dropdownRevertVersion, setDropdownRevertVersion] = useState<number | null>(null);
-  /* The PO shows its amounts in the base currency, the vendor's amount and
-     the rate in each hover. The Base | Vendor toggle is gone (Currency
-     Touchpoints Map, 24 Nov); the view stays pinned to base so the
-     document-currency plumbing (docCurrencyContext) is unchanged. */
-  const poView = "base" as const;
+  /* Which currency the PO's amounts show in: base (the default, the
+     vendor's amount and the rate in each hover) or the PO's own. The header's
+     Base Currency | Vendor Currency switch sets it per PO for the session
+     (poView.ts); it is a view, never an edit (25 Nov 2026). */
+  const poView = usePOView(id);
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   /* Source version for the Duplicate flow — lifted here so the
      "View details" Version History modal can update it externally
@@ -4864,6 +4876,13 @@ export default function PurchaseOrderDraft() {
   const creditLimit = fx.currency === "USD"
     ? 125000
     : roundTo(fx.currency, 125000 * crossRate(midRateOn("USD", fx.rateDate) ?? 1, fx.rate));
+  /* Credit amounts (whole units) in the page's view: base at the PO's rate,
+     or the PO's currency. */
+  const creditInBase = poView === "base" && !fx.isBase;
+  const fmtCredit = (n: number) =>
+    creditInBase
+      ? `${moneyPrefix(BASE_CURRENCY)}${Math.round(toBase(n, fx.rate)).toLocaleString("en-US")}`
+      : `${moneyPrefix(fx.currency)}${Math.round(n).toLocaleString("en-US")}`;
   const creditUsedPercent = Math.min(100, (po.total / creditLimit) * 100);
   const creditRemaining = creditLimit - po.total;
 
@@ -5088,13 +5107,14 @@ export default function PurchaseOrderDraft() {
                     compact={isScrolled}
                   />
 
-                  {/* Vendor, the PO's currency tag (foreign POs only) and the
-                      Currency button: "PO-000002 · Toyota Technical Center
-                      [USD] [Currency]" (Currency Touchpoints Map). */}
+                  {/* Vendor and the PO's currency tag (foreign POs only):
+                      "PO-000002 · Toyota Technical Center [USD]" (Currency
+                      Touchpoints Map). */}
                   <POCurrencyHeaderControls
                     vendorName={po.vendor.name}
                     currency={fx.currency}
                     compact={isScrolled}
+                    view={poView}
                     onOpenConfig={() => setCurrencyConfigOpen(true)}
                   />
                   </div>{/* /info block */}
@@ -5168,7 +5188,7 @@ export default function PurchaseOrderDraft() {
                         // Inline format — `fmtMoney` lives inside the Credit-
                         // card IIFE further down the JSX tree, so it's not
                         // reachable from here.
-                        const formattedLimit = `${moneyPrefix(fx.currency)}${Math.round(creditLimit).toLocaleString("en-US")}`;
+                        const formattedLimit = fmtCredit(creditLimit);
                         return `PO total exceeds the available credit limit of ${formattedLimit}.`;
                       }
                       return undefined;
@@ -6570,8 +6590,7 @@ export default function PurchaseOrderDraft() {
                     creditPct > 80 ? "#FEF2F2" : creditPct > 50 ? "#FFFBEB" : "#ECFDF5";
                   const statusPillBorder =
                     creditPct > 80 ? "#FECACA" : creditPct > 50 ? "#FDE68A" : "#A7F3D0";
-                  const fmtMoney = (n: number) =>
-                    `${moneyPrefix(fx.currency)}${Math.round(n).toLocaleString("en-US")}`;
+                  const fmtMoney = fmtCredit;
 
                   return (
                     <CollapsibleSection

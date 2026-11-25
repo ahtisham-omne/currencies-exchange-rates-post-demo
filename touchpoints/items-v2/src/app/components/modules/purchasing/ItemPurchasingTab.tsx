@@ -250,7 +250,7 @@ export function ItemPurchasingTab({ itemId }: ItemPurchasingTabProps) {
   return (
     <>
       {primaryTab === "qvs" ? (
-        <QualifiedVendorsPanel itemId={itemId} qvs={qvs} headerSlot={primaryToggleRow} onEditConfig={handleEditConfig} onAddVendor={() => setWizardOpen(true)} />
+        <QualifiedVendorsPanel itemId={itemId} qvs={qvs} headerSlot={primaryToggleRow} onEditConfig={handleEditConfig} onAddVendor={() => setWizardOpen(true)} currencySwitch />
       ) : (
         <PurchaseOrdersPanel
           itemId={itemId}

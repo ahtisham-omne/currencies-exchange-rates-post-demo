@@ -9,7 +9,7 @@ import type { MoneyFx } from "./Money";
 
 /* ── Versions shown in base, at each version's own rate ───────────────
  * Like the rest of the quote, versions show their amounts in the base
- * currency unless the page is toggled to the customer's: each at the rate
+ * currency unless the page's switch shows the customer's: each at the rate
  * that version locked in (quoteStore's version rates), so a version made
  * with today's rate reads differently from one that kept its old rate.
  * Outside the quote page (the listing's history), base. A version on record

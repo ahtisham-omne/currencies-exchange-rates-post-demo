@@ -55,6 +55,9 @@ interface SOLineGridProps {
      reconcile. */
   pricingAPI?: import('./usePricingRules').PricingRulesAPI;
   adjustmentsAPI?: import('./useAdjustments').AdjustmentsAPI;
+  /* View controls the parent puts at the start of the toolbar's
+     right-hand group (the Base Currency | Customer Currency switch). */
+  toolbarView?: React.ReactNode;
 }
 
 /* UoM definitions — `multiplier` is the number of base units (EA)
@@ -788,7 +791,7 @@ function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds
   );
 }
 
-export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDeleteLine, onCancelLines, onConfigureLine, onUpdateLine, onDuplicateLine, onRequestPriceVersionConfirm, onRequestUomChange, requiresVersionFirst, pricingAPI, adjustmentsAPI }: SOLineGridProps) {
+export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDeleteLine, onCancelLines, onConfigureLine, onUpdateLine, onDuplicateLine, onRequestPriceVersionConfirm, onRequestUomChange, requiresVersionFirst, pricingAPI, adjustmentsAPI, toolbarView }: SOLineGridProps) {
   // SO-level edit gate — Shipped / Cancelled / Archived are terminal and
   // fully locked. Everything else (Draft / Pending Review / Cleared /
   // Partially Shipped / Partially Cancelled) is editable; per-line
@@ -976,6 +979,7 @@ export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDel
           )}
         </div>
         <div className="flex items-center flex-wrap justify-end ml-auto" style={{ gap: "6px" }}>
+          {toolbarView}
           {selectedLineIds.size > 0 ? (
             // Bulk action bar — direct port of Quote `ItemsTabTableClean`:
             // Duplicate (white), Delete (destructive outline), optional Cancel

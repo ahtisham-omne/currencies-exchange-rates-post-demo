@@ -4,7 +4,7 @@ import { splitToBase, toBase, type MoneyFx } from '@/app/currency/rates';
 import { returnFx, rmaCurrency, rmaCurrencyPO } from '@/app/currency/returnCurrency';
 import { accountCurrency, returnSettlementFx, settlementMoneyFx } from '@/app/currency/returnSettlement';
 import { useReturnView, viewMoney } from '@/app/components/currency/returnView';
-import { BaseMoney } from '@/app/components/currency/Money';
+import { Money } from '@/app/components/currency/Money';
 import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
 import { RateTypeChip, ReturnCurrencyBlock, settleRateLine } from '@/app/components/currency/ReturnCurrencyConfig';
 import React, { useEffect, useState } from 'react';
@@ -1173,6 +1173,10 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
             ]
               .filter(Boolean)
               .join(' and ');
+            // A row's second line gives the other currency: the PO's on Base
+            // Currency, PKR on Vendor Currency (the page's view).
+            const other = (value: number, base: number) =>
+              s.foreign && pageView === 'document' ? moneyIn(base, BASE_CURRENCY) : moneyIn(value, code);
             const deductions = round2(p.charges + p.loss);
             type SummaryRow = {
               key: string;
@@ -1189,7 +1193,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               rows.push({
                 key: 'settled',
                 label: 'Settled by vendor',
-                sub: `${moneyIn(p.settles, code)}${at('today') ? ` ${at('today')}` : ''}`,
+                sub: `${other(p.settles, s.foreign ? s.settlesNow : p.settles)}${at('today') ? ` ${at('today')}` : ''}`,
                 tooltip: `${settledSplit ? `${settledSplit[0]!.toUpperCase()}${settledSplit.slice(1)}` : 'What was invoiced'}${
                   deductions > 0.004 ? `, less ${moneyIn(deductions, code)} kept back or unpaid` : ''
                 }. The credit note and the refund come back at ${s.locked ? 'the rate on the day the vendor settled' : "today's rate until the vendor settles"}.`,
@@ -1204,7 +1208,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                 // nothing comes back for them (ERP-8688).
                 key: 'reversed',
                 label: 'Reversed, not invoiced',
-                sub: `${moneyIn(p.reverses, code)}${at('receiving') ? ` ${at('receiving')}` : ''}`,
+                sub: `${other(p.reverses, s.base.reverses)}${at('receiving') ? ` ${at('receiving')}` : ''}`,
                 tooltip: "Goods we hadn't been invoiced for. The receipt's accrual reverses at the rate it was booked at, so nothing comes back and there's no FX.",
                 value: p.reverses,
                 base: s.base.reverses,
@@ -1214,7 +1218,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               rows.push({
                 key: 'replacement',
                 label: 'Replacement',
-                sub: `${moneyIn(p.replacement, code)}${at('receiving') ? ` ${at('receiving')}` : ''} · stock comes back in`,
+                sub: `${other(p.replacement, s.base.replacement)}${at('receiving') ? ` ${at('receiving')}` : ''} · stock comes back in`,
                 value: p.replacement,
                 base: s.base.replacement,
                 fx: summaryFx,
@@ -1223,7 +1227,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               rows.push({
                 key: 'loss',
                 label: 'Not paid, booked as a loss',
-                sub: `${moneyIn(p.loss, code)}${at('receiving') ? ` ${at('receiving')}` : ''} · RMA Settlement Loss`,
+                sub: `${other(p.loss, s.base.loss)}${at('receiving') ? ` ${at('receiving')}` : ''} · RMA Settlement Loss`,
                 value: p.loss,
                 base: s.base.loss,
                 fx: summaryFx,
@@ -1232,7 +1236,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
               rows.push({
                 key: 'write-off',
                 label: 'Written off as a loss',
-                sub: `${moneyIn(p.writtenOff, code)}${at('receiving') ? ` ${at('receiving')}` : ''} · nothing is coming back for it`,
+                sub: `${other(p.writtenOff, s.base.writtenOff)}${at('receiving') ? ` ${at('receiving')}` : ''} · nothing is coming back for it`,
                 value: p.writtenOff,
                 base: s.base.writtenOff,
                 fx: summaryFx,
@@ -1275,7 +1279,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                       Return value{s.foreign ? ` · receiving rate ${formatRate(s.receivingRate)}` : ''}
                     </p>
                     <p className="text-[22px] text-foreground tabular-nums mt-0.5" style={{ fontWeight: 700, lineHeight: 1.1 }}>
-                      <BaseMoney value={Math.round(rmaReturnValue * 100) / 100} currency={code} fx={summaryFx} role="Return currency" />
+                      <Money value={Math.round(rmaReturnValue * 100) / 100} currency={code} fx={summaryFx} role="Return currency" />
                     </p>
                     <p className="text-[11px] text-slate-400 tabular-nums mt-1" style={{ fontWeight: 500 }}>
                       Sum of authorized qty × unit price
@@ -1315,7 +1319,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                           className={`shrink-0 text-[12px] tabular-nums ${r.strong ? 'text-primary' : 'text-foreground'}`}
                           style={{ fontWeight: r.strong ? 700 : 600 }}
                         >
-                          <BaseMoney value={r.value} currency={code} fx={r.fx} baseValue={r.base} role="Return currency" />
+                          <Money value={r.value} currency={code} fx={r.fx} baseValue={r.base} role="Return currency" />
                         </span>
                       </div>
                     ))}
@@ -1328,11 +1332,11 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                           <span className="block text-[10px] text-slate-400 tabular-nums">
                             {charge.description ||
                               (idx === 0 ? `Kept back before the ${settlementWord} settles` : 'Kept back by the vendor')}
-                            {s.foreign ? ` · ${moneyIn(charge.amount, code)} at receiving rate` : ''}
+                            {s.foreign ? ` · ${other(charge.amount, chargeBases[idx] ?? charge.amount)} at receiving rate` : ''}
                           </span>
                         </span>
                         <span className="shrink-0 text-[12px] tabular-nums text-rose-600" style={{ fontWeight: 600 }}>
-                          −<BaseMoney value={charge.amount} currency={code} fx={summaryFx} baseValue={chargeBases[idx]} role="Return currency" />
+                          −<Money value={charge.amount} currency={code} fx={summaryFx} baseValue={chargeBases[idx]} role="Return currency" />
                         </span>
                       </div>
                     ))}
@@ -1342,7 +1346,7 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
                           Total charges
                         </span>
                         <span className="shrink-0 text-[12px] tabular-nums text-rose-600" style={{ fontWeight: 700 }}>
-                          −<BaseMoney
+                          −<Money
                             value={chargeLines.reduce((sum, c) => sum + c.amount, 0)}
                             currency={code}
                             fx={summaryFx}

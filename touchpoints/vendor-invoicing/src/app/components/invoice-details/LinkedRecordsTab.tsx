@@ -35,7 +35,8 @@ import {
   type LinkedRecordStatus as RecordStatus,
 } from '@/app/data/invoiceLinkedRecords';
 import { CreatedByCell, highlightAmount, highlightText } from '@/app/components/InvoiceDataTable';
-import { formatMoney as formatInCurrency } from '@/app/currency/money';
+import { useDocMoney, useDocView } from '@/app/components/currency/docCurrencyContext';
+import { DocMoney } from '@/app/components/currency/DocCurrency';
 
 /** Search highlight for a record's amount (10/9/26): the filter matches the
  *  raw figure ("1250" or "1250.00"), so the digits only mark when that
@@ -110,8 +111,8 @@ function isExcludedRow(r: LinkedFinancialRecord): boolean {
     : !countsTowardBalance(r.status as LinkedApplicationStatus);
 }
 
-// Each currency with its own symbol and decimals (Currency & Exchange Rates).
-const formatMoney = (amount: number, currency: string) => formatInCurrency(amount, currency);
+// Amounts are the invoice's own, shown through DocMoney / useDocMoney in the
+// page's shown currency (base by default, the vendor's on the header switch).
 
 // Linked-record dates show date + time (user 10/7), via the shared
 // date-time formatter seeded by the record date.
@@ -139,6 +140,10 @@ export function LinkedRecordsTab({
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggle = (key: string) => setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+  // Amounts follow the page's Base | Vendor Currency switch; search matches
+  // the figure as shown.
+  const docMoney = useDocMoney();
+  const { toView } = useDocView();
 
   // References open in a NEW TAB (user 10/5): the record page loads
   // fresh while this invoice stays put. Known trade-off (accepted):
@@ -183,10 +188,9 @@ export function LinkedRecordsTab({
         || r.status.toLowerCase().includes(q)
         || r.createdBy.toLowerCase().includes(q)
         || r.type.toLowerCase().includes(q)
-        || r.amount.toFixed(2).includes(q)
-        || String(Math.round(r.amount)).includes(q),
+        || amountMatches(toView(r.amount), q),
     );
-  }, [records, query]);
+  }, [records, query, toView]);
 
   // ── Group the (search-filtered) records by type, newest first. ──
   const groups = useMemo(() => {
@@ -371,7 +375,7 @@ export function LinkedRecordsTab({
                 </span>
                 {total > 0 && (
                   <span className="ml-auto text-foreground text-[13px]" style={{ fontWeight: 600 }}>
-                    {formatMoney(total, invoice.currency)}
+                    <DocMoney value={total} />
                   </span>
                 )}
                 <ChevronDown
@@ -464,9 +468,11 @@ export function LinkedRecordsTab({
                                   style={{ fontWeight: 600 }}
                                   title={excluded ? 'Excluded from totals, no longer counts toward the balance' : undefined}
                                 >
-                                  {amountMatches(r.amount, query)
-                                    ? highlightAmount(formatMoney(r.amount, invoice.currency), query)
-                                    : formatMoney(r.amount, invoice.currency)}
+                                  <DocMoney value={r.amount}>
+                                    {amountMatches(toView(r.amount), query)
+                                      ? highlightAmount(docMoney(r.amount), query)
+                                      : docMoney(r.amount)}
+                                  </DocMoney>
                                 </span>
                               ) : null}
                             </td>

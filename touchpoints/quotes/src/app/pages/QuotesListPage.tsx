@@ -101,7 +101,8 @@ import {
 } from '@/app/components/ui/popover';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/app/components/ui/tooltip';
 import { format } from 'date-fns';
-import { BaseMoney } from '@/app/components/currency/Money';
+import { BaseMoney, Money } from '@/app/components/currency/Money';
+import { useColumnCurrencyViews } from '@/app/components/currency/columnCurrencyView';
 import { currentRateFor, customerCurrency, quoteFx, stampQuoteRate, toQuoteBase } from '@/app/currency/qFx';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
@@ -149,7 +150,8 @@ const COLUMN_DEFS: (ColSelectorConfig & { minWidth: string; sortable?: boolean; 
   { key: 'customer', label: 'Customer Name', minWidth: '210px', sortable: true },
   /* The quote's currency (spec 4.3), right after the customer it comes
      from. Shown by default, base included; Quote Value is in base, the
-     quote's currency on its hover. */
+     quote's currency on its hover, or the other way round from its
+     header menu's "Show values as". */
   { key: 'currency', label: 'Currency', minWidth: '264px', sortable: true },
   { key: 'primaryPoC', label: 'Point of Contact', minWidth: '210px', sortable: true },
   { key: 'status', label: 'Status', minWidth: '180px', sortable: true },
@@ -189,6 +191,10 @@ const COLUMN_DEFS: (ColSelectorConfig & { minWidth: string; sortable?: boolean; 
   { key: 'rejectedAt', label: 'Rejected On', minWidth: '150px', sortable: true },
   { key: 'rejectedBy', label: 'Rejected By', minWidth: '180px' },
 ];
+
+/* Money columns: their header menu offers "Show values as" base or
+   customer currency. */
+const MONEY_COLUMNS = new Set<string>(['totalValue']);
 
 /* Columns opted-out of the default listing view. Users can toggle
    them on via the column configurator (both grid + kanban). */
@@ -723,6 +729,9 @@ export function QuotesListPage() {
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [autoOpenFilterKey, setAutoOpenFilterKey] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+  /* Money columns' "Show values as" (header menu): base by default, or the
+     customer's currency. Sorting and filtering stay in base. */
+  const columnCurrency = useColumnCurrencyViews('quotes-list');
   /* Quote No is the locked anchor; Customer is pre-pinned alongside it
      so users open onto both identifying columns sticky on the left. */
   const [frozenColumns, setFrozenColumns] = useState<Set<string>>(new Set(['quoteNumber', 'customer']));
@@ -1648,7 +1657,9 @@ export function QuotesListPage() {
                                 <ColumnHeaderMenu columnKey={key} label={def.label} sortable={def.sortable} sortConfig={sortConfig}
                                   onSort={handleSort} onAddFilter={handleAddColumnFilter} onHideColumn={handleHideColumn}
                                   onFreezeColumn={handleFreezeColumn} isFrozen={isFrozen} isLocked={isLocked} hasActiveFilter={hasFilter}
-                                  filter={columnFilters[key] ?? null} quotes={quotes} onFilterChange={handleColumnFilterChange}>
+                                  filter={columnFilters[key] ?? null} quotes={quotes} onFilterChange={handleColumnFilterChange}
+                                  currencyView={MONEY_COLUMNS.has(key) ? columnCurrency.viewOf(key) : undefined}
+                                  onCurrencyViewChange={MONEY_COLUMNS.has(key) ? (view) => columnCurrency.setView(key, view) : undefined}>
                                   <div className={`inline-flex items-center gap-1 ${def.align === 'right' ? 'w-full justify-end' : ''}`}>
                                     <span className="text-[13px]" style={currentColSort || hasFilter ? { color: 'var(--primary)' } : undefined}>{def.label}</span>
                                     {hasFilter && !currentColSort && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--primary)' }} />}
@@ -1787,8 +1798,16 @@ export function QuotesListPage() {
                             /* In the base currency at the quote's own rate, as Quotes shows
                                amounts, so rows compare whatever currency they're in; the
                                customer's amount (the quote's currency) and the rate on hover. */
-                            case 'totalValue': { const qfx = quoteFx(quote); return <TableCell key={colKey} className="text-right"><BaseMoney value={quote.totalValue || 0} currency={qfx.currency} fx={qfx.isBase ? null : qfx} className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--foreground)' }} /></TableCell>; }
-                            case 'currency': { const code = quoteFx(quote).currency; return <TableCell key={colKey}><span className="inline-flex whitespace-nowrap max-w-full" style={{ fontSize: '13px' }}><CurrencyCodeCell code={code} title="The quote's currency. Quote Value is in the base currency; hover it for the customer's amount." /></span></TableCell>; }
+                            case 'totalValue': {
+                              /* Base (default): in base at the quote's rate, the customer's amount on
+                                 hover. Customer currency: the quote's own amount, base on hover. */
+                              const qfx = quoteFx(quote);
+                              const moneyStyle = { fontSize: '13px', fontWeight: 600, color: 'var(--foreground)' };
+                              return <TableCell key={colKey} className="text-right">{columnCurrency.viewOf('totalValue') === 'customer'
+                                ? <Money value={quote.totalValue || 0} currency={qfx.currency} fx={qfx.isBase ? null : qfx} role="customer currency" className="whitespace-nowrap" style={moneyStyle} />
+                                : <BaseMoney value={quote.totalValue || 0} currency={qfx.currency} fx={qfx.isBase ? null : qfx} className="whitespace-nowrap" style={moneyStyle} />}</TableCell>;
+                            }
+                            case 'currency': { const code = quoteFx(quote).currency; return <TableCell key={colKey}><span className="inline-flex whitespace-nowrap max-w-full" style={{ fontSize: '13px' }}><CurrencyCodeCell code={code} title="The quote's currency. Quote Value shows base or customer currency (its column menu); hover it for the other." /></span></TableCell>; }
                             case 'deliveryLocation':
                               return (
                                 <TableCell key={colKey}>

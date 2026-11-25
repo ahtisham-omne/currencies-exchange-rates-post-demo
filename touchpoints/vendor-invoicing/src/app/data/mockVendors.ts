@@ -786,17 +786,21 @@ export const mockVendors: Vendor[] = Array.from({ length: 40 }, (_, index) => {
   const creators = ['Ahtisham Ahmad', 'Eli Rosenbloom', 'Mahreen Ghafoor', 'Irtaza Abid', 'Rida Iftikhar', 'Sarah Chen', 'James Wilson', 'Maria Garcia', 'Robert Taylor', 'Linda Martinez'];
   const types: ('Domestic' | 'International' | 'Service' | 'Manufacturing')[] = ['Domestic', 'International', 'Service', 'Manufacturing'];
   
-  const createdOn = `2024-${String(Math.floor(rand() * 12) + 1).padStart(2, '0')}-${String(Math.floor(rand() * 28) + 1).padStart(2, '0')}`;
+  // Acme Corp (USD) is the newest vendor, so the standalone picker ("Newest
+  // first") leads with the same USD vendor as the receiving-invoice picker.
+  // The rand() draw still happens, so no later seed value changes.
+  const seededCreatedOn = `2024-${String(Math.floor(rand() * 12) + 1).padStart(2, '0')}-${String(Math.floor(rand() * 28) + 1).padStart(2, '0')}`;
+  const createdOn = vendorName === 'Acme Corp' ? '2024-12-30' : seededCreatedOn;
 
   // Partner-level default expense account — seeded on ~2 of every 3 vendors
   // so the standalone-invoice auto-pull demos both the "pre-filled" and the
   // "no default configured" states. Every 3rd vendor intentionally has none.
   const expenseDefaults = ['6000 General & Admin', '6100 Office Supplies', '5000 Cost of Goods Sold'];
   let defaultExpenseAccount = index % 3 === 2 ? undefined : expenseDefaults[index % expenseDefaults.length];
-  // Demo guarantee: the standalone vendor picker is sorted "Newest first", so
-  // its first row (Superior Industries) is pinned to NO default — showing the
-  // empty / must-pick case — and its second row (Acme Industries) carries a
-  // default — showing the auto-pull case.
+  // Demo guarantee: Superior Industries is pinned to NO default — showing
+  // the empty / must-pick case — and Acme Industries carries a default —
+  // showing the auto-pull case. (The standalone picker, "Newest first",
+  // leads with Acme Corp, which has a default too.)
   if (vendorName === 'Superior Industries') defaultExpenseAccount = undefined;
   else if (vendorName === 'Acme Industries') defaultExpenseAccount = '6000 General & Admin';
 

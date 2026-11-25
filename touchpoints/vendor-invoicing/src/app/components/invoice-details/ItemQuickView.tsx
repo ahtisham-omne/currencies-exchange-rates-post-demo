@@ -16,6 +16,7 @@ import {
   HoverCardTrigger,
 } from '@/app/components/ui/hover-card';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
+import { useDocMoney } from '@/app/components/currency/docCurrencyContext';
 
 /* ════════════════════════════════════════════════════════════════
    ItemQuickView — verbatim port of the Add-Items modal recipe in
@@ -124,7 +125,9 @@ export function ItemImageWithPreview({ sku, alt, onPreview, disabled, size = 36,
   const src = imageForSku(sku);
   const meta = itemMetaFor(sku);
   const dim = size === 32 ? 'w-8 h-8' : size === 40 ? 'w-10 h-10' : 'w-9 h-9';
-  const priceLabel = unitPrice != null ? formatCurrency(unitPrice) : meta.price;
+  // The line's real price follows the page's shown currency (Base | Vendor).
+  const docMoney = useDocMoney();
+  const priceLabel = unitPrice != null ? docMoney(unitPrice) : meta.price;
   const controlLabel = serialized != null ? (serialized ? 'Serialized' : 'Non-Serialized') : meta.inventoryControl;
   return (
     <HoverCard openDelay={300} closeDelay={80} open={disabled ? false : undefined}>
@@ -206,6 +209,7 @@ interface ItemQuickViewModalProps {
 
 export function ItemQuickViewModal({ open, onClose, sku, vendorName, description, unitPrice, uom, serialized }: ItemQuickViewModalProps) {
   const [photoIdx, setPhotoIdx] = useState(0);
+  const docMoney = useDocMoney();
   if (!open) return null;
   const d = mockItemDataFull(sku, description);
   const photos = largePhotosForSku(sku);
@@ -299,7 +303,7 @@ export function ItemQuickViewModal({ open, onClose, sku, vendorName, description
                 <div className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>Vendor</div>
               </div>
               <div className="px-2.5 py-2.5 text-center">
-                <div className="text-[15px] text-slate-900" style={{ fontWeight: 700 }}>{formatCurrency(displayPrice)}</div>
+                <div className="text-[15px] text-slate-900" style={{ fontWeight: 700 }}>{unitPrice != null ? docMoney(unitPrice) : formatCurrency(displayPrice)}</div>
                 <div className="text-[10px] text-slate-400 mt-0.5" style={{ fontWeight: 500 }}>Price per Unit</div>
               </div>
               <div className="px-2.5 py-2.5 text-center">

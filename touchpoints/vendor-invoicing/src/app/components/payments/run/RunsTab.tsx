@@ -1,4 +1,5 @@
 import { useTableStates, type DataTableEmptyConfig } from '@/app/components/data-table/DataTable';
+import type { CurrencyView } from '@/app/components/data-table/types';
 import { TableEmptyState, CardSkeletonGrid, TableStaleBanner } from '@/app/components/ui/table-empty-state';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { formatMoneyText } from '@/app/components/payments/MoneyInput';
@@ -118,12 +119,21 @@ const vendorNames = (run: PaymentRun) => Array.from(new Set(liveLines(run).map((
 /** A run's total in the base currency (Currency & Exchange Rates): each
  *  payment at its rate on the payment date. A run that pays only in the
  *  base currency reads plain; any other currency reads "≈" with each
- *  currency's total on hover. */
-function RunTotalCell({ run, className, searchQuery }: { run: PaymentRun; className: string; searchQuery?: string }) {
+ *  currency's total on hover. Set to Payment currency (the column's
+ *  "Show values as"), it reads each currency's own total instead
+ *  ("$1,200.00 · €480.00"), with the base total in the same hover. */
+function RunTotalCell({ run, className, searchQuery, view = 'base' }: { run: PaymentRun; className: string; searchQuery?: string; view?: CurrencyView }) {
   const items = runNetByCurrency(run);
   const text = formatMoney(runTotalBase(run), BASE_CURRENCY);
   if (items.every((i) => isBaseCurrency(i.currency))) {
     return <span className={className} style={{ fontWeight: 600 }}>{highlightAmount(text, searchQuery)}</span>;
+  }
+  if (view === 'party') {
+    return (
+      <BaseTotal items={items} basis="payment" className={className} style={{ fontWeight: 600 }}>
+        {highlightAmount(amountsText(items), searchQuery)}
+      </BaseTotal>
+    );
   }
   return (
     <BaseTotal items={items} basis="payment" className={className} style={{ fontWeight: 600 }}>
@@ -301,7 +311,8 @@ const buildRunColumns = (displayStatus: (r: PaymentRun) => RunDisplayStatus): Co
   {
     key: 'total',
     label: 'Total',
-    tooltip: 'In the base currency, each payment at its rate on the payment date. Hover a total to see each currency.',
+    tooltip: 'Base currency shows the base total, each payment at its rate on the payment date; Payment currency shows each currency\'s own total (set it in this column\'s menu). Hover for the other figures. Sorting and filters use the base total.',
+    currencyViewLabel: 'Payment currency',
     minWidth: 120,
     defaultWidth: 150,
     align: 'right',
@@ -311,7 +322,7 @@ const buildRunColumns = (displayStatus: (r: PaymentRun) => RunDisplayStatus): Co
     // across runs that pay in different currencies.
     getValue: (r) => runTotalBase(r),
     searchText: (r) => `${formatMoney(runTotalBase(r), BASE_CURRENCY)} ${amountsText(runNetByCurrency(r))}`,
-    render: (r, { searchQuery }) => <RunTotalCell run={r} className="text-[13px]" searchQuery={searchQuery} />,
+    render: (r, { searchQuery, currencyView }) => <RunTotalCell run={r} className="text-[13px]" searchQuery={searchQuery} view={currencyView} />,
   },
   // Last Updated By / On (user 10/22/26), placed like Payment history:
   // just before Created By / On. The latest step or edit on the run.
@@ -1339,6 +1350,7 @@ export function RunsTab({
                 setCurrentPage(1);
               }}
               onRowClick={(run) => onOpenRun(run.id)}
+              currencyViewScope="payment-runs"
               renderRowActions={(run) => (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

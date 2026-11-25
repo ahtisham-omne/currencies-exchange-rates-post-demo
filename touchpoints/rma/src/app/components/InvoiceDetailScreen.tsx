@@ -2,7 +2,7 @@ import { formatMoney as moneyIn, rateSentence } from '@/app/currency/money';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CurrencyHeaderControls, ReturnCurrencyTag } from '@/app/components/currency/CurrencyHeaderControls';
 import { ReturnCurrencyConfigDialog } from '@/app/components/currency/ReturnCurrencyConfig';
-import { ReturnViewProvider } from '@/app/components/currency/returnView';
+import { ReturnViewProvider, useStoredReturnView } from '@/app/components/currency/returnView';
 import { returnFx as returnFxOf, rmaCurrency as returnCurrencyOf, rmaCurrencyPO } from '@/app/currency/returnCurrency';
 import { returnSettlementFx } from '@/app/currency/returnSettlement';
 import { useRMAEditGate } from './rma-versions/RMAEditGate';
@@ -815,9 +815,12 @@ function daysBetween(later: Date, earlier: Date) {
 
 export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [], applyInvoiceAction, onSettleInvoices, onPayInvoices, onAddPrepayment, onEditResubmit, onReversePayment, mode = 'invoice', rmaStatus, rma, onRmaAction, onRmaRevert }: InvoiceDetailScreenProps) {
   const isRma = mode === 'rma';
-  // The return's page reads in PKR, the base currency, with the PO's amount
-  // on hover (Currency Touchpoints Map, 2026-11-24: no Base | Vendor Currency
-  // toggle). The header's Currency button opens its currency configuration.
+  // The return's page opens in PKR, the base currency, with the PO's amount
+  // on hover. The header's Base Currency | Vendor Currency switch (25 Nov
+  // 2026) flips it to the return's currency for the session, per return
+  // (returnView.tsx); it never edits the return. The currency configuration
+  // opens from the summary's currency card.
+  const [returnView, setReturnView] = useStoredReturnView(isRma ? rma?.id : null);
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -1633,7 +1636,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
 
   return (
     <RMAEditGateProvider rma={isRma ? rma : null}>
-    <ReturnViewProvider value={isRma ? 'base' : 'document'}>
+    <ReturnViewProvider value={isRma ? returnView : 'document'}>
     <div ref={scrollContainerRef} className="flex-1 flex flex-col bg-slate-50">
       {/* IntersectionObserver sentinel — sits just below the topbar */}
       <div ref={sentinelRef} className="shrink-0 h-px" />
@@ -2075,15 +2078,6 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
 
                 {/* Right: Fullscreen + Actions + Edit CTA */}
                 <div className="flex items-center shrink-0 transition-all duration-250" style={{ gap: isScrolled ? 6 : 8 }}>
-                  {/* The Currency button, which opens the return's currency
-                      configuration. No Base | Vendor Currency toggle
-                      (2026-11-24): the page reads in PKR. */}
-                  {isRma && rma && (
-                    <CurrencyHeaderControls
-                      onOpenConfig={() => setCurrencyConfigOpen(true)}
-                      compact={isScrolled}
-                    />
-                  )}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
@@ -2540,6 +2534,16 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                   isPending={isPending}
                   rma={rma}
                   readOnly={viewingVersion !== null}
+                  // The Base Currency | Vendor Currency switch: in the Return
+                  // Items toolbar, beside Full screen and Columns (25 Nov
+                  // 2026, not in the header). Its one render site; it hides
+                  // itself on a PKR return. The view it sets (returnView)
+                  // covers the whole page.
+                  toolbarExtra={
+                    isRma && rma ? (
+                      <CurrencyHeaderControls currency={returnCurrencyOf(rma)} view={returnView} onViewChange={setReturnView} />
+                    ) : undefined
+                  }
                 />
               )}
               {activeTab === 'shipping' && rma && (

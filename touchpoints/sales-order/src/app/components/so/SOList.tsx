@@ -23,7 +23,8 @@ import { SOFilterBar } from "./SOFilterBar";
 import { DatePickerField } from "./date-picker-field";
 import { InsightsRangeMenu, InsightsRefresh, type InsightsRange } from "@/app/components/shared/InsightsControls";
 import { summarizeSO } from "./summarizeSO";
-import { BaseMoney } from "@/app/components/currency/Money";
+import { BaseMoney, Money } from "@/app/components/currency/Money";
+import { useColumnCurrencyViews, type ColumnCurrencyView } from "@/app/components/currency/columnCurrencyView";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatCompactMoney, formatMoney } from "@/app/currency/money";
 import { soFx, toSOBase } from "@/app/currency/soFx";
@@ -191,7 +192,8 @@ const COLUMN_DEFS: SOColumnDef[] = [
   { key: "customer", label: "Customer Name", minWidth: 210, sortable: true },
   /* The order's currency, right after the customer it comes from. Shown
      by default, base included; amounts are in base with the order's
-     currency on hover. */
+     currency on hover, or the other way round per money column from its
+     header menu's "Show values as". */
   { key: "currency", label: "Currency", minWidth: 264, sortable: true },
   { key: "status", label: "Order Status", minWidth: 200, sortable: true },
   /* Line Items sits right after Order Status so it matches the Quote
@@ -221,6 +223,27 @@ const COLUMN_DEFS: SOColumnDef[] = [
      rejection flow is hidden. Keep the code path elsewhere but
      stop advertising the columns in the configurator. */
 ];
+
+/* Money columns: their header menu offers "Show values as" base or
+   customer currency. */
+const MONEY_COLUMNS = new Set<string>(["value", "invoiced", "payments"]);
+
+/** An order's amount (in its own currency) as a money column shows it:
+ *  base at the order's rate with the customer's amount on hover, or the
+ *  customer's amount with base on hover. A base-currency order reads the
+ *  same either way. */
+function ColumnMoney({ view, value, so, className, style }: {
+  view: ColumnCurrencyView;
+  value: number;
+  so: Parameters<typeof soFx>[0] & { currency: string };
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const fx = soFx(so);
+  return view === "customer"
+    ? <Money value={value} currency={so.currency} fx={fx} role="customer currency" className={className} style={style} />
+    : <BaseMoney value={value} currency={so.currency} fx={fx} role="Customer currency" className={className} style={style} />;
+}
 
 /* Default order places "customer" directly after "so" so the two
    pre-pinned columns sit visually adjacent on the left edge. Sticky
@@ -602,6 +625,10 @@ export function SOList() {
      users open onto both identifying columns sticky on the left. */
   const [frozenColumns, setFrozenColumns] = useState<Set<string>>(new Set(["so", "customer"]));
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+  /* Money columns' "Show values as" (header menu): base by default, or the
+     customer's currency. Sorting, filtering and KPIs stay in base. */
+  const columnCurrency = useColumnCurrencyViews("so-list");
+  const { viewOf: currencyViewOf } = columnCurrency;
 
   /* Column drag reorder state */
   const colDragRef = useRef<{ columnKey: string; startX: number; startY: number; isDragging: boolean; lastSwapTime: number } | null>(null);
@@ -1056,6 +1083,9 @@ export function SOList() {
           case "status": aVal = a.status; bVal = b.status; break;
           case "salesrep": aVal = a.salesRep; bVal = b.salesRep; break;
           case "value": aVal = toSOBase(a, summarizeSO(a).grandTotal); bVal = toSOBase(b, summarizeSO(b).grandTotal); break;
+          // Invoiced / Payments sort by their base value, so mixed currencies compare (25 Nov 2026).
+          case "invoiced": { const inv = (x: typeof a) => toSOBase(x, x.linkedTransactions.filter(t => t.type === "Invoice").reduce((s, t) => s + txInOrderCurrency(t, x), 0)); aVal = inv(a); bVal = inv(b); break; }
+          case "payments": { const pay = (x: typeof a) => toSOBase(x, x.linkedTransactions.filter(t => t.type === "Payment Receipt").reduce((s, t) => s + txInOrderCurrency(t, x), 0)); aVal = pay(a); bVal = pay(b); break; }
           case "priority": aVal = a.priority; bVal = b.priority; break;
           case "currency": aVal = soFx(a).currency; bVal = soFx(b).currency; break;
           case "linecount": aVal = a.lines.length; bVal = b.lines.length; break;
@@ -1376,9 +1406,10 @@ export function SOList() {
         /* Listing's "Order Value" is the GRAND TOTAL (subtotal + tax +
            freight + adjustments − rules), not the line-subtotal-with-tax.
            Same number the detail sidebar's "Grand Total" tile shows. */
-        /* In base at the order's rate, as Sales Orders shows amounts; the
-           customer's amount and the rate on hover. */
-        return <BaseMoney value={summary.grandTotal} currency={so.currency} fx={soFx(so)} role="Customer currency" className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }} />;
+        /* Base (default): in base at the order's rate, the customer's amount
+           and the rate on hover. Customer currency: the order's own amount,
+           base on hover. */
+        return <ColumnMoney view={currencyViewOf("value")} value={summary.grandTotal} so={so} className="whitespace-nowrap" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A' }} />;
       case "invoiced": {
         const invoiced = so.linkedTransactions.filter(t => t.type === "Invoice").reduce((s, t) => s + txInOrderCurrency(t, so), 0);
         const invoiceList = so.linkedTransactions.filter(t => t.type === "Invoice");
@@ -1386,7 +1417,7 @@ export function SOList() {
           <div className="relative group/inv">
             <div className="flex items-center gap-1">
               <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 500, color: invoiced > 0 ? '#0F172A' : '#94A3B8' }}>
-                {invoiced > 0 ? <BaseMoney value={invoiced} currency={so.currency} fx={soFx(so)} role="Customer currency" /> : '—'}
+                {invoiced > 0 ? <ColumnMoney view={currencyViewOf("invoiced")} value={invoiced} so={so} /> : '—'}
               </span>
               {invoiceList.length > 0 && (
                 <ArrowUpRight className="w-3 h-3 text-primary/40 group-hover/inv:text-primary transition-colors" />
@@ -1399,7 +1430,9 @@ export function SOList() {
                   {invoiceList.map((inv, i) => (
                     <div key={i} className="flex items-center justify-between py-1 px-2 rounded-md hover:bg-muted/40 transition-colors cursor-pointer">
                       <span className="text-[12px] text-primary" style={{ fontWeight: 500 }}>{inv.number}</span>
-                      <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }} title={formatMoney(inv.amount, inv.currency || so.currency)}>{formatMoney(toSOBase(so, txInOrderCurrency(inv, so)), BASE_CURRENCY)}</span>
+                      {currencyViewOf("invoiced") === "customer"
+                        ? <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }} title={formatMoney(toSOBase(so, txInOrderCurrency(inv, so)), BASE_CURRENCY)}>{formatMoney(txInOrderCurrency(inv, so), so.currency)}</span>
+                        : <span className="text-[12px] text-foreground tabular-nums" style={{ fontWeight: 600 }} title={formatMoney(inv.amount, inv.currency || so.currency)}>{formatMoney(toSOBase(so, txInOrderCurrency(inv, so)), BASE_CURRENCY)}</span>}
                     </div>
                   ))}
                 </div>
@@ -1410,7 +1443,7 @@ export function SOList() {
       }
       case "payments": {
         const payments = so.linkedTransactions.filter(t => t.type === "Payment Receipt").reduce((s, t) => s + txInOrderCurrency(t, so), 0);
-        return <span className="whitespace-nowrap tabular-nums text-left" style={{ fontSize: '13px', fontWeight: 500, color: payments > 0 ? '#0F172A' : '#94A3B8' }}>{payments > 0 ? <BaseMoney value={payments} currency={so.currency} fx={soFx(so)} role="Customer currency" /> : '—'}</span>;
+        return <span className="whitespace-nowrap tabular-nums text-left" style={{ fontSize: '13px', fontWeight: 500, color: payments > 0 ? '#0F172A' : '#94A3B8' }}>{payments > 0 ? <ColumnMoney view={currencyViewOf("payments")} value={payments} so={so} /> : '—'}</span>;
       }
       case "orderdate": return <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{dates.orderDate}</span>;
       case "shipby": return <span className="whitespace-nowrap tabular-nums" style={{ fontSize: '13px', fontWeight: 400, color: '#64748B' }}>{dates.shipBy}</span>;
@@ -1532,7 +1565,7 @@ export function SOList() {
       case "priority": return <PriorityBadge priority={so.priority} />;
       case "currency": {
         const orderCurrency = soFx(so).currency;
-        return <span className="inline-flex whitespace-nowrap max-w-full" style={{ fontSize: '13px' }}><CurrencyCodeCell code={orderCurrency} title={`The order's currency. Amounts show in ${BASE_CURRENCY}; hover one for ${orderCurrency}.`} /></span>;
+        return <span className="inline-flex whitespace-nowrap max-w-full" style={{ fontSize: '13px' }}><CurrencyCodeCell code={orderCurrency} title={`The order's currency. Amounts show in ${BASE_CURRENCY} or ${orderCurrency} (each money column's menu); hover one for the other.`} /></span>;
       }
       case "tags": {
         /* Tags cell — Partner Management chrome
@@ -1707,7 +1740,7 @@ export function SOList() {
       }
       default: return null;
     }
-  }, [search, isCondensed, cellFontSize, avatarSize, avatarFontSize, smallAvatarSize, smallAvatarFontSize]);
+  }, [search, isCondensed, cellFontSize, avatarSize, avatarFontSize, smallAvatarSize, smallAvatarFontSize, currencyViewOf]);
 
   const isTableView = density !== "kanban";
 
@@ -2342,6 +2375,8 @@ export function SOList() {
                                 onFreezeColumn={handleFreezeColumn}
                                 isFrozen={isFrozen}
                                 isLocked={isLocked}
+                                currencyView={MONEY_COLUMNS.has(key) ? currencyViewOf(key) : undefined}
+                                onCurrencyViewChange={MONEY_COLUMNS.has(key) ? (view) => columnCurrency.setView(key, view) : undefined}
                               >
                                 <div className={`inline-flex items-center gap-1 ${def.align === "right" ? "w-full justify-end" : ""}`}>
                                   <span className="text-[13px]" style={currentColSort ? { color: "#0A77FF" } : undefined}>{def.label}</span>

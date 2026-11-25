@@ -23,7 +23,7 @@ import {
 import { CarrierIcon } from "./CarrierIcon";
 import type { VendorContact } from "../../../context/purchasing/types";
 import { vendorRate, type VendorRate } from "../../../currency/vendorFx";
-import { BaseMoney } from "../../currency/Money";
+import { RowMoney } from "../../currency/RowCurrencyView";
 
 /* Deterministic location thumbnails + site-type mock for the Partner Locations
    cell and its "+N more" overflow (ported from VendorsListPage's LOC_PHOTOS_PL
@@ -171,13 +171,14 @@ export function CountryCell({ country, countryFlag }: { country?: string; countr
    list (Currency Touchpoints Map, 24 Nov 2026). The partner keeps the limit in
    its own currency; a foreign one has the rate card on hover with that figure
    ("¥5,793,448 JPY") and the rate. `fx` is the vendor's rate on this item;
-   without it, today's mid-market rate. */
+   without it, today's mid-market rate. On the column's "Show values as: Vendor
+   currency" (25 Nov 2026) it shows in the partner's currency, base on hover. */
 export function CreditLimitCell({ creditLimit, currency, fx }: { creditLimit?: number; currency?: string; fx?: VendorRate }) {
   if (creditLimit == null) return <span className="text-sm tabular-nums text-foreground">—</span>;
   const code = currency || "USD";
   return (
     <span className="text-sm tabular-nums text-foreground">
-      <BaseMoney value={creditLimit} currency={code} fx={fx ?? vendorRate(code)} role="partner currency" />
+      <RowMoney value={creditLimit} currency={code} fx={fx ?? vendorRate(code)} role="partner currency" />
     </span>
   );
 }

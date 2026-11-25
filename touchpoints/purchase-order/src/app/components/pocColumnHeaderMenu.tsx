@@ -17,6 +17,8 @@ import {
   ChevronDown,
   ChevronLeft,
   Plus,
+  Landmark,
+  Handshake,
 } from "lucide-react";
 import { Checkbox } from "./ui/checkbox";
 
@@ -199,6 +201,10 @@ function getStatusColor(status: string): string {
 
 /* ─── Column Header Menu ─── */
 
+/** Which currency a money column shows: the base currency (each record's
+ *  amount converted at its rate) or the vendor's (the record's own). */
+export type ColumnCurrencyView = "base" | "vendor";
+
 interface ColumnHeaderMenuProps {
   columnKey: string;
   label: string;
@@ -221,6 +227,11 @@ interface ColumnHeaderMenuProps {
   /** Optional override for the filter type — used when the column key is not a built-in vendor key */
   filterTypeOverride?: FilterType;
   onFilterChange?: (columnKey: string, filter: ColumnFilterState) => void;
+  /** Money columns only: the column's currency view and its setter. With
+   *  both, the menu shows "Show values as" between Sort and Hide (the
+   *  Partners listing's money-column menu, 25 Nov 2026). */
+  currencyView?: ColumnCurrencyView;
+  onCurrencyViewChange?: (view: ColumnCurrencyView) => void;
   children: ReactNode;
 }
 
@@ -241,6 +252,8 @@ export function ColumnHeaderMenu({
   uniqueValues: uniqueValuesProp,
   filterTypeOverride,
   onFilterChange,
+  currencyView,
+  onCurrencyViewChange,
   children,
 }: ColumnHeaderMenuProps) {
   const [open, setOpen] = useState(false);
@@ -425,6 +438,37 @@ export function ColumnHeaderMenu({
                       <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
                     )}
                   </button>
+                </>
+              )}
+
+              {/* Show values as — base or vendor currency (money columns).
+                  The divider is skipped when nothing sits above it. */}
+              {currencyView !== undefined && onCurrencyViewChange && (
+                <>
+                  {(onAddFilter || sortable) && <div className="border-t border-border/60 my-1" />}
+                  <div
+                    className="px-2.5 pt-1 pb-0.5 text-[10.5px] text-muted-foreground/70 uppercase tracking-wider"
+                    style={{ fontWeight: 600, letterSpacing: "0.04em" }}
+                  >
+                    Show values as
+                  </div>
+                  {([
+                    ["base", "Base currency", Landmark],
+                    ["vendor", "Vendor currency", Handshake],
+                  ] as const).map(([value, text, Icon]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => { onCurrencyViewChange(value); setOpen(false); }}
+                      className={`flex items-center gap-2.5 w-full px-2.5 py-[7px] rounded-md text-[13px] cursor-pointer transition-colors hover:bg-muted/60 ${
+                        currencyView === value ? "text-primary bg-primary/5" : "text-foreground"
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 text-muted-foreground" />
+                      <span style={{ fontWeight: 400 }}>{text}</span>
+                      {currencyView === value && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
+                    </button>
+                  ))}
                 </>
               )}
 

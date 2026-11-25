@@ -50,7 +50,7 @@ import { defaultValueOf, missingDefaults, valuesByDimension } from '../lib/dimen
 import { MoveUnderSummaryModal } from '../components/MoveUnderSummaryModal'
 import { NewJournalEntryModal } from '../components/NewJournalEntryModal'
 import { AdjustmentAccountModal } from '../components/AdjustmentAccountModal'
-import { StatusChip, StatusMenu, HeaderMenu, AccountActionItems, filterActive, ColumnFiltersBar, FxPostingTooltip, FxBalanceTooltip, CurrencyHeldCard, BookedBaseTooltip, BookedMarker, CurrencyCell, avatarTint, chartRowValues, ColFilter, ColFilterType, GL_TYPE_TONE, CategoryCell, DimensionPills, AccountTree, isLockedCol, DEFAULT_COLUMNS, DEFAULT_COLUMN_ORDER, useTreeExpansion, withAncestorContext, matchesColFilters, uniqueColValues, blankFilter, HEADER_DEFS, besidePrefill, RESTRICTED_HELP, type ColumnConfig, type ColKey, type ColFilters, type CreateRowPrefill } from '../components/AccountTable'
+import { StatusChip, StatusMenu, HeaderMenu, AccountActionItems, filterActive, ColumnFiltersBar, FxPostingTooltip, FxBalanceTooltip, CurrencyHeldCard, BookedBaseTooltip, BookedMarker, CurrencyCell, avatarTint, chartRowValues, ColFilter, ColFilterType, GL_TYPE_TONE, CategoryCell, DimensionPills, AccountTree, isLockedCol, DEFAULT_COLUMNS, DEFAULT_COLUMN_ORDER, useTreeExpansion, withAncestorContext, matchesColFilters, uniqueColValues, blankFilter, HEADER_DEFS, besidePrefill, RESTRICTED_HELP, type ColumnConfig, type ColKey, type ColFilters, type CreateRowPrefill, type ColumnCurrencyView } from '../components/AccountTable'
 import { describePicked } from '../components/NotifyRecipientsPicker'
 import { ACCOUNT_OWNER_ACCESS, DEFAULT_RESTRICTED_ACCESS } from '../lib/restrictedAccess'
 import { ColumnSelector } from '../components/ColumnSelector'
@@ -2939,8 +2939,11 @@ const TX_RIGHT: TxColKey[] = ['debit', 'credit', 'balance']
    should have everything in it ... for both active and hidden columns"*). A
    `Record`, so a column added here cannot be left out of search. */
 interface TxTextCtx {
-  /** The register's currency, which Debit, Credit and Running balance print in. */
+  /** The account's currency, which Debit, Credit and Running balance print in. */
   currency: string
+  /** Per money column: on its header menu's "Base currency" view it prints in base instead. */
+  inBase: Record<TxMoneyCol, boolean>
+  base: string
   /** The running balance after a posting. */
   runBal: (id: string) => number
   /** The same, in the register's currency, typed amounts counted as typed. */
@@ -2948,9 +2951,21 @@ interface TxTextCtx {
   /** A dimension's name by id, for the Dimensions pill's "Location: USA". */
   dimensionName: (id: string) => string | undefined
 }
+/* The register's money columns, each with "Show values as" in its header menu
+   (25 Nov 2026, replacing the toolbar's Base Currency | Account Currency
+   switch): Base currency, or Account currency. Only an account held in another
+   currency offers it - on a base account the two read the same. The register
+   has always opened in the account's own currency, so each column still does:
+   flip TX_CURRENCY_VIEW_DEFAULT to open on base instead. */
+type TxMoneyCol = 'debit' | 'credit' | 'balance'
+const isTxMoneyCol = (k: TxColKey): k is TxMoneyCol => k === 'debit' || k === 'credit' || k === 'balance'
+export const TX_CURRENCY_VIEW_DEFAULT: ColumnCurrencyView = 'account'
+const TX_CURRENCY_VIEWS_DEFAULT: Record<TxMoneyCol, ColumnCurrencyView> = { debit: TX_CURRENCY_VIEW_DEFAULT, credit: TX_CURRENCY_VIEW_DEFAULT, balance: TX_CURRENCY_VIEW_DEFAULT }
 // A side as the account's own currency holds it: typed, where the entry was
-// written in it, else restated (lib/currencies).
-const txMoneyText = (t: Transaction, side: 'debit' | 'credit', currency: string) => (t[side] ? fmtCurrencyExact(ownSide(t, side, currency), currency) : '')
+// written in it, else restated (lib/currencies). With `base` (the register's
+// Base Currency view), the base figure the ledger holds.
+const txMoneyText = (t: Transaction, side: 'debit' | 'credit', currency: string, base?: string) =>
+  (t[side] ? (base ? fmtCurrencyExact(t[side], base) : fmtCurrencyExact(ownSide(t, side, currency), currency)) : '')
 const TX_CELL_TEXT: Record<TxColKey, (t: Transaction, ctx: TxTextCtx) => string> = {
   date: t => fmtDate(t.date),
   entry: t => t.jeNumber,
@@ -2958,9 +2973,9 @@ const TX_CELL_TEXT: Record<TxColKey, (t: Transaction, ctx: TxTextCtx) => string>
   reference: t => t.reference,
   description: t => t.description,
   dimensions: (t, ctx) => t.dimensionValues.map(v => `${ctx.dimensionName(v.dimensionId) ?? ''} ${v.value}`).join(' '),
-  debit: (t, ctx) => txMoneyText(t, 'debit', ctx.currency),
-  credit: (t, ctx) => txMoneyText(t, 'credit', ctx.currency),
-  balance: (t, ctx) => fmtCurrencyExact(ctx.ownRunBal(t.id), ctx.currency),
+  debit: (t, ctx) => txMoneyText(t, 'debit', ctx.currency, ctx.inBase.debit ? ctx.base : undefined),
+  credit: (t, ctx) => txMoneyText(t, 'credit', ctx.currency, ctx.inBase.credit ? ctx.base : undefined),
+  balance: (t, ctx) => (ctx.inBase.balance ? fmtCurrencyExact(ctx.runBal(t.id), ctx.base) : fmtCurrencyExact(ctx.ownRunBal(t.id), ctx.currency)),
 }
 // Same edge treatment the Chart of Accounts and the ledger give a frozen column: a
 // thin border followed by a soft outward shadow, so the run reads as a held edge the
@@ -3172,7 +3187,19 @@ function RegisterTab({ transactions, currency, statistical, accountId, initialRa
   const ownRunBal = (id: string) => ownByTx.get(id) ?? 0
   const dimensions = useStore(s => s.dimensions)
   const dimensionNames = useMemo(() => new Map(dimensions.map(d => [d.id, d.name])), [dimensions])
-  const txCtx: TxTextCtx = { currency, runBal, ownRunBal, dimensionName: id => dimensionNames.get(id) }
+  /* An account in another currency reads in it, or in base on a money
+     column's "Show values as: Base currency" (header menu, per column); the
+     other figure is on the hover. Filters and sort read the base figures
+     either way. Kept for the session per account, so leaving the page and
+     coming back keeps it. */
+  const foreign = currency !== base
+  const [colView, setColView] = useRememberedState<Record<TxMoneyCol, ColumnCurrencyView>>(accountId ? `account-currency-view:${accountId}` : undefined, TX_CURRENCY_VIEWS_DEFAULT)
+  const inBase: Record<TxMoneyCol, boolean> = {
+    debit: foreign && colView.debit === 'base',
+    credit: foreign && colView.credit === 'base',
+    balance: foreign && colView.balance === 'base',
+  }
+  const txCtx: TxTextCtx = { currency, inBase, base, runBal, ownRunBal, dimensionName: id => dimensionNames.get(id) }
   // Toolbar chrome mirrors the Chart of Accounts table: search + Filters on
   // the left, count + density + columns on the right (per the Cash Management
   // Bank Transactions reference, sans KPIs).
@@ -3622,6 +3649,8 @@ function RegisterTab({ transactions, currency, statistical, accountId, initialRa
                       onHide={() => hideCol(k)}
                       onToggleFreeze={() => setFrozenCols(prev => prev.includes(k) ? prev.filter(c => c !== k) : [...prev, k])}
                       frozen={frozen}
+                      currencyView={foreign && isTxMoneyCol(k) ? colView[k] : undefined}
+                      onCurrencyViewChange={foreign && isTxMoneyCol(k) ? v => setColView(prev => ({ ...prev, [k]: v })) : undefined}
                     >
                       <span style={active || hasFilter ? { color: 'hsl(var(--primary))' } : undefined}>{TX_COL_LABEL[k]}</span>
                       {hasFilter && !active && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'hsl(var(--primary))' }} />}
@@ -3664,7 +3693,18 @@ function RegisterTab({ transactions, currency, statistical, accountId, initialRa
               const money = (side: 'debit' | 'credit') => {
                 const v = t[side]
                 if (!v) return <span className="text-fg-subtle">-</span>
-                const label = <Marked text={txMoneyText(t, side, currency)} q={q} />
+                const label = <Marked text={txMoneyText(t, side, currency, inBase[side] ? base : undefined)} q={q} />
+                // In base, the card gives the line in the account's currency:
+                // as typed, at its own rate, where it was typed in it.
+                if (inBase[side]) {
+                  const typed = typedIn(t, currency)
+                  return (
+                    <FxPostingTooltip code={currency} base={base} booked={v} side={side}
+                      {...(typed ? { rate: t.entryRate, on: fmtDate(t.date), onIso: t.date.slice(0, 10), typed: ownSide(t, side, currency), rateType: t.entryRateType } : {})}>
+                      <span className="cursor-help">{label}</span>
+                    </FxPostingTooltip>
+                  )
+                }
                 // A line typed in this currency is the amount typed; there is no
                 // booked restatement of it to explain.
                 return currency !== base && !typedIn(t, currency)
@@ -3723,7 +3763,12 @@ function RegisterTab({ transactions, currency, statistical, accountId, initialRa
                   case 'credit': return <td key={k} className="text-[13px] text-right tabular-nums whitespace-nowrap text-slate-800">{money('credit')}</td>
                   // Signed running balance after this posting - normal-side, so
                   // a negative reads as "below zero on this account's natural side".
-                  case 'balance': return <td key={k} className="text-[13px] text-right tabular-nums whitespace-nowrap text-slate-900" style={{ fontWeight: 600 }}><Marked text={TX_CELL_TEXT.balance(t, txCtx)} q={q} /></td>
+                  case 'balance': return <td key={k} className="text-[13px] text-right tabular-nums whitespace-nowrap text-slate-900" style={{ fontWeight: 600 }}>{inBase.balance
+                    ? <UITooltip align="right" content={`${withCode(fmtCurrencyExact(ownRunBal(t.id), currency), currency)} in the account's currency`}><span className="cursor-help"><Marked text={TX_CELL_TEXT.balance(t, txCtx)} q={q} /></span></UITooltip>
+                    : foreign
+                      // Account currency: the base figure the ledger holds is on the hover.
+                      ? <UITooltip align="right" content={`${withCode(fmtCurrencyExact(runBal(t.id), base), base)} in base currency`}><span className="cursor-help"><Marked text={TX_CELL_TEXT.balance(t, txCtx)} q={q} /></span></UITooltip>
+                      : <Marked text={TX_CELL_TEXT.balance(t, txCtx)} q={q} />}</td>
                 }
               }
               // Row chrome copied from Cash Management's DataTable: #EFF6FF hover,
