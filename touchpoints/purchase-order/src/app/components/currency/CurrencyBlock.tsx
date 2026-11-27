@@ -65,6 +65,14 @@ export interface CurrencyBlockRow {
   title?: string;
   /** An estimate: written "≈ C$14,120.55 CAD". */
   approx?: boolean;
+  /** Written as is in place of the amount or the currency name, e.g. an
+   *  account or a rate (27 Nov 2026). */
+  value?: React.ReactNode;
+  /** A muted line under the value, e.g. "Estimate at today's rate" or the
+   *  rate type chip (27 Nov 2026). */
+  sub?: React.ReactNode;
+  /** Leave out the flag before the value. */
+  noFlag?: boolean;
 }
 
 /** "Pakistani Rupee (PKR)": a currency by name, as the block writes it. */
@@ -115,21 +123,43 @@ export function CurrencyBlock({
         </p>
       ) : (
         <>
-          {rows.map((r) => (
-            <div key={r.label} className="flex items-center justify-between gap-2" title={r.title}>
-              <p className="text-slate-400 shrink-0" style={{ fontSize: 10, fontWeight: 500 }}>
-                {r.label}
-              </p>
-              <p className="flex items-center gap-1.5 text-slate-700 tabular-nums text-right min-w-0" style={{ fontSize: 12, fontWeight: 500 }}>
+          {rows.map((r) => {
+            const value = (
+              <p className="flex items-center justify-end gap-1.5 text-slate-700 tabular-nums text-right min-w-0" style={{ fontSize: 12, fontWeight: 500 }}>
                 {/* A flag on the document's amount and the account's currency; the base equivalent reads plainly. */}
-                {(r.amount === undefined || r.code.toUpperCase() !== BASE_CURRENCY) && <CurrencyFlag code={r.code} size={11} />}
-                <span className="truncate">
-                  {r.amount !== undefined && r.approx ? "≈ " : ""}
-                  {r.amount === undefined ? currencyNameWithCode(r.code) : withCode(r.amount, r.code)}
-                </span>
+                {!r.noFlag && r.value === undefined && (r.amount === undefined || r.code.toUpperCase() !== BASE_CURRENCY) && (
+                  <CurrencyFlag code={r.code} size={11} />
+                )}
+                {r.value !== undefined ? (
+                  r.value
+                ) : (
+                  <span className="truncate">
+                    {r.amount !== undefined && r.approx ? "≈ " : ""}
+                    {r.amount === undefined ? currencyNameWithCode(r.code) : withCode(r.amount, r.code)}
+                  </span>
+                )}
               </p>
-            </div>
-          ))}
+            );
+            // With a sub-line the label sits on the value's line, as the Exchange rate row's does.
+            return r.sub ? (
+              <div key={r.label} className="flex items-start justify-between gap-2" title={r.title}>
+                <p className="text-slate-400 shrink-0 pt-0.5" style={{ fontSize: 10, fontWeight: 500 }}>
+                  {r.label}
+                </p>
+                <div className="flex flex-col items-end gap-1 min-w-0">
+                  {value}
+                  <div className="text-slate-400 text-right" style={{ fontSize: 10 }}>{r.sub}</div>
+                </div>
+              </div>
+            ) : (
+              <div key={r.label} className="flex items-center justify-between gap-2" title={r.title}>
+                <p className="text-slate-400 shrink-0" style={{ fontSize: 10, fontWeight: 500 }}>
+                  {r.label}
+                </p>
+                {value}
+              </div>
+            );
+          })}
           {rate && (
             <div className="flex items-start justify-between gap-2">
               <p className="text-slate-400 shrink-0 pt-0.5" style={{ fontSize: 10, fontWeight: 500 }}>Exchange rate</p>

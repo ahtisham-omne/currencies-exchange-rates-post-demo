@@ -1332,10 +1332,19 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
   // to today) — unless that period has since closed, where the editable
   // field would gate the submit; then it falls to today like a fresh
   // entry. Fresh creates still default to today.
+  // Eli's ruling (26 Nov 2026): a vendor bill posts on its posting date,
+  // which defaults to the vendor's invoice date. So a new invoice's posting
+  // date follows the Vendor Invoice Date until the user sets it (today when
+  // that day's period is closed); a reopened one keeps its saved date.
   const [postingDate, setPostingDate] = useState(() => {
     const saved = resubmitInvoice?.postingDate;
-    return saved && !isClosedPeriod(saved) ? saved : localTodayIso();
+    if (saved && !isClosedPeriod(saved)) return saved;
+    const vendorDay = resubmitInvoice?.invoiceDate || localTodayIso();
+    return isClosedPeriod(vendorDay) ? localTodayIso() : vendorDay;
   });
+  /** The user set the posting date (or the invoice was saved with one): it
+   *  stops following the vendor invoice date. */
+  const postingDateSetRef = useRef(!!resubmitInvoice?.postingDate);
   // Trigger Date for terms whose event isn't Receiving or Invoice Date
   // (Shipping, Production End, ...). Starts EMPTY and is required
   // (8/28/26 review): the vendor supplies this date on their invoice and
@@ -1900,8 +1909,15 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
    *  a new one simply follows the date. */
   const onRateDateFieldChange = (field: 'postingDate' | 'invoiceDate', next: string) => {
     const prev = field === 'postingDate' ? postingDate : invoiceDate;
-    if (field === 'postingDate') setPostingDate(next);
-    else setInvoiceDate(next);
+    if (field === 'postingDate') {
+      setPostingDate(next);
+      postingDateSetRef.current = true;
+    } else {
+      setInvoiceDate(next);
+      // The posting date follows the vendor invoice date until it's set
+      // (Eli's ruling, 26 Nov 2026).
+      if (!postingDateSetRef.current && next && !isClosedPeriod(next)) setPostingDate(next);
+    }
     if (!heldRate || invoiceIsBase || ratePending || !next || next === prev) return;
     const basisField = rateAsOf.basis === 'postingDate' ? 'postingDate' : rateAsOf.basis === 'invoiceDate' ? 'invoiceDate' : null;
     if (basisField !== field) return;
@@ -3684,11 +3700,13 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                           </TooltipContent>
                         </Tooltip>
                       ) : (() => {
-                        // Amber "not today" cue in the helper text only
-                        // (BA UX feedback); a closed-period pick escalates
-                        // to red copy and locks Submit.
-                        const todayIso = new Date().toISOString().slice(0, 10);
-                        const notToday = !!postingDate && postingDate !== todayIso;
+                        // Amber cue in the helper text only (BA UX
+                        // feedback); a closed-period pick escalates to red
+                        // copy and locks Submit. 27 Nov 2026: the default is
+                        // the vendor invoice date (Eli's ruling, 26 Nov
+                        // 2026), so the cue is "not the vendor invoice
+                        // date", not "not today".
+                        const notToday = !!postingDate && !!invoiceDate && postingDate !== invoiceDate;
                         return (
                           <>
                             <DatePicker
@@ -3703,8 +3721,8 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
                                 {postingDateClosed
                                   ? `${postingDate} falls in a closed period. Pick a date in the open period.`
                                   : notToday
-                                    ? `Posting on ${postingDate}, not today's date`
-                                    : 'The date this invoice is recorded in the general ledger, today by default.'}
+                                    ? `Posting on ${postingDate}, not the vendor invoice date`
+                                    : 'The date this invoice is recorded in the general ledger, the vendor invoice date by default.'}
                               </span>
                             </div>
                           </>
@@ -9014,6 +9032,7 @@ export function CreateInvoiceScreen({ onClose, onGoBack, invoiceType, selectedPO
         prepayments={formPrepaid > 0 ? lockedPrepayments : []}
         canEditRate={apPerms.canChangeInvoiceRate}
         limitPct={apPerms.invoiceRateLimitPct}
+        vendorInvoiceDate={invoiceDate}
         onSave={(next) => {
           // A new currency or rate replaces the rate an edit was keeping;
           // an account change alone keeps it.

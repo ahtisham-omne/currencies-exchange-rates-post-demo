@@ -29,6 +29,9 @@ export interface CompanyProfile {
 
 export type TimeFormat = "12-hour" | "24-hour";
 export type FirstDayOfWeek = "Saturday" | "Sunday" | "Monday";
+/** The company's default exchange rate, by the names every module uses for
+ *  the two rate types (Mahreen, 27 Nov 2026). */
+export type DefaultExchangeRate = "Daily market rate" | "Corporate rate";
 
 export interface GlobalPreferences {
   timezone: string;
@@ -36,6 +39,10 @@ export interface GlobalPreferences {
   timeFormat: TimeFormat;
   /** ISO 4217 code. */
   baseCurrency: string;
+  /** The rate that converts amounts on documents that don't choose one. Shown
+   *  and saved here only (27 Nov 2026): nothing reads it yet, so each module
+   *  keeps its own default until it is wired. */
+  defaultExchangeRate: DefaultExchangeRate;
   language: string;
   firstDayOfWeek: FirstDayOfWeek;
   requireMfa: boolean;
@@ -63,6 +70,8 @@ export const INDUSTRIES = [
 
 export const DATE_FORMATS = ["MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD"] as const;
 
+export const DEFAULT_EXCHANGE_RATES: readonly DefaultExchangeRate[] = ["Daily market rate", "Corporate rate"];
+
 let state: GeneralSettings = {
   profile: {
     // A company onboarding set up opens under its own legal name.
@@ -83,6 +92,7 @@ let state: GeneralSettings = {
     dateFormat: "MM/DD/YYYY",
     timeFormat: "12-hour",
     baseCurrency: BASE_CURRENCY,
+    defaultExchangeRate: "Daily market rate",
     language: "English (US)",
     firstDayOfWeek: "Sunday",
     requireMfa: true,

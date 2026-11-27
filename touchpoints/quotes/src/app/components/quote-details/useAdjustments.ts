@@ -70,15 +70,23 @@ export interface AdjustmentsAPI {
   setAdjustmentAppliedTo: (id: string, lineIds: string[]) => void;
 }
 
-function seedInitial(lines: QuoteLineRef[], restate: (usd: number) => number = (n) => n): Adjustment[] {
+/* Seed a couple of demo adjustments tied to real line ids so the summary
+   starts with meaningful coverage rather than an empty state.
+   Percentages since 27 Nov 2026 (4b), as Sales Orders has had them since
+   25 Nov: fixed amounts (+$2,400, +$1,350, +$4,500, −$2,500) took no
+   account of a quote's size and were restated into its currency. A
+   percentage keeps every quote's adjustments in proportion and in its own
+   currency. `restate` is kept for callers; percentages need no
+   conversion. */
+function seedInitial(lines: QuoteLineRef[], _restate: (usd: number) => number = (n) => n): Adjustment[] {
   const first = lines[0]?.id;
   const third = lines[2]?.id;
   const seed: Adjustment[] = [
-    { id: 'A003', label: 'Expedited Build Schedule', type: 'premium', amountType: '$', amount: restate(4500), scope: 'quote', isApplied: true },
-    { id: 'A004', label: 'Returning Customer Credit', type: 'discount', amountType: '$', amount: restate(2500), scope: 'quote', isApplied: true },
+    { id: 'A003', label: 'Expedited Build Schedule', type: 'premium', amountType: '%', amount: 3, scope: 'quote', isApplied: true },
+    { id: 'A004', label: 'Returning Customer Credit', type: 'discount', amountType: '%', amount: 2, scope: 'quote', isApplied: true },
   ];
-  if (first) seed.unshift({ id: 'A001', label: 'Chassis Delivery & Prep', type: 'premium', amountType: '$', amount: restate(2400), scope: 'item', appliedTo: [first], isApplied: true });
-  if (third) seed.splice(1, 0, { id: 'A002', label: 'Radio Programming & Encryption', type: 'premium', amountType: '$', amount: restate(1350), scope: 'item', appliedTo: [third], isApplied: true });
+  if (first) seed.unshift({ id: 'A001', label: 'Chassis Delivery & Prep', type: 'premium', amountType: '%', amount: 4, scope: 'item', appliedTo: [first], isApplied: true });
+  if (third) seed.splice(1, 0, { id: 'A002', label: 'Radio Programming & Encryption', type: 'premium', amountType: '%', amount: 2.5, scope: 'item', appliedTo: [third], isApplied: true });
   return seed;
 }
 

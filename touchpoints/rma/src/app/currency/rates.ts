@@ -15,9 +15,12 @@ import { BASE_CURRENCY, getCurrency, isBaseCurrency } from './currencies';
 
 export type RateType = 'mid' | 'corporate';
 
+/* "Daily market rate" | "Corporate rate" on every toggle, chip, dropdown and
+ * hover (Eli's ruling, 26 Nov 2026; Mahreen, 27 Nov 2026). The label already
+ * ends in "rate", so never append " rate" to it. */
 export const RATE_TYPE_LABEL: Record<RateType, string> = {
-  mid: 'Mid-market',
-  corporate: 'Corporate',
+  mid: 'Daily market rate',
+  corporate: 'Corporate rate',
 };
 
 export const RATE_PROVIDER = 'Open Exchange Rates';
@@ -37,17 +40,49 @@ export interface CorporateRate {
   note: string;
 }
 
-export const CORPORATE_RATES: CorporateRate[] = [
-  { code: 'USD', rate: 279.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'EUR', rate: 305.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'GBP', rate: 356.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'AED', rate: 76.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'SAR', rate: 74.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'CNY', rate: 38.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
+/* Today's read (Eli, 26 Nov 2026): one daily market rate per currency per
+ * day, read once a day from the provider and fixed for that date. The demo
+ * reads today's at the start of the day (UTC), as the Exchange Rates module
+ * does, so "Read on" is always today. */
+export const RATES_READ_ON: string = new Date().toISOString().slice(0, 10);
+
+/* Corporate rates as the Exchange Rates module seeds them (27 Nov 2026), so
+ * every module shows the same figure and the same "set on" day:
+ *  - USD keeps the history its activity log tells: 279.00 from 2 Mar, 280.00
+ *    from 1 Apr, 280.25 from 15 Apr and 281.50 from 1 May 2026.
+ *  - The others took effect on the 1st of the month 40 days before today's
+ *    read, as there. Their 1 Apr 2026 entry at the same rate stays, so older
+ *    documents still find one. */
+const CORPORATE_EFFECTIVE = (() => {
+  const d = new Date(Date.parse(`${RATES_READ_ON}T00:00:00Z`) - 40 * 86_400_000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+})();
+const CORPORATE_NOTE = `Q${Math.floor((Number(CORPORATE_EFFECTIVE.slice(5, 7)) - 1) / 3) + 1} ${CORPORATE_EFFECTIVE.slice(0, 4)} corporate rate`;
+const CORPORATE_SET_BY = 'Ahtisham Ahmad';
+const steadyCorporate = (code: string, rate: number): CorporateRate[] => [
+  { code, rate, effectiveDate: '2026-04-01', setBy: CORPORATE_SET_BY, note: 'Q2 2026 corporate rate' },
+  { code, rate, effectiveDate: CORPORATE_EFFECTIVE, setBy: CORPORATE_SET_BY, note: CORPORATE_NOTE },
 ];
 
-/** The provider's last sync (as Purchase Orders has it); mid-market history ends on this day. */
-export const LAST_SYNC = '2026-04-10T14:30:00Z';
+export const CORPORATE_RATES: CorporateRate[] = [
+  { code: 'USD', rate: 279.0, effectiveDate: '2026-03-02', setBy: CORPORATE_SET_BY, note: 'Agreed with the bank for Q2 imports.' },
+  { code: 'USD', rate: 280.0, effectiveDate: '2026-04-01', setBy: CORPORATE_SET_BY, note: '' },
+  { code: 'USD', rate: 280.25, effectiveDate: '2026-04-15', setBy: CORPORATE_SET_BY, note: '' },
+  { code: 'USD', rate: 281.5, effectiveDate: '2026-05-01', setBy: CORPORATE_SET_BY, note: '' },
+  ...steadyCorporate('EUR', 305.5),
+  ...steadyCorporate('GBP', 356.0),
+  ...steadyCorporate('AED', 76.0),
+  ...steadyCorporate('SAR', 74.5),
+  ...steadyCorporate('CNY', 38.5),
+];
+
+/* Where the generated history ends; a later day takes that day's rate.
+ * This module's seeds are written on fixed dates against the 10 Apr 2026
+ * read, so its history stays anchored there and a seeded rate never moves.
+ * Sales Orders and Quotes, which date their seeds back from today, end
+ * theirs on today's read instead. */
+const HISTORY_ENDS_TODAY = false;
+export const LAST_SYNC = HISTORY_ENDS_TODAY ? `${RATES_READ_ON}T00:00:00Z` : '2026-04-10T14:30:00Z';
 const LAST_SYNC_DAY = LAST_SYNC.slice(0, 10);
 const HISTORY_DAYS = 6 * 365;
 

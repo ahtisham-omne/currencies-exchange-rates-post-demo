@@ -7,7 +7,7 @@ import { DEFAULT_RATE_TYPE, LAST_SYNC, RATE_PROVIDER, rateOn, toBase, type RateT
  * from one, else the customer's default; the rep can change it from Order
  * Summary. Every line, total, rule, adjustment, freight charge and invoice
  * on it is in that currency. It carries the rate taken on its order date:
- * mid-market (read-only) or corporate (editable on the SO). The listing's
+ * the daily market rate (read-only) or corporate (editable on the SO). The listing's
  * base-currency KPIs convert each order through here before adding up. */
 
 export interface SoFx {
@@ -88,7 +88,7 @@ export function soFx(so: SoFxFields): SoFx {
 export const toSOBase = (so: SoFxFields, amount: number) => toBase(amount, soFx(so).rate);
 
 /** The currency fields to stamp on an SO, with the rate taken on its order
- *  date. A corporate rate falls back to mid-market when finance has none set. */
+ *  date. A corporate rate falls back to the daily market rate when finance has none set. */
 export function stampSoRate(
   currency: string,
   orderDate: string,
@@ -101,7 +101,7 @@ export function stampSoRate(
   return { currency: code, exchangeRate: usable.rate ?? 1, rateType: usable.type, rateDate: day, rateEdited: false };
 }
 
-/** Today's rate (mid-market) for a currency: creating an SO, before it exists. */
+/** Today's rate (daily market rate) for a currency: creating an SO, before it exists. */
 export const todayRate = (code: string) => rateOn(code, localTodayIso(), 'mid').rate ?? 1;
 
 /** Today's rate for a Money hover, before an SO exists. */
@@ -122,7 +122,7 @@ export function roundTo(code: string, value: number): number {
 /** One unit of `from` in `to`, through base, at the two rates given. */
 export const crossRate = (fromRate: number, toRate: number) => (toRate > 0 ? fromRate / toRate : 1);
 
-/** An amount in `from`, in `to`, at the mid-market rates on a day. */
+/** An amount in `from`, in `to`, at the daily market rates on a day. */
 export function convertOn(amount: number, from: string, to: string, day: string): number {
   if (from.toUpperCase() === to.toUpperCase() || !amount) return amount;
   const fromRate = rateOn(from, isoDay(day), 'mid').rate ?? 1;
@@ -132,7 +132,7 @@ export function convertOn(amount: number, from: string, to: string, day: string)
 
 /* ── The design's figures ─────────────────────────────────────────────
  * The design writes every amount in USD. A seeded order in another
- * currency is restated once in it at the mid-market rate on its order
+ * currency is restated once in it at the daily market rate on its order
  * date (the last synced rate for a date after the last sync). */
 export const DESIGN_CURRENCY = 'USD';
 export const LAST_SYNC_DAY = LAST_SYNC.slice(0, 10);
@@ -143,9 +143,9 @@ export const LAST_SYNC_DAY = LAST_SYNC.slice(0, 10);
  * Rule tiers here are quantity bands; a fixed-amount tier (unit "$" in the
  * data, meaning "a fixed amount", not dollars) takes that many rupees off
  * (or adds them to) each unit. On an SO in another currency the amount is
- * converted at the SO's own rate, so it follows the order's rate, mid-market
+ * converted at the SO's own rate, so it follows the order's rate, daily market
  * or corporate. (Until 24 Nov the rule book was in USD and converted at the
- * order date's mid-market cross rate.) Seeded amounts first written in USD
+ * order date's daily market cross rate.) Seeded amounts first written in USD
  * are restated at the spec's fixed factor, ×280 ($200 → Rs 56,000), the same
  * in every module. */
 export const RULE_AMOUNT_CURRENCY = BASE_CURRENCY;

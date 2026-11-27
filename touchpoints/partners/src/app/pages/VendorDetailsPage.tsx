@@ -25,11 +25,13 @@ import {
 import { PARTNER_GROUPS, CONTACT_DICTIONARY, VENDOR_SUB_TYPES, CUSTOMER_SUB_TYPES, VENDOR_CONFIG_SECTIONS } from "../components/vendors/partnerConstants";
 import { ConfigPageContent } from "../components/vendors/CreatePartnerModal";
 import { CurrencyFlag } from "../components/currency/CurrencyFlag";
+import { RateTypeInfo } from "../components/currency/RateTypeInfo";
 import { CurrencyViewToggle, ProfileCurrencyProvider, profileFormatters, useProfileMoney } from "../components/currency/ProfileCurrency";
-import { BASE_CURRENCY, getCurrency } from "../currency/currencies";
+import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "../currency/currencies";
+import { formatMoney, formatRate, moneyPrefix } from "../currency/money";
 import type { CurrencyView } from "../currency/partnerAmounts";
 import { usePartnerCurrencyInfo, usePartnerRateTypeInfo } from "../currency/usePartnerCurrency";
-import { currencySettingsFromConfig } from "../currency/partnerCurrency";
+import { currencySettingsFromConfig, currentRate } from "../currency/partnerCurrency";
 import { RATE_TYPE_LABEL } from "../currency/rates";
 import { ActivityFeed, type ActivityFeedItemType } from "../components/vendors/PartnerGroupDetailModal";
 import type { ContactPerson as PartnerContact } from "../components/vendors/partnerConstants";
@@ -372,6 +374,10 @@ export function VendorDetailsPage() {
     () => ({ view: profileCurrencyView, partnerCurrency: partnerCurrency?.code ?? BASE_CURRENCY, streams: vendor?.currencyBreakdown }),
     [profileCurrencyView, partnerCurrency?.code, vendor?.currencyBreakdown],
   );
+  // Base view of a partner in another currency: the money KPIs are its
+  // amounts converted at today's daily market rate, so they are estimates.
+  const dashConverted = profileCurrencyView === "base" && !isBaseCurrency(profileCurrency.partnerCurrency);
+  const dashRate = dashConverted ? currentRate(profileCurrency.partnerCurrency).rate : null;
 
   // Generate location data for KPI computations (must be after vendor is available)
   const locationsData = useMemo(() => vendor ? generateLocationsFromVendor(vendor) : [], [vendor]);
@@ -1123,6 +1129,9 @@ export function VendorDetailsPage() {
                       })() : undefined;
                       // Amounts get their currency hover (base or partner amount, and the rate).
                       const moneyNode = dashKpiAmount(kpi.key, vendor);
+                      // Converted to base (Mahreen, 27 Nov 2026, PA-2): "≈" before
+                      // the figure, and the partner's own amount under it.
+                      const converted = dashConverted && moneyNode != null && moneyNode !== 0;
                       return (
                         <DraggableKpiCard
                           key={kpi.key}
@@ -1130,7 +1139,8 @@ export function VendorDetailsPage() {
                           kpiKey={kpi.key}
                           label={kpi.label}
                           value={computed.value}
-                          valueNode={valueNode ?? (moneyNode != null ? <p className="text-[15px] text-slate-700 tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{profileMoney.money(moneyNode, { rolledUp: kpi.key === "total_spent" })}</p> : undefined)}
+                          valueNode={valueNode ?? (moneyNode != null ? <p className="text-[15px] text-slate-700 tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{profileMoney.money(moneyNode, { rolledUp: kpi.key === "total_spent", approx: true })}</p> : undefined)}
+                          subValue={converted ? formatMoney(moneyNode, profileCurrency.partnerCurrency) : undefined}
                           subtitle={kpi.subtitle}
                           iconName={kpi.iconName}
                           tooltip={kpi.tooltip}
@@ -1143,6 +1153,12 @@ export function VendorDetailsPage() {
                     })}
                   </div>
                 </DndProvider>
+              )}
+              {/* Which rate the "≈" figures use (Mahreen, 27 Nov 2026, PA-2). */}
+              {dashConverted && dashRate != null && activeKpiDefs.some((k) => dashKpiAmount(k.key, vendor)) && (
+                <p className="mt-2 text-[11px] text-slate-400 tabular-nums" style={{ fontWeight: 500 }}>
+                  ≈ at today's {RATE_TYPE_LABEL.mid.toLowerCase()}: 1 {profileCurrency.partnerCurrency} = {moneyPrefix(BASE_CURRENCY)}{formatRate(dashRate)}
+                </p>
               )}
             </div>
           )}
@@ -1459,7 +1475,8 @@ export function VendorDetailsPage() {
           widgetSizes={dashWidgetSizes}
           onWidgetSizeChange={handleWidgetSizeChange}
           vendor={vendor}
-          formatCurrency={formatCurrency}
+          // Its KPI previews follow the strip: "≈" on a converted amount.
+          formatCurrency={dashConverted ? (v: number) => (v ? `≈ ${formatCurrency(v)}` : formatCurrency(v)) : formatCurrency}
           formatDate={formatDate}
         />
       )}
@@ -2504,10 +2521,10 @@ function computeDashKpiValue(
     case "sales_orders": return { value: String(splitVendorOrders(vendor).so) };
     case "total_spent": return { value: formatCurrency(vendor.totalSpent) };
     case "outstanding": return { value: formatCurrency(vendor.outstandingBalance) };
-    case "avg_order_value": return {
-      value: formatCurrency(vendor.totalOrders > 0 ? vendor.totalSpent / vendor.totalOrders : 0),
-      change: `↘ ${formatCurrency(240)}`, changeColor: "#EF4444",
-    };
+    // No change chip (27 Nov 2026): a partner has no dated orders to compare
+    // with, and the hard-coded 240 read as pesos in one view and rupees
+    // (↘ ₨3,943.20) in the other.
+    case "avg_order_value": return { value: formatCurrency(dashKpiAmount("avg_order_value", vendor) ?? 0) };
     case "days_payable": return { value: "23 Days" };
     case "net_margin": return { value: `${(vendor.netProfitMargin ?? 0).toFixed(2)}%` };
     case "credit_limit": return { value: formatCurrency(vendor.creditLimit) };
@@ -3800,22 +3817,29 @@ function DashboardTab({ vendor, cfg, formatCurrency, formatDate, activeWidgets, 
         <DashInfoCard title="Financial Summary" icon={Wallet} tooltip="Financial overview including currency, cash flow, and outstanding obligations for this partner.">
           <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 mb-3">
             <div className="min-w-0">
-              {/* The partner's currency — the default on every transaction with it. */}
+              {/* The partner's currency — the default on every transaction with it.
+                  Named with its code, "Mexican Peso (MXN)": the peso's own "$"
+                  reads as US dollars (Mahreen, 27 Nov 2026, PA-3). */}
               <DashInfoLabel tooltip={currencyInfo.source === "partner"
                 ? "Set on this partner. Every transaction with it defaults to this currency."
                 : `Inherited from its partner group${currencyInfo.group?.name ? `, ${currencyInfo.group.name}` : ""}. Every transaction with it defaults to this currency.`}>Currency</DashInfoLabel>
               <p className="text-[12px] text-slate-700 flex items-center gap-1.5 min-w-0" style={{ fontWeight: 600 }}>
                 <CurrencyFlag code={currencyInfo.code} />
-                <span className="truncate">{getCurrency(currencyInfo.code)?.name ?? currencyInfo.code} ({getCurrency(currencyInfo.code)?.symbol ?? currencyInfo.code})</span>
+                <span className="truncate">{getCurrency(currencyInfo.code)?.name ?? currencyInfo.code} ({currencyInfo.code})</span>
               </p>
-              {/* Its default exchange rate, set beside the currency in Billing & Shipping. */}
-              <p
-                className="text-[10.5px] text-slate-400 mt-0.5 truncate"
-                style={{ fontWeight: 500 }}
-                title={rateTypeInfo.source === "partner" ? "Default exchange rate, set on this partner" : `Default exchange rate, inherited from ${rateTypeInfo.group?.name ?? "its partner group"}`}
-              >
-                {RATE_TYPE_LABEL[rateTypeInfo.type]} rate by default
-              </p>
+              {/* Its default exchange rate, set beside the currency in Billing &
+                  Shipping, then both of today's rates on hover (Mahreen, 27 Nov
+                  2026, PA-1). No icon for a partner in the base currency. */}
+              <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                <p
+                  className="text-[10.5px] text-slate-400 truncate"
+                  style={{ fontWeight: 500 }}
+                  title={rateTypeInfo.source === "partner" ? "Default exchange rate, set on this partner" : `Default exchange rate, inherited from ${rateTypeInfo.group?.name ?? "its partner group"}`}
+                >
+                  {RATE_TYPE_LABEL[rateTypeInfo.type]} by default
+                </p>
+                <RateTypeInfo currency={currencyInfo.code} className="-my-1" />
+              </div>
             </div>
             <div className="min-w-0">
               <DashInfoLabel>Pay To</DashInfoLabel>
@@ -4299,12 +4323,15 @@ function LocKpiInsightsDrawer({ open, onOpenChange, activeKpis, onToggleKpi, all
   );
 }
 
-function DraggableKpiCard({ index, kpiKey, label, value, valueNode, subtitle, iconName, tooltip, change, changeColor, moveCard, onRemove }: {
+function DraggableKpiCard({ index, kpiKey, label, value, valueNode, subValue, subtitle, iconName, tooltip, change, changeColor, moveCard, onRemove }: {
   index: number; kpiKey: string; label: string; value: string;
   /** When provided, replaces the default `<p>{value}</p>` render with a custom
    *  node — used by KPIs whose value isn't a plain string (e.g. Top Item by
    *  Spend renders an avatar + part-number link + % pill). */
   valueNode?: React.ReactNode;
+  /** A small muted line under the value: the partner's own amount under a
+   *  figure converted to base, "MXN 2,500,000.00" (Mahreen, 27 Nov 2026, PA-2). */
+  subValue?: React.ReactNode;
   subtitle?: string; iconName?: string; tooltip?: string;
   change?: string; changeColor?: string; moveCard: (from: number, to: number) => void; onRemove?: () => void;
 }) {
@@ -4406,6 +4433,9 @@ function DraggableKpiCard({ index, kpiKey, label, value, valueNode, subtitle, ic
             <p className="text-[15px] text-slate-700 tracking-tight whitespace-nowrap" style={{ fontWeight: 600, lineHeight: 1.2 }}>{value}</p>
           )}
         </div>
+        {subValue != null && (
+          <p className="text-[10px] text-slate-400 tabular-nums truncate mt-0.5" style={{ fontWeight: 500 }}>{subValue}</p>
+        )}
       </div>
       {/* Remove button — bottom-right on hover */}
       {onRemove && (
@@ -4584,6 +4614,10 @@ const LOCATION_IMAGES = [
   "https://images.unsplash.com/photo-1670107767801-e40f61540f5a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtYW51ZmFjdHVyaW5nJTIwcGxhbnQlMjBleHRlcmlvcnxlbnwxfHx8fDE3NzMyMzk4Mjd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
 ];
 
+/** Lower case without accents, for mock emails and sites: "General Motors
+ *  de México" → "general motors de mexico", not "...de mxico". */
+const asciiLower = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 function generateLocationsFromVendor(vendor: Vendor): PartnerLocationData[] {
   // Determine which roles the partner itself plays — a customer-only
   // partner can't have a vendor location and vice versa. Default to
@@ -4648,7 +4682,7 @@ function generateLocationsFromVendor(vendor: Vendor): PartnerLocationData[] {
       createdBy: creator,
       lastUpdated: updDate.toISOString(),
       phone: `+1 (${300 + (seed % 700)}) ${100 + (idx * 37 % 900)}-${1000 + (seed * 13 % 9000)}`,
-      email: `${locName.toLowerCase().replace(/[^a-z0-9]+/g, ".")}@${vendor.companyName.toLowerCase().replace(/[^a-z0-9]+/g, "")}.com`,
+      email: `${asciiLower(locName).replace(/[^a-z0-9]+/g, ".")}@${asciiLower(vendor.companyName).replace(/[^a-z0-9]+/g, "")}.com`,
       // Deterministically leave a handful of locations without images so the Google Maps
       // fallback gets exercised in real demo data. Skips ~25% of cards (idx 1, 5, 9, 13, ...).
       image: idx % 4 === 1 ? undefined : LOCATION_IMAGES[(seed + idx) % LOCATION_IMAGES.length],
@@ -6425,7 +6459,7 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
           {selectedLocation && (() => {
             const loc = selectedLocation;
             const locAddress = `${loc.address}, ${loc.city}, ${loc.state} ${loc.zipCode}`;
-            const locWebsite = `www.${vendor.companyName.toLowerCase().replace(/[^a-z0-9]/g, "")}.com`;
+            const locWebsite = `www.${asciiLower(vendor.companyName).replace(/[^a-z0-9]/g, "")}.com`;
             const locLandline = `(${loc.phone.replace(/[^\d]/g, "").slice(1, 4)}) ${loc.phone.replace(/[^\d]/g, "").slice(4, 7)}-${loc.phone.replace(/[^\d]/g, "").slice(7, 11)}`;
 
             // Trimmed tab set per stakeholder feedback ("too cluttered, full
@@ -7401,7 +7435,7 @@ function PartnerLocationsTab({ vendor, cfg, formatDate, formatCurrency, initialL
                                       <DashInfoLabel tooltip="Set on the partner; every location uses it.">Currency</DashInfoLabel>
                                       <p className="text-[12px] text-slate-700 flex items-center gap-1.5 min-w-0" style={{ fontWeight: 600 }}>
                                         <CurrencyFlag code={currencyInfo.code} />
-                                        <span className="truncate">{getCurrency(currencyInfo.code)?.name ?? currencyInfo.code} ({getCurrency(currencyInfo.code)?.symbol ?? currencyInfo.code})</span>
+                                        <span className="truncate">{getCurrency(currencyInfo.code)?.name ?? currencyInfo.code} ({currencyInfo.code})</span>
                                       </p>
                                     </div>
                                     <div className="min-w-0">

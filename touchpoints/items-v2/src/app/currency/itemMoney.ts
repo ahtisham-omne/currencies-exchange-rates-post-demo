@@ -4,8 +4,8 @@ import { usdToBase } from './vendorFx';
 
 /* ── Item amounts (spec 4.1) ──────────────────────────────────────────
  * Item prices, costs and valuations stay in the base currency. The design
- * writes them in USD; they are restated in base at the last sync's
- * mid-market rate, so each figure keeps its place relative to the others. */
+ * writes them in USD; they are restated in base at the last read's
+ * daily market rate, so each figure keeps its place relative to the others. */
 
 /** A unit price or valuation in base, to the cent: ₨6,824.31. */
 export const baseMoney = (usd: number) => formatMoney(usdToBase(usd), BASE_CURRENCY);

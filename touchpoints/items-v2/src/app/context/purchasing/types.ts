@@ -131,7 +131,7 @@ export interface QualifiedVendorConfig {
   /** Pricing-rule ids attached to this qualified-vendor row. */
   appliedPricingRuleIds?: string[];
   /** The rate the vendor's prices convert to base at (spec 4.1, 3.5):
-   *  today's mid-market rate (read-only) or the corporate rate. */
+   *  today's daily market rate (read-only) or the corporate rate. */
   rateType?: RateType;
   /** A corporate rate entered for this vendor (base per 1 unit). */
   exchangeRate?: string;

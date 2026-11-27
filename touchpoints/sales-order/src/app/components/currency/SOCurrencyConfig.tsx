@@ -7,10 +7,10 @@ import type { SalesOrder } from "@/app/components/so/types";
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "@/app/currency/currencies";
 import { formatMoney, formatRate, formatRateDate, moneyPrefix } from "@/app/currency/money";
 import { crossRate, customerCurrency, roundTo, soFx } from "@/app/currency/soFx";
-import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
+import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { DEFAULT_ACCOUNT_ID, getCompanyAccount, isEligibleAccount } from "@/app/currency/companyAccounts";
 import { CurrencyFlag } from "./CurrencyChip";
-import { CompareRatesHover } from "./CompareRatesHover";
+import { RateTypeInfo } from "./RateTypeInfo";
 import { linkProvider } from "./ProviderLink";
 import {
   AccountPicker,
@@ -35,8 +35,8 @@ import {
  *    account the customer's payment goes to, in the base currency or the
  *    order's (companyAccounts.ts).
  *  - "Base equivalent": the total in the base currency at the order's rate.
- *  - "Exchange rate": the order date's (or the quote's), mid-market
- *    (read-only) or corporate (finance's, which can be changed on the
+ *  - "Exchange rate": the order date's (or the quote's), the daily market
+ *    rate (read-only) or the corporate rate (finance's, which can be changed on the
  *    order), with its date. A new version can take today's rate.
  * Laid out as Purchase Orders has it (POCurrencyConfigDialog, 25 Nov 2026).
  * The configuration is read-only once the order is confirmed (leaves
@@ -94,9 +94,9 @@ export function SOCurrencySummary({ so, total, onViewConfig }: { so: SalesOrder;
   }
 
   const rateTip = fromQuote
-    ? `The ${RATE_TYPE_LABEL[fx.rateType].toLowerCase()} rate from quote ${fromQuote} (${formatRateDate(fx.rateDate)}).`
+    ? `The ${RATE_TYPE_LABEL[fx.rateType].toLowerCase()} from quote ${fromQuote} (${formatRateDate(fx.rateDate)}).`
     : fx.rateType === "mid"
-      ? `The mid-market rate on ${formatRateDate(fx.rateDate)}, the order date · ${RATE_PROVIDER}`
+      ? `The daily market rate on ${formatRateDate(fx.rateDate)}, the order date · ${RATE_PROVIDER}`
       : so.rateEdited
         ? `A corporate rate entered on this order (${formatRateDate(fx.rateDate)})`
         : `Finance's corporate rate in effect on ${formatRateDate(fx.rateDate)}, the order date`;
@@ -198,13 +198,13 @@ function AmountRow({ text, picker }: { text: string; picker: React.ReactNode }) 
   );
 }
 
-/** The time of day the provider's rates sync, e.g. "7:30 PM". */
-const SYNC_TIME = new Date(LAST_SYNC).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-
-/** Under the rate (25 Nov 2026): when a mid-market rate was last updated,
- *  or from when a corporate rate is in effect. Not the order date. */
+/** Under the rate: the day a daily market rate was read, or from when a
+ *  corporate rate is in effect. A rate is read once a day and fixed for
+ *  that date, so no time of day (Eli's ruling, 26 Nov 2026): "Read on
+ *  Nov 09, 2026", the order's rate date, instead of "Rate updated as of
+ *  {date}, {time}". */
 export function rateAsOfLine(type: RateType, date: string, effectiveDate?: string | null, entered?: boolean): string {
-  if (type === "mid") return `Rate updated as of ${formatRateDate(date)}, ${SYNC_TIME}`;
+  if (type === "mid") return `Read on ${formatRateDate(date)}`;
   if (entered) return `Entered on this order · effective from ${formatRateDate(date)}`;
   return `Effective from ${formatRateDate(effectiveDate ?? date)}`;
 }
@@ -221,8 +221,8 @@ function RateCard({ from, rate, type, source, day }: { from: string; rate: numbe
         <div>1 {from} = {formatRate(rate)} {BASE_CURRENCY}</div>
         <div className="text-slate-500" style={{ fontWeight: 400 }}>1 {BASE_CURRENCY} = {formatRate(1 / rate)} {from}</div>
       </div>
-      {/* rateAsOfLine: "Rate updated as of Apr 10, 2026, 7:30 PM" or
-          "Effective from Apr 1, 2026". The rate itself never locks
+      {/* rateAsOfLine: "Read on Nov 09, 2026" or "Effective from
+          May 01, 2026". The rate itself never locks
           (25 Nov 2026); only the configuration does, once the order is
           confirmed. */}
       <div className="mt-1.5 text-[10.5px] text-slate-400 tabular-nums">{day}</div>
@@ -345,8 +345,8 @@ export function SOCurrencyConfigDialog({
   /* The configuration is read-only once the order is confirmed; the rate
      itself shows no lock (25 Nov 2026). */
   const locked = soRateLocked(so);
-  /* Under the rate: when the mid-market rate was updated, or from when the
-     corporate rate is in effect (25 Nov 2026). */
+  /* Under the rate: the day the daily market rate was read (the order's
+     rate date), or from when the corporate rate is in effect. */
   const rateDay = rateAsOfLine(type, fx.rateDate, corpQuote.effectiveDate, rateEdited);
 
   return (
@@ -434,9 +434,11 @@ export function SOCurrencyConfigDialog({
                       corporateAvailable={corpQuote.rate != null}
                     />
                   )}
-                  {/* Compare rates (Nophil review item 3, 25 Nov 2026): both
-                      rates for the pair on the order's rate date. Read-only. */}
-                  <CompareRatesHover currency={currency} date={fx.rateDate} selected={type} />
+                  {/* The rate info hover (Mahreen, 27 Nov 2026, PA-1): both
+                      rates for the pair on the order's rate date and the gap.
+                      Read-only. It replaces the 25 Nov "Compare rates"
+                      hover. Nothing for the base currency. */}
+                  <RateTypeInfo currency={currency} date={fx.rateDate} align="end" className="-ml-1" />
                 </div>
                 {type === "corporate" && !readOnly ? (
                   <div className="h-10 w-full rounded-lg px-3 flex items-center gap-1.5 text-[13px] bg-white border border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">
@@ -489,7 +491,7 @@ export function SOCurrencyConfigDialog({
               disabled={readOnly}
               className="inline-flex items-center gap-1.5 text-[11.5px] text-slate-500 hover:text-slate-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               style={{ fontWeight: 500 }}
-              title={fromQuote ? `The quote's currency, ${BASE_CURRENCY} account 1010 and the mid-market rate` : `The customer's currency, ${BASE_CURRENCY} account 1010 and the mid-market rate`}
+              title={fromQuote ? `The quote's currency, ${BASE_CURRENCY} account 1010 and the daily market rate` : `The customer's currency, ${BASE_CURRENCY} account 1010 and the daily market rate`}
             >
               <RotateCcw className="w-3 h-3" />
               Reset

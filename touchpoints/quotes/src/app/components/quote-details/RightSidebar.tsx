@@ -1280,6 +1280,12 @@ export function RightSidebar({
      live data is present, fall back to the quote's `totalValue` so
      listing and sidebar agree. */
   const computedGrandTotal = subtotal - livePricingRulesAmount + liveAdjustmentNet;
+  /* Counts for the summary's captions, from the live lines (27 Nov 2026):
+     the lines on the quote, and the lines an active pricing rule changes. */
+  const summaryLineCount = quoteLines.length;
+  const ruleLineCount = pricingAPI
+    ? pricingAPI.breakdowns.filter((b) => b.discountAmount !== 0 || b.premiumAmount !== 0).length
+    : 0;
   const liveGrandTotal = grandTotalProp ?? (livePricingRulesAmount !== 0 || liveAdjustmentNet !== 0 ? computedGrandTotal : (quoteGrandTotal ?? subtotal));
   void resolvedShipmentTotal;
 
@@ -1534,8 +1540,10 @@ export function RightSidebar({
               {/* In the page's currency, the other one on hover. */}
               <DocMoney value={liveGrandTotal}>{fmtCurrency(liveGrandTotal)}</DocMoney>
             </p>
+            {/* The line count, as the Line Items card counts them (27 Nov
+                2026: was a fixed "5 items" against the table's 50 lines). */}
             <p className="text-slate-500 mt-1 truncate" style={{ fontSize: 11, fontWeight: 400, fontFamily: 'Inter, system-ui, sans-serif' }}>
-              5 items
+              {summaryLineCount} {summaryLineCount === 1 ? 'item' : 'items'}
             </p>
           </div>
 
@@ -1571,7 +1579,7 @@ export function RightSidebar({
               </div>
               {hasPricingRules ? (
                 <SummaryInfoRow
-                  label={`${livePricingRuleCount} rules · applied to 5 items`}
+                  label={`${livePricingRuleCount} ${livePricingRuleCount === 1 ? 'rule' : 'rules'} · applied to ${ruleLineCount} ${ruleLineCount === 1 ? 'item' : 'items'}`}
                   onClick={() => setShowPricingRulesManageModal(true)}
                   color={pricingRulesNet > 0 ? '#7C3AED' : pricingRulesNet < 0 ? 'var(--success)' : undefined}
                 />

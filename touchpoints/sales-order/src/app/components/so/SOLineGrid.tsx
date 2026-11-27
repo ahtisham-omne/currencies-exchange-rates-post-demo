@@ -21,9 +21,12 @@ import { Button } from "./ui/Button";
 import { itemListPrice } from "./soMoney";
 import { useDocCurrency, useDocMoney, useDocOtherText, useDocView } from "@/app/components/currency/docCurrencyContext";
 import { DocMoney } from "@/app/components/currency/DocCurrency";
-import { EstimatePriceIcon } from "@/app/components/currency/EstimatePriceIcon";
+import { EstimateChip, EstimatePriceIcon, itemPriceCaption } from "@/app/components/currency/EstimatePriceIcon";
+import { LineItemsRateNote, PricesInChip, TotalFxHover } from "@/app/components/currency/LineItemsCurrency";
 import { formatAmount, moneyPrefix } from "@/app/currency/money";
 import { roundTo } from "@/app/currency/soFx";
+import { estimateBasePrice } from "@/app/currency/itemPrices";
+import { findCatalogItem } from "./store";
 import { getLineItemImage } from "./lineItemImage";
 import "./line-table-responsive.css";
 
@@ -49,11 +52,9 @@ interface SOLineGridProps {
      auto-version confirm flow the PPU edits already use. */
   onRequestUomChange?: (line: SOLine, newUom: string) => void;
   requiresVersionFirst?: boolean;
-  /* Shared pricing/adjustments APIs so the TOTAL column can render
-     the line's true total (subtotal + line-scoped rules + line-scoped
-     adjustments) instead of the bare line subtotal. The Advanced
-     Configurator already shows the same breakdown — they should
-     reconcile. */
+  /* Shared pricing/adjustments APIs for the TOTAL column's breakdown
+     hover, which lists the line's rules and adjustments as applied in the
+     Order summary. The Total itself is qty × unit price (27 Nov 2026, D4). */
   pricingAPI?: import('./usePricingRules').PricingRulesAPI;
   adjustmentsAPI?: import('./useAdjustments').AdjustmentsAPI;
   /* View controls the parent puts at the start of the toolbar's
@@ -119,14 +120,21 @@ function PriceCapsule({
      modal on that callback. */
   requiresVersionFirst,
   onRequestVersionConfirm,
+  estimate,
+  caption,
 }: {
   price: number; unit?: string; cancelled?: boolean; editable?: boolean;
   onChangePrice?: (v: number) => void;
   requiresVersionFirst?: boolean;
   onRequestVersionConfirm?: (newPrice: number, applyCallback: () => void) => void;
+  /** An estimate (the item has no price in the order's currency): "Est." before the price (4d). */
+  estimate?: boolean;
+  /** A small muted line under the price, e.g. "Item's USD price" (4d). */
+  caption?: string;
 }) {
   /* Prices are kept in the order's currency (spec 4.3) and shown, and typed,
-     in the page's: base by default, the customer's with the header toggle.
+     in the page's: the customer's by default (27 Nov 2026), base with the
+     Line Items toolbar's switch.
      A price typed in base is converted at the order's rate and rounded to the
      customer currency's minor unit; an untouched input keeps the stored
      price (a round trip through base would nudge it). */
@@ -176,7 +184,9 @@ function PriceCapsule({
           small slimmer gray UOM label on the same baseline. Capsule chrome
           and absolutely-positioned UOM stay in editable mode. */}
       {!editing && !editable ? (
+        <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 3 }}>
         <span style={{ display: "inline-flex", alignItems: "baseline", gap: 4, fontFamily: "Inter, system-ui, sans-serif" }}>
+          {estimate && !isCan && <span className="self-center"><EstimateChip /></span>}
           {/* The other currency on hover. */}
           <DocMoney value={price}>
             <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1, marginRight: 4 }}>{prefix}</span>
@@ -187,6 +197,10 @@ function PriceCapsule({
           <span style={{ fontSize: 11, fontWeight: 500, color: "var(--muted-foreground)", lineHeight: 1, whiteSpace: "nowrap" }}>
             {uomLabel}
           </span>
+        </span>
+          {caption && !isCan && (
+            <span style={{ fontSize: 10, fontWeight: 400, color: "#9CA3AF", lineHeight: 1, whiteSpace: "nowrap" }}>{caption}</span>
+          )}
         </span>
       ) : editing ? (
         <div
@@ -222,6 +236,7 @@ function PriceCapsule({
           tabIndex={editable ? 0 : -1}
           title={other ? `${formatted} · ${other.replace(/^≈ /, "")} ${inBase ? "customer currency" : "base currency"}` : formatted}
         >
+          {estimate && <span style={{ marginRight: 4, flexShrink: 0, display: "inline-flex" }}><EstimateChip /></span>}
           <span style={{ fontSize: 12, color: "var(--muted-foreground)", fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>{prefix}</span>
           {/* Long values truncate with an ellipsis inside the capsule
              rather than spilling into the next column. The `title`
@@ -241,6 +256,7 @@ function PriceCapsule({
           userSelect: "none", whiteSpace: "nowrap",
         }}>
           {uomLabel}
+          {caption && !editing && <> · {caption}</>}
         </span>
       )}
 
@@ -436,6 +452,15 @@ function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds
 }) {
   const formatCurrencyValue = useDocMoney();
   const docCurrency = useDocCurrency();
+  /* An estimated price: the base price it was converted from (for the
+     line's unit) and the order's rate, for the hover (4d). */
+  const estimate = (() => {
+    if (line.priceSource !== "estimate" || !docCurrency.fx) return null;
+    const item = findCatalogItem(line.itemCode);
+    if (!item) return null;
+    const rate = docCurrency.fx.rate;
+    return { basePrice: estimateBasePrice(item, line.unitPrice, docCurrency.currency, rate), rate };
+  })();
   const isExp = expandedRows.has(line.id);
   const isCan = line.cancelled;
   const isSel = selectedLineIds.has(line.id);
@@ -680,27 +705,33 @@ function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds
             onChangePrice={v => onUpdateLine?.(line.id, { unitPrice: v })}
             requiresVersionFirst={requiresVersionFirst}
             onRequestVersionConfirm={(newPrice, applyCb) => onRequestPriceVersionConfirm?.(line.id, newPrice, applyCb)}
+            estimate={estimate != null}
+            caption={line.priceSource === "regional" && docCurrency.fx ? itemPriceCaption(docCurrency.currency) : undefined}
           />
-          {/* 25 Nov 2026 (Nophil review item 2): the item has no price in the
-              order's currency, so the line took the base price at the order's
-              rate. Gone once the price is typed by hand. */}
-          {line.priceSource === "estimate" && !isCan && <EstimatePriceIcon currency={docCurrency.currency} rateDate={docCurrency.fx?.rateDate ?? docCurrency.rateDate} />}
+          {/* 4d (Mahreen, 27 Nov 2026; waiting on Eli): the item has no price
+              in the order's currency, so the line took the base price at the
+              order's rate: "Est." before the price, and this icon says what
+              it was converted from. Gone once the price is typed by hand. */}
+          {estimate && !isCan && (
+            <EstimatePriceIcon
+              currency={docCurrency.currency}
+              basePrice={estimate.basePrice}
+              rate={estimate.rate}
+              rateType={docCurrency.fx?.rateType}
+              date={docCurrency.fx?.rateDate ?? docCurrency.rateDate}
+            />
+          )}
         </div>
       </td>
       <td className="li-fig li-end" data-label="Total" style={{ padding: "10px 8px", verticalAlign: "top", textAlign: "right", maxWidth: 0 }}>
         {!isCan ? (() => {
-          /* Line TOTAL = baseSubtotal + line-scoped pricing-rule impact
-             + line-scoped one-time adjustment net. The breakdown sub-
-             line was replaced with a hover card that itemises each
-             rule and adjustment so users see the full composition
-             without polluting every row. */
-          const baseSubtotal = line.orderedQty * line.unitPrice;
-          const ruleBreakdown = pricingAPI?.breakdowns?.find((b) => b.lineId === line.id);
-          const ruleDelta = ruleBreakdown ? (ruleBreakdown.premiumAmount - ruleBreakdown.discountAmount) : 0;
-          const adjBreakdown = adjustmentsAPI?.lineBreakdowns?.get(line.id);
-          const adjDelta = adjBreakdown ? adjBreakdown.net : 0;
-          const lineTotal = baseSubtotal + ruleDelta + adjDelta;
-          const hasOverlay = ruleDelta !== 0 || adjDelta !== 0;
+          /* Line TOTAL = qty × unit price (27 Nov 2026, D4; Mahreen 4b).
+             Pricing rules and one-time adjustments apply only in the Order
+             summary, so the lines add up to its Subtotal. (Until then the
+             line added its rule and adjustment deltas, and the lines never
+             summed to the Subtotal.) The hover card still lists the line's
+             rules and adjustments, as applied in the Order summary. */
+          const lineTotal = line.orderedQty * line.unitPrice;
           return (
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <PriceBreakdownHoverCard
@@ -840,6 +871,7 @@ export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDel
   // Item peek modal — opens from any line thumbnail in the grid.
   const { open: openItemQuickView, modal: itemQuickViewModal } = useItemQuickView();
   const money = useDocMoney();
+  const { currency: docCode } = useDocCurrency();
   const previewLine = (line: SOLine) => {
     openItemQuickView({
       code: line.itemCode,
@@ -878,13 +910,16 @@ export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDel
   };
   const cancelledLines = so.lines.filter(l => l.cancelled);
   const activeLines = so.lines.filter(l => !l.cancelled);
+  /* The lines added up (qty × unit price each, D4): the Order summary's
+     Subtotal (summarizeSO), in the order's currency. */
+  const linesTotal = roundTo(docCode, activeLines.reduce((s, l) => s + l.orderedQty * l.unitPrice, 0));
   const fullyAllocCount = activeLines.filter(l => l.allocatedQty >= l.orderedQty).length;
   const partAllocCount = activeLines.filter(l => l.allocatedQty > 0 && l.allocatedQty < l.orderedQty).length;
   const isDraft = so.status === "Draft";
   const isPendingConfirm = so.status === "Pending Review";
   // QTY/UOM first, then PPU
   // Wider PPU + TOTAL columns so full numbers fit ("$1,400,000.00" needs
-  // ~140px; amounts in base, the default view, run longer:
+  // ~140px; amounts in base (the switch's other view) run longer:
   // "₨13,424,700.00"). At 100s of billions the cell still truncates with
   // `…` and shows the full number on hover via the `title` attribute.
   /* QTY / UOM was 100px which clipped the dropdown the moment the user
@@ -927,6 +962,9 @@ export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDel
           </div>
           <span className="text-slate-700" style={{ fontSize: 13, fontWeight: 600 }}>Line Items</span>
           <NumberPill count={activeLines.length} />
+          {/* 4c (Mahreen, 27 Nov 2026, proposed): the currency the order's
+              prices are in. Nothing on a base-currency order. */}
+          <PricesInChip />
           {/* Status sub-pills — Partner StatusPill chrome: rounded-full,
               padding 2px 10px, fontSize 11, hairline border tinted by tone. */}
           {selectedLineIds.size > 0 ? (
@@ -985,6 +1023,10 @@ export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDel
           )}
         </div>
         <div className="flex items-center flex-wrap justify-end ml-auto" style={{ gap: "6px" }}>
+          {/* 4c (proposed): the order's rate, said once for every line, beside
+              the Base Currency | Customer Currency switch. The lines carry no
+              rate chip of their own; it is in their hovers. */}
+          <LineItemsRateNote className="mr-1.5" />
           {toolbarView}
           {selectedLineIds.size > 0 ? (
             // Bulk action bar — direct port of Quote `ItemsTabTableClean`:
@@ -1141,6 +1183,29 @@ export function SOLineGrid({ so, onAddLine, onAllocateLine, onAllocateAll, onDel
               </tr>
             )}
           </tbody>
+          {/* Total (Mahreen, 27 Nov 2026, 4a): the lines added up, each qty
+              × unit price, so it equals the Order summary's Subtotal (D4).
+              The amount sits under the Total column; the convert icon hangs
+              after it, hover for the total in base, the rate and its date.
+              No icon on a base-currency order. */}
+          {so.lines.length > 0 && (
+            <tfoot>
+              <tr className="li-foot border-t border-border/60">
+                <td colSpan={5} className="li-foot-label text-muted-foreground" style={{ padding: "10px var(--space-inline-gap)", textAlign: "right", fontSize: 12, fontWeight: 500 }}>
+                  Total
+                </td>
+                <td className="li-foot-value" style={{ padding: "10px 8px", textAlign: "right", whiteSpace: "nowrap" }}>
+                  <span className="relative inline-flex items-center justify-end">
+                    <span className="tabular-nums" style={{ fontSize: 13, fontWeight: 700, color: "#1F2937" }}>{money(linesTotal)}</span>
+                    <span className="li-foot-fx absolute left-full top-1/2 -translate-y-1/2 ml-1 inline-flex">
+                      <TotalFxHover total={linesTotal} />
+                    </span>
+                  </span>
+                </td>
+                <td colSpan={3} className="li-foot-pad" />
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
 

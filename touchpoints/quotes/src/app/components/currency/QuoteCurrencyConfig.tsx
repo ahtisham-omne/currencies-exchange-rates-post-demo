@@ -8,9 +8,10 @@ import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "@/app/currency/curre
 import { eligibleAccounts, resolveAccount, type CompanyAccount } from "@/app/currency/companyAccounts";
 import { formatMoney, formatRate, formatRateDate, moneyPrefix } from "@/app/currency/money";
 import { crossRate, customerCurrency, type QuoteFx } from "@/app/currency/qFx";
-import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
+import { RATES_READ_ON, RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
 import { linkProvider } from "./ProviderLink";
+import { RateTypeInfo } from "./RateTypeInfo";
 import {
   CurrencyPicker,
   QuoteCurrencyConfirmDialog,
@@ -29,8 +30,10 @@ import {
  *  - "You receive in": the bank or cash account the customer pays into, in
  *    the base currency or the quote's (currency/companyAccounts.ts).
  *  - "Base equivalent": the total in the base currency at the quote's rate.
- *  - "Exchange rate": the quote date's, mid-market (read-only) or corporate
- *    (finance's, which can be changed on the quote).
+ *  - "Exchange rate": the quote date's, the daily market rate (read-only)
+ *    or corporate (finance's, which can be changed on the quote). An info
+ *    icon after the rate type shows both rates and the gap (RateTypeInfo,
+ *    Mahreen, 27 Nov 2026).
  * Laid out as Purchase Orders has it (POCurrencyConfigDialog, 25 Nov 2026).
  * All of it changes only while the quote is a Draft; once the quote is sent
  * the configuration is read-only. The exchange rate shows no lock of its
@@ -115,7 +118,7 @@ export function QuoteCurrencySummary({
   ];
   const rateTypeTip =
     fx.rateType === "mid"
-      ? `The mid-market rate on ${formatRateDate(fx.rateDate)}, ${rateDayNote(fx, quoteDay)} · ${RATE_PROVIDER}`
+      ? `The daily market rate on ${formatRateDate(fx.rateDate)}, ${rateDayNote(fx, quoteDay)} · ${RATE_PROVIDER}`
       : rateEdited
         ? `A corporate rate entered on this quote (${formatRateDate(fx.rateDate)})`
         : `Finance's corporate rate in effect on ${formatRateDate(fx.rateDate)}, ${rateDayNote(fx, quoteDay)}`;
@@ -218,19 +221,21 @@ function AmountRow({ text, picker }: { text: string; picker: React.ReactNode }) 
   );
 }
 
-/** The time of day the provider's rates sync, e.g. "7:30 PM". */
-const SYNC_TIME = new Date(LAST_SYNC).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-
-/** Under the rate (25 Nov 2026): when a mid-market rate was last updated,
- *  or from when a corporate rate is in effect. Not the quote date. */
+/** Under the rate: the day a daily market rate was read (Eli's ruling, 26
+ *  Nov 2026: read once a day and fixed for that date, so no time of day),
+ *  or from when a corporate rate is in effect. For the quote's rate, its
+ *  rate date; a date after today's read has today's. */
 export function rateAsOfLine(type: RateType, date: string, effectiveDate?: string | null, entered?: boolean): string {
-  if (type === "mid") return `Rate updated as of ${formatRateDate(date)}, ${SYNC_TIME}`;
+  if (type === "mid") {
+    const day = date.slice(0, 10);
+    return `Read on ${formatRateDate(day > RATES_READ_ON ? RATES_READ_ON : day)}`;
+  }
   if (entered) return `Entered on this quote · effective from ${formatRateDate(date)}`;
   return `Effective from ${formatRateDate(effectiveDate ?? date)}`;
 }
 
-/** "● Mid-market · Open Exchange Rates", the rate both ways, and when it is
- *  as of (rateAsOfLine). */
+/** "● Daily market rate · Open Exchange Rates", the rate both ways, and the
+ *  day it was read (rateAsOfLine). */
 function RateCard({ from, rate, type, source, day }: { from: string; rate: number; type: RateType; source: string; day: string }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
@@ -538,6 +543,8 @@ export function QuoteCurrencyConfigDialog({
                       corporateAvailable={corpQuote.rate != null}
                     />
                   )}
+                  {/* Both rates on the quote's rate date, and the gap (Mahreen, 27 Nov 2026). */}
+                  <RateTypeInfo currency={currency} date={fx.rateDate} align="end" className="-ml-1" />
                 </div>
                 {type === "corporate" && !readOnly ? (
                   <div className="h-10 w-full rounded-lg px-3 flex items-center gap-1.5 text-[13px] bg-white border border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">

@@ -7,7 +7,8 @@ import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
 import { currencyForVendorName } from '@/app/currency/invoiceFx';
 import { stampPaymentRate } from '@/app/currency/paymentFx';
-import { buildPaymentGlFx, canPayFrom, defaultPayFromCurrency, paymentRateOf } from '@/app/currency/paymentRules';
+import { buildPaymentGlFx, canPayFrom, canPayFromInRun, defaultPayFromCurrency, paymentRateOf } from '@/app/currency/paymentRules';
+import { localTodayIso } from '@/app/lib/dueBucket';
 import { toBase } from '@/app/currency/rates';
 import type { RateType } from '@/app/currency/rates';
 
@@ -144,11 +145,17 @@ export interface Payment {
    *  invoices' currency here. Payments are always in the invoices' currency
    *  now; older records still read through settledCurrencyOf. */
   settledCurrency?: string;
-  /** From a base-currency account paying foreign invoices: what the bank
-   *  took, in base. The rate is worked out from it and `amount`. */
+  /** From an account in another currency paying foreign invoices: what the
+   *  bank took, in base. The rate is worked out from it and `amount`. From
+   *  a third currency it is `accountAmount` at the payment date's rate of
+   *  the account's currency. */
   bankAmount?: number;
+  /** From an account in a third currency (a CAD account paying a USD
+   *  invoice, 27 Nov 2026, D7): what the bank took, in the account's
+   *  currency. The bank's rate is it over `amount` (1 USD = 1.3935 CAD). */
+  accountAmount?: number;
   /** Base per one unit of `currency`: worked out from the bank's figures
-   *  from a base account, the mid-market rate on the payment date from an
+   *  from a base account, the daily market rate on the payment date from an
    *  account in the invoices' currency. Compared with each invoice's rate,
    *  it makes the realized FX Gain/Loss. */
   exchangeRate?: number;
@@ -288,10 +295,18 @@ export interface PayFromAccount {
 }
 
 /** Accounts that can pay invoices in this currency (Currency & Exchange
- *  Rates, rule 3): in that currency, or in the base currency (the bank
- *  converts). Pickers list the rest greyed, with payFromBlockReason. */
+ *  Rates, rule 3, 27 Nov 2026): any account for a foreign invoice (the bank
+ *  converts from the base or a third currency), a base-currency one for a
+ *  base invoice. */
 export function accountsForCurrency<T extends Pick<PayFromAccount, 'currency'>>(accounts: T[], currency: string): T[] {
   return accounts.filter((a) => canPayFrom(a.currency, currency));
+}
+
+/** Accounts a payment run can pay these invoices from: the run keeps the
+ *  two-currency rule (in that currency or the base; its bank figure is
+ *  entered in base). Pickers list the rest greyed, with runPayFromBlockReason. */
+export function runAccountsForCurrency<T extends Pick<PayFromAccount, 'currency'>>(accounts: T[], currency: string): T[] {
+  return accounts.filter((a) => canPayFromInRun(a.currency, currency));
 }
 
 /** The default account for a payment (rule 5): the first of the method's
@@ -675,7 +690,7 @@ function seedFirstVendorPrepayments(payments: Payment[]): Payment[] {
  * the vendor receives), from an account in that currency or the base
  * currency. One from a base account records what the bank took; the seeds
  * have no bank statement, so that is the amount at the payment date's
- * mid-market rate. Applied last, so no seed sequence changes. */
+ * daily market rate. Applied last, so no seed sequence changes. */
 export function vendorPaymentCurrency(vendor: string): string {
   return resolveRegistryVendor(vendor)?.currency ?? currencyForVendorName(vendor);
 }
@@ -683,7 +698,8 @@ function withPaymentCurrency(list: Payment[]): Payment[] {
   return list.map((p) => {
     const currency = p.currency && p.currency !== 'USD' ? p.currency : vendorPaymentCurrency(p.vendor);
     const account = PAY_FROM_ACCOUNTS.find((a) => a.id === p.bankAccount);
-    const bankAccount = account && canPayFrom(account.currency, currency) ? p.bankAccount : '1010-Operating';
+    // The seeds keep the two-currency rule they were drawn with.
+    const bankAccount = account && canPayFromInRun(account.currency, currency) ? p.bankAccount : '1010-Operating';
     const rated = { ...p, currency, bankAccount, ...(p.exchangeRate ? {} : stampPaymentRate(currency, p.paymentDate)) };
     const fromBase = isBaseCurrency(PAY_FROM_ACCOUNTS.find((a) => a.id === bankAccount)?.currency ?? BASE_CURRENCY);
     return fromBase && !isBaseCurrency(currency) && rated.bankAmount == null
@@ -788,12 +804,36 @@ export const PAYMENT_FX_DEMO: Payment[] = [
 
 /* ── Mark as paid asks for the bank's rate (25 Nov 2026, Nophil item 9) ──
  *   PMT-000123 pays Acme Corp's INV-000221, $10,000.00, from 1010 JPMorgan
- *     Operating (PKR) on Nov 28, 2026. Scheduled on Nov 20 at the mid-market
+ *     Operating (PKR) on Nov 28, 2026. Scheduled on Nov 20 at the daily market
  *     rate, ₨278.5200, so the bank is estimated to take ₨2,785,200.00. Mark
  *     as paid asks for the rate the bank used; at ₨281.2500 it took
  *     ₨2,812,500.00, ₨27,300.00 more than the estimate: an FX Loss. */
+/* ── Scheduled for today: the bank's rate is due (27 Nov 2026, Mahreen 7e) ──
+ *   PMT-000124 pays Pacific Trading Co's USD invoice (INV-000110, or the
+ *     vendor's next open USD invoice if that one isn't open) in full from
+ *     1010 JPMorgan Operating (PKR). It was scheduled a week ago for TODAY
+ *     (dates relative to the demo clock, localTodayIso), so the bank
+ *     converts today: the invoice's Payments tab and Payment History show
+ *     "PMT-000124 was scheduled for today" with Enter rate, which opens Mark
+ *     as paid for the rate the bank gave. Until then it is an estimate at
+ *     today's daily market rate. */
+const daysFromToday = (n: number) => {
+  const d = new Date(`${localTodayIso()}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const DUE_TODAY_INVOICE = (() => {
+  const open = (i: (typeof mockInvoices)[number]) =>
+    i.vendor === 'Pacific Trading Co' && i.currency === 'USD' && i.status === 'Approved' && !i.is_payment_held &&
+    i.type !== 'Pre-Invoice' && i.outstandingBalance > 0 && i.outstandingBalance >= i.amount - 0.004;
+  return (mockInvoices.find((i) => i.invoiceNumber === 'INV-000110' && open(i)) ?? mockInvoices.find(open))?.invoiceNumber;
+})();
+
 export const SCHEDULED_FX_DEMO: Payment[] = [
   paymentFxDemo({ n: 123, invoiceNumber: 'INV-000221', paymentDate: '2026-11-28', scheduledOn: '2026-11-20', bankAccount: '1010-Operating', method: 'Wire', reference: 'WIRE-771221' }),
+  DUE_TODAY_INVOICE
+    ? paymentFxDemo({ n: 124, invoiceNumber: DUE_TODAY_INVOICE, paymentDate: daysFromToday(0), scheduledOn: daysFromToday(-7), bankAccount: '1010-Operating', method: 'Wire', reference: 'WIRE-771224' })
+    : null,
 ].filter((p): p is Payment => p !== null);
 
 export const mockPayments = [

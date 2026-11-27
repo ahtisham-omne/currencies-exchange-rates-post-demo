@@ -9,13 +9,14 @@ import type { MoneyFx } from "./Money";
 /* ── The document's currency, and which one the page shows ────────────
  * An SO's amounts are kept in its currency, the customer's (spec 4.3), at a
  * rate to the base currency taken on the order date. The page shows them in
- * the base currency by default, the customer's amount riding the hover; the
- * header's Base Currency | Customer Currency toggle flips that (`view`). The
+ * the customer's currency by default (27 Nov 2026, D1), the base amount
+ * riding the hover; the Line Items toolbar's Base Currency | Customer
+ * Currency switch flips that (`view`). The
  * SO page puts the currency, its rate and the view here so the pieces (line
  * rows, Order Summary, hover cards, rule, adjustment and freight modals,
  * invoicing) don't each need a prop; creating an SO does the same for the
- * customer's currency at today's rate. Outside a provider, amounts are in
- * base. */
+ * customer's currency at today's rate. Outside a provider (no rate), amounts
+ * are in base. */
 
 export type DocView = "base" | "document";
 
@@ -30,7 +31,7 @@ export interface DocCurrency {
   /** The document's rate date (ISO), also when `fx` is null (a base-currency
    *  order): the design's USD figures convert on it. */
   rateDate?: string;
-  /** Which currency amounts are shown in. Base unless the page says otherwise. */
+  /** Which currency amounts are shown in: the document's unless the page says base. */
   view?: DocView;
 }
 
@@ -38,10 +39,11 @@ export const DocCurrencyContext = React.createContext<DocCurrency>({ currency: B
 
 export const useDocCurrency = () => React.useContext(DocCurrencyContext);
 
-/** Where a document's amounts are shown: base (the default, for a foreign
- *  document with a rate) or the document's own currency. */
+/** Where a document's amounts are shown: its own currency (the default
+ *  since 27 Nov 2026, D1), or base when the page asks for it on a foreign
+ *  document with a rate. */
 export function docInBase(doc: DocCurrency): boolean {
-  return (doc.view ?? "base") === "base" && !!doc.fx && !isBaseCurrency(doc.currency);
+  return (doc.view ?? "document") === "base" && !!doc.fx && !isBaseCurrency(doc.currency);
 }
 
 /** The shown currency, and the conversions between it and the document's. */

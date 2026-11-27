@@ -5,13 +5,15 @@ import type { PayFromAccount } from '@/app/data/mockPayments';
 import { formatMoney } from '@/app/currency/money';
 import { isBaseCurrency } from '@/app/currency/currencies';
 import { CurrencyFlag } from './CurrencyChip';
+import { AddBankAccountRow } from '@/app/components/payments/AddBankAccountRow';
 
 /* ── Pay-from account picker (Currency Touchpoints Map, 24 Nov 2026) ────
  * "1010 · JPMorgan Operating · PKR ▾": the account a document is paid
  * from, beside its "You pay" amount in a Currency Configuration. The caller
- * passes the accounts to list (an invoice: every one; a payment: the base
- * currency or the invoices' own). Each row is flag, label and code, with
- * the balance in the account's currency. Read-only shows it locked. */
+ * passes the accounts to list, in order (the document's currency first,
+ * 27 Nov 2026, Mahreen 7d), and "Add a bank account" closes the list. Each
+ * row is flag, label and code, with the balance in the account's currency.
+ * Read-only shows it locked. */
 
 const iconFor = (a: Pick<PayFromAccount, 'type'>) => (a.type === 'cash' ? Banknote : a.type === 'card' ? Wallet : Landmark);
 
@@ -108,6 +110,10 @@ export function PayFromAccountPicker({
               </button>
             );
           })}
+        </div>
+        {/* Add a bank account (27 Nov 2026, Mahreen 7d): set up in Cash Management. */}
+        <div className="mt-1 pt-1 border-t border-slate-100">
+          <AddBankAccountRow onClick={() => setOpen(false)} />
         </div>
       </PopoverContent>
     </Popover>

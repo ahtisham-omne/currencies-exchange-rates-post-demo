@@ -1,7 +1,7 @@
 // Pair detail: the Rate history tab. CoA's register-tab pattern (spec-detail
 // §5.1): a flat table in a full-width card, search, density, Columns, and an
 // Effective Date pill on the quick-filter row (CoA's ledger Amount pill, with dates). It lists one rate type, the page's own:
-// the mid-market page shows the provider's syncs, the corporate page the
+// the daily market rate page shows the provider's daily reads, the corporate page the
 // corporate rate's changes. The page's range does not narrow it.
 import { useEffect, useMemo, useState } from 'react'
 import { SourceLink } from './SourceLink'
@@ -15,7 +15,7 @@ import { DateRangePill } from '../../coa/components/DateRangePill'
 import { EmptyCell } from '../../coa/components/cells'
 import { PersonCell, personText } from '../../coa/components/AuditCells'
 import { cn, fmtDate } from '../../coa/lib/utils'
-import { fmtInverse, fmtRate, fmtSignedPct } from './rateModel'
+import { BASE, fmtBaseInUnit, fmtRate, fmtSignedPct, fmtUnitInBase } from './rateModel'
 import type { RateHistoryRow } from './pairData'
 
 interface HistoryFilters { from: string; to: string }
@@ -23,10 +23,10 @@ const NO_FILTERS: HistoryFilters = { from: '', to: '' }
 const countFilters = (f: HistoryFilters) => (f.from || f.to ? 1 : 0)
 const matches = (r: RateHistoryRow, f: HistoryFilters) => (!f.from || r.effectiveDate >= f.from) && (!f.to || r.effectiveDate <= f.to)
 
-/** What the Change column means: a mid-market rate against its previous sync,
- *  a corporate rate against the one it replaced. */
+/** What the Change column means: a daily market rate against the previous day's
+ *  read, a corporate rate against the one it replaced. */
 const CHANGE_INFO = {
-  mid: 'How much the mid-market rate moved since the previous sync, as a percentage. Positive means it went up.',
+  mid: 'How much the daily market rate moved since the previous day’s read, as a percentage. Positive means it went up.',
   corporate: 'How much this corporate rate differs from the last one.',
 }
 
@@ -43,15 +43,17 @@ export function RateHistoryTab({ rows, code, isStd }: { rows: RateHistoryRow[]; 
       render: (r, ctx) => <span className="text-sm text-slate-700 tabular-nums whitespace-nowrap" style={{ fontWeight: 500 }}><Marked text={fmtDate(r.effectiveDate)} q={ctx.q} /></span>,
       sortValue: r => `${r.effectiveDate}|${r.at}`, searchText: r => fmtDate(r.effectiveDate), filter: 'date', filterValue: r => r.effectiveDate,
     },
+    // Named by what they show, as the rate lists' columns are (Mahreen's 1d, 27 Nov
+    // 2026); this page is one pair, so they name its currency. Keys kept for saved layouts.
     {
-      key: 'rate', label: 'Rate Value', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]',
-      info: 'One unit of this currency in your base currency.',
-      render: (r, ctx) => <span className="text-sm font-medium text-slate-700 tabular-nums whitespace-nowrap"><Marked text={fmtRate(r.rate)} q={ctx.q} /></span>,
+      key: 'rate', label: `1 ${code} in ${BASE}`, align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]',
+      info: 'What 1 unit of this currency is worth in your base currency.',
+      render: (r, ctx) => <span className="text-sm font-medium text-slate-700 tabular-nums whitespace-nowrap"><Marked text={fmtUnitInBase(r.rate)} q={ctx.q} /></span>,
       sortValue: r => r.rate, searchText: r => fmtRate(r.rate), filter: 'range',
     },
     {
-      key: 'inverse', label: 'Inverse Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]', info: RATE_TOOLTIPS.inverse,
-      render: r => <span className="text-sm text-slate-500 tabular-nums whitespace-nowrap">{fmtInverse(r.rate)}</span>,
+      key: 'inverse', label: `1 ${BASE} in ${code}`, align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[130px]', info: RATE_TOOLTIPS.inverse,
+      render: r => <span className="text-sm text-slate-500 tabular-nums whitespace-nowrap">{fmtBaseInUnit(code, r.rate)}</span>,
       sortValue: r => 1 / r.rate, filter: 'range', filterValue: r => 1 / r.rate,
     },
     {

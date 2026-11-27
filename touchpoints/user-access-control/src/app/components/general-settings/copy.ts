@@ -8,3 +8,6 @@ export const LANGUAGE_TIP = "Language switching is coming in a future release.";
 export const MFA_TIP = "When on, users sign in with a second factor as set by the policies in Security Settings. When off, no policy applies.";
 export const BASE_CURRENCY_TIP =
   "You can change this until your first posting to the general ledger. After that it locks, because every amount in your books is kept in this currency.";
+/** Mahreen's 1c (27 Nov 2026): the company's default exchange rate, under Base Currency. */
+export const DEFAULT_EXCHANGE_RATE_TIP =
+  "Converts amounts on documents that don't choose a rate. Daily market rates are read once a day from Open Exchange Rates; corporate rates are set by your company.";

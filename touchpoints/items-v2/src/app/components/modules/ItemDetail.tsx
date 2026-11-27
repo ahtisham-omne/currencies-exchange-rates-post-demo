@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ItemOverviewTab } from './itemDetail/ItemOverviewTab';
 import { baseCompact, baseMoney } from '@/app/currency/itemMoney';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
-import { fromRegionalDrafts, toRegionalDrafts } from '@/app/currency/regionalPrices';
+import { fromRegionalDrafts, otherCurrencyPricingOf, toRegionalDrafts } from '@/app/currency/regionalPrices';
 import {
   ArrowLeft, 
   ArrowRight,
@@ -1997,13 +1997,19 @@ export function ItemDetail({ item: initialItem, onBack, onEdit, scrollContainerR
       pricing: initialItem?.pricing?.length
           ? initialItem.pricing.map((p) => ({ ...p }))
           : [{ price: initialItem?.price?.toFixed(2) || '0.00', uom: initialItem?.unit || 'Each', id: '1' }],
+      // 27 Nov 2026: how other currencies are priced (Spec D).
+      otherCurrencyPricing: otherCurrencyPricingOf(initialItem),
       regionalPrices: toRegionalDrafts(initialItem?.regionalPrices),
   }));
 
-  // The Edit modal saves regional prices to the item; keep Selling in step.
+  // The Edit modal saves other-currency prices to the item; keep Selling in step.
   useEffect(() => {
-      setConfig(prev => ({ ...prev, regionalPrices: toRegionalDrafts(initialItem?.regionalPrices) }));
-  }, [initialItem?.regionalPrices]);
+      setConfig(prev => ({
+          ...prev,
+          otherCurrencyPricing: otherCurrencyPricingOf(initialItem),
+          regionalPrices: toRegionalDrafts(initialItem?.regionalPrices),
+      }));
+  }, [initialItem?.regionalPrices, initialItem?.otherCurrencyPricing]);
 
   
   const getFileIcon = (type: string) => {
@@ -2524,9 +2530,13 @@ export function ItemDetail({ item: initialItem, onBack, onEdit, scrollContainerR
                    config={config}
                    onConfigChange={(updates) => {
                        setConfig({ ...config, ...updates });
-                       // Regional prices are saved to the item (25 Nov 2026).
-                       if ('regionalPrices' in updates && item && updateItem) {
-                           updateItem(item.id, { regionalPrices: fromRegionalDrafts(updates.regionalPrices) });
+                       // Other-currency prices and their mode are saved to the item (25 and 27 Nov 2026).
+                       if (('regionalPrices' in updates || 'otherCurrencyPricing' in updates) && item && updateItem) {
+                           const next = { ...config, ...updates };
+                           updateItem(item.id, {
+                               otherCurrencyPricing: next.otherCurrencyPricing,
+                               regionalPrices: fromRegionalDrafts(next.regionalPrices),
+                           });
                        }
                    }}
                    item={item}

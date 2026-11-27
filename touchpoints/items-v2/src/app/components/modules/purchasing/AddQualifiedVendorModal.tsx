@@ -1095,7 +1095,7 @@ export function AddQualifiedVendorModal({
       const cur = configById[id] as Record<string, unknown> | undefined;
       if (cur) {
         for (const k of VENDOR_CONFIG_DIFF_KEYS) {
-          // A vendor with no rate type saved is on the default (mid-market).
+          // A vendor with no rate type saved is on the default (the daily market rate).
           if (k === "rateType") {
             if ((cur[k] ?? DEFAULT_RATE_TYPE) !== (base[k] ?? DEFAULT_RATE_TYPE)) keys.add(k);
           } else if (!sameVendorVal(cur[k], base[k])) keys.add(k);
@@ -2028,7 +2028,7 @@ export function AddQualifiedVendorModal({
                           const shippingMethodIds = cfg.shippingMethodIds || [];
                           const appliedRuleIds = cfg.appliedPricingRuleIds || [];
                           /* The vendor quotes in its partner's currency; its rate to base
-                             (mid-market, or corporate) is shared by every selling unit. */
+                             (the daily market rate, or the corporate rate) is shared by every selling unit. */
                           const vfx = vendorRate(v.currency ?? vendorCurrencyFor(v.country ?? v.location), { rateType: cfg.rateType, exchangeRate: cfg.exchangeRate });
                           const setVendorRateType = (t: "mid" | "corporate") => updateVendorConfig(v.id, { rateType: t, exchangeRate: undefined });
                           const setVendorRate = (r: string | null) => updateVendorConfig(v.id, { exchangeRate: r ?? undefined });
@@ -2330,8 +2330,8 @@ export function AddQualifiedVendorModal({
                                                                     />
                                                                   }
                                                                 />
-                                                                {/* The vendor's rate, once, under the price: the Mid-market |
-                                                                    Corporate switch and the rate. Every selling unit converts at it. */}
+                                                                {/* The vendor's rate, once, under the price: the Daily market rate |
+                                                                    Corporate rate switch and the rate. Every selling unit converts at it. */}
                                                                 <VendorRateCard
                                                                   key={`${v.id}:rate`}
                                                                   fx={vfx}

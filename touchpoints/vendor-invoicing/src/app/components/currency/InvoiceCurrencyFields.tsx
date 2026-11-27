@@ -168,7 +168,7 @@ export function InvoiceCurrencyField({
   );
 }
 
-/** Mid-market | Corporate, as the Exchange Rates module names them. */
+/** Daily market rate | Corporate rate, as the Exchange Rates module names them. */
 export function RateTypeToggle({ value, onChange }: { value: RateType; onChange: (t: RateType) => void }) {
   return (
     <span className="ml-auto inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Rate type">
@@ -293,8 +293,9 @@ export function InvoiceExchangeRateField({
     <Label className={LABEL} style={{ fontWeight: 500 }}>
       Exchange Rate{!isBase && !pending && <span className="text-red-500">*</span>}
       <InfoTip>
-        Base currency per 1 unit of the invoice currency, on the Rate as of date. A mid-market rate comes from the
-        rate provider and is read-only; a corporate rate can be changed on the invoice if your role allows it.
+        Base currency per 1 unit of the invoice currency, on the Rate as of date. A daily market rate is read once a
+        day from Open Exchange Rates, fixed for that date and read-only; a corporate rate can be changed on the
+        invoice if your role allows it.
       </InfoTip>
       {!isBase && !pending && <RateTypeToggle value={rateType} onChange={onRateTypeChange} />}
     </Label>
@@ -331,7 +332,7 @@ export function InvoiceExchangeRateField({
           </TooltipContent>
         </Tooltip>
         <p className="text-[11px] text-slate-400 mt-1 truncate">
-          {midQuote.rate != null ? `Today's mid-market rate is ${rateSentence(currency, midQuote.rate)}.` : ''}
+          {midQuote.rate != null ? `Today's daily market rate is ${rateSentence(currency, midQuote.rate)}.` : ''}
         </p>
       </div>
     );
@@ -412,7 +413,7 @@ export function InvoiceExchangeRateField({
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-[260px] p-2.5 bg-white border border-border rounded-lg shadow-md">
             <p className="text-[11px] text-slate-500 leading-snug">
-              Mid-market rates are read-only. Switch to Corporate to use, or change, a corporate rate.
+              Daily market rates are read-only. Switch to Corporate rate to use, or change, a corporate rate.
             </p>
           </TooltipContent>
         </Tooltip>
@@ -439,7 +440,7 @@ export function InvoiceExchangeRateField({
           <span className="truncate" style={{ color: edited ? '#B45309' : 'rgb(148 163 184)' }}>
             {!corporate
               ? // The provider steps aside for the PO chip (it's in the ⓘ too).
-                <>Mid-market rate on {day}{po ? null : <> · <ProviderLink /></>}</>
+                <>Daily market rate on {day}{po ? null : <> · <ProviderLink /></>}</>
               : quote.rate == null
                 ? `No corporate rate for ${currency} on ${day}. Enter the rate to use.`
                 : edited

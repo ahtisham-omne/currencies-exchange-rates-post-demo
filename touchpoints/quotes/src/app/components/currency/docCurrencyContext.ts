@@ -9,14 +9,16 @@ import type { MoneyFx } from "./Money";
 /* ── The document's currency, and which one the page shows ────────────
  * A quote's amounts are kept in its currency, the customer's (spec 4.2,
  * 4.3), at a rate to the base currency taken on the quote date. The page
- * shows them in the base currency by default, the customer's amount riding
- * the hover; the Base Currency | Customer Currency switch (back on 25 Nov
- * 2026, in the Line Items toolbar, foreign-currency quotes only) flips that (`view`, kept per
- * quote for the session in quoteView.ts). The quote page puts the currency, its rate and the view
+ * shows them in that currency by default, base riding the hover (D1, 27
+ * Nov 2026: line items open in the document's currency); the Base Currency
+ * | Customer Currency switch (in the Line Items toolbar, foreign-currency
+ * quotes only) flips that (`view`, kept per quote for the session in
+ * quoteView.ts). The quote page puts the currency, its rate and the view
  * here so the pieces (line rows, Quote Summary, hover cards, rule,
  * adjustment and freight modals, versions) don't each need a prop; creating
  * a quote does the same for the customer's currency at today's rate.
- * Outside a provider, amounts are in base. */
+ * Modals opened from the listing or the board stay in base
+ * (QuoteDocCurrency sets it). Outside a provider, amounts are in base. */
 
 export type DocView = "base" | "document";
 
@@ -32,7 +34,8 @@ export interface DocCurrency {
    *  convert on it, also when `fx` is null (a base-currency quote) or its
    *  rate was taken later (today's rate applied on a new version). */
   rateDate?: string;
-  /** Which currency amounts are shown in. Base unless the page says otherwise. */
+  /** Which currency amounts are shown in. The document's unless the provider
+   *  says otherwise (27 Nov 2026). */
   view?: DocView;
   /** The rate a version of the quote locked in (versions show their amounts
    *  at it); null where it has none on record. */
@@ -43,10 +46,10 @@ export const DocCurrencyContext = React.createContext<DocCurrency>({ currency: B
 
 export const useDocCurrency = () => React.useContext(DocCurrencyContext);
 
-/** Where a document's amounts are shown: base (the default, for a foreign
- *  document with a rate) or the document's own currency. */
+/** Where a document's amounts are shown: its own currency (the default
+ *  since 27 Nov 2026, D1) or base, for a foreign document with a rate. */
 export function docInBase(doc: DocCurrency): boolean {
-  return (doc.view ?? "base") === "base" && !!doc.fx && !isBaseCurrency(doc.currency);
+  return (doc.view ?? "document") === "base" && !!doc.fx && !isBaseCurrency(doc.currency);
 }
 
 /** The shown currency, and the conversions between it and the document's. */

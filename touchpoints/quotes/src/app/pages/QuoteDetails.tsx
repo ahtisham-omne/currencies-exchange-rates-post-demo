@@ -235,12 +235,17 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
     restateSeed: (usd) => roundTo(fx.currency, usd * designFactor),
   });
 
-  /* Live subtotal — sum of each line's `subtotal` (qty × unitPrice
-     after the picker's UoM rescale). Replaces the previously stale
-     `summarizeQuote(quote).grandTotal` that read from the static
-     mockQuotes record. Re-runs whenever the items table writes back. */
+  /* Live subtotal — the sum of the line totals, each qty × unit price as
+     the items table shows it (D4, 27 Nov 2026), so Quote Summary's
+     Subtotal and the table's Total row read the same figure. Replaces the
+     previously stale `summarizeQuote(quote).grandTotal` that read from the
+     static mockQuotes record. Re-runs whenever the items table writes back. */
   const liveSubtotal = useMemo(
-    () => liveLines.reduce((sum: number, l: any) => sum + Number(l?.subtotal ?? l?.total ?? 0), 0),
+    () => liveLines.reduce((sum: number, l: any) => {
+      const qty = Number(l?.quantity);
+      const price = Number(l?.unitPrice);
+      return sum + (Number.isFinite(qty) && Number.isFinite(price) ? qty * price : Number(l?.subtotal ?? l?.total ?? 0));
+    }, 0),
     [liveLines],
   );
 
@@ -250,13 +255,16 @@ export function QuoteDetails({ quoteId: propQuoteId, onBack }: QuoteDetailsProps
      detail page. Safe to mutate here because both `mockQuotes` and
      the created-quotes store are mock in-memory arrays; the proper
      fix would be a store action, but this keeps the listing in sync
-     without a reload. */
+     without a reload. The listing's Quote Value is Quote Summary's
+     Grand Total (27 Nov 2026: it was the Subtotal, before pricing rules
+     and one-time adjustments, so the two never matched). */
+  const listingTotal = liveSubtotal - (pricingAPI.totalDiscount - pricingAPI.totalPremium) + adjustmentsAPI.grandTotal.net;
   useEffect(() => {
     if (!rawQuote) return;
     /* The stored record, not `quote`: with a status override that is a
        fresh copy each render, and the listing would keep the old value. */
-    (rawQuote as { totalValue: number }).totalValue = liveSubtotal;
-  }, [rawQuote, liveSubtotal]);
+    (rawQuote as { totalValue: number }).totalValue = listingTotal;
+  }, [rawQuote, listingTotal]);
 
   /* Projected quote total = post-rule subtotal + adjustment net impact.
      If pricing-rule and one-time discounts together push this negative,

@@ -16,7 +16,7 @@ import { RateTypeChip } from './RateType';
  *   You pay in                          🇵🇰 Pakistani Rupee (PKR)
  *   Base equivalent                              ₨2,833,270.62 PKR
  *   FX variance                                     −₨10,136.20
- *   Exchange rate             1 USD = ₨279.5200 PKR [● Mid-market]
+ *   Exchange rate             1 USD = ₨279.5200 PKR [● Daily market rate]
  *                                                       PO date
  *                    [ ⚙ View currency configuration ]
  *

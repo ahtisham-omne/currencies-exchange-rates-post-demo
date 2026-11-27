@@ -66,7 +66,8 @@ import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, rateSentence } from '@/app/currency/money';
 import { RATE_TYPE_LABEL } from '@/app/currency/rates';
 import { paymentFx, paymentRateLocked, settledCurrencyOf } from '@/app/currency/paymentFx';
-import { needsBankRate, paymentLedger, type PaymentLedger } from '@/app/currency/paymentLedger';
+import { bankRateOf, bankRatePairOf, needsBankRate, paymentAccountCurrencyOf, paymentLedger, type PaymentLedger } from '@/app/currency/paymentLedger';
+import { pairRateText } from '@/app/currency/paymentRules';
 import { MarkPaidDialog } from '@/app/components/payments/MarkPaidDialog';
 import { CurrencyChip, CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
@@ -974,7 +975,7 @@ export function PaymentDetailScreen({
           currency={ledgerFx.currency}
           vendorReceives={payment.amount}
           accounts={PAY_FROM_ACCOUNTS}
-          value={{ accountId: payment.bankAccount, bankTook: ledgerFx.converts ? ledgerFx.cost : null }}
+          value={{ accountId: payment.bankAccount, bankRate: ledgerFx.converts ? String(+bankRateOf(payment).toFixed(4)) : null }}
           youPayIn={ledgerFx.youPayIn}
           paymentDate={payment.paymentDate}
           dayRate={ledgerFx.dayRate}
@@ -991,9 +992,10 @@ export function PaymentDetailScreen({
           open={markPaidOpen}
           onOpenChange={setMarkPaidOpen}
           payments={[payment]}
+          invoices={invoices}
           onConfirm={(rates) => {
             setMarkPaidOpen(false);
-            onMarkPaid(payment.id, rates[settledCurrencyOf(payment)]);
+            onMarkPaid(payment.id, rates[bankRatePairOf(payment)]);
           }}
         />
       )}
@@ -1449,7 +1451,8 @@ function PaymentDetailSidebar({
             {payment.linkedPO && <GridField label="Linked PO" value={`PO ${payment.linkedPO}`} />}
             {/* The rate this payment settled at (Currency & Exchange Rates):
                 worked out from the bank's figures from a base account, the
-                day's mid-market rate from one in the invoices' currency. */}
+                day's daily market rate from one in the invoices' currency.
+                From a third currency, the bank's direct pair (27 Nov 2026, D7). */}
             {!isBaseCurrency(settledCurrencyOf(payment)) && (
               <div className="min-w-0 col-span-2">
                 <Tooltip delayDuration={300}>
@@ -1464,13 +1467,15 @@ function PaymentDetailSidebar({
                       {isPrepay
                         ? 'The rate this advance was paid at. It shows wherever the advance is applied to an invoice.'
                         : ledgerFx?.converts
-                          ? 'Worked out from the bank’s figures: the rupees it took for what the vendor got. The difference from each invoice’s own rate goes to FX Gain or FX Loss.'
-                          : 'Nothing converted (paid from an account in the invoices’ currency), so the payment is valued at the payment date’s mid-market rate. The difference from each invoice’s own rate goes to FX Gain or FX Loss.'}
+                          ? 'The rate the bank gave for what the vendor got. The difference from each invoice’s own rate goes to FX Gain or FX Loss.'
+                          : 'Nothing converted (paid from an account in the invoices’ currency), so the payment is valued at the payment date’s daily market rate. The difference from each invoice’s own rate goes to FX Gain or FX Loss.'}
                     </p>
                   </TooltipContent>
                 </Tooltip>
                 <p className="text-[12px] text-foreground mt-0.5 tabular-nums" style={{ fontWeight: 600 }}>
-                  {rateSentence(settledCurrencyOf(payment), ledgerFx?.rate ?? paymentFx(payment).rate)}
+                  {ledgerFx?.converts
+                    ? pairRateText(settledCurrencyOf(payment), paymentAccountCurrencyOf(payment), bankRateOf(payment))
+                    : rateSentence(settledCurrencyOf(payment), ledgerFx?.rate ?? paymentFx(payment).rate)}
                 </p>
                 <p className="text-[11px] text-slate-500 leading-snug">
                   {ledgerFx?.converts ? (
@@ -1481,7 +1486,7 @@ function PaymentDetailSidebar({
                     </span>
                   )}
                   {' · '}{fmtSidebarDate(payment.rateDate || payment.paymentDate)} (payment date)
-                  {ledgerFx?.converts ? (payment.rateEdited ? ' · from the bank’s figures' : ' · estimated at mid-market') : ''}
+                  {ledgerFx?.converts ? (payment.rateEdited ? ' · the bank’s rate' : ' · estimated at the daily market rate') : ''}
                 </p>
               </div>
             )}
@@ -1598,6 +1603,7 @@ function PaymentDetailSidebar({
               vendorReceives={payment.amount}
               account={ledgerFx.account ?? null}
               bankTook={ledgerFx.converts ? ledgerFx.cost : null}
+              accountTook={payment.accountAmount ?? null}
               rate={ledgerFx.rate}
               paymentDate={payment.paymentDate}
               lines={ledgerFx.lines}

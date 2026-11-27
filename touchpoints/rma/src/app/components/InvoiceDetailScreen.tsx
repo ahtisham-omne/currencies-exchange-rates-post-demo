@@ -3482,7 +3482,7 @@ function ReturnCurrencyConfigHost({
           () => {
             updateRMA(rma.id, { payToAccountId: change.payToAccountId, settlementRateType: change.settlementRateType });
             toast.success('Currency configuration applied', {
-              description: `${rma.rmaNumber} settles at today's ${change.settlementRateType === 'corporate' ? 'corporate' : 'mid-market'} rate until the vendor settles.`,
+              description: `${rma.rmaNumber} settles at today's ${change.settlementRateType === 'corporate' ? 'corporate' : 'daily market'} rate until the vendor settles.`,
             });
           },
           rmaMaterialEditable(rma) ? 'material' : 'minor',

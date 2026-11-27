@@ -1,7 +1,7 @@
-// The "Live exchange rate converter" card body, rebuilt in the kit's look: two
+// The "Exchange rate converter" card body, rebuilt in the kit's look: two
 // sides (currency picker + amount), a swap that trades the two currencies and
 // keeps the From amount, as Google's converter does (1 USD = 278.52 PKR swaps to
-// 1 PKR = 0.0036 USD), a Mid-market / Corporate rate toggle, the corporate
+// 1 PKR = 0.003590 USD), a Daily market / Corporate rate toggle, the corporate
 // empty state and the adaptive footer. The sides are top-level components, so
 // an amount box keeps its focus while you type.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeftRight, Check, ChevronDown, Info, Plus, Search, X } from 'lucide-react'
 import { useCurrencies } from '../../context/CurrencyContext'
 import { useExchangeRates } from '../../context/ExchangeRateContext'
-import { LAST_SYNC, corporateRateInEffect, upcomingRateOf } from '../../data/exchangeRates'
+import { corporateRateInEffect, upcomingRateOf } from '../../data/exchangeRates'
 import type { Currency } from '../../data/currencies'
 import { CONVERTER_SUBTITLE, CONVERTER_TOGGLE_TOOLTIPS, INVERSE_BADGE_TOOLTIP } from '../../utils/rateCopy'
 import { Badge, Banner, Button, Marked, Tooltip, useEscapeToClose } from '../../coa/components/ui'
@@ -177,7 +177,7 @@ function RateTypeToggle({ mode, onChange, corporateAvailable }: { mode: RateMode
     <div className="flex items-center h-8 rounded-lg border border-border bg-slate-50 p-0.5 gap-0.5 shrink-0" role="tablist" aria-label="Rate type">
       <Tooltip content={CONVERTER_TOGGLE_TOOLTIPS.midMarket} side="top">
         <button type="button" role="tab" aria-selected={mode === 'mid'} onClick={() => onChange('mid')} className={seg(mode === 'mid')} style={{ fontWeight: mode === 'mid' ? 600 : 500 }}>
-          Mid-Market Rate
+          Daily Market Rate
           <Info className="w-3 h-3 text-fg-subtle/70" />
         </button>
       </Tooltip>
@@ -281,8 +281,8 @@ export function CurrencyConverter({ detail, wide = true }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromCode, toCode, effectiveMode, midMarketRates, standardRates])
 
-  // A converted amount carries four decimals, as every rate does, so converting
-  // one unit reads as the rate itself (1 PKR = 0.0036 USD).
+  // A converted amount carries a rate's decimals (four, six under 0.01), so
+  // converting one unit reads as the rate itself (1 PKR = 0.003590 USD).
   const fmt = fmtConverted
 
   // Recompute whichever side was not typed in when the pair or rate changes.
@@ -319,7 +319,7 @@ export function CurrencyConverter({ detail, wide = true }: {
   const pickTo = (c: string) => { setToCode(c); setIsSwapped(false) }
 
   // Swap trades the two currencies and keeps the From amount, as Google's converter
-  // does: 1 USD = 278.52 PKR becomes 1 PKR = 0.0036 USD. The To side follows.
+  // does: 1 USD = 278.52 PKR becomes 1 PKR = 0.003590 USD. The To side follows.
   const swap = () => {
     setIsSwapped(s => !s)
     setFromCode(toCode)
@@ -355,7 +355,7 @@ export function CurrencyConverter({ detail, wide = true }: {
           <ConverterSide side="From" code={fromCode} setCode={pickFrom} amount={fromAmount} onAmountChange={onFromChange} {...sides} />
         </motion.div>
         <div className="flex items-center justify-center">
-          <Tooltip content={isSwapped ? 'Inverse direction. Click to restore.' : 'Swap direction'} side="top">
+          <Tooltip content={isSwapped ? 'Showing 1 unit of your base currency. Click to swap back.' : 'Swap direction'} side="top">
             <button
               type="button"
               onClick={swap}
@@ -380,14 +380,15 @@ export function CurrencyConverter({ detail, wide = true }: {
           title="No corporate rate has been set for this currency pair yet."
           action={<Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => navigate(`/accounting/exchange-rates?addCorp=${encodeURIComponent(pairCode)}`)}>Set Corporate Rate</Button>}
         >
-          The mid-market rate is being used by default.
+          The daily market rate is being used by default.
         </Banner>
       )}
 
       <div className="flex items-center gap-1.5 flex-wrap text-[12px] text-fg-muted leading-relaxed">
         <span>
-          {/* Where the rate comes from and when; the rate itself is in the boxes above. */}
-          {effectiveMode === 'mid' && midRecord && <>Auto-synced from <SourceLink className="text-primary" />{' · '}Last updated {fmtDateTime(LAST_SYNC)}</>}
+          {/* Where the rate comes from and the day it was read, with no time (Eli's
+              ruling, 26 Nov 2026); the rate itself is in the boxes above. */}
+          {effectiveMode === 'mid' && midRecord && <>Daily market rate from <SourceLink className="text-primary" />{' · '}Read on {fmtDate(midRecord.effectiveDate)}</>}
           {/* Scheduling a later rate moves the record's last update, not this rate's, so name the day it took effect then. */}
           {effectiveMode === 'std' && stdRecord && <>Manually set by {stdRecord.createdBy} on {fmtDateTime(stdRecord.upcoming ? stdRecord.effectiveDate : stdRecord.updatedAt || stdRecord.effectiveDate)}</>}
         </span>
@@ -400,7 +401,7 @@ export function CurrencyConverter({ detail, wide = true }: {
         {isSwapped && (
           <Tooltip content={INVERSE_BADGE_TOOLTIP} side="top">
             <span className="inline-flex cursor-help" tabIndex={0}>
-              <Badge tone="info"><ArrowLeftRight className="w-2.5 h-2.5 mr-1" />Inverse Rate</Badge>
+              <Badge tone="info"><ArrowLeftRight className="w-2.5 h-2.5 mr-1" />1 {BASE} in {pairCode}</Badge>
             </span>
           </Tooltip>
         )}

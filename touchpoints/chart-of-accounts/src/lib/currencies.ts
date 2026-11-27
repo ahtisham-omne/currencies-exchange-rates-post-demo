@@ -154,8 +154,10 @@ export function fxStanding(booked: number, code: string, ownAmount?: number): Fx
 export const RATE_SOURCE = 'Open Exchange Rates'
 const longDay = (d: Date) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 export const RATE_AS_OF = `${longDay(new Date())} 09:00`
-/** The same moment as the balance cards write it: "Nov 18, 2026, 9:00 AM". */
-export const RATE_AS_OF_TIME = `${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}, 9:00 AM`
+/** The day today's rates were read, as the balance cards write it: "Read on Nov 27, 2026".
+ *  A date with no time: a rate is read once a day and fixed for that date (Eli's
+ *  ruling, 26 Nov 2026). It said "As of Nov 18, 2026, 9:00 AM". */
+export const RATE_READ_ON = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
 /* When the booked rates were last struck. Revaluation runs at period close, so
    this is a month end - the last one before today - and always sits behind

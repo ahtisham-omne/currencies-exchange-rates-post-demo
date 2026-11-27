@@ -42,8 +42,8 @@ export interface PartnerGroupTemplate {
    *  currency/partnerCurrency.ts). */
   currency?: string;
   /** Default exchange rate for the group's partners' documents, set beside
-   *  the currency in Billing & Shipping: "mid" (mid-market) or "corporate".
-   *  Unset means mid-market. Partners inherit it and can override it
+   *  the currency in Billing & Shipping: "mid" (daily market rate) or
+   *  "corporate". Unset means the daily market rate. Partners inherit it and can override it
    *  (currency/partnerCurrency.ts). */
   rateType?: "mid" | "corporate";
   /** Default payment term preset id. */

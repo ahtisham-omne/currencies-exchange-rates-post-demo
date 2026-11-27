@@ -1,6 +1,6 @@
 // A currency's detail page, rebuilt on the CoA kit's detail skeleton: sticky
 // DetailHeaderCard (status menu, Actions, full width), tabs that honour ?tab=,
-// a Dashboard holding the live exchange rate converter beside the information
+// a Dashboard holding the exchange rate converter beside the information
 // rail, the Linked transactions register, and the record tabs (Notes,
 // Attachments, Communications, Activity).
 import { useCallback, useMemo } from 'react'
@@ -22,11 +22,11 @@ import { recordKey } from '../coa/lib/recordStore'
 import { fmtDate, fmtDateTime, todayIso } from '../coa/lib/utils'
 import { useCurrencies } from '../context/CurrencyContext'
 import { useExchangeRates } from '../context/ExchangeRateContext'
-import { API_PROVIDER, LAST_SYNC, corporateRateInEffect, upcomingRateOf } from '../data/exchangeRates'
+import { API_PROVIDER, corporateRateInEffect, upcomingRateOf } from '../data/exchangeRates'
 import type { Currency } from '../data/currencies'
 import { CURRENCY_TOOLTIPS, MID_MARKET_DETAIL_TOOLTIP, RATE_TOOLTIPS } from '../utils/rateCopy'
 import { auditTooltips } from './auditColumns'
-import { fmtVariance } from './exchange/rateModel'
+import { LAST_SYNC_DAY, fmtBaseInUnit, fmtUnitInBase, fmtVariance } from './exchange/rateModel'
 import {
   BASE, auditFacts, BASE_CURRENCY_LOCKED, countInUse, fmtRate, formatPreview, linkedDocs, placeFlagOf,
   regionOf, statusOf, statusOptionsFor,
@@ -75,7 +75,9 @@ export function CurrencyDetailPage() {
     )
   }
 
-  const mid = c.isBaseCurrency ? 1 : midMarketRates.find(r => r.sourceCurrency === c.code)?.rate ?? null
+  const midRecord = c.isBaseCurrency ? undefined : midMarketRates.find(r => r.sourceCurrency === c.code)
+  const mid = c.isBaseCurrency ? 1 : midRecord?.rate ?? null
+  const rateDay = midRecord?.effectiveDate ?? LAST_SYNC_DAY
   // The corporate rate in effect today; one dated for later shows as Upcoming.
   const today = todayIso()
   const corporate = c.isBaseCurrency ? null : corporateRateInEffect(c.code, standardRates, today) ?? null
@@ -161,6 +163,7 @@ export function CurrencyDetailPage() {
           <DashboardTab
             c={c}
             mid={mid}
+            rateDay={rateDay}
             corporate={corporate}
             upcoming={upcoming}
           />
@@ -180,9 +183,11 @@ export function CurrencyDetailPage() {
   )
 }
 
-function DashboardTab({ c, mid, corporate, upcoming }: {
+function DashboardTab({ c, mid, rateDay, corporate, upcoming }: {
   c: Currency
   mid: number | null
+  /** The day the daily market rate was read (ISO): the last read's, or the one before when it failed. */
+  rateDay: string
   corporate: { standardRate: number; effectiveDate: string; createdBy: string } | null
   /** A corporate rate dated for later. */
   upcoming: { standardRate: number; effectiveDate: string } | null
@@ -196,7 +201,7 @@ function DashboardTab({ c, mid, corporate, upcoming }: {
     <DashboardGrid
       main={
         <ChartWidgetCard
-          title="Live Exchange Rate Converter"
+          title="Exchange Rate Converter"
           icon={ArrowLeftRight}
         >
           <CurrencyConverter detail={c} />
@@ -235,20 +240,22 @@ function DashboardTab({ c, mid, corporate, upcoming }: {
 
           <DashInfoCard title="Exchange Rate" icon={ArrowLeftRight} tooltip="Rates for 1 unit of this currency in your base currency.">
             <InfoGrid>
+              {/* The rates as amounts, and the base currency's unit in this one, as the
+                  rate lists' "1 PKR in That Currency" shows it (Mahreen's 1d, 27 Nov 2026). */}
               <div className="min-w-0">
-                <DashInfoLabel tooltip={MID_MARKET_DETAIL_TOOLTIP}>Mid-Market Rate</DashInfoLabel>
-                {mid != null ? <InfoValue strong className="tabular-nums">{fmtRate(mid)}</InfoValue> : <InfoValue empty>Not available</InfoValue>}
+                <DashInfoLabel tooltip={MID_MARKET_DETAIL_TOOLTIP}>Daily Market Rate</DashInfoLabel>
+                {mid != null ? <InfoValue strong className="tabular-nums">{fmtUnitInBase(mid)}</InfoValue> : <InfoValue empty>Not available</InfoValue>}
               </div>
               <div className="min-w-0">
-                <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.inverse}>Inverse Rate</DashInfoLabel>
-                {mid ? <InfoValue className="tabular-nums">{fmtRate(1 / mid)}</InfoValue> : <InfoValue empty>–</InfoValue>}
+                <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.inverse}>{`1 ${BASE} in ${c.code}`}</DashInfoLabel>
+                {mid ? <InfoValue className="tabular-nums">{fmtBaseInUnit(c.code, mid)}</InfoValue> : <InfoValue empty>–</InfoValue>}
               </div>
               <div className="min-w-0">
                 <DashInfoLabel tooltip={RATE_TOOLTIPS.corporate}>Corporate Rate</DashInfoLabel>
                 {c.isBaseCurrency
                   ? <InfoValue empty>Not applicable</InfoValue>
                   : corporate
-                    ? <InfoValue className="tabular-nums">{fmtRate(corporate.standardRate)}</InfoValue>
+                    ? <InfoValue className="tabular-nums">{fmtUnitInBase(corporate.standardRate)}</InfoValue>
                     : upcoming
                       ? <InfoValue empty>None in effect yet</InfoValue>
                       : <InfoValue empty>–</InfoValue>}
@@ -258,9 +265,10 @@ function DashboardTab({ c, mid, corporate, upcoming }: {
                 {variance != null && corporate && mid ? <InfoValue className="tabular-nums">{fmtVariance(corporate.standardRate, mid)}</InfoValue> : <InfoValue empty>–</InfoValue>}
               </div>
               {/* The base currency's rates come from no provider, so it has no Source;
-                  Last Synced then opens the row on the left. */}
+                  Rate Date then opens the row on the left. The day the rate was read,
+                  with no time (Eli's ruling, 26 Nov 2026). */}
               {!c.isBaseCurrency && <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue><SourceLink className="text-primary" /></InfoValue></div>}
-              <div className="min-w-0"><DashInfoLabel align={c.isBaseCurrency ? undefined : 'right'} tooltip={RATE_TOOLTIPS.lastSync}>Last Synced</DashInfoLabel><InfoValue>{fmtDateTime(LAST_SYNC)}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel align={c.isBaseCurrency ? undefined : 'right'} tooltip={RATE_TOOLTIPS.lastSync}>Rate Date</DashInfoLabel><InfoValue>{fmtDate(rateDay)}</InfoValue></div>
             </InfoGrid>
             {(corporate || upcoming) && (
               <div className="pt-2.5 border-t border-muted text-[11px] text-slate-500 space-y-1">

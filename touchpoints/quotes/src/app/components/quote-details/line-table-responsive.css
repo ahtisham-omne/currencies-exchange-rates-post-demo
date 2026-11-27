@@ -102,3 +102,10 @@
   .li-row > td.li-fig::before { margin-bottom: 0; }
   .li-row > td.li-end { padding-bottom: 12px !important; }
 }
+
+/* The Total footer under the table (27 Nov 2026): lines up with the Total
+   column on a wide card; in the stacked layouts it sits at the card's right
+   edge, as each row's Total does. */
+@container li-table (max-width: 839px) {
+  .li-foot { padding-right: 8px !important; }
+}

@@ -794,7 +794,14 @@ export function ItemCreation({ onCancel, onSave }: ItemCreationProps) {
                                              </SelectContent>
                                          </Select>
                                      </div>
-                                     <p className="text-sm text-muted-foreground">Base price, in {BASE_CURRENCY}. Advanced pricing rules may override this value.</p>
+                                     <div className="space-y-2">
+                                         <p className="text-sm text-muted-foreground">Base price, in {BASE_CURRENCY}. Advanced pricing rules may override this value.</p>
+                                         {/* No rate setting on the item (Mahreen, 27 Nov 2026). */}
+                                         <p className="flex items-start gap-1.5" style={{ fontSize: 12, lineHeight: 1.5, color: '#64748B' }}>
+                                             <Info className="shrink-0" style={{ width: 13, height: 13, color: '#94A3B8', marginTop: 2.5 }} aria-hidden />
+                                             The exchange rate comes from the customer and the order, not the item.
+                                         </p>
+                                     </div>
                                  </div>
                              </div>
                          </TabsContent>

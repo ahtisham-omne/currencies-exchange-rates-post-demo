@@ -84,7 +84,7 @@ export function FxNote({ children, small }: { children: React.ReactNode; small?:
   );
 }
 
-/** "● Mid-market · Open Exchange Rates", purple for mid-market, amber for corporate. */
+/** "● Daily market rate · Open Exchange Rates", purple for the daily market rate, amber for corporate. */
 export function FxRateType({ type, label, source }: { type: 'mid' | 'corporate'; label: string; source?: string | undefined }) {
   const color = RATE_COLOR[type];
   return (

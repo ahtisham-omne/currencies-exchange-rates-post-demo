@@ -21,7 +21,7 @@ export function POCurrencyHeaderControls({
   vendorName,
   currency,
   compact,
-  view = "base",
+  view = "document",
   onOpenConfig: _onOpenConfig,
 }: {
   vendorName: string;

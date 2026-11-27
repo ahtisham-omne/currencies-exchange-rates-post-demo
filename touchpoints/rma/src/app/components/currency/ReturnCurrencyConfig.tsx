@@ -7,7 +7,7 @@ import { authorizedQty, type RMA } from '@/app/data/mockRMAs';
 import type { PayFromAccount } from '@/app/data/mockPayments';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, formatRate, formatRateDate, rateSentence } from '@/app/currency/money';
-import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, fxToday, rateOn, todayIso, toBase, type RateType } from '@/app/currency/rates';
+import { RATES_READ_ON, RATE_PROVIDER, RATE_TYPE_LABEL, fxToday, rateOn, todayIso, toBase, type RateType } from '@/app/currency/rates';
 import { accountCurrency, receiveInAccountsFor, returnSettlementFx, type ReturnSettlementFx } from '@/app/currency/returnSettlement';
 import { CurrencyFlag } from './CurrencyChip';
 import { linkProvider } from './ProviderLink';
@@ -184,7 +184,7 @@ export function ReturnCurrencyBlock({ rma, onViewConfig }: { rma: RMA; onViewCon
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-[240px] text-[11px]">
-                    {s.rateType === 'mid' ? `The mid-market rate · ${RATE_PROVIDER}` : `Finance's corporate rate · ${s.rateSource.replace(/^Set by/, 'set by')}`}
+                    {s.rateType === 'mid' ? `The daily market rate · ${RATE_PROVIDER}` : `Finance's corporate rate · ${s.rateSource.replace(/^Set by/, 'set by')}`}
                     {s.chosenType === s.poRateType ? `, the PO's rate type (${s.po}).` : `, changed from the PO's ${RATE_TYPE_LABEL[s.poRateType].toLowerCase()}.`}
                   </TooltipContent>
                 </Tooltip>
@@ -314,7 +314,7 @@ export function DepositAccountPicker({
   );
 }
 
-/** Mid-market | Corporate, as the Exchange Rates module names them. */
+/** Daily market rate | Corporate rate, as the Exchange Rates module names them. */
 export function RateTypeToggle({ value, onChange, corporateAvailable }: { value: RateType; onChange: (t: RateType) => void; corporateAvailable: boolean }) {
   return (
     <span className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Rate type">
@@ -347,14 +347,12 @@ export function RateTypeToggle({ value, onChange, corporateAvailable }: { value:
   );
 }
 
-/** The time of day the provider's rates sync, e.g. "7:30 PM". */
-const SYNC_TIME = new Date(LAST_SYNC).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-
-/** Under the rate (25 Nov 2026, as POCurrencyConfig's): when a mid-market
- *  rate was last updated, or from when a corporate rate is in effect. Not
- *  the settlement date or today. */
+/** Under the rate (25 Nov 2026, as POCurrencyConfig's): the day a daily
+ *  market rate was read, or from when a corporate rate is in effect. A rate
+ *  is read once a day and fixed for that date, so no time of day (Eli's
+ *  ruling, 26 Nov 2026). A day still to come has today's read until its own. */
 export function rateAsOfLine(type: RateType, date: string, effectiveDate?: string | null, entered?: boolean): string {
-  if (type === 'mid') return `Rate updated as of ${formatRateDate(date)}, ${SYNC_TIME}`;
+  if (type === 'mid') return `Read on ${formatRateDate(date.slice(0, 10) > RATES_READ_ON ? RATES_READ_ON : date)}`;
   if (entered) return `Entered on this return · effective from ${formatRateDate(date)}`;
   return `Effective from ${formatRateDate(effectiveDate ?? date)}`;
 }
@@ -504,7 +502,7 @@ export function ReturnCurrencyConfigDialog({
                     <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RATE_HEX[s.rateType] }} />
                     <span style={{ color: RATE_HEX[s.rateType], fontWeight: 600 }}>{RATE_TYPE_LABEL[s.rateType]}</span>
                     <span className="text-slate-500">· {s.rateType === 'mid' ? linkProvider(RATE_PROVIDER) : s.rateSource.replace(/^Set by/, 'set by')}</span>
-                    {s.rateFellBack && <span className="text-amber-700">· no corporate rate is set, so mid-market stands</span>}
+                    {s.rateFellBack && <span className="text-amber-700">· no corporate rate is set, so the daily market rate stands</span>}
                   </div>
                   <div className="mt-1.5 text-[12px] text-slate-700 tabular-nums leading-5" style={{ fontWeight: 500 }}>
                     <div>
@@ -648,7 +646,7 @@ export function CreateReturnCurrencyDialog({
                 </p>
                 <div className="mt-1 flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500">
                   <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: RATE_HEX.mid }} />
-                  <span style={{ color: RATE_HEX.mid, fontWeight: 600 }}>Mid-market</span>
+                  <span style={{ color: RATE_HEX.mid, fontWeight: 600 }}>{RATE_TYPE_LABEL.mid}</span>
                   <span>· {linkProvider(RATE_PROVIDER)}</span>
                   <span>· Today, {formatRateDate(today.rateDate)}</span>
                 </div>

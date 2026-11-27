@@ -1,7 +1,7 @@
 // The demo's clock. The seed data was written against fixed days; at load it is
 // moved forward so that whenever the prototype is opened it reads as current:
-// the rate provider last synced today (or yesterday, before 6:00 PM in
-// Pakistan), the corporate rates took effect at the start of a recent month,
+// the rate provider read today's rates at the start of the day, the corporate
+// rates took effect at the start of a recent month,
 // and every open transaction falls in the last three months. Each timeline
 // keeps its own order, so nothing is priced at a rate before that rate existed.
 
@@ -19,15 +19,13 @@ export function shiftIso(iso: string, days: number): string {
   return moved + iso.slice(10)
 }
 
-/** The last daily sync from the rate provider: 13:00 UTC (6:00 PM in Pakistan,
- *  the time the BA's activity log gives the daily sync) today, or yesterday's
- *  when today's is still to come. */
-export const LAST_SYNC: string = (() => {
-  const now = Date.now()
-  let t = dayMs(new Date(now).toISOString()) + 13 * 60 * 60_000
-  if (t > now) t -= DAY
-  return new Date(t).toISOString().replace('.000Z', 'Z')
-})()
+/** Today's read from the rate provider, at the start of the day (00:00 UTC,
+ *  5:00 AM in Pakistan). Eli's ruling (26 Nov 2026): one daily market rate per
+ *  currency per day, read once a day and fixed for that date, so every entry
+ *  dated today has today's rate from the start of the day. It was 13:00 UTC
+ *  (6:00 PM, the BA's activity log's sync time), which read yesterday's rates
+ *  until the evening. */
+export const LAST_SYNC: string = new Date(dayMs(new Date().toISOString())).toISOString().replace('.000Z', 'Z')
 
 /** The day of the last sync: the mid-market rates' effective date and the end of their history. */
 export const SYNC_DAY = LAST_SYNC.slice(0, 10)

@@ -62,11 +62,12 @@ function lockTitle(doc: ReceivingDoc): string {
 }
 
 function rateTypeTip(doc: ReceivingDoc): string {
+  // "daily market rate" / "corporate rate": the label already says "rate".
   const type = RATE_TYPE_LABEL[doc.fx.rateType].toLowerCase();
   const source = doc.fx.rateType === "mid" ? ` · ${RATE_PROVIDER}` : "";
   return doc.status === "completed"
-    ? `The ${type} rate on ${formatRateDate(doc.date)}, the receiving date${source}. The rate type follows the PO; nobody changes it by hand.`
-    : `Today's ${type} rate${source}. The rate type follows the PO.`;
+    ? `The ${type} on ${formatRateDate(doc.date)}, the receiving date${source}. The rate type follows the PO; nobody changes it by hand.`
+    : `Today's ${type}${source}. The rate type follows the PO.`;
 }
 
 function DocRow({ doc, isBase, inBase, open, onToggle }: { doc: ReceivingDoc; isBase: boolean; inBase: boolean; open: boolean; onToggle: () => void }) {
@@ -236,7 +237,7 @@ export function POReceivingDocsTab({ po }: { po: PurchaseOrderData }) {
           {fx.isBase
             ? `Valued in ${BASE_CURRENCY}, the base currency`
             : inBase
-              ? `Valued in ${BASE_CURRENCY} at each receiving date's ${RATE_TYPE_LABEL[fx.rateType].toLowerCase()} rate`
+              ? `Valued in ${BASE_CURRENCY} at each receiving date's ${RATE_TYPE_LABEL[fx.rateType].toLowerCase()}`
               : `Valued in ${fx.currency}, the PO's currency`}
         </span>
       </div>

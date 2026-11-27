@@ -55,6 +55,7 @@ import {
 } from '@/app/components/data-table';
 import { palette } from '@/styles/tokens';
 import { formatUsDate, formatUsDateTime } from '@/app/lib/dueBucket';
+import { PaymentRateCell, RateSettlesNote, paymentRateText } from '@/app/components/currency/PaymentRateCell';
 
 const ACTION_ICONS: Record<PaymentActionId, React.ComponentType<{ className?: string }>> = {
   view: Eye,
@@ -568,7 +569,32 @@ export const PAYMENT_COLUMNS: ColumnDef<Payment>[] = [
     uniqueValues: (rows) => Array.from(new Set(rows.map((r) => displayStatusOf(r)))).sort(),
     getValue: (row) => displayStatusOf(row),
     searchText: (row) => paymentStatusLabel(displayStatusOf(row)),
-    render: (row, { searchQuery }) => renderPaymentStatus(displayStatusOf(row), searchQuery),
+    // Mahreen 7f (27 Nov 2026): a scheduled payment the bank converts says
+    // its rate settles when it's paid.
+    render: (row, { searchQuery }) =>
+      row.status === 'Scheduled' ? (
+        <span className="inline-flex flex-col items-start">
+          {renderPaymentStatus(displayStatusOf(row), searchQuery)}
+          <RateSettlesNote payment={row} />
+        </span>
+      ) : (
+        renderPaymentStatus(displayStatusOf(row), searchQuery)
+      ),
+  },
+  // The rate (27 Nov 2026, Mahreen 7e): a scheduled payment the bank
+  // converts shows its estimate ("Estimate 1 USD = ₨278.5200", "≈ ₨…"); a
+  // paid one the bank's rate and what it cost; one from an account in the
+  // invoices' currency "Same currency".
+  {
+    key: 'rate',
+    label: 'Rate',
+    minWidth: 160,
+    defaultWidth: 190,
+    sortable: false,
+    filterable: false,
+    getValue: (row) => paymentRateText(row),
+    searchText: (row) => paymentRateText(row),
+    render: (row) => <PaymentRateCell payment={row} />,
   },
   {
     key: 'checkPrint',

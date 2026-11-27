@@ -121,6 +121,7 @@ import { InsightsRangeMenu, INSIGHTS_RANGE_OPTIONS } from '@/app/components/Insi
 import { Money } from '@/app/components/currency/Money';
 import { formatMoney, moneyPrefix } from '@/app/currency/money';
 import { invoiceFx, toTodayBase } from '@/app/currency/invoiceFx';
+import { InvoiceTotalsSummary } from '@/app/components/currency/InvoiceTotalsSummary';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { InsightsResetButton } from '@/app/components/InsightsResetButton';
 import { InsightsRefresh } from '@/app/components/InsightsRefresh';
@@ -183,9 +184,9 @@ const INVOICE_COLUMN_CATALOG: { key: string; label: string }[] = [
   { key: 'approvalStatus', label: 'Invoice Status' },
   { key: 'paymentStatus', label: 'Payment Status' },
   { key: 'amount', label: 'Amount' },
-  // The base-currency estimate beside the invoice's own amount, visible by
-  // default (25 Nov 2026, Nophil item 8).
-  { key: 'amountBase', label: `Amount (${BASE_CURRENCY})` },
+  // The base equivalent beside the invoice's own amount, visible by default
+  // (25 Nov 2026, Nophil item 8; renamed 27 Nov 2026, Mahreen 6a).
+  { key: 'amountBase', label: 'Base Equivalent' },
   { key: 'discount', label: 'Discount' },
   // Linked Records sits after Amount (feedback 7/16/26).
   { key: 'linkedRecords', label: 'Linked Records' },
@@ -2698,6 +2699,9 @@ export function InvoiceListScreen({
               onRecordsPerPageChange={handleRecordsPerPageChange}
               onRowClick={(invoice) => onViewInvoice(invoice.id)}
               onRowAction={dispatchRowAction}
+              // Totals by currency and in base, over every filtered row
+              // (Mahreen, 27 Nov 2026, 6a).
+              summary={sortedFilteredInvoices.length > 0 ? <InvoiceTotalsSummary invoices={sortedFilteredInvoices} /> : undefined}
             />
           </div>
         )}

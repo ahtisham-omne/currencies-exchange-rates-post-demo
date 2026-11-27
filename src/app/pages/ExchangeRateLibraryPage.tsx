@@ -1,7 +1,7 @@
 // The Exchange Rates tab of Currency & Exchange Rates (CurrencyExchangePage),
 // on the CoA kit: the shared header and one CoA table card per rate type,
-// switched by Cash Management's SegmentedTabs atop the card (Mid-market rates |
-// Corporate rates).
+// switched by Cash Management's SegmentedTabs atop the card (Daily Market Rates |
+// Corporate Rates).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Archive, ArchiveRestore, ChevronDown, Download, Eye, FileSpreadsheet, FileText, Pencil, Plus } from 'lucide-react'
@@ -19,7 +19,7 @@ import { setStoredValue, useRememberedState, useStoredState } from '../coa/lib/r
 import { pushToast } from '../coa/lib/toast'
 import { cn, fmtDate } from '../coa/lib/utils'
 import {
-  BASE, LAST_SYNC_AT, flagOf, fmtInverse, fmtRate, fmtSignedPct, pairPath,
+  BASE, LAST_SYNC_DATE, flagOf, fmtInverse, fmtRate, fmtSignedPct, pairPath,
   toCorpRows, toMidRows, type CorpRow, type MidRow,
 } from './exchange/rateModel'
 import { corpColumns, midColumns } from './exchange/libraryConfig'
@@ -57,10 +57,24 @@ function ExplainerBanner({ id, title, children }: { id: Tab; title: string; chil
   )
 }
 
-/** The rate provider's site, in a new tab. */
-/* The line above each table's header: what every rate is quoted against, where
-   the market figures come from and how often they refresh. It replaces the base
-   currency's own row (always 1.0000) and, unlike the banner, can't be hidden. */
+/* The Daily Market Rates tab's banner: how the rates are read, and the day
+   today's were. A plain info Banner with no Dismiss, since it states a fact
+   rather than a tip (Mahreen's 1b, 27 Nov 2026; Eli's ruling, 26 Nov 2026). It
+   replaced the dismissible "midpoint of global buy and sell rates" banner. */
+function DailyReadBanner() {
+  return (
+    <div className="px-4 py-3 border-b border-border">
+      <Banner tone="info">
+        Read once a day from <SourceLink className="underline underline-offset-2" />, and fixed for that date. Today’s rates were read on {LAST_SYNC_DATE}.
+      </Banner>
+    </div>
+  )
+}
+
+/* The line above each table's header: what every rate is quoted against, and
+   where the market figures come from. It replaces the base currency's own row
+   (always 1.0000) and, unlike the banner, can't be hidden. The read date is in
+   the banner above it, so it isn't said twice. */
 function QuotedStrip({ kind }: { kind: Tab }) {
   return (
     <div className="px-4 py-2 border-b border-border flex items-center justify-between gap-x-4 gap-y-1 flex-wrap text-xs text-fg-muted">
@@ -69,9 +83,8 @@ function QuotedStrip({ kind }: { kind: Tab }) {
         <span>Base currency: <span className="font-medium text-fg">{BASE}</span></span>
       </span>
       <span>
-        {kind === 'mid' ? 'Rates from ' : 'Mid-market rates from '}
+        {kind === 'mid' ? 'Rates from ' : 'Daily market rates from '}
         <SourceLink className="text-primary" />
-        {kind === 'mid' && <> · Last updated {LAST_SYNC_AT}</>}
       </span>
     </div>
   )
@@ -149,7 +162,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
   const rateTypeTabs = (
     <SegmentedTabs<Tab>
       tabs={[
-        { key: 'mid', label: 'Mid-Market Rates', count: midAll.length },
+        { key: 'mid', label: 'Daily Market Rates', count: midAll.length },
         { key: 'corp', label: 'Corporate Rates', count: corpAll.length },
       ]}
       activeKey={tab}
@@ -164,17 +177,19 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
     if (isMid && !only) {
       const rows = midTable.rows
       void exportRows({
-        fileBase: 'mid_market_rates', sheetName: 'Mid-Market Rates', title: 'Mid-Market Exchange Rates', noun: 'rates', one: 'rate',
-        headers: ['Base Currency', 'Source Currency', 'Currency Name', 'Mid-Market Exchange Rate', 'Inverse Rate', 'Change', 'Effective Date'],
+        // The list's columns, named by what they show (Mahreen's 1d, 27 Nov 2026).
+        // The figures stay bare numbers, so a spreadsheet can work with them.
+        fileBase: 'daily_market_rates', sheetName: 'Daily Market Rates', title: 'Daily Market Exchange Rates', noun: 'rates', one: 'rate',
+        headers: ['Base Currency', 'Source Currency', 'Currency Name', `1 Unit in ${BASE}`, `1 ${BASE} in That Currency`, 'Change', 'Rate Date'],
         rows: rows.map(r => [BASE, r.code, r.name, fmtRate(r.rate), fmtInverse(r.rate), fmtSignedPct(r.change24h), r.effectiveDate]),
-        widths: [14, 16, 28, 24, 14, 12, 14],
+        widths: [14, 16, 28, 16, 24, 12, 14],
       }, fmt)
       return
     }
     const rows = (only ?? corpShown).filter(r => r.status === 'Active')
     void exportRows({
       fileBase: 'corporate_rates', sheetName: 'Corporate Rates', title: 'Corporate Exchange Rates', noun: 'rates', one: 'rate',
-      headers: ['Base Currency', 'Source Currency', 'Corporate Exchange Rate', 'Mid-Market Exchange Rate', 'Variance', 'Effective Date', 'Upcoming Rate', 'Upcoming From', 'Created By'],
+      headers: ['Base Currency', 'Source Currency', 'Corporate Exchange Rate', 'Daily Market Rate', 'Variance', 'Effective Date', 'Upcoming Rate', 'Upcoming From', 'Created By'],
       rows: rows.map(r => [BASE, r.code, r.rate == null ? '' : fmtRate(r.rate), r.mid == null ? '' : fmtRate(r.mid), r.variance == null ? '' : `${r.variance}%`, r.effectiveDate, r.upcoming ? fmtRate(r.upcoming.rate) : '', r.upcoming?.effectiveDate ?? '', r.createdBy]),
       widths: [14, 16, 22, 24, 10, 14, 14, 14, 18],
     }, fmt)
@@ -241,9 +256,7 @@ export function ExchangeRatesPanel({ swapIn }: { swapIn?: string } = {}) {
                 }
                 pills={<PillRow>{regionPill}</PillRow>}
                 notes={<>
-                  <ExplainerBanner id="mid" title="Mid-Market Rates">
-                    The midpoint of global buy and sell rates. Synced from <SourceLink className="underline underline-offset-2" />.
-                  </ExplainerBanner>
+                  <DailyReadBanner />
                   <QuotedStrip kind="mid" />
                 </>}
               >

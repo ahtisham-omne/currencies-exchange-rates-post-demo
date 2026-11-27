@@ -140,13 +140,14 @@ for (const part of parts) {
   // Configuration dialog (R11, R15, R17).
   if (kindName === 'Configuration dialog') {
     if (NONE.test(lock)) warn.push(`${id}: a configuration dialog says when its rate locks (R11, R15)`);
-    if (!/compare rates/i.test(part) && /vendor|customer/i.test(glanceRows['party'] ?? '') && /order/i.test(title ?? ''))
-      warn.push(`${id}: sales and purchase orders put Compare rates after the rate type choice (R17)`);
+    if (!/rate info|info icon|both rates/i.test(part) && /vendor|customer/i.test(glanceRows['party'] ?? ''))
+      warn.push(`${id}: put the rate info icon (both rates, R17) after the rate type choice`);
   }
   // Rate day (R14).
   if (rate && !NONE.test(rate) && !DATE_WORD.test(rate)) warn.push(`${id}: Rate names no day (document date, posting date, payment date, today...) (R14)`);
-  if (['Configuration dialog', 'Create/edit'].includes(kindName ?? '') && rate && !/mid-market|corporate|company default|rate type/i.test(rate))
-    warn.push(`${id}: Rate names no rate type (mid-market, corporate, or the company default) (R13)`);
+  if (['Configuration dialog', 'Create/edit'].includes(kindName ?? '') && rate && !/daily market|corporate|company default|rate type/i.test(rate))
+    warn.push(`${id}: Rate names no rate type (daily market rate, corporate rate, or the company default) (R13)`);
+  if (/mid-?market/i.test(part)) warn.push(`${id}: says "mid-market": the rate is the "daily market rate" (R26, Eli 26 Nov 2026)`);
 
   // Copy (R26).
   for (const q of copy.match(/"[^"]*"/g) ?? []) {

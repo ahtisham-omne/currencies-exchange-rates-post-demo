@@ -2996,7 +2996,7 @@ function GroupsListingTable({
                         const code = groupCurrencyOf(g);
                         const origin = g.template?.currency ? "Set on the group" : "Base currency by default";
                         return (
-                          <CurrencyCodeCell code={code} title={`${origin} · ${RATE_TYPE_LABEL[groupRateTypeOf(g)]} rate by default`} />
+                          <CurrencyCodeCell code={code} title={`${origin} · ${RATE_TYPE_LABEL[groupRateTypeOf(g)]} by default`} />
                         );
                       })()}
                       {key === "country" && (

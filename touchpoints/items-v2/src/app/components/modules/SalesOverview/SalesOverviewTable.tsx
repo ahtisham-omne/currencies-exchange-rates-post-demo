@@ -255,15 +255,15 @@ const SALES_ORDERS: SalesOrder[] = ([
   },
 ] as SalesOrder[]).map(inOrderCurrency);
 
-/* The design's $ amounts in the order's currency, at the last sync's
-   mid-market rate (as the qualified vendors' amounts are restated). A USD
+/* The design's $ amounts in the order's currency, at the last read's
+   daily market rate (as the qualified vendors' amounts are restated). A USD
    order keeps the design's figures. */
 function inOrderCurrency(row: SalesOrder): SalesOrder {
   const to = (n: number | null) => (n == null ? null : fromUsd(n, row.currency));
   return { ...row, orderValue: to(row.orderValue) ?? 0, invoicedAmount: to(row.invoicedAmount), paymentsMade: to(row.paymentsMade) };
 }
 
-/* The order's rate to base: mid-market on the order date, the rate the order
+/* The order's rate to base: the daily market rate on the order date, the rate the order
    locks when confirmed. Order value, invoiced and paid show in base at it,
    and the hover gives the amount in the order's currency. Null for a base
    (PKR) order, which shows plain PKR. */

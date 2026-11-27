@@ -46,6 +46,7 @@ import type { QualifiedVendor } from "../../../context/purchasing/types";
 import { InitialAvatar } from "../../items-v3/InitialAvatar";
 import { PriorityChip } from "../../items-v3/PriorityChip";
 import { ColumnView, RowMoney } from "../../currency/RowCurrencyView";
+import { VENDOR_PRICE_NOTE } from "../../currency/VendorPrice";
 import { CurrencyPill } from "../../currency/CurrencyChip";
 import { isBaseCurrency } from "../../../currency/currencies";
 import { qvRate } from "../../../currency/vendorFx";
@@ -133,7 +134,7 @@ function SortableQVCard({
           {/* In the table's Units & Pricing view (base by default); the hover gives the other figure and the rate. */}
           <span className="text-[15px] text-slate-700 tabular-nums" style={{ fontWeight: 700 }}>
             <ColumnView column="unitsPricing">
-              <RowMoney value={qv.pricePerUnit} currency={qv.currency} fx={qvRate(qv)} />
+              <RowMoney value={qv.pricePerUnit} currency={qv.currency} fx={qvRate(qv)} note={VENDOR_PRICE_NOTE} />
             </ColumnView>
           </span>
           <span className="text-[12px] text-slate-500 tabular-nums" style={{ fontWeight: 600 }}>

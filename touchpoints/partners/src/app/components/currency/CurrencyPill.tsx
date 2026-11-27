@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/app/components/ui/tooltip";
 import { getCurrency, isBaseCurrency } from "@/app/currency/currencies";
-import { RATE_TYPE_LABEL, type RateType } from "@/app/currency/rates";
+import { RATE_PROVIDER, RATE_TYPE_LABEL, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyFlag";
 
 /**
@@ -38,12 +38,13 @@ export function CurrencyPill({ code, note: _note, party, className = "" }: { cod
 
 /** What each rate type means, on hover of its option. */
 const RATE_TYPE_TIP: Record<RateType, string> = {
-  mid: "Midpoint of global buy and sell rates. Updated from your rate provider at each sync.",
+  // The daily meaning (Eli's ruling, 26 Nov 2026).
+  mid: `Read once a day from ${RATE_PROVIDER}, and fixed for that date.`,
   corporate: "Fixed rate set by your company. Applies until a new rate takes effect.",
 };
 
 /**
- * Mid-market | Corporate, the switch the document touchpoints use for a rate
+ * Daily market rate | Corporate rate, the switch the document touchpoints use for a rate
  * type. Drawn frameless like Chart of Accounts' period presets: the chosen
  * option is a light-blue pill. `disabled` keeps it readable but fixed.
  */

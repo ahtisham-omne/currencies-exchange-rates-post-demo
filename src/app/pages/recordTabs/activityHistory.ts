@@ -92,9 +92,9 @@ function syncs(code: string, series: { date: string; mid: number }[]): FxEvent[]
     if (before === after) continue
     out.push({
       id: `sync-${code}-${series[i].date}`, actor: 'System', timestamp: `${series[i].date}${time}`, kind: 'fx',
-      verb: 'updated the mid-market rate', trigger: 'daily sync',
+      verb: 'updated the daily market rate', trigger: 'daily sync',
       rows: [
-        { kind: 'pair', field: 'Mid-market rate', before: fmtRate(before), after: fmtRate(after) },
+        { kind: 'pair', field: 'Daily market rate', before: fmtRate(before), after: fmtRate(after) },
         { kind: 'sentence', parts: [{ t: 'Rates from ' }, { v: API_PROVIDER }] },
       ],
       filter: 'updated', changed: 'midMarketRate',
@@ -103,11 +103,11 @@ function syncs(code: string, series: { date: string; mid: number }[]): FxEvent[]
   return out
 }
 
-/** "1.64% below the mid-market rate of 283.6509". */
+/** "1.64% below the daily market rate of 283.6509". */
 function varianceRow(rate: number, mid: number | null | undefined): FxRow[] {
   if (!mid) return []
   const pct = ((rate - mid) / mid) * 100
-  return [{ kind: 'sentence', parts: [{ v: `${Math.abs(pct).toFixed(2)}%` }, { t: ` ${pct < 0 ? 'below' : 'above'} the mid-market rate of ` }, { v: fmtRate(mid) }] }]
+  return [{ kind: 'sentence', parts: [{ v: `${Math.abs(pct).toFixed(2)}%` }, { t: ` ${pct < 0 ? 'below' : 'above'} the daily market rate of ` }, { v: fmtRate(mid) }] }]
 }
 
 const noteRow = (text: string): FxRow[] => (text.trim() ? [{ kind: 'note', text: text.trim() }] : [])

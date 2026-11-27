@@ -10,7 +10,8 @@ import type {
 import { ARCHIVABLE_STATES } from "./types";
 import { DESIGN_CURRENCY, convertOn, customerCurrency, localTodayIso, roundTo, soFx, stampSoRate } from "@/app/currency/soFx";
 import { isBaseCurrency } from "@/app/currency/currencies";
-import { marketPrice } from "@/app/currency/itemPrices";
+import { RATES_READ_ON } from "@/app/currency/rates";
+import { customerGroupOf, marketPrice } from "@/app/currency/itemPrices";
 import { summarizeSO } from "./summarizeSO";
 import { resolveReceiveAccount } from "@/app/currency/companyAccounts";
 import { formatWhole } from "./soMoney";
@@ -22,6 +23,7 @@ import { getMissingFields, type FieldRule } from "@/app/components/shared/fieldR
 import { SHIPMENT_CARRIERS, DEFAULT_SHIPMENT } from "./ShipmentMethodModal";
 import { WAREHOUSES } from "./WarehouseSelectionModal";
 import {
+  UOM_SETS,
   getUomSetIdForProduct,
   getPrimaryUomForProduct,
   findUomById,
@@ -66,18 +68,27 @@ export const CATALOG: CatalogItem[] = [
      at 6 in the UI. Without a tagged set the empty state used to slice
      the whole catalogue, mixing in items the customer has never bought. */
   /* `regionalPrices` (25 Nov 2026, Nophil review item 2): the item's own
-     price in a market currency. The lightbar is the flagship (USD 1,199,
-     EUR 1,509); a few items have a USD price, the stretcher a GBP one and
-     the AED a dirham one; the rest have none, so an order in another
-     currency takes their base price converted at its rate, as an estimate
-     (currency/itemPrices.ts). */
+     price in a currency, per EA, optionally for one customer group
+     (27 Nov 2026, Spec D: North America USD, Europe EUR, GCC States AED;
+     no group = any customer). The lightbar has a USD and a EUR price, the
+     stretcher a USD and a GBP one, the AED a USD and a dirham one, the
+     siren and the DEF fluid a USD one; the rest have none, so an order in
+     another currency takes their base price converted at its rate, as an
+     estimate (currency/itemPrices.ts).
+     Since 27 Nov 2026 (Mahreen, 4b) each sits within about 2% of the item's
+     base price at today's rate, so a direct order and one from a quote
+     price an item alike. The base price is the list price below after
+     CATALOG_PRICE_CAP (,500), at today's daily market rate: the stretcher
+     lists at ,500, not ,500, so USD 1,490 (it was 1,395) and GBP 1,160
+     (£1,175.45 converted); the AED is USD 1,480 (it was 1,375, against
+     ,500 on orders from a quote) and AED 5,450 (5,508.70 converted). */
   { code: "000-100-001", name: "Cutaway cab-chassis with 178\" wheelbase, 10,360 GVWR, 3.5L EcoBoost V6 turbocharged engine with 10-speed automatic transmission, factory ambulance prep package includes heavy-duty alternator (240A), auxiliary idle control, and reinforced rear frame section for modular body mounting", description: "Heavy-duty ambulance chassis", type: "Serialized", unitPrice: 42500, category: "Base Vehicles", inStock: 3, isRecentlyOrdered: true },
   { code: "000-100-002", name: "E-450 stripped chassis, 176\" WB, 7.3L V8 gas engine, dual rear wheels, 16,000 GVWR, heavy-duty front and rear stabilizer bars, ambulance prep with reinforced frame rails, upgraded 210A alternator, engine block heater, and transmission PTO provision for hydraulic equipment", description: "Ambulance prep with reinforced frame", type: "Serialized", unitPrice: 48200, category: "Base Vehicles", inStock: 117, isRecentlyOrdered: true },
   { code: "000-100-003", name: "ProMaster 3500 extended 159\" WB, high-roof body, front-wheel drive, 3.6L Pentastar V6 with 9-speed automatic, ambulance chassis package includes upgraded suspension with load-leveling rear air springs, heavy-duty brakes, and dual battery system with smart isolator relay", description: "3.6L Pentastar ambulance chassis", type: "Serialized", unitPrice: 39800, category: "Base Vehicles", inStock: 64 },
-  { code: "000-100-026", name: "54\" full-size LED lightbar with 16 independently addressable modules in red/white split pattern for ambulance application, integrated alley lights and takedown floods, 62 programmable flash patterns with traffic advisor mode, low-profile aerodynamic housing with UV-stabilized polycarbonate lens, conformal-coated electronics rated IP67", description: "Integrated alley/takedown lights, programmable flash patterns", type: "Non-Serialized", unitPrice: 3250, category: "Lighting", inStock: 156, regionalPrices: [{ currency: "USD", unitPrice: 1199 }, { currency: "EUR", unitPrice: 1509 }], isRecentlyOrdered: true },
-  { code: "000-100-041", name: "200-watt electronic siren amplifier with integrated PA system, includes wail, yelp, phaser, and hi-lo tone selections with configurable priority override, radio rebroadcast input for simultaneous PA and radio operation, backlit tactile controls with night-mode dimming, meets SAE J1849 and KKK-A-1822F specifications", description: "Radio rebroadcast input, backlit controls", type: "Non-Serialized", unitPrice: 685, category: "Audio", inStock: 89, regionalPrices: [{ currency: "USD", unitPrice: 649 }], isRecentlyOrdered: true },
+  { code: "000-100-026", name: "54\" full-size LED lightbar with 16 independently addressable modules in red/white split pattern for ambulance application, integrated alley lights and takedown floods, 62 programmable flash patterns with traffic advisor mode, low-profile aerodynamic housing with UV-stabilized polycarbonate lens, conformal-coated electronics rated IP67", description: "Integrated alley/takedown lights, programmable flash patterns", type: "Non-Serialized", unitPrice: 3250, category: "Lighting", inStock: 156, regionalPrices: [{ currency: "USD", unitPrice: 1475, partnerGroup: "North America" }, { currency: "EUR", unitPrice: 1349, partnerGroup: "Europe" }], isRecentlyOrdered: true },
+  { code: "000-100-041", name: "200-watt electronic siren amplifier with integrated PA system, includes wail, yelp, phaser, and hi-lo tone selections with configurable priority override, radio rebroadcast input for simultaneous PA and radio operation, backlit tactile controls with night-mode dimming, meets SAE J1849 and KKK-A-1822F specifications", description: "Radio rebroadcast input, backlit controls", type: "Non-Serialized", unitPrice: 685, category: "Audio", inStock: 89, regionalPrices: [{ currency: "USD", unitPrice: 675 }], isRecentlyOrdered: true },
   { code: "000-100-049", name: "Multi-band P25 Phase II digital mobile radio covering VHF (136-174 MHz), UHF (380-512 MHz), 700 MHz, and 800 MHz bands with TDMA technology, AES-256 and DES-OFB encryption, integrated GPS receiver with location reporting, Bluetooth 5.0, Over-The-Air Programming (OTAP) ready, built-in IP packet data modem for AVL and messaging", description: "AES 256 encryption, GPS, Bluetooth, OTAP ready", type: "Serialized", unitPrice: 7850, category: "Communications", inStock: 45, isRecentlyOrdered: true },
-  { code: "000-100-059", name: "Powered hydraulic stretcher with 700 lb patient capacity, battery-operated lift mechanism with proportional hydraulic control, auto-loading base with isokinetic lowering system, compatible with Power-LOAD cot fastener, Fowler/Trendelenburg positioning, retractable head section, IV pole mount, integrated CPR platform, antimicrobial powder-coated aluminum frame with stainless steel components", description: "Auto-loading with isokinetic lowering, Power-LOAD compatible", type: "Serialized", unitPrice: 18500, category: "Patient Care", inStock: 23, regionalPrices: [{ currency: "USD", unitPrice: 1395 }, { currency: "GBP", unitPrice: 1090 }], isRecentlyOrdered: true },
+  { code: "000-100-059", name: "Powered hydraulic stretcher with 700 lb patient capacity, battery-operated lift mechanism with proportional hydraulic control, auto-loading base with isokinetic lowering system, compatible with Power-LOAD cot fastener, Fowler/Trendelenburg positioning, retractable head section, IV pole mount, integrated CPR platform, antimicrobial powder-coated aluminum frame with stainless steel components", description: "Auto-loading with isokinetic lowering, Power-LOAD compatible", type: "Serialized", unitPrice: 18500, category: "Patient Care", inStock: 23, regionalPrices: [{ currency: "USD", unitPrice: 1490, partnerGroup: "North America" }, { currency: "GBP", unitPrice: 1160 }], isRecentlyOrdered: true },
   { code: "000-100-079", name: "Automatic shoreline power inlet with auto-eject on engine start, 20A/125V marine-grade weatherproof connector with corrosion-resistant stainless steel housing, includes integrated GFCI protection, LED status indicator for shore power connection state, and auto-transfer relay that switches between shore and inverter power sources without interrupting patient compartment equipment", description: "Weatherproof marine-grade connector", type: "Lot Non-Serialized", unitPrice: 1250, category: "Electrical", inStock: 200 },
   { code: "000-100-171", name: "Complete body preparation, prime, paint, and graphics installation labor package including surface prep with DA sanding and chemical etching, high-build epoxy primer with moisture barrier, base coat/clear coat in Imron polyurethane with UV protection, full agency decal/stripe/Chevron graphics per customer-supplied artwork and NFPA 1901 retroreflective markings", description: "Complete vehicle finishing service", type: "Non-Serialized", unitPrice: 5200, category: "Services", inStock: 999, isRecentlyOrdered: true },
   { code: "000-100-175", name: "8-hour on-site operator training session covering all installed vehicle systems including chassis operation, emergency lighting and siren controls, HVAC and climate management, electrical distribution panels, patient compartment equipment orientation, radio programming basics, Power-LOAD stretcher loading/unloading procedures with hands-on practicals and written competency assessment", description: "Patient compartment equipment orientation", type: "Non-Serialized", unitPrice: 1500, category: "Services", inStock: 999 },
@@ -86,7 +97,7 @@ export const CATALOG: CatalogItem[] = [
   // batches by lot for recall / expiration management. Inventory below
   // carries both `lots` and `serialNumbers` so the allocation modal can
   // pick a specific lot AND specific serial.
-  { code: "000-100-195", name: "Field-ready AED with traceable smart battery. Unique per-unit serial number for asset/warranty tracking AND lot-numbered battery cells for recall + expiration management. FDA Class III, CE marked, 8-year shelf life, biphasic 200J defibrillator with metronome-guided CPR coaching.", description: "Serial-tracked AED with lot-controlled battery cells", type: "Lot Serialized", unitPrice: 2150, category: "Patient Care", inStock: 60, regionalPrices: [{ currency: "USD", unitPrice: 1375 }, { currency: "AED", unitPrice: 5050 }] },
+  { code: "000-100-195", name: "Field-ready AED with traceable smart battery. Unique per-unit serial number for asset/warranty tracking AND lot-numbered battery cells for recall + expiration management. FDA Class III, CE marked, 8-year shelf life, biphasic 200J defibrillator with metronome-guided CPR coaching.", description: "Serial-tracked AED with lot-controlled battery cells", type: "Lot Serialized", unitPrice: 2150, category: "Patient Care", inStock: 60, regionalPrices: [{ currency: "USD", unitPrice: 1480, partnerGroup: "North America" }, { currency: "AED", unitPrice: 5450, partnerGroup: "GCC States" }] },
   /* Genuine liquid-set items — names spell out a container size
      (Gallon / Drum) so the data layer's strict heuristic routes
      them to the liquid UoM set (Liter / Gallon / Drum). The
@@ -232,6 +243,43 @@ EXTRA_CATALOG.forEach(item => { if (item.unitPrice > CATALOG_PRICE_CAP) item.uni
 /** A catalogue item by code, from either list. */
 export const findCatalogItem = (code: string): CatalogItem | undefined =>
   CATALOG.find(c => c.code === code) ?? EXTRA_CATALOG.find(c => c.code === code);
+
+/* ── A seeded line's unit and its price (27 Nov 2026, Mahreen 4b) ─────
+ * A seeded line used to carry the catalogue's per-EA price whatever unit it
+ * was seeded on, so "3 Pallet × $925" read as 3 pallets of 480 for the
+ * price of 3 units. The catalogue price is per base unit (EA, Liter, Foot);
+ * a line is now priced for its own unit, the base unit's price times the
+ * units it holds (a Box of 12 at $415 each is $4,980). A unit whose price
+ * would pass $5,000 (a Pallet of 480, a Roll of 500 ft, a Box of $685
+ * items) steps down to the largest unit in the item's set that stays under,
+ * so qty × price stays plausible. Same unit choice (pickSeededUomForLine)
+ * as before for every line that fits. */
+const SEEDED_UNIT_PRICE_LIMIT = 5_000;
+
+/** A seed's date, `daysBack` days before today's rate read ("2026/11/20").
+ *  Counted from the rate calendar's today (RATES_READ_ON, a UTC day) rather
+ *  than the local clock, so a seeded order's rate date is always the same
+ *  number of days before the last rate read and gets the same rate every
+ *  day (27 Nov 2026). Counted from the local day, an order read a different
+ *  rate from midnight to 5 AM in Pakistan, while the UTC day lags. */
+function seedDay(daysBack: number): string {
+  const d = new Date(`${RATES_READ_ON}T00:00:00`);
+  d.setDate(d.getDate() - daysBack);
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** How many base units one `uom` holds (Box 12, Drum 208, Roll 500; 1 when unknown). */
+export const unitsPerUom = (uom: string | undefined): number => findUomById(uom)?.multiplier ?? 1;
+
+function seededUnit(lineId: string, item: CatalogItem): { uom: string; unitPrice: number } {
+  const setId = getUomSetIdForProduct({ itemCode: item.code, itemName: item.name, category: item.category });
+  const set = UOM_SETS[setId];
+  const pick = pickSeededUomForLine(lineId, setId);
+  const priceFor = (multiplier: number) => Math.round(item.unitPrice * multiplier * 100) / 100;
+  const fits = set.filter((u) => u.multiplier <= pick.multiplier && priceFor(u.multiplier) <= SEEDED_UNIT_PRICE_LIMIT);
+  const unit = fits[fits.length - 1] ?? set[0];
+  return { uom: unit.name, unitPrice: priceFor(unit.multiplier) };
+}
 
 // ===== Mock Inventory =====
 const initialInventory: WarehouseInventory[] = [
@@ -1248,12 +1296,11 @@ function generateMockSOs(): SalesOrder[] {
       const isReadyToPick = lineAllocated > 0 && !isCancelledLine && ["Cleared", "Shipped", "Partially Shipped"].includes(effectiveStatus);
       const pickupSel = pickupForItem(item.code);
       /* Per-line UoM — deterministically seeded from the item's set so
-         the table reads with variety (some lines on the primary, some
-         on Box/Carton/Pallet or Gallon/Drum / Yard/Roll) without
-         every refresh flipping the assignments around. */
+         the table reads with variety (some lines on EA, some on
+         Box/Carton or Gallon/Drum / Yard) without every refresh flipping
+         the assignments around, and priced for that unit (seededUnit). */
       const lineId = `SOL-${i}-${j}`;
-      const setId = getUomSetIdForProduct({ itemCode: item.code, itemName: item.name, category: item.category });
-      const seededUom = pickSeededUomForLine(lineId, setId).name;
+      const seeded = seededUnit(lineId, item);
       lines.push({
         id: lineId,
         itemCode: item.code,
@@ -1265,8 +1312,8 @@ function generateMockSOs(): SalesOrder[] {
         pickedQty: isCancelledLine ? 0 : picked,
         shippedQty: isCancelledLine && status !== "Cancelled" ? 0 : shipped,
         deliveredQty: isCancelledLine ? 0 : delivered,
-        unitPrice: item.unitPrice,
-        uom: seededUom,
+        unitPrice: seeded.unitPrice,
+        uom: seeded.uom,
         taxRate: 0.08,
         /* Stamp the product-mapped pickup selection so opening the
            Freight & Logistics modal on this line already shows the
@@ -1468,10 +1515,7 @@ function generateMockSOs(): SalesOrder[] {
       190 + (i * 11) % 160,     // last 12 months
       400 + (i * 17) % 100,     // older
     ][i % 6];
-    const soDay = (daysBack: number) => {
-      const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - daysBack);
-      return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
-    };
+    const soDay = seedDay;
     const soCreatedDate = soDay(soDaysAgo);
     const soOrderDate = soDay(soDaysAgo + (i % 5));
     const soLastUpdated = soDay(Math.max(0, soDaysAgo - (5 + (i * 5) % 23)));
@@ -1676,7 +1720,7 @@ function applyEmptyCustomerDemo(sos: SalesOrder[]): void {
 }
 
 /** The design's seeded orders are written in USD. Restate one in its
- *  customer's currency (prices, freight, its documents) at the mid-market
+ *  customer's currency (prices, freight, its documents) at the daily market
  *  rate on its order date, and stamp that rate. Applied last, so no seed
  *  sequence changes. */
 function inCustomerCurrency(so: SalesOrder): SalesOrder {
@@ -1704,19 +1748,23 @@ function inCustomerCurrency(so: SalesOrder): SalesOrder {
  *  each line from the item, as the create dialog now does: the item's price
  *  in the order's currency, else its base price at the order's rate (an
  *  estimate). The bariatric duplicate line carries a hand-set price. Orders
- *  from a quote keep the quote's prices; base-currency orders are unchanged. */
+ *  from a quote keep the quote's prices; base-currency orders are unchanged.
+ *  Since 27 Nov 2026 the item's price is for the customer's group (Spec D)
+ *  and, like the seeded list price, per base unit: a line on a Box takes
+ *  12 of it (seededUnit). */
 function withMarketPrices(so: SalesOrder): SalesOrder {
   if (so.sourceQuoteRef) return so;
   const fx = soFx(so);
   if (isBaseCurrency(fx.currency)) return so;
+  const group = customerGroupOf(so.customer);
   return {
     ...so,
     lines: so.lines.map((l) => {
       if (l.id.endsWith("-dup")) return { ...l, priceSource: "manual" as const };
       const item = findCatalogItem(l.itemCode);
       if (!item) return l;
-      const p = marketPrice(item, fx.currency, fx.rate);
-      return { ...l, unitPrice: p.unitPrice, priceSource: p.priceSource };
+      const p = marketPrice(item, fx.currency, fx.rate, { group });
+      return { ...l, unitPrice: roundTo(fx.currency, p.unitPrice * unitsPerUom(l.uom)), priceSource: p.priceSource };
     }),
   };
 }
@@ -1727,9 +1775,12 @@ function withMarketPrices(so: SalesOrder): SalesOrder {
  *  quotes it, and the linked quote, invoices, payments and credit memos are
  *  made from it (generateLinkedTransactions). */
 function withSeededAmounts(so: SalesOrder): SalesOrder {
-  if (so.soNumber === EMPTY_CUSTOMER_SO_NUMBER) return so;
   const code = so.currency || DESIGN_CURRENCY;
   const grand = roundTo(code, summarizeSO(so).grandTotal);
+  /* The name-only customer's Draft has no documents or description, but its
+     total is its lines' too (27 Nov 2026): the home page's pipeline value
+     adds `total`, and it read $20,039.40 against the order's $20,139.12. */
+  if (so.soNumber === EMPTY_CUSTOMER_SO_NUMBER) return { ...so, total: grand };
   const index = Number(so.soNumber.slice(-3)) || 0;
   return {
     ...so,
@@ -1757,6 +1808,11 @@ function initializeMockData(): { sos: SalesOrder[]; shipments: Shipment[] } {
      Splice at index 2 so it sits at listing position #3. */
   if (sos.length > 0) {
     const template = sos[0];
+    /* Dated back from today (27 Nov 2026), as every other seed is, so its
+       rate is the same every day: with the rate history ending today, its
+       fixed 28 May 2026 order date read a different day's rate each day and
+       its base figures moved. 183 days back is 28 May on 27 Nov. */
+    const daysBack = seedDay;
     const hero: SalesOrder = {
       ...template,
       id: 'so-outdated-demo',
@@ -1766,8 +1822,8 @@ function initializeMockData(): { sos: SalesOrder[]; shipments: Shipment[] } {
       customerId: 'cust-mc-outdated',
       status: 'Draft',
       priority: 'High',
-      orderDate: '2026/05/28',
-      createdDate: '2026/05/14',
+      orderDate: daysBack(183),
+      createdDate: daysBack(197),
       currency: 'USD',
       description: 'Type III ambulance conversion — Metro City Fire & Rescue. Configuration is drifting from upstream modules (currency, ship-to, pricing rule tier, sales rep). Review the pending updates from the header pill.',
       shipmentIds: [],

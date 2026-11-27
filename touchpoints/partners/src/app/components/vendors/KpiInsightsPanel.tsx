@@ -29,13 +29,13 @@ import {
 import type { Vendor } from "../../data/vendors";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatCompactMoney } from "@/app/currency/money";
-import { CORPORATE_RATE_EFFECTIVE, partnerCurrencyOf, toBaseNow } from "@/app/currency/partnerCurrency";
+import { CORPORATE_RATES_SET, partnerCurrencyOf, toBaseNow } from "@/app/currency/partnerCurrency";
 import { usePartnerCurrencyOf } from "@/app/currency/usePartnerCurrency";
 
 /* Money KPIs add up partners that trade in different currencies, so each
-   partner's amount is converted to the base currency (at today's mid-market
+   partner's amount is converted to the base currency (at today's daily market
    rate) before summing, and the total is shown in base. */
-const BASE_NOTE = `Shown in the base currency (${BASE_CURRENCY}). Each partner's amount is converted from its own currency at today's mid-market rate.`;
+const BASE_NOTE = `Shown in the base currency (${BASE_CURRENCY}). Each partner's amount is converted from its own currency at today's daily market rate.`;
 
 /* ─── KPI definition type ─── */
 export interface KpiDefinition {
@@ -253,7 +253,7 @@ export const ALL_KPI_DEFINITIONS: KpiDefinition[] = [
     formula: "sum(orders) over customer-side partners",
   },
   // FX — the corporate rate, from the Currency & Exchange Rates module. There
-  // is no Mid-market Rate card: insights are always in the base currency
+  // is no Daily Market Rate card: insights are always in the base currency
   // (Mahreen, 2026-11-19).
   {
     key: "corporate_rate",
@@ -424,7 +424,7 @@ export function computeKpiValue(key: string, vendors: Vendor[], currencyOf: Curr
     case "sales_orders":
       return String(vendors.reduce((s, v) => s + splitVendorOrders(v).so, 0));
     case "corporate_rate":
-      return CORPORATE_RATE_EFFECTIVE;
+      return CORPORATE_RATES_SET;
     default:
       return "–";
   }
@@ -778,7 +778,7 @@ export function KpiInsightsPanel({
                         </div>
                       </div>
 
-                      {/* Value — the rate insights' "Updated as of …" is long, so
+                      {/* Value — the rate insights' "6 currencies, last set on …" is long, so
                           it wraps in a smaller size. */}
                       <p
                         className={`${RATE_KPI_KEYS.has(kpi.key) ? "text-[12px] leading-snug" : "text-[15px]"} mt-1 transition-colors ${

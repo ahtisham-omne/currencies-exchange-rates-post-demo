@@ -130,8 +130,8 @@ import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
 import { DocMoney } from "@/app/components/currency/DocCurrency";
 import { soFx } from "@/app/currency/soFx";
 import { restateDesign } from "./soMoney";
-import { marketPrice, type LinePriceSource } from "@/app/currency/itemPrices";
-import { EstimatePriceIcon } from "@/app/components/currency/EstimatePriceIcon";
+import { customerGroupOf, itemBasePrice, marketPrice, type LinePriceSource } from "@/app/currency/itemPrices";
+import { EstimateChip, EstimatePriceIcon, itemPriceCaption } from "@/app/components/currency/EstimatePriceIcon";
 const PENDING_UOM_OPTIONS = UOM_SETS.discrete;
 type UomOption = ImportedUomOption;
 
@@ -306,8 +306,8 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
   const so = store.salesOrders.find(s => s.id === soId);
   const [search, setSearch] = useState("");
   /* The catalog's list prices are the design's USD; on this order they are
-     in its currency, at the mid-market rate on its order date (spec 4.3),
-     and shown in the page's (base by default, the other one on hover). */
+     in its currency, at the daily market rate on its order date (spec 4.3),
+     and shown in the page's (the customer's by default, the other one on hover). */
   const formatCurrency = useDocMoney();
   const fx = so ? soFx(so) : null;
   /* Since 25 Nov 2026 (Nophil review item 2) a line takes the item's price
@@ -317,15 +317,20 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
     const sources = new Map<string, LinePriceSource>();
     const items = fx
       ? STORE_CATALOG.map((c) => {
-          const p = marketPrice(c, fx.currency, fx.rate, restateDesign(c.unitPrice, fx.currency, fx.rateDate));
+          const p = marketPrice(c, fx.currency, fx.rate, { basePrice: restateDesign(c.unitPrice, fx.currency, fx.rateDate), group: customerGroupOf(so?.customer) });
           sources.set(c.code, p.priceSource);
           return { ...c, unitPrice: p.unitPrice };
         })
       : STORE_CATALOG;
     return { items, sources };
-  }, [fx?.currency, fx?.rate, fx?.rateDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fx?.currency, fx?.rate, fx?.rateDate, so?.customer]); // eslint-disable-line react-hooks/exhaustive-deps
   const CATALOG = priced.items;
   const isEstimate = (code: string) => priced.sources.get(code) === "estimate";
+  /** The base price an estimated catalogue price was converted from (4d). */
+  const estimateBaseOf = (code: string) => {
+    const original = STORE_CATALOG.find((c) => c.code === code);
+    return original ? itemBasePrice(original) : 0;
+  };
 
   /* Item peek modal — opens when the user taps any catalog or
      selected-card thumbnail. Same chrome as SOLineGrid. */
@@ -901,11 +906,22 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
                               {sidebarWidth === "narrow" && <ItemTypeBadge type={item.type} />}
                             </div>
                             <div className="text-right shrink-0">
+                              {/* 4d (Mahreen, 27 Nov 2026; waiting on Eli): "Est."
+                                  and an info icon on a converted price, "Item's
+                                  USD price" under the item's own. */}
                               {isEstimate(item.code) && (
-                                <span className="inline-flex align-middle" style={{ marginRight: 4 }}><EstimatePriceIcon currency={fx?.currency ?? ""} rateDate={fx?.rateDate} /></span>
+                                <span className="inline-flex align-middle" style={{ marginRight: 4 }}><EstimateChip /></span>
                               )}
                               <DocMoney value={item.unitPrice} style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)", color: "var(--foreground)" }} />
                               <span style={{ fontSize: 11, color: "var(--muted-foreground)", marginLeft: 4 }}>/ {findUomById(getPrimaryUomForProduct(item))?.name || 'EA'}</span>
+                              {isEstimate(item.code) && fx && (
+                                <span className="inline-flex align-middle" style={{ marginLeft: 4 }}>
+                                  <EstimatePriceIcon currency={fx.currency} basePrice={estimateBaseOf(item.code)} rate={fx.rate} rateType={fx.rateType} date={fx.rateDate} />
+                                </span>
+                              )}
+                              {fx && priced.sources.get(item.code) === "regional" && (
+                                <div style={{ fontSize: 10, color: "var(--muted-foreground)", lineHeight: 1.3, marginTop: 2 }}>{itemPriceCaption(fx.currency)}</div>
+                              )}
                             </div>
                           </div>
 
@@ -1257,11 +1273,17 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
                                   />
                                   <div className="flex-1 text-right min-w-0">
                                     <div className="truncate flex items-center justify-end gap-1" style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
-                                      {p.priceSource === "estimate" && <EstimatePriceIcon currency={fx?.currency ?? ""} rateDate={fx?.rateDate} />}
+                                      {p.priceSource === "estimate" && fx && (
+                                        <>
+                                          <EstimateChip />
+                                          <EstimatePriceIcon currency={fx.currency} basePrice={estimateBaseOf(p.item.code)} rate={fx.rate} rateType={fx.rateType} date={fx.rateDate} />
+                                        </>
+                                      )}
                                       <DocMoney value={p.qty * p.item.unitPrice} />
                                     </div>
                                     <div className="truncate" style={{ fontSize: 11, fontWeight: 400, color: "var(--muted-foreground)" }}>
                                       {itemUomLabel}
+                                      {p.priceSource === "regional" && fx && <> · {itemPriceCaption(fx.currency)}</>}
                                     </div>
                                   </div>
                                 </>

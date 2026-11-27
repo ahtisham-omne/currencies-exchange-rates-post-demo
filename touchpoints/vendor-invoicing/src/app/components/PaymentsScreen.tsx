@@ -111,8 +111,9 @@ import { BaseMoney } from '@/app/components/currency/Money';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { paymentFx, settledCurrencyOf, toPaymentBase } from '@/app/currency/paymentFx';
-import { estimatedRateOf, needsBankRate, withBankRate } from '@/app/currency/paymentLedger';
+import { bankRatePairOf, estimatedRateOf, needsBankRate, withBankRate } from '@/app/currency/paymentLedger';
 import { MarkPaidDialog } from '@/app/components/payments/MarkPaidDialog';
+import { BankRateDueBanner, bankRateDueToday } from '@/app/components/payments/BankRateDueBanner';
 import { BulkActionBar, type BulkAction } from '@/app/components/BulkActionBar';
 import { getBulkActions, isBulkEligible, type PaymentActionId } from '@/app/data/paymentActions';
 import {
@@ -158,6 +159,9 @@ const PAYMENT_COLUMN_CATALOG: { key: string; label: string }[] = [
   { key: 'appliedTo', label: 'Applied To' },
   { key: 'amount', label: 'Amount' },
   { key: 'status', label: 'Status' },
+  // A scheduled payment's estimated rate, or the rate it went at (27 Nov
+  // 2026, Mahreen 7e).
+  { key: 'rate', label: 'Rate' },
   { key: 'memo', label: 'Description' },
   { key: 'updatedBy', label: 'Last Updated By' },
   { key: 'updatedDate', label: 'Last Updated On' },
@@ -359,6 +363,7 @@ export function PaymentsScreen({
   // paying USD) first asks for the rate the bank used (25 Nov 2026, Nophil
   // item 9, MarkPaidDialog); every other one is marked paid straight away.
   const [markPaidIds, setMarkPaidIds] = useState<string[] | null>(null);
+  const rateDueToday = useMemo(() => bankRateDueToday(payments), [payments]);
   const handleMarkPaid = (ids: string[]) => {
     const targets = payments.filter((p) => ids.includes(p.id) && p.status === 'Scheduled');
     if (targets.length === 0) return;
@@ -374,7 +379,7 @@ export function PaymentsScreen({
     const settled = new Map(
       targets.map((t) => [
         t.id,
-        needsBankRate(t) ? withBankRate(t, rates[settledCurrencyOf(t)] ?? estimatedRateOf(t), invoices) : t,
+        needsBankRate(t) ? withBankRate(t, rates[bankRatePairOf(t)] ?? estimatedRateOf(t), invoices) : t,
       ]),
     );
     setPayments((prev) =>
@@ -558,7 +563,7 @@ export function PaymentsScreen({
   const [columnDrawerOpen, setColumnDrawerOpen] = useState(false);
   const [columnOrder, setColumnOrder] = useState<string[]>(() => PAYMENT_COLUMN_CATALOG.map((c) => c.key));
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, true])),
+    Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'rate' || module === 'vendor'])),
   );
   // Column drawer Reset restores this default view and remounts the
   // table so dragged widths snap back too (10/9/26).
@@ -1344,6 +1349,17 @@ export function PaymentsScreen({
         </div>
       )}
 
+      {/* The bank's rate is due (27 Nov 2026, Mahreen 7e): a payment
+          scheduled for today that the bank converts. Enter Rate opens Mark
+          as paid for the rate the bank gave. */}
+      {showPaymentsBody && module === 'vendor' && rateDueToday.length > 0 && (
+        <BankRateDueBanner
+          className={`shrink-0 ${showInsights && activeKpiKeys.length > 0 ? 'mb-3' : 'mt-3'}`}
+          payments={rateDueToday}
+          onEnterRate={(p) => handleMarkPaid([p.id])}
+        />
+      )}
+
       {/* Unified Table Container — wraps search, pills, table, pagination.
           Hidden when the workspace's "Ready to pay" tab is active. */}
       {showPaymentsBody && (
@@ -1988,7 +2004,7 @@ export function PaymentsScreen({
           open={columnDrawerOpen}
           onOpenChange={setColumnDrawerOpen}
           defaultColumnOrder={PAYMENT_COLUMN_CATALOG.map((c) => c.key)}
-          defaultColumnVisibility={Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, true]))}
+          defaultColumnVisibility={Object.fromEntries(PAYMENT_COLUMN_CATALOG.map((c) => [c.key, c.key !== 'rate' || module === 'vendor']))}
           onReset={() => setColumnResetKey((k) => k + 1)}
         />
       </div>
@@ -2055,6 +2071,7 @@ export function PaymentsScreen({
         open={markPaidIds != null}
         onOpenChange={(o) => { if (!o) setMarkPaidIds(null); }}
         payments={payments.filter((p) => markPaidIds?.includes(p.id) && p.status === 'Scheduled')}
+        invoices={invoices}
         onConfirm={(rates) => {
           const targets = payments.filter((p) => markPaidIds?.includes(p.id) && p.status === 'Scheduled');
           setMarkPaidIds(null);

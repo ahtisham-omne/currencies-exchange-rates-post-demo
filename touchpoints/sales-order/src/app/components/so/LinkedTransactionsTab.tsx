@@ -57,7 +57,8 @@ export function LinkedTransactionsTab({ transactions, createdViaUI = false }: Pr
   /* Documents are in the order's currency unless they carry their own (a
      quote, or one raised before the order's currency changed); section
      totals add them up in the order's currency. Both are shown in the page's
-     currency (base by default); a document's own figure is on hover. */
+     currency (the customer's by default since 27 Nov 2026); a document's own
+     figure is on hover. */
   const { currency, fx, rateDate } = useDocCurrency();
   const whole = useDocWhole();
   const inOrder = (t: { amount: number; currency?: string }) =>

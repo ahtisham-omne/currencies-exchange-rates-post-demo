@@ -7,11 +7,13 @@ import { BASE_CURRENCY, isBaseCurrency } from './currencies';
 import { invoiceFx } from './invoiceFx';
 import { bookedRateOf, settledCurrencyOf } from './paymentFx';
 import {
+  accountDayRateOn,
   bankConversionText,
   buildPaymentGlFx,
   convertsAtBank,
   costInBase,
   dayRateOn,
+  isThirdCurrency,
   glAtRate,
   paymentRateOf,
   realizedFxDescription,
@@ -41,7 +43,7 @@ export interface PaymentLedger {
   converts: boolean;
   /** The payment's rate (the bank's, or the day's). */
   rate: number;
-  /** Mid-market on the payment date. */
+  /** The daily market rate on the payment date. */
   dayRate: number;
   /** What the cash cost in base. */
   cost: number;
@@ -117,6 +119,7 @@ export function paymentLedger(p: Payment, invoices: Invoice[], payments: Payment
       bankGl: account?.creditGl ?? p.bankAccount,
       accountCurrency,
       bankAmount: p.bankAmount,
+      accountAmount: p.accountAmount,
       paymentRate: rate,
       paymentDate: p.paymentDate,
       description: `Settle ${lines.map((l) => l.invoiceNumber).join(', ')}`,
@@ -153,31 +156,87 @@ export function paymentLedger(p: Payment, invoices: Invoice[], payments: Payment
  * is a settlement fact, not a rate override, so it is asked whichever rate
  * type the company uses. Saved on the payment, it becomes the payment's
  * rate: the bank's figure is the amount at it, and the realized FX Gain/Loss
- * moves by the difference from the estimate. */
+ * moves by the difference from the estimate.
+ * The bank's rate is in the account's currency per one unit of the
+ * invoice's (27 Nov 2026, D7): base per unit from a base account, the
+ * direct pair from a third currency (1 USD = 1.3935 CAD). */
+
+const accountCurrencyOf = (p: Pick<Payment, 'bankAccount'>) =>
+  (PAY_FROM_ACCOUNTS.find((a) => a.id === p.bankAccount)?.currency ?? BASE_CURRENCY).toUpperCase();
 
 /** The pay-from account's currency differs from what the vendor receives,
  *  so the bank converts and the rate is only an estimate until it's paid. */
 export function needsBankRate(p: Payment): boolean {
   if (p.status !== 'Scheduled') return false;
-  const currency = settledCurrencyOf(p);
-  const accountCurrency = PAY_FROM_ACCOUNTS.find((a) => a.id === p.bankAccount)?.currency ?? BASE_CURRENCY;
-  return accountCurrency.toUpperCase() !== currency && convertsAtBank(accountCurrency, currency);
+  return convertsAtBank(accountCurrencyOf(p), settledCurrencyOf(p));
 }
 
-/** The rate a scheduled payment was estimated at, base per one unit. */
-export const estimatedRateOf = (p: Payment) => paymentRateOf(p);
+/** Where a payment's bank rate is read: "USD/PKR", "USD/CAD". Payments
+ *  marked paid together share one rate per pair. */
+export const bankRatePairOf = (p: Payment) => `${settledCurrencyOf(p)}/${accountCurrencyOf(p)}`;
+
+/** The pay-from account's currency, for a payment. */
+export const paymentAccountCurrencyOf = accountCurrencyOf;
+
+/** A payment's bank rate, in the account's currency per one unit of the
+ *  invoice's: from a third currency what the bank took over the amount
+ *  (else the day's cross rate), from a base account the payment's rate. */
+export function bankRateOf(p: Payment): number {
+  const currency = settledCurrencyOf(p);
+  const accountCurrency = accountCurrencyOf(p);
+  if (isThirdCurrency(accountCurrency, currency)) {
+    return p.accountAmount != null && p.amount > 0
+      ? p.accountAmount / p.amount
+      : accountDayRateOn(currency, accountCurrency, p.paymentDate);
+  }
+  return paymentRateOf(p);
+}
+
+/** The rate a scheduled payment was estimated at, in the account's
+ *  currency per one unit (the bank's rate field starts at it). */
+export const estimatedRateOf = (p: Payment) => bankRateOf(p);
 
 /** What a scheduled payment was estimated to cost in the account's currency. */
-export const estimatedCostOf = (p: Payment) => costInBase(p);
+export function estimatedCostOf(p: Payment): number {
+  if (isThirdCurrency(accountCurrencyOf(p), settledCurrencyOf(p))) {
+    return Math.round(p.amount * bankRateOf(p) * 100) / 100;
+  }
+  return costInBase(p);
+}
+
+/** What a payment costs in base at a bank rate (account currency per unit):
+ *  from a third currency, the account's amount at the payment date's rate
+ *  of that currency (rule 8). */
+export function costAtBankRate(p: Pick<Payment, 'amount' | 'paymentDate' | 'bankAccount' | 'currency'> & Partial<Pick<Payment, 'settledCurrency'>>, bankRate: number): { cost: number; accountAmount: number | null } {
+  const currency = settledCurrencyOf(p);
+  const accountCurrency = accountCurrencyOf(p);
+  if (isThirdCurrency(accountCurrency, currency)) {
+    const accountAmount = Math.round(p.amount * bankRate * 100) / 100;
+    return { cost: toBase(accountAmount, dayRateOn(accountCurrency, p.paymentDate)), accountAmount };
+  }
+  return { cost: toBase(p.amount, bankRate), accountAmount: null };
+}
 
 /** The payment, settled at the rate the bank used: the rate and the bank's
  *  figure saved on it, and a saved journal re-posted at them (the bank line
- *  at what it cost, the rest to Realized FX Gain/Loss). */
+ *  at what it cost, the rest to Realized FX Gain/Loss). `rate` is the bank's,
+ *  in the account's currency per one unit of the invoice's. */
 export function withBankRate(p: Payment, rate: number, invoices: Invoice[]): Payment {
   if (!needsBankRate(p) || !(rate > 0)) return p;
   const currency = settledCurrencyOf(p);
-  const cost = toBase(p.amount, rate);
-  const next: Payment = { ...p, exchangeRate: rate, bankAmount: cost, rateEdited: true, rateDate: p.paymentDate };
+  const accountCurrency = accountCurrencyOf(p);
+  const { cost, accountAmount } = costAtBankRate(p, rate);
+  // Base per one unit: the bank's rate from a base account; from a third
+  // currency, what it cost in base over the amount.
+  const baseRate = accountAmount != null && p.amount > 0 ? cost / p.amount : rate;
+  const next: Payment = {
+    ...p,
+    exchangeRate: baseRate,
+    bankAmount: cost,
+    ...(accountAmount != null ? { accountAmount } : {}),
+    rateEdited: true,
+    rateDate: p.paymentDate,
+  };
   // A seed without a journal is built from the rule when it's read
   // (paymentLedger), so the bank's figure is all it needs.
   if (!p.glEntries?.some((e) => e.currency)) return next;
@@ -188,7 +247,16 @@ export function withBankRate(p: Payment, rate: number, invoices: Invoice[]): Pay
     .filter((e) => e.accountCode !== fxCode)
     .map((e) =>
       e.accountCode === bankCode && e.credit != null
-        ? { ...e, credit: cost, rate, description: `Bank converts ${bankConversionText(cost, p.amount, currency)}` }
+        ? accountAmount != null
+          ? {
+              ...e,
+              credit: cost,
+              currency: accountCurrency,
+              foreignAmount: accountAmount,
+              rate: dayRateOn(accountCurrency, p.paymentDate),
+              description: `Bank converts ${bankConversionText(accountAmount, p.amount, currency, accountCurrency)}`,
+            }
+          : { ...e, credit: cost, rate, description: `Bank converts ${bankConversionText(cost, p.amount, currency)}` }
         : e,
     );
   const total = (side: 'debit' | 'credit') => round2(entries.reduce((s, e) => s + (e[side] ?? 0), 0));
@@ -199,7 +267,7 @@ export function withBankRate(p: Payment, rate: number, invoices: Invoice[]): Pay
     entries.push({
       accountCode: g.code,
       accountName: g.name,
-      description: realizedFxDescription(currency, paymentLedger(p, invoices).lines, rate, p.paymentDate, true),
+      description: realizedFxDescription(currency, paymentLedger(p, invoices).lines, baseRate, p.paymentDate, true),
       ...(kind === 'gain' ? { credit: Math.abs(rest) } : { debit: Math.abs(rest) }),
     });
   }

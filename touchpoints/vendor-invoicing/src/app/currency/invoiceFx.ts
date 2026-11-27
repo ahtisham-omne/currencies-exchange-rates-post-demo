@@ -94,6 +94,17 @@ export function invoiceRateLocked(inv: FxFields & Pick<Invoice, 'status'>): bool
 /** An invoice amount (its total, balance, a line…) in the base currency. */
 export const toInvoiceBase = (inv: FxFields, amount: number) => toBase(amount, invoiceFx(inv).rate);
 
+/** An invoice's base equivalent on the lists (Mahreen, 27 Nov 2026, 6a): a
+ *  posted invoice's fixed base amount, at its own rate; an unposted one
+ *  (Pending Approval, a pre-invoice not yet paid) an estimate at today's
+ *  rate, marked ≈. A base-currency invoice is its own amount. */
+export function invoiceBaseEquivalent(inv: FxFields & Pick<Invoice, 'status'>, amount: number): { base: number; estimate: boolean } {
+  const code = (inv.currency || BASE_CURRENCY).toUpperCase();
+  if (isBaseCurrency(code)) return { base: amount, estimate: false };
+  if (invoiceRateLocked(inv)) return { base: toInvoiceBase(inv, amount), estimate: false };
+  return { base: toTodayBase(code, amount), estimate: true };
+}
+
 /** Today's rate for a currency: Company Setup's rate type, mid-market when
  *  there's none of that type (25 Nov 2026, Nophil item 8). The invoice
  *  lists' "Amount (PKR)" estimate converts at it; an invoice's own amount

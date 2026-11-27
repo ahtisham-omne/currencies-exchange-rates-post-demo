@@ -1,47 +1,49 @@
 import * as React from 'react';
-import { AlertCircle, AlertTriangle, RotateCcw, Settings2 } from 'lucide-react';
+import { RotateCcw, Settings2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/app/components/ui/dialog';
-import { MoneyInput } from '@/app/components/payments/MoneyInput';
 import type { PayFromAccount } from '@/app/data/mockPayments';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
-import { formatMoney, formatRate, formatRateDate, moneyPrefix } from '@/app/currency/money';
+import { formatMoney, formatRate, formatRateDate } from '@/app/currency/money';
 import { RATE_PROVIDER, toBase } from '@/app/currency/rates';
 import {
   OTHER_CURRENCY_NOTE,
+  accountDayRateOn,
   bankRateNeedsReview,
   convertsAtBank,
-  derivedRate,
+  isThirdCurrency,
+  pairRateText,
   payFromBlockReason,
-  rateGapPct,
   realizedFxOf,
   type CreditUsed,
   type SettledLine,
 } from '@/app/currency/paymentRules';
-import { AmountBox, LockedCurrency, RateCard, Section, VarianceCard, baseRate, rateAsOfLine } from './InvoiceCurrencyConfig';
-import { CurrencyBlock, PAYMENT_FX_VARIANCE_TITLE, RateTypeChip, type CurrencyBlockRow } from './CurrencyBlock';
+import { sortPayFromAccounts } from '@/app/currency/payFrom';
+import { AmountBox, LockedCurrency, Section, VarianceCard, baseRate } from './InvoiceCurrencyConfig';
+import { CurrencyBlock, PAYMENT_FX_VARIANCE_TITLE, type CurrencyBlockRow } from './CurrencyBlock';
 import { PayFromAccountPicker } from './PayFromAccountPicker';
+import { BankRateBreakdown, BankRateField, OurRateField, SameCurrencyNote, bankRateFigures, parseRateInput, rateInputText } from './BankRateField';
 
 /* ── A payment's currency: the currency block and Currency Configuration ──
  * The payment counterpart of the invoice's (InvoiceCurrencyConfig), in the
  * Currency Touchpoints Map's shape (24 Nov 2026), on the payment rules
  * (currency/paymentRules.ts):
- *  - "Pay from": the account, in the invoices' currency or the base. Only
- *    those are offered; the PO's "You pay in" (or the invoice's own pay-from
- *    account) picked the default.
+ *  - "Pay from": any account (27 Nov 2026, D7: a third currency too), the
+ *    invoices' currency first; the PO's "You pay in" (or the invoice's own
+ *    pay-from account) picked the default.
  *  - "Vendor receives": the invoices' currency, fixed.
  *  - "You pay in": the account's currency (the account on hover). "Base
  *    equivalent", always shown: from a base account, what the bank took
- *    (entered, else the payment date's mid-market estimate); from an account
- *    in the invoices' currency, the amount at the payment date's rate.
- *  - "Exchange rate": worked out from the two amounts, or the payment date's
- *    mid-market rate when nothing converts. No lock on the rate (25 Nov
- *    2026); the configuration is read-only once the payment posts.
+ *    (the amount at the bank's rate); from an account in the invoices'
+ *    currency, the amount at the payment date's rate.
+ *  - "Our rate" and "Bank's rate" when the bank converts (27 Nov 2026,
+ *    Mahreen 7a, BankRateField): the payment date's daily market rate, and
+ *    the one rate entered, with the breakdown under it. From an account in
+ *    the invoices' currency, "Same currency. No exchange rate needed." (7b).
+ *    The configuration is read-only once the payment posts.
  *  - "FX variance": what A/P carried at the invoice rates against what paying
  *    cost. + is a gain (FX Gain), − a loss (FX Loss).
- * In Record Payment the dialog edits the account and the bank's figure
- * (Save writes them back). The dialog reads Pay from, Vendor receives, Base
- * equivalent (from a base account, what the bank took), [Vendor credit],
- * FX variance, Exchange rate. On a saved payment it is read-only. A payment of
+ * In Record Payment the dialog edits the account and the bank's rate (Save
+ * writes them back). On a saved payment it is read-only. A payment of
  * base-currency invoices converts nothing. */
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -67,8 +69,11 @@ export interface PaymentCurrencyBlockProps {
   vendorReceives: number;
   /** The pay-from account. */
   account?: Pick<PayFromAccount, 'label' | 'currency'> | null;
-  /** From a base account: what the bank took (the estimate until entered). */
+  /** From an account in another currency: what the bank took, in base. */
   bankTook?: number | null;
+  /** From a third currency: what the bank took, in the account's currency
+   *  (the rate row then reads the direct pair, "1 USD = 1.3935 CAD"). */
+  accountTook?: number | null;
   /** The payment's rate: worked out from the two amounts, or the day's. */
   rate: number;
   paymentDate: string;
@@ -92,6 +97,7 @@ export function PaymentCurrencyBlock({
   vendorReceives,
   account,
   bankTook,
+  accountTook,
   rate,
   paymentDate,
   lines = [],
@@ -104,6 +110,9 @@ export function PaymentCurrencyBlock({
   const code = currency.toUpperCase();
   const accountCurrency = account?.currency ?? BASE_CURRENCY;
   const converts = convertsAtBank(accountCurrency, code);
+  const third = isThirdCurrency(accountCurrency, code);
+  // A third currency's rate is the direct pair, no PKR rate (D7).
+  const pairText = third && accountTook != null && vendorReceives > 0 ? pairRateText(code, accountCurrency, accountTook / vendorReceives) : undefined;
   const cost = converts ? round2(bankTook ?? toBase(vendorReceives, rate)) : toBase(vendorReceives, rate);
   const rows: CurrencyBlockRow[] = [{ label: past ? 'Vendor received' : 'Vendor receives', code, amount: vendorReceives }];
   // Currency information (25 Nov 2026): the currency you pay in (the
@@ -118,21 +127,24 @@ export function PaymentCurrencyBlock({
     label: 'Base equivalent',
     code: BASE_CURRENCY,
     amount: cost,
-    title: converts ? `What the bank took${account ? ` from ${account.label}` : ''}` : `At the ${formatRateDate(paymentDate)} rate`,
+    title: converts
+      ? `What the bank took${account ? ` from ${account.label}` : ''}${third ? `, at the ${formatRateDate(paymentDate)} ${accountCurrency} rate` : ''}`
+      : `At the ${formatRateDate(paymentDate)} rate`,
   });
   return (
     <CurrencyBlock
       className={className}
       currency={code}
-      rateType="mid"
-      rateTip={
-        converts
-          ? `Mid-market is the rate type. Paid from a ${BASE_CURRENCY} account, the rate comes from the two amounts: what the vendor receives and what the bank took.`
-          : `The mid-market rate on ${formatRateDate(paymentDate)}, the payment date · ${RATE_PROVIDER}`
-      }
+      // The bank's rate isn't the daily market rate, so no chip on it.
+      rateType={converts ? null : 'mid'}
+      rateTip={converts ? undefined : `The daily market rate on ${formatRateDate(paymentDate)}, the payment date · ${RATE_PROVIDER}`}
       rows={rows}
-      variance={realized != null ? { amount: realized, title: `${paymentRatesText(lines, rate)}. ${PAYMENT_FX_VARIANCE_TITLE}` } : null}
-      rate={{ rate, qualifier: qualifier ?? (converts ? 'from the two amounts' : 'payment date') }}
+      variance={
+        realized != null
+          ? { amount: realized, title: third ? PAYMENT_FX_VARIANCE_TITLE : `${paymentRatesText(lines, rate)}. ${PAYMENT_FX_VARIANCE_TITLE}` }
+          : null
+      }
+      rate={{ rate, text: pairText, qualifier: qualifier ?? (converts ? "bank's rate" : 'payment date') }}
       onViewConfig={onViewConfig}
     />
   );
@@ -142,8 +154,9 @@ export function PaymentCurrencyBlock({
 
 export interface PaymentCurrencyChoice {
   accountId: string;
-  /** From a base account: the bank's figure; null keeps the estimate. */
-  bankTook: number | null;
+  /** From an account in another currency: the bank's rate as typed, in the
+   *  account's currency per one unit; null keeps our rate. */
+  bankRate: string | null;
 }
 
 export interface PaymentCurrencyConfigDialogProps {
@@ -158,13 +171,14 @@ export interface PaymentCurrencyConfigDialogProps {
   currency: string;
   /** The cash, in the invoices' currency. */
   vendorReceives: number;
-  /** The accounts to offer; only those that may pay are listed. */
+  /** The accounts to offer; only those that may pay are listed, the
+   *  invoices' currency first. */
   accounts: PayFromAccount[];
   value: PaymentCurrencyChoice;
   /** The account currency the PO's You pay in asks for. */
   youPayIn: string;
   paymentDate: string;
-  /** Mid-market on the payment date. */
+  /** The daily market rate on the payment date, base per one unit. */
   dayRate: number;
   /** The invoices settled, each at its rate, for what A/P carried. */
   lines: SettledLine[];
@@ -202,30 +216,35 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
   } = props;
 
   const [accountId, setAccountId] = React.useState(value.accountId);
-  const [bankTook, setBankTook] = React.useState<number | null>(value.bankTook);
+  const [bankRate, setBankRate] = React.useState<string | null>(value.bankRate);
   React.useEffect(() => {
     if (!open) return;
     setAccountId(value.accountId);
-    setBankTook(value.bankTook);
+    setBankRate(value.bankRate);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const base = isBaseCurrency(currency);
-  // Only an account in the invoices' currency or in base is offered (rule 3).
-  const eligible = accounts.filter((a) => !payFromBlockReason(a.currency, currency));
+  // Any account that may pay (rule 3, 27 Nov 2026), the invoices' currency first.
+  const eligible = sortPayFromAccounts(accounts.filter((a) => !payFromBlockReason(a.currency, currency)), currency);
   const account = accounts.find((a) => a.id === accountId) ?? null;
   const accountCurrency = account?.currency ?? BASE_CURRENCY;
   const converts = convertsAtBank(accountCurrency, currency);
-  const estimate = toBase(vendorReceives, dayRate);
-  const took = converts ? bankTook ?? estimate : null;
-  const rate = base ? 1 : converts ? derivedRate(vendorReceives, took ?? 0) ?? dayRate : dayRate;
-  const cost = base ? round2(vendorReceives) : converts ? round2(took ?? 0) : toBase(vendorReceives, dayRate);
+  const third = isThirdCurrency(accountCurrency, currency);
+  // Our rate in the account's currency; the bank's as typed, else ours.
+  const ourRate = converts ? accountDayRateOn(currency, accountCurrency, paymentDate) : dayRate;
+  const rateText = bankRate ?? rateInputText(ourRate);
+  const typedRate = parseRateInput(rateText);
+  const entered = bankRate != null && bankRate !== rateInputText(ourRate);
+  const figures = converts
+    ? bankRateFigures({ currency, accountCurrency, lines, credits, cash: vendorReceives, dayRate, bankRate: typedRate, paymentDate })
+    : null;
+  const cost = base ? round2(vendorReceives) : figures ? figures.cost : toBase(vendorReceives, dayRate);
   // A prepayment settles no invoice yet: it is booked at what it cost, so it has no FX variance.
   const fx = base || lines.length === 0 ? null : realizedFxOf(lines, credits, cost);
-  const review = converts && bankTook != null && bankRateNeedsReview(rate, dayRate, allowedPct);
+  const review = converts && entered && bankRateNeedsReview(typedRate, ourRate, allowedPct);
   const blocked = review && !canRecordPastAllowed && !readOnly;
-  const dirty = !readOnly && (accountId !== value.accountId || (bankTook ?? null) !== (value.bankTook ?? null));
-  const canSave = dirty && !blocked && !!account && !payFromBlockReason(accountCurrency, currency);
-  const gap = rateGapPct(rate, dayRate);
+  const dirty = !readOnly && (accountId !== value.accountId || (bankRate ?? null) !== (value.bankRate ?? null));
+  const canSave = dirty && !blocked && !!account && !payFromBlockReason(accountCurrency, currency) && (!converts || typedRate != null);
 
   const save = () => {
     if (readOnly || !dirty) {
@@ -233,13 +252,13 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
       return;
     }
     if (!canSave) return;
-    onSave?.({ accountId, bankTook: converts ? bankTook : null });
+    onSave?.({ accountId, bankRate: converts && entered ? bankRate : null });
     onOpenChange(false);
   };
   const reset = () => {
     const def = eligible.find((a) => a.currency === youPayIn) ?? eligible.find((a) => isBaseCurrency(a.currency));
     if (def) setAccountId(def.id);
-    setBankTook(null);
+    setBankRate(null);
   };
 
   // The configuration is read-only once the payment posts; the rate itself
@@ -279,7 +298,11 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
             <PayFromAccountPicker
               value={accountId}
               accounts={eligible}
-              onChange={setAccountId}
+              onChange={(id) => {
+                // Another account's currency has another rate: back to ours.
+                if (accounts.find((a) => a.id === id)?.currency !== accountCurrency) setBankRate(null);
+                setAccountId(id);
+              }}
               readOnly={readOnly}
               documentCurrency={currency}
               ariaLabel="Pay from account"
@@ -298,50 +321,38 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
             </p>
           </Section>
 
+          {/* Our rate and the bank's (27 Nov 2026, Mahreen 7a–7c): the one rate
+              entered, and what it makes. From an account in the invoices'
+              currency there's no rate to enter (7b). */}
+          {!base && converts && (
+            <>
+              <OurRateField variant="section" label="Our rate" currency={currency} accountCurrency={accountCurrency} rate={ourRate} paymentDate={paymentDate} amount={vendorReceives} />
+              <div className="space-y-2">
+                <BankRateField
+                  variant="section"
+                  currency={currency}
+                  accountCurrency={accountCurrency}
+                  value={rateText}
+                  onChange={(t) => setBankRate(t)}
+                  ourRate={ourRate}
+                  check={blocked ? 'blocked' : review ? 'review' : 'ok'}
+                  allowedPct={allowedPct}
+                  readOnly={readOnly}
+                />
+                {figures && <BankRateBreakdown currency={currency} accountCurrency={accountCurrency} figures={figures} />}
+              </div>
+            </>
+          )}
+          {!base && !converts && <SameCurrencyNote />}
+
           <Section label="Base equivalent">
-            {converts && !readOnly ? (
-              <>
-                {/* From a base account: what the bank took, entered here. */}
-                <div
-                  className={`h-10 w-full rounded-lg px-3 flex items-center gap-1.5 border bg-white ${
-                    blocked ? 'border-red-400 ring-2 ring-red-100' : review ? 'border-amber-300' : 'border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20'
-                  }`}
-                >
-                  <span className="text-slate-400 text-sm">{moneyPrefix(BASE_CURRENCY).trim()}</span>
-                  <MoneyInput
-                    value={took ?? 0}
-                    fluid
-                    onValueChange={(n) => setBankTook(n)}
-                    className="flex-1 min-w-0 bg-transparent outline-none tabular-nums text-foreground text-[14px] font-medium"
-                  />
-                  <span className="text-slate-500 text-[13px] shrink-0">{BASE_CURRENCY}</span>
-                  {bankTook != null && (
-                    <button type="button" onClick={() => setBankTook(null)} className="text-slate-400 hover:text-primary cursor-pointer" title="Back to the estimate" aria-label="Back to the estimate">
-                      <RotateCcw className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-                <p className="text-[11px] leading-relaxed flex items-start gap-1" style={{ color: blocked ? '#DC2626' : review ? '#B45309' : '#64748B' }}>
-                  {blocked && <AlertCircle className="w-3 h-3 mt-[2px] shrink-0" />}
-                  {review && !blocked && <AlertTriangle className="w-3 h-3 mt-[2px] shrink-0" />}
-                  <span>
-                    {blocked
-                      ? `The bank's rate is ${Math.abs(gap).toFixed(2)}% from the day's, past the allowed ${allowedPct}%. Your role can't record that; Settings, Permissions sets who can.`
-                      : review
-                        ? `The bank's rate is ${Math.abs(gap).toFixed(2)}% from the day's, past the allowed ${allowedPct}%: it needs review.`
-                        : bankTook == null
-                          ? `What the bank took. Estimated at the ${formatRateDate(paymentDate)} mid-market rate until you enter it.`
-                          : 'What the bank took.'}
-                  </span>
-                </p>
-              </>
-            ) : converts ? (
-              <>
-                <AmountBox text={`${formatMoney(took ?? 0, BASE_CURRENCY)} ${BASE_CURRENCY}`} />
-                <p className="text-[11px] text-slate-500 leading-relaxed">What the bank took.</p>
-              </>
-            ) : (
-              <AmountBox text={`${base ? '' : '≈ '}${formatMoney(cost, BASE_CURRENCY)} ${BASE_CURRENCY}`} />
+            <AmountBox text={`${base || converts ? '' : '≈ '}${formatMoney(cost, BASE_CURRENCY)} ${BASE_CURRENCY}`} />
+            {converts && (
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                {third
+                  ? `What the bank took, at the ${formatRateDate(paymentDate)} ${accountCurrency} rate.`
+                  : "What the bank took, at the bank's rate."}
+              </p>
             )}
           </Section>
 
@@ -367,9 +378,9 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
             </Section>
           )}
 
-          {!base && fx && (
+          {!base && !converts && fx && (
             <Section label="FX variance">
-              <VarianceCard amount={fx.amount} caption={paymentRatesText(lines, rate)}>
+              <VarianceCard amount={fx.amount} caption={paymentRatesText(lines, dayRate)}>
                 <div className="mt-2 pt-2 border-t border-[#EEF2F6] space-y-0.5 text-[11px] text-slate-500 tabular-nums">
                   <div className="flex justify-between gap-3">
                     <span>A/P carried at the invoice rate{Array.from(new Set(lines.map((l) => l.rate))).length > 1 ? 's' : ''}</span>
@@ -382,42 +393,11 @@ export function PaymentCurrencyConfigDialog(props: PaymentCurrencyConfigDialogPr
                     </div>
                   )}
                   <div className="flex justify-between gap-3">
-                    <span>{converts ? 'You pay: what the bank took' : `You pay: at the ${formatRateDate(paymentDate)} rate`}</span>
+                    <span>You pay: at the {formatRateDate(paymentDate)} rate</span>
                     <span className="text-slate-700">−{formatMoney(fx.cost, BASE_CURRENCY)}</span>
                   </div>
                 </div>
               </VarianceCard>
-            </Section>
-          )}
-
-          {/* A payment's rate is mid-market: from the two amounts when the
-              bank converts, else the payment date's. No lock on the rate
-              (25 Nov 2026). */}
-          {!base && (
-            <Section label="Exchange rate" right={<RateTypeChip type="mid" />}>
-              {converts ? (
-                <>
-                  <RateCard
-                    from={currency}
-                    rate={rate}
-                    type="mid"
-                    source="Worked out from what the bank took"
-                    caption={`Rate from the two amounts · ${formatRateDate(paymentDate)}${
-                      Math.abs(gap) >= 0.005 ? ` · ${gap > 0 ? '+' : '−'}${Math.abs(gap).toFixed(2)}% vs the day's mid-market ${formatRate(dayRate)}` : ''
-                    }`}
-                  />
-                  <RateCard
-                    from={currency}
-                    rate={dayRate}
-                    type="mid"
-                    source={RATE_PROVIDER}
-                    caption={`${rateAsOfLine('mid', paymentDate)} · for comparison`}
-                    amount={vendorReceives}
-                  />
-                </>
-              ) : (
-                <RateCard from={currency} rate={rate} type="mid" source={RATE_PROVIDER} caption={rateAsOfLine('mid', paymentDate)} />
-              )}
             </Section>
           )}
 

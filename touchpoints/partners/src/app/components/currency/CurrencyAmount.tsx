@@ -27,6 +27,9 @@ export interface CurrencyAmountProps {
   rollupBreakdown?: CurrencyStream[];
   /** KPI-sized: 750.3M rather than 750,312,004.00. */
   compact?: boolean;
+  /** listing-base: "≈" before the figure, which is the partner's amount
+   *  converted at today's rate, an estimate (Mahreen, 27 Nov 2026, PA-2). */
+  approx?: boolean;
   className?: string;
 }
 
@@ -42,9 +45,11 @@ export function CurrencyAmount(props: CurrencyAmountProps) {
   const code = (getCurrency(currency)?.code ?? currency).toUpperCase();
   const showHover = shouldShowHover(props, code);
   const prefix = moneyPrefix(code).trim();
+  const approx = props.approx && props.mode === "listing-base" && showHover;
 
   const body = (
     <span className={cn("inline-flex items-baseline whitespace-nowrap", className)}>
+      {approx && <span className="mr-1">≈</span>}
       {value < 0 && "−"}
       <span className={cn("mr-1", showHover && "border-b border-dotted border-slate-400 leading-none pb-[1px]")}>{prefix}</span>
       <span>{compact ? formatCompactMoney(Math.abs(value), code).slice(moneyPrefix(code).length) : formatAmount(value, code)}</span>
@@ -98,7 +103,7 @@ function CardHead({ code, role }: { code: string; role: string }) {
   return <FxHead flag={<CurrencyFlag code={code} className="text-[15px]" />} name={getCurrency(code)?.name ?? code} code={code} role={role} />;
 }
 
-/** Today's mid-market rate for a currency, where it comes from and when it was last synced. */
+/** Today's daily market rate for a currency, where it comes from and the day it was read. */
 export function RateLine({ code, lead = "At" }: { code: string; lead?: string }) {
   const rate = currentRate(code).rate;
   return (

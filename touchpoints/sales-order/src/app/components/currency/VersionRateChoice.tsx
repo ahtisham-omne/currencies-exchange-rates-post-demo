@@ -14,12 +14,12 @@ const FONT = "Inter, system-ui, sans-serif";
  * rate" / "Use today's rate" (before: "Use locked rate from V{n}" / "Apply
  * current rate"). Shown when a version is started and when one is reverted
  * to, on an order in a foreign currency. Each option names its rate; today's
- * can be mid-market or corporate when a corporate rate is set (Mahreen,
+ * can be the daily market rate or corporate when a corporate rate is set (Mahreen,
  * 2026-11-20). The customer's prices don't change either way; the
  * base-currency totals do. */
 
 export interface VersionRateOptions {
-  /** The rate the version locked in: "Mid-market · 1 USD = 278.5200 PKR ·
+  /** The rate the version locked in: "Daily market rate · 1 USD = 278.5200 PKR ·
    *  Nov 19, 2026", then the base total when there is one. */
   locked: string;
   /** Today's rate of each type; corporate only when a corporate rate is set. */
@@ -37,7 +37,7 @@ interface TodayRate {
 
 type Stamp = { exchangeRate: number; rateType: RateType; rateDate: string };
 
-/** "Mid-market · 1 USD = 278.5200 PKR · Nov 19, 2026". */
+/** "Daily market rate · 1 USD = 278.5200 PKR · Nov 19, 2026". */
 function rateLine(currency: string, type: RateType, rate: number, day: string): string {
   return `${RATE_TYPE_LABEL[type]} · ${rateSentence(currency, rate)} · ${day}`;
 }
@@ -55,7 +55,7 @@ function buildOptions(
     const totals = !withTotal ? "" : differs ? ` · total ${inBase(locked.rate)} → ${inBase(now.exchangeRate)}` : ` · total ${inBase(now.exchangeRate)}`;
     return { line: rateLine(currency, type, now.exchangeRate, `Today, ${formatRateDate(now.rateDate)}`) + totals, differs };
   };
-  // Today's corporate rate falls back to mid-market when none is set: then there is no corporate option.
+  // Today's corporate rate falls back to the daily market rate when none is set: then there is no corporate option.
   const corp = todayOf("corporate");
   const corporate = corp.rateType === "corporate" ? today("corporate", corp) : undefined;
   return {
@@ -78,7 +78,7 @@ export function VersionRateChoice({
 }) {
   /* A new version, or a restored one, always takes today's rate (25 Nov
      2026): no "Keep version N's rate" choice. The type stays the version's
-     when today has one of that type (a corporate rate set), else mid-market. */
+     when today has one of that type (a corporate rate set), else the daily market rate. */
   const todayChoice: Choice = options.defaultType === "corporate" && options.today.corporate ? "current-corporate" : "current-mid";
   React.useEffect(() => {
     if (value !== todayChoice) onChange(todayChoice);

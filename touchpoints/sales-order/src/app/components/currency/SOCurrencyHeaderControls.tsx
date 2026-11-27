@@ -8,8 +8,8 @@ import type { DocView } from "./docCurrencyContext";
 /* ── The SO header's currency ──────────────────────────────────────────
  * Currency Touchpoints Map (24 Nov 2026): "SO-000-112 from Q-000-750 ·
  * Harbor Point Rescue [USD]". The header carries the order's currency tag,
- * after the customer's name. Amounts show in the base currency by default,
- * the customer's on hover; the Base Currency | Customer Currency switch
+ * after the customer's name. Amounts show in the customer's currency by
+ * default (27 Nov 2026, D1), base on hover; the Base Currency | Customer Currency switch
  * (25 Nov 2026), which sits in the Line Items toolbar, not the header,
  * flips that for the order for the session (docView.ts), never an edit.
  * The currency configuration opens from the summary's currency card. A
@@ -23,7 +23,7 @@ export function SOHeaderCustomer({
   customer,
   currency,
   sourceQuoteRef,
-  view = "base",
+  view = "document",
   compact = false,
 }: {
   customer: string;
@@ -66,6 +66,16 @@ export function SOHeaderCustomer({
       )}
     </span>
   );
+}
+
+/** The Order summary's Currency row (Mahreen, 27 Nov 2026, 4b), worded as
+ *  the header tag's note above: "USD, from the customer", "USD, from quote
+ *  Q-000-100-001", or "EUR, changed on this order" when the order's currency
+ *  isn't the customer's. */
+export function currencyOriginText(currency: string, customer: string | null | undefined, sourceQuoteRef?: string | null): string {
+  const code = currency.toUpperCase();
+  if (sourceQuoteRef) return `${code}, from quote ${sourceQuoteRef}`;
+  return customerCurrency(customer) === code ? `${code}, from the customer` : `${code}, changed on this order`;
 }
 
 /* Same segment and frame as Vendor Invoicing's CurrencyHeaderControls. */

@@ -93,19 +93,30 @@ import { rateOn, toBase } from '@/app/currency/rates';
 import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
 import { exchangeDifference, toPaymentBase } from '@/app/currency/paymentFx';
 import {
+  accountDayRateOn,
   bankRateNeedsReview,
   buildPaymentGlFx,
   canPayFrom,
-  payFromCurrencies,
   convertsAtBank,
   dayRateOn,
   derivedRate,
   glAtRate,
+  isThirdCurrency,
+  pairRateText,
   youPayInOfAll,
   type SettledLine,
 } from '@/app/currency/paymentRules';
 import { useApPermissions, useApSettings } from '@/app/hooks/useApSettings';
-import { BankTookField, type BankRateCheck } from '@/app/components/currency/PaymentCurrencyFields';
+import {
+  BankRateBreakdown,
+  BankRateField,
+  OurRateField,
+  SameCurrencyNote,
+  bankRateFigures,
+  parseRateInput,
+  rateInputText,
+  type BankRateCheck,
+} from '@/app/components/currency/BankRateField';
 import { PaymentCurrencyBlock, PaymentCurrencyConfigDialog } from '@/app/components/currency/PaymentCurrencyConfig';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
 import type { DocView } from '@/app/components/currency/docCurrencyContext';
@@ -1568,14 +1579,17 @@ export function RecordPaymentFlow({
   // Every amount on a vendor's card is in its invoices' currency (`fmt`
   // shadows the module's $ formatter): what you owe stays in it, and the
   // vendor always receives it ("Vendor Receives" is fixed). The only choice
-  // is the account that pays: one in the invoices' currency (one amount,
-  // nothing converts) or one in the base currency (the bank converts: the
-  // rupees it took are entered, estimated at the payment date's mid-market
-  // rate until then, and the rate is worked out from the two). The PO's
-  // "You pay in" picks the default account. A bank rate further from the
-  // day's than Settings' allowed difference needs review, and a role
-  // without "Change the Exchange Rate on a Payment" can't record it. Each
-  // invoice settled against its own rate leaves the realized FX Gain/Loss.
+  // is the account that pays: one in the invoices' currency (nothing
+  // converts: "Same currency. No exchange rate needed."), or any other (the
+  // bank converts: 27 Nov 2026, Mahreen 7a and D7). Then our rate fills in
+  // from the payment date (the daily market rate) and the one field is the
+  // bank's rate, pre-filled with ours, in the account's currency per one
+  // unit (1 AED = 76.2500 PKR; from a third currency the direct pair,
+  // 1 USD = 1.3935 CAD). What the bank took is the amount at it. The PO's
+  // "You pay in" picks the default account. A bank rate further from ours
+  // than Settings' allowed difference needs review, and a role without
+  // "Change the Exchange Rate on a Payment" can't record it. Each invoice
+  // settled against its own rate leaves the realized FX Gain/Loss.
   const apPerms = useApPermissions();
   const apSettings = useApSettings();
   const rowCurrency = (vendor?: string) =>
@@ -1583,50 +1597,77 @@ export function RecordPaymentFlow({
   const flowCurrency = mode === 'prepay' ? prepayCurrency : rowCurrency(activePayVendor);
   const fmt = (n: number) => formatMoney(n, flowCurrency);
   const fmtIn = (code: string) => (n: number) => formatMoney(n, code);
-  /** The bank's figure per vendor, in base; absent keeps the estimate. */
-  const [bankTookByVendor, setBankTookByVendor] = useState<Record<string, number | null>>({});
+  /** The bank's rate as typed, per vendor and account currency
+   *  ("Acme Corp|PKR"); absent keeps our rate. */
+  const [bankRateByVendor, setBankRateByVendor] = useState<Record<string, string>>({});
   /** The invoices' currency: what the vendor receives. */
   const settledCurrencyFor = (vendor?: string) => (mode === 'prepay' ? prepayCurrency : rowCurrency(vendor));
   /** The account paying this vendor's payment. */
   const accountFor = (vendor?: string) =>
     PAY_FROM_ACCOUNTS.find((a) => a.id === (isMultiVendorPay && vendor ? cfgFor(vendor).bankAccount : bankAccount));
-  /** The pay-from account's currency: the invoices' or the base (rule 3). */
+  /** The pay-from account's currency: any that may pay (rule 3, 27 Nov 2026). */
   const payCurrencyFor = (vendor?: string) => {
     const a = accountFor(vendor);
     return a && canPayFrom(a.currency, settledCurrencyFor(vendor)) ? a.currency : BASE_CURRENCY;
   };
-  /** A base account paying foreign invoices: the bank converts (rule 7). */
+  /** An account in another currency paying foreign invoices: the bank converts (rules 7, 8). */
   const convertsFor = (vendor?: string) => convertsAtBank(payCurrencyFor(vendor), settledCurrencyFor(vendor));
-  /** The payment date's mid-market rate, the estimate and the comparison. */
+  /** A third currency (rule 8, D7): a CAD account paying USD invoices. */
+  const thirdFor = (vendor?: string) => isThirdCurrency(payCurrencyFor(vendor), settledCurrencyFor(vendor));
+  /** The payment date's daily market rate, base per one unit: what the
+   *  invoices are valued at when nothing converts. */
   const dayRateFor = (vendor?: string) => dayRateOn(settledCurrencyFor(vendor), paymentDate);
+  /** Our rate: the payment date's daily market rate in the account's
+   *  currency per one unit of the invoices' (base, or the direct pair). */
+  const ourRateFor = (vendor?: string) => accountDayRateOn(settledCurrencyFor(vendor), payCurrencyFor(vendor), paymentDate);
+  const bankRateKey = (vendor: string) => `${vendor}|${payCurrencyFor(vendor)}`;
+  /** The bank's rate as typed, else ours. */
+  const bankRateTextFor = (vendor?: string) =>
+    (vendor ? bankRateByVendor[bankRateKey(vendor)] : undefined) ?? rateInputText(ourRateFor(vendor));
+  /** The bank's rate, in the account's currency per one unit; null when the
+   *  field isn't a number above zero (it blocks the payment). */
+  const bankRateFor = (vendor?: string) => parseRateInput(bankRateTextFor(vendor));
+  const setBankRateFor = (vendor: string, text: string) => setBankRateByVendor((prev) => ({ ...prev, [bankRateKey(vendor)]: text }));
   /** What the vendor receives on this payment: the cash, in the invoices' currency. */
   const cashFor = (vendor?: string) => {
     if (mode === 'prepay') return grand.net;
     const row = selectedRows.find((r) => r.vendor === vendor);
     return row ? vendorMath(row).net : 0;
   };
-  const bankEnteredFor = (vendor?: string) => !!vendor && bankTookByVendor[vendor] != null;
-  /** What the bank took, in base: the entered figure, else the estimate. */
-  const bankTookFor = (vendor?: string) => {
-    const entered = vendor ? bankTookByVendor[vendor] : null;
-    return entered != null ? entered : toBase(cashFor(vendor), dayRateFor(vendor));
+  /** The bank's rate was changed from ours. */
+  const bankEnteredFor = (vendor?: string) => {
+    const r = bankRateFor(vendor);
+    return !!vendor && r != null && Math.abs(r - ourRateFor(vendor)) > 1e-9;
   };
-  /** The payment's rate, base per one unit: worked out from the bank's
-   *  figures from a base account, the day's from one in the invoices' currency. */
+  /** What the bank took for an amount, in the account's currency: the amount
+   *  at the bank's rate (ours while the field is empty). */
+  const accountAmountFor = (vendor: string | undefined, n: number) =>
+    Math.round(n * (bankRateFor(vendor) ?? ourRateFor(vendor)) * 100) / 100;
+  /** What the bank took, in the account's currency. */
+  const accountTookFor = (vendor?: string) => accountAmountFor(vendor, cashFor(vendor));
+  /** What the bank took, in base: from a third currency, the account's
+   *  amount at the payment date's rate of that currency (rule 8). */
+  const bankTookFor = (vendor?: string) =>
+    thirdFor(vendor) ? toBase(accountTookFor(vendor), dayRateOn(payCurrencyFor(vendor), paymentDate)) : accountTookFor(vendor);
+  /** The payment's rate, base per one unit: the bank's from a base account,
+   *  what it cost over the amount from a third currency, the day's from an
+   *  account in the invoices' currency. */
   const payRateFor = (vendor?: string) => {
     if (isBaseCurrency(settledCurrencyFor(vendor))) return 1;
     if (!convertsFor(vendor)) return dayRateFor(vendor);
-    return derivedRate(cashFor(vendor), bankTookFor(vendor)) ?? dayRateFor(vendor);
+    if (!thirdFor(vendor)) return bankRateFor(vendor) ?? dayRateFor(vendor);
+    const bankRate = bankRateFor(vendor) ?? ourRateFor(vendor);
+    return derivedRate(cashFor(vendor), bankTookFor(vendor)) ?? bankRate * dayRateOn(payCurrencyFor(vendor), paymentDate);
   };
-  /** The bank's rate against the allowed difference (Settings). */
+  /** The bank's rate against ours and the allowed difference (Settings). */
   const bankRateCheckFor = (vendor?: string): BankRateCheck => {
     if (!convertsFor(vendor) || !bankEnteredFor(vendor)) return 'ok';
-    if (!bankRateNeedsReview(payRateFor(vendor), dayRateFor(vendor), apSettings.allowedDifferencePct)) return 'ok';
+    if (!bankRateNeedsReview(bankRateFor(vendor), ourRateFor(vendor), apSettings.allowedDifferencePct)) return 'ok';
     return apPerms.canChangePaymentRate ? 'review' : 'blocked';
   };
   /** An amount in the invoices' currency, in the pay-from account's currency. */
   const inPayCurrency = (vendor: string | undefined, n: number) =>
-    payCurrencyFor(vendor) === settledCurrencyFor(vendor) ? n : toBase(n, payRateFor(vendor));
+    payCurrencyFor(vendor) === settledCurrencyFor(vendor) ? n : thirdFor(vendor) ? accountAmountFor(vendor, n) : toBase(n, payRateFor(vendor));
   /** Rule 5: the account currency the selected invoices' POs ask for. */
   const payInWantFor = (vendor?: string) => {
     if (!vendor || mode === 'prepay') return BASE_CURRENCY;
@@ -1684,6 +1725,7 @@ export function RecordPaymentFlow({
       bankGl: acct?.creditGl ?? bank.creditGl,
       accountCurrency: payCurrencyFor(vendor),
       bankAmount: convertsFor(vendor) ? bankTookFor(vendor) : undefined,
+      accountAmount: thirdFor(vendor) ? accountTookFor(vendor) : undefined,
       paymentRate: payRateFor(vendor),
       paymentDate,
       description,
@@ -2408,7 +2450,13 @@ export function RecordPaymentFlow({
   // Compared in the account's own currency (Currency & Exchange Rates): a
   // base-currency account pays a foreign payment at the payment's rate.
   const inAccountCurrency = (vendor: string, net: number, accountCurrency: string) =>
-    accountCurrency === settledCurrencyFor(vendor) ? net : toBase(net, payRateFor(vendor));
+    accountCurrency === settledCurrencyFor(vendor)
+      ? net
+      : isBaseCurrency(accountCurrency)
+        ? toBase(net, payRateFor(vendor))
+        : accountCurrency === payCurrencyFor(vendor)
+          ? accountAmountFor(vendor, net)
+          : toBase(toBase(net, payRateFor(vendor)), 1 / dayRateOn(accountCurrency, paymentDate));
   /** The whole run's cash as text: in its payment currency when there is one,
    *  else in the base currency at each payment's rate (Currency & Exchange Rates). */
   /** Recorded payments' total: in their currency when they share one, else in
@@ -2473,7 +2521,7 @@ export function RecordPaymentFlow({
       });
       return next;
     });
-    setBankTookByVendor(drop);
+    setBankRateByVendor((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith(`${vendor}|`))));
     setPrepayDraws(drop);
     setPrepayApply(drop);
   };
@@ -2804,7 +2852,11 @@ export function RecordPaymentFlow({
                 rateType: 'mid' as const,
                 rateDate: paymentDate,
                 ...(convertsFor(prepayVendor)
-                  ? { bankAmount: toBase(run.amount, payRateFor(prepayVendor)), rateEdited: bankEnteredFor(prepayVendor) || undefined }
+                  ? {
+                      bankAmount: toBase(run.amount, payRateFor(prepayVendor)),
+                      ...(thirdFor(prepayVendor) ? { accountAmount: accountAmountFor(prepayVendor, run.amount) } : {}),
+                      rateEdited: bankEnteredFor(prepayVendor) || undefined,
+                    }
                   : {}),
               }),
           reference: reference || '',
@@ -2953,7 +3005,13 @@ export function RecordPaymentFlow({
               exchangeRate: payRateFor(row.vendor),
               rateType: 'mid' as const,
               rateDate: today,
-              ...(convertsFor(row.vendor) ? { bankAmount: bankTookFor(row.vendor), rateEdited: bankEnteredFor(row.vendor) || undefined } : {}),
+              ...(convertsFor(row.vendor)
+                ? {
+                    bankAmount: bankTookFor(row.vendor),
+                    ...(thirdFor(row.vendor) ? { accountAmount: accountTookFor(row.vendor) } : {}),
+                    rateEdited: bankEnteredFor(row.vendor) || undefined,
+                  }
+                : {}),
             }),
         reference: reference || '',
         memo: [memo || `Manual payment · ${m.selectedInvs.length} invoice${m.selectedInvs.length === 1 ? '' : 's'}`, ...lateNotes].join(' · '),
@@ -3824,15 +3882,12 @@ export function RecordPaymentFlow({
                     {fieldErrors.paymentDate ? (
                       <p className="text-[11px] text-red-600 mt-1">{fieldErrors.paymentDate}</p>
                     ) : (() => {
-                      // The payment date sets the rate (Currency Touchpoints Map).
+                      // The payment date sets our rate, shown beside the
+                      // bank's below (27 Nov 2026). Scheduled, the bank's
+                      // rate is only known on the day (Mahreen 7f).
                       const v = mode === 'prepay' ? prepayVendor : activePayVendor;
-                      const cur = v ? settledCurrencyFor(v) : BASE_CURRENCY;
-                      if (!v || isBaseCurrency(cur) || !paymentDate) return null;
-                      return (
-                        <p className="text-[11px] text-slate-400 mt-1 truncate">
-                          {convertsFor(v) ? 'Sets the estimate' : 'Sets the rate'}: {rateSentence(cur, dayRateFor(v))}, mid-market.
-                        </p>
-                      );
+                      if (!v || !isFuture || !convertsFor(v)) return null;
+                      return <p className="text-[11px] text-slate-400 mt-1 truncate">Rate settles when paid.</p>;
                     })()}
                   </div>
                   <div>
@@ -3841,26 +3896,27 @@ export function RecordPaymentFlow({
                     <p className="text-[11px] text-slate-400 mt-1">System-generated, unique per record.</p>
                   </div>
                 </div>
-                {/* Vendor Receives + Pay From, and from a base account Bank
-                    Took + the rate it makes (Currency & Exchange Rates,
-                    currency/paymentRules.ts): after the vendor is chosen.
-                    The vendor always receives the invoices' currency; the
-                    old Payment Currency switch is gone (a third currency is
-                    never offered). A base-currency invoice converts
+                {/* Pay From, then the rates (27 Nov 2026, Mahreen 7a–7d;
+                    Eli's ruling, 26 Nov 2026), after the vendor is chosen.
+                    The vendor always receives the invoices' currency. Any
+                    account can pay (D7), the invoices' currency listed
+                    first. From another currency the bank converts: our rate
+                    (the payment date's daily market rate), the bank's rate,
+                    the one field, and the breakdown it makes. From an
+                    account in the invoices' currency: "Same currency. No
+                    exchange rate needed." A base-currency invoice converts
                     nothing, so it shows none of this. */}
                 {(() => {
                   const v = mode === 'prepay' ? prepayVendor : activePayVendor;
                   if (!v || isBaseCurrency(settledCurrencyFor(v))) return null;
                   const cur = settledCurrencyFor(v);
                   const acct = accountFor(v);
+                  const accCur = payCurrencyFor(v);
                   const converts = convertsFor(v);
                   const AccIcon = acct?.type === 'cash' ? Banknote : acct?.type === 'card' ? Wallet : Landmark;
+                  const wantCur = payInWantFor(v);
                   return (
                     <div className="space-y-3">
-                      {/* Vendor Receives and Exchange Rate are in Currency
-                          Configuration (Mahreen, 2026-11-20). Bank Took stays
-                          here when the bank converts: the payment can't post
-                          without it. */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <Label className="text-xs sm:text-[13px] text-foreground" style={{ fontWeight: 500 }}>Pay From<span className="text-red-500">*</span></Label>
@@ -3878,26 +3934,53 @@ export function RecordPaymentFlow({
                             <Settings2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                           </button>
                           <p className="text-[11px] text-slate-400 mt-1 truncate">
-                            {payInWantFor(v) !== BASE_CURRENCY && acct?.currency === payInWantFor(v)
-                              ? `The PO says You pay in ${payInWantFor(v)}. A ${BASE_CURRENCY} account can pay too.`
-                              : `A ${cur} or a ${BASE_CURRENCY} account can pay.`}
+                            {wantCur !== BASE_CURRENCY && acct?.currency === wantCur
+                              ? `The PO says You pay in ${wantCur}. Any account can pay.`
+                              : `${cur} accounts are listed first. Any account can pay.`}
                           </p>
                         </div>
                         {converts && (
-                          <BankTookField
+                          <OurRateField
+                            label="Our Rate"
                             currency={cur}
-                            vendorReceives={cashFor(v)}
-                            value={bankTookFor(v)}
-                            entered={bankEnteredFor(v)}
-                            onChange={(n) => setBankTookByVendor((prev) => ({ ...prev, [v]: n }))}
-                            dayRate={dayRateFor(v)}
+                            accountCurrency={accCur}
+                            rate={ourRateFor(v)}
                             paymentDate={paymentDate}
-                            check={bankRateCheckFor(v)}
-                            allowedPct={apSettings.allowedDifferencePct}
-                            label="You Pay"
+                            amount={cashFor(v)}
                           />
                         )}
                       </div>
+                      {converts ? (
+                        <div className="grid grid-cols-2 gap-4 items-start">
+                          <BankRateField
+                            label="Bank's Rate"
+                            currency={cur}
+                            accountCurrency={accCur}
+                            value={bankRateTextFor(v)}
+                            onChange={(t) => setBankRateFor(v, t)}
+                            ourRate={ourRateFor(v)}
+                            check={bankRateCheckFor(v)}
+                            allowedPct={apSettings.allowedDifferencePct}
+                          />
+                          <BankRateBreakdown
+                            className="sm:mt-6"
+                            currency={cur}
+                            accountCurrency={accCur}
+                            figures={bankRateFigures({
+                              currency: cur,
+                              accountCurrency: accCur,
+                              lines: mode === 'pay' ? settledLinesFor(v) : [],
+                              credits: mode === 'pay' ? creditsUsedFor(v) : [],
+                              cash: cashFor(v),
+                              dayRate: dayRateFor(v),
+                              bankRate: bankRateFor(v),
+                              paymentDate,
+                            })}
+                          />
+                        </div>
+                      ) : (
+                        <SameCurrencyNote />
+                      )}
                     </div>
                   );
                 })()}
@@ -4215,7 +4298,7 @@ export function RecordPaymentFlow({
                 const fmtCredit = fmtIn(row.currency);
                 const rowFx = isBaseCurrency(row.currency)
                   ? null
-                  : { rate: rowPayRate, rateType: 'mid' as const, rateDate: paymentDate, source: rowConverts ? 'Worked out from the bank’s figures' : 'Open Exchange Rates', provisional: false, dateLabel: 'payment date' };
+                  : { rate: rowPayRate, rateType: 'mid' as const, rateDate: paymentDate, source: rowConverts ? 'The bank’s rate' : 'Open Exchange Rates', provisional: false, dateLabel: 'payment date' };
                 return (
                   <div key={row.vendor} className="rounded-lg border border-border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] overflow-hidden">
                     <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2 bg-slate-50 rounded-t-lg flex-wrap">
@@ -4436,7 +4519,7 @@ export function RecordPaymentFlow({
                                   <FxHeader tip={`This payment in ${BASE_CURRENCY} at the invoice’s own rate: what A/P carried for the part paid.`}>A/P Carried</FxHeader>
                                 </th>
                                 <th className="text-right px-3 py-2 text-[11px] text-slate-400 whitespace-nowrap" style={{ fontWeight: 600 }}>
-                                  <FxHeader tip={rowConverts ? `What this part cost in ${BASE_CURRENCY}, at the rate worked out from the bank’s figures.` : `Nothing converts from a ${settledCurrencyFor(row.vendor)} account; this part is valued at the payment date’s mid-market rate.`}>Paid in {BASE_CURRENCY}</FxHeader>
+                                  <FxHeader tip={rowConverts ? `What this part cost in ${BASE_CURRENCY}, at the bank’s rate.` : `Nothing converts from a ${settledCurrencyFor(row.vendor)} account; this part is valued at the payment date’s daily market rate.`}>Paid in {BASE_CURRENCY}</FxHeader>
                                 </th>
                                 <th className="text-right px-3 py-2 text-[11px] text-slate-400 whitespace-nowrap" style={{ fontWeight: 600 }}>
                                   <FxHeader tip="A/P carried minus what paying cost. + is a gain and posts to FX Gain; − is a loss and posts to FX Loss.">FX Variance</FxHeader>
@@ -4996,6 +5079,7 @@ export function RecordPaymentFlow({
                   vendorReceives={cashFor(blockVendor)}
                   account={accountFor(blockVendor) ?? null}
                   bankTook={convertsFor(blockVendor) ? bankTookFor(blockVendor) : null}
+                  accountTook={thirdFor(blockVendor) ? accountTookFor(blockVendor) : null}
                   rate={payRateFor(blockVendor)}
                   paymentDate={paymentDate}
                   lines={blockLines}
@@ -6822,7 +6906,12 @@ export function RecordPaymentFlow({
                             className="mt-1"
                             error={!!fieldErrors.paymentDate}
                           />
-                          {fieldErrors.paymentDate && <p className="text-[11px] text-red-600 mt-1">{fieldErrors.paymentDate}</p>}
+                          {fieldErrors.paymentDate ? (
+                            <p className="text-[11px] text-red-600 mt-1">{fieldErrors.paymentDate}</p>
+                          ) : isFuture && convertsFor(activePayVendor) ? (
+                            // Mahreen 7f (27 Nov 2026): the bank's rate is known on the day.
+                            <p className="text-[11px] text-slate-400 mt-1 truncate">Rate settles when paid.</p>
+                          ) : null}
                         </div>
                         {isMultiVendorPay ? (
                           /* Multi-vendor bulk run — method + pay-from live
@@ -7649,10 +7738,18 @@ export function RecordPaymentFlow({
                       // "Change the Exchange Rate on a Payment" can't record it.
                       {
                         const vs = mode === 'prepay' ? [prepayVendor] : selectedRows.map((r) => r.vendor);
+                        // The bank's rate is required where the bank converts (27 Nov 2026).
+                        const noRateV = vs.find((v) => convertsFor(v) && bankRateFor(v) == null);
+                        if (noRateV) {
+                          toast.error('Enter the bank’s rate', {
+                            description: `${noRateV}: enter the exchange rate the bank gave you.`,
+                          });
+                          return;
+                        }
                         const blockedV = vs.find((v) => bankRateCheckFor(v) === 'blocked');
                         if (blockedV) {
                           toast.error('The bank’s rate needs someone who can change a payment’s rate', {
-                            description: `${blockedV}: ${rateSentence(settledCurrencyFor(blockedV), payRateFor(blockedV))} is more than ${apSettings.allowedDifferencePct}% from the ${paymentDate} mid-market rate. Check the bank’s figure, or ask someone allowed in Settings, Permissions.`,
+                            description: `${blockedV}: ${pairRateText(settledCurrencyFor(blockedV), payCurrencyFor(blockedV), bankRateFor(blockedV) ?? ourRateFor(blockedV))} is more than ${apSettings.allowedDifferencePct}% from the ${paymentDate} daily market rate. Check the bank’s rate, or ask someone allowed in Settings, Permissions.`,
                           });
                           return;
                         }
@@ -8332,7 +8429,7 @@ export function RecordPaymentFlow({
             // Only the accounts that can pay: in the invoices' currency or
             // the base (Currency Touchpoints Map; the dialog leaves out the rest).
             accounts={PAY_FROM_ACCOUNTS}
-            value={{ accountId: current?.id ?? '', bankTook: bankTookByVendor[v] ?? null }}
+            value={{ accountId: current?.id ?? '', bankRate: bankEnteredFor(v) ? bankRateTextFor(v) : null }}
             youPayIn={payInWantFor(v)}
             paymentDate={paymentDate}
             dayRate={dayRateFor(v)}
@@ -8347,7 +8444,14 @@ export function RecordPaymentFlow({
               } else if (next.accountId !== current?.id) {
                 onAccountApply(next.accountId);
               }
-              setBankTookByVendor((prev) => ({ ...prev, [v]: next.bankTook }));
+              // The bank's rate belongs to the account's currency it was entered in.
+              const nextCur = PAY_FROM_ACCOUNTS.find((a) => a.id === next.accountId)?.currency ?? BASE_CURRENCY;
+              setBankRateByVendor((prev) => {
+                const k = `${v}|${nextCur}`;
+                const rest = { ...prev };
+                delete rest[k];
+                return next.bankRate != null ? { ...rest, [k]: next.bankRate } : rest;
+              });
             }}
           />
         );

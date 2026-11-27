@@ -4,12 +4,18 @@ import { CURRENCIES, getBaseCurrency, getCurrency, isBaseCurrency } from './curr
  * The same demo rates the Currency & Exchange Rates module shows
  * (src/app/data/exchangeRates.ts in the shell), so a converted amount can be
  * checked against the pair's Rate History:
- *  - Mid-market: synced daily from the provider. The history is generated
- *    exactly as the module generates it (same seeds), ending on the last
- *    sync; a date after the last sync takes the last synced rate.
- *  - Corporate: set by finance, in effect from a date. USD to PKR follows
- *    the module's own history (279.0000 from 2 Mar 2026, 281.5000 from
- *    1 May 2026), as its activity log tells it.
+ *  - Daily market rate (Eli's ruling, 26 Nov 2026): one rate per currency
+ *    per day, read once a day from the provider (Open Exchange Rates) and
+ *    fixed for that date; never a live rate. The history is generated
+ *    exactly as the module generates it (same seeds) and ends on today's
+ *    read, as the module's does; a later date (a scheduled payment) takes
+ *    today's rate until its own day's is read. Date a module's seeds back
+ *    from today, so a record N days old always gets the same rate; a seed on
+ *    a fixed calendar date should store the rate it was made at.
+ *  - Corporate rate: set by your company, in effect from a date. USD to PKR
+ *    follows the module's own history (279.0000 from 2 Mar 2026, 281.5000
+ *    from 1 May 2026), as its activity log tells it; the others took effect
+ *    on the 1st of a recent month, as the module's demo clock sets them.
  * Every rate is base currency per one unit of the other currency
  * (1 USD = 278.5200 PKR). The demo rates are for a PKR base.
  *
@@ -20,18 +26,24 @@ export type RateType = 'mid' | 'corporate';
 /** Company Setup's default rate type (the module's DEFAULT_RATE_TYPE). */
 export const DEFAULT_RATE_TYPE: RateType = 'mid';
 
+/** As every screen names them (Eli's ruling, 26 Nov 2026: "daily market
+ *  rate", never "mid-market"). Full names: don't append " rate". */
 export const RATE_TYPE_LABEL: Record<RateType, string> = {
-  mid: 'Mid-market',
-  corporate: 'Corporate',
+  mid: 'Daily market rate',
+  corporate: 'Corporate rate',
 };
 
-/** The rate type's colour: purple for mid-market, amber for corporate. */
+/** The rate type's colour: purple for the daily market rate, amber for corporate. */
 export const RATE_HEX: Record<RateType, string> = { mid: '#7C3AED', corporate: '#B45309' };
 export const RATE_TINT: Record<RateType, string> = { mid: 'rgba(124,58,237,0.08)', corporate: 'rgba(180,83,9,0.10)' };
 
 export const RATE_PROVIDER = 'Open Exchange Rates';
-/** The provider's last sync; mid-market history ends on this day. */
-export const LAST_SYNC = '2026-04-10T14:30:00Z';
+/** Today's read, as an ISO day: the provider's rates are read once a day, at
+ *  the start of the day (UTC), as the Exchange Rates module's demo clock
+ *  reads them. Screens write it as "Read on Nov 27, 2026", never with a time. */
+export const RATES_READ_ON: string = new Date().toISOString().slice(0, 10);
+/** Today's read as a moment; the daily market rate history ends on its day. */
+export const LAST_SYNC = `${RATES_READ_ON}T00:00:00Z`;
 export const LAST_SYNC_DAY = LAST_SYNC.slice(0, 10);
 const HISTORY_DAYS = 6 * 365;
 
@@ -54,17 +66,30 @@ export interface CorporateRate {
   note: string;
 }
 
+/* The non-USD corporate rates took effect on the 1st of the month 40 days
+   before today's read (the module's demo clock); their 1 Apr 2026 entry at the
+   same rate stays, so older documents still find one. */
+const CORPORATE_EFFECTIVE = (() => {
+  const d = new Date(Date.parse(`${RATES_READ_ON}T00:00:00Z`) - 40 * 86_400_000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+})();
+const CORPORATE_NOTE = `Q${Math.floor((Number(CORPORATE_EFFECTIVE.slice(5, 7)) - 1) / 3) + 1} ${CORPORATE_EFFECTIVE.slice(0, 4)} corporate rate`;
+const steadyCorporate = (code: string, rate: number): CorporateRate[] => [
+  { code, rate, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
+  { code, rate, effectiveDate: CORPORATE_EFFECTIVE, setBy: 'Ahtisham Ahmad', note: CORPORATE_NOTE },
+];
+
 /** Corporate rates, every change kept, so a past document finds the rate it used. */
 export const CORPORATE_RATES: CorporateRate[] = [
   { code: 'USD', rate: 279.0, effectiveDate: '2026-03-02', setBy: 'Ahtisham Ahmad', note: 'Agreed with the bank for Q2 imports.' },
   { code: 'USD', rate: 280.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: '' },
   { code: 'USD', rate: 280.25, effectiveDate: '2026-04-15', setBy: 'Ahtisham Ahmad', note: '' },
   { code: 'USD', rate: 281.5, effectiveDate: '2026-05-01', setBy: 'Ahtisham Ahmad', note: '' },
-  { code: 'EUR', rate: 305.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'GBP', rate: 356.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'AED', rate: 76.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'SAR', rate: 74.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'CNY', rate: 38.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
+  ...steadyCorporate('EUR', 305.5),
+  ...steadyCorporate('GBP', 356.0),
+  ...steadyCorporate('AED', 76.0),
+  ...steadyCorporate('SAR', 74.5),
+  ...steadyCorporate('CNY', 38.5),
 ];
 
 // ── The module's generators, kept bit for bit so the numbers agree ──
@@ -102,14 +127,14 @@ const DAY_MS = 86_400_000;
 const dayNumber = (iso: string) => Math.floor(Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) / DAY_MS);
 const LAST_SYNC_DAY_NUMBER = dayNumber(LAST_SYNC_DAY);
 
-/** Current (last synced) mid-market rate and its 24h change, as the module seeds them. */
+/** Today's daily market rate and its change from yesterday, as the module seeds them. */
 function syncedMid(code: string): [number, number] {
   return HAND_SEEDED_MID[code] ?? [generatedMidRate(code), generatedChange24h(code)];
 }
 
 const seriesCache = new Map<string, number[]>();
 
-/** Daily mid-market rates ending on the last sync (index HISTORY_DAYS). */
+/** Daily market rates ending on today's read (index HISTORY_DAYS). */
 function midSeries(code: string): number[] {
   const cached = seriesCache.get(code);
   if (cached) return cached;
@@ -136,7 +161,7 @@ export function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** The mid-market rate on a day (the last synced rate for any day after the last sync). */
+/** The daily market rate on a day (today's for a day still to come). */
 export function midRateOn(code: string, isoDate: string): number | null {
   if (isBaseCurrency(code)) return 1;
   if (!getCurrency(code)) return null;
@@ -182,7 +207,7 @@ export function rateOn(code: string, isoDate: string, type: RateType): RateQuote
   return { rate: midRateOn(code, date), type, date, source: RATE_PROVIDER };
 }
 
-/** The rate a document uses: its type on its day, falling back to mid-market
+/** The rate a document uses: its type on its day, falling back to the daily market rate
  *  on a day with no corporate rate. */
 export function usableRateOn(code: string, isoDate: string, type: RateType): RateQuote {
   const quote = rateOn(code, isoDate, type);
@@ -234,13 +259,13 @@ export interface RateComparison {
   date: string;
   mid: RateQuote;
   corporate: RateQuote;
-  /** Corporate minus mid-market, per one unit, in base; null unless both exist. */
+  /** Corporate minus daily market rate, per one unit, in base; null unless both exist. */
   difference: number | null;
-  /** The difference as a percentage of mid-market. */
+  /** The difference as a percentage of the daily market rate. */
   percent: number | null;
 }
 
-/** Both rates for a pair on a day, for the Compare rates hover. */
+/** Both rates for a pair on a day, for the rate info hover (RateTypeInfo). */
 export function compareRatesOn(code: string, isoDate: string): RateComparison {
   const mid = rateOn(code, isoDate, 'mid');
   const corporate = rateOn(code, isoDate, 'corporate');

@@ -166,7 +166,7 @@ const isMoneyColumn = (key: string): key is MoneyColumn =>
   key === "net_profit" || key === "credit_limit" || key === "credit_utilization";
 
 /** The money columns' note, shown in their header menu. */
-const MONEY_COLUMN_NOTE = `Each partner's amount is kept in its own currency. Base shows it in ${BASE_CURRENCY} at today's mid-market rate; sorting and range filters use that.`;
+const MONEY_COLUMN_NOTE = `Each partner's amount is kept in its own currency. Base shows it in ${BASE_CURRENCY} at today's daily market rate; sorting and range filters use that.`;
 
 // Module refresh v7
 type QuickFilter = "all" | "customers" | "vendors" | "both" | "active" | "inactive" | "archived";
@@ -3862,7 +3862,7 @@ interface KpiTooltipData {
   formula: string;
 }
 
-const BASE_CURRENCY_NOTE = `Shown in the base currency (${BASE_CURRENCY}); each partner's amount is converted from its own currency at today's mid-market rate.`;
+const BASE_CURRENCY_NOTE = `Shown in the base currency (${BASE_CURRENCY}); each partner's amount is converted from its own currency at today's daily market rate.`;
 
 // Only complex/calculated KPIs get the rich tooltip — simple counts use plain tooltips
 const KPI_TOOLTIP_DATA: Record<string, KpiTooltipData> = {
@@ -4137,7 +4137,7 @@ function DraggableListKpiCard({ index, kpiKey, label, value, sub, delta, rangeLa
               {delta.text}
             </span>
           )}
-          {/* The rate insights' "Updated as of …" is long: smaller, and it wraps. */}
+          {/* The rate insights' "6 currencies, last set on …" is long: smaller, and it wraps. */}
           {RATE_KPI_KEYS.has(kpiKey) ? (
             <p className="text-[12px] text-slate-700 tracking-tight" style={{ fontWeight: 600, lineHeight: 1.3 }}>{value}</p>
           ) : (

@@ -12,7 +12,7 @@ import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@
 import { eligibleAccounts, getCompanyAccount } from "@/app/currency/companyAccounts";
 import { CurrencyFlag } from "./CurrencyChip";
 import { ProviderLink } from "./ProviderLink";
-import { CompareRatesHover } from "./CompareRatesHover";
+import { RateTypeInfo } from "./RateTypeInfo";
 import { followsMarketPrice } from "@/app/currency/itemPrices";
 
 /* ── Order Summary: Currency and Exchange Rate (spec 4.3) ─────────────
@@ -20,8 +20,8 @@ import { followsMarketPrice } from "@/app/currency/itemPrices";
  * the customer's default, is changed here, near the totals. Choosing
  * another currency opens a confirmation with the rate and the new totals;
  * confirming converts every line. The rate is taken on the order date:
- * mid-market is read-only, corporate can be changed on the SO. Both are
- * fixed once the order leaves Draft. Same row recipe as the rest of Order
+ * the daily market rate is read-only, a corporate rate can be changed on
+ * the SO. Both are fixed once the order leaves Draft. Same row recipe as the rest of Order
  * Summary: a 10/500 slate-400 label, 12/500 slate-700 values. */
 
 const FONT = "Inter, system-ui, sans-serif";
@@ -211,7 +211,7 @@ export function AccountPicker({
   );
 }
 
-/** Mid-market | Corporate, as the Exchange Rates module names them. */
+/** Daily market rate | Corporate rate, as the Exchange Rates module names them. */
 export function RateTypeToggle({ value, onChange, corporateAvailable }: { value: RateType; onChange: (t: RateType) => void; corporateAvailable: boolean }) {
   return (
     <span className="ml-auto inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Rate type">
@@ -293,7 +293,7 @@ export function SOCurrencyFields({
   };
 
   const switchType = (t: RateType) => {
-    // No corporate rate set for the currency: start from the mid-market one, to be changed.
+    // No corporate rate set for the currency: start from the daily market rate, to be changed.
     const quote = t === "corporate" ? (corpQuote.rate != null ? corpQuote : midQuote) : midQuote;
     onChange({
       next: { currency: fx.currency, rateType: t, exchangeRate: quote.rate ?? fx.rate, rateEdited: t === "corporate" && corpQuote.rate == null },
@@ -329,12 +329,13 @@ export function SOCurrencyFields({
           <p className="text-slate-400 flex items-center gap-1" style={LABEL}>
             Exchange rate
             <InfoTip>
-              {BASE_CURRENCY} per 1 {fx.currency}, taken on the order date. A mid-market rate comes from {RATE_PROVIDER}
-              and is read-only; a corporate rate is set by finance and can be changed on the SO while it is a Draft.
+              {BASE_CURRENCY} per 1 {fx.currency}, taken on the order date. A daily market rate is read once a day from
+              {RATE_PROVIDER}, fixed for that date and read-only. A corporate rate is set by finance and can be changed on
+              the SO while it is a Draft.
             </InfoTip>
           </p>
           {!isBase && canEdit && <RateTypeToggle value={fx.rateType} onChange={switchType} corporateAvailable={corpQuote.rate != null} />}
-          {!isBase && canEdit && <CompareRatesHover currency={fx.currency} date={fx.rateDate} selected={fx.rateType} />}
+          {!isBase && canEdit && <RateTypeInfo currency={fx.currency} date={fx.rateDate} align="end" className="-ml-0.5" />}
         </div>
         {isBase ? (
           <div className={LOCKED}>
@@ -382,7 +383,7 @@ export function SOCurrencyFields({
           {isBase
             ? `${BASE_CURRENCY} is the base currency, so the rate is 1`
             : !corporate
-              ? <>{RATE_TYPE_LABEL.mid} rate on {day} (order date) · <ProviderLink /></>
+              ? <>{RATE_TYPE_LABEL.mid} on {day} (order date) · <ProviderLink /></>
               : so.rateEdited
                 ? corpQuote.rate != null
                   ? `Changed on the SO from ${formatRate(corpQuote.rate)}, the corporate rate on ${day}`
@@ -515,7 +516,7 @@ export function SOCurrencyConfirmDialog({
               </span>
             </p>
             {wanted === "corporate" && type === "mid" && (
-              <p className="mt-1 text-[11px] text-amber-700">No corporate rate is set for {to}, so the mid-market rate is used.</p>
+              <p className="mt-1 text-[11px] text-amber-700">No corporate rate is set for {to}, so the daily market rate is used.</p>
             )}
           </div>
 

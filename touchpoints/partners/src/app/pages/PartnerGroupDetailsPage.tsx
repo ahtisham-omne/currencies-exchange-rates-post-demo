@@ -1407,7 +1407,7 @@ function DashboardTab({
     const inactive = linkedPartners.filter((v) => v.status === "inactive").length;
     const archived = linkedPartners.filter((v) => v.status === "archived").length;
     // Partners keep their figures in their own currencies; group totals add
-    // them up in the base currency (each converted at today's mid-market rate).
+    // them up in the base currency (each converted at today's daily market rate).
     const inBase = (v: Vendor, amount: number | undefined) => toBaseNow(amount || 0, partnerCurrencyOf(v, partnerGroups));
     const totalSpend = linkedPartners.reduce((sum, v) => sum + inBase(v, v.totalSpent), 0);
     const outstanding = linkedPartners.reduce((sum, v) => sum + inBase(v, v.outstandingBalance), 0);

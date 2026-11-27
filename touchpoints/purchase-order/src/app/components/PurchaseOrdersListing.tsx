@@ -52,6 +52,9 @@ import UserHoverCard from "./UserHoverCard";
 import ItemHoverCard from "./ItemHoverCard";
 import PODashboard from "./PODashboard";
 import { formatMoney } from "@/app/currency/money";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
+import { poFx, toPOBase, type PoFxFields } from "@/app/currency/poFx";
+import { Money } from "./currency/Money";
 import PODemands from "./PODemands";
 import { FlaskConical } from "lucide-react";
 import { useOpenPlannerItems, useLastActiveItem } from "./plannerSession";
@@ -76,6 +79,9 @@ interface OrderedItem { code: string; image: string; }
 const AVAILABLE_COLUMNS: ColumnDef[] = [
   { id: "partnerLocation",  label: "Partner Location",   minWidth: 200, sortable: true },
   { id: "status",           label: "Status",             minWidth: 170 },
+  // The PO's total in its own currency, then in base (Mahreen, 27 Nov 2026, PO-5).
+  { id: "amount",           label: "Amount",             minWidth: 140, align: "right", sortable: true },
+  { id: "baseEquivalent",   label: "Base Equivalent",    minWidth: 160, align: "right", sortable: true },
   { id: "orderedItems",     label: "Ordered Item(s)",    minWidth: 180, sortable: true },
   { id: "pointOfContact",   label: "Point of Contact",   minWidth: 170, sortable: true },
   { id: "location",         label: "Location",           minWidth: 160 },
@@ -185,6 +191,13 @@ function genItemCode() {
   return `${a}-${b}-${c}`;
 }
 
+/** A row's money (27 Nov 2026): the PO's total in its own currency, the same
+ *  total in base at the PO's own rate, and that rate for the Amount hover. */
+function listingMoney(po: PoFxFields, amount: number): Pick<PurchaseOrder, "currency" | "amount" | "baseAmount" | "fx"> {
+  const fx = poFx(po);
+  return { currency: fx.currency, amount, baseAmount: toPOBase(po, amount), fx: fx.isBase ? null : fx };
+}
+
 function fmtDate(d: Date) {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return `${months[d.getMonth()]} ${String(d.getDate()).padStart(2, "0")}, ${d.getFullYear()}`;
@@ -241,6 +254,10 @@ function generateMockData(): PurchaseOrder[] {
       location: LOCATIONS[i % LOCATIONS.length].name,
       locationAddress: LOCATIONS[i % LOCATIONS.length].address,
       quoteValue: quoteValues[i % quoteValues.length],
+      ...listingMoney(
+        { vendor: { name: partner.name }, orderDate: new Date(baseDate.getTime() - (14 + i * 14) * 86400000).toISOString().slice(0, 10) },
+        quoteValues[i % quoteValues.length],
+      ),
       createdBy,
       dueDeliveryDate: fmtDate(new Date(baseDate.getTime() - i * 14 * 86400000)),
       orderDate: fmtDate(new Date(baseDate.getTime() - (14 + i * 14) * 86400000)),
@@ -1053,6 +1070,7 @@ export default function PurchaseOrdersListing({ initialTopTab }: PurchaseOrdersL
         location: spo.payment.shippedTo,
         locationAddress: LOCATION_ADDRESSES[spo.payment.shippedTo] || spo.payment.shippedTo,
         quoteValue: spo.total || 50000,
+        ...listingMoney(spo, spo.total),
         createdBy: spo.createdBy,
         // Feed the row's "dueDeliveryDate" slot (kept as the column id for
         // backward-compat with layout code) from the derived Expected PO
@@ -1347,6 +1365,29 @@ export default function PurchaseOrdersListing({ initialTopTab }: PurchaseOrdersL
               </div>
             </UserHoverCard>
           </div>
+        );
+      }
+      /* Amount and Base Equivalent (Mahreen, 27 Nov 2026, PO-5): the vendor's
+         amount, never converted, with the rate hover; then the base beside it
+         for comparing POs, "≈" because a PO is an estimate (at its own rate).
+         A PO in the base currency shows its plain base amount. */
+      case "amount":
+        return (
+          <span className="block whitespace-nowrap text-right" style={{ ...s.cellText, color: "rgb(30, 41, 59)" }}>
+            <Money value={item.amount ?? 0} currency={item.currency} fx={item.fx} dateLabel="PO date" />
+          </span>
+        );
+      case "baseEquivalent": {
+        const foreign = !isBaseCurrency(item.currency ?? BASE_CURRENCY);
+        return (
+          <span
+            className="block whitespace-nowrap text-right tabular-nums"
+            style={{ ...s.cellText, color: foreign ? "hsl(var(--muted-foreground))" : "rgb(30, 41, 59)" }}
+            title={foreign ? `In ${BASE_CURRENCY} at the PO's rate` : undefined}
+          >
+            {foreign ? "≈ " : ""}
+            {formatMoney(item.baseAmount ?? 0, BASE_CURRENCY)}
+          </span>
         );
       }
       case "dueDeliveryDate":

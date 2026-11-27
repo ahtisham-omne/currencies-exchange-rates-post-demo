@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { CurrencyDropdown } from "../currency/CurrencyDropdown";
 import { FieldLabel, LockedField, ModalSection, OptionCards, SettingsModal, TimezoneValue } from "./SettingsParts";
-import { DATE_FORMATS, savePreferences, useGeneralSettings, type FirstDayOfWeek, type GlobalPreferences, type TimeFormat } from "./generalSettingsStore";
-import { BASE_CURRENCY_TIP } from "./copy";
+import { DATE_FORMATS, DEFAULT_EXCHANGE_RATES, savePreferences, useGeneralSettings, type FirstDayOfWeek, type GlobalPreferences, type TimeFormat } from "./generalSettingsStore";
+import { BASE_CURRENCY_TIP, DEFAULT_EXCHANGE_RATE_TIP } from "./copy";
 
 /* ── Edit Global Settings ───────────────────────────────────────────────
  * The prototype's dialog, field for field, with one change: its locked
@@ -38,7 +38,7 @@ export function EditGlobalSettingsModal({ open, onClose }: { open: boolean; onCl
       open={open}
       onClose={onClose}
       title="Edit Global Settings"
-      subtitle="Update tenant-wide defaults for timezone, date and time formats, currency, language, and MFA."
+      subtitle="Update tenant-wide defaults for timezone, date and time formats, currency and exchange rate, language, and MFA."
       onSave={save}
     >
       <ModalSection icon={Globe} title="Display Preferences">
@@ -87,6 +87,13 @@ export function EditGlobalSettingsModal({ open, onClose }: { open: boolean; onCl
                 Exchange rates will be quoted against {draft.baseCurrency} instead of {preferences.baseCurrency}.
               </p>
             )}
+          </div>
+          {/* Mahreen's 1c (27 Nov 2026): there is no "Update frequency" here, as the
+              daily market rate is read once a day. Saved for the session only; each
+              module keeps its own default until this is wired. */}
+          <div>
+            <FieldLabel tip={DEFAULT_EXCHANGE_RATE_TIP}>Default Exchange Rate</FieldLabel>
+            <OptionCards options={DEFAULT_EXCHANGE_RATES} value={draft.defaultExchangeRate} onChange={(v) => set("defaultExchangeRate", v)} />
           </div>
           <div>
             <FieldLabel>Functional Language</FieldLabel>

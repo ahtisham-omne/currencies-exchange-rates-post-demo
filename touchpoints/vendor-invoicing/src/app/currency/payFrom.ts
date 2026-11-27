@@ -5,8 +5,9 @@ import { youPayInOf } from './paymentRules';
 
 /* ── "You pay" is an account (Currency Touchpoints Map, 24 Nov 2026) ───
  * An invoice says which account it will be paid from: any bank or cash
- * account, in any currency (25 Nov 2026, as on a PO), listed base-currency
- * ones first, then those in the invoice's own currency, then the rest. The
+ * account, in any currency (25 Nov 2026, as on a PO), listed those in the
+ * invoice's own currency first, then base-currency ones, then the rest
+ * (27 Nov 2026, Mahreen 7d; base-currency ones led before). The
  * choice is stored on the invoice (`payFromAccount`); its "You pay in"
  * (`youPayIn`) is the invoice's currency when the account is in it, else
  * the base, so a payment of it starts from an account that may pay
@@ -17,13 +18,29 @@ import { youPayInOf } from './paymentRules';
 /** The base operating account a new document pays from by default. */
 export const DEFAULT_PAY_FROM_ID = '1010-Operating';
 
+/** Where an account lists for a document in this currency (27 Nov 2026,
+ *  Mahreen 7d): in that currency first, then the base currency, then the
+ *  rest. */
+export function payFromRank(account: Pick<PayFromAccount, 'currency'>, currency: string): number {
+  const code = (currency || BASE_CURRENCY).toUpperCase();
+  const cur = account.currency.toUpperCase();
+  return cur === code ? 0 : isBaseCurrency(cur) ? 1 : 2;
+}
+
+/** Accounts in listing order for a document in this currency (each group
+ *  keeps the ledger's order). */
+export function sortPayFromAccounts<T extends Pick<PayFromAccount, 'currency'>>(accounts: T[], currency: string): T[] {
+  return accounts
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => payFromRank(x.a, currency) - payFromRank(y.a, currency) || x.i - y.i)
+    .map((x) => x.a);
+}
+
 /** Bank and cash accounts a document in this currency can name: every one,
- *  in any currency, base-currency ones first, then those in that currency,
+ *  in any currency, those in that currency first, then base-currency ones,
  *  then the rest (each group in the ledger's order). */
 export function payFromAccountsFor(currency: string): PayFromAccount[] {
-  const code = (currency || BASE_CURRENCY).toUpperCase();
-  const rank = (a: PayFromAccount) => (isBaseCurrency(a.currency) ? 0 : a.currency.toUpperCase() === code ? 1 : 2);
-  return PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank' || a.type === 'cash').sort((a, b) => rank(a) - rank(b));
+  return sortPayFromAccounts(PAY_FROM_ACCOUNTS.filter((a) => a.type === 'bank' || a.type === 'cash'), currency);
 }
 
 /** The default account for a document in this currency, given the currency

@@ -56,7 +56,12 @@ node skills/omne-currencies/scripts/check-currencies.mjs <module-src-dir>
 The kit is generalized from the Currencies & Exchange Rates prototype's
 touchpoint apps (Partners, Items, Purchase Orders, Quotes, Sales Orders,
 Vendor Invoicing and Payments, Vendor Returns, Chart of Accounts) as they
-stood after Nophil's review on 25 Nov 2026. Its demo rates match the
-Currencies & Exchange Rates module's.
+stood after Nophil's review on 25 Nov 2026, Eli's rate ruling on 26 Nov 2026
+and Mahreen's design changes on 27 Nov 2026. Its demo rates match the
+Currencies & Exchange Rates module's: one daily market rate per currency per
+day, read once a day and fixed for that date.
 
-Version 0.1.0, 25 Nov 2026. Mahad Ejaz.
+Version 0.2.0, 27 Nov 2026: "mid-market" is now the daily market rate; the
+rate info hover (`RateTypeInfo`) replaces Compare rates; rates follow the
+posting date; recording a payment asks for the bank's rate. Version 0.1.0,
+25 Nov 2026. Mahad Ejaz.

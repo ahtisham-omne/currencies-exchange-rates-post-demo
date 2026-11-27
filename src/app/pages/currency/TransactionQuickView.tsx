@@ -30,7 +30,7 @@ export function TransactionQuickView({ doc, currency: c, onClose }: {
   const dp = c.decimalPlaces
   const corporate = c.isBaseCurrency ? undefined : corporateRateInEffect(c.code, standardRates, todayIso())
   const mid = c.isBaseCurrency ? 1 : midMarketRates.find(m => m.sourceCurrency === c.code)?.rate
-  // The rate it was priced at: the corporate rate when it used one and one is in effect, else mid-market.
+  // The rate it was priced at: the corporate rate when it used one and one is in effect, else the daily market rate.
   const usedCorporate = doc.rateType === 'corporate' && !!corporate
   const rate = usedCorporate ? corporate!.standardRate : mid
   const baseValue = rate != null ? doc.amount * rate : null
@@ -70,7 +70,7 @@ export function TransactionQuickView({ doc, currency: c, onClose }: {
       {!c.isBaseCurrency && (
         <QuickViewCard title="Exchange Rate" icon={ArrowLeftRight}>
           <QuickViewFields fields={[
-            { label: 'Rate Used', value: usedCorporate ? 'Corporate Rate' : 'Mid-Market Rate' },
+            { label: 'Rate Used', value: usedCorporate ? 'Corporate Rate' : 'Daily Market Rate' },
             { label: 'Exchange Rate', value: rate != null ? fmtPairRate(c.code, rate) : 'Not available' },
             { label: 'Value in Base Currency', value: baseValue != null ? money(symbolOf(BASE), baseValue, decimalsOf(BASE)) : '–' },
           ]} />

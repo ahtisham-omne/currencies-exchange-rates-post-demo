@@ -60,7 +60,7 @@ const CURRENCY_LINES: Line[] = [
   v => `Treasury confirmed ${v.code} stays on the approved list for next quarter. No change to the corporate rate review cycle.`,
   v => `${v.code} rounds to ${v.places}. Supplier invoices quoted finer than that are rounded on entry, and the difference posts to FX rounding.`,
   v => `Bank confirmed ${v.code} settlements at the corporate rate from ${v.month}. The confirmation letter is in Attachments.`,
-  v => `Check the ${v.code} variance before the month-end revaluation. The mid-market rate has been moving more than usual.`,
+  v => `Check the ${v.code} variance before the month-end revaluation. The daily market rate has been moving more than usual.`,
   v => `${v.name} is in scope for the year-end audit. Keep the rate approvals in Attachments.`,
   v => `Keep ${v.code} active while there are open transactions in it. Deactivate only once the last one has settled.`,
 ]
@@ -82,7 +82,7 @@ const WRITTEN: Record<string, { id: string; text: string; author: string; days: 
   ],
   AED: [
     { id: 'note_aed_2', text: 'AED was deactivated for two months last year while the Dubai office had no open transactions. Reactivated once the new supplier contract was signed.', author: CONTROLLER, days: 12, hour: 10, minute: 40 },
-    { id: 'note_aed_1', text: 'AED is pegged to the US dollar, so its mid-market rate tracks USD closely. A large AED move usually means USD moved.', author: ACCOUNTANTS[0], days: 31, hour: 14, minute: 30 },
+    { id: 'note_aed_1', text: 'AED is pegged to the US dollar, so its daily market rate tracks USD closely. A large AED move usually means USD moved.', author: ACCOUNTANTS[0], days: 31, hour: 14, minute: 30 },
   ],
 }
 
@@ -202,7 +202,7 @@ export function currencyActivity(c: Currency, now = new Date()): ActivityFeedIte
         }
       : {
           id: `${c.code}-sample-review`, type: 'info', user: 'Daniel Osei', at: at(26 + (h % 9), 15), date: '',
-          verb: 'reviewed the mid-market rate for', target: pair,
+          verb: 'reviewed the daily market rate for', target: pair,
         },
     {
       id: `${c.code}-sample-decimals`, type: 'edit', user: 'Marcus Lee', at: at(58 + (h % 11), 11), date: '',

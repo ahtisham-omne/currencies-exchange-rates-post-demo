@@ -34,9 +34,10 @@ export function profileFormatters({ view, partnerCurrency, streams }: ProfileCur
     partnerCurrency,
     displayCode,
     /** The amount with its hover (base equivalent or partner amount, and the rate).
-     *  rolledUp: a multi-currency partner's total, whose hover lists each currency. */
-    money: (v: number, opts?: { rolledUp?: boolean }) => (
-      <CurrencyAmount {...partnerAmount(v, partnerCurrency, view, opts?.rolledUp ? streams : undefined)} />
+     *  rolledUp: a multi-currency partner's total, whose hover lists each currency.
+     *  approx: "≈" before a figure converted to the base currency. */
+    money: (v: number, opts?: { rolledUp?: boolean; approx?: boolean }) => (
+      <CurrencyAmount {...partnerAmount(v, partnerCurrency, view, opts?.rolledUp ? streams : undefined)} approx={opts?.approx} />
     ),
     /** As text (chart tooltips, labels): "$12,400.00", "₨3,453,648.00". */
     moneyText: (v: number) => formatMoney(toDisplay(v), displayCode),
@@ -54,7 +55,9 @@ export function useProfileMoney() {
 /** The Base / Partner currency switch, in Chart of Accounts' pattern (the
  *  period presets on its dashboard widgets, DetailInsights PeriodSelector):
  *  plain 11px options, the chosen one on a light blue pill, no frame. What
- *  each option shows rides its hover. Hidden for a partner in the base currency. */
+ *  each option shows rides its hover. Hidden for a partner in the base currency.
+ *  A visible "Show amounts in" label, and each option names its currency:
+ *  "Base (PKR) | Partner (MXN)" (Mahreen, 27 Nov 2026, PA-2). */
 export function CurrencyViewToggle({
   view,
   onChange,
@@ -66,35 +69,40 @@ export function CurrencyViewToggle({
   partnerCurrency: string;
   size?: "sm" | "md";
 }) {
+  const labelId = React.useId();
   if (isBaseCurrency(partnerCurrency)) return null;
+  const partnerCode = partnerCurrency.toUpperCase();
   const options: { value: CurrencyView; label: string; tip: string }[] = [
-    { value: "base", label: "Base Currency", tip: "Show amounts in your base currency." },
-    { value: "partner", label: "Partner Currency", tip: "Show amounts in the currency set for this partner." },
+    { value: "base", label: `Base (${BASE_CURRENCY})`, tip: "Show amounts in your base currency." },
+    { value: "partner", label: `Partner (${partnerCode})`, tip: "Show amounts in the currency set for this partner." },
   ];
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-label="Show amounts in">
-      {options.map((o) => {
-        const active = view === o.value;
-        return (
-          <Tooltip key={o.value} delayDuration={300}>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => onChange(o.value)}
-                className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
-                  active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
-                }`}
-                style={{ fontWeight: active ? 500 : 400 }}
-              >
-                {o.label}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-[240px] text-[11px] leading-snug">{o.tip}</TooltipContent>
-          </Tooltip>
-        );
-      })}
+    <div className="inline-flex items-center gap-1.5 shrink-0">
+      <span id={labelId} className="text-[11px] text-slate-500 whitespace-nowrap" style={{ fontWeight: 500 }}>Show amounts in</span>
+      <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5 shrink-0" role="radiogroup" aria-labelledby={labelId}>
+        {options.map((o) => {
+          const active = view === o.value;
+          return (
+            <Tooltip key={o.value} delayDuration={300}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => onChange(o.value)}
+                  className={`px-2 py-0.5 rounded-md text-[11px] whitespace-nowrap transition-colors cursor-pointer ${
+                    active ? "bg-[#EDF4FF] text-[#0A77FF]" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                  style={{ fontWeight: active ? 500 : 400 }}
+                >
+                  {o.label}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[240px] text-[11px] leading-snug">{o.tip}</TooltipContent>
+            </Tooltip>
+          );
+        })}
+      </div>
     </div>
   );
 }

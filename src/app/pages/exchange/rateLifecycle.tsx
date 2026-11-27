@@ -16,7 +16,7 @@ export const CORPORATE_STATUS_OPTIONS: StatusOption<CorpStatus>[] = [
 ]
 
 export const MID_STATUS_OPTIONS: StatusOption<'Active'>[] = [
-  { value: 'Active', verb: 'Activate', meaning: ['Synced from the rate provider.'] },
+  { value: 'Active', verb: 'Activate', meaning: ['Read once a day from the rate provider, and fixed for that date.'] },
 ]
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
@@ -62,7 +62,7 @@ export function useCorporateRateLifecycle() {
         title: 'Archive this corporate rate?',
         description: [
           'This corporate rate will be archived. It stays in rate history, but it can no longer be selected for new transactions.',
-          'The currency falls back to the mid-market rate until a new corporate rate is set.',
+          'The currency falls back to the daily market rate until a new corporate rate is set.',
         ],
         confirmLabel: 'Archive Rate',
       },
@@ -138,7 +138,7 @@ export function useCorporateRateLifecycle() {
         badge: 'Archive',
         title: `Archive ${n} corporate ${plural(n, 'rate', 'rates')}?`,
         description: [
-          `${plural(n, 'It stays', 'They stay')} in rate history, but ${plural(n, 'it', 'they')} can no longer be selected for new transactions. Each currency falls back to the mid-market rate until a new corporate rate is set.`,
+          `${plural(n, 'It stays', 'They stay')} in rate history, but ${plural(n, 'it', 'they')} can no longer be selected for new transactions. Each currency falls back to the daily market rate until a new corporate rate is set.`,
         ],
         reasonsTitle: held.length ? 'Not Included' : 'Rates to Archive',
         reasons: held.length

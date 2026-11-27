@@ -11,7 +11,7 @@ import { formatMoney, formatRate, formatRateDate } from "@/app/currency/money";
 import { crossRate, poFx, vendorCurrency } from "@/app/currency/poFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
-import { CompareRatesHover } from "./CompareRatesHover";
+import { RateTypeInfo } from "./RateTypeInfo";
 import { ProviderLink } from "./ProviderLink";
 
 /* ── Order Summary: Currency and Exchange Rate (spec 4.3, 4.2) ────────
@@ -73,7 +73,9 @@ export function CurrencyPicker({
     );
   }
   return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQuery(""); }}>
+    // Modal: it opens inside the Currency configuration dialog, where the list
+    // wouldn't scroll by wheel otherwise.
+    <Popover modal open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQuery(""); }}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -128,7 +130,7 @@ export function CurrencyPicker({
   );
 }
 
-/** Mid-market | Corporate, as the Exchange Rates module names them. */
+/** Daily market rate | Corporate rate, as the Exchange Rates module names them. */
 export function RateTypeToggle({ value, onChange, corporateAvailable }: { value: RateType; onChange: (t: RateType) => void; corporateAvailable: boolean }) {
   return (
     <span className="ml-auto inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Rate type">
@@ -190,7 +192,7 @@ export function POCurrencyFields({
   };
 
   const switchType = (t: RateType) => {
-    // No corporate rate set for the currency: start from the mid-market one, to be changed.
+    // No corporate rate set for the currency: start from the daily market rate, to be changed.
     const quote = t === "corporate" ? (corpQuote.rate != null ? corpQuote : midQuote) : midQuote;
     onChange({
       next: { currency: fx.currency, rateType: t, exchangeRate: quote.rate ?? fx.rate, rateEdited: t === "corporate" && corpQuote.rate == null },
@@ -223,12 +225,12 @@ export function POCurrencyFields({
           <p className="text-slate-400 flex items-center gap-1" style={LABEL}>
             Exchange rate
             <InfoTip>
-              {BASE_CURRENCY} per 1 {fx.currency}, taken on the PO date. A mid-market rate comes from {RATE_PROVIDER} and
-              is read-only; a corporate rate is set by finance and can be changed on the PO.
+              {BASE_CURRENCY} per 1 {fx.currency}, taken on the PO date. The daily market rate is read once a day from {RATE_PROVIDER}, is fixed
+              for that date and is read-only; a corporate rate is set by finance and can be changed on the PO.
             </InfoTip>
           </p>
           {!isBase && canEdit && <RateTypeToggle value={fx.rateType} onChange={switchType} corporateAvailable={corpQuote.rate != null} />}
-          {!isBase && <CompareRatesHover currency={fx.currency} date={fx.rateDate} selected={fx.rateType} />}
+          <RateTypeInfo currency={fx.currency} date={fx.rateDate} />
         </div>
         {isBase ? (
           <div className={LOCKED}>
@@ -276,7 +278,7 @@ export function POCurrencyFields({
           {isBase
             ? `${BASE_CURRENCY} is the base currency, so the rate is 1`
             : !corporate
-              ? <>{RATE_TYPE_LABEL.mid} rate on {day} (PO date) · <ProviderLink /></>
+              ? <>{RATE_TYPE_LABEL.mid} on {day} (PO date) · <ProviderLink /></>
               : po.rateEdited
                 ? corpQuote.rate != null
                   ? `Changed on the PO from ${formatRate(corpQuote.rate)}, the corporate rate on ${day}`
@@ -379,7 +381,7 @@ export function POCurrencyConfirmDialog({
               </span>
             </p>
             {wanted === "corporate" && type === "mid" && (
-              <p className="mt-1 text-[11px] text-amber-700">No corporate rate is set for {to}, so the mid-market rate is used.</p>
+              <p className="mt-1 text-[11px] text-amber-700">No corporate rate is set for {to}, so the daily market rate is used.</p>
             )}
           </div>
 

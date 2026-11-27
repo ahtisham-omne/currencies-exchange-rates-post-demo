@@ -124,7 +124,7 @@ export function RuleDocumentExampleCard({
         )}
       </div>
       <div className="mt-3 pt-2.5 border-t border-[#E8ECF1] text-[10.5px] text-slate-400 leading-relaxed">
-        Rate {baseRateSentence(code, ex.rate)} · today's {RATE_TYPE_LABEL[ex.rateType].toLowerCase()} rate. The threshold is checked in {BASE_CURRENCY} at the document's rate; a fixed amount is converted to {code} at that rate.
+        Rate {baseRateSentence(code, ex.rate)} · today's {RATE_TYPE_LABEL[ex.rateType].toLowerCase()}. The threshold is checked in {BASE_CURRENCY} at the document's rate; a fixed amount is converted to {code} at that rate.
       </div>
     </div>
   );

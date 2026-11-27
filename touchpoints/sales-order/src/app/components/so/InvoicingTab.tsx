@@ -1596,7 +1596,7 @@ export function InvoiceSidebarSummary({ so, onOpenInvoicing }: { so: SalesOrder;
         <p style={{ fontSize: 11, fontWeight: 500, color: "#64748B", fontFamily: "Inter, system-ui, sans-serif" }}>Invoiced</p>
         <p className="tabular-nums" style={{ fontSize: 12, fontWeight: 600, color: "#334155", fontFamily: "Inter, system-ui, sans-serif" }}>
           {/* Kept in the order's currency (spec 4.4); shown in the page's
-              (base by default), the other one on hover. */}
+              (the customer's by default), the other one on hover. */}
           <DocMoney value={totalInvoiced} />
         </p>
       </div>

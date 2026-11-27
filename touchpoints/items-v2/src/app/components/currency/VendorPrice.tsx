@@ -11,6 +11,12 @@ import { RowMoney } from './RowCurrencyView';
  * (the vendor's rate type, today). A base-currency vendor's price is plain.
  * On the column's "Show values as: Vendor currency" (25 Nov 2026) it shows in
  * the vendor's own currency instead, the base figure on hover (RowCurrencyView). */
+
+/** The qualified vendor price hover's last line (Mahreen, 27 Nov 2026): the
+ *  rate here is for comparing vendors; the PO picks its own. On this hover
+ *  only, not on the Credit Limit, Last PO or Sales hovers. */
+export const VENDOR_PRICE_NOTE = 'For reference only: the PO sets the rate it uses.';
+
 export function VendorPrice({
   price,
   fx,
@@ -28,7 +34,7 @@ export function VendorPrice({
   return (
     <span className={`inline-flex min-w-0 truncate ${className}`}>
       <span className="truncate">
-        <RowMoney value={price} currency={fx.currency} fx={isBase ? null : fx} className="text-foreground font-medium" />
+        <RowMoney value={price} currency={fx.currency} fx={isBase ? null : fx} className="text-foreground font-medium" note={VENDOR_PRICE_NOTE} />
         {uom && <span className="text-muted-foreground"> / {uom}</span>}
       </span>
     </span>

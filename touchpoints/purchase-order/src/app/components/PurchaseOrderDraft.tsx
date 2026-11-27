@@ -207,8 +207,9 @@ import { POCurrencyConfigDialog, POCurrencySummary } from "./currency/POCurrency
 import { POCurrencyHeaderControls, POCurrencyViewSwitch } from "./currency/POCurrencyHeaderControls";
 import { setPOView, usePOView } from "./currency/poView";
 import { POReceivingDocsTab } from "./currency/POReceivingDocsTab";
+import { PricesInChip } from "./currency/VendorCurrencyTag";
 import { versionRateOptions } from "./currency/VersionRateChoice";
-import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { currencyDecimals, formatMoney, moneyPrefix } from "@/app/currency/money";
 import { crossRate, fromPOCurrency, poFx, roundTo, ruleAmountFactor, vendorCurrency } from "@/app/currency/poFx";
 import { midRateOn, toBase } from "@/app/currency/rates";
@@ -1568,14 +1569,17 @@ function LineItemsPanel({
   const [editingPriceValue, setEditingPriceValue] = useState<string>("");
 
   /* Prices are kept in the PO's currency (spec 4.3) and shown, and typed, in
-     the page's: base by default, the vendor's with the Line Items switch. A price
-     typed in base is converted at the PO's rate and rounded to the vendor
-     currency's minor unit. Plain digits: a number input can't take "1,245.00". */
+     the page's: the vendor's by default (D1, 27 Nov 2026), base with the Line
+     Items switch. A price typed in base is converted at the PO's rate and
+     rounded to the vendor currency's minor unit. Plain digits: a number input
+     can't take "1,245.00". */
   const { currency, view: docView } = useDocCurrency();
   const { viewCurrency, toView, fromView, decimals: priceDecimals } = useDocView();
   const docMoney = useDocMoney();
   const otherText = useDocOtherText();
   const pricePrefix = moneyPrefix(viewCurrency).trim();
+  /** " (EUR)" after the Price Per Unit and Total headers; nothing on a PKR PO. */
+  const priceHeaderCode = isBaseCurrency(currency) ? "" : ` (${viewCurrency})`;
   const priceText = (li: POLineItem) => toView(li.unitPrice * (1 - li.discount / 100)).toFixed(priceDecimals);
   const startPriceEdit = (li: POLineItem) => {
     setEditingPriceId(li.id);
@@ -1684,6 +1688,9 @@ function LineItemsPanel({
           >
             {totalUnits.toLocaleString()} units
           </span>
+          {/* The currency the prices are kept in (Mahreen, 27 Nov 2026, PO-1),
+              whichever one the switch shows them in. None on a PKR PO. */}
+          <PricesInChip code={currency} />
         </div>
         <div className="flex items-center gap-2 shrink-0">
         {/* Base Currency | Vendor Currency (foreign-currency POs only;
@@ -1692,7 +1699,7 @@ function LineItemsPanel({
             per PO for the session (poView.ts), never an edit. */}
         <POCurrencyViewSwitch
           currency={currency}
-          view={docView ?? "base"}
+          view={docView ?? "document"}
           onViewChange={(v) => setPOView(po.id, v)}
         />
         {canEdit && (
@@ -1792,12 +1799,14 @@ function LineItemsPanel({
       {po.lineItems.length > 0 && (
         <div
           className="grid items-center px-4 py-2 border-b border-border"
-          style={{ gridTemplateColumns: showReceiving ? "1fr 100px 124px 124px 90px 72px" : "1fr 100px 124px 124px 72px", backgroundColor: "color-mix(in srgb, hsl(var(--muted)) 30%, transparent)" }}
+          style={{ gridTemplateColumns: showReceiving ? "1fr 100px 152px 136px 90px 72px" : "1fr 100px 152px 136px 72px", backgroundColor: "color-mix(in srgb, hsl(var(--muted)) 30%, transparent)" }}
         >
           <span style={COL_HEADER}>Line Item</span>
           <span style={{ ...COL_HEADER, textAlign: "right" }}>Qty</span>
-          <span style={{ ...COL_HEADER, textAlign: "right" }}>Price Per Unit</span>
-          <span style={{ ...COL_HEADER, textAlign: "right" }}>Total</span>
+          {/* The currency the amounts show in (Mahreen, 27 Nov 2026): the PO's,
+              or the base with the switch on Base Currency. None on a PKR PO. */}
+          <span style={{ ...COL_HEADER, textAlign: "right", whiteSpace: "nowrap" }}>Price Per Unit{priceHeaderCode}</span>
+          <span style={{ ...COL_HEADER, textAlign: "right", whiteSpace: "nowrap" }}>Total{priceHeaderCode}</span>
           {showReceiving && <span style={{ ...COL_HEADER, textAlign: "right" }}>Received</span>}
           <span />
         </div>
@@ -1838,7 +1847,7 @@ function LineItemsPanel({
                   ? "group grid px-4 py-3 cursor-pointer transition-colors duration-150 hover:bg-amber-100/50"
                   : "group grid px-4 py-3 cursor-pointer transition-colors duration-150 hover:bg-muted/30"
               }
-              style={{ gridTemplateColumns: showReceiving ? "1fr 100px 124px 124px 90px 72px" : "1fr 100px 124px 124px 72px", alignItems: "start" }}
+              style={{ gridTemplateColumns: showReceiving ? "1fr 100px 152px 136px 90px 72px" : "1fr 100px 152px 136px 72px", alignItems: "start" }}
               onClick={() => {
                 const isInlineEditing = editingQtyId === li.id || editingPriceId === li.id;
                 if (isInlineEditing) return;

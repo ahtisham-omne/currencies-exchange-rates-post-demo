@@ -360,8 +360,9 @@ export function CreateQuoteModal({ open: isOpen, onOpenChange, onQuoteCreated, o
         );
       case 2:
         return (
-          /* The new quote is in the customer's currency (spec 4.3), at today's rate. */
-          <DocCurrencyProvider currency={draftCurrency} fx={isBaseCurrency(draftCurrency) ? null : todayFx(draftCurrency)} rateDate={localTodayIso()} dateLabel="today" role="customer currency">
+          /* The new quote is in the customer's currency (spec 4.3), at today's
+             rate, and its lines are shown in it (D1, 27 Nov 2026). */
+          <DocCurrencyProvider currency={draftCurrency} fx={isBaseCurrency(draftCurrency) ? null : todayFx(draftCurrency)} rateDate={localTodayIso()} dateLabel="today" role="customer currency" view="document">
             <Step3LineItems
               quoteDraft={quoteDraft}
               onUpdate={(updates) => {

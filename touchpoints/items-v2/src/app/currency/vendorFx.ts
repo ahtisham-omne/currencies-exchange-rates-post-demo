@@ -7,7 +7,7 @@ import { DEFAULT_RATE_TYPE, LAST_SYNC, RATE_PROVIDER, rateOn, toBase, type RateT
  * own currency, the partner's default, and every selling unit carries three
  * fields: the price in that currency, the exchange rate to the base
  * currency, and the price in base. Entering either price fills the other.
- * The rate is today's mid-market rate (read-only) or the corporate rate,
+ * The rate is today's daily market rate (read-only) or the corporate rate,
  * which can be changed for the vendor. */
 
 export const localTodayIso = () => {
@@ -54,7 +54,8 @@ export interface VendorRate {
   rateType: RateType;
   /** The day the rate is for: today. */
   rateDate: string;
-  /** For the Money hover: "Open Exchange Rates", "Corporate rate", … */
+  /** For the Money hover, after the rate type: "Open Exchange Rates",
+   *  "Set by Ahtisham Ahmad", "Entered for this vendor". */
   source: string;
   /** A corporate rate entered for this vendor instead of finance's. */
   edited: boolean;
@@ -65,7 +66,7 @@ export interface VendorRate {
 /** The rate a vendor's prices convert at: today's, of the vendor's rate type.
  *  Corporate is open only where finance has set a corporate rate for the
  *  currency, and a corporate rate typed for the vendor wins over finance's.
- *  With no corporate rate set the price stays on mid-market, whatever the
+ *  With no corporate rate set the price stays on the daily market rate, whatever the
  *  vendor was saved with (Mahreen, 2026-11-19). */
 export function vendorRate(
   currency: string | null | undefined,
@@ -73,7 +74,8 @@ export function vendorRate(
 ): VendorRate {
   const code = (currency || BASE_CURRENCY).toUpperCase();
   const today = localTodayIso();
-  const corporate = isBaseCurrency(code) ? 1 : rateOn(code, today, 'corporate').rate;
+  const corporateQuote = rateOn(code, today, 'corporate');
+  const corporate = isBaseCurrency(code) ? 1 : corporateQuote.rate;
   const rateType = corporate == null ? 'mid' : (opts.rateType ?? DEFAULT_RATE_TYPE);
   if (isBaseCurrency(code)) {
     return { currency: code, rate: 1, rateType, rateDate: today, source: 'Base currency', edited: false, corporateRate: 1 };
@@ -86,13 +88,15 @@ export function vendorRate(
       rate: typed,
       rateType,
       rateDate: today,
-      source: edited ? 'Corporate rate, entered for this vendor' : 'Corporate rate',
+      // The hover already names the rate type ("Corporate rate"), so the
+      // source says who set it (27 Nov 2026).
+      source: edited ? 'Entered for this vendor' : corporateQuote.source,
       edited,
       corporateRate: corporate,
     };
   }
   if (rateType === 'corporate' && corporate != null) {
-    return { currency: code, rate: corporate, rateType, rateDate: today, source: 'Corporate rate', edited: false, corporateRate: corporate };
+    return { currency: code, rate: corporate, rateType, rateDate: today, source: corporateQuote.source, edited: false, corporateRate: corporate };
   }
   const mid = rateOn(code, today, 'mid').rate ?? 1;
   return { currency: code, rate: mid, rateType: 'mid', rateDate: today, source: RATE_PROVIDER, edited: false, corporateRate: corporate };
@@ -107,7 +111,7 @@ export const priceFromBase = (base: number, rate: number, code: string) => (rate
 /* ── The design's figures ─────────────────────────────────────────────
  * The design writes every amount in USD. Vendor amounts are restated in the
  * vendor's currency, and item amounts (which stay in base) in PKR, at the
- * mid-market rate of the last sync. */
+ * daily market rate of the last read. */
 const LAST_SYNC_DAY = LAST_SYNC.slice(0, 10);
 
 export function fromUsd(amount: number, code: string): number {

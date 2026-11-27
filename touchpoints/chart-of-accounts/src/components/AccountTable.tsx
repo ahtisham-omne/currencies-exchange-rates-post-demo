@@ -14,9 +14,9 @@ import { DateField } from './DateField'
 import { cn, fmtCurrency, fmtDate, invertedDates, invertedRange, localDayOf } from '../lib/utils'
 import { AUDIT_HELP, GridComfort, PersonCell, StampCell, peopleIn, PERSON_PAD, personText } from './AuditCells'
 import { ME_MODE } from '../lib/features'
-import { currencyMeta, bookedFromBase, currentOwnBalanceOf, fxStanding, formatRate, PEGGED_TO_BASE, RATE_SOURCE, RATE_AS_OF_TIME, REVALUED_ON } from '../lib/currencies'
+import { currencyMeta, bookedFromBase, currentOwnBalanceOf, fxStanding, formatRate, PEGGED_TO_BASE, RATE_SOURCE, RATE_READ_ON, REVALUED_ON } from '../lib/currencies'
 import { useStore, usePeriodScopedAccounts, useSelectedPeriod, lifecycleCtx, useAccountNumberText } from '../store'
-import { corporateSetBy } from '../lib/fxRates'
+import { RATE_KIND_LABEL, corporateSetBy } from '../lib/fxRates'
 import { actionToward, canDeleteAccount, planLifecycle, showsSummaryTotal, statusesFor, statusMeaningLines } from '../lib/accountLifecycle'
 import type { LifecycleAction } from '../lib/accountLifecycle'
 import { manualPostingLock } from '../lib/journalEntry'
@@ -1101,8 +1101,8 @@ export function FxBalanceTooltip({ code, base, booked, own, accountId, children 
           <FxLine label="Not yet booked" value={fmtMoneySigned(fx.difference, symbolFor(base))} />
           <BooksTo difference={fx.difference} accountId={accountId} />
           <FxNote>{unitRate(code, base, fx.rate)}</FxNote>
-          <FxRateType type="mid" label="Mid-market" source={RATE_SOURCE} />
-          <FxNote small>As of {RATE_AS_OF_TIME}</FxNote>
+          <FxRateType type="mid" label={RATE_KIND_LABEL.mid} source={RATE_SOURCE} />
+          <FxNote small>Read on {RATE_READ_ON}</FxNote>
         </FxInset>
       )}
     </div>
@@ -1164,7 +1164,7 @@ export function FxPostingTooltip({ code, base, booked, rate, on, onIso, typed, r
   const own = rate != null && rate > 0
   const amount = own && typed != null ? typed : fx.own
   const kind = rateType ?? 'mid'
-  const kindLabel = kind === 'corporate' ? 'Corporate' : kind === 'manual' ? 'Typed on the entry' : 'Mid-market'
+  const kindLabel = kind === 'corporate' ? RATE_KIND_LABEL.corporate : kind === 'manual' ? 'Typed on the entry' : RATE_KIND_LABEL.mid
   const kindSource = kind === 'corporate' ? `Set by ${corporateSetBy(code, onIso)}` : kind === 'manual' ? undefined : RATE_SOURCE
   const today = amount / fx.rate
   const card = (
@@ -1189,8 +1189,8 @@ export function FxPostingTooltip({ code, base, booked, rate, on, onIso, typed, r
           <FxLine label="Not yet booked" value={fmtMoneySigned(today - booked, symbolFor(base))} />
           <BooksTo difference={today - booked} side={side} />
           <FxNote>{unitRate(code, base, fx.rate)}</FxNote>
-          <FxRateType type="mid" label="Mid-market" source={RATE_SOURCE} />
-          <FxNote small>As of {RATE_AS_OF_TIME}</FxNote>
+          <FxRateType type="mid" label={RATE_KIND_LABEL.mid} source={RATE_SOURCE} />
+          <FxNote small>Read on {RATE_READ_ON}</FxNote>
         </FxInset>
       )}
     </div>

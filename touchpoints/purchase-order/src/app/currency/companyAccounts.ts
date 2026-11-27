@@ -4,8 +4,9 @@ import { BASE_CURRENCY, isBaseCurrency } from './currencies';
  * What a PO is paid from. Copied from Vendor Invoicing's PAY_FROM_ACCOUNTS
  * (src/app/data/mockPayments.ts there): the same ids, labels and currencies,
  * so a PO's pay-from account reads the same when it is invoiced and paid.
- * A PO is paid from an account in the base currency or in the PO's own
- * currency (Currency Touchpoints Map, Purchase Orders 4), 1010 by default. */
+ * A PO is paid from an account in any currency (25 Nov 2026): the one chosen
+ * on the PO, else the vendor's default (VENDOR_PAY_FROM, 27 Nov 2026), else
+ * 1010. */
 
 export interface CompanyAccount {
   id: string;
@@ -34,32 +35,66 @@ export const COMPANY_ACCOUNTS: CompanyAccount[] = [
 /** 1010 · JPMorgan Operating, in the base currency. */
 export const DEFAULT_PAY_FROM = '1010-Operating';
 
+/* ── The vendor's default pay-from account (Mahreen, 27 Nov 2026, PO-2) ──
+ * "You pay in" lists the vendor's default account first, tagged "From
+ * vendor", and a PO with no account of its own is paid from it. As on the
+ * partner record, one per vendor; a vendor not listed is paid from 1010.
+ * The seeded vendors (poStore's listing POs):
+ *  - Most are paid from 1010 · JPMorgan Operating (PKR), as in the mockup.
+ *  - Tesla, Inc. bills in USD, so its record pays from 1040 · Global FX
+ *    Settlement (USD). PO 395-9826 (po-4) is paid from 1075 · CAD Settlement
+ *    instead: a choice on that PO only, which the dialog shows against the
+ *    vendor's 1040. */
+export const VENDOR_PAY_FROM: Record<string, string> = {
+  'General Motors (GM)': DEFAULT_PAY_FROM,
+  'Toyota Technical Center (TTC)': DEFAULT_PAY_FROM,
+  'Ford Motor Company': DEFAULT_PAY_FROM,
+  'Tesla, Inc.': '1040-FX Settlement',
+  'Chrysler (Stellantis N.V.)': DEFAULT_PAY_FROM,
+  'Rivian Automotive': DEFAULT_PAY_FROM,
+  'Lucid Motors': DEFAULT_PAY_FROM,
+  'Honda Motor Co., Ltd. (USA)': DEFAULT_PAY_FROM,
+  'Nissan North America': DEFAULT_PAY_FROM,
+  'BMW of North America': DEFAULT_PAY_FROM,
+};
+
 export const getCompanyAccount = (id: string | null | undefined): CompanyAccount | undefined =>
   id ? COMPANY_ACCOUNTS.find((a) => a.id === id) : undefined;
 
+/** The vendor's default pay-from account, else 1010 · JPMorgan Operating. */
+export function vendorPayFrom(vendorName?: string | null): CompanyAccount {
+  const id = (vendorName && VENDOR_PAY_FROM[vendorName.trim()]) || DEFAULT_PAY_FROM;
+  return getCompanyAccount(id) ?? getCompanyAccount(DEFAULT_PAY_FROM) ?? COMPANY_ACCOUNTS[0];
+}
+
 /** The accounts a document in `docCurrency` can be paid from: every bank and
- *  cash account, in any currency (25 Nov 2026), listed base-currency ones
- *  first, then those in the document's currency, then the rest. */
-export function payFromAccountsFor(docCurrency: string): CompanyAccount[] {
+ *  cash account, in any currency (25 Nov 2026). The vendor's default comes
+ *  first when the vendor is given (27 Nov 2026), then the base-currency ones,
+ *  then those in the document's currency, then the rest. */
+export function payFromAccountsFor(docCurrency: string, vendorName?: string | null): CompanyAccount[] {
   const code = (docCurrency || BASE_CURRENCY).toUpperCase();
-  const rank = (a: CompanyAccount) => (isBaseCurrency(a.currency) ? 0 : a.currency === code ? 1 : 2);
+  const vendorDefault = vendorName ? vendorPayFrom(vendorName).id : null;
+  const rank = (a: CompanyAccount) =>
+    a.id === vendorDefault ? 0 : isBaseCurrency(a.currency) ? 1 : a.currency === code ? 2 : 3;
   return [...COMPANY_ACCOUNTS].sort((a, b) => rank(a) - rank(b));
 }
 
 /** The account a document is paid from: the one chosen when it is still
  *  allowed for the document's currency; else, for a document saved with only
- *  a settlement currency, the first account in it; else 1010. */
+ *  a settlement currency, the first account in it; else the vendor's default
+ *  (27 Nov 2026); else 1010. */
 export function resolvePayFrom(
   docCurrency: string,
   accountId?: string | null,
   settlementCurrency?: string | null,
+  vendorName?: string | null,
 ): CompanyAccount {
   const eligible = payFromAccountsFor(docCurrency);
   const chosen = accountId ? eligible.find((a) => a.id === accountId) : undefined;
   if (chosen) return chosen;
   const settle = settlementCurrency?.toUpperCase();
   const bySettlement = settle && !isBaseCurrency(settle) ? eligible.find((a) => a.currency === settle) : undefined;
-  return bySettlement ?? eligible.find((a) => a.id === DEFAULT_PAY_FROM) ?? eligible[0] ?? COMPANY_ACCOUNTS[0];
+  return bySettlement ?? vendorPayFrom(vendorName);
 }
 
 /** "1010 · JPMorgan Operating · PKR" */

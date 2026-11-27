@@ -85,7 +85,7 @@ Follow the document screen by screen, with `references/patterns.md`:
   in the line items toolbar, `DocMoney` for every document amount; GL Impact
   in base (pattern 8). Typed amounts: pattern 9.
 - `CurrencyBlock` at the end of the summary (pattern 10); the module's own
-  dialog with `RateTypeToggle`, `CompareRates`, `PayFromAccountPicker` and
+  dialog with `RateTypeToggle`, `RateTypeInfo`, `PayFromAccountPicker` and
   `LockLine` (patterns 11, 12).
 - Print: `PrintCurrencySwitch`, `printTotalLabel`, `currencyFootnote`
   (pattern 13). Mark as paid: `BankRateField` (pattern 14).
@@ -125,13 +125,13 @@ skill's review steps.
 
 - `assets/kit/`: the shared currency kit (the installer copies it).
   `currencies.ts` (the Currency Library and the company's base),
-  `rates.ts` (mid-market and corporate demo rates, cross rates, Compare rates
-  data), `moneyFormat.ts` (writing money and rates), `Money.tsx`,
+  `rates.ts` (daily market and corporate demo rates, today's read, cross
+  rates, the data behind the rate info hover), `moneyFormat.ts` (writing money and rates), `Money.tsx`,
   `DocCurrency.tsx` and `docCurrencyContext.ts` (the four faces and the
   document provider), `docView.ts`, `CurrencySwitch.tsx` (the three
   switches), `ShowValuesAs.tsx` and `columnCurrencyView.ts`,
   `CurrencyChip.tsx`, `CurrencyCodeCell.tsx`, `FlagImage.tsx`,
-  `CurrencyBlock.tsx`, `RateType.tsx`, `CompareRates.tsx`,
+  `CurrencyBlock.tsx`, `RateType.tsx`, `RateTypeInfo.tsx`,
   `companyAccounts.ts` and `PayFromAccountPicker.tsx`, `BankRateField.tsx`,
   `FxCard.tsx`, `ProviderLink.tsx`, and `index.ts`.
 - `references/rules.md` (the same file as the BA's), `references/patterns.md`,

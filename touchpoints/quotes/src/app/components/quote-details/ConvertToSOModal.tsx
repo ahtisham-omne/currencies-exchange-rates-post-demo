@@ -194,7 +194,7 @@ export function ConvertToSOModal({ isOpen, onClose, onConfirm, quoteNumber, cust
       {formatCurrency(usd)}
     </BaseMoney>
   );
-  /* "EUR, Mid-market · 1 EUR = 304.8150 PKR · Nov 3, 2026": what the order inherits. */
+  /* "EUR, Daily market rate · 1 EUR = 304.8150 PKR · Nov 3, 2026": what the order inherits. */
   const keeps = foreign
     ? `${doc.currency}, ${RATE_TYPE_LABEL[chosen.rateType]} · ${rateSentence(doc.currency, chosen.exchangeRate)} · ${formatRateDate(chosen.rateDate)}, paid into ${account.label}`
     : `${doc.currency}, paid into ${account.label}`;

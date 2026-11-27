@@ -3,9 +3,9 @@
 // (`layout="stack"`): type an amount in one currency and read it in the other at
 // this rate. The swap works as Google's converter does: it turns USD → PKR into
 // PKR → USD and keeps the amount typed, so 1 USD = 278.52 PKR swaps to
-// 1 PKR = 0.0036 USD, the same rate read the other way. (It used to carry the
+// 1 PKR = 0.003590 USD, the same rate read the other way. (It used to carry the
 // converted amount across, so the swap read 278.52 PKR = 1.00 USD.) The result
-// carries four decimals like every rate (fmtConverted), so it never reads 0.00.
+// carries a rate's decimals (fmtConverted: four, six under 0.01), so it never reads 0.00.
 import { useState } from 'react'
 import { ArrowLeftRight, ArrowUpDown } from 'lucide-react'
 import { LayoutGroup, motion } from 'motion/react'
@@ -13,7 +13,7 @@ import { INVERSE_BADGE_TOOLTIP } from '../../utils/rateCopy'
 import { Tooltip } from '../../coa/components/ui'
 import { FlagImage } from '../../coa/components/FlagImage'
 import { cn } from '../../coa/lib/utils'
-import { BASE, BASE_NAME, countryOf, flagOf, fmtConverted, fmtInverse, fmtRate } from './rateModel'
+import { BASE, BASE_NAME, countryOf, flagOf, fmtBaseInUnit, fmtConverted, fmtUnitInBase } from './rateModel'
 
 const SPRING = { type: 'spring', stiffness: 520, damping: 38 } as const
 
@@ -70,7 +70,11 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
   const base = { id: 'base', code: BASE, name: BASE_NAME }
   const [first, second] = inverted ? [base, src] : [src, base]
   const Swap = stack ? ArrowUpDown : ArrowLeftRight
-  const line = inverted ? `1 ${BASE} = ${fmtInverse(rate)} ${code}` : `1 ${code} = ${fmtRate(rate)} ${BASE}`
+  // Both directions in plain words, the way being converted first, the other
+  // under it, in place of an "Inverse Rate" caption (Mahreen's 1e, 27 Nov 2026).
+  const forward = `1 ${code} = ${fmtUnitInBase(rate)}`
+  const back = `1 ${BASE} = ${fmtBaseInUnit(code, rate)}`
+  const [line, otherWay] = inverted ? [back, forward] : [forward, back]
 
   return (
     <LayoutGroup>
@@ -107,7 +111,7 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
         </div>
         <motion.div layout transition={SPRING} key={second.id} className={stack ? '' : 'shrink-0'}>
           <SideCard label="To" code={second.code} name={second.name} stack={stack}>
-            {/* Four decimals, as every rate reads: 1 USD = 278.5200 PKR, 1 PKR = 0.0036 USD. */}
+            {/* A rate's decimals: 1 USD = 278.5200 PKR, 1 PKR = 0.003590 USD. */}
             <span className="text-[13px] text-slate-700 tabular-nums whitespace-nowrap" style={{ fontWeight: 600 }}>
               {valid ? fmtConverted(converted) : '–'}
             </span>
@@ -115,7 +119,7 @@ export function PairInverter({ code, name, rate, inverted, onToggle, layout = 'r
         </motion.div>
         <div className={cn('min-w-0', stack ? 'text-center' : '')}>
           <p className="text-[12px] text-slate-700 tabular-nums" style={{ fontWeight: 600 }}>{line}</p>
-          {inverted && <p className="text-[11px] text-fg-subtle">Inverse Rate</p>}
+          <p className="text-[11px] text-fg-subtle tabular-nums">{otherWay}</p>
           {note && <p className="text-[11px] text-fg-subtle">{note}</p>}
         </div>
       </div>

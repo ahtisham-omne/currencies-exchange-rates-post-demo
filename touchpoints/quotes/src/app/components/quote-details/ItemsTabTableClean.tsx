@@ -93,6 +93,8 @@ import {
 } from '../../data/uomSets';
 import { useDocCurrency, useDocMoney, useDocOtherText, useDocView } from '@/app/components/currency/docCurrencyContext';
 import { DocMoney } from '@/app/components/currency/DocCurrency';
+import { ExchangeRateNote, PricesInChip, TotalConvertHover } from '@/app/components/currency/LineItemsCurrency';
+import { isBaseCurrency } from '@/app/currency/currencies';
 import { formatAmount, formatMoney, moneyPrefix } from '@/app/currency/money';
 import { roundTo } from '@/app/currency/qFx';
 import { formatWhole } from '@/app/currency/quoteMoney';
@@ -1320,28 +1322,20 @@ function ItemRow({
         )}
       </td>
 
-      {/* Total — line TOTAL = baseSubtotal + line-scoped pricing-rule
-          impact + line-scoped one-time adjustment net (same math the
-          Advanced Configurator's "Total" tile already runs). The
-          breakdown sub-line was replaced with a hover card that lists
-          each rule and adjustment separately so users see the full
-          composition without polluting every row. */}
+      {/* Total — qty × unit price (D4, Mahreen, 27 Nov 2026: "each line
+          total equals quantity × price"). Pricing rules and one-time
+          adjustments apply only in Quote Summary, so the lines add up to
+          its Subtotal. The hover card still lists the line's rules and
+          adjustments, as applied in the quote summary. */}
       <td className="li-fig li-end" data-label="Total" style={{ padding: '0 12px', textAlign: 'right', verticalAlign: 'middle', maxWidth: 0 }}>
         {(() => {
-          /* Base for rule + adjustment overlays is the line's RAW
-             subtotal (qty × unit price), not `item.total` which
-             already has a legacy pre-baked discount inside it. The
-             pricingAPI breakdowns and the configurator both compute
-             rules off raw subtotal, so we must use the same base
-             here or the column drifts away from the hover card +
-             configurator (was rendering 101k while the breakdown +
-             configurator agreed on 107k). */
-          const baseSubtotal = item.quantity * item.unitPrice;
+          /* qty × unit price, not `item.total`, which has a legacy
+             pre-baked discount inside it. */
+          const lineTotal = item.quantity * item.unitPrice;
           const ruleBreakdown = pricingAPI?.breakdowns?.find((b: any) => b.lineId === item.id);
           const ruleDelta = ruleBreakdown ? (ruleBreakdown.premiumAmount - ruleBreakdown.discountAmount) : 0;
           const adjBreakdown = adjustmentsAPI?.lineBreakdowns?.get(item.id);
           const adjDelta = adjBreakdown ? adjBreakdown.net : 0;
-          const lineTotal = baseSubtotal + ruleDelta + adjDelta;
           const hasOverlay = ruleDelta !== 0 || adjDelta !== 0;
           return (
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -1481,9 +1475,11 @@ function ItemsTable({
   quoteDefaultFreight, lineFreightCosts, onSetLineFreightCost, onSeedLineFreightCosts,
   onRequestPriceVersionConfirm, onLinesChange, lineFactor = 1, conversion, toolbarExtra,
 }: ItemsTabTableCleanProps) {
-  const { currency: docCurrency } = useDocCurrency();
-  /* Amounts in the page's currency: base by default, the customer's with
-     the header toggle (docCurrencyContext). */
+  const { currency: docCurrency, fx: docFx } = useDocCurrency();
+  /* A foreign-currency quote: the footer's Total gets the convert icon. */
+  const linesConvert = !!docFx && !isBaseCurrency(docCurrency);
+  /* Amounts in the page's currency: the customer's by default since 27 Nov
+     2026 (D1), base with the toolbar switch (docCurrencyContext). */
   const { viewCurrency, toView } = useDocView();
   const docMoney = useDocMoney();
   // Item quick-view peek modal (opens from any line-item thumbnail).
@@ -1610,7 +1606,7 @@ function ItemsTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineFreightCosts]);
 
-  /* In the page's currency (base by default); whole amounts drop the minor unit, as before. */
+  /* In the page's currency (the customer's by default since 27 Nov 2026); whole amounts drop the minor unit, as before. */
   const formatCurrency = (amount: number) => {
     const v = toView(amount);
     return v % 1 !== 0 ? formatMoney(v, viewCurrency) : formatWhole(v, viewCurrency);
@@ -2126,6 +2122,9 @@ function ItemsTable({
 
   // Count unique products for display
   const uniqueProductCount = new Set(items.map(i => i.productId)).size;
+  /* The footer's Total: every line's qty × unit price, as each row's Total
+     shows it (D4, 27 Nov 2026). */
+  const linesTotal = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
 
   return (
     <>
@@ -2187,8 +2186,14 @@ function ItemsTable({
               Products and services included on this quote. Add items from the catalog, configure quantities, and apply pricing rules per line.
             </TooltipContent>
           </Tooltip>
+          {/* The currency the prices are kept in (Mahreen, 27 Nov 2026,
+              SO-2). None on a base-currency quote. */}
+          <PricesInChip />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+          {/* The quote's rate type and rate, once for the quote rather than
+              on each line (Mahreen, 27 Nov 2026, SO-2). */}
+          <ExchangeRateNote className="mr-1.5" />
           {toolbarExtra}
           {/* Bulk actions when items are selected */}
           {isEditable && selectedRows.size > 0 ? (
@@ -2429,6 +2434,26 @@ function ItemsTable({
             </AnimatePresence>
             </tbody>
           </table>
+          {/* Total (Mahreen, 27 Nov 2026, SO-2): the line totals added up,
+              the same figure as Quote Summary's Subtotal (D4). The value
+              lines up with the Total column; the convert icon, on a
+              foreign-currency quote, gives it in base at the quote's rate. */}
+          <div
+            className="li-foot"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+              borderTop: '1px solid var(--border)',
+              padding: `10px ${(isEditMode ? 76 : 40) + 12 - (linesConvert ? 24 : 0)}px 10px 16px`,
+            }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted-foreground)', lineHeight: 1 }}>Total</span>
+            <span className="inline-flex items-center gap-1">
+              <span className="tabular-nums" style={{ fontSize: 13, fontWeight: 700, color: 'var(--foreground)', lineHeight: 1 }}>
+                {formatCurrency(linesTotal)}
+              </span>
+              <TotalConvertHover total={linesTotal} />
+            </span>
+          </div>
         </div>
         )}
 

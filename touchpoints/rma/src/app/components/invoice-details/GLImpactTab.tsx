@@ -792,7 +792,7 @@ function RMAGLImpact({ rma, currency }: { rma: RMA; currency: string }) {
               {receipts.map((r) => (
                 <p key={r.grnNumber} className="tabular-nums mt-0.5 text-slate-500">
                   <span style={{ fontWeight: 600 }} className="text-slate-700">{r.grnNumber}</span> received {formatRateDate(r.date)} ·{' '}
-                  <span style={{ fontWeight: 600 }} className="text-slate-700">{rateSentence(currency, r.rate)}</span> · Mid-market, <ProviderLink />
+                  <span style={{ fontWeight: 600 }} className="text-slate-700">{rateSentence(currency, r.rate)}</span> · {RATE_TYPE_LABEL.mid}, <ProviderLink />
                 </p>
               ))}
               {receipts.length > 1 && fx.breakdown && (

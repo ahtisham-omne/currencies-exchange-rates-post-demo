@@ -125,6 +125,7 @@ export function RowMoney({
   className,
   dateLabel,
   role,
+  note,
 }: {
   value: number;
   currency: string | null | undefined;
@@ -132,11 +133,13 @@ export function RowMoney({
   className?: string;
   dateLabel?: string;
   role?: string;
+  /** A last line on the hover (MoneyCard). */
+  note?: React.ReactNode;
 }) {
   const view = useRowView();
   return view === 'row' ? (
-    <Money value={value} currency={currency} fx={fx} className={className} dateLabel={dateLabel} role={role} />
+    <Money value={value} currency={currency} fx={fx} className={className} dateLabel={dateLabel} role={role} note={note} />
   ) : (
-    <BaseMoney value={value} currency={currency} fx={fx} className={className} dateLabel={dateLabel} role={role} />
+    <BaseMoney value={value} currency={currency} fx={fx} className={className} dateLabel={dateLabel} role={role} note={note} />
   );
 }

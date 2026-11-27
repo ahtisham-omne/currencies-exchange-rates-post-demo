@@ -11,7 +11,7 @@ import { EditCompanyInfoModal } from "./EditCompanyInfoModal";
 import { EditGlobalSettingsModal } from "./EditGlobalSettingsModal";
 import { useGeneralSettings } from "./generalSettingsStore";
 import { countryFlag, dialFlag } from "./countries";
-import { ADDRESS_TIP, BASE_CURRENCY_TIP, BILLING_ANCHOR_TIP, EMAIL_TIP, LANGUAGE_TIP, MFA_TIP } from "./copy";
+import { ADDRESS_TIP, BASE_CURRENCY_TIP, BILLING_ANCHOR_TIP, DEFAULT_EXCHANGE_RATE_TIP, EMAIL_TIP, LANGUAGE_TIP, MFA_TIP } from "./copy";
 import { getUsersForRole } from "../../data/uac-derived";
 import { ACCOUNT_OWNER_ROLE_ID } from "../../data/account-owner";
 import { getAvatarTint, getInitials, resolveUserAvatar } from "../../lib/avatar";
@@ -120,6 +120,10 @@ export function GeneralSettingsPage() {
                 <Field label="Base Currency" tip={BASE_CURRENCY_TIP} wide>
                   {/* Not locked here; the info tooltip says when it locks (Mahreen, 2026-11-20). */}
                   <CurrencyValue code={preferences.baseCurrency} />
+                </Field>
+                {/* Mahreen's 1c (27 Nov 2026). Shown, not wired: each module keeps its own default. */}
+                <Field label="Default Exchange Rate" tip={DEFAULT_EXCHANGE_RATE_TIP}>
+                  {preferences.defaultExchangeRate}
                 </Field>
                 <Field label="Functional Language" tip={LANGUAGE_TIP}>
                   {preferences.language}

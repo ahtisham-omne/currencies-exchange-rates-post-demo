@@ -133,7 +133,8 @@ import { ConfigEditContext } from './configAtoms';
 import { getItemFieldLocks } from './itemFieldLocks';
 import { toast } from 'sonner';
 import {
-  fromRegionalDrafts, invalidRegionalPrices, toRegionalDrafts, type RegionalPriceDraft,
+  blockingRegionalPrices, fromRegionalDrafts, otherCurrencyPricingOf, toRegionalDrafts,
+  type OtherCurrencyPricing, type RegionalPriceDraft,
 } from '@/app/currency/regionalPrices';
 import {
   computeCategoryConfigRows,
@@ -173,7 +174,8 @@ export const CONFIG_TRACKED_FIELDS: { key: string; label: string; section: strin
   // Selling
   { key: 'sellingScope', label: 'Selling Scope', section: 'fulfillment' },
   { key: 'specificPartners', label: 'Specific Partners', section: 'fulfillment', conditional: (c) => c.sellingScope === 'specific' },
-  { key: 'regionalPrices', label: 'Regional Prices', section: 'fulfillment', conditional: (c) => c.sellingScope === 'all' },
+  { key: 'otherCurrencyPricing', label: 'Other Currencies', section: 'fulfillment', conditional: (c) => c.sellingScope === 'all' },
+  { key: 'regionalPrices', label: 'Prices per Currency', section: 'fulfillment', conditional: (c) => c.sellingScope === 'all' },
   // Governance
   { key: 'valuationMethod', label: 'Inventory Valuation', section: 'governance' },
   { key: 'owners', label: 'Ownership', section: 'governance' },
@@ -499,7 +501,10 @@ interface AdvancedConfig {
   specificPartners: string[]; // New
   partnerRules: Record<string, string[]>; // New
   pricing: { price: string; uom: string; id: string }[]; // New
-  /** Optional unit price per market currency (25 Nov 2026). */
+  /** Other currencies (Spec D, 27 Nov 2026): convert the base price, or a
+   *  price per currency + partner group. */
+  otherCurrencyPricing: OtherCurrencyPricing;
+  /** Optional unit price per currency + partner group (25 and 27 Nov 2026). */
   regionalPrices: RegionalPriceDraft[];
 
   vendorScope?: 'all' | 'specific';
@@ -594,6 +599,7 @@ const DEFAULT_CONFIG: AdvancedConfig = {
   specificPartners: [],
   partnerRules: {},
   pricing: [{ price: '0.00', uom: 'Each', id: '1' }],
+  otherCurrencyPricing: 'convert',
   regionalPrices: [],
 
   vendorScope: 'all',
@@ -1658,6 +1664,7 @@ export function CreateItemModal({ open, onOpenChange, onSuccess, editItem }: Cre
           outboundLocation: editItem.outboundLocations || [],
           // 25 Nov 2026: the item's own prices, so regional prices sit by its base price.
           pricing: editItem.pricing?.length ? editItem.pricing.map((p: any) => ({ ...p })) : DEFAULT_CONFIG.pricing,
+          otherCurrencyPricing: otherCurrencyPricingOf(editItem),
           regionalPrices: toRegionalDrafts(editItem.regionalPrices),
         } as AdvancedConfig;
         setFormData({
@@ -1799,7 +1806,8 @@ export function CreateItemModal({ open, onOpenChange, onSuccess, editItem }: Cre
                   return isEditMode && editItem.images ? editItem.images : ['https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=1000'];
               })(),
               thumbnailId: null,
-              // Optional unit price per market currency (25 Nov 2026).
+              // Other currencies: the mode and the prices per currency (25 and 27 Nov 2026).
+              otherCurrencyPricing: formData.config.otherCurrencyPricing,
               regionalPrices: fromRegionalDrafts(formData.config.regionalPrices),
               isEdit: isEditMode,
           };
@@ -1924,13 +1932,14 @@ export function CreateItemModal({ open, onOpenChange, onSuccess, editItem }: Cre
     [modifiedKeys, baselineConfig, fieldLocks],
   );
 
-  /* Regional prices must be above 0 (25 Nov 2026). Shown only when selling to
-     all partners, so only checked then; opens the Selling section to fix. */
+  /* A price per currency must be above 0 (25 Nov 2026). Shown only when selling
+     to all partners with a price for each currency, so only checked then;
+     opens the Selling section to fix. */
   const regionalPricesBlocked = () => {
-    if (formData.config.sellingScope !== 'all' || invalidRegionalPrices(formData.config.regionalPrices).length === 0) return false;
+    if (blockingRegionalPrices(formData.config).length === 0) return false;
     setActiveSectionId('fulfillment');
     setShowConfig(true);
-    toast.error('Enter a regional price above 0, or remove the row.');
+    toast.error('Enter a price above 0, or remove the row.');
     return true;
   };
 

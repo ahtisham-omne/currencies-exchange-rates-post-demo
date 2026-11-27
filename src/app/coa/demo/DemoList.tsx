@@ -134,7 +134,7 @@ const LIST_KPIS: KpiDefinition[] = [
 const LIST_DEFAULT = ['active', 'inactive', 'in_use', 'blocking', 'base', 'countries']
 
 const RATE_KPIS: KpiDefinition[] = [
-  { key: 'count', label: 'Mid-market rates', category: 'Rates', tooltip: 'Rates synced from the provider, base row included.' },
+  { key: 'count', label: 'Daily market rates', category: 'Rates', tooltip: 'Rates read once a day from the provider, base row included.' },
   { key: 'sync', label: 'Last sync', category: 'Freshness' },
   { key: 'gain', label: 'Largest gain', category: 'Performance' },
   { key: 'drop', label: 'Largest drop', category: 'Performance' },
@@ -264,8 +264,8 @@ export function DemoList() {
       sortValue: r => r.code, searchText: r => [r.code, r.name],
     },
     {
-      key: 'rate', label: 'Mid-market exchange rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[200px]',
-      info: 'One unit of the source currency in the base currency, at the provider\'s mid-market rate.',
+      key: 'rate', label: 'Daily market rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[200px]',
+      info: 'One unit of the source currency in the base currency, at the provider\'s daily market rate.',
       render: r => <span className="text-sm font-medium text-slate-700 tabular-nums whitespace-nowrap">{r.rate.toFixed(4)}</span>,
       sortValue: r => r.rate, searchText: r => r.rate.toFixed(4), filter: 'range', filterValue: r => r.rate,
     },
@@ -342,7 +342,7 @@ export function DemoList() {
           icon={<Coins size={16} />}
           title="Currency Library"
           subtitle="Kit demo: every CoA list-page piece on the currency seed data."
-          tabs={[{ id: 'currencies', label: 'Currencies', count: rows.length }, { id: 'rates', label: 'Mid-market rates', count: rates.length }]}
+          tabs={[{ id: 'currencies', label: 'Currencies', count: rows.length }, { id: 'rates', label: 'Daily market rates', count: rates.length }]}
           activeTab={tab}
           onTabChange={id => setTab(id as 'currencies' | 'rates')}
           secondaryActions={
@@ -439,7 +439,7 @@ export function DemoList() {
               table={rateTable}
               notes={
                 <div className="px-4 py-3 border-b border-border">
-                  <Banner tone="info" title="Mid-market rates">Synced from <SourceLink className="underline underline-offset-2" />. Corporate rates you set are kept apart and never overwritten by a sync.</Banner>
+                  <Banner tone="info" title="Daily market rates">Read once a day from <SourceLink className="underline underline-offset-2" />, and fixed for that date. Corporate rates you set are kept apart and never overwritten.</Banner>
                 </div>
               }
               toolbar={

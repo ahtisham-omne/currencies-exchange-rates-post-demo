@@ -48,6 +48,7 @@ import { SO_SALES_REP_ROSTER } from "./salesRepRoster";
 import { ArrowRight } from "lucide-react";
 import { type SOCurrencyChange, type SOCurrencyTotals } from "@/app/components/currency/SOCurrencyFields";
 import { SOCurrencyConfigDialog, SOCurrencySummary } from "@/app/components/currency/SOCurrencyConfig";
+import { currencyOriginText } from "@/app/components/currency/SOCurrencyHeaderControls";
 import { DocMoney } from "@/app/components/currency/DocCurrency";
 import { useDocWhole } from "@/app/components/currency/docCurrencyContext";
 import { getCompanyAccount } from "@/app/currency/companyAccounts";
@@ -1636,6 +1637,20 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
                 <DocMoney value={tax}>{tax > 0 ? "+" : ""}{fmtCurrency(tax)}</DocMoney>
               </p>
             </div>
+
+            {/* Currency (Mahreen, 27 Nov 2026, 4b): the order's one currency,
+                and where it comes from: the customer, or the quote. */}
+            {(() => {
+              const origin = currencyOriginText(soFx(so).currency, so.customer, so.sourceQuoteRef);
+              return (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="shrink-0" style={{ fontSize: 11, fontWeight: 500, color: "#64748B", fontFamily: "Inter, system-ui, sans-serif" }}>Currency</p>
+                  <p className="truncate text-right" title={origin} style={{ fontSize: 12, fontWeight: 500, color: "#475569", fontFamily: "Inter, system-ui, sans-serif" }}>
+                    {origin}
+                  </p>
+                </div>
+              );
+            })()}
 
             {/* Freight Charges — feature paused (kept for re-enablement).
                 Saved value lives on `shipment.shipmentCost` + each

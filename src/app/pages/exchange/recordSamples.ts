@@ -21,7 +21,7 @@ export const isSeededRate = (record: StandardRate | undefined) => !!record && SE
 /* ───────────────────────────── Notes ───────────────────────────── */
 
 const CORPORATE_NOTES = [
-  (pair: string) => `Treasury agreed this rate for the quarter. Review ${pair} against the mid-market rate on the first working day of each month.`,
+  (pair: string) => `Treasury agreed this rate for the quarter. Review ${pair} against the daily market rate on the first working day of each month.`,
   () => 'Variance checked at month end. Still inside the threshold, so no change.',
   () => 'The previous rate was archived when this one took effect. Restore it from the archive if this one is questioned.',
   (pair: string) => `Payments in ${pair.split('/')[0]} are booked at this rate and settled at the bank rate. The difference goes to FX gain or loss.`,
@@ -73,14 +73,14 @@ export function pairAttachments(code: string, kind: RateKind, record: StandardRa
     ? [
         { name: `${stem} corporate rate approval.pdf`, type: 'pdf', kb: [900, 1600], days: 24 + (h % 10), time: '14:00', by: CONTROLLER },
         { name: `Treasury rate proposal - ${stem}.xlsx`, type: 'xlsx', kb: [30, 90], days: 27 + (h % 10), time: '15:10', by: ACCOUNTANTS[0] },
-        { name: `Mid-market reference - ${stem}.pdf`, type: 'pdf', kb: [180, 360], days: 27 + (h % 10), time: '11:20', by: ACCOUNTANTS[0] },
+        { name: `Daily market rate reference - ${stem}.pdf`, type: 'pdf', kb: [180, 360], days: 27 + (h % 10), time: '11:20', by: ACCOUNTANTS[0] },
         { name: `Variance review memo.rtf`, type: 'doc', kb: [50, 100], days: 9 + (h % 6), time: '10:05', by: CONTROLLER },
         { name: `Bank rate confirmation - scan.png`, type: 'img', kb: [500, 1100], days: 63, time: '13:45', by: ACCOUNTANTS[1] },
       ]
     : [
         { name: `${API_PROVIDER} service terms.pdf`, type: 'pdf', kb: [900, 1500], days: 210, time: '14:00', by: CONTROLLER },
         { name: `${stem} daily rates export.xlsx`, type: 'xlsx', kb: [60, 180], days: 5 + (h % 6), time: '15:10', by: ACCOUNTANTS[0] },
-        { name: `Mid-market methodology.pdf`, type: 'pdf', kb: [200, 420], days: 140, time: '11:20', by: CONTROLLER },
+        { name: `Daily market rate methodology.pdf`, type: 'pdf', kb: [200, 420], days: 140, time: '11:20', by: CONTROLLER },
         { name: `Provider sync checklist.rtf`, type: 'doc', kb: [40, 90], days: 96, time: '10:05', by: ACCOUNTANTS[1] },
         { name: `Rate feed dashboard - screenshot.png`, type: 'img', kb: [400, 900], days: 33, time: '13:45', by: ACCOUNTANTS[0] },
       ]
@@ -136,7 +136,7 @@ export function corporatePairActivity(code: string, audit: RateAuditEntry[], rec
   return feedOf([...real, ...kept])
 }
 
-/** The mid-market rate's history: the provider's latest syncs, then the reviews
+/** The daily market rate's history: the provider's latest daily reads, then the reviews
  *  and the provider change behind them. */
 export function midPairActivity(code: string, series: PairPoint[]): ActivityFeedItem[] {
   const pair = `${code}/${BASE}`
@@ -144,14 +144,14 @@ export function midPairActivity(code: string, series: PairPoint[]): ActivityFeed
     id: `sync-${p.date}`,
     type: 'info' as const,
     user: API_PROVIDER,
-    verb: `synced the mid-market rate to “${fmtRate(p.mid)}” for`,
+    verb: `read the daily market rate as “${fmtRate(p.mid)}” for`,
     target: pair,
     date: '',
     at: `${p.date}T09:30:00.000Z`,
   }))
   const sample: DatedActivity[] = [
     { id: `${code}-mid-review`, type: 'info', user: 'Daniel Osei', at: plusDays(LAST_SYNC, -20, 11), date: '', target: pair,
-      verb: 'reviewed the mid-market rate against the bank’s closing rate for' },
+      verb: 'reviewed the daily market rate against the bank’s closing rate for' },
     { id: `${code}-mid-provider`, type: 'edit', user: 'Ayesha Khan', at: plusDays(LAST_SYNC, -300, 10), date: '', target: pair,
       verb: `updated the rate provider (“XE” → “${API_PROVIDER}”) for` },
   ]

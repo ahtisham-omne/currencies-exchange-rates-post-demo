@@ -191,8 +191,13 @@ export function AdvancedConfiguratorModal({
       onSave={(updatedItem) => {
         if (line) {
           const qty = Number(updatedItem?.quantity ?? mappedItem.quantity);
-          const rawTotal = Number(updatedItem?.total ?? qty * Number(updatedItem?.unitPrice ?? mappedItem.unitPrice));
-          const effectiveUnitPrice = qty > 0 ? rawTotal / qty : Number(updatedItem?.unitPrice ?? mappedItem.unitPrice);
+          /* The unit price as set in the configurator (27 Nov 2026, D4).
+             Until then it was the configurator's total over qty, which
+             took in the line's pricing rules and one-time adjustments:
+             saving moved the price by itself and the Order summary then
+             applied them a second time. They live in the shared rules and
+             adjustments state and apply only in the Order summary. */
+          const effectiveUnitPrice = Number(updatedItem?.unitPrice ?? mappedItem.unitPrice);
           /* Forward shipmentCost + pickupLocation so SODetail can
              persist both on the SOLine. Undefined values clear the
              override / pickup. */

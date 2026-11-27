@@ -203,7 +203,7 @@ import {
   CONTACT_DICTIONARY,
   type ContactPerson,
 } from "./partnerConstants";
-import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
+import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "@/app/currency/currencies";
 import { currencyCodeOf, currencyIdOf, currencySettingsFromConfig, groupCurrencyOf, groupRateTypeOf, openDocumentCount, partnerCurrencyInfo, partnerRateTypeInfo } from "@/app/currency/partnerCurrency";
 import { RATE_TYPE_LABEL, type RateType } from "@/app/currency/rates";
 import { RULE_FIXED_TOOLTIP, RULE_SYMBOL, isFixedRuleAmount, ruleAmountFromInput, ruleInputValue } from "@/app/currency/pricingRuleCurrency";
@@ -212,6 +212,7 @@ import { CurrencyFlag } from "../currency/CurrencyFlag";
 import { CurrencySymbol } from "../currency/CurrencySymbol";
 import { BaseCurrencyPreview } from "../currency/BaseCurrencyPreview";
 import { RateTypeToggle } from "../currency/CurrencyPill";
+import { RateTypeInfo } from "../currency/RateTypeInfo";
 import { RuleCreateExampleCard, RuleCurrencyField, RuleCurrencyNote } from "../currency/RuleCurrency";
 import { SelectPocDictionaryModal, CreatePocModal } from "./PocModals";
 import { PocPillsRow } from "./PocPillComponents";
@@ -981,7 +982,7 @@ export function CreatePartnerModal({ open, onOpenChange, onPartnerCreated, initi
             {primaryGroup && (() => {
               const tpl = primaryGroup.template;
               // Every group has a currency (its own, else base) and a default
-              // exchange rate (its own, else mid-market), so both always pre-fill.
+              // exchange rate (its own, else the daily market rate), so both always pre-fill.
               const inheritedFields: string[] = ["Currency", "Default exchange rate"];
               if (tpl?.paymentTermId) inheritedFields.push("Payment Term");
               if (tpl?.creditEnforcement) inheritedFields.push("Credit Enforcement");
@@ -5483,7 +5484,7 @@ export function ConfigPageContent({
 
   // Default exchange rate (Currency Touchpoints Map, 24 Nov 2026): set in
   // the Currency card beside the currency, inherited from the primary group
-  // (mid-market unless the group sets corporate) and overridable the same way.
+  // (the daily market rate unless the group sets corporate) and overridable the same way.
   const groupTemplateRateType: RateType | undefined = selectedGroup
     ? groupRateTypeOf(getStoreGroup(selectedGroup.id) ?? selectedGroup)
     : undefined;
@@ -6471,7 +6472,12 @@ export function ConfigPageContent({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                           <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Default exchange rate</span>
-                          <InfoTooltip>The rate used to convert this partner's amounts to your base currency.</InfoTooltip>
+                          {/* Both of today's rates and the gap for a foreign
+                              currency (Mahreen, 27 Nov 2026, PA-1); the plain
+                              tip for a partner in the base currency. */}
+                          {isBaseCurrency(currencyCodeOf(currency))
+                            ? <InfoTooltip>The rate used to convert this partner's amounts to your base currency.</InfoTooltip>
+                            : <RateTypeInfo currency={currencyCodeOf(currency)} className="-my-1" />}
                           {!groupContext && selectedGroup && groupTemplateRateType && rateTypeInherited && (
                             <span
                               className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] border bg-[#EEF2FF] text-[#4338CA] border-[#E0E7FF]"

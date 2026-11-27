@@ -25,7 +25,7 @@ const FONT = "Inter, system-ui, sans-serif";
 export interface RateLine {
   /** "1 USD = 278.5200 PKR" */
   rate: string;
-  /** "Mid-market · Nov 19, 2026 · total ₨3,977,265.60" */
+  /** "Daily market rate · Nov 19, 2026 · total ₨3,977,265.60" */
   meta: string;
 }
 

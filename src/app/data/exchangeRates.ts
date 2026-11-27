@@ -88,7 +88,7 @@ export const BASE_CURRENCY = "PKR";
 export const BASE_CURRENCY_NAME = "Pakistani Rupee";
 export const API_PROVIDER = "Open Exchange Rates";
 export const API_PROVIDER_URL = "https://openexchangerates.org";
-export const SYNC_FREQUENCY = "Every 30 min";
+// No sync frequency: the daily market rate is read once a day (Eli's ruling, 26 Nov 2026).
 export const DEFAULT_RATE_TYPE: "MID" | "STD" = "MID";
 
 // ─── Mid-Market Rates Seed Data ───

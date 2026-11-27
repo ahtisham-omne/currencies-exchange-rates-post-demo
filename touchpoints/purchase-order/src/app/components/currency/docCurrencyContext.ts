@@ -6,13 +6,13 @@ import type { MoneyFx } from "./Money";
 
 /* ── The document's currency, and which one the page shows ────────────
  * A PO's amounts are kept in its currency, the vendor's (spec 4.2, 4.3), at a
- * rate to the base currency taken on the PO date. The page shows them in the
- * base currency, the vendor's amount riding the hover. `view` could show the
- * document's currency instead; the PO page pins it to base since the header
- * toggle was removed (Currency Touchpoints Map, 24 Nov). The PO page puts
- * the currency, its rate and the view here so the pieces (line rows, hover
- * cards, rule and adjustment modals) don't each need a prop; the cart does the
- * same for each vendor group. Outside a provider, amounts are in base. */
+ * rate to the base currency taken on the PO date. The page shows them in that
+ * currency (D1, 27 Nov 2026: order line items open in the document's
+ * currency); the Line Items' Base Currency | Vendor Currency switch
+ * (`view`) shows them in base, the vendor's amount riding the hover. The PO
+ * page puts the currency, its rate and the view here so the pieces (line
+ * rows, hover cards, rule and adjustment modals) don't each need a prop; the
+ * cart does the same for each vendor group. Outside a provider, amounts are in base. */
 
 export type DocView = "base" | "document";
 
@@ -24,7 +24,7 @@ export interface DocCurrency {
   dateLabel?: string;
   /** What the currency is, for the hover ("PO currency", "vendor currency"). */
   role?: string;
-  /** Which currency amounts are shown in. Base unless the page says otherwise. */
+  /** Which currency amounts are shown in. The document's unless the page says otherwise (D1, 27 Nov 2026). */
   view?: DocView;
 }
 
@@ -32,10 +32,10 @@ export const DocCurrencyContext = React.createContext<DocCurrency>({ currency: B
 
 export const useDocCurrency = () => React.useContext(DocCurrencyContext);
 
-/** Where a document's amounts are shown: base (the default, for a foreign
- *  document with a rate) or the document's own currency. */
+/** Where a document's amounts are shown: its own currency (the default,
+ *  D1, 27 Nov 2026) or, for a foreign document with a rate, the base. */
 export function docInBase(doc: DocCurrency): boolean {
-  return (doc.view ?? "base") === "base" && !!doc.fx && !isBaseCurrency(doc.currency);
+  return (doc.view ?? "document") === "base" && !!doc.fx && !isBaseCurrency(doc.currency);
 }
 
 /** The shown currency, and the conversions between it and the document's. */

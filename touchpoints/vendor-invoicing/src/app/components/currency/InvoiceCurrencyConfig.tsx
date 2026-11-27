@@ -4,10 +4,11 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/app/com
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, formatRate, formatRateDate, moneyPrefix, rateSentence } from '@/app/currency/money';
-import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, corporateRateOn, rateOn, toBase, type RateQuote, type RateType } from '@/app/currency/rates';
+import { RATES_READ_ON, RATE_PROVIDER, RATE_TYPE_LABEL, corporateRateOn, rateOn, toBase, type RateQuote, type RateType } from '@/app/currency/rates';
 import { fxVarianceOf, gainLossOf, type FxVariance, type LockedPrepayment, type ReceiptValue } from '@/app/currency/fxVariance';
 import { eligiblePayFromId, payFromAccountsFor } from '@/app/currency/payFrom';
 import { PayFromAccountPicker } from './PayFromAccountPicker';
+import { RateTypeInfo } from './RateTypeInfo';
 import { rateChangePct } from '@/app/hooks/useApSettings';
 import type { InvoiceRateBasis } from '@/app/data/mockInvoices';
 import type { PayFromAccount } from '@/app/data/mockPayments';
@@ -31,14 +32,14 @@ export { RateTypeChip } from './CurrencyBlock';
  * (24 Nov 2026), on this module's invoice model:
  *  - "Vendor invoiced": the invoice's amount and currency, the PO's by
  *    default (else the vendor's), and not locked: changing it converts every
- *    line at the rate day's mid-market cross rate when applied
+ *    line at the rate day's daily market cross rate when applied
  *    (CreateInvoiceScreen). The vendor's default currency doesn't change.
  *  - "Prepayment": each one deducted at the rate it was paid at.
  *  - "You pay in": the currency of the account it is paid from (the
  *    account on hover), any bank or cash account, base-currency ones first
  *    (currency/payFrom.ts). "Base equivalent" is always shown: an estimate at
  *    the invoice rate; the payment records what the bank took.
- *  - "Exchange rate": mid-market (read-only) or corporate (typed if the role may
+ *  - "Exchange rate": daily market (read-only) or corporate (typed if the role may
  *    change an invoice's rate, within its ± limit; Settings, Permissions), on
  *    the posting date (the module default). No lock on the rate (25 Nov
  *    2026); the configuration is read-only once the invoice posts.
@@ -120,6 +121,11 @@ export interface InvoiceCurrencyBlockProps {
   locked: boolean;
   /** The account it is paid from. */
   payFrom: Pick<PayFromAccount, 'label' | 'currency'>;
+  /** A saved invoice (27 Nov 2026, Mahreen 6b): what the vendor invoiced is
+   *  locked, "From the vendor's invoice GF-7781" under it. */
+  vendorInvoiceNumber?: string;
+  /** Under the base equivalent: "Follows the posting date's rate". */
+  baseNote?: string;
   onViewConfig?: () => void;
   className?: string;
 }
@@ -139,6 +145,8 @@ export function InvoiceCurrencyBlock({
   rateEdited,
   variance,
   payFrom,
+  vendorInvoiceNumber,
+  baseNote,
   onViewConfig,
   className = '',
 }: InvoiceCurrencyBlockProps) {
@@ -150,22 +158,31 @@ export function InvoiceCurrencyBlock({
   // Currency information (25 Nov 2026): what the vendor invoiced, the
   // currency you pay in (the pay-from account's, the account on hover), and
   // the base equivalent, always shown.
-  const rows: CurrencyBlockRow[] = [{ label: 'Vendor invoiced', code, amount: total }];
+  // What the vendor billed is fixed; only the base amount moves (Mahreen,
+  // 27 Nov 2026, 6b). The create screen leaves these off.
+  const rows: CurrencyBlockRow[] = [
+    {
+      label: 'Vendor invoiced',
+      code,
+      amount: total,
+      ...(vendorInvoiceNumber ? { locked: true, note: `From the vendor's invoice ${vendorInvoiceNumber}` } : {}),
+    },
+  ];
   if (prepaid > 0.004) rows.push({ label: 'Prepaid', code, amount: Math.min(prepaid, total), sign: '−', title: 'Deducted at the rate it was paid at.' });
   rows.push({
     label: 'You pay in',
     code: payInBase ? BASE_CURRENCY : payFrom.currency.toUpperCase(),
     title: `From ${payFrom.label} (${payFrom.currency})${pending ? ", at today's rate until it's paid" : ''}`,
   });
-  rows.push({ label: 'Base equivalent', code: BASE_CURRENCY, amount: restBase });
+  rows.push({ label: 'Base equivalent', code: BASE_CURRENCY, amount: restBase, ...(baseNote && !pending ? { note: baseNote } : {}) });
   const corporate = rateType === 'corporate' && rateDate ? corporateRateOn(code, rateDate) : undefined;
   const rateTip =
     rateType === 'mid'
-      ? `The mid-market rate on ${formatRateDate(rateDate)}, the ${dateLabel ?? 'posting date'} · ${RATE_PROVIDER}`
+      ? `The daily market rate on ${formatRateDate(rateDate)}, the ${dateLabel ?? 'posting date'} · ${RATE_PROVIDER}`
       : rateEdited
         ? `A corporate rate entered on this invoice (${formatRateDate(rateDate)})`
         : corporate
-          ? `Corporate · Set by ${corporate.setBy} · In effect since ${formatRateDate(corporate.effectiveDate)}`
+          ? `Corporate rate · Set by ${corporate.setBy} · In effect since ${formatRateDate(corporate.effectiveDate)}`
           : `Corporate rate on ${formatRateDate(rateDate)}, the ${dateLabel ?? 'posting date'}`;
   return (
     <CurrencyBlock
@@ -247,14 +264,13 @@ export function LockedCurrency({ code, note, detail }: { code: string; note: str
   );
 }
 
-/** The time of day the provider's rates sync, e.g. "7:30 PM". */
-const SYNC_TIME = new Date(LAST_SYNC).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-
-/** Under the rate (25 Nov 2026, as POCurrencyConfig's): when a mid-market
- *  rate was last updated, or from when a corporate rate is in effect. Not
- *  the posting or payment date. */
+/** Under the rate (25 Nov 2026, as POCurrencyConfig's): the day a daily
+ *  market rate was read, or from when a corporate rate is in effect.
+ *  A rate is read once a day and fixed for that date (Eli's ruling, 26 Nov
+ *  2026), so no time of day: "Read on Nov 25, 2026". A day still to come (a
+ *  scheduled payment) has today's read until its own. */
 export function rateAsOfLine(type: RateType, date: string, effectiveDate?: string | null, entered?: boolean): string {
-  if (type === 'mid') return `Rate updated as of ${formatRateDate(date)}, ${SYNC_TIME}`;
+  if (type === 'mid') return `Read on ${formatRateDate(date.slice(0, 10) > RATES_READ_ON ? RATES_READ_ON : date)}`;
   if (entered) return `Entered on this invoice · effective from ${formatRateDate(date)}`;
   return `Effective from ${formatRateDate(effectiveDate ?? date)}`;
 }
@@ -380,6 +396,9 @@ export interface InvoiceCurrencyConfigDialogProps {
   savedRate?: { rate: number; rateType: RateType; rateDate: string; edited?: boolean; source?: string };
   /** A saved invoice that has posted: its configuration is read-only. */
   posted?: boolean;
+  /** The vendor's invoice date: the FX variance says when the posting date
+   *  is it (Eli's ruling, 26 Nov 2026: the posting date defaults to it). */
+  vendorInvoiceDate?: string;
   /** Read-only: open the invoice's edit screen, where currency and rate change. */
   onEdit?: () => void;
   /** Editable: write the choice back to the form. `rateChanged` is false
@@ -408,6 +427,7 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
     readOnly = false,
     savedRate,
     posted = false,
+    vendorInvoiceDate,
     onEdit,
     onSave,
   } = props;
@@ -513,8 +533,8 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
     setReleaseHeld(true);
   };
 
-  // "Mid-market · Open Exchange Rates", "Corporate · Set by Ahtisham Ahmad ·
-  // In effect since Apr 01, 2026" (Mahreen, 2026-11-20: the person, not
+  // "Daily market rate · Open Exchange Rates", "Corporate rate · Set by
+  // Ahtisham Ahmad · In effect since Apr 01, 2026" (Mahreen, 2026-11-20: the person, not
   // "Finance's corporate rate").
   const corporate = draftType === 'corporate' ? corporateRateOn(currency, draftDate) : undefined;
   const rateSource =
@@ -542,7 +562,7 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
   // Where the currency comes from: the PO's, else the vendor's.
   const defaultCurrency = source.kind === 'po' ? source.currency ?? value.currency : vendorDefault;
   const currencyHelper = currencyChanged
-    ? `Changed from ${value.currency}. Saving converts every line at the ${formatRateDate(rateDay)} mid-market rate.`
+    ? `Changed from ${value.currency}. Saving converts every line at the ${formatRateDate(rateDay)} daily market rate.`
     : currency === defaultCurrency
       ? source.kind === 'po'
         ? "Defaults to the PO's currency."
@@ -550,25 +570,29 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
       : source.kind === 'po'
         ? `Changed from ${defaultCurrency}, the PO's currency.`
         : `Changed from ${vendorDefault}, the vendor's currency.`;
-  // "Rate updated as of Apr 10, 2026, 7:30 PM" / "Effective from Apr 1, 2026"
-  // (25 Nov 2026: not "Rate on posting date: …").
+  // "Read on Nov 25, 2026" / "Effective from Apr 1, 2026" (25 Nov 2026: not
+  // "Rate on posting date: …"; 27 Nov 2026: no time of day).
   const rateDateLine = rateAsOfLine(draftType, draftDate, rateOn(currency, draftDate, 'corporate').effectiveDate, edited);
 
-  // Receiving's side of the variance, one line per receiving rate.
-  const receivedLines = variance
-    ? Array.from(
-        variance.rest
-          .reduce((m, r) => {
-            const key = `${r.rate}`;
-            const cur = m.get(key) ?? { dates: [] as string[], rate: r.rate, base: 0 };
-            cur.dates.push(r.date);
-            cur.base = r2(cur.base + r.base);
-            m.set(key, cur);
-            return m;
-          }, new Map<string, { dates: string[]; rate: number; base: number }>())
-          .values(),
-      )
-    : [];
+  // Receiving's side of the variance, one line per receipt (Mahreen,
+  // 27 Nov 2026, 6c), oldest first.
+  const receivedLines = variance ? [...variance.rest].sort((a, b) => a.date.localeCompare(b.date)) : [];
+  // "On AED 9,920.00, the part not prepaid. The posting date is the vendor's
+  // invoice date. A negative amount means this invoice costs more in your
+  // base currency. Posts when the invoice posts." (Mahreen's helper, in the
+  // invoice's own figures.)
+  const varianceHelper = variance
+    ? [
+        `On ${formatMoney(variance.restForeign, currency)}${variance.prepaidGoods.length > 0 ? ', the part not prepaid' : ''}.`,
+        dateLabel === 'posting date' && vendorInvoiceDate && draftDate === vendorInvoiceDate.slice(0, 10)
+          ? "The posting date is the vendor's invoice date."
+          : '',
+        'A negative amount means this invoice costs more in your base currency.',
+        posted ? 'Posted with the invoice.' : 'Posts when the invoice posts.',
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : '';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -664,23 +688,28 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
             <Section
               label="Exchange rate"
               right={
-                readOnly || pending ? (
-                  !pending && <RateTypeChip type={draftType} />
-                ) : (
-                  <RateTypeToggle
-                    value={rateType}
-                    onChange={(t) => {
-                      setRateType(t);
-                      setTyped(null);
-                    }}
-                  />
-                )
+                /* The rate info hover right after the rate type (Mahreen,
+                   27 Nov 2026, PA-1): both rates on the invoice's rate date. */
+                <span className="inline-flex items-center gap-1">
+                  {readOnly || pending ? (
+                    !pending && <RateTypeChip type={draftType} />
+                  ) : (
+                    <RateTypeToggle
+                      value={rateType}
+                      onChange={(t) => {
+                        setRateType(t);
+                        setTyped(null);
+                      }}
+                    />
+                  )}
+                  <RateTypeInfo currency={currency} date={draftDate} align="end" />
+                </span>
               }
             >
               {pending ? (
                 <p className="text-[11px] text-slate-500 leading-relaxed">
                   A pre-invoice takes its rate when it's paid.
-                  {quote.rate != null && rateType === 'mid' ? ` Today's mid-market rate is ${rateSentence(currency, quote.rate)}.` : ''}
+                  {quote.rate != null && rateType === 'mid' ? ` Today's daily market rate is ${rateSentence(currency, quote.rate)}.` : ''}
                 </p>
               ) : (
                 <>
@@ -784,23 +813,26 @@ export function InvoiceCurrencyConfigDialog(props: InvoiceCurrencyConfigDialogPr
             <Section label="FX variance">
               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[12px] tabular-nums">
                 {variance.restForeign > 0.004 ? (
+                  /* Both rates and the posting date, so the sign explains
+                     itself (Mahreen, 27 Nov 2026, 6c; Eli's ruling, 26 Nov
+                     2026): what receiving booked, what the bill posts at,
+                     then the signed variance (+ gain green, − loss red). */
                   <div className="space-y-1.5">
-                    {receivedLines.map((l) => (
-                      <div key={l.rate} className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500 min-w-0 truncate">
-                          Received {Array.from(new Set(l.dates)).sort().map((d) => formatRateDate(d)).join(", ")}
-                        </span>
+                    {receivedLines.map((l, i) => (
+                      <div key={`${l.date}-${i}`} className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500 min-w-0 truncate">Received · {formatRateDate(l.date)}</span>
                         <span className="text-slate-700 shrink-0">1 {currency} = {baseRate(l.rate)} · {formatMoney(l.base, BASE_CURRENCY)}</span>
                       </div>
                     ))}
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-slate-500 min-w-0 truncate">Invoiced {formatRateDate(draftDate)}</span>
+                      <span className="text-slate-500 min-w-0 truncate">Billed · {dateLabel} {formatRateDate(draftDate)}</span>
                       <span className="text-slate-700 shrink-0">1 {currency} = {baseRate(variance.invoiceRate)} · {formatMoney(variance.restAtInvoice, BASE_CURRENCY)}</span>
                     </div>
                     <div className="pt-1.5 border-t border-[#EEF2F6] flex items-center justify-between gap-3">
                       <span className="text-slate-800" style={{ fontWeight: 600 }}>FX variance</span>
                       <span className="shrink-0" style={{ fontWeight: 700, color: varianceHex(variance.amount) }}>{signedVariance(variance.amount)}</span>
                     </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed" style={{ fontVariantNumeric: 'normal' }}>{varianceHelper}</p>
                   </div>
                 ) : (
                   <p className="text-[11px] text-slate-500 leading-relaxed">

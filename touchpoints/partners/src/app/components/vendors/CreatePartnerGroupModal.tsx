@@ -215,14 +215,15 @@ import {
   CONTACT_DICTIONARY,
   type ContactPerson,
 } from "./partnerConstants";
-import { BASE_CURRENCY, getCurrency } from "@/app/currency/currencies";
+import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "@/app/currency/currencies";
 import { currencyCodeOf, currencyIdOf, groupRateTypeOf } from "@/app/currency/partnerCurrency";
-import type { RateType } from "@/app/currency/rates";
+import { RATE_PROVIDER, type RateType } from "@/app/currency/rates";
 import { RULE_FIXED_TOOLTIP, RULE_SYMBOL, isFixedRuleAmount, ruleAmountFromInput, ruleInputValue } from "@/app/currency/pricingRuleCurrency";
 import { CurrencyFlag } from "../currency/CurrencyFlag";
 import { CurrencySymbol } from "../currency/CurrencySymbol";
 import { BaseCurrencyPreview } from "../currency/BaseCurrencyPreview";
 import { RateTypeToggle } from "../currency/CurrencyPill";
+import { RateTypeInfo } from "../currency/RateTypeInfo";
 import { RuleCreateExampleCard, RuleCurrencyField, RuleCurrencyNote } from "../currency/RuleCurrency";
 import { SelectPocDictionaryModal, CreatePocModal } from "./PocModals";
 import { PocPillsRow } from "./PocPillComponents";
@@ -398,7 +399,7 @@ export function CreatePartnerGroupModal({ open, onOpenChange, onPartnerCreated, 
       if (tplCurrency && !savedCredit?.currency) {
         configDataRef.current.configCreditLimit = { ...(savedCredit ?? {}), currency: tplCurrency };
       }
-      // Same for its default exchange rate (mid-market unless set).
+      // Same for its default exchange rate (the daily market rate unless set).
       const tplRateType = (g.template as { rateType?: string } | undefined)?.rateType;
       const savedCreditNow = configDataRef.current.configCreditLimit as Record<string, unknown> | undefined;
       if (tplRateType && !savedCreditNow?.rateType) {
@@ -5239,7 +5240,7 @@ export function ConfigPageContent({
   // Seeded groups carry their currency in the template, not in configData.
   const [currency, setCurrency] = useState(() => _seedCreditLimit?.currency || selectedGroup?.template?.currency || currencyIdOf(BASE_CURRENCY));
   // The group's default exchange rate (Currency Touchpoints Map): set beside
-  // the currency; its partners inherit it. Mid-market until set.
+  // the currency; its partners inherit it. The daily market rate until set.
   const [rateType, setRateType] = useState<RateType>(() => {
     const saved = _seedCreditLimit?.rateType;
     return saved === "mid" || saved === "corporate" ? saved : groupRateTypeOf(selectedGroup);
@@ -5964,7 +5965,12 @@ export function ConfigPageContent({
                     <div className="pt-2.5 border-t border-muted flex flex-col gap-1.5 cursor-default" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[11px] text-slate-500" style={{ fontWeight: 500 }}>Default exchange rate</span>
-                        <InfoTooltip>{`The rate new documents with this group's ${configType === "customer" ? "customers" : "vendors"} start from: mid-market (synced from the rate provider) or corporate (set by finance). Each partner inherits it and can override it. A document can still switch it.`}</InfoTooltip>
+                        {/* Both of today's rates and the gap for a foreign
+                            currency (Mahreen, 27 Nov 2026, PA-1); the plain
+                            tip for a group in the base currency. */}
+                        {isBaseCurrency(currencyCodeOf(currency))
+                          ? <InfoTooltip>{`The rate new documents with this group's ${configType === "customer" ? "customers" : "vendors"} start from: the daily market rate (read once a day from ${RATE_PROVIDER}, and fixed for that date) or the corporate rate (set by your company). Each partner inherits it and can override it. A document can still switch it.`}</InfoTooltip>
+                          : <RateTypeInfo currency={currencyCodeOf(currency)} className="-my-1" />}
                       </div>
                       <div>
                         <RateTypeToggle value={rateType} onChange={setRateType} />

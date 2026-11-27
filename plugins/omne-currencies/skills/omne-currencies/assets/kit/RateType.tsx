@@ -2,11 +2,11 @@ import { Lock, LockOpen } from 'lucide-react';
 import { RATE_HEX, RATE_TINT, RATE_TYPE_LABEL, type RateType } from './rates';
 
 /* ── OMNE currency kit: rate type and lock ────────────────────────────
- *  - RateTypeChip: "● Mid-market" (purple) or "● Corporate" (amber), after
+ *  - RateTypeChip: "● Daily market rate" (purple) or "● Corporate rate" (amber), after
  *    a rate.
- *  - RateTypeToggle: Mid-market | Corporate, where the rate type is chosen
+ *  - RateTypeToggle: Daily market rate | Corporate rate, where the rate type is chosen
  *    (a document's Currency configuration, the create screen). Put
- *    CompareRates right after it on sales and purchase orders.
+ *    RateTypeInfo (the info icon with both rates) right after it.
  *  - LockChip / LockLine: whether a document's rate can still change.
  *    Unlocked (amber) until the event the BA's document names, then Locked
  *    (green). The block itself shows no lock; the configuration dialog does.
@@ -25,7 +25,7 @@ export function RateTypeChip({ type }: { type: RateType }) {
   );
 }
 
-/** Mid-market | Corporate, as the Exchange Rates module names them. */
+/** Daily market rate | Corporate rate, as the Exchange Rates module names them. */
 export function RateTypeToggle({
   value,
   onChange,

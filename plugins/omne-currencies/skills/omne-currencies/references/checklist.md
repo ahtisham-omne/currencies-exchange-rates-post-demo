@@ -72,8 +72,9 @@ in the base currency. Check every screen in the BA's document.
 **Configuration dialog**
 - [ ] Its sections, as the document lists them; Reset to default, Cancel,
       Apply.
-- [ ] Mid-market | Corporate; on orders, Compare rates right after it. Its
-      card: both rates, the source lines, the difference, the selected row.
+- [ ] Daily market rate | Corporate rate, with the rate info icon right
+      after it. Its card: "USD to PKR today", both rates, the Gap, and "Daily
+      market rate read on … Corporate rate set by your company on …".
 - [ ] The account picker: base first, then the document's currency, then
       the rest; no balances. A third-currency account shows the direct rate
       and "Estimated payment ≈ …".

@@ -18,7 +18,7 @@ import type React from "react";
 import type { POChangeType, POVersionEntry, POVersionSnapshot } from "./poStore";
 import type { POVersionStatus } from "./poStore";
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
-import { toBase } from "@/app/currency/rates";
+import { RATE_TYPE_LABEL, toBase } from "@/app/currency/rates";
 import { formatMoney, formatRate, formatRateDate, rateSentence } from "@/app/currency/money";
 import { poFx, rateSourceLabel, type PoFx } from "@/app/currency/poFx";
 import { snapshotOneTimeNet } from "./poOrderPricing";
@@ -97,13 +97,14 @@ export const versionPalette = {
 export const formatCurrency = (n: number, code: string): string => formatMoney(n, code);
 
 /* ── Shown in base, at each version's own rate ──────────────────────
-   Like the rest of the PO, versions show their amounts in the base currency
-   unless the page is toggled to the vendor's: each at the rate that version
-   locked in, so a version saved with today's rate reads differently from one
-   that kept its old rate. Outside the PO page (the listing's history), base. */
+   Like the rest of the PO, versions show their amounts in the version's own
+   currency (D1, 27 Nov 2026) unless the page is toggled to base: then each at
+   the rate that version locked in, so a version saved with today's rate reads
+   differently from one that kept its old rate. Outside the PO page (the
+   listing's history), the version's own currency too. */
 export function useVersionInBase(): boolean {
   const { view } = useDocCurrency();
-  return (view ?? "base") === "base";
+  return (view ?? "document") === "base";
 }
 
 /* A version amount as shown: in base at the version's rate, or in its currency. */
@@ -153,13 +154,13 @@ export function useDocFx(): PoFx | null {
   );
 }
 
-/* "Mid-market" · "Corporate" · "Corporate, changed on the PO". */
+/* "Daily market rate" · "Corporate rate" · "Corporate rate, changed on the PO". */
 export function rateTypeText(fx: PoFx): string {
-  if (fx.rateType === "mid") return "Mid-market";
-  return fx.source === rateSourceLabel("corporate", true) ? "Corporate, changed on the PO" : "Corporate";
+  if (fx.rateType === "mid") return RATE_TYPE_LABEL.mid;
+  return fx.source === rateSourceLabel("corporate", true) ? `${RATE_TYPE_LABEL.corporate}, changed on the PO` : RATE_TYPE_LABEL.corporate;
 }
 
-/* "1 USD = 274.3045 PKR · Mid-market · Feb 20, 2026", or "No conversion"
+/* "1 USD = 274.3045 PKR · Daily market rate · Feb 20, 2026", or "No conversion"
    for a version in the base currency. */
 export function rateText(fx: PoFx): string {
   if (fx.isBase) return "No conversion";

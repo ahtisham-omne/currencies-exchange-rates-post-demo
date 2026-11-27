@@ -4,10 +4,11 @@ import { BASE_CURRENCY, CURRENCIES, getCurrency, isBaseCurrency } from './curren
  * The same rates the Currency & Exchange Rates module shows
  * (src/app/data/exchangeRates.ts there), so a converted amount can be checked
  * against the pair's rate history:
- *  - Mid-market: synced from the provider. The history is generated exactly as
- *    the module generates it (same seeds), ending on the last sync; a date after
- *    the last sync takes the last synced rate.
- *  - Corporate: set by finance, effective from a date.
+ *  - Daily market rate ('mid'): read once a day from the provider and fixed
+ *    for that date (Eli's ruling, 26 Nov 2026). The history is generated
+ *    exactly as the module generates it (same seeds), ending on the last
+ *    read; a date after it takes the last rate read.
+ *  - Corporate rate: set by finance, effective from a date.
  * Every rate is base currency per one unit of the other currency
  * (1 USD = 278.52 PKR). */
 
@@ -16,14 +17,28 @@ export type RateType = 'mid' | 'corporate';
 /** Company Setup's default rate type (the module's DEFAULT_RATE_TYPE, "MID"). */
 export const DEFAULT_RATE_TYPE: RateType = 'mid';
 
+/* "Daily market rate" | "Corporate rate" on every toggle, chip and hover
+ * (Mahreen, 27 Nov 2026, 1a). The labels end in "rate": never append
+ * " rate" to them. The code keeps 'mid'. */
 export const RATE_TYPE_LABEL: Record<RateType, string> = {
-  mid: 'Mid-market',
-  corporate: 'Corporate',
+  mid: 'Daily market rate',
+  corporate: 'Corporate rate',
 };
 
 export const RATE_PROVIDER = 'Open Exchange Rates';
-/** The provider's last sync; mid-market history ends on this day. */
-export const LAST_SYNC = '2026-04-10T14:30:00Z';
+/* Today's read (Eli, 26 Nov 2026): one daily market rate per currency per
+ * day, read once a day from the provider and fixed for that date. The demo
+ * reads today's at the start of the day (UTC), as the Exchange Rates module
+ * does, so "Read on" is always today. */
+export const RATES_READ_ON: string = new Date().toISOString().slice(0, 10);
+
+/* Where the generated history ends; a later day takes that day's rate.
+ * This module dates its seeds back from today, so its history ends on
+ * today's read, as the Exchange Rates module's does: an order N days old
+ * always gets the same rate (before 27 Nov 2026 an order older than 10 Apr
+ * read a different day of the history each day, and its prices moved). */
+const HISTORY_ENDS_TODAY = true;
+export const LAST_SYNC = HISTORY_ENDS_TODAY ? `${RATES_READ_ON}T00:00:00Z` : '2026-04-10T14:30:00Z';
 const LAST_SYNC_DAY = LAST_SYNC.slice(0, 10);
 const HISTORY_DAYS = 6 * 365;
 
@@ -45,13 +60,34 @@ export interface CorporateRate {
   note: string;
 }
 
+/* Corporate rates as the Exchange Rates module seeds them (27 Nov 2026), so
+ * every module shows the same figure and the same "set on" day:
+ *  - USD keeps the history its activity log tells: 279.00 from 2 Mar, 280.00
+ *    from 1 Apr, 280.25 from 15 Apr and 281.50 from 1 May 2026.
+ *  - The others took effect on the 1st of the month 40 days before today's
+ *    read, as there. Their 1 Apr 2026 entry at the same rate stays, so older
+ *    documents still find one. */
+const CORPORATE_EFFECTIVE = (() => {
+  const d = new Date(Date.parse(`${RATES_READ_ON}T00:00:00Z`) - 40 * 86_400_000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+})();
+const CORPORATE_NOTE = `Q${Math.floor((Number(CORPORATE_EFFECTIVE.slice(5, 7)) - 1) / 3) + 1} ${CORPORATE_EFFECTIVE.slice(0, 4)} corporate rate`;
+const CORPORATE_SET_BY = 'Ahtisham Ahmad';
+const steadyCorporate = (code: string, rate: number): CorporateRate[] => [
+  { code, rate, effectiveDate: '2026-04-01', setBy: CORPORATE_SET_BY, note: 'Q2 2026 corporate rate' },
+  { code, rate, effectiveDate: CORPORATE_EFFECTIVE, setBy: CORPORATE_SET_BY, note: CORPORATE_NOTE },
+];
+
 export const CORPORATE_RATES: CorporateRate[] = [
-  { code: 'USD', rate: 279.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'EUR', rate: 305.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'GBP', rate: 356.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'AED', rate: 76.0, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'SAR', rate: 74.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
-  { code: 'CNY', rate: 38.5, effectiveDate: '2026-04-01', setBy: 'Ahtisham Ahmad', note: 'Q2 2026 corporate rate' },
+  { code: 'USD', rate: 279.0, effectiveDate: '2026-03-02', setBy: CORPORATE_SET_BY, note: 'Agreed with the bank for Q2 imports.' },
+  { code: 'USD', rate: 280.0, effectiveDate: '2026-04-01', setBy: CORPORATE_SET_BY, note: '' },
+  { code: 'USD', rate: 280.25, effectiveDate: '2026-04-15', setBy: CORPORATE_SET_BY, note: '' },
+  { code: 'USD', rate: 281.5, effectiveDate: '2026-05-01', setBy: CORPORATE_SET_BY, note: '' },
+  ...steadyCorporate('EUR', 305.5),
+  ...steadyCorporate('GBP', 356.0),
+  ...steadyCorporate('AED', 76.0),
+  ...steadyCorporate('SAR', 74.5),
+  ...steadyCorporate('CNY', 38.5),
 ];
 
 // ── The module's generators, kept bit-for-bit so the numbers agree ──
@@ -89,14 +125,14 @@ const DAY_MS = 86_400_000;
 const dayNumber = (iso: string) => Math.floor(Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) / DAY_MS);
 const LAST_SYNC_DAY_NUMBER = dayNumber(LAST_SYNC_DAY);
 
-/** Current (last synced) mid-market rate and its 24h change, as the module seeds them. */
+/** The last daily market rate read and its 24h change, as the module seeds them. */
 function syncedMid(code: string): [number, number] {
   return HAND_SEEDED_MID[code] ?? [generatedMidRate(code), generatedChange24h(code)];
 }
 
 const seriesCache = new Map<string, number[]>();
 
-/** Daily mid-market rates ending on the last sync (index HISTORY_DAYS). */
+/** Daily market rates ending on the last read (index HISTORY_DAYS). */
 function midSeries(code: string): number[] {
   const cached = seriesCache.get(code);
   if (cached) return cached;
@@ -117,7 +153,7 @@ function midSeries(code: string): number[] {
   return rounded;
 }
 
-/** The mid-market rate on a day (the last synced rate for any day after the last sync). */
+/** The daily market rate on a day (the last rate read for any day after the last read). */
 export function midRateOn(code: string, isoDate: string): number | null {
   if (isBaseCurrency(code)) return 1;
   if (!getCurrency(code)) return null;

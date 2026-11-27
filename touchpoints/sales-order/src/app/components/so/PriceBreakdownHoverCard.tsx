@@ -3,8 +3,12 @@
  *  Mirrors the Quote-module twin file-for-file; field names map to SO's
  *  `itemCode` / `orderedQty` instead of Quote's `productId` / `quantity`.
  *  Replaces the inline "Subtotal $X" sub-line on the SOLineGrid TOTAL
- *  column with a white-overlay hover card listing every active pricing
- *  rule and adjustment that compose the line total.
+ *  column with a white-overlay hover card: the line's Total (qty × unit
+ *  price) and every active pricing rule and one-time adjustment on the
+ *  line. Since 27 Nov 2026 (D4, Mahreen 4b) rules and adjustments apply
+ *  only in the Order summary, so they are listed under "Applied in the
+ *  Order summary" and the line's Total leaves them out; the lines then
+ *  add up to the Subtotal.
  * ═══════════════════════════════════════════════════════════════════════════ */
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import { BASE_CURRENCY as BASE } from "@/app/currency/currencies";
@@ -66,9 +70,8 @@ export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, form
     }
   }
 
-  const ruleDelta = ruleRows.reduce((s, r) => s + (r.type === 'discount' ? -r.amount : r.amount), 0);
-  const adjDelta = adjRows.reduce((s, r) => s + (r.type === 'discount' ? -r.amount : r.amount), 0);
-  const lineTotal = baseSubtotal + ruleDelta + adjDelta;
+  // The line's Total is qty × unit price (D4); the rows below it apply in the Order summary.
+  const lineTotal = baseSubtotal;
 
   const calcPos = useCallback(() => {
     if (!triggerRef.current) return;
@@ -172,19 +175,47 @@ export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, form
               </span>
             </div>
 
-            {/* Body rows + inline highlighted Total row (Partner's ATP
-                pattern). No separate footer panel. */}
+            {/* The line's Total first, highlighted (Partner's ATP pattern):
+                qty × unit price (D4). Then what applies to the line in the
+                Order summary. No separate footer panel. */}
             <div style={{ padding: '6px 0' }}>
-              <BreakdownRow
-                label="Subtotal"
-                sub={`${line.orderedQty} × ${formatCurrency(line.unitPrice)}`}
-                value={formatCurrency(baseSubtotal)}
-                bold
-              />
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                padding: '4px 14px',
+                backgroundColor: '#F0FDF4',
+              }}>
+                <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#1F2937', lineHeight: 1.4 }}>Total</span>
+                  <span style={{ fontSize: 10, color: '#6B7280', lineHeight: 1.3, marginTop: 1 }}>
+                    {line.orderedQty} × {formatCurrency(line.unitPrice)}
+                  </span>
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#059669', fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}>
+                  {formatCurrency(lineTotal)}
+                </span>
+              </div>
+              {ruleMoney.baseText(lineTotal) && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '2px 14px 0' }}>
+                  <span style={{ fontSize: 11, color: '#6B7280', fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}>
+                    {ruleMoney.baseText(lineTotal)} {inBase ? `${currency} · customer currency` : `${BASE} · base currency`}
+                  </span>
+                </div>
+              )}
+
+              {hasOverlay && (
+                <>
+                  <Divider />
+                  <div style={{ padding: '2px 14px', fontSize: 10.5, fontWeight: 500, color: '#6B7280', lineHeight: 1.4 }}>
+                    Applied in the Order summary
+                  </div>
+                </>
+              )}
 
               {ruleRows.length > 0 && (
                 <>
-                  <Divider />
                   {ruleRows.map((r) => (
                     <BreakdownRow
                       key={r.name}
@@ -203,7 +234,6 @@ export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, form
 
               {adjRows.length > 0 && (
                 <>
-                  <Divider />
                   {adjRows.map((r) => (
                     <BreakdownRow
                       key={r.label}
@@ -218,27 +248,6 @@ export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, form
                     />
                   ))}
                 </>
-              )}
-
-              <Divider />
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '4px 14px',
-                backgroundColor: '#F0FDF4',
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#1F2937', lineHeight: 1.4 }}>Total</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#059669', fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}>
-                  {formatCurrency(lineTotal)}
-                </span>
-              </div>
-              {ruleMoney.baseText(lineTotal) && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '2px 14px 0' }}>
-                  <span style={{ fontSize: 11, color: '#6B7280', fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}>
-                    {ruleMoney.baseText(lineTotal)} {inBase ? `${currency} · customer currency` : `${BASE} · base currency`}
-                  </span>
-                </div>
               )}
             </div>
           </div>

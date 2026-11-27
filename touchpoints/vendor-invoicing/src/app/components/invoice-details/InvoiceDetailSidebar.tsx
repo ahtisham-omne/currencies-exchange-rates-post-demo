@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/too
 import { Invoice } from '@/app/data/mockInvoices';
 import { invoiceFx, invoiceRateLocked, toInvoiceBase } from '@/app/currency/invoiceFx';
 import { invoicePayFrom } from '@/app/currency/payFrom';
+import { formatRateDate } from '@/app/currency/money';
 import { differenceNeedsReview, useApSettings } from '@/app/hooks/useApSettings';
 import { DocMoney } from '@/app/components/currency/DocCurrency';
 import { useDocMoney } from '@/app/components/currency/docCurrencyContext';
@@ -680,6 +681,12 @@ export function InvoiceDetailSidebar({ invoice, numbers, status, statusPalette, 
             variance={variance}
             locked={invoiceRateLocked(invoice)}
             payFrom={invoicePayFrom(invoice)}
+            // Mahreen, 27 Nov 2026 (6b): the vendor's amount is locked, with
+            // where it came from; the rate names its posting date; only the
+            // base amount follows the rate.
+            vendorInvoiceNumber={invoice.vendorInvoiceNumber || undefined}
+            qualifier={fx.provisional ? undefined : `${fx.dateLabel.charAt(0).toUpperCase()}${fx.dateLabel.slice(1)} ${formatRateDate(fx.rateDate)}`}
+            baseNote={`Follows the ${fx.dateLabel}'s rate`}
             onViewConfig={onViewCurrencyConfig}
           />
         )}

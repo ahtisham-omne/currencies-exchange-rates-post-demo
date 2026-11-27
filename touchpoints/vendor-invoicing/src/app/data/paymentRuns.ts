@@ -2,7 +2,7 @@ import { mockInvoices, type Invoice } from './mockInvoices';
 import {
   PAY_FROM_ACCOUNTS,
   accountTypeForMethod,
-  accountsForCurrency,
+  runAccountsForCurrency,
   vendorPaymentCurrency,
   type Payment,
 } from './mockPayments';
@@ -438,7 +438,7 @@ export function accountForMethod(method: VendorPaymentMethod | null, currency?: 
   const want = defaultPayFromCurrency(currency, youPayIn);
   const inWant = PAY_FROM_ACCOUNTS.filter((a) => a.currency === want);
   const inBase = PAY_FROM_ACCOUNTS.filter((a) => isBaseCurrency(a.currency));
-  const allowed = accountsForCurrency(PAY_FROM_ACCOUNTS, currency);
+  const allowed = runAccountsForCurrency(PAY_FROM_ACCOUNTS, currency);
   return (pick(inWant) ?? pick(inBase) ?? allowed.find((a) => a.type === 'bank'))?.id ?? FALLBACK_ACCOUNT;
 }
 

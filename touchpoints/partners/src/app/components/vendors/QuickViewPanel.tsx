@@ -32,6 +32,7 @@ import { usePersonLightbox } from "./PersonAvatarLightbox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip";
 import type { OverflowItem } from "./OverflowTooltip";
 import { useVendors } from "../../context/VendorContext";
+import type { Vendor } from "../../data/vendors";
 import { BASE_CURRENCY } from "@/app/currency/currencies";
 import { formatCompactMoney, formatMoney } from "@/app/currency/money";
 import { usePartnerCurrencyOf } from "@/app/currency/usePartnerCurrency";
@@ -476,12 +477,36 @@ function getLocationPhoto(name: string): string {
   return LOCATION_PHOTOS[hashStr(name) % LOCATION_PHOTOS.length];
 }
 
-function LocationQuickView({ locationName, vendorName, subtitle, tableImageUrl, currency }: { locationName: string; vendorName: string; subtitle?: string; tableImageUrl?: string; locationIdx?: number; currency: string }) {
+/** The partner a location belongs to, for its country. */
+type LocationPartner = Pick<Vendor, "country" | "countryFlag" | "billingAddress">;
+
+const US_NAMES = new Set(["united states", "united states of america", "usa", "us"]);
+const countryKey = (name: string | undefined) => {
+  const n = (name ?? "").trim().toLowerCase();
+  return US_NAMES.has(n) ? "united states" : n;
+};
+
+/* A location is in its partner's country (Mahreen, 27 Nov 2026, PA-3). The
+ * hashed country could put a Mexican partner's site in China, or Germany.
+ * The mock cities are all American, so a partner elsewhere takes its
+ * billing city when that is in the same country, else no city. */
+function locationPlace(d: ReturnType<typeof mockLocationData>, partner?: LocationPartner) {
+  if (!partner?.country) return { city: d.city, country: d.country };
+  const country = { name: partner.country, flag: partner.countryFlag ?? "" };
+  if (countryKey(partner.country) === "united states") return { city: d.city, country };
+  const b = partner.billingAddress;
+  const city = b?.city && countryKey(b.country) === countryKey(partner.country) ? `${b.city}${b.state ? `, ${b.state}` : ""}` : "";
+  return { city, country };
+}
+
+function LocationQuickView({ locationName, vendorName, subtitle, tableImageUrl, currency, partner }: { locationName: string; vendorName: string; subtitle?: string; tableImageUrl?: string; locationIdx?: number; currency: string; partner?: LocationPartner }) {
   // Title is the real location name — matches the row/hover card the user
   // opened from. The partner name lives in the stat row's Partner cell.
   const displayName = locationName;
   // Use the raw locationName as the data seed so the modal data stays stable regardless of display name
   const d = mockLocationData(locationName);
+  const place = locationPlace(d, partner);
+  const placeText = `${d.street}${place.city ? `, ${place.city}` : ""}`;
   const { openLightbox } = usePersonLightbox();
   // Use the table's image if provided (upscale 80x80 → 600x400) so the modal matches the row thumbnail
   const photo = tableImageUrl ? tableImageUrl.replace(/w=80&h=80/, "w=600&h=400") : getLocationPhoto(locationName);
@@ -537,14 +562,14 @@ function LocationQuickView({ locationName, vendorName, subtitle, tableImageUrl, 
           <div className="flex items-start gap-2.5">
             <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
             <a
-              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${d.street}, ${d.city}, ${d.country.name}`)}`}
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${placeText}, ${place.country.name}`)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-[13px] text-foreground hover:text-primary hover:underline transition-colors min-w-0"
               style={{ fontWeight: 500 }}
             >
-              {d.street}, {d.city}
-              <span className="text-slate-500"> • <FlagImage code={flagEmojiCode(d.country.flag)} className="text-[13px]" /> {d.country.name}</span>
+              {placeText}
+              <span className="text-slate-500"> • <FlagImage code={flagEmojiCode(place.country.flag)} className="text-[13px]" /> {place.country.name}</span>
             </a>
           </div>
           <div className="flex items-center gap-2.5">
@@ -1252,7 +1277,7 @@ export function QuickViewPanel({ data, onClose, zIndex = 200 }: QuickViewPanelPr
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto scrollbar-hide">
           {type === "item" && <ItemQuickView code={item.name} vendorName={vendorName} tableImageUrl={item.imageUrl} currency={partnerCurrency} />}
-          {type === "location" && <LocationQuickView locationName={item.name} vendorName={vendorName} subtitle={item.subtitle} tableImageUrl={item.imageUrl} locationIdx={locationIdx} currency={partnerCurrency} />}
+          {type === "location" && <LocationQuickView locationName={item.name} vendorName={vendorName} subtitle={item.subtitle} tableImageUrl={item.imageUrl} locationIdx={locationIdx} currency={partnerCurrency} partner={quickViewPartner} />}
           {type === "carrier" && <CarrierQuickView carrierName={item.name} carrierRole={item.subtitle || "Carrier"} vendorName={vendorName} />}
           {type === "partner" && <PartnerQuickView partnerName={item.name} meta={item.meta} />}
           {type === "contact" && (

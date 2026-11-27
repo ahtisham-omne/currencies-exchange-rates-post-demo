@@ -38,7 +38,7 @@ const CAPTION: React.CSSProperties = {
 };
 
 /* The version's currency and rate (spec 4.3): flag + code, then
-   "1 USD = 274.3045 PKR · Mid-market · Feb 20, 2026". A version in the
+   "1 USD = 274.3045 PKR · Daily market rate · Feb 20, 2026". A version in the
    base currency has no rate. */
 function VersionCurrencyStrip({ fx }: { fx: PoFx }) {
   return (

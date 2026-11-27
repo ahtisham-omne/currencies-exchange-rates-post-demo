@@ -1722,6 +1722,7 @@ export function RunProposalStage({
           value={accountModalVendor.payFromAccountId}
           invoiceCurrency={groupCurrency(accountModalVendor)}
           youPayIn={groupYouPayIn(run, accountModalVendor)}
+          inRun
           accounts={PAY_FROM_ACCOUNTS.filter((a) => {
             const want = accountTypeForMethod(accountModalVendor.methodType);
             return want === 'any' ? true : a.type === want;

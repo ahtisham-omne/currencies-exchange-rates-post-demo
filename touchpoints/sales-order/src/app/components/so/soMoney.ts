@@ -6,7 +6,7 @@ import { DESIGN_CURRENCY, LAST_SYNC_DAY, convertOn, soFx } from "@/app/currency/
 /* A linked document's amount in its order's currency. Documents carry
    the order's currency unless they say otherwise (a quote, or an invoice
    raised before the order's currency changed); those convert at the
-   mid-market rates on the order's rate date. */
+   daily market rates on the order's rate date. */
 export function txInOrderCurrency(t: Pick<LinkedTransaction, "amount" | "currency">, so: SalesOrder): number {
   const fx = soFx(so);
   return t.currency && t.currency.toUpperCase() !== fx.currency
@@ -26,7 +26,7 @@ export function itemListPrice(usd: number): string {
   return formatMoney(convertOn(usd, DESIGN_CURRENCY, BASE_CURRENCY, LAST_SYNC_DAY), BASE_CURRENCY);
 }
 
-/** The design's fixed USD figures in a currency, at the mid-market rate on a
+/** The design's fixed USD figures in a currency, at the daily market rate on a
  *  day: mock history (version snapshots and change notes) is written in $. */
 export function restateDesign(usd: number, code: string, day: string): number {
   return convertOn(usd, DESIGN_CURRENCY, code, day);

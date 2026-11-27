@@ -1,7 +1,7 @@
 import type { SalesOrder, SOLine, SOStatus, SOVersion } from './types';
 import { convertOn, customerCurrency, localTodayIso, soFx, todayRate } from '@/app/currency/soFx';
 import { isBaseCurrency } from '@/app/currency/currencies';
-import { followsMarketPrice, repriceFromItem } from '@/app/currency/itemPrices';
+import { customerGroupOf, followsMarketPrice, repriceFromItem } from '@/app/currency/itemPrices';
 import { findCatalogItem } from './store';
 
 /* ════════════════════════════════════════════════════════════════════
@@ -94,7 +94,7 @@ export function buildDuplicateSOPayload(
   const customerName = options.newCustomerId ? options.newCustomerName : source.customer;
   /* Same customer: the copy keeps the order's currency. Another customer:
      it opens in that customer's default currency (spec 4.3), prices
-     converted at today's mid-market rates. Either way it takes today's
+     converted at today's daily market rates. Either way it takes today's
      rate, as a new order does (createSO). */
   const currency = options.newCustomerId ? customerCurrency(customerName) : source.currency;
   const convert = (n: number) => convertOn(n, source.currency, currency, localTodayIso());
@@ -106,7 +106,7 @@ export function buildDuplicateSOPayload(
     if (currency === source.currency) return l;
     const freight = typeof l.shipmentCost === 'number' && { shipmentCost: convert(l.shipmentCost) };
     const item = followsMarketPrice(l.priceSource) ? findCatalogItem(l.itemCode) : undefined;
-    if (item) return { ...l, ...repriceFromItem(l.unitPrice, item, { currency: source.currency, rate: sourceRate }, { currency, rate: copyRate }), ...freight };
+    if (item) return { ...l, ...repriceFromItem(l.unitPrice, item, { currency: source.currency, rate: sourceRate, group: customerGroupOf(source.customer) }, { currency, rate: copyRate, group: customerGroupOf(customerName) }), ...freight };
     return { ...l, unitPrice: convert(l.unitPrice), ...freight };
   });
   const customerInitials = options.newCustomerId

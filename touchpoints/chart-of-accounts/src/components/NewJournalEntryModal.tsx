@@ -587,14 +587,15 @@ export function NewJournalEntryModal({ open, onClose, prefillAccountId }: {
   /* The rate field's line under it: where the rate comes from (rules 2, 3, 11). */
   const today = todayIso()
   const rateCaption = !foreign ? null
-    : rateEdited ? `Typed on this entry · ${RATE_KIND_LABEL.corporate.toLowerCase()} rate was ${rateLabel(quote.rate).replace(/^1 \w+ = /, '')}`
-    // "Corporate · Set by Ahtisham Ahmad · In effect since Nov 1, 2026." (Mahreen, 2026-11-20)
-    : kind === 'corporate' ? `Corporate · ${quote.source} · In effect since ${fmtDate(quote.date)}.${editable ? ' You can change it for this entry.' : ''}`
+    // The label already ends in "rate" (27 Nov 2026), so nothing is added after it.
+    : rateEdited ? `Typed on this entry · ${RATE_KIND_LABEL.corporate.toLowerCase()} was ${rateLabel(quote.rate).replace(/^1 \w+ = /, '')}`
+    // "Corporate rate · Set by Ahtisham Ahmad · In effect since Nov 1, 2026." (Mahreen, 2026-11-20)
+    : kind === 'corporate' ? `${RATE_KIND_LABEL.corporate} · ${quote.source} · In effect since ${fmtDate(quote.date)}.${editable ? ' You can change it for this entry.' : ''}`
     // The entry date's rate; one dated after today takes today's.
-    : `Mid-market · ${MID_SOURCE} · ${date > today ? `today, ${fmtDate(today)}` : `${fmtDate(date)}, the entry date`}`
+    : `${RATE_KIND_LABEL.mid} · ${MID_SOURCE} · ${date > today ? `today, ${fmtDate(today)}` : `${fmtDate(date)}, the entry date`}`
   const rateLockWhy = kind === 'mid'
-    ? `A mid-market rate can't be edited. It is the rate for the entry date${corporateAvailable ? ', or switch to the corporate rate' : ''}.`
-    : 'Your company takes mid-market rates, so a corporate rate can be used here but not typed.'
+    ? `A daily market rate can't be edited. It is the rate for the entry date${corporateAvailable ? ', or switch to the corporate rate' : ''}.`
+    : 'Your company takes daily market rates, so a corporate rate can be used here but not typed.'
 
   return (
     <>
@@ -1128,7 +1129,7 @@ function HeadInfo({ text }: { text: string }) {
   )
 }
 
-/* Mid-market or the corporate rate, where one is set for the entry's
+/* The daily market rate or the corporate rate, where one is set for the entry's
    currency (rule 11). The Currencies module's two names, purple and
    amber as its rate chips colour them. */
 function RateKindToggle({ value, onChange }: { value: RateKind; onChange: (kind: RateKind) => void }) {

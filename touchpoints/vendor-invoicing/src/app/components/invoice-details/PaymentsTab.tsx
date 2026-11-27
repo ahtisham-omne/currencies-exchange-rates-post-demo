@@ -17,6 +17,8 @@ import { LineItemsTable } from './LineItemsTab';
 import { highlightText } from '@/app/components/InvoiceDataTable';
 import { useDocMoney } from '@/app/components/currency/docCurrencyContext';
 import { DocMoney } from '@/app/components/currency/DocCurrency';
+import { PaymentRateCell, RateSettlesNote, paymentRateText } from '@/app/components/currency/PaymentRateCell';
+import { BankRateDueBanner, bankRateDueToday } from '@/app/components/payments/BankRateDueBanner';
 
 // Payments tab — every money movement recorded against THIS invoice in one
 // place: posted payments, prepayments (anchored or applied), scheduled
@@ -38,6 +40,8 @@ interface PaymentRow {
   /** True for real app-state payment records (navigable), false for the
    *  synthesized history rows. */
   isRecord: boolean;
+  /** The record behind a real row, for its rate (27 Nov 2026, Mahreen 7e). */
+  payment?: Payment;
 }
 
 const TYPE_PILL: Record<PaymentRow['type'], { bg: string; color: string; border: string }> = {
@@ -82,6 +86,9 @@ const PAYMENT_COLUMN_CATALOG = [
   { key: 'date', label: 'Date' },
   { key: 'method', label: 'Method' },
   { key: 'status', label: 'Status' },
+  // A scheduled payment's estimated rate, or the rate it went at (27 Nov
+  // 2026, Mahreen 7e).
+  { key: 'rate', label: 'Rate' },
   { key: 'applied', label: 'Applied to Invoice' },
   { key: 'total', label: 'Amount' },
   { key: 'actions', label: 'Actions' },
@@ -94,6 +101,7 @@ export function PaymentsTab({
   onViewPayment,
   onViewCreditMemo,
   onContinuePayment,
+  onEnterRate,
 }: {
   invoice: Invoice;
   payments: Payment[];
@@ -106,6 +114,9 @@ export function PaymentsTab({
   onViewCreditMemo?: (creditMemoNumber: string) => void;
   /** Records a scheduled payment now in the Record Payment flow. */
   onContinuePayment?: (paymentNumber: string) => void;
+  /** A payment scheduled for today that the bank converts: Mark as paid,
+   *  asking for the bank's rate (27 Nov 2026, Mahreen 7e). */
+  onEnterRate?: (paymentId: string) => void;
 }) {
   const rows = useMemo<PaymentRow[]>(() => {
     // Real payment records from the app state — includes drafts, scheduled
@@ -129,6 +140,7 @@ export function PaymentsTab({
           applied: appliedRef?.amount ?? (p.preInvoiceId === invoice.invoiceNumber || p.preInvoiceId === invoice.id ? p.amount : 0),
           total: p.amount,
           isRecord: true,
+          payment: p,
           // App prepends new records, so the array index IS recency —
           // the latest payment sorts to the top on same-day ties (7/15/26).
           seq: idx,
@@ -237,14 +249,23 @@ export function PaymentsTab({
       render: (r) => {
         const pill = STATUS_PILL[r.status] ?? STATUS_FALLBACK;
         return (
-          <span
-            className="inline-flex items-center px-2 py-px rounded-full text-[10px] border"
-            style={{ fontWeight: 600, backgroundColor: pill.bg, color: pill.color, borderColor: pill.border }}
-          >
-            {r.status}
+          <span className="inline-flex flex-col items-start">
+            <span
+              className="inline-flex items-center px-2 py-px rounded-full text-[10px] border"
+              style={{ fontWeight: 600, backgroundColor: pill.bg, color: pill.color, borderColor: pill.border }}
+            >
+              {r.status}
+            </span>
+            {/* Mahreen 7f (27 Nov 2026): the bank's rate comes when it's paid. */}
+            {r.status === 'Scheduled' && r.payment && <RateSettlesNote payment={r.payment} />}
           </span>
         );
       },
+    },
+    {
+      key: 'rate', label: 'Rate', minWidth: 150, defaultWidth: 180, sortable: false,
+      getValue: (r) => (r.payment ? paymentRateText(r.payment) : ''),
+      render: (r) => (r.payment ? <PaymentRateCell payment={r.payment} /> : null),
     },
     {
       key: 'applied', label: 'Applied to Invoice', minWidth: 116, defaultWidth: 140, sortable: true, align: 'right',
@@ -346,8 +367,14 @@ export function PaymentsTab({
     );
   }
 
+  // Scheduled for today and converting at the bank: the bank's rate is due.
+  const rateDue = onEnterRate
+    ? bankRateDueToday(payments.filter((p) => p.appliedInvoices?.some((a) => a.invoiceNumber === invoice.invoiceNumber)))
+    : [];
+
   return (
     <div className="space-y-3.5">
+      {rateDue.length > 0 && onEnterRate && <BankRateDueBanner payments={rateDue} onEnterRate={(p) => onEnterRate(p.id)} />}
       {/* Pending money banner — same slim gradient recipe as the GL Impact
           tab's "Not posted" banner. */}
       {hasPending && (
@@ -384,7 +411,7 @@ export function PaymentsTab({
         lockedKeys={['reference']}
         storageKey="omnesoft:invoice-payments:columns"
         getRowId={(r) => r.id}
-        rowHeight={52}
+        rowHeight={56}
         searchAccessor={(r) => `${r.reference} ${r.type} ${r.method} ${r.status}`}
         searchPlaceholder="Search payments…"
         title="Payments"

@@ -52,7 +52,7 @@ export function computeSalesKpiValue(
 ): { value: string; change?: string; changeColor?: string; note?: string } {
   /* Money KPIs are in the base currency, with no hover (Currency Touchpoints
      Map, Items 5): every order counts at its own rate. The design's USD
-     figures are restated in PKR at the last sync's mid-market rate. */
+     figures are restated in PKR at the last read's daily market rate. */
   const inBase = `in ${BASE_CURRENCY}`;
   switch (key) {
     // 5 legacy defaults — values match the previous SalesKpiStrip exactly.

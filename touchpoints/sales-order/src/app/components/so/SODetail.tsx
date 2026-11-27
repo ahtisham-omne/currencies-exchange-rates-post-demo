@@ -153,9 +153,9 @@ export function SODetail() {
   });
 
   const [activeTab, setActiveTab] = useState("lines");
-  /* Which currency the page's amounts show in: base by default, the
-     customer's amount and the rate on hover. The Base Currency | Customer
-     Currency switch (25 Nov 2026, in the Line Items toolbar, only on an order
+  /* Which currency the page's amounts show in: the customer's by default
+     (27 Nov 2026, D1; base before), the base amount and the rate on hover.
+     The Base Currency | Customer Currency switch (25 Nov 2026, in the Line Items toolbar, only on an order
      in a foreign currency) flips it; the choice is kept per order for the
      session (docView.ts), never an edit. The order's Currency Configuration
      dialog opens from the summary's currency card. */

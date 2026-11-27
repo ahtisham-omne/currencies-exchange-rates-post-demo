@@ -29,7 +29,7 @@ export interface VersionRateOptions {
 interface RateOption {
   /** "1 USD = 276.1000 PKR" */
   sentence: string;
-  /** "Mid-market · Nov 19, 2026 · total ₨2,823,134.42" */
+  /** "Daily market rate · Nov 19, 2026 · total ₨2,823,134.42" */
   meta: string;
 }
 

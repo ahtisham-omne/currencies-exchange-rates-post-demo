@@ -1,6 +1,6 @@
 {
   "name": "omne-currencies",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OMNE currencies and exchange rates, end to end: BAs write a module's currency document (omne-currency-doc) saying what each screen shows in which currency, and designers add currencies and exchange rates to the module from it with OMNE's shared currency kit (omne-currencies), then check the build.",
   "author": {
     "name": "Mahad Ejaz"

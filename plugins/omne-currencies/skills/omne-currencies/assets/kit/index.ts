@@ -21,7 +21,7 @@ export * from './docView';
 export * from './DocCurrency';
 export * from './CurrencySwitch';
 export * from './RateType';
-export * from './CompareRates';
+export * from './RateTypeInfo';
 export * from './CurrencyBlock';
 export * from './columnCurrencyView';
 export * from './ShowValuesAs';

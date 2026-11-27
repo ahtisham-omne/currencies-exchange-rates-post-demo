@@ -84,9 +84,15 @@ export function FxNote({ children, small }: { children: React.ReactNode; small?:
   );
 }
 
-/** "● Mid-market · Open Exchange Rates", purple for mid-market, amber for corporate. */
-export function FxRateType({ type, label, source }: { type: 'mid' | 'corporate'; label: string; source?: string }) {
+/** "● Daily market rate · Open Exchange Rates", purple for the daily market rate, amber for corporate. */
+export function FxRateType({ type, label, source: rawSource }: { type: 'mid' | 'corporate'; label: string; source?: string }) {
   const color = RATE_COLOR[type];
+  // The label already names the type (27 Nov 2026): a PO's corporate source,
+  // "Corporate rate" or "Corporate rate, changed on the PO", adds only the rest.
+  const source =
+    rawSource && rawSource.toLowerCase().startsWith(label.toLowerCase())
+      ? rawSource.slice(label.length).replace(/^[\s,·]+/, '')
+      : rawSource;
   return (
     <div className="flex items-center gap-[6px] whitespace-nowrap text-[11px] leading-[15px]">
       <span className="w-[6px] h-[6px] rounded-full shrink-0" style={{ background: color }} />

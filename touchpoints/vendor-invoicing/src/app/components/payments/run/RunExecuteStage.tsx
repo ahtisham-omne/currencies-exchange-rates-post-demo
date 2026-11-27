@@ -7,10 +7,10 @@ import { toast } from 'sonner';
 import type { Invoice } from '@/app/data/mockInvoices';
 import type { Payment } from '@/app/data/mockPayments';
 import { groupCurrency, groupKeyOf, liveLines, type PaymentRun } from '@/app/data/paymentRuns';
-import { PAY_FROM_ACCOUNTS, PAYMENT_METHODS, accountTypeForMethod, accountsForCurrency } from '@/app/data/mockPayments';
+import { PAY_FROM_ACCOUNTS, PAYMENT_METHODS, accountTypeForMethod, runAccountsForCurrency } from '@/app/data/mockPayments';
 import type { PaymentRunsApi } from '@/app/hooks/usePaymentRuns';
 import { addByCurrency, groupAmount, groupConverts, groupCredit, groupLines, groupRate, groupRemainingNet, isClosedPeriod, lineRemaining, planGroupPass, revalidateRun, type CurrencyAmount } from '@/app/lib/runMath';
-import { bankRateNeedsReview, derivedRate, payFromBlockReason, rateGapPct } from '@/app/currency/paymentRules';
+import { bankRateNeedsReview, derivedRate, rateGapPct, runPayFromBlockReason } from '@/app/currency/paymentRules';
 import { useApPermissions, useApSettings } from '@/app/hooks/useApSettings';
 import { MoneyInput } from '@/app/components/payments/MoneyInput';
 import { DateCalendar } from '@/app/components/ui/date-picker';
@@ -397,7 +397,7 @@ export function RunExecuteStage({
         // currency (Currency & Exchange Rates).
         const nextAccount = compatible
           ? g.payFromAccountId
-          : (accountsForCurrency(PAY_FROM_ACCOUNTS, groupCurrency(g)).find((a) => a.type === want)?.id ?? g.payFromAccountId);
+          : (runAccountsForCurrency(PAY_FROM_ACCOUNTS, groupCurrency(g)).find((a) => a.type === want)?.id ?? g.payFromAccountId);
         return clearStaleAutoRef({ ...g, methodType, payFromAccountId: nextAccount });
       }),
     }));
@@ -582,7 +582,7 @@ export function RunExecuteStage({
     if (blockedBank) {
       setConfirmOpen(false);
       toast.error('The bank’s rate needs someone who can change a payment’s rate', {
-        description: `${blockedBank.vendor}: more than ${apSettings.allowedDifferencePct}% from the payment date’s mid-market rate. Check the bank’s figure, or ask someone allowed in Settings, Permissions.`,
+        description: `${blockedBank.vendor}: more than ${apSettings.allowedDifferencePct}% from the payment date’s daily market rate. Check the bank’s figure, or ask someone allowed in Settings, Permissions.`,
       });
       return;
     }
@@ -722,7 +722,7 @@ export function RunExecuteStage({
       // pay (Currency & Exchange Rates, rule 3); the others are listed
       // greyed with the reason (rule 4). The current one always lists.
       render: (g) => {
-        const eligible = accountsForCurrency(PAY_FROM_ACCOUNTS, groupCurrency(g));
+        const eligible = runAccountsForCurrency(PAY_FROM_ACCOUNTS, groupCurrency(g));
         const current = PAY_FROM_ACCOUNTS.find((a) => a.id === g.payFromAccountId);
         const options = current && !eligible.includes(current) ? [current, ...eligible] : eligible;
         const seen = new Set(options.map((a) => a.currency));
@@ -740,7 +740,7 @@ export function RunExecuteStage({
             ))}
             {greyed.map((a) => (
               <option key={a.id} value={a.id} disabled>
-                {a.label} ({a.currency}): {payFromBlockReason(a.currency, groupCurrency(g))}
+                {a.label} ({a.currency}): {runPayFromBlockReason(a.currency, groupCurrency(g))}
               </option>
             ))}
           </select>
@@ -900,10 +900,10 @@ export function RunExecuteStage({
             <span
               className="block text-[10.5px] mt-0.5 tabular-nums"
               style={{ fontWeight: 500, color: blocked ? '#E11D48' : review ? '#B45309' : '#64748B' }}
-              title={`Mid-market on ${run.paymentDate}: ${rateSentence(cur, dayRate)}`}
+              title={`Daily market rate on ${run.paymentDate}: ${rateSentence(cur, dayRate)}`}
             >
               {g.bankAmount == null
-                ? 'Estimated at mid-market'
+                ? 'Estimated at the daily market rate'
                 : rate != null
                   ? `${rateSentence(cur, rate)}${review ? ` · ${Math.abs(rateGapPct(rate, dayRate)).toFixed(2)}% off` : ''}`
                   : ''}

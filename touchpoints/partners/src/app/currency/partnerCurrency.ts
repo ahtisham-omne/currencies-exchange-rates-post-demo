@@ -1,6 +1,7 @@
 import { PARTNER_GROUPS } from "@/app/components/vendors/partnerConstants";
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from "./currencies";
-import { CORPORATE_RATES, DEFAULT_RATE_TYPE, LAST_SYNC, RATE_PROVIDER, rateOn, type RateQuote, type RateType } from "./rates";
+import { formatRateDate } from "./money";
+import { DEFAULT_RATE_TYPE, RATES_READ_ON, corporateCodesOn, corporateRateOn, rateOn, type RateQuote, type RateType } from "./rates";
 
 /* ── A partner's currency (spec 4.2) ──────────────────────────────────
  * A Partner Group carries a default currency, the base currency unless set
@@ -71,13 +72,14 @@ export function exampleDocumentCurrency(partnerCurrency: string | null | undefin
 
 /* ── Default exchange rate (Currency Touchpoints Map, 24 Nov 2026) ─────
  * Beside its currency, a group carries the rate type its partners'
- * documents start from: mid-market or corporate. Mid-market unless set on
- * the group. A partner inherits its primary group's and can override it,
+ * documents start from: the daily market rate or the corporate rate. The
+ * daily market rate unless set on the group. A partner inherits its
+ * primary group's and can override it,
  * stored like the currency: only when it differs from the group's. */
 
 const isRateType = (v: unknown): v is RateType => v === "mid" || v === "corporate";
 
-/** A group's default exchange rate: the one set on it, else mid-market. */
+/** A group's default exchange rate: the one set on it, else the daily market rate. */
 export function groupRateTypeOf(group: GroupLike | null | undefined): RateType {
   const t = group?.template?.rateType;
   return isRateType(t) ? t : DEFAULT_RATE_TYPE;
@@ -148,24 +150,25 @@ export function openDocumentCount(partner: { id?: unknown; totalOrders?: unknown
 /* ── Today's rate ─────────────────────────────────────────────────────
  * A partner's totals (credit limit, spend, balances) are kept in its own
  * currency. Seen beside other partners they are converted to the base
- * currency at today's mid-market rate, which is the provider's last synced
- * rate (the Currency & Exchange Rates module's own figures). */
+ * currency at today's daily market rate, read once a day from the provider
+ * and fixed for that date (the Currency & Exchange Rates module's own
+ * figures). */
 
 const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-/** Today's mid-market rate for a currency: base currency per one unit. */
+/** Today's daily market rate for a currency: base currency per one unit. */
 export const currentRate = (code: string): RateQuote => rateOn(code, todayIso(), "mid");
 
-/** Today's rate of a type; corporate falls back to mid-market where finance has set none. */
+/** Today's rate of a type; corporate falls back to the daily market rate where none is set. */
 export function rateNow(code: string, type: RateType): RateQuote {
   const quote = rateOn(code, todayIso(), type);
   return quote.rate == null && type === "corporate" ? currentRate(code) : quote;
 }
 
-/** An amount in a currency, in base currency at today's mid-market rate. */
+/** An amount in a currency, in base currency at today's daily market rate. */
 export function toBaseNow(amount: number, code: string | null | undefined): number {
   if (!code) return amount;
   return amount * (currentRate(code).rate ?? 1);
@@ -177,26 +180,22 @@ export function convertNow(amount: number, from: string, to: string): number {
   return rate ? toBaseNow(amount, from) / rate : amount;
 }
 
-/* ── The sync stamp, as the module writes it ──────────────────────────── */
+/* ── When today's rates were read (Eli's ruling, 26 Nov 2026) ──────────
+ * A rate is read once a day and fixed for that date, so it carries a day,
+ * never a time: "Read on Nov 27, 2026". */
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const pad2 = (n: number) => String(n).padStart(2, "0");
+/** "Read on Nov 27, 2026": today's daily market rates. */
+export const MID_RATE_UPDATED = `Read on ${formatRateDate(RATES_READ_ON)}`;
 
-/** LAST_SYNC in Pakistan time (UTC+5): "Apr 10, 2026 at 19:30 PKT". */
-const SYNC = (() => {
-  const d = new Date(new Date(LAST_SYNC).getTime() + 5 * 3600 * 1000);
-  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()} at ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} PKT`;
-})();
-
-/** "Updated as of Apr 10, 2026 at 19:30 PKT" */
-export const MID_RATE_UPDATED = `Updated as of ${SYNC}`;
-/** "Synced from Open Exchange Rates · Updated as of …" */
-export const MID_RATE_SYNC_LINE = `Synced from ${RATE_PROVIDER} · ${MID_RATE_UPDATED}`;
-
-/** When the corporate rates in use took effect: "Effective from Apr 1, 2026". */
-export const CORPORATE_RATE_EFFECTIVE = (() => {
-  const latest = CORPORATE_RATES.map((r) => r.effectiveDate).sort().at(-1);
-  if (!latest) return "No corporate rates set";
-  const [y, m, d] = latest.split("-").map(Number);
-  return `Effective from ${MONTHS[m - 1]} ${d}, ${y}`;
+/** The corporate rates in effect today, for the listing's Corporate Rate
+ *  insight, which spans every currency: "6 currencies, last set on Oct 01,
+ *  2026". Each currency has its own history (USD's last change is May 01),
+ *  so the day is the latest of the rates in effect, not one for all. */
+export const CORPORATE_RATES_SET = (() => {
+  const inEffect = corporateCodesOn(RATES_READ_ON)
+    .map((code) => corporateRateOn(code, RATES_READ_ON)?.effectiveDate)
+    .filter((d): d is string => !!d);
+  if (!inEffect.length) return "No corporate rates set";
+  const latest = inEffect.sort().at(-1)!;
+  return `${inEffect.length} ${inEffect.length === 1 ? "currency" : "currencies"}, last set on ${formatRateDate(latest)}`;
 })();

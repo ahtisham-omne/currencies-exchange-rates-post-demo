@@ -27,7 +27,7 @@ export function RevertRateBox({ so, version, total }: {
   if (!so) return null;
   const locked = versionRateFields(so, version);
   if (isBaseCurrency(locked.currency)) return null;
-  // Today's rate of the version's own type (mid-market when no corporate rate is set).
+  // Today's rate of the version's own type (the daily market rate when no corporate rate is set).
   const today = currentRateFor({ ...so, ...locked });
 
   return (

@@ -126,6 +126,7 @@ import {
 } from '../../data/uomSets';
 import { useDocCurrency, useDocMoney, useDocView } from '@/app/components/currency/docCurrencyContext';
 import { DocMoney } from '@/app/components/currency/DocCurrency';
+import { TotalConvertHover } from '@/app/components/currency/LineItemsCurrency';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { localTodayIso } from '@/app/currency/qFx';
 import { restateDesign } from '@/app/currency/quoteMoney';
@@ -323,8 +324,8 @@ const generateItemId = (itemId: string): string => {
 export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
   /* The quote will be in the customer's currency (CreateQuoteModal provides
      it): catalog list prices, written in USD, are added in it at today's
-     mid-market rate, the rate the new quote takes. They are shown in the
-     base currency, as Quotes shows amounts, the customer's on hover. */
+     daily market rate, the rate the new quote takes. They are shown in the
+     customer's currency (D1, 27 Nov 2026), as the quote page opens. */
   const formatCurrency = useDocMoney();
   const formatCurrencyImmediate = formatCurrency;
   const { currency: draftCurrency } = useDocCurrency();
@@ -1590,11 +1591,19 @@ export function Step3LineItems({ quoteDraft, onUpdate }: Step3LineItemsProps) {
               <span className="text-[12px] text-muted-foreground">
                 Subtotal
               </span>
-              <span className="text-[20px] text-primary" style={{ fontWeight: 600 }}>
-                <DocMoney value={subtotal}>{formatCurrency(subtotal)}</DocMoney>
+              {/* In the customer's currency (D1, 27 Nov 2026), with the
+                  quote page's convert icon: the subtotal in base at today's
+                  rate, an estimate (Mahreen, 27 Nov 2026, SO-2). The card
+                  sits over the create modal. */}
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-[20px] text-primary tabular-nums" style={{ fontWeight: 600 }}>
+                  {formatCurrency(subtotal)}
+                </span>
+                <TotalConvertHover total={subtotal} contentClassName="z-[12500]" />
               </span>
             </div>
-            {/* Shown in base until the quote exists; it takes the rate on its quote date. */}
+            {/* Base view only (the create flow opens in the customer's
+                currency since 27 Nov 2026); it takes the rate on its quote date. */}
             {inBase && (
               <div className="mt-1 text-right text-[11px] text-muted-foreground">
                 In {BASE_CURRENCY}, base currency · {draftCurrency} converted at today's rate

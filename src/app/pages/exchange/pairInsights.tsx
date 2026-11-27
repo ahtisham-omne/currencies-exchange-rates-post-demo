@@ -20,10 +20,10 @@ import { rateTick, thin, tickLabelFor, type PairPoint } from './pairData'
 
 /** The KPI catalogue. Descriptions say "this currency" and "your base currency", never the codes. */
 export const pairKpis = (code: string, isStd = false): DetailKpiDef[] => [
-  { key: 'current_mid', label: 'Current Mid-Market Rate', category: 'Rates', description: 'Current mid-market rate for 1 unit of this currency in your base currency.' },
+  { key: 'current_mid', label: 'Current Daily Market Rate', category: 'Rates', description: 'Current daily market rate for 1 unit of this currency in your base currency.' },
   { key: 'current_std', label: 'Current Corporate Rate', category: 'Rates', description: 'The corporate rate set by your company for 1 unit of this currency in your base currency.' },
-  { key: 'range_change', label: 'Mid-Market Change', category: 'Performance', description: 'How much the mid-market rate moved over the selected period.' },
-  { key: 'range_volatility', label: 'Mid-Market Volatility', category: 'Analytics', description: 'Average daily movement of the mid-market rate over the selected period.' },
+  { key: 'range_change', label: 'Daily Market Rate Change', category: 'Performance', description: 'How much the daily market rate moved over the selected period.' },
+  { key: 'range_volatility', label: 'Daily Market Rate Volatility', category: 'Analytics', description: 'Average daily movement of the daily market rate over the selected period.' },
   { key: 'variance', label: 'Corporate Variance', category: 'Rates', description: RATE_TOOLTIPS.variance },
   { key: 'days_since_update', label: 'Days Since Rate Updated', category: 'Operational', description: 'Days since the corporate rate was last updated.' },
   // Keyed fx_exposure_30d still, so layouts readers saved keep the tile.
@@ -42,14 +42,14 @@ export function pairWidgets(isStd: boolean, code: string): DetailWidgetDef[] {
       key: 'rate_over_time', category: 'Charts', icon: TrendingUp, previewType: 'line',
       label: isStd ? 'Corporate Rate over Time' : 'Rate over Time',
       description: isStd
-        ? 'Daily mid-market rate over the selected period, shown with the corporate rate.'
-        : 'Daily mid-market rate over the selected period, shown with the corporate rate when one is set.',
+        ? 'The daily market rate over the selected period, shown with the corporate rate.'
+        : 'The daily market rate over the selected period, shown with the corporate rate when one is set.',
     },
     {
       key: 'conversion_trend', category: 'Charts', icon: Banknote, previewType: 'area',
       label: isStd ? 'Corporate Conversion Trend' : 'Conversion Trend',
       description: isStd
-        ? 'What the entered amount in this currency was worth in your base currency each day, at the mid-market and corporate rates.'
+        ? 'What the entered amount in this currency was worth in your base currency each day, at the daily market and corporate rates.'
         : 'What the entered amount in this currency was worth in your base currency each day.',
     },
   ]
@@ -80,8 +80,8 @@ export interface BodyProps {
 function RateLegend() {
   return (
     <div className="flex items-center justify-end gap-3 mt-2">
-      <ChartLegendDot color={MID_C} label="Mid-Market" />
-      <ChartLegendDot color={CORP_C} label="Corporate" />
+      <ChartLegendDot color={MID_C} label="Daily Market Rate" />
+      <ChartLegendDot color={CORP_C} label="Corporate Rate" />
     </div>
   )
 }
@@ -153,8 +153,8 @@ export function RateOverTimeBody({ code, points, label, isStd, corporate, lastDa
               const gap = p.corp != null ? p.corp - p.mid : null
               return (
                 <ChartTooltipCard title={fmtDate(p.date)} rows={[
-                  { label: 'Mid-Market', value: `${fmtRate(p.mid)} ${BASE}` },
-                  { label: 'Corporate', value: p.corp != null ? `${fmtRate(p.corp)} ${BASE}` : 'Not Set' },
+                  { label: 'Daily Market Rate', value: `${fmtRate(p.mid)} ${BASE}` },
+                  { label: 'Corporate Rate', value: p.corp != null ? `${fmtRate(p.corp)} ${BASE}` : 'Not Set' },
                   ...(gap != null ? [{ label: 'Gap', value: signedRate(gap) }] : []),
                   ...setDates.filter(m => m.x === p.date).map(m => ({ label: 'Rate Set', value: fmtDate(m.date) })),
                 ]} />
@@ -165,8 +165,8 @@ export function RateOverTimeBody({ code, points, label, isStd, corporate, lastDa
               <ReferenceLine key={m.x} x={m.x} stroke={CORP_C} strokeDasharray="3 3" strokeOpacity={0.9}
                 label={{ value: `Rate set ${fmtDate(m.date).replace(/, \d{4}$/, '')}`, position: data.findIndex(p => p.date === m.x) > data.length / 2 ? 'insideTopRight' : 'insideTopLeft', fill: '#B45309', fontSize: 10, fontWeight: 600 }} />
             ))}
-            <Line type="monotone" dataKey="mid" name="Mid-Market" stroke={MID_C} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-            {hasCorp && <Line type="stepAfter" dataKey="corp" name="Corporate" stroke={CORP_C} strokeWidth={2} strokeDasharray="4 4" dot={false} activeDot={{ r: 4 }} connectNulls={false} />}
+            <Line type="monotone" dataKey="mid" name="Daily Market Rate" stroke={MID_C} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+            {hasCorp && <Line type="stepAfter" dataKey="corp" name="Corporate Rate" stroke={CORP_C} strokeWidth={2} strokeDasharray="4 4" dot={false} activeDot={{ r: 4 }} connectNulls={false} />}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -212,7 +212,7 @@ export function ConversionTrendBody({ code, points, label, isStd }: BodyProps) {
             <XAxis dataKey="date" {...AXIS_PROPS} tickFormatter={axis.tickFormatter} interval={axis.interval} />
             <YAxis {...AXIS_PROPS} width={56} domain={['auto', 'auto']} tickFormatter={(v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}K` : v.toFixed(0))} />
             <RTooltip contentStyle={CM_TT_STYLE} labelFormatter={(l: string) => fmtDate(l)}
-              formatter={(v: number, name: string) => [money(v), name === 'corp' ? 'At Corporate Rate' : 'At Mid-Market Rate']} />
+              formatter={(v: number, name: string) => [money(v), name === 'corp' ? 'At Corporate Rate' : 'At Daily Market Rate']} />
             <Area type="monotone" dataKey="mid" stroke={MID_C} strokeWidth={2} fill={`url(#${id})`} dot={false} activeDot={{ r: 4 }} />
             {showCorp && <Area type="stepAfter" dataKey="corp" stroke={CORP_C} strokeWidth={2} strokeDasharray="4 4" fill="none" dot={false} activeDot={{ r: 4 }} connectNulls={false} />}
           </AreaChart>

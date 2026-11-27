@@ -5,7 +5,7 @@ import {
   type ItemReviewRow,
   type MapperLookups,
 } from "@/app/import-export/mappers";
-import type { RegionalPrice } from "@/app/currency/regionalPrices";
+import type { OtherCurrencyPricing, RegionalPrice } from "@/app/currency/regionalPrices";
 
 /* ─── Item type (matches INITIAL_ITEMS shape from legacy App.tsx) ─── */
 export interface Item {
@@ -76,8 +76,13 @@ export interface Item {
   sellingScope?: "all" | "specific";
   specificPartners?: string[];
   pricing?: { id: string; price: string; uom: string }[];
-  /** Optional unit (selling) price per market currency, next to the base
-   *  price; one per currency, never the base currency (25 Nov 2026). */
+  /** How other currencies are priced (Spec D, 27 Nov 2026): convert the base
+   *  price at the order's rate, or a price per currency (+ partner group).
+   *  Missing: "perCurrency" when the item has prices, else "convert". */
+  otherCurrencyPricing?: OtherCurrencyPricing;
+  /** Optional unit (selling) price per currency, next to the base price; one
+   *  per currency + customer partner group, never the base currency. Orders
+   *  ignore them in "convert" mode (25 and 27 Nov 2026). */
   regionalPrices?: RegionalPrice[];
   owners?: { materialHandling: string[]; purchasing: string | null; finance: string | null };
   cycleTolerance?: number;
@@ -157,9 +162,10 @@ export const INITIAL_ITEMS: Item[] = [
     createdBy: "Maya Patel",
     createdAt: "2025-01-05T14:32:00.000Z",
     tags: ["Stainless", "Industrial Grade", "ISO Certified", "Special Order", "Heavy Use"],
-    // Regional prices demo (25 Nov 2026).
+    // Prices in other currencies (Spec D, 27 Nov 2026).
     pricing: [{ id: "1", price: "23500.00", uom: "Each" }],
-    regionalPrices: [{ currency: "USD", unitPrice: 84.5 }],
+    otherCurrencyPricing: "perCurrency",
+    regionalPrices: [{ currency: "USD", unitPrice: 84.5, partnerGroup: "North America" }],
   },
   {
     id: "3",
@@ -363,9 +369,10 @@ export const INITIAL_ITEMS: Item[] = [
     lotControl: false,
     createdBy: "Ahtisham Ahmad",
     createdAt: "2024-10-07T10:02:00.000Z",
-    // Regional prices demo (25 Nov 2026).
+    // Prices in other currencies (Spec D, 27 Nov 2026): USD for any group.
     pricing: [{ id: "1", price: "175000.00", uom: "Each" }],
-    regionalPrices: [{ currency: "USD", unitPrice: 629 }],
+    otherCurrencyPricing: "perCurrency",
+    regionalPrices: [{ currency: "USD", unitPrice: 629, partnerGroup: null }],
   },
   {
     id: "10",
@@ -477,11 +484,13 @@ export const INITIAL_ITEMS: Item[] = [
     lotControl: true,
     createdBy: "Liam Chen",
     createdAt: "2024-09-30T08:22:00.000Z",
-    // Regional prices demo (25 Nov 2026): priced per market (duties, VAT, import fees).
+    // Prices in other currencies (Spec D, 27 Nov 2026): priced per market
+    // (duties, VAT, import fees).
     pricing: [{ id: "1", price: "335000.00", uom: "Each" }],
+    otherCurrencyPricing: "perCurrency",
     regionalPrices: [
-      { currency: "USD", unitPrice: 1199 },
-      { currency: "EUR", unitPrice: 1509 },
+      { currency: "USD", unitPrice: 1199, partnerGroup: "North America" },
+      { currency: "EUR", unitPrice: 1509, partnerGroup: "Europe" },
     ],
   },
   {
@@ -593,11 +602,12 @@ export const INITIAL_ITEMS: Item[] = [
     lotControl: true,
     createdBy: "Michael Reed",
     createdAt: "2025-02-03T09:15:00.000Z",
-    // Regional prices demo (25 Nov 2026).
+    // Prices in other currencies (Spec D, 27 Nov 2026).
     pricing: [{ id: "1", price: "136500.00", uom: "Each" }],
+    otherCurrencyPricing: "perCurrency",
     regionalPrices: [
-      { currency: "USD", unitPrice: 489 },
-      { currency: "AED", unitPrice: 1950 },
+      { currency: "USD", unitPrice: 489, partnerGroup: "North America" },
+      { currency: "AED", unitPrice: 1950, partnerGroup: "GCC States" },
     ],
   },
   {

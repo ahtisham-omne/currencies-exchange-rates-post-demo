@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Globe } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { isBaseCurrency } from "@/app/currency/currencies";
 import { CurrencyFlag, currencyChipLabel } from "./CurrencyChip";
@@ -13,7 +14,10 @@ import { CurrencyFlag, currencyChipLabel } from "./CurrencyChip";
  *  2. Amber chip: amber-50 / amber-700 / amber-200, the FX hint colours, so it
  *     also reads as "foreign".
  *  3. Strong: flag + code in primary at weight 600 (no chip), and the vendor's
- *     group gets a thin primary left accent and a tinted header row. */
+ *     group gets a thin primary left accent and a tinted header row.
+ * The blue chip (1) is the default (D8, 27 Nov 2026); ?ccyAccent stays until
+ * Monday's review. The PO page's "Prices in EUR" chip (PricesInChip) takes
+ * the same treatment. */
 
 export type CcyAccent = 1 | 2 | 3;
 
@@ -48,6 +52,27 @@ export function VendorCurrencyTag({ code, party = "Vendor" }: { code: string | n
         </span>
       </TooltipTrigger>
       <TooltipContent side="top">{currencyChipLabel(upper, party)}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** "🌐 Prices in EUR" after a PO's Line Items title (Mahreen, 27 Nov 2026,
+ *  PO-1): names the currency the PO's prices are kept in, the vendor's unless
+ *  changed on the PO, whichever currency the page shows them in. Same
+ *  treatment as the vendor's tag (CCY_ACCENT, the brand tint by default).
+ *  Nothing on a PO in the base currency. */
+export function PricesInChip({ code }: { code: string | null | undefined }) {
+  if (!code || isBaseCurrency(code)) return null;
+  const upper = code.toUpperCase();
+  return (
+    <Tooltip delayDuration={250}>
+      <TooltipTrigger asChild>
+        <span className={ACCENT_CLASS[CCY_ACCENT]} style={{ fontWeight: CCY_ACCENT === 3 ? 600 : 500 }}>
+          <Globe className="w-2.5 h-2.5 shrink-0" />
+          Prices in {upper}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top">{currencyChipLabel(upper, "PO")}</TooltipContent>
     </Tooltip>
   );
 }

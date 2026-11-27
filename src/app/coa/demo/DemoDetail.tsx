@@ -43,15 +43,15 @@ const TABS = ['dashboard', 'linked', 'notes', 'attachments', 'communications', '
 type Tab = typeof TABS[number]
 
 const KPIS: DetailKpiDef[] = [
-  { key: 'mid', label: 'Mid-market rate', description: 'One unit in the base currency at the provider\'s mid-market rate.', category: 'Rates' },
+  { key: 'mid', label: 'Daily market rate', description: 'One unit in the base currency at the provider\'s daily market rate.', category: 'Rates' },
   { key: 'corporate', label: 'Corporate rate', description: 'The rate your company set for this currency.', category: 'Rates' },
-  { key: 'change', label: 'Change', description: 'Movement of the mid-market rate over the last day.', category: 'Rates' },
+  { key: 'change', label: 'Change', description: 'Movement of the daily market rate since the previous day.', category: 'Rates' },
   { key: 'open', label: 'Open documents', description: 'Documents in this currency that are still open.', category: 'Usage' },
   { key: 'value', label: 'Total linked value', description: 'The sum of every open document in this currency.', category: 'Usage' },
   { key: 'last', label: 'Last transaction', description: 'The most recent document in this currency.', category: 'Usage' },
 ]
 const WIDGETS: DetailWidgetDef[] = [
-  { key: 'trend', label: 'Rate trend', description: 'The mid-market rate against the base currency over time.', category: 'Charts', icon: TrendingUp, iconBg: '#ECFDF5', iconColor: '#059669', previewType: 'area' },
+  { key: 'trend', label: 'Rate trend', description: 'The daily market rate against the base currency over time.', category: 'Charts', icon: TrendingUp, iconBg: '#ECFDF5', iconColor: '#059669', previewType: 'area' },
   { key: 'docs', label: 'Linked documents by type', description: 'Open documents in this currency, by document type.', category: 'Charts', icon: BarChart3, previewType: 'bar' },
 ]
 
@@ -259,7 +259,7 @@ function DashboardTab({ c, rate, change, corporate, docs }: {
           </DashInfoCard>
           <DashInfoCard title="Exchange rate" icon={ArrowLeftRight}>
             <InfoGrid>
-              <div className="min-w-0"><DashInfoLabel>Mid-market rate</DashInfoLabel><InfoValue strong className="tabular-nums">{rate.toFixed(4)}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel>Daily market rate</DashInfoLabel><InfoValue strong className="tabular-nums">{rate.toFixed(4)}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel align="right">Inverse rate</DashInfoLabel><InfoValue className="tabular-nums">{(1 / rate).toFixed(6)}</InfoValue></div>
               <div className="min-w-0"><DashInfoLabel>Corporate rate</DashInfoLabel>{corporate ? <InfoValue className="tabular-nums">{corporate.toFixed(4)}</InfoValue> : <InfoValue empty>Not set</InfoValue>}</div>
               <div className="min-w-0"><DashInfoLabel align="right">Source</DashInfoLabel><InfoValue><SourceLink className="text-primary" /></InfoValue></div>
@@ -277,7 +277,7 @@ function TrendBody({ series, code }: { series: { date: string; rate: number }[];
   const [r, setR] = useState<RangeValue>({ kind: 'preset', key: '30' })
   const opts = [{ key: '7', label: '7d' }, { key: '14', label: '14d' }, { key: '30', label: '30d' }, { key: '90', label: '90d' }]
   const data = r.kind === 'preset' ? series.slice(-Number(r.key)) : series.filter(p => p.date >= r.from && p.date <= r.to)
-  if (data.length < 2) return <ChartEmpty icon={TrendingUp} title="No rate history" description="Synced rates will chart here once there are two or more." />
+  if (data.length < 2) return <ChartEmpty icon={TrendingUp} title="No rate history" description="Daily rates will chart here once there are two or more." />
   const first = data[0].rate, lastV = data[data.length - 1].rate
   const id = `kitTrend-${code}`
   return (
@@ -290,7 +290,7 @@ function TrendBody({ series, code }: { series: { date: string; rate: number }[];
             <CartesianGrid {...GRID_PROPS} />
             <XAxis dataKey="date" tickFormatter={isoLabel} {...AXIS_PROPS} interval={tickInterval(data.length)} />
             <YAxis tickFormatter={(v: number) => v.toFixed(2)} {...AXIS_PROPS} width={50} domain={['auto', 'auto']} />
-            <RTooltip contentStyle={CM_TT_STYLE} labelFormatter={(l: string) => isoLabel(l)} formatter={(v: number) => [v.toFixed(4), 'Mid-market']} />
+            <RTooltip contentStyle={CM_TT_STYLE} labelFormatter={(l: string) => isoLabel(l)} formatter={(v: number) => [v.toFixed(4), 'Daily market rate']} />
             <Area type="monotone" dataKey="rate" stroke="#059669" strokeWidth={2} fill={`url(#${id})`} dot={false} activeDot={{ r: 4 }} />
           </AreaChart>
         </ResponsiveContainer>
@@ -419,7 +419,7 @@ function RateFormModal({ open, onClose, code, name, mid }: { open: boolean; onCl
         <SectionCard icon={<TrendingUp size={16} />} title="Rate">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             <Input label="Corporate exchange rate" required type="number" step="0.0001" placeholder="e.g. 279.0000" value={rate} onChange={e => setRate(e.target.value)}
-              hint={variance == null ? `Mid-market reference: ${mid.toFixed(4)}` : `Variance from mid-market: ${variance >= 0 ? '+' : ''}${variance.toFixed(2)}%`} />
+              hint={variance == null ? `Daily market rate: ${mid.toFixed(4)}` : `Variance from the daily market rate: ${variance >= 0 ? '+' : ''}${variance.toFixed(2)}%`} />
             <div className="space-y-1.5">
               <label className="label flex items-center gap-1">Effective date<RequiredMark show /></label>
               <DateField value={date} onChange={setDate} ariaLabel="Effective date" />

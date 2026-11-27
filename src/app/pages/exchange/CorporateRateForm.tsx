@@ -1,7 +1,7 @@
 // Exchange Rates screens: the one Add / Update corporate rate form, used by the
 // Exchange Rate Library and by the pair page. CoA FormModal + SectionCard field
 // layout (spec-detail §6.2) over the currency app's rules: duplicate detection
-// with "Update existing rate", the mid-market reference, live variance,
+// with "Update existing rate", the daily market rate for reference, live variance,
 // backdating block / warn, notes (no length limit) and validation. A date after
 // today saves the rate as Upcoming: the current rate stays in effect until then.
 import { useMemo, useState } from 'react'
@@ -17,7 +17,7 @@ import { FlagImage } from '../../coa/components/FlagImage'
 import { pushToast } from '../../coa/lib/toast'
 import { fmtDate, todayIso } from '../../coa/lib/utils'
 import {
-  ACTOR, BASE, BASE_NAME, LAST_SYNC_AT, checkBackdate, flagOf, fmtPairRate, fmtRate, fmtSignedPct, fmtVariance, variancePct,
+  ACTOR, BASE, BASE_NAME, checkBackdate, flagOf, fmtPairRate, fmtRate, fmtSignedPct, fmtVariance, variancePct,
 } from './rateModel'
 
 export type CorporateFormRequest = { mode: 'add'; code?: string } | { mode: 'update'; rateId: string }
@@ -241,13 +241,14 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
               <SectionCard icon={<TrendingUp size={16} />} title="Rate">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                   <div>
-                    <LockedField label="Mid-Market Reference" info={CONVERTER_TOGGLE_TOOLTIPS.midMarket} why={`Synced from ${API_PROVIDER}. It can’t be edited here.`}>
+                    <LockedField label="Daily Market Rate" info={CONVERTER_TOGGLE_TOOLTIPS.midMarket} why={`Read once a day from ${API_PROVIDER}. It can’t be edited here.`}>
                       {mid
                         ? <span className="tabular-nums truncate">{fmtPairRate(code, mid.rate)}</span>
-                        : <span className="text-fg-subtle truncate">Choose a currency to see its mid-market rate</span>}
+                        : <span className="text-fg-subtle truncate">Choose a currency to see its daily market rate</span>}
                     </LockedField>
-                    {/* When the figure was taken, to the minute, under the field like a hint. */}
-                    {mid && <p className="mt-1.5 text-2xs text-fg-subtle">Last synced {LAST_SYNC_AT} from <SourceLink className="text-primary" /></p>}
+                    {/* The day the figure was read, under the field like a hint: a date,
+                        no time (Eli's ruling, 26 Nov 2026). */}
+                    {mid && <p className="mt-1.5 text-2xs text-fg-subtle">Read on {fmtDate(mid.effectiveDate)} from <SourceLink className="text-primary" /></p>}
                   </div>
                   <Input
                     label="Corporate Exchange Rate"
@@ -264,8 +265,8 @@ function CorporateRateFormModal({ request, onClose, onSaved }: {
                     onBlur={() => { if (rateValid) setRate(fmtRate(n)) }}
                     error={errorOf('rate')}
                     hint={variance != null
-                      // Green above mid-market, red below, grey when level.
-                      ? <>Variance from mid-market: <span className={variance > 0 ? 'text-success-700' : variance < 0 ? 'text-danger-700' : undefined} style={{ fontWeight: 600 }}>{fmtVariance(n, mid!.rate) ?? fmtSignedPct(variance)}</span></>
+                      // Green above the daily market rate, red below, grey when level.
+                      ? <>Variance from the daily market rate: <span className={variance > 0 ? 'text-success-700' : variance < 0 ? 'text-danger-700' : undefined} style={{ fontWeight: 600 }}>{fmtVariance(n, mid!.rate) ?? fmtSignedPct(variance)}</span></>
                       : code ? '1 unit of this currency in your base currency' : undefined}
                   />
                   <div className="space-y-1.5">

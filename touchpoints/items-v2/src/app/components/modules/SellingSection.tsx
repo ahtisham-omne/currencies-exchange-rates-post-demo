@@ -10,16 +10,18 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Users, Store, Banknote,
+  Plus, Trash2, Users, Store, Banknote, Info,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { RadioOption } from './configAtoms';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { basePrefix } from '@/app/currency/itemMoney';
-import { currencyDecimals, formatMoney, moneyPrefix, rateSentence } from '@/app/currency/money';
+import { currencyDecimals, formatMoney, formatRateDate, moneyPrefix, rateSentence } from '@/app/currency/money';
 import {
-  nextRegionalCurrency, regionalBaseEquivalent, regionalPriceInvalid, regionalRateToday,
-  type RegionalPriceDraft,
+  ALL_GROUPS_LABEL, CUSTOMER_PARTNER_GROUPS, RATES_READ_ON,
+  nextRegionalCurrency, regionalBaseEquivalent, regionalPriceInvalid, regionalPriceKey, regionalRateToday,
+  takenCurrencies, takenGroups,
+  type OtherCurrencyPricing, type RegionalPriceDraft,
 } from '@/app/currency/regionalPrices';
 import { CurrencyPicker } from '../currency/CurrencyPicker';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -176,16 +178,28 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
               </div>
             )}
             {/* The selling price is the base price (Currency Touchpoints Map,
-                Items 4). A price per currency is Eli's to decide. */}
-            <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748B', fontFamily: FONT }}>
-              Base price, in {BASE_CURRENCY}.
-            </p>
+                Items 4). */}
+            <div className="flex flex-col gap-1">
+              <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748B', fontFamily: FONT }}>
+                Base price, in {BASE_CURRENCY}.
+              </p>
+              {/* The item has no rate setting: the customer and the order pick
+                  the rate (Mahreen, 27 Nov 2026, agreed in review). */}
+              <p className="flex items-start gap-1.5" style={{ fontSize: 12, lineHeight: 1.5, color: '#64748B', fontFamily: FONT }}>
+                <Info className="shrink-0" style={{ width: 13, height: 13, color: '#94A3B8', marginTop: 2.5 }} aria-hidden />
+                The exchange rate comes from the customer and the order, not the item.
+              </p>
+            </div>
 
-            {/* Regional prices (Nophil review item 1, 25 Nov 2026): optional
-                prices per market currency, below the base price. */}
-            <RegionalPrices
+            {/* Other currencies (Mahreen, 27 Nov 2026; waiting on Eli, built as
+                the proposal for Monday): convert the base price, or set a
+                price per currency and partner group. Replaces last round's
+                Regional prices. */}
+            <OtherCurrencies
+              mode={config.otherCurrencyPricing ?? 'convert'}
+              onModeChange={(next) => onConfigChange('otherCurrencyPricing', next as any)}
               rows={config.regionalPrices || []}
-              onChange={(next) => onConfigChange('regionalPrices', next as any)}
+              onRowsChange={(next) => onConfigChange('regionalPrices', next as any)}
             />
           </div>
         </ConfigCard>
@@ -202,114 +216,205 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
   );
 }
 
-/* ── RegionalPrices — the item's optional unit price per market currency
-   (25 Nov 2026). Rows: currency (flag + code; not the base currency or one
-   already used), the price in that currency, its base equivalent at today's
-   mid-market rate, remove. The price must be above 0. ── */
-function RegionalPrices({ rows, onChange }: { rows: RegionalPriceDraft[]; onChange: (next: RegionalPriceDraft[]) => void }) {
-  // A row left blank shows its error once the field has been left.
+/* ── OtherCurrencies — how the item sells in currencies other than the base
+   (Mahreen, 27 Nov 2026; Spec D). Two RadioOptions, as Selling Scope uses:
+   convert the base price at that day's rate, or set a price for each
+   currency. The second shows a table: Currency | Partner group | Price per
+   unit | In base today, one row per currency + group (never the base
+   currency), then "Add a price". Switching back to Convert keeps the rows
+   but hides them, so switching again restores them; orders ignore them while
+   the item converts. A price must be above 0. ── */
+const PRICE_GRID = 'grid grid-cols-[112px_minmax(0,1fr)_minmax(0,1fr)_120px_32px] gap-2 items-center';
+const HEAD_CELL = 'text-[10px] text-slate-400 uppercase tracking-wider';
+const ALL_GROUPS = '__all';
+
+function OtherCurrencies({
+  mode,
+  onModeChange,
+  rows,
+  onRowsChange,
+}: {
+  mode: OtherCurrencyPricing;
+  onModeChange: (next: OtherCurrencyPricing) => void;
+  rows: RegionalPriceDraft[];
+  onRowsChange: (next: RegionalPriceDraft[]) => void;
+}) {
+  // A row left blank shows its error once the field has been left; keyed by
+  // currency + group, as the rows are.
   const [touched, setTouched] = useState<Set<string>>(new Set());
-  const used = rows.map((r) => r.currency);
-  const next = nextRegionalCurrency(used);
+  const nextCurrency = nextRegionalCurrency(rows);
 
   const add = () => {
-    if (next) onChange([...rows, { currency: next, unitPrice: '' }]);
+    if (nextCurrency) onRowsChange([...rows, { currency: nextCurrency, unitPrice: '', partnerGroup: null }]);
   };
-  const update = (idx: number, patch: Partial<RegionalPriceDraft>) =>
-    onChange(rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
-  const remove = (idx: number) => onChange(rows.filter((_, i) => i !== idx));
+  const update = (idx: number, patch: Partial<RegionalPriceDraft>) => {
+    const row = { ...rows[idx], ...patch };
+    const before = regionalPriceKey(rows[idx]);
+    const after = regionalPriceKey(row);
+    if (before !== after && touched.has(before)) {
+      setTouched((prev) => {
+        const next = new Set(prev);
+        next.delete(before);
+        next.add(after);
+        return next;
+      });
+    }
+    onRowsChange(rows.map((r, i) => (i === idx ? row : r)));
+  };
+  const remove = (idx: number) => {
+    const key = regionalPriceKey(rows[idx]);
+    setTouched((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    onRowsChange(rows.filter((_, i) => i !== idx));
+  };
 
   return (
     <div className="flex flex-col gap-3" style={{ borderTop: '1px solid #EEF2F6', paddingTop: 14, marginTop: 2 }}>
-      <div className="flex flex-col gap-1">
-        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.8px', textTransform: 'uppercase', color: '#9CA3AF', fontFamily: FONT }}>Regional prices</span>
-        <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748B', fontFamily: FONT }}>
-          Set a price for a market's currency. Without one, orders convert the base price at the day's rate.
-        </p>
+      <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.8px', textTransform: 'uppercase', color: '#9CA3AF', fontFamily: FONT }}>Other currencies</span>
+
+      <div className="flex flex-col gap-3">
+        <RadioOption
+          selected={mode === 'convert'}
+          onSelect={() => onModeChange('convert')}
+          label="Convert from the base price"
+          desc="Uses that day's rate. Orders mark it as an estimate."
+        />
+        <RadioOption
+          selected={mode === 'perCurrency'}
+          onSelect={() => onModeChange('perCurrency')}
+          label="Set a price for each currency"
+          desc="Currencies without a price still convert."
+        />
       </div>
 
-      {rows.length > 0 && (
+      {mode === 'perCurrency' && (
         <div className="flex flex-col gap-2">
-          {rows.map((row, idx) => {
-            const amount = Number(row.unitPrice);
-            const invalid = regionalPriceInvalid(row);
-            const showError = invalid && (row.unitPrice !== '' || touched.has(row.currency));
-            const base = !invalid ? regionalBaseEquivalent(row.currency, amount) : null;
-            const rate = regionalRateToday(row.currency);
-            const decimals = currencyDecimals(row.currency);
-            return (
-              <div key={row.currency} className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <div className="shrink-0" style={{ width: 120 }}>
-                    <CurrencyPicker
-                      value={row.currency}
-                      onPick={(code) => update(idx, { currency: code })}
-                      exclude={[BASE_CURRENCY, ...used]}
-                      ariaLabel="Market currency"
-                    />
-                  </div>
-                  <div
-                    className={`flex items-center flex-1 min-w-0 bg-white border rounded-lg px-3 ${showError ? 'border-[#FCA5A5]' : 'border-border'}`}
-                    style={{ height: 40 }}
-                  >
-                    <span style={{ fontSize: 13, color: '#94A3B8', fontFamily: FONT, marginRight: 6 }}>{moneyPrefix(row.currency).trim()}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step={decimals ? (1 / 10 ** decimals).toString() : '1'}
-                      value={row.unitPrice}
-                      onChange={(e) => update(idx, { unitPrice: e.target.value })}
-                      onBlur={() => setTouched((prev) => new Set(prev).add(row.currency))}
-                      className="flex-1 min-w-0 bg-transparent outline-none"
-                      style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", color: '#0F172A' }}
-                      placeholder={decimals ? (0).toFixed(decimals) : '0'}
-                      aria-label={`Price in ${row.currency}`}
-                      aria-invalid={showError}
-                    />
-                    {base != null && rate != null && (
-                      <Tooltip delayDuration={250}>
-                        <TooltipTrigger asChild>
-                          <span className="shrink-0 tabular-nums cursor-default" style={{ fontSize: 11, color: '#94A3B8', fontFamily: FONT, marginLeft: 6 }}>
-                            ≈ {formatMoney(base, BASE_CURRENCY)} {BASE_CURRENCY}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          At today's mid-market rate, {rateSentence(row.currency, rate)}
-                        </TooltipContent>
-                      </Tooltip>
+          <div className="rounded-lg overflow-hidden" style={{ border: '1px solid #EEF2F6' }}>
+            <div className={`${PRICE_GRID} px-3 h-8`} style={{ backgroundColor: '#FAFBFC', borderBottom: '1px solid #EEF2F6' }}>
+              <span className={HEAD_CELL} style={{ fontWeight: 600 }}>Currency</span>
+              <span className={HEAD_CELL} style={{ fontWeight: 600 }}>Partner group</span>
+              <span className={HEAD_CELL} style={{ fontWeight: 600 }}>Price per unit</span>
+              <span className={`${HEAD_CELL} text-right`} style={{ fontWeight: 600 }}>In base today</span>
+              <span aria-hidden />
+            </div>
+
+            {rows.length === 0 ? (
+              <p className="px-3 py-3" style={{ fontSize: 12, color: '#94A3B8', fontFamily: FONT }}>
+                No prices yet. Every currency converts from the base price.
+              </p>
+            ) : (
+              rows.map((row, idx) => {
+                const key = regionalPriceKey(row);
+                const amount = Number(row.unitPrice);
+                const invalid = regionalPriceInvalid(row);
+                const showError = invalid && (row.unitPrice !== '' || touched.has(key));
+                const base = !invalid ? regionalBaseEquivalent(row.currency, amount) : null;
+                const rate = regionalRateToday(row.currency);
+                const decimals = currencyDecimals(row.currency);
+                const groupsTaken = takenGroups(rows, idx);
+                const groupLabel = row.partnerGroup ?? ALL_GROUPS_LABEL;
+                return (
+                  <div key={key} className="px-3 py-2 flex flex-col gap-1" style={{ borderTop: idx === 0 ? undefined : '1px solid #F1F5F9' }}>
+                    <div className={PRICE_GRID}>
+                      <CurrencyPicker
+                        value={row.currency}
+                        onPick={(code) => update(idx, { currency: code })}
+                        exclude={takenCurrencies(rows, idx)}
+                        ariaLabel={`Currency, ${groupLabel}`}
+                      />
+                      <Select
+                        value={row.partnerGroup ?? ALL_GROUPS}
+                        onValueChange={(v) => update(idx, { partnerGroup: v === ALL_GROUPS ? null : v })}
+                      >
+                        <SelectTrigger
+                          aria-label={`Partner group for the ${row.currency} price`}
+                          className="!h-10 rounded-lg text-[13px] bg-white border-border hover:border-slate-300 transition-colors focus:border-primary focus:ring-1 focus:ring-primary/20 [&>svg]:text-slate-400"
+                          style={{ fontFamily: FONT, color: '#0F172A' }}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="z-[250] rounded-lg">
+                          <SelectItem value={ALL_GROUPS} disabled={groupsTaken.includes(null)}>{ALL_GROUPS_LABEL}</SelectItem>
+                          {CUSTOMER_PARTNER_GROUPS.map((g) => (
+                            <SelectItem key={g.name} value={g.name} disabled={groupsTaken.includes(g.name)}>
+                              {g.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div
+                        className={`flex items-center min-w-0 bg-white border rounded-lg px-3 ${showError ? 'border-[#FCA5A5]' : 'border-border'}`}
+                        style={{ height: 40 }}
+                      >
+                        <span className="shrink-0" style={{ fontSize: 13, color: '#94A3B8', fontFamily: FONT, marginRight: 6 }}>{moneyPrefix(row.currency).trim()}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step={decimals ? (1 / 10 ** decimals).toString() : '1'}
+                          value={row.unitPrice}
+                          onChange={(e) => update(idx, { unitPrice: e.target.value })}
+                          onBlur={() => setTouched((prev) => new Set(prev).add(key))}
+                          className="flex-1 min-w-0 bg-transparent outline-none"
+                          style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", color: '#0F172A' }}
+                          placeholder={decimals ? (0).toFixed(decimals) : '0'}
+                          aria-label={`Price per unit in ${row.currency}, ${groupLabel}`}
+                          aria-invalid={showError}
+                        />
+                      </div>
+                      <div className="text-right min-w-0">
+                        {base != null && rate != null ? (
+                          <Tooltip delayDuration={250}>
+                            <TooltipTrigger asChild>
+                              <span className="tabular-nums cursor-default whitespace-nowrap" style={{ fontSize: 12, color: '#64748B', fontFamily: FONT }}>
+                                ≈ {formatMoney(base, BASE_CURRENCY)}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              At today's daily market rate, {rateSentence(row.currency, rate)}. Read on {formatRateDate(RATES_READ_ON)}.
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span style={{ fontSize: 12, color: '#CBD5E1', fontFamily: FONT }}>—</span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => remove(idx)}
+                        className="flex items-center justify-center text-slate-400 hover:text-destructive hover:bg-[#FEF2F2] rounded-md transition-colors shrink-0"
+                        style={{ width: 32, height: 40 }}
+                        aria-label={`Remove the ${row.currency} price for ${groupLabel}`}
+                      >
+                        <Trash2 style={{ width: 14, height: 14 }} />
+                      </button>
+                    </div>
+                    {showError && (
+                      <div className={PRICE_GRID}>
+                        <span className="col-start-3 col-span-3" style={{ fontSize: 11, color: '#B91C1C', fontFamily: FONT }}>
+                          Enter a price above 0.
+                        </span>
+                      </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => remove(idx)}
-                    className="flex items-center justify-center text-slate-400 hover:text-destructive hover:bg-[#FEF2F2] rounded-md transition-colors shrink-0"
-                    style={{ width: 32, height: 40 }}
-                    aria-label={`Remove ${row.currency} price`}
-                  >
-                    <Trash2 style={{ width: 14, height: 14 }} />
-                  </button>
-                </div>
-                {showError && (
-                  <span style={{ fontSize: 11, color: '#B91C1C', fontFamily: FONT, paddingLeft: 128 }}>
-                    Enter a price above 0.
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                );
+              })
+            )}
+          </div>
 
-      {next && (
-        <div>
-          <button
-            type="button"
-            onClick={add}
-            className="inline-flex items-center gap-1.5 px-3 hover:bg-[#EDF4FF] transition-colors"
-            style={{ height: 32, borderRadius: 8, border: '1px solid #BFDBFE', fontSize: 12, fontWeight: 500, fontFamily: FONT, color: '#0A77FF', background: '#F8FBFF' }}
-          >
-            <Plus style={{ width: 13, height: 13 }} /> Add regional price
-          </button>
+          {nextCurrency && (
+            <div>
+              <button
+                type="button"
+                onClick={add}
+                className="inline-flex items-center gap-1.5 hover:underline underline-offset-2"
+                style={{ fontSize: 12, fontWeight: 500, fontFamily: FONT, color: '#0A77FF' }}
+              >
+                <Plus style={{ width: 13, height: 13 }} /> Add a price
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

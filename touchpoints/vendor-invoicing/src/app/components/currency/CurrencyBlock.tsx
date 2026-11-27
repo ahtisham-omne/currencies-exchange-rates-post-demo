@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Info, Settings2 } from 'lucide-react';
+import { Info, Lock, Settings2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, formatRate, moneyPrefix } from '@/app/currency/money';
@@ -18,7 +18,7 @@ import { CurrencyFlag } from './CurrencyChip';
  *   You pay in                          🇵🇰 Pakistani Rupee (PKR)
  *   Base equivalent                              ₨2,833,270.62 PKR
  *   FX variance                                     −₨10,136.20   (+ gain green, − loss red)
- *   Exchange rate             1 USD = ₨279.5200 PKR [● Mid-market]
+ *   Exchange rate      1 USD = ₨279.5200 PKR [● Daily market rate]
  *                                                    posting date
  *                    [ ⚙ View currency configuration ]
  *
@@ -66,7 +66,7 @@ export const varianceHex = (amount: number) => {
   return k === 'gain' ? GAIN_HEX : k === 'loss' ? LOSS_HEX : '#334155';
 };
 
-/** The mid-market / corporate chip. */
+/** The daily market rate / corporate rate chip. */
 export function RateTypeChip({ type }: { type: RateType }) {
   return (
     <span
@@ -90,6 +90,11 @@ export interface CurrencyBlockRow {
   sign?: '−';
   /** Shown on hover of the row, e.g. the pay-from account. */
   title?: string;
+  /** A lock after the amount: it can't change here (the vendor's invoiced
+   *  amount, 27 Nov 2026, Mahreen 6b). Off by default. */
+  locked?: boolean;
+  /** A line under the amount, e.g. "From the vendor's invoice GF-7781". */
+  note?: string;
 }
 
 export interface CurrencyBlockProps {
@@ -104,8 +109,9 @@ export interface CurrencyBlockProps {
   /** The FX variance row, where the document has one. */
   variance?: { amount: number; title: string; label?: string; tip?: React.ReactNode } | null;
   /** The Exchange rate row: "1 USD = ₨279.5200 PKR", the qualifier
-   *  ("posting date") under it. Null rate shows `pendingText`. */
-  rate?: { rate: number | null; qualifier?: string; pendingText?: string } | null;
+   *  ("posting date") under it. Null rate shows `pendingText`. `text`
+   *  replaces the rate line (a third currency's pair, "1 USD = 1.3935 CAD"). */
+  rate?: { rate: number | null; text?: string; qualifier?: string; pendingText?: string } | null;
   onViewConfig?: () => void;
   className?: string;
 }
@@ -146,11 +152,8 @@ export function CurrencyBlock({ currency, rateType, rateTip, rows, variance, rat
         </p>
       ) : (
         <>
-          {rows.map((r) => (
-            <div key={r.label} className="flex items-center justify-between gap-2" title={r.title}>
-              <p className={`text-slate-400 shrink-0 ${r.title ? 'cursor-help' : ''}`} style={{ fontSize: 10, fontWeight: 500 }}>
-                {r.label}
-              </p>
+          {rows.map((r) => {
+            const amount = (
               <p className="flex items-center gap-1.5 text-slate-700 tabular-nums text-right min-w-0" style={{ fontSize: 12, fontWeight: 500 }}>
                 {/* A flag on the document's amount and the account's currency; the base equivalent reads plainly. */}
                 {(r.amount === undefined || r.code.toUpperCase() !== BASE_CURRENCY) && <CurrencyFlag code={r.code} size={11} />}
@@ -164,9 +167,25 @@ export function CurrencyBlock({ currency, rateType, rateTip, rows, variance, rat
                     </>
                   )}
                 </span>
+                {r.locked && <Lock className="w-2.5 h-2.5 text-slate-300 shrink-0" aria-label="Locked" />}
               </p>
-            </div>
-          ))}
+            );
+            return (
+              <div key={r.label} className={`flex ${r.note ? 'items-start' : 'items-center'} justify-between gap-2`} title={r.title}>
+                <p className={`text-slate-400 shrink-0 ${r.note ? 'pt-0.5' : ''} ${r.title ? 'cursor-help' : ''}`} style={{ fontSize: 10, fontWeight: 500 }}>
+                  {r.label}
+                </p>
+                {r.note ? (
+                  <div className="flex flex-col items-end min-w-0">
+                    {amount}
+                    <p className="text-slate-400 text-right" style={{ fontSize: 10 }}>{r.note}</p>
+                  </div>
+                ) : (
+                  amount
+                )}
+              </div>
+            );
+          })}
           {variance && (
             <div className="flex items-center justify-between gap-2">
               {variance.tip ? (
@@ -206,7 +225,7 @@ export function CurrencyBlock({ currency, rateType, rateTip, rows, variance, rat
                   </p>
                 ) : (
                   <p className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 text-slate-700 tabular-nums text-right" style={{ fontSize: 12, fontWeight: 500 }}>
-                    <span className="whitespace-nowrap">{rateLine(code, rate.rate)}</span>
+                    <span className="whitespace-nowrap">{rate.text ?? rateLine(code, rate.rate)}</span>
                     {chip}
                   </p>
                 )}
@@ -238,9 +257,11 @@ export function CurrencyBlock({ currency, rateType, rateTip, rows, variance, rat
 
 /* ── What each block's FX variance says ───────────────────────────────── */
 
-/** The FX variance info tooltip on a vendor invoice (copy, 25 Nov 2026). */
+/** The FX variance info tooltip on a vendor invoice (copy, 25 Nov 2026;
+ *  27 Nov 2026: the bill posts on its posting date, Eli's ruling, 26 Nov
+ *  2026, which defaults to the vendor's invoice date). */
 export const INVOICE_FX_VARIANCE_TITLE =
-  'The difference between the receiving-day rate and the invoice-date rate.';
+  "The difference between the receiving-day rate and the posting date's rate.";
 
 export const PAYMENT_FX_VARIANCE_TITLE =
   "What A/P carried at the invoice's rate against what this payment cost in the base currency. Costing less is a gain (+) and posts to FX Gain; costing more is a loss (−) and posts to FX Loss.";

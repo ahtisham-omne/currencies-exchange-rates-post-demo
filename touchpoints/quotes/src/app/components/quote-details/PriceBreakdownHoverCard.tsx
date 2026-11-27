@@ -1,10 +1,11 @@
 /* ═══════════════════════════════════════════════════════════════════════════
  *  PriceBreakdownHoverCard — Quote module
  *  Mirrors the InventoryTooltip shape (white surface, soft shadow, 280 ms
- *  open delay, portalled). Renders the line's subtotal, every active
- *  pricing rule's one-time impact, every item-scoped adjustment's impact,
- *  and the resulting total — replacing the inline "Subtotal $X" sub-line
- *  the TOTAL column used to render.
+ *  open delay, portalled). Renders the line's total (qty × unit price)
+ *  and every active pricing rule and item-scoped adjustment on the line.
+ *  Since 27 Nov 2026 (D4) those apply only in Quote Summary, not to the
+ *  line's total, so the card lists them as applied in the quote summary
+ *  and has no "Total" of its own that would differ from the line's.
  * ═══════════════════════════════════════════════════════════════════════════ */
 import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -59,14 +60,10 @@ export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, form
     }
   }
 
-  const ruleDelta = ruleRows.reduce((s, r) => s + (r.type === 'discount' ? -r.amount : r.amount), 0);
-  const adjDelta = adjRows.reduce((s, r) => s + (r.type === 'discount' ? -r.amount : r.amount), 0);
-  const lineTotal = baseSubtotal + ruleDelta + adjDelta;
-
   const calcPos = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const rowCount = 1 + ruleRows.length + adjRows.length + 1;
+    const rowCount = 1 + 1 + ruleRows.length + adjRows.length;
     const estimatedH = 56 + rowCount * 22 + 36;
     const spaceBelow = window.innerHeight - rect.bottom;
     const placement: Placement = spaceBelow > estimatedH + 12 ? 'bottom' : 'top';
@@ -181,15 +178,21 @@ export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, form
                 children 26px. Dividers between sections at 4px 14px. */}
             <div style={{ padding: '6px 0' }}>
               <BreakdownRow
-                label="Subtotal"
+                label="Line total"
                 sub={`${line.quantity} × ${formatCurrency(line.unitPrice)}`}
                 value={formatCurrency(baseSubtotal)}
                 bold
               />
 
+              {/* The line's rules and adjustments: in the quote summary,
+                  not in the line's total (D4, 27 Nov 2026). */}
+              <Divider />
+              <p style={{ padding: '2px 14px 2px', fontSize: 10, color: '#9CA3AF', lineHeight: 1.3 }}>
+                Applied in the quote summary
+              </p>
+
               {ruleRows.length > 0 && (
                 <>
-                  <Divider />
                   {ruleRows.map((r) => (
                     <BreakdownRow
                       key={r.name}
@@ -208,7 +211,7 @@ export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, form
 
               {adjRows.length > 0 && (
                 <>
-                  <Divider />
+                  {ruleRows.length > 0 && <Divider />}
                   {adjRows.map((r) => (
                     <BreakdownRow
                       key={r.label}
@@ -224,23 +227,9 @@ export function PriceBreakdownHoverCard({ line, pricingAPI, adjustmentsAPI, form
                   ))}
                 </>
               )}
-
-              {/* Total — Partner inventory snapshot's ATP row pattern:
-                  inline body row with green tint background, same row
-                  chrome as the others (no separate footer panel). */}
-              <Divider />
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '4px 14px',
-                backgroundColor: '#F0FDF4',
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#1F2937', lineHeight: 1.4 }}>Total</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#059669', fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}>
-                  {formatCurrency(lineTotal)}
-                </span>
-              </div>
+              {/* No "Total" row (27 Nov 2026): the line's total is qty ×
+                  unit price, the first row; rules and adjustments add up
+                  in the quote summary. */}
             </div>
           </div>
         </div>,

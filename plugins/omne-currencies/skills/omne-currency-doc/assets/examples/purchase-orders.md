@@ -11,7 +11,8 @@ before handover. Procurement Planning is out of scope here.
 
 - The prototype: touchpoints/purchase-order in currencies-exchange-rates-post-demo, read on 25 Nov 2026 (commit 4eb00126 and the review fixes after it).
 - docs/purchase-orders-currency-touchpoints.md, sections 3 to 3c.
-- Nophil Anwer's review, 25 Nov 2026 (items: Compare rates, pay-from rate, book balance, vendor currency on Create PO).
+- Nophil Anwer's review, 25 Nov 2026 (items: compare rates, pay-from rate, book balance, vendor currency on Create PO).
+- Mahreen Ghafoor's design changes from that review, 27 Nov 2026 (PO-1 to PO-5), and Eli Rosenbloom's rate ruling, 26 Nov 2026.
 - The product team's Currency Touchpoints Map, 24 Nov 2026, Purchase Orders 1 to 5 and Receiving 1 to 2.
 
 ## Rulings this document follows
@@ -21,7 +22,7 @@ before handover. Procurement Planning is out of scope here.
 - R5: the Purchase Orders listing has a Currency column and the vendor's tag; the Receiving Docs table's Value column gets "Show values as".
 - R7: the PO page's switch sits in the Line Items toolbar.
 - R9 to R11: the PO's currency defaults to the vendor's; the Currency information block and the Currency configuration dialog.
-- R13 to R17: mid-market by default, the PO date's rate, locks when confirmed, versions offer today's rate, Compare rates after the rate type.
+- R13 to R17: the daily market rate by default, the PO date's rate (an estimate: nothing posts), locks when confirmed, versions offer today's rate, the rate info icon after the rate type.
 - R18, R19: "You pay" is an account in any currency; a third-currency account shows the direct rate as an estimate.
 - R22: the printed PO is in the vendor's currency, with a switch to base.
 - R25: pricing rules are in base.
@@ -34,7 +35,7 @@ before handover. Procurement Planning is out of scope here.
 | Base currency | The company's base currency (R1). Nothing module-specific. |
 | Party | Vendor |
 | Document currency | The vendor's default currency. It can change on the PO from the Currency configuration, which converts every line at the PO date's rate. |
-| Rate type | The company default (mid-market); Mid-market or Corporate per PO. A corporate rate can be changed on the PO. |
+| Rate type | The company default (daily market rate); Daily market rate or Corporate rate per PO. A corporate rate can be changed on the PO. |
 | Rate date | The PO date. A receiving doc takes its completion day's rate (today while in progress). |
 | Locks | When the PO is confirmed. Draft and Sent are unlocked; a cancelled PO keeps the state it was cancelled in. |
 | Pay from / receive into | "You pay" is a company account in any currency, 1010 · JPMorgan Operating by default (R18). A third-currency account shows the direct rate as an estimate (R19). |
@@ -85,17 +86,17 @@ before handover. Procurement Planning is out of scope here.
 
 | Amount | Shown in | Hover | Estimate (≈) |
 |---|---|---|---|
-| Line unit price, line total, rule and one-time amounts | Base by default; the vendor's currency with the switch | The other currency, the rate, its type and "PO date" | No |
+| Line unit price, line total, rule and one-time amounts | The vendor's currency by default; base with the switch | The other currency, the rate, its type and "PO date" | No |
 | Order Summary: Subtotal, Pricing Rules Applied, One-Time Discounts/Premiums, Total | As the switch | As above | No |
 | "Vendor receives" under the Total | The vendor's currency | None | No |
 | Currency information block | Both, as its rows say | None | "≈" on an estimated payment only |
 
-**Switch** Line items toolbar: "Base Currency | Vendor Currency", foreign-currency POs only, default base, kept per PO for the session. Never in the page header.
+**Switch** Line items toolbar: "Base Currency | Vendor Currency", foreign-currency POs only, default the vendor's currency (R7, 27 Nov 2026), kept per PO for the session. Never in the page header. The card's title carries a "Prices in USD" chip and the price and total headers name the shown currency, "Price Per Unit (USD)", "Total (USD)".
 **Show values as** No listing on this tab.
 **Currency column** Not applicable: one currency on the page.
 **Rate** The PO's rate type on its PO date.
 **Lock** Shown in the configuration dialog, not on the block.
-**Pay from** The block's "You pay in" row names the account's currency, the account on hover; "Base equivalent" shows only when paying from a non-base account.
+**Pay from** The block's "You pay in" row names the account. From a third currency's account (R10): Vendor receives "$10,000.00 [USD]" · You pay in "1075 · CAD Settlement" · You pay "≈ C$13,935.00" · Exchange rate "1 USD = 1.3935 CAD" with its rate type chip under it · Base equivalent "≈ ₨2,785,200.00" with "Estimate at today's rate" under it. No rates through the base.
 **FX gain/loss** None.
 **Copy** "Show amounts in your base currency." · "Show amounts in the currency set for this purchase order." · "Currency information" · "View currency configuration" · "PKR is the base currency, so there's no conversion."
 
@@ -133,11 +134,11 @@ before handover. Procurement Planning is out of scope here.
 **Switch** None.
 **Show values as** Not applicable.
 **Currency column** Not applicable.
-**Rate** Mid-market | Corporate on the PO date, with Compare rates right after the choice; a corporate rate can be typed. From a third-currency account, the direct rate between the account's currency and the PO's.
+**Rate** Daily market rate | Corporate rate on the PO date, with the rate info icon right after the choice; a corporate rate can be typed. From a third-currency account, the direct rate between the account's currency and the PO's.
 **Lock** "[Unlocked] locks when the PO is confirmed", or "[Locked] locked when the PO was confirmed"; read-only once locked.
-**Pay from** The account picker lists every bank and cash account, base first, then the PO's currency, then the rest. Default 1010 · JPMorgan Operating. Balances hidden (P2).
+**Pay from** "You pay in" is one dropdown of every bank and cash account, each with its currency chip, the vendor's default first and tagged "From vendor", then base, then the PO's currency, then the rest. No separate pay-currency choice. Default: the vendor's account, else 1010 · JPMorgan Operating. Balances hidden (P2).
 **FX gain/loss** None.
-**Copy** "Applies to PO {n} only. The vendor's default currency (USD) doesn't change." · "Defaults to the vendor's currency. Changing it converts every line at the PO date's rate." · "The currency you pay this PO in. Defaults to your base currency." · "Estimated payment ≈ $X USD from 1040 · Global FX Settlement. Estimate at today's rate. Your bank uses its own rate when you pay." · "Rates for USD to PKR today" · "Corporate is ₨2.98 (1.07%) above mid-market."
+**Copy** "Applies to PO {n} only. The vendor's default currency (USD) doesn't change." · "Defaults to the vendor's currency. Changing it converts every line at the PO date's rate." · "The currency you pay this PO in. Defaults to your base currency." · "Estimated payment ≈ $X USD from 1040 · Global FX Settlement. Estimate at today's rate. Your bank uses its own rate when you pay." · "USD to PKR today" · "Gap ₨2.98 (1.07%)" · "Daily market rate read on Nov 27, 2026. Corporate rate set by your company on May 01, 2026."
 
 ### Screen 6: Cart and Create PO
 
@@ -154,7 +155,7 @@ before handover. Procurement Planning is out of scope here.
 **Switch** None.
 **Show values as** No listing.
 **Currency column** Not applicable.
-**Rate** Each new PO takes the vendor's currency and the mid-market rate on its PO date (today).
+**Rate** Each new PO takes the vendor's currency and the daily market rate on its PO date (today).
 **Lock** Not applicable: new POs start as Draft.
 **Pay from** New POs pay from 1010 · JPMorgan Operating.
 **FX gain/loss** None.
@@ -173,7 +174,7 @@ before handover. Procurement Planning is out of scope here.
 **Switch** None.
 **Show values as** Not applicable.
 **Currency column** Not applicable.
-**Rate** "Keep version {n}'s rate" or "Use today's rate", each with its rate type and day; today's has Mid-market | Corporate when a corporate rate is set today.
+**Rate** "Keep version {n}'s rate" or "Use today's rate", each with its rate type and day; today's has Daily market rate | Corporate rate when a corporate rate is set today.
 **Lock** Restoring a version can apply today's rate even on a confirmed PO, as the map's restore prompt offers it.
 **Pay from** Not applicable.
 **FX gain/loss** None.
@@ -215,11 +216,13 @@ in ("1010 · JPMorgan Operating (PKR) to 1040 · Global FX Settlement (USD)").
 ## Open questions
 
 **Does a buyer see the pay-from account's book balance on a PO (P2)?** Nophil
-wants it behind a permission; Mahreen says it belongs in payments. The
-account picker hides balances until this is settled. Nophil to rule.
+wants it behind a "View bank balances" permission; Mahreen says it shows when
+the payment is recorded. The account picker hides balances until this is
+settled. Nophil to rule.
 
-**How should a foreign-currency PO stand out on Create PO (P6)?** Nophil found
-the vendor currency almost invisible. Mahad is trying colour variations.
+**Should the listing show a Base Equivalent column (R6, proposed)?** Mahreen
+proposes Amount in each PO's currency and "Base Equivalent" beside it with
+"≈". The prototype has it; the listing otherwise follows R5.
 
 **Regional item prices (P1).** If Eli approves them, a PO line would take the
 item's buying price in the PO's currency where one is set, else the

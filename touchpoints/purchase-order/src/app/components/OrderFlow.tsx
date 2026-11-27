@@ -1090,9 +1090,10 @@ export default function OrderFlow({ open, onOpenChange, item, mode, prefill, rea
   const linkedFx = linkedPO ? poFx(linkedPO) : null;
   const flowCurrency = linkedFx ? linkedFx.currency : bookCurrency;
   const flowFx = linkedFx ?? todayFx(flowCurrency);
-  /* Shown in base, like the rest of Purchase Orders, unless the PO page it
-     was opened from is toggled to the vendor's currency. */
-  const outerView = useDocCurrency().view ?? "base";
+  /* Shown in the vendor's currency, like the rest of Purchase Orders (D1,
+     27 Nov 2026), unless the PO page it was opened from is toggled to base.
+     Opened from the cart or the catalogue, the vendor's too. */
+  const outerView = useDocCurrency().view ?? "document";
   const flowInBase = outerView === "base" && !isBaseCurrency(flowCurrency);
   const flowMoney = (n: number) => (flowInBase ? formatMoney(toBase(n, flowFx.rate), BASE_CURRENCY) : formatMoney(n, flowCurrency));
   const bookToFlow = (price: number, vendorName?: string, currency?: string) =>

@@ -476,7 +476,7 @@ export function LogSettlementModal({
               {!amountError && foreign && amount > 0 && (
                 <p className="text-[10px] text-slate-500 tabular-nums mt-1">
                   {pk(amount)} at {date === todayIso() ? "today's" : `the ${formatRateDate(date)}`}{' '}
-                  {RATE_TYPE_LABEL[quote.type].toLowerCase()} rate, {rateSentence(currency, settleRate)}
+                  {RATE_TYPE_LABEL[quote.type].toLowerCase()}, {rateSentence(currency, settleRate)}
                   {quote.fellBack ? ' (no corporate rate is set)' : ''}
                 </p>
               )}
@@ -582,7 +582,7 @@ export function LogSettlementModal({
 
           {/* No "Bank received (PKR)" any more (2026-11-24): the settlement is
               recorded at the configured rate, today's of the PO's type
-              (mid-market or corporate, set in the currency configuration),
+              (the daily market rate or corporate rate, set in the currency configuration),
               not at a rate worked out from what the bank credited. */}
 
           {/* Vendor charges: what is already on the return, carried forward,

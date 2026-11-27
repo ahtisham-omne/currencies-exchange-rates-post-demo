@@ -9,24 +9,32 @@ export const RATE_TOOLTIPS = {
     "The currency this rate is for, quoted against your base currency.",
   baseCurrency:
     "The reference currency configured for your company. All exchange rates in the system are expressed relative to this currency.",
+  // The daily market rate's meaning (Eli's ruling, 26 Nov 2026; Mahreen, 27 Nov 2026).
   midMarket:
-    "Midpoint of global buy and sell rates.",
+    `Read once a day from ${API_PROVIDER}, and fixed for that date.`,
   corporate:
     "Fixed rate set by your company. Applies until a new rate takes effect.",
+  // The rate lists' columns, named by what they show (Mahreen's 1d, 27 Nov 2026):
+  // "1 Unit in PKR" on each tab, then "1 PKR in That Currency" (inverse).
+  unitInBaseMid:
+    `The daily market rate: what 1 unit of this currency is worth in your base currency. Read once a day from ${API_PROVIDER}, and fixed for that date.`,
+  unitInBaseCorporate:
+    "The corporate rate: what 1 unit of this currency is worth in your base currency. Set by your company. Applies until a new rate takes effect.",
   inverse:
-    "The value of 1 unit of your base currency in this currency.\n\nExample: If 1 AED equals 75.8400 in your base currency, the inverse rate is 0.0132 AED.",
+    "What 1 unit of your base currency is worth in this currency.\n\nExample: If 1 AED equals 75.8400 in your base currency, 1 unit of your base currency equals 0.0132 AED.",
   change24h:
-    "How much the rate moved since the last sync.",
+    "How much the rate moved since the previous day’s read.",
   rateType:
-    "Mid-market rates update automatically. Corporate rates are fixed rates your team sets.",
+    `Daily market rates are read once a day from ${API_PROVIDER}. Corporate rates are fixed rates your team sets.`,
+  // The Rate Date column and fields (Eli's ruling, 26 Nov 2026: a date, no time).
   lastSync:
-    `When ${API_PROVIDER} last updated this rate.`,
+    `The day this rate was read from ${API_PROVIDER}. It stays fixed for that date.`,
   internalId:
     "The system ID for this rate.",
   upcoming:
     "A rate saved for a later date. The current rate stays in effect until then.",
   variance:
-    "The difference between the corporate rate and the mid-market rate, in your base currency and as a percentage. Positive means the corporate rate is higher; negative means it’s lower. Updated each time the mid-market rate syncs.\n\nExample: A corporate rate of 255 against a mid-market rate of 250 shows +5 (+2%). At 245, it shows −5 (−2%).",
+    "The difference between the corporate rate and the daily market rate, in your base currency and as a percentage. Positive means the corporate rate is higher; negative means it’s lower. Updated each day when the daily market rate is read.\n\nExample: A corporate rate of 255 against a daily market rate of 250 shows +5 (+2%). At 245, it shows −5 (−2%).",
   effectiveDate:
     "Date from which this rate is applicable.",
   totalValueAllDocs:
@@ -35,23 +43,23 @@ export const RATE_TOOLTIPS = {
     "Sum of all active transactions of this type, in this currency.",
 } as const;
 
-// The converters' swap button (and the currency converter's Inverse Rate badge).
+// The converters' swap button (and the currency converter's "1 PKR in that
+// currency" badge). No "inverse": Mahreen, 27 Nov 2026, names both directions.
 // The column headers say the same in RATE_TOOLTIPS.inverse. The "Example:" line
 // renders on its own line in blue (Tooltip's TooltipText).
 export const INVERSE_BADGE_TOOLTIP =
-  "Show the inverse rate: the value of 1 unit of your base currency in this currency.\n\nExample: If 1 AED equals 75.8400 in your base currency, the inverse rate is 0.0132 AED.";
+  "Show the other direction: what 1 unit of your base currency is worth in this currency.\n\nExample: If 1 AED equals 75.8400 in your base currency, 1 unit of your base currency is 0.0132 AED.";
 
 
 export const CONVERTER_SUBTITLE =
-  "Convert amounts between this currency and other currencies, at the mid-market or corporate rate.";
+  "Convert amounts between this currency and other currencies, at the daily market rate or the corporate rate.";
 
-// The Mid-Market Rate field on the currency and rate detail pages.
-export const MID_MARKET_DETAIL_TOOLTIP =
-  "Midpoint of global buy and sell rates. Updated from your rate provider at each sync.";
+// The Daily Market Rate field on the currency and rate detail pages.
+export const MID_MARKET_DETAIL_TOOLTIP = RATE_TOOLTIPS.midMarket;
 
 // The converter's rate toggles say what the listing's columns say.
 export const CONVERTER_TOGGLE_TOOLTIPS = {
-  midMarket: `${RATE_TOOLTIPS.midMarket} Synced automatically.`,
+  midMarket: RATE_TOOLTIPS.midMarket,
   corporate: RATE_TOOLTIPS.corporate,
 } as const;
 
@@ -72,7 +80,7 @@ export const CURRENCY_TOOLTIPS = {
 export const NOTES_TOOLTIP = "Note added with this rate.";
 
 export const EXPLANATORY_BLOCKS = {
-  // The mid-market banner is written in ExchangeRateLibraryPage, where it links the provider.
+  // The Daily Market Rates banner is written in ExchangeRateLibraryPage, where it links the provider.
   corporate:
     "A fixed exchange rate set by your company. It applies until a new rate takes effect.",
 } as const;

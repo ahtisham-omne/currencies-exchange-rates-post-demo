@@ -1,20 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { mockInvoices } from '../../data/mockInvoices';
-import { PAYMENT_FX_DEMO, PAY_FROM_ACCOUNTS, accountsForCurrency, defaultPayFromAccount } from '../../data/mockPayments';
+import { PAYMENT_FX_DEMO, PAY_FROM_ACCOUNTS, SCHEDULED_FX_DEMO, accountsForCurrency, defaultPayFromAccount, runAccountsForCurrency } from '../../data/mockPayments';
 import {
+  accountDayRateOn,
   bankConversionText,
   bankRateNeedsReview,
   buildPaymentGlFx,
   canPayFrom,
+  canPayFromInRun,
+  convertsAtBank,
   costInBase,
+  dayRateOn,
   defaultPayFromCurrency,
   derivedRate,
+  isThirdCurrency,
   payFromBlockReason,
   payFromCurrencies,
   paymentRateOf,
   realizedFxFromGl,
+  runPayFromBlockReason,
   youPayInOf,
 } from '../paymentRules';
+import { bankRateOf, bankRatePairOf, needsBankRate, withBankRate } from '../paymentLedger';
+import { payFromAccountsFor } from '../payFrom';
+import { toBase } from '../rates';
 import { paymentFx } from '../paymentFx';
 import { SEED_RUNS } from '../../data/paymentRuns';
 import { buildRunExecution, runGlRows } from '../../lib/runMath';
@@ -28,24 +37,41 @@ const sumOf = (side: 'debit' | 'credit', rows: { debit?: number; credit?: number
 const entry = (rows: { accountCode: string; debit?: number; credit?: number }[], code: string) => rows.find((r) => r.accountCode === code);
 
 describe('Pay from: which accounts can pay', () => {
-  it('only the invoice currency and the base (rules 3, 8)', () => {
+  // 27 Nov 2026 (D7): rules 3, 4 and 8 open to a third currency. Before, a
+  // EUR account couldn't pay a GBP invoice; now any account pays a foreign
+  // invoice and the bank converts. A payment run keeps the two-currency rule.
+  it('any account pays a foreign invoice; a base invoice takes a base account (rules 3, 8)', () => {
     expect(payFromCurrencies('GBP')).toEqual(['GBP', 'PKR']);
     expect(payFromCurrencies('PKR')).toEqual(['PKR']);
     expect(canPayFrom('GBP', 'GBP')).toBe(true);
     expect(canPayFrom('PKR', 'GBP')).toBe(true);
-    expect(canPayFrom('EUR', 'GBP')).toBe(false);
+    expect(canPayFrom('EUR', 'GBP')).toBe(true);
     expect(canPayFrom('USD', 'PKR')).toBe(false);
     const ids = accountsForCurrency(PAY_FROM_ACCOUNTS, 'GBP').map((a) => a.id);
     expect(ids).toContain('1060-GBP Settlement');
     expect(ids).toContain('1020-Payroll');
-    expect(ids).not.toContain('1050-EUR Settlement');
-    expect(ids).not.toContain('1040-FX Settlement');
+    expect(ids).toContain('1050-EUR Settlement');
+    expect(ids).toContain('1040-FX Settlement');
+    // A run still pays from the invoice's currency or the base.
+    expect(canPayFromInRun('EUR', 'GBP')).toBe(false);
+    const runIds = runAccountsForCurrency(PAY_FROM_ACCOUNTS, 'GBP').map((a) => a.id);
+    expect(runIds).toContain('1060-GBP Settlement');
+    expect(runIds).not.toContain('1050-EUR Settlement');
   });
 
   it('greys the rest with the reason (rule 4)', () => {
-    expect(payFromBlockReason('EUR', 'GBP')).toBe('This account is in EUR. Pick a GBP or PKR account.');
+    expect(payFromBlockReason('EUR', 'GBP')).toBeNull();
     expect(payFromBlockReason('USD', 'PKR')).toBe('This account is in USD. Pick a PKR account.');
     expect(payFromBlockReason('PKR', 'GBP')).toBeNull();
+    expect(runPayFromBlockReason('EUR', 'GBP')).toBe('This account is in EUR. Pick a GBP or PKR account.');
+    expect(runPayFromBlockReason('AED', 'AED')).toBeNull();
+  });
+
+  it("lists the invoice's currency first, then the base, then the rest (7d)", () => {
+    const curs = payFromAccountsFor('GBP').map((a) => a.currency);
+    expect(curs[0]).toBe('GBP');
+    const firstOther = curs.findIndex((c) => c !== 'GBP' && c !== 'PKR');
+    expect(curs.slice(1, firstOther).every((c) => c === 'PKR')).toBe(true);
   });
 
   it("the PO's You pay in picks the default account (rule 5)", () => {
@@ -207,5 +233,74 @@ describe('Payment runs keep the rules (rule 9)', () => {
     expect(p.bankAmount).toBe(3503000);
     expect(p.exchangeRate).toBeCloseTo(350.3, 10);
     expect(realizedFxFromGl(p.glEntries)).toBe(-96198);
+  });
+});
+
+describe('A third currency: a CAD account pays a USD invoice (D7, 27 Nov 2026)', () => {
+  // The journal still posts in base: A/P at the invoice's base, the CAD
+  // account at what the bank took in CAD at the payment date's CAD rate,
+  // the difference to FX Gain/Loss.
+  const date = '2025-10-24';
+  const usd = dayRateOn('USD', date);
+  const cad = dayRateOn('CAD', date);
+  const cross = accountDayRateOn('USD', 'CAD', date);
+
+  it('converts at the bank, and our rate is the direct pair', () => {
+    expect(convertsAtBank('CAD', 'USD')).toBe(true);
+    expect(isThirdCurrency('CAD', 'USD')).toBe(true);
+    expect(isThirdCurrency('PKR', 'USD')).toBe(false);
+    expect(convertsAtBank('USD', 'USD')).toBe(false);
+    // To 4 decimals, as it's shown and typed.
+    expect(cross).toBe(+(usd / cad).toFixed(4));
+    expect(accountDayRateOn('USD', 'CAD', '2026-11-27')).toBe(1.3935);
+    expect(bankConversionText(13935, 10000, 'USD', 'CAD')).toBe('C$13,935.00 → $10,000.00 · 1 USD = 1.3935 CAD');
+  });
+
+  it('A/P at the invoice rate, the CAD account at the day’s CAD rate, the rest to FX', () => {
+    const invoiceRate = 278.52;
+    const accountAmount = 13935;
+    const { entries, fx } = buildPaymentGlFx({
+      currency: 'USD',
+      lines: [{ invoiceNumber: 'INV-X', amount: 10000, rate: invoiceRate }],
+      apAccount: '2000 Accounts Payable',
+      cash: 10000,
+      bankGl: '1075 CAD Settlement',
+      accountCurrency: 'CAD',
+      accountAmount,
+      paymentRate: toBase(accountAmount, cad) / 10000,
+      paymentDate: date,
+    });
+    const cost = toBase(accountAmount, cad);
+    expect(fx.carried).toBe(2785200);
+    expect(fx.cost).toBe(cost);
+    expect(fx.amount).toBe(Math.round((2785200 - cost) * 100) / 100);
+    const bank = entries.find((e) => e.accountCode === '1075')!;
+    expect(bank.credit).toBe(cost);
+    expect(bank.currency).toBe('CAD');
+    expect(bank.foreignAmount).toBe(accountAmount);
+    expect(sumOf('debit', entries)).toBe(sumOf('credit', entries));
+  });
+
+  it('Mark as paid takes the bank’s CAD rate', () => {
+    const p = { ...SCHEDULED_FX_DEMO[0], bankAccount: '1075-CAD Settlement', bankAmount: undefined, glEntries: undefined };
+    expect(needsBankRate(p)).toBe(true);
+    expect(bankRatePairOf(p)).toBe('USD/CAD');
+    const paid = withBankRate(p, 1.4, mockInvoices);
+    expect(paid.accountAmount).toBe(14000);
+    expect(paid.bankAmount).toBe(toBase(14000, dayRateOn('CAD', p.paymentDate)));
+    expect(bankRateOf(paid)).toBeCloseTo(1.4, 10);
+  });
+});
+
+describe('Scheduled for today (7e)', () => {
+  it('PMT-000124 is due today from a PKR account, so it asks for the bank’s rate', () => {
+    const p = SCHEDULED_FX_DEMO.find((x) => x.paymentNumber === 'PMT-000124')!;
+    expect(p).toBeDefined();
+    expect(p.status).toBe('Scheduled');
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    expect(p.paymentDate).toBe(today);
+    expect(p.currency).toBe('USD');
+    expect(needsBankRate(p)).toBe(true);
   });
 });

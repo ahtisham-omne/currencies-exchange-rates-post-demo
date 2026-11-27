@@ -213,8 +213,10 @@ if (/<DocMoney\b|useDocMoney\(|useDocView\(/.test(all) && !/<DocCurrencyProvider
   problems.push({ file: '(module)', line: 0, rule: 'DocMoney without a DocCurrencyProvider: amounts fall back to base with no rate. Wrap the document page in DocCurrencyProvider', text: '' });
 if (/<DocViewSwitch\b/.test(all) && !/useDocViewOf\(/.test(all))
   problems.push({ file: '(module)', line: 0, rule: 'DocViewSwitch but nothing reads useDocViewOf(viewKey) into the provider\'s view: the switch would change nothing', text: '' });
-if (/<RateTypeToggle\b/.test(all) && !/<CompareRates\b/.test(all))
-  warnings.push({ file: '(module)', line: 0, rule: 'RateTypeToggle without CompareRates: sales and purchase orders put the Compare rates hover right after it', text: '' });
+if (/<RateTypeToggle\b/.test(all) && !/<RateTypeInfo\b/.test(all))
+  warnings.push({ file: '(module)', line: 0, rule: 'RateTypeToggle without RateTypeInfo: put the rate info icon right after the rate type choice (R17)', text: '' });
+if (/mid-?market/i.test(all.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '').replace(/['"]mid['"]|midRateOn|MidMarket/g, '')))
+  warnings.push({ file: '(module)', line: 0, rule: 'Says "mid-market" outside a comment: the rate is the "daily market rate" (R26)', text: '' });
 const setBase = [...all.matchAll(/setBaseCurrency\(/g)].length;
 if (setBase > 1) warnings.push({ file: '(module)', line: 0, rule: `setBaseCurrency called ${setBase} times: set the company's base once, at start-up`, text: '' });
 if (!/currency-kit/.test(all)) warnings.push({ file: '(module)', line: 0, rule: 'nothing imports the kit yet', text: '' });
@@ -231,7 +233,7 @@ const PATTERNS = [
   ['DocCurrencyProvider', /<DocCurrencyProvider\b([^>]*)/],
   ['CurrencyBlock', /<CurrencyBlock\b([^>]*)/],
   ['RateTypeToggle', /<RateTypeToggle\b([^>]*)/],
-  ['CompareRates', /<CompareRates\b([^>]*)/],
+  ['RateTypeInfo', /<RateTypeInfo\b([^>]*)/],
   ['LockLine', /<LockLine\b([^>]*)/],
   ['PayFromAccountPicker', /<PayFromAccountPicker\b([^>]*)/],
   ['BankRateField', /<BankRateField\b([^>]*)/],

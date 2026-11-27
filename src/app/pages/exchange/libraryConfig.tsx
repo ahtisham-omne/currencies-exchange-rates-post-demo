@@ -7,22 +7,28 @@ import type { CoaColumn } from '../../coa/components/CoaDataTable'
 import { CurrencyCell, EmptyCell, PARTNER_CHIP_CLS } from '../../coa/components/cells'
 import { StatusMenu } from '../../coa/components/StatusChip'
 import { FlagImage } from '../../coa/components/FlagImage'
-import { cn, fmtDate, fmtDateTime } from '../../coa/lib/utils'
+import { cn, fmtDate } from '../../coa/lib/utils'
 import { CORPORATE_STATUS_OPTIONS } from './rateLifecycle'
 import { auditColumns } from '../auditColumns'
-import { BASE, fmtInverse, fmtPairRate, fmtRate, fmtSignedPct, fmtVariance, type CorpRow, type CorpStatus, type MidRow } from './rateModel'
+import {
+  BASE, fmtBaseInUnit, fmtInverse, fmtPairRate, fmtRate, fmtSignedPct, fmtUnitInBase, fmtVariance, syncStamp,
+  type CorpRow, type CorpStatus, type MidRow,
+} from './rateModel'
 
 /* ── Cells ──────────────────────────────────────────────────────────────── */
 
-/* A rate as the pair it prices, "1 AED = 75.8400 PKR": the figure carries the
-   weight, the units around it are quieter so a column still scans by number. */
-const RateText = ({ from, value, to, q, strong }: { from: string; value: string; to: string; q: string; strong?: boolean }) => (
-  <span className="text-sm tabular-nums whitespace-nowrap">
-    <span className="text-fg-subtle">1 {from} = </span>
-    <span className={strong ? 'font-medium text-slate-700' : 'text-slate-500'}><Marked text={value} q={q} /></span>
-    <span className="text-fg-subtle"> {to}</span>
+/* A rate as an amount of the currency it is in, "₨278.5200" or "$0.003590": the
+   columns are named by what they show ("1 Unit in PKR", "1 PKR in That
+   Currency"), so the cell needs no "1 USD =" before it (Mahreen's 1d, 27 Nov 2026). */
+const RateText = ({ value, q, strong }: { value: string; q: string; strong?: boolean }) => (
+  <span className={cn('text-sm tabular-nums whitespace-nowrap', strong ? 'font-medium text-slate-700' : 'text-slate-500')}>
+    <Marked text={value} q={q} />
   </span>
 )
+
+/* The two columns' labels, following the base currency. */
+const UNIT_IN_BASE = `1 Unit in ${BASE}`
+const BASE_IN_UNIT = `1 ${BASE} in That Currency`
 
 function ChangeCell({ value }: { value: number }) {
   const Icon = value > 0 ? TrendingUp : value < 0 ? TrendingDown : Minus
@@ -57,7 +63,7 @@ function CorpRateCell({ r, q }: { r: CorpRow; q: string }) {
           <Badge tone="info" className={cn(PARTNER_CHIP_CLS, 'cursor-default')}>Upcoming</Badge>
         </Tooltip>
       )}
-      <RateText from={r.code} value={fmtRate(rate)} to={BASE} q={q} strong />
+      <RateText value={fmtUnitInBase(rate)} q={q} strong />
     </span>
   )
 }
@@ -73,15 +79,16 @@ function CountryCell({ row, q }: { row: { flag: string; country: string; region:
   )
 }
 
-/* ── Mid-market table ───────────────────────────────────────────────────── */
+/* ── Daily market rates table ───────────────────────────────────────────── */
 
 /* The failed-sync edge case: the latest sync returned no rate for this currency,
    so the row keeps the last good one. The badge says so beside the name, and its
-   tooltip says when it failed and how old the rate on screen is. */
+   tooltip says which day's read failed and which day the rate on screen is from:
+   days only, as a rate is read once a day (Eli's ruling, 26 Nov 2026). */
 function SyncFailedBadge({ row }: { row: MidRow }) {
   const f = row.syncFailed!
   return (
-    <Tooltip content={`The sync on ${fmtDateTime(f.failedAt)} didn’t return a rate for this currency. This is the rate from ${fmtDateTime(f.lastSyncedAt)}, and it updates at the next successful sync.`} side="top">
+    <Tooltip content={`The read on ${syncStamp(f.failedAt).date} didn’t return a rate for this currency. This is the rate read on ${syncStamp(f.lastSyncedAt).date}, and it updates at the next successful read.`} side="top">
       <Badge tone="warning" className={cn(PARTNER_CHIP_CLS, 'shrink-0 gap-1')}><AlertTriangle size={11} aria-hidden />Sync Failed</Badge>
     </Tooltip>
   )
@@ -95,14 +102,15 @@ export function midColumns(): CoaColumn<MidRow>[] {
         trailing={r.syncFailed ? <SyncFailedBadge row={r} /> : undefined} />,
       sortValue: r => r.code, searchText: r => [r.code, r.name, r.syncFailed ? 'Sync Failed' : ''], filter: 'text', filterValue: r => `${r.code} ${r.name}`,
     },
+    // Keyed rate and inverse still, so the layouts readers saved keep both columns.
     {
-      key: 'rate', label: 'Mid-Market Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: `${RATE_TOOLTIPS.midMarket} Synced automatically.`,
-      render: (r, ctx) => <RateText from={r.code} value={fmtRate(r.rate)} to={BASE} q={ctx.q} strong />,
+      key: 'rate', label: UNIT_IN_BASE, align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[150px]', info: RATE_TOOLTIPS.unitInBaseMid,
+      render: (r, ctx) => <RateText value={fmtUnitInBase(r.rate)} q={ctx.q} strong />,
       sortValue: r => r.rate, searchText: r => fmtRate(r.rate), filter: 'range',
     },
     {
-      key: 'inverse', label: 'Inverse Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[180px]', info: RATE_TOOLTIPS.inverse,
-      render: (r, ctx) => <RateText from={BASE} value={fmtInverse(r.rate)} to={r.code} q={ctx.q} />,
+      key: 'inverse', label: BASE_IN_UNIT, align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[200px]', info: RATE_TOOLTIPS.inverse,
+      render: (r, ctx) => <RateText value={fmtBaseInUnit(r.code, r.rate)} q={ctx.q} />,
       // The inverse is not a stored field, so it sorts on the figure it prints.
       sortValue: r => 1 / r.rate, searchText: r => fmtInverse(r.rate), filter: 'range', filterValue: r => 1 / r.rate,
     },
@@ -119,12 +127,12 @@ export function midColumns(): CoaColumn<MidRow>[] {
       sortValue: r => r.country, searchText: r => [r.country, r.region ?? ''], filter: 'multiselect', filterValue: r => r.region ?? '',
     },
     {
-      key: 'effective', label: 'Last Synced', defaultHidden: true, headerClassName: 'min-w-[130px]',
+      key: 'effective', label: 'Rate Date', defaultHidden: true, headerClassName: 'min-w-[130px]',
       info: RATE_TOOLTIPS.lastSync,
       render: (r, ctx) => <span className="text-sm text-slate-700 tabular-nums whitespace-nowrap"><Marked text={fmtDate(r.effectiveDate)} q={ctx.q} /></span>,
       sortValue: r => r.effectiveDate, searchText: r => fmtDate(r.effectiveDate), filter: 'date', filterValue: r => r.effectiveDate,
     },
-    // Synced by the provider: "System" sets each rate up and keeps it current.
+    // Read from the provider each day: "System" sets each rate up and keeps it current.
     ...auditColumns<MidRow>(r => r, 'rate'),
   ]
 }
@@ -138,8 +146,10 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
       render: (r, ctx) => <CurrencyCell code={r.code} country={r.flag} name={r.name} q={ctx.q} showName strong={ctx.band} onOpen={ctx.openRow} />,
       sortValue: r => r.code, searchText: r => [r.code, r.name], filter: 'text', filterValue: r => `${r.code} ${r.name}`,
     },
+    // The tab names the rate type, so the columns say what they show, as on the
+    // Daily Market Rates tab (Mahreen's 1d, 27 Nov 2026). Keys kept for saved layouts.
     {
-      key: 'rate', label: 'Corporate Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: RATE_TOOLTIPS.corporate,
+      key: 'rate', label: UNIT_IN_BASE, align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[180px]', info: RATE_TOOLTIPS.unitInBaseCorporate,
       render: (r, ctx) => <CorpRateCell r={r} q={ctx.q} />,
       sortValue: r => shownRate(r),
       searchText: r => {
@@ -149,16 +159,16 @@ export function corpColumns(onStatus: (next: CorpStatus, row: CorpRow) => void):
       filter: 'range', filterValue: r => shownRate(r),
     },
     {
-      key: 'inverse', label: 'Inverse Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[180px]', info: RATE_TOOLTIPS.inverse,
+      key: 'inverse', label: BASE_IN_UNIT, align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[200px]', info: RATE_TOOLTIPS.inverse,
       // The inverse of the figure the row shows, so the two always pair up.
-      render: (r, ctx) => { const rate = shownRate(r); return rate == null ? <EmptyCell /> : <RateText from={BASE} value={fmtInverse(rate)} to={r.code} q={ctx.q} /> },
+      render: (r, ctx) => { const rate = shownRate(r); return rate == null ? <EmptyCell /> : <RateText value={fmtBaseInUnit(r.code, rate)} q={ctx.q} /> },
       sortValue: r => { const rate = shownRate(r); return rate == null ? null : 1 / rate },
       searchText: r => { const rate = shownRate(r); return rate == null ? '' : fmtInverse(rate) },
       filter: 'range', filterValue: r => { const rate = shownRate(r); return rate == null ? null : 1 / rate },
     },
     {
-      key: 'mid', label: 'Mid-Market Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[210px]', info: RATE_TOOLTIPS.midMarket,
-      render: (r, ctx) => (r.mid == null ? <EmptyCell /> : <RateText from={r.code} value={fmtRate(r.mid)} to={BASE} q={ctx.q} />),
+      key: 'mid', label: 'Daily Market Rate', align: 'right', cellClassName: 'pl-4 pr-4', headerClassName: 'min-w-[170px]', info: RATE_TOOLTIPS.unitInBaseMid,
+      render: (r, ctx) => (r.mid == null ? <EmptyCell /> : <RateText value={fmtUnitInBase(r.mid)} q={ctx.q} />),
       sortValue: r => r.mid, searchText: r => (r.mid == null ? '' : fmtRate(r.mid)), filter: 'range',
     },
     {

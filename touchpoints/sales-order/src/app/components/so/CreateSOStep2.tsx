@@ -137,6 +137,9 @@ export interface Step2Props {
   lineItems: SOLineItem[];
   onLineItemsChange: (items: SOLineItem[]) => void;
   hasCustomer: boolean;
+  /** The customer's partner group, which picks among an item's prices
+   *  (27 Nov 2026, Spec D); null for none. */
+  customerGroup?: string | null;
 }
 
 /* UoM data layer — central `data/uomSets` module is the source of
@@ -151,10 +154,12 @@ import {
   findUomById,
   multiplierWithinSet,
 } from '../../data/uomSets';
-import { useDocCurrency, useDocMoney, useDocOtherText } from "@/app/components/currency/docCurrencyContext";
+import { useDocCurrency, useDocMoney, useDocOtherText, useDocView } from "@/app/components/currency/docCurrencyContext";
 import { DocMoney } from "@/app/components/currency/DocCurrency";
-import { marketPrice, type LinePriceSource } from "@/app/currency/itemPrices";
-import { EstimatePriceIcon } from "@/app/components/currency/EstimatePriceIcon";
+import { estimateBasePrice, itemBasePrice, marketPrice, type LinePriceSource } from "@/app/currency/itemPrices";
+import { EstimateChip, EstimatePriceIcon, itemPriceCaption } from "@/app/components/currency/EstimatePriceIcon";
+import { TotalFxHover } from "@/app/components/currency/LineItemsCurrency";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
 const UNITS_OF_MEASURE = UOM_SETS.discrete;
 type UomOption = ImportedUomOption;
 
@@ -325,19 +330,23 @@ function QtyUomCapsule({
   );
 }
 
-export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Step2Props) {
+export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer, customerGroup = null }: Step2Props) {
   const { inventory } = useSOStore();
   /* The order will be in the customer's currency (CreateSOModal provides
-     it), at today's mid-market rate, the rate the new order takes. A line
+     it), at today's daily market rate, the rate the new order takes. A line
      takes the item's price in that currency, or its base price converted
      at that rate, marked as an estimate (25 Nov 2026, Nophil review item 2;
-     currency/itemPrices.ts). Shown in base with the customer's amount on
-     hover. */
+     currency/itemPrices.ts). Shown in the customer's currency (27 Nov 2026,
+     D1), base on hover. */
   const formatCurrency = useDocMoney();
   const otherText = useDocOtherText();
   const { currency, fx, rateDate } = useDocCurrency();
+  const { inBase } = useDocView();
   const orderRate = fx?.rate ?? 1;
-  const priceOf = useCallback((product: CatalogItem) => marketPrice(product, currency, orderRate), [currency, orderRate]);
+  const priceOf = useCallback(
+    (product: CatalogItem) => marketPrice(product, currency, orderRate, { group: customerGroup }),
+    [currency, orderRate, customerGroup],
+  );
   const listPrice = useCallback((product: CatalogItem) => priceOf(product).unitPrice, [priceOf]);
 
   /* Item peek modal — opens when the user taps any catalog or
@@ -885,11 +894,22 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                           )}
                         </div>
                         <div className="text-right shrink-0">
+                          {/* 4d (Mahreen, 27 Nov 2026; waiting on Eli): "Est."
+                              and an info icon on a converted price, "Item's
+                              USD price" under the item's own. */}
                           {priceOf(product).priceSource === 'estimate' && (
-                            <span className="inline-flex align-middle" style={{ marginRight: 4 }}><EstimatePriceIcon currency={currency} rateDate={rateDate} /></span>
+                            <span className="inline-flex align-middle" style={{ marginRight: 4 }}><EstimateChip /></span>
                           )}
                           <DocMoney value={listPrice(product)} style={{ fontSize: 'var(--text-caption)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }} />
                           <span style={{ fontSize: 'var(--text-micro)', color: 'var(--foreground)', opacity: 0.4, marginLeft: 4 }}>/ {findUomById(getPrimaryUomForProduct(product))?.name || 'EA'}</span>
+                          {priceOf(product).priceSource === 'estimate' && (
+                            <span className="inline-flex align-middle" style={{ marginLeft: 4 }}>
+                              <EstimatePriceIcon currency={currency} basePrice={itemBasePrice(product)} rate={orderRate} rateType={fx?.rateType} date={rateDate} />
+                            </span>
+                          )}
+                          {priceOf(product).priceSource === 'regional' && (
+                            <div style={{ fontSize: 10, color: 'var(--muted-foreground)', lineHeight: 1.3, marginTop: 2 }}>{itemPriceCaption(currency)}</div>
+                          )}
                         </div>
                       </div>
 
@@ -1247,10 +1267,26 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                             opacity-0.4 ghost. Matches the Quote card. */}
                         <label style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 500 }}>Quantity</label>
                         <label className="inline-flex items-center gap-1" style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 500 }}>
-                          {/* Estimated price (25 Nov 2026): the item has no price in the
-                              order's currency. Beside the label, since the amount fills
-                              the narrow card. */}
-                          {item.priceSource === 'estimate' && <EstimatePriceIcon currency={currency} rateDate={rateDate} />}
+                          {/* Estimated price (4d, 27 Nov 2026): the item has no price in
+                              the order's currency. "Est." and the info icon beside the
+                              label, since the amount fills the narrow card. */}
+                          {item.priceSource === 'estimate' && (() => {
+                            const product = EXTENDED_CATALOG.find((p) => p.code === item.productId);
+                            return (
+                              <>
+                                <EstimateChip />
+                                {product && (
+                                  <EstimatePriceIcon
+                                    currency={currency}
+                                    basePrice={estimateBasePrice(product, item.unitPrice, currency, orderRate)}
+                                    rate={orderRate}
+                                    rateType={fx?.rateType}
+                                    date={rateDate}
+                                  />
+                                )}
+                              </>
+                            );
+                          })()}
                           Item Total
                         </label>
                       </div>
@@ -1283,6 +1319,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                                 </div>
                                 <div className="truncate" style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted-foreground)' }}>
                                   {itemUomLabel}
+                                  {item.priceSource === 'regional' && <> · {itemPriceCaption(currency)}</>}
                                 </div>
                               </div>
                             </>
@@ -1352,14 +1389,18 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
               <span style={{ fontSize: 12, color: 'var(--muted-foreground)', fontWeight: 500 }}>
                 Subtotal
               </span>
-              <span style={{ fontSize: 20, fontWeight: 600, color: 'var(--primary)' }}>
+              <span className="inline-flex items-center gap-1" style={{ fontSize: 20, fontWeight: 600, color: 'var(--primary)' }}>
                 <DocMoney value={subtotal} />
+                {/* The line items' convert icon (4a, 27 Nov 2026): the
+                    subtotal in base at today's rate, with the rate. */}
+                <TotalFxHover total={subtotal} noun="a sales order" />
               </span>
             </div>
-            {/* The order's own figure, in the customer's currency at today's rate. */}
+            {/* The figure in the currency not shown, at today's rate: base in
+                the customer's view (the default since 27 Nov 2026). */}
             {otherText(subtotal) && (
               <div className="text-right tabular-nums" style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 2 }}>
-                {otherText(subtotal)} {currency} · customer currency, at today's rate
+                {otherText(subtotal)} {inBase ? `${currency} · customer currency` : `${BASE_CURRENCY} · base currency`}, at today's rate
               </div>
             )}
           </div>

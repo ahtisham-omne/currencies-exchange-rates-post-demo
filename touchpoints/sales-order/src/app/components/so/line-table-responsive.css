@@ -24,7 +24,8 @@
  *      and each figure becomes a caption-left, value-right line.
  *
  * Cells opt in by class: li-sel (checkbox), li-num (#), li-main (item),
- * li-fig (+ data-label) for figures, li-end for Total, li-act (actions).
+ * li-fig (+ data-label) for figures, li-end for Total, li-act (actions);
+ * in the footer, li-foot-label, li-foot-value (+ li-foot-fx) and li-foot-pad.
  * The table sets --li-sel-w, --li-num-w and --li-act-w inline, since
  * those depend on edit mode.
  */
@@ -85,6 +86,16 @@
     white-space: nowrap;
   }
   .li-row > td.li-end { order: 1; text-align: right !important; }
+
+  /* The Total footer (27 Nov 2026): one right-aligned line, "Total" then
+     the amount and its convert icon, which sits inline here rather than
+     hanging into the (hidden) Allocated column. */
+  .li-table > tfoot { display: block; width: 100%; }
+  .li-table > tfoot > tr { display: flex; align-items: center; justify-content: flex-end; }
+  .li-table > tfoot > tr > td { display: block; }
+  .li-table > tfoot > tr > td.li-foot-pad { display: none; }
+  .li-table > tfoot > tr > td.li-foot-value { padding-right: 12px !important; }
+  .li-table .li-foot-fx { position: static; transform: none; translate: none; margin-left: 4px; }
 }
 
 @container li-table (max-width: 479px) {

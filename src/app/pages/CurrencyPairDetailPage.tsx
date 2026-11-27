@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { useExchangeRates } from '../context/ExchangeRateContext'
 import { useCurrencies } from '../context/CurrencyContext'
-import { API_PROVIDER, LAST_SYNC, isRateInEffect, upcomingRateOf } from '../data/exchangeRates'
+import { isRateInEffect, upcomingRateOf } from '../data/exchangeRates'
 import { CoaPage } from '../coa/components/CoaPage'
 import { DetailHeaderCard } from '../coa/components/DetailHeaderCard'
 import {
@@ -29,7 +29,7 @@ import { cn, fmtDate, fmtDateTime, fmtNumber, todayIso } from '../coa/lib/utils'
 import { MID_MARKET_DETAIL_TOOLTIP, NOTES_TOOLTIP, RATE_TOOLTIPS } from '../utils/rateCopy'
 import { auditTooltips } from './auditColumns'
 import {
-  BASE, BASE_NAME, LAST_SYNC_AT, LAST_SYNC_DAY, daysSince, decimalsOf, fmtInverse, fmtRate, fmtSignedPct,
+  BASE, BASE_NAME, LAST_SYNC_DAY, daysSince, decimalsOf, fmtBothWays, fmtRate, fmtSignedPct, fmtUnitInBase,
   fmtVariance, midAuditOf, symbolOf, varianceColor, variancePct, pairPath,
 } from './exchange/rateModel'
 import {
@@ -130,8 +130,8 @@ export function CurrencyPairDetailPage() {
   const atLatest = !end || end.date === series[series.length - 1]?.date
   const before = end ? series[series.findIndex(p => p.date === end.date) - 1] : undefined
   const endChange = atLatest ? mid.change24h : end && before ? ((end.mid - before.mid) / before.mid) * 100 : 0
-  // The sync that set a day's rate: the latest one, or the same time on an earlier day.
-  const syncOn = (day: string) => (day === series[series.length - 1]?.date ? LAST_SYNC_AT : fmtDateTime(`${day}${LAST_SYNC.slice(10)}`))
+  // The day that read set the rate: a day, never a time (Eli's ruling, 26 Nov 2026).
+  const readOn = fmtDate(atLatest ? mid.effectiveDate : end.date)
   // FX Exposure over the period: the open transactions dated in it.
   const startDay = points[0]?.date ?? ''
   const periodDocs = end ? openDocs.filter(d => d.date >= startDay && d.date <= end.date) : []
@@ -140,7 +140,7 @@ export function CurrencyPairDetailPage() {
       case 'current_mid': {
         const rate = atLatest ? mid.rate : end.mid
         const c = endChange >= 0 ? '#059669' : '#DC2626'
-        return { text: fmtRate(rate), value: fmtRate(rate), subDetail: <>{colored(fmtSignedPct(endChange), c)} · as of {atLatest ? LAST_SYNC_AT : syncOn(end.date)}</> }
+        return { text: fmtRate(rate), value: fmtRate(rate), subDetail: <>{colored(fmtSignedPct(endChange), c)} · Read on {readOn}</> }
       }
       case 'current_std':
         if (!atLatest) {
@@ -164,7 +164,7 @@ export function CurrencyPairDetailPage() {
         // against today's mid-market rate, as the Rate Information panel shows it.
         const t = inEffect ? fmtVariance(inEffect.standardRate, mid.rate) : null
         return t && variance != null
-          ? { text: t, value: colored(t, varianceColor(variance)), subDetail: 'Updated as of today’s mid-market rate' }
+          ? { text: t, value: colored(t, varianceColor(variance)), subDetail: 'Against today’s daily market rate' }
           : { text: 'N/A', value: 'N/A', subDetail: 'No corporate rate in effect' }
       }
       case 'days_since_update': {
@@ -203,7 +203,7 @@ export function CurrencyPairDetailPage() {
   const rateTypeChip = (() => {
     const cls = isStd ? 'badge-orange' : 'badge-purple'
     const Icon = isStd ? Star : Activity
-    const text = isStd ? 'Corporate Rate' : 'Mid-Market Rate'
+    const text = isStd ? 'Corporate Rate' : 'Daily Market Rate'
     if (!record || isBase) return <span className={cn(cls, 'gap-1')}><Icon className="w-3 h-3" />{text}</span>
     return (
       <Menu align="left" trigger={
@@ -215,7 +215,7 @@ export function CurrencyPairDetailPage() {
         {close => (
           <>
             <MenuItem icon={<Activity size={14} />} active={!isStd} onClick={() => { close(); if (isStd) switchTo('mid') }}>
-              <span className="flex-1">Mid-Market Rate</span>{!isStd && <Check size={14} className="text-primary ml-2" />}
+              <span className="flex-1">Daily Market Rate</span>{!isStd && <Check size={14} className="text-primary ml-2" />}
             </MenuItem>
             <MenuItem icon={<Star size={14} />} active={isStd} onClick={() => { close(); if (!isStd) switchTo('std') }}>
               <span className="flex-1">Corporate Rate</span>{isStd && <Check size={14} className="text-primary ml-2" />}
@@ -244,7 +244,7 @@ export function CurrencyPairDetailPage() {
           <>
             {record && !isBase && (
               <MenuItem icon={<ArrowLeftRight size={14} />} onClick={() => { close(); switchTo(isStd ? 'mid' : 'std') }}>
-                {isStd ? 'View Mid-Market Rate' : 'View Corporate Rate'}
+                {isStd ? 'View Daily Market Rate' : 'View Corporate Rate'}
               </MenuItem>
             )}
             {!isStd && !isBase && (active
@@ -280,20 +280,18 @@ export function CurrencyPairDetailPage() {
       <DashInfoCard title="Rate Information" icon={FileText}>
         <InfoGrid>
           <div className="min-w-0"><DashInfoLabel>Currency Pair</DashInfoLabel><InfoValue strong>{code} / {BASE}</InfoValue></div>
-          <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.rateType}>Rate Type</DashInfoLabel><InfoValue>{isStd ? 'Corporate Rate' : 'Mid-Market Rate'}</InfoValue></div>
-          <div className="min-w-0">
+          <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.rateType}>Rate Type</DashInfoLabel><InfoValue>{isStd ? 'Corporate Rate' : 'Daily Market Rate'}</InfoValue></div>
+          {/* Both directions in one line, "1 USD = ₨278.5200 · 1 PKR = $0.003590", in
+              place of the separate Rate and Inverse Rate fields (Mahreen's 1e, 27 Nov 2026). */}
+          <div className="min-w-0 col-span-2">
             <DashInfoLabel tooltip={isStd ? RATE_TOOLTIPS.corporate : MID_MARKET_DETAIL_TOOLTIP}>{archived ? 'Rate (Archived)' : 'Rate'}</DashInfoLabel>
-            {shownRate != null ? <InfoValue strong className="tabular-nums">{fmtRate(shownRate)} {BASE}</InfoValue> : <InfoValue empty>{upcoming ? 'None in effect yet' : 'Not Set'}</InfoValue>}
-          </div>
-          <div className="min-w-0">
-            <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.inverse}>Inverse Rate</DashInfoLabel>
-            {shownRate != null ? <InfoValue className="tabular-nums">{fmtInverse(shownRate)} {code}</InfoValue> : <InfoValue empty>–</InfoValue>}
+            {shownRate != null ? <InfoValue strong className="tabular-nums" title={fmtBothWays(code, shownRate)}>{fmtBothWays(code, shownRate)}</InfoValue> : <InfoValue empty>{upcoming ? 'None in effect yet' : 'Not Set'}</InfoValue>}
           </div>
           {isStd ? (
             // A corporate rate has no Source field: the team sets it, which Rate Type
-            // already says. Mid-market and variance share a row; the dates close the card.
+            // already says. Daily market rate and variance share a row; the dates close the card.
             <>
-              <div className="min-w-0"><DashInfoLabel tooltip={MID_MARKET_DETAIL_TOOLTIP}>Mid-Market Rate</DashInfoLabel><InfoValue className="tabular-nums">{fmtRate(mid.rate)} {BASE}</InfoValue></div>
+              <div className="min-w-0"><DashInfoLabel tooltip={MID_MARKET_DETAIL_TOOLTIP}>Daily Market Rate</DashInfoLabel><InfoValue className="tabular-nums">{fmtUnitInBase(mid.rate)}</InfoValue></div>
               <div className="min-w-0">
                 <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.variance}>Variance</DashInfoLabel>
                 {variance != null && inEffect ? <InfoValue className="tabular-nums"><span style={{ color: varianceColor(variance) }}>{fmtVariance(inEffect.standardRate, mid.rate)}</span></InfoValue> : <InfoValue empty>–</InfoValue>}
@@ -313,16 +311,18 @@ export function CurrencyPairDetailPage() {
             </>
           ) : (
             <>
+              {/* The day the rate was read, date only (Eli's ruling, 26 Nov 2026). A
+                  daily market rate takes effect the day it is read, so one Rate Date
+                  stands for the Effective Date and Last Synced it had. */}
               <div className="min-w-0"><DashInfoLabel>Source</DashInfoLabel><InfoValue><SourceLink className="text-primary" /></InfoValue></div>
               <div className="min-w-0">
-                <DashInfoLabel align="right">Effective Date</DashInfoLabel>
+                <DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Rate Date</DashInfoLabel>
                 <InfoValue>{fmtDate(mid.effectiveDate)}</InfoValue>
               </div>
               <div className="min-w-0">
                 <DashInfoLabel tooltip={RATE_TOOLTIPS.change24h}>Change</DashInfoLabel>
                 <InfoValue className="tabular-nums"><span style={{ color: mid.change24h > 0 ? '#059669' : mid.change24h < 0 ? '#DC2626' : undefined }}>{fmtSignedPct(mid.change24h)}</span></InfoValue>
               </div>
-              <div className="min-w-0"><DashInfoLabel align="right" tooltip={RATE_TOOLTIPS.lastSync}>Last Synced</DashInfoLabel><InfoValue>{LAST_SYNC_AT}</InfoValue></div>
             </>
           )}
         </InfoGrid>
@@ -347,10 +347,10 @@ export function CurrencyPairDetailPage() {
       </DashInfoCard>
       <DashInfoCard title="Pair Converter" icon={ArrowLeftRight}>
         {shownRate != null ? (
-          <PairInverter layout="stack" swapTip="Swap currencies" description={isStd ? 'Converts amounts at the corporate rate.' : 'Converts amounts at the mid-market rate.'} code={code} name={mid.sourceCurrencyName} rate={shownRate}
-            inverted={inverted} onToggle={() => setInverted(v => !v)} note={isStd ? (archived ? 'At the archived corporate rate' : 'At the corporate rate') : 'At the mid-market rate'} />
+          <PairInverter layout="stack" swapTip="Swap currencies" description={isStd ? 'Converts amounts at the corporate rate.' : 'Converts amounts at the daily market rate.'} code={code} name={mid.sourceCurrencyName} rate={shownRate}
+            inverted={inverted} onToggle={() => setInverted(v => !v)} note={isStd ? (archived ? 'At the archived corporate rate' : 'At the corporate rate') : 'At the daily market rate'} />
         ) : isStd && upcoming ? (
-          <PairInverter layout="stack" swapTip="Swap currencies" description={isStd ? 'Converts amounts at the corporate rate.' : 'Converts amounts at the mid-market rate.'} code={code} name={mid.sourceCurrencyName} rate={upcoming.standardRate}
+          <PairInverter layout="stack" swapTip="Swap currencies" description={isStd ? 'Converts amounts at the corporate rate.' : 'Converts amounts at the daily market rate.'} code={code} name={mid.sourceCurrencyName} rate={upcoming.standardRate}
             inverted={inverted} onToggle={() => setInverted(v => !v)} note={`At the upcoming corporate rate, from ${fmtDate(upcoming.effectiveDate)}`} />
         ) : (
           <p className="text-[12px] text-slate-400">No corporate rate is set for this pair yet.</p>
@@ -428,7 +428,7 @@ export function CurrencyPairDetailPage() {
         {tab === 'history' && <RateHistoryTab rows={history} code={code} isStd={isStd} />}
         {tab === 'notes' && <RecordNotesTab noteKey={key} noun="exchange rate" derived={derivedNotes} />}
         {tab === 'attachments' && (
-          <RecordAttachmentsTab recordKey={key} seed={seedFiles} document={{ recordLabel: `${pair} ${isStd ? 'corporate rate' : 'mid-market rate'}`, recordKind: 'exchange rate' }} />
+          <RecordAttachmentsTab recordKey={key} seed={seedFiles} document={{ recordLabel: `${pair} ${isStd ? 'corporate rate' : 'daily market rate'}`, recordKind: 'exchange rate' }} />
         )}
         {/* Communications follows Vendor Invoicing, which shows it as Coming
             Soon until its backend lands. */}

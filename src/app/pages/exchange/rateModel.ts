@@ -7,7 +7,7 @@ import {
   API_PROVIDER, BASE_CURRENCY, BASE_CURRENCY_NAME, LAST_SYNC, isRateInEffect, upcomingRateOf,
   type MidMarketRate, type StandardRate,
 } from '../../data/exchangeRates'
-import { fmtDate, fmtDateTime, todayIso } from '../../coa/lib/utils'
+import { fmtDate, todayIso } from '../../coa/lib/utils'
 
 export const BASE = BASE_CURRENCY
 export const BASE_NAME = BASE_CURRENCY_NAME
@@ -18,11 +18,12 @@ export const ACTOR = 'Ahtisham Ahmad'
 const SEED_BY_CODE = new Map(SEED_CURRENCIES.map(c => [c.code, c]))
 /** Who set up and keeps a provider-synced rate. */
 const SYSTEM = 'System'
-/** A mid-market rate's audit details: "System" set it up the day its currency entered the
- *  library, and the provider's last sync is its last update. */
+/** A daily market rate's audit details: "System" set it up the day its currency entered the
+ *  library, and the provider's last read is its last update. That is a day, not a
+ *  moment: a rate is read once a day and has no time of day (Eli's ruling, 26 Nov 2026). */
 export function midAuditOf(code: string) {
   const log = SEED_BY_CODE.get(code)?.auditLog
-  return { createdBy: SYSTEM, createdAt: log?.[log.length - 1]?.dateTime ?? '', updatedBy: SYSTEM, updatedAt: LAST_SYNC }
+  return { createdBy: SYSTEM, createdAt: log?.[log.length - 1]?.dateTime ?? '', updatedBy: SYSTEM, updatedAt: LAST_SYNC_DAY }
 }
 
 /** ISO 3166 alpha-2 for the flag ('ae'), or '' when there is none. */
@@ -42,22 +43,43 @@ export const symbolOf = (code: string) => SEED_BY_CODE.get(code)?.symbol ?? code
 
 /* ── Numbers ───────────────────────────────────────────────────────────── */
 
-/** Every rate, and every inverse rate, prints with four decimals. */
+/** Every rate prints with four decimals (every rate here is 0.01 or more). */
 export const fmtRate = (n: number) => n.toFixed(4)
-export const fmtInverse = (n: number) => (n > 0 ? (1 / n).toFixed(4) : '–')
+/** R27: four decimals, six under 0.01, so a strong currency's inverse keeps its
+ *  figures (1 PKR = 0.003590 USD, 0.001102 KWD) instead of rounding to 0.0036 or 0.0011. */
+const rateDigits = (n: number) => (n !== 0 && Math.abs(n) < 0.01 ? 6 : 4)
+export const fmtInverse = (n: number) => (n > 0 ? (1 / n).toFixed(rateDigits(1 / n)) : '–')
 /** A rate as the pair it prices: "1 AED = 75.8400 PKR". */
 export const fmtPairRate = (code: string, rate: number) => `1 ${code} = ${fmtRate(rate)} ${BASE}`
-/** Its inverse the same way round: "1 PKR = 0.0132 AED". */
+/** Its inverse the same way round: "1 PKR = 0.0132 AED", "1 PKR = 0.003590 USD". */
 export const fmtPairInverse = (code: string, rate: number) => `1 ${BASE} = ${fmtInverse(rate)} ${code}`
+
+/* A figure as an amount of a currency, with its sign: "₨278.5200", "$0.003590".
+   A sign that ends in a letter (CHF, kr, د.إ) takes a space, and a left-to-right
+   mark keeps a right-to-left sign from pulling the digits in front of it, as
+   currency/model's money() does. */
+export const withSymbol = (code: string, figure: string) => {
+  const s = symbolOf(code)
+  return /\p{L}$/u.test(s) ? `${s}‎ ${figure}` : `${s}‎${figure}`
+}
+/** 1 unit of the currency in the base currency: "₨278.5200" (the rate lists' "1 Unit in PKR"). */
+export const fmtUnitInBase = (rate: number) => withSymbol(BASE, fmtRate(rate))
+/** 1 unit of the base currency in this one: "$0.003590" (the rate lists' "1 PKR in That Currency"). */
+export const fmtBaseInUnit = (code: string, rate: number) => (rate > 0 ? withSymbol(code, fmtInverse(rate)) : '–')
+/** Both directions in plain words: "1 USD = ₨278.5200 · 1 PKR = $0.003590"
+ *  (Mahreen's 1e, 27 Nov 2026: it replaces the separate Rate and Inverse Rate). */
+export const fmtBothWays = (code: string, rate: number) => `1 ${code} = ${fmtUnitInBase(rate)} · 1 ${BASE} = ${fmtBaseInUnit(code, rate)}`
 /** An amount in a currency, with that currency's own decimals (75.84 PKR, 0.00 USD). */
 export const fmtAmountIn = (n: number, code: string) => {
   const dp = decimalsOf(code)
   return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
 }
-/** A converter's result, with the four decimals every rate carries, so converting
- *  one unit reads as the rate itself: 1 AFN = 19.7000 PKR, 1 PKR = 0.0036 USD. */
-export const fmtConverted = (n: number) =>
-  n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+/** A converter's result, with the decimals every rate carries (R27), so converting
+ *  one unit reads as the rate itself: 1 AFN = 19.7000 PKR, 1 PKR = 0.003590 USD. */
+export const fmtConverted = (n: number) => {
+  const dp = rateDigits(n)
+  return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
+}
 export const fmtSignedPct =(n: number, dp = 2) => `${n > 0 ? '+' : ''}${n.toFixed(dp)}%`
 /** Variance as the amount and, in brackets, the percentage: "+0.4800 PKR (+0.17%)".
  *  The amount is corporate minus mid-market, in PKR per unit, to a rate's four decimals. */
@@ -82,7 +104,9 @@ export function varianceColor(v: number | null): string | undefined {
   return a <= 1 ? '#059669' : a <= 3 ? '#D97706' : '#DC2626'
 }
 
-/* ── The sync stamp ────────────────────────────────────────────────────── */
+/* ── The sync stamp ──────────────────────────────────────────────────────
+   A rate is read once a day and fixed for that date (Eli's ruling, 26 Nov
+   2026), so the screens say the day only: "Read on Nov 27, 2026". */
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const pad2 = (n: number) => String(n).padStart(2, '0')
@@ -100,11 +124,9 @@ const SYNC = syncStamp()
 export const LAST_SYNC_DATE = SYNC.date
 export const LAST_SYNC_TIME = SYNC.time
 export const LAST_SYNC_DAY = SYNC.day
-/** The last sync as every screen writes a moment: "Apr 10, 2026, 6:00 PM". */
-export const LAST_SYNC_AT = fmtDateTime(LAST_SYNC)
-export const SYNC_LINE = `Synced from ${API_PROVIDER} · Updated ${LAST_SYNC_AT}`
+export const SYNC_LINE = `Daily market rates from ${API_PROVIDER} · Read on ${LAST_SYNC_DATE}`
 /** The toolbar's short form; the full line rides in its tooltip. */
-export const SYNC_LINE_SHORT = `Updated ${LAST_SYNC_AT}`
+export const SYNC_LINE_SHORT = `Read on ${LAST_SYNC_DATE}`
 
 /* ── Backdating (one rule for every door to the corporate rate form) ───── */
 
@@ -173,8 +195,8 @@ export function toMidRows(mid: MidMarketRate[], standard: StandardRate[]): MidRo
     region: regionOf(m.sourceCurrency),
     ...midAuditOf(m.sourceCurrency),
     syncFailed: m.syncFailed ?? null,
-    // A failed sync didn't update it: its last update is the last good sync.
-    ...(m.syncFailed ? { updatedAt: m.syncFailed.lastSyncedAt } : {}),
+    // A failed sync didn't update it: its last update is the last good read's day.
+    ...(m.syncFailed ? { updatedAt: syncStamp(m.syncFailed.lastSyncedAt).day } : {}),
     corporate: standard.find(s => s.sourceCurrency === m.sourceCurrency && s.status === 'active'),
   }))
 }

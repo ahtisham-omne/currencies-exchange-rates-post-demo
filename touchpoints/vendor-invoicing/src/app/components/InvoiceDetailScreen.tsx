@@ -88,6 +88,8 @@ import { reversiblePaymentsFrom, reversedRefsFromHistory } from '@/app/lib/rever
 import type { CreditMemo } from '@/app/data/creditMemos';
 import { formatUsDate, overdueDaysOf, parseDateOnly, todayAtMidnight } from '@/app/lib/dueBucket';
 import { PaymentsTab } from './invoice-details/PaymentsTab';
+import { MarkPaidDialog } from '@/app/components/payments/MarkPaidDialog';
+import { bankRatePairOf } from '@/app/currency/paymentLedger';
 import { AttachmentsTab } from './invoice-details/AttachmentsTab';
 import { ComingSoonTab } from './invoice-details/ComingSoonTab';
 import { InvoiceDetailSidebar } from './invoice-details/InvoiceDetailSidebar';
@@ -166,6 +168,10 @@ interface InvoiceDetailScreenProps {
    *  post-reversal numbers. The invoiceId/amount pair is the fallback
    *  for seed synthetic rows with no record behind them. */
   onReversePayment?: (args: { invoiceId?: string; paymentReference: string; amount?: number; reason?: string }) => void;
+  /** Marks a scheduled payment paid at App level (App's mark-paid handler),
+   *  with the bank's rate when the bank converts: the Payments tab's "Enter
+   *  Rate" banner opens Mark as paid here (27 Nov 2026, Mahreen 7e). */
+  onMarkPaymentPaid?: (paymentId: string, bankRate?: number) => void;
   /** Credit memos live in App state (9/22/26): real records that persist
    *  across navigation and open a real page. */
   creditMemos?: CreditMemo[];
@@ -824,7 +830,7 @@ function daysBetween(later: Date, earlier: Date) {
 // Main screen
 // ══════════════════════════════════════════════════════════════════
 
-export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [], applyInvoiceAction, onSettleInvoices, onPayInvoices, onAddPrepayment, onEditResubmit, onReversePayment, creditMemos = [], onAddCreditMemo, onViewCreditMemo, runs, onViewRun, notes = [], onAddNote, onUpdateNote, onDeleteNote }: InvoiceDetailScreenProps) {
+export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [], applyInvoiceAction, onSettleInvoices, onPayInvoices, onAddPrepayment, onEditResubmit, onReversePayment, onMarkPaymentPaid, creditMemos = [], onAddCreditMemo, onViewCreditMemo, runs, onViewRun, notes = [], onAddNote, onUpdateNote, onDeleteNote }: InvoiceDetailScreenProps) {
   const navigate = useNavigate();
   const location = useLocation();
   // Opened from Vendor Payments (Ready to pay row, Applied To link) — the
@@ -845,6 +851,9 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
   const currencyViewKey = `invoice:${invoiceId}`;
   const currencyView: DocView = useDocViewOf(currencyViewKey);
   const [currencyConfigOpen, setCurrencyConfigOpen] = useState(false);
+  // Mark as paid with the bank's rate, from the Payments tab's banner (27 Nov 2026).
+  const [markPaidPaymentId, setMarkPaidPaymentId] = useState<string | null>(null);
+  const markPaidPayment = markPaidPaymentId ? payments.find((p) => p.id === markPaidPaymentId && p.status === 'Scheduled') ?? null : null;
   const apPerms = useApPermissions();
   const [creditMemoOpen, setCreditMemoOpen] = useState(false);
   // Credit memos come from App state now (9/22/26 review response): real
@@ -2196,6 +2205,7 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
                     )
                   }
                   onContinuePayment={() => onPayInvoices?.([invoice.id])}
+                  onEnterRate={onMarkPaymentPaid ? (paymentId) => setMarkPaidPaymentId(paymentId) : undefined}
                   onViewCreditMemo={(creditMemoNumber) => {
                     // Session memos have a real page; a seed's synthetic
                     // memo row has no record behind it, so say so instead
@@ -2792,10 +2802,26 @@ export function InvoiceDetailScreen({ invoiceId, onClose, invoices, payments = [
             readOnly
             savedRate={{ rate: pageFx.rate, rateType: pageFx.rateType, rateDate: pageFx.rateDate, edited: invoice.rateEdited, source: pageFx.source }}
             posted={invoiceRateLocked(invoice)}
+            vendorInvoiceDate={invoice.invoiceDate}
             onEdit={status === 'Pending Approval' ? () => handleAction({ key: 'edit', label: 'Edit Invoice', icon: Pencil }) : undefined}
           />
         );
       })()}
+
+      {/* Mark as paid with the bank's rate (27 Nov 2026, Mahreen 7e): the
+          Payments tab's "was scheduled for today" banner opens it. */}
+      {onMarkPaymentPaid && (
+        <MarkPaidDialog
+          open={!!markPaidPayment}
+          onOpenChange={(o) => { if (!o) setMarkPaidPaymentId(null); }}
+          payments={markPaidPayment ? [markPaidPayment] : []}
+          invoices={invoices}
+          onConfirm={(rates) => {
+            if (markPaidPayment) onMarkPaymentPaid(markPaidPayment.id, rates[bankRatePairOf(markPaidPayment)]);
+            setMarkPaidPaymentId(null);
+          }}
+        />
+      )}
     </div>
     </DocCurrencyProvider>
   );

@@ -1,18 +1,26 @@
 import * as React from "react";
-import { Check, ChevronDown, Lock, LockOpen, RotateCcw, Settings2 } from "lucide-react";
+import { Banknote, Check, ChevronDown, Landmark, Lock, LockOpen, RotateCcw, Settings2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { FONT } from "../designTokens";
 import { computePOPricing } from "../poOrderPricing";
 import { isPORateLocked, withPOCurrency, type POCurrencyChoice, type PurchaseOrderData } from "../poStore";
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
-import { DEFAULT_PAY_FROM, getCompanyAccount, payFromAccountsFor, resolvePayFrom } from "@/app/currency/companyAccounts";
-import { formatMoney, formatRate, formatRateDate } from "@/app/currency/money";
-import { payFromCross, poFx, vendorCurrency } from "@/app/currency/poFx";
-import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
-import { CurrencyFlag } from "./CurrencyChip";
+import {
+  accountLine,
+  getCompanyAccount,
+  payFromAccountsFor,
+  resolvePayFrom,
+  vendorPayFrom,
+  type CompanyAccount,
+} from "@/app/currency/companyAccounts";
+import { formatMoney, formatRate, formatRateDate, rateSentence } from "@/app/currency/money";
+import { localTodayIso, payFromCross, poFx, vendorCurrency, type PayFromCross, type PoFx } from "@/app/currency/poFx";
+import { RATES_READ_ON, RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
+import { CurrencyPill } from "./CurrencyChip";
 import { CurrencyBlock, LockChip, RateTypeChip, blockRateText, withCode, type CurrencyBlockRow } from "./CurrencyBlock";
-import { CompareRatesHover } from "./CompareRatesHover";
+import { RateTypeInfo } from "./RateTypeInfo";
 import { linkProvider } from "./ProviderLink";
 import { CurrencyPicker, POCurrencyConfirmDialog, RateTypeToggle, type POCurrencyChange } from "./POCurrencyFields";
 
@@ -28,13 +36,14 @@ export const PAY_FROM_ESTIMATE_NOTE = "Estimate at today's rate. Your bank uses 
  *  - "Vendor receives": the PO's currency, the vendor's by default (spec 4.2).
  *    Changing it converts every line at the PO date's rates, after the same
  *    confirmation the redesign shows (POCurrencyConfirmDialog).
- *  - "You pay": the company bank or cash account the PO is paid from, in the
- *    base currency or the PO's (companyAccounts), 1010 by default. Paying
- *    from a base account, the amount is the base total at the PO's rate.
- *  - The rate: the PO date's, mid-market (read-only) or corporate (finance's,
- *    which can be changed on the PO). Unlocked while the PO is a Draft or
- *    Sent; it locks when the PO is confirmed (isPORateLocked), and then the
- *    configuration is read-only.
+ *  - "You pay in": the company bank or cash account the PO is paid from, in
+ *    any currency (companyAccounts): the vendor's default unless chosen on
+ *    the PO, else 1010 (27 Nov 2026). Paying from a base account, the amount
+ *    is the base total at the PO's rate.
+ *  - The rate: the PO date's, the daily market rate (read-only) or
+ *    corporate (finance's, which can be changed on the PO). Unlocked while
+ *    the PO is a Draft or Sent; it locks when the PO is confirmed
+ *    (isPORateLocked), and then the configuration is read-only.
  * Every change goes through the page's edit guard and version history. */
 
 const RATE_HEX: Record<RateType, string> = { mid: "#7C3AED", corporate: "#B45309" };
@@ -49,9 +58,64 @@ export function poLockTitle(po: Pick<PurchaseOrderData, "confirmationDate">, loc
 
 /* ── Order Summary: CURRENCY ───────────────────────────────────────── */
 
+/** Under an estimate in base: today's rate, or the day of the PO's rate when
+ *  it was taken on another day (the PO's base equivalent is at the PO's rate). */
+const baseEstimateNote = (rateDate: string) =>
+  rateDate.slice(0, 10) === localTodayIso() ? "Estimate at today's rate" : `Estimate at the rate of ${formatRateDate(rateDate)}`;
+
+/* Paid from an account in a third currency (Mahreen, 27 Nov 2026, PO-4): what
+ * the vendor receives with its currency chip, the account, the estimate in
+ * the account's currency, the one rate that changes hands (USD to CAD, today's)
+ * with its type under it, then the base equivalent as one estimate line. No
+ * rates through the base currency (removed 25 Nov). */
+function crossRows(fx: PoFx, total: number, base: number, account: CompanyAccount, cross: PayFromCross): CurrencyBlockRow[] {
+  const today = formatRateDate(localTodayIso());
+  const crossTip =
+    fx.rateType === "mid"
+      ? `Today's ${RATE_TYPE_LABEL.mid.toLowerCase()}, ${today} · ${RATE_PROVIDER}. Your bank uses its own rate when you pay.`
+      : `From today's corporate rates, ${today}, or the ${RATE_TYPE_LABEL.mid.toLowerCase()} where none is set. Your bank uses its own rate when you pay.`;
+  return [
+    {
+      label: "Vendor receives",
+      code: fx.currency,
+      value: (
+        <>
+          <span className="truncate">{formatMoney(total, fx.currency)}</span>
+          <CurrencyPill code={fx.currency} />
+        </>
+      ),
+    },
+    { label: "You pay in", code: account.currency, value: <span className="truncate">{accountLine(account)}</span> },
+    { label: "You pay", code: cross.account, amount: cross.amount, approx: true, noFlag: true },
+    {
+      label: "Exchange rate",
+      code: cross.to,
+      value: <span className="whitespace-nowrap">{rateSentence(cross.from, cross.shown, cross.to)}</span>,
+      // The rate type of a base-currency PO's cross rate isn't the PO's to show.
+      sub: fx.isBase ? (
+        PAY_FROM_ESTIMATE_NOTE
+      ) : (
+        <Tooltip delayDuration={200}>
+          <TooltipTrigger asChild>
+            <span className="cursor-help inline-flex">
+              <RateTypeChip type={fx.rateType} />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-[240px] text-[11px]">
+            {crossTip}
+          </TooltipContent>
+        </Tooltip>
+      ),
+    },
+    ...(fx.isBase
+      ? []
+      : [{ label: "Base equivalent", code: BASE_CURRENCY, amount: base, approx: true, sub: baseEstimateNote(fx.rateDate) }]),
+  ];
+}
+
 export function POCurrencySummary({ po, total, onViewConfig }: { po: PurchaseOrderData; total: number; onViewConfig: () => void }) {
   const fx = poFx(po);
-  const account = resolvePayFrom(fx.currency, po.payFromAccount, po.settlementCurrency);
+  const account = resolvePayFrom(fx.currency, po.payFromAccount, po.settlementCurrency, po.vendor.name);
   const locked = isPORateLocked(po);
   const base = toBase(total, fx.rate);
   // Paid from an account in a third currency (25 Nov 2026): the estimate in
@@ -59,15 +123,19 @@ export function POCurrencySummary({ po, total, onViewConfig }: { po: PurchaseOrd
   // equivalent.
   const cross = payFromCross(fx, account.currency, total);
 
+  // The PO's own rate (same-currency and base-currency accounts): the PO date's.
+  const poRateTip =
+    fx.rateType === "mid"
+      ? `The ${RATE_TYPE_LABEL.mid.toLowerCase()} on ${formatRateDate(fx.rateDate)}, the PO date · ${RATE_PROVIDER}`
+      : po.rateEdited
+        ? `A corporate rate entered on this PO (${formatRateDate(fx.rateDate)})`
+        : `Finance's corporate rate in effect on ${formatRateDate(fx.rateDate)}, the PO date`;
+
   // Currency information (25 Nov 2026): what the vendor receives, the
   // currency you pay in (the pay-from account's), the base equivalent and the
   // exchange rate with its type.
   const rows: CurrencyBlockRow[] = cross
-    ? [
-        { label: "Vendor receives", code: fx.currency, amount: total },
-        { label: "You pay in", code: cross.account, amount: cross.amount, approx: true, title: `From ${account.label}` },
-        ...(fx.isBase ? [] : [{ label: "Base equivalent", code: BASE_CURRENCY, amount: base, approx: true }]),
-      ]
+    ? crossRows(fx, total, base, account, cross)
     : [
         { label: "Vendor receives", code: fx.currency, amount: total },
         { label: "You pay in", code: account.currency, title: `From ${account.label}` },
@@ -78,16 +146,9 @@ export function POCurrencySummary({ po, total, onViewConfig }: { po: PurchaseOrd
     <div className="border-t border-muted pt-3 mt-3">
       <CurrencyBlock
         isBase={fx.isBase && !cross}
-        rateType={cross && fx.isBase ? undefined : fx.rateType}
-        rate={cross ? { code: cross.from, rate: cross.shown, to: cross.to } : { code: fx.currency, rate: fx.rate }}
-        note={cross ? PAY_FROM_ESTIMATE_NOTE : undefined}
-        rateTypeTip={
-          fx.rateType === "mid"
-            ? `The mid-market rate on ${formatRateDate(fx.rateDate)}, the PO date · ${RATE_PROVIDER}`
-            : po.rateEdited
-              ? `A corporate rate entered on this PO (${formatRateDate(fx.rateDate)})`
-              : `Finance's corporate rate in effect on ${formatRateDate(fx.rateDate)}, the PO date`
-        }
+        rateType={cross ? undefined : fx.rateType}
+        rate={cross ? null : { code: fx.currency, rate: fx.rate }}
+        rateTypeTip={poRateTip}
         lock={{ locked, title: poLockTitle(po, locked) }}
         rows={rows}
         footer={
@@ -140,28 +201,36 @@ function AmountRow({ amount, code, approx, picker }: { amount: number; code: str
 
 const PICKER = "h-10 w-full rounded-md px-2.5 flex items-center gap-1.5 text-[12px]";
 
-/** "1010 · JPMorgan Operating · PKR ▾": bank and cash accounts in the base
- *  currency or the PO's. */
+/** "🏛 1010 · JPMorgan Operating [PKR] ▾" (Mahreen, 27 Nov 2026, PO-2): one
+ *  dropdown of the company's bank and cash accounts, each with its currency
+ *  chip, the vendor's default first and tagged "From vendor". The account
+ *  sets the currency you pay in; there is no separate currency choice. No
+ *  balances (5e, waiting on Nophil). */
 function PayFromPicker({
   value,
   currency,
+  vendorName,
   onPick,
   disabled,
 }: {
   value: string;
   /** The PO's currency (as drafted in the dialog). */
   currency: string;
+  /** The PO's vendor, whose default account leads the list. */
+  vendorName: string;
   onPick: (accountId: string) => void;
   disabled: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
-  const accounts = payFromAccountsFor(currency);
+  const accounts = payFromAccountsFor(currency, vendorName);
+  const vendorDefault = vendorPayFrom(vendorName).id;
   const current = getCompanyAccount(value) ?? accounts[0];
+  const AccountIcon = current.type === "cash" ? Banknote : Landmark;
   const body = (
     <span className="flex items-center gap-1.5 min-w-0">
-      <CurrencyFlag code={current.currency} />
+      <AccountIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
       <span className="truncate text-slate-700" style={{ fontWeight: 500 }}>{current.label}</span>
-      <span className="shrink-0 text-slate-400">· {current.currency}</span>
+      <CurrencyPill code={current.currency} party="Account" />
     </span>
   );
   if (disabled) {
@@ -173,7 +242,8 @@ function PayFromPicker({
     );
   }
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // Modal: inside the dialog, the list wouldn't scroll by wheel otherwise.
+    <Popover modal open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -184,7 +254,11 @@ function PayFromPicker({
           <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[300px] p-0 rounded-lg z-[200]" style={{ fontFamily: FONT }}>
+      <PopoverContent
+        align="start"
+        className="w-[var(--radix-popover-trigger-width)] min-w-[320px] p-0 rounded-lg z-[200]"
+        style={{ fontFamily: FONT }}
+      >
         <div className="max-h-[280px] overflow-y-auto py-1" role="listbox" aria-label="Pay from account">
           {accounts.map((a) => {
             const selected = a.id === current.id;
@@ -202,14 +276,20 @@ function PayFromPicker({
                   selected ? "bg-primary/[0.06] text-primary" : "hover:bg-slate-50 text-foreground"
                 }`}
               >
-                <CurrencyFlag code={a.currency} />
                 <span className="flex-1 min-w-0">
-                  <span className="block truncate" style={{ fontWeight: 600 }}>{a.label}</span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="truncate" style={{ fontWeight: 600 }}>{a.label}</span>
+                    <CurrencyPill code={a.currency} party="Account" />
+                  </span>
                   <span className="block truncate text-[10.5px] text-slate-400" style={{ fontWeight: 400 }}>
                     {a.type === "cash" ? "Cash on hand" : `${a.bankName} ••${a.accountMask}`}
                   </span>
                 </span>
-                <span className="shrink-0 text-[11px] text-slate-500" style={{ fontWeight: 600 }}>{a.currency}</span>
+                {a.id === vendorDefault && (
+                  <span className="shrink-0 text-[10px] text-slate-400" style={{ fontWeight: 500 }}>
+                    From vendor
+                  </span>
+                )}
                 {selected && <Check className="w-3.5 h-3.5 shrink-0" />}
               </button>
             );
@@ -220,13 +300,12 @@ function PayFromPicker({
   );
 }
 
-/** The time of day the provider's rates sync, e.g. "7:30 PM". */
-const SYNC_TIME = new Date(LAST_SYNC).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-
-/** Under the rate (25 Nov 2026): when a mid-market rate was last updated,
- *  or from when a corporate rate is in effect. Not the PO date. */
+/** Under the rate (25 Nov 2026): the day a daily market rate was read, or
+ *  from when a corporate rate is in effect. A rate is read once a day and
+ *  fixed for that date, so no time of day (Eli's ruling, 26 Nov 2026). */
 export function rateAsOfLine(type: RateType, date: string, effectiveDate?: string | null, entered?: boolean): string {
-  if (type === "mid") return `Rate updated as of ${formatRateDate(date)}, ${SYNC_TIME}`;
+  // A day still to come has today's read until its own.
+  if (type === "mid") return `Read on ${formatRateDate(date.slice(0, 10) > RATES_READ_ON ? RATES_READ_ON : date)}`;
   if (entered) return `Entered on this PO · effective from ${formatRateDate(date)}`;
   return `Effective from ${formatRateDate(effectiveDate ?? date)}`;
 }
@@ -278,7 +357,7 @@ export function POCurrencyConfigDialog({
 }) {
   const fx = poFx(po);
   const vendorDefault = vendorCurrency(po.vendor.name);
-  const savedAccount = resolvePayFrom(fx.currency, po.payFromAccount, po.settlementCurrency).id;
+  const savedAccount = resolvePayFrom(fx.currency, po.payFromAccount, po.settlementCurrency, po.vendor.name).id;
   // The configuration locks once the PO is confirmed; the exchange rate
   // shows no lock of its own anywhere (25 Nov 2026).
   const locked = isPORateLocked(po);
@@ -318,8 +397,8 @@ export function POCurrencyConfigDialog({
   const previewPo = sameCurrency ? po : withPOCurrency(po, { currency, rateType: type, exchangeRate: rate });
   const vendorTotal = computePOPricing(previewPo).total;
   const baseTotal = foreign ? toBase(vendorTotal, rate) : vendorTotal;
-  // The pay-from account, while it is allowed for the drafted currency (else 1010).
-  const account = resolvePayFrom(currency, accountId);
+  // The pay-from account (else the vendor's default, else 1010).
+  const account = resolvePayFrom(currency, accountId, null, po.vendor.name);
   // An account in neither the base nor the drafted currency: the direct rate
   // and the estimate in the account's currency (25 Nov 2026).
   const cross = payFromCross({ currency, rate, rateType: type, rateDate: fx.rateDate }, account.currency, vendorTotal);
@@ -352,7 +431,8 @@ export function POCurrencyConfigDialog({
 
   const reset = () => {
     setCurrency(vendorDefault);
-    setAccountId(DEFAULT_PAY_FROM);
+    // The vendor's default account (27 Nov 2026), else 1010.
+    setAccountId(vendorPayFrom(po.vendor.name).id);
     setType("mid");
     setRateText(null);
   };
@@ -414,7 +494,7 @@ export function POCurrencyConfigDialog({
             </Section>
 
             <Section label="You pay in">
-              <PayFromPicker value={account.id} currency={currency} onPick={setAccountId} disabled={readOnly} />
+              <PayFromPicker value={account.id} currency={currency} vendorName={po.vendor.name} onPick={setAccountId} disabled={readOnly} />
               {cross && (
                 <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
                   <p className="text-[12px] text-slate-700 tabular-nums leading-5" style={{ fontWeight: 500 }}>
@@ -456,7 +536,7 @@ export function POCurrencyConfigDialog({
                       corporateAvailable={corpQuote.rate != null}
                     />
                   )}
-                  <CompareRatesHover currency={currency} date={fx.rateDate} selected={type} />
+                  <RateTypeInfo currency={currency} date={fx.rateDate} />
                 </div>
                 {type === "corporate" && !readOnly ? (
                   <div className="h-10 w-full rounded-lg px-3 flex items-center gap-1.5 text-[13px] bg-white border border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">

@@ -273,29 +273,34 @@ Build the dialog with the module's own `Dialog`; put the kit's pieces in it.
 
 **Sections** (as the BA's document lists them): the partner's amount and
 currency (changing it converts every line, after a confirmation); You pay or
-You receive with the account picker; Rate with Mid-market | Corporate,
-Compare rates (orders), the rate card and the lock line; FX variance where
-there is one. Buttons: Reset to default, Cancel, Apply.
+You receive with the account picker; Rate with Daily market rate |
+Corporate rate and the rate info icon, the rate card and the lock line; FX
+variance where there is one. Buttons: Reset to default, Cancel, Apply.
 
 ```tsx
 <div className="flex items-center gap-1.5">
   <span>Rate</span>
   <RateTypeToggle value={rateType} onChange={setRateType} corporateAvailable={!!corporateRateOn(po.currency, po.orderDate)} disabled={locked} className="ml-auto" />
-  <CompareRates currency={po.currency} rateDate={po.orderDate} selected={rateType} />
+  <RateTypeInfo currency={po.currency} date={po.orderDate} />
 </div>
 <LockLine locked={locked} locksWhen="the PO is confirmed" lockedWhen="the PO was confirmed" />
 ```
 
-Compare rates goes on sales and purchase orders, right after the rate type
-choice, here and on the create screen if the rate type is chosen there (R17).
+The rate info icon goes right after the rate type choice wherever it is
+made: this dialog on orders, quotes and invoices, the create screen if the
+rate type is chosen there, and a partner's or partner group's "Default
+exchange rate" (R17).
 Any popover inside the dialog is `<Popover modal>`; the kit's account picker
 already is.
 
 ## 12. Paying from an account
 
 "You pay" and "You receive" are accounts, in any currency (R18). The picker
-lists every bank and cash account, base first, then the document's
-currency, then the rest. Balances stay hidden until P2 is ruled.
+lists every bank and cash account, each with its currency chip, the
+vendor's default first and tagged "From vendor", then base, then the
+document's currency, then the rest. Balances stay hidden on a PO until P2 is
+ruled; recording a payment shows them, the invoice's currency first, and
+ends with "Add a bank account".
 
 ```tsx
 <PayFromAccountPicker value={accountId} onChange={setAccountId} documentCurrency={po.currency} readOnly={locked} />
@@ -341,28 +346,45 @@ const amount = (n: number) => formatMoney(inBase ? toBase(n, fx.rate) : n, code)
 
 A PDF built with jsPDF uses `formatMoneyPdf` (its fonts lack ₨).
 
-## 14. Mark as paid: the bank's rate
+## 14. Recording a foreign payment: the bank's rate
 
-**Where.** In the Mark as paid dialog of a scheduled foreign payment (R20).
-It renders nothing when the account and the invoice share a currency.
+**Where.** In Record payment (its payment details) and in the Mark as paid
+dialog of a scheduled foreign payment (R20). A scheduled one shows an
+"Estimate" chip with its rate and the "≈" base amount until then; on its
+payment date a banner asks for the rate ("{payment no.} was scheduled for
+today. Once it's paid, enter the rate the bank gave you." · "Enter rate").
 
-**Copy.** "Rate the bank used" · "Pre-filled with the estimate. Enter the rate on your bank statement." · "Estimate was ₨278.5200." · "+₨5,800.00
-posts to FX Gain." or "−₨5,800.00 posts to FX Loss."
+**Copy.** "Our rate" · "Daily market rate · Dec 05, 2026 · ₨754,912.00" ·
+"Bank's rate *" · "Enter the exchange rate the bank gave you." · "Invoice
+booked at ₨75.8400" · "Bank took at ₨76.2500" · "Rate change since invoice"
+· "Bank's rate vs ours" · "FX variance". From an account in the invoice's
+currency: "Same currency. No exchange rate needed." From a third currency:
+"1 USD = 1.3935 CAD", "Bank took C$13,935.00" and the FX variance, with no
+PKR rate.
 
 ```tsx
-const [rate, setRate] = useState(payment.estimateRate);
-<BankRateField currency={inv.currency} to={account.currency} amount={payment.amount} estimateRate={payment.estimateRate} value={rate} onChange={setRate} />
+// Base per unit from a base account; the direct pair from a third currency.
+const ourRate = crossRateOn(inv.currency, account.currency, paymentDate, 'mid') ?? 1;
+const [rate, setRate] = useState(ourRate);
+<BankRateField
+  currency={inv.currency}
+  to={account.currency}
+  amount={payment.amount}
+  ourRate={ourRate}
+  invoiceRate={inv.exchangeRate}
+  paymentDate={paymentDate}
+  value={rate}
+  onChange={setRate}
+  toBaseRate={usableRateOn(account.currency, paymentDate, 'mid').rate ?? 1}
+/>
 ```
-
-Whether it shows for a company on mid-market rates waits on P4: follow the
-BA's document.
 
 ## 15. Version and date prompts
 
 No kit component: these are the module's own dialogs, built with the kit's
 text helpers. Copy (R16, R14): "Keep version 1's rate  1 USD = 264.5919 PKR"
-/ "Use today's rate  1 USD = 278.5200 PKR", each with "Mid-market · May 12,
-2024 · total ₨…" under it, and a `RateTypeToggle` on today's when
+/ "Use today's rate  1 USD = 278.5200 PKR", each with "Daily market rate ·
+May 12, 2024 · total ₨…" under it, and a `RateTypeToggle` on today's when
 `corporateRateOn(code, todayIso())` is set. A posting-date change: "Keep the
 current rate" / "Use Nov 25's rate".
 

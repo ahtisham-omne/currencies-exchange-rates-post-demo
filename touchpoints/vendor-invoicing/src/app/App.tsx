@@ -1081,6 +1081,7 @@ export default function App() {
             onAddPrepayment={handleAddPrepayment}
             onEditResubmit={(inv, reason, notifyIds) => { setResubmitInvoice(inv); setResubmitReason(reason); setResubmitNotifyIds(notifyIds); }}
             onReversePayment={handleReversePayment}
+            onMarkPaymentPaid={handleMarkPaymentPaid}
             creditMemos={creditMemos}
             onAddCreditMemo={handleAddCreditMemo}
             onViewCreditMemo={handleViewCreditMemo}

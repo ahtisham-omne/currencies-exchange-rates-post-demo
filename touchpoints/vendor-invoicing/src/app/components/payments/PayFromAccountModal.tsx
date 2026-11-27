@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Landmark, Search, X, Check } from 'lucide-react';
+import { AddBankAccountRow } from './AddBankAccountRow';
 import { Button } from '@/app/components/ui/button';
 import { Input } from '@/app/components/ui/input';
 import type { PayFromAccount } from '@/app/data/mockPayments';
@@ -7,8 +8,9 @@ import { highlightText } from '@/app/components/InvoiceDataTable';
 import { formatMoney } from '@/app/currency/money';
 import { CurrencyChip } from '@/app/components/currency/CurrencyChip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
-import { payFromBlockReason, payFromCurrencies } from '@/app/currency/paymentRules';
-import { isBaseCurrency } from '@/app/currency/currencies';
+import { payFromBlockReason, payFromCurrencies, runPayFromBlockReason } from '@/app/currency/paymentRules';
+import { payFromRank } from '@/app/currency/payFrom';
+import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 
 // Pay-from account picker — mirrors the standalone GL Configuration modal
 // (GLAccountConfigModal) so the payment flow's account selection uses the same
@@ -23,13 +25,16 @@ interface PayFromAccountModalProps {
   /** Accounts eligible for the chosen method. */
   accounts: PayFromAccount[];
   onApply: (id: string) => void;
-  /** The invoices' currency (Currency & Exchange Rates): only an account in
-   *  it or in the base currency can pay, and only those are listed (Currency
-   *  Touchpoints Map, 24 Nov 2026: "base or invoice currency only"; before
-   *  that the rest were listed greyed with the reason). */
+  /** The invoices' currency (Currency & Exchange Rates): only the accounts
+   *  that may pay are listed, those in it first (27 Nov 2026, Mahreen 7d).
+   *  Any account pays a foreign invoice (D7); a base-currency invoice takes
+   *  a base-currency account. */
   invoiceCurrency?: string;
   /** The PO's You pay in, marked on the accounts in it. */
   youPayIn?: string;
+  /** A payment run: it keeps the two-currency rule (the invoices' currency
+   *  or the base), as its bank figure is entered in base. */
+  inRun?: boolean;
 }
 
 const GROUP_LABEL: Record<PayFromAccount['type'], string> = {
@@ -42,8 +47,9 @@ const GROUP_ORDER: PayFromAccount['type'][] = ['bank', 'card', 'cash'];
 // Each balance in its account's own currency (Currency & Exchange Rates).
 const fmtIn = (n: number, code: string) => formatMoney(n, code);
 
-export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApply, invoiceCurrency, youPayIn }: PayFromAccountModalProps) {
-  const reasonFor = (a: PayFromAccount) => (invoiceCurrency ? payFromBlockReason(a.currency, invoiceCurrency) : null);
+export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApply, invoiceCurrency, youPayIn, inRun = false }: PayFromAccountModalProps) {
+  const blockReason = inRun ? runPayFromBlockReason : payFromBlockReason;
+  const reasonFor = (a: PayFromAccount) => (invoiceCurrency ? blockReason(a.currency, invoiceCurrency) : null);
   const [draft, setDraft] = useState(value);
   const [search, setSearch] = useState('');
 
@@ -56,7 +62,7 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
 
   const filtered = useMemo(() => {
     // Only the accounts that can pay these invoices.
-    const payable = invoiceCurrency ? accounts.filter((a) => !payFromBlockReason(a.currency, invoiceCurrency)) : accounts;
+    const payable = invoiceCurrency ? accounts.filter((a) => !blockReason(a.currency, invoiceCurrency)) : accounts;
     if (!search.trim()) return payable;
     const q = search.toLowerCase();
     return payable.filter(
@@ -66,17 +72,22 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
         (a.bankName?.toLowerCase().includes(q) ?? false) ||
         (a.accountMask?.includes(q) ?? false),
     );
-  }, [search, accounts, invoiceCurrency]);
+  }, [search, accounts, invoiceCurrency, inRun]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const grouped = useMemo(() => {
     const g: Record<string, PayFromAccount[]> = {};
-    // Accounts that can pay first; the greyed ones after them in each group.
-    const rank = (a: PayFromAccount) => (invoiceCurrency && payFromBlockReason(a.currency, invoiceCurrency) ? 1 : 0);
-    [...filtered].sort((a, b) => rank(a) - rank(b)).forEach((a) => {
-      (g[a.type] ??= []).push(a);
-    });
+    // Accounts in the invoices' currency first, then the base currency, then
+    // the rest (27 Nov 2026, Mahreen 7d); the greyed ones last in each group.
+    const blocked = (a: PayFromAccount) => (invoiceCurrency && blockReason(a.currency, invoiceCurrency) ? 1 : 0);
+    const rank = (a: PayFromAccount) => blocked(a) * 10 + (invoiceCurrency ? payFromRank(a, invoiceCurrency) : 0);
+    filtered
+      .map((a, i) => ({ a, i }))
+      .sort((x, y) => rank(x.a) - rank(y.a) || x.i - y.i)
+      .forEach(({ a }) => {
+        (g[a.type] ??= []).push(a);
+      });
     return g;
-  }, [filtered, invoiceCurrency]);
+  }, [filtered, invoiceCurrency, inRun]); // eslint-disable-line react-hooks/exhaustive-deps
   const usable = filtered.filter((a) => !reasonFor(a)).length;
 
   if (!open) return null;
@@ -101,9 +112,13 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
                 Pay-From Account
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5" style={{ fontWeight: 400 }}>
-                {invoiceCurrency
-                  ? `Select the account this payment draws from: ${payFromCurrencies(invoiceCurrency).length > 1 ? `one in ${payFromCurrencies(invoiceCurrency)[0]}, the invoices’ currency, or in ${payFromCurrencies(invoiceCurrency)[1]}, the base currency` : `one in ${payFromCurrencies(invoiceCurrency)[0]}`}. All balances are book balances from your ledger.`
-                  : 'Select the account this payment draws from. All balances are book balances from your ledger.'}
+                {!invoiceCurrency
+                  ? 'Select the account this payment draws from. All balances are book balances from your ledger.'
+                  : isBaseCurrency(invoiceCurrency)
+                    ? `Select the account this payment draws from: one in ${BASE_CURRENCY}. All balances are book balances from your ledger.`
+                    : inRun
+                      ? `Select the account this payment draws from: one in ${payFromCurrencies(invoiceCurrency)[0]}, the invoices’ currency, or in ${BASE_CURRENCY}, the base currency. All balances are book balances from your ledger.`
+                      : `Select the account this payment draws from. ${invoiceCurrency} accounts are listed first; from any other, the bank converts. All balances are book balances from your ledger.`}
               </p>
             </div>
           </div>
@@ -252,6 +267,11 @@ export function PayFromAccountModal({ open, onOpenChange, value, accounts, onApp
               </div>
             ))
           )}
+          {/* Add a bank account (27 Nov 2026, Mahreen 7d): accounts are set
+              up in Cash Management, so this says where, no flow here. */}
+          <div className="px-3 py-1.5 border-t border-slate-100">
+            <AddBankAccountRow />
+          </div>
         </div>
 
         {/* Footer */}

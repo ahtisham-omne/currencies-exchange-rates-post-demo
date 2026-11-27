@@ -4,7 +4,7 @@ import { FX_GAIN_LOSS_ACCOUNT } from '@/app/data/glAccounts';
 import { splitAccount, type GlEntryLine } from '@/app/lib/glPosting';
 import { BASE_CURRENCY, isBaseCurrency } from './currencies';
 import { gainLossOf } from './fxVariance';
-import { formatMoney, formatRateDate, rateSentence } from './money';
+import { formatMoney, formatRate, formatRateDate, rateSentence } from './money';
 import { midRateOn, toBase } from './rates';
 
 /* ── Paying an invoice in another currency (Currency & Exchange Rates) ──
@@ -16,18 +16,38 @@ import { midRateOn, toBase } from './rates';
  *     pound balance, never a rupee one.
  *  2. The vendor always receives the invoice's currency. "Vendor receives"
  *     is fixed.
- *  3. Only two kinds of account can pay: one in the invoice's currency, or
- *     one in the base currency.
- *  4. Accounts in any other currency are listed, greyed, with the reason.
+ *  3. Any bank account can pay a foreign invoice: one in its currency
+ *     (nothing converts), one in the base currency or one in a third
+ *     currency (the bank converts; 27 Nov 2026, D7). A base-currency
+ *     invoice is paid from a base-currency account. Accounts in the
+ *     invoice's currency are listed first (currency/payFrom.ts).
+ *  4. Only a base-currency invoice greys accounts out, with the reason. A
+ *     payment run keeps the two-currency rule for now (invoice's or base:
+ *     its bank figure is entered in base), so it still greys the rest.
  *  5. The PO's "You pay in" picks the default account; the user can switch
- *     between the two allowed kinds.
+ *     to any account that may pay.
  *  6. From an account in the invoice's currency: one amount, the pounds
  *     paid. Nothing converts.
- *  7. From a base account: two amounts, the pounds the vendor gets and the
- *     rupees the bank took. The rate is worked out from them and shown.
- *  8. A third currency is never offered. If the vendor agrees to be paid in
- *     another one, they send a new invoice in it (or a credit note and a new
- *     invoice).
+ *  7. From an account in another currency the bank converts: the one rate
+ *     entered is the bank's ("1 AED = 76.2500 PKR"), pre-filled with the
+ *     payment date's daily market rate, and what the bank took is the amount
+ *     at it (27 Nov 2026, Mahreen 7a: the rate, not the rupees, is entered).
+ *  8. A third currency (27 Nov 2026, D7): a CAD account paying a USD
+ *     invoice. The vendor still receives USD. The bank's rate is the direct
+ *     pair, CAD per USD ("1 USD = 1.3935 CAD"); no PKR rate is shown. The
+ *     journal still posts in base (Eli's ruling, 26 Nov 2026: the payment
+ *     takes the payment date's rate, the bank's spread goes to FX gain or
+ *     loss):
+ *       - A/P clears at the invoice's own base, the amount at its rate;
+ *       - the CAD account is credited with the Canadian dollars the bank
+ *         took, valued at the payment date's CAD rate (base per CAD);
+ *       - the difference is the FX variance. It splits as for a base
+ *         account: the rate change since the invoice (amount × (invoice
+ *         rate − the payment date's USD rate)) and the bank's spread
+ *         (amount × (the day's USD rate − the bank's cross rate × the day's
+ *         CAD rate)).
+ *     If the vendor wants to be paid in another currency, they send a new
+ *     invoice in it (or a credit note and a new invoice).
  *  9. A payment run keeps these per invoice and totals per currency.
  * 10. The remittance advice is in the invoice's currency.
  *
@@ -44,24 +64,41 @@ const up = (code: string | null | undefined) => (code || BASE_CURRENCY).toUpperC
 export const OTHER_CURRENCY_NOTE =
   'To pay in another currency, ask the vendor for a new invoice in that currency, or a credit note and a new invoice.';
 
-/** Rule 3: the currencies an account paying this invoice can be in, its own first. */
+/** The currencies that pay this invoice with no third currency: its own
+ *  first, then the base. Record Payment lists accounts in them first; a
+ *  payment run pays only from them (rule 4). */
 export function payFromCurrencies(invoiceCurrency: string): string[] {
   const cur = up(invoiceCurrency);
   return isBaseCurrency(cur) ? [BASE_CURRENCY] : [cur, BASE_CURRENCY];
 }
 
-/** Rule 3: whether an account in this currency may pay the invoice. */
+/** Rule 3 (27 Nov 2026, D7): whether an account in this currency may pay
+ *  the invoice. Any account pays a foreign invoice; a base-currency invoice
+ *  takes a base-currency account. */
 export const canPayFrom = (accountCurrency: string, invoiceCurrency: string) =>
-  payFromCurrencies(invoiceCurrency).includes(up(accountCurrency));
+  !isBaseCurrency(up(invoiceCurrency)) || isBaseCurrency(up(accountCurrency));
 
-const article = (code: string) => (/^[AEIO]/.test(code) && code !== 'EUR' ? 'an' : 'a');
+/** "a" or "an" before a currency code read as letters ("an AED account"). */
+export const articleFor = (code: string) => (/^[AEIO]/.test(code) && code !== 'EUR' ? 'an' : 'a');
 
-/** Rule 4: "This account is in EUR. Pick a GBP or PKR account.", or null
- *  when the account may pay. */
+/** Rule 4: "This account is in USD. Pick a PKR account.", or null when the
+ *  account may pay. */
 export function payFromBlockReason(accountCurrency: string, invoiceCurrency: string): string | null {
   if (canPayFrom(accountCurrency, invoiceCurrency)) return null;
+  return `This account is in ${up(accountCurrency)}. Pick ${articleFor(BASE_CURRENCY)} ${BASE_CURRENCY} account.`;
+}
+
+/** Rule 4 in a payment run, which keeps the two-currency rule: the
+ *  invoice's currency or the base (a run's bank figure is entered in base). */
+export const canPayFromInRun = (accountCurrency: string, invoiceCurrency: string) =>
+  payFromCurrencies(invoiceCurrency).includes(up(accountCurrency));
+
+/** Rule 4 in a payment run: "This account is in EUR. Pick a GBP or PKR
+ *  account.", or null when the account may pay the run's payment. */
+export function runPayFromBlockReason(accountCurrency: string, invoiceCurrency: string): string | null {
+  if (canPayFromInRun(accountCurrency, invoiceCurrency)) return null;
   const [first, second] = payFromCurrencies(invoiceCurrency);
-  const pick = second ? `${article(first)} ${first} or ${second}` : `${article(first)} ${first}`;
+  const pick = second ? `${articleFor(first)} ${first} or ${second}` : `${articleFor(first)} ${first}`;
   return `This account is in ${up(accountCurrency)}. Pick ${pick} account.`;
 }
 
@@ -75,10 +112,12 @@ export function payFromOptions<T extends Pick<PayFromAccount, 'currency'>>(accou
 }
 
 /** Rule 5: the currency of the account a payment starts from: the PO's "You
- *  pay in" when it may pay the invoice, else the base. */
+ *  pay in" when it is the invoice's currency or the base, else the base. A
+ *  third currency is picked by hand, never by default, so a payment run
+ *  (which keeps the two-currency rule) always starts on an account it may use. */
 export function defaultPayFromCurrency(invoiceCurrency: string, youPayIn?: string | null): string {
   const want = up(youPayIn ?? BASE_CURRENCY);
-  return canPayFrom(want, invoiceCurrency) ? want : BASE_CURRENCY;
+  return canPayFromInRun(want, invoiceCurrency) ? want : BASE_CURRENCY;
 }
 
 /** Rule 5 for an invoice: its PO's "You pay in" (base when it has none). */
@@ -92,9 +131,37 @@ export function youPayInOfAll(invoices: (Pick<Invoice, 'currency'> & Partial<Pic
   return wants.size === 1 ? [...wants][0] : BASE_CURRENCY;
 }
 
-/** Rule 7: the payment converts at the bank, a base account paying a foreign invoice. */
+/** Rules 7 and 8: the payment converts at the bank, an account in another
+ *  currency (the base or a third one) paying a foreign invoice. */
 export const convertsAtBank = (accountCurrency: string, invoiceCurrency: string) =>
-  isBaseCurrency(accountCurrency) && !isBaseCurrency(invoiceCurrency);
+  !isBaseCurrency(invoiceCurrency) && up(accountCurrency) !== up(invoiceCurrency);
+
+/** Rule 8: an account in neither the invoice's currency nor the base. */
+export const isThirdCurrency = (accountCurrency: string, invoiceCurrency: string) =>
+  convertsAtBank(accountCurrency, invoiceCurrency) && !isBaseCurrency(accountCurrency);
+
+/** "Our rate" (27 Nov 2026, Mahreen 7a): the payment date's daily market
+ *  rate in the account's currency per one unit of the invoice's. Base per
+ *  unit from a base account (1 AED = ₨76.1000); the direct pair from a
+ *  third currency (1 USD = 1.3935 CAD, the two daily rates' cross). */
+export function accountDayRateOn(invoiceCurrency: string, accountCurrency: string, date: string): number {
+  const inv = dayRateOn(invoiceCurrency, date);
+  if (isBaseCurrency(accountCurrency)) return inv;
+  const acc = dayRateOn(accountCurrency, date);
+  if (!(acc > 0)) return inv;
+  // To the decimals a rate is shown and typed in (formatRate), so the bank's
+  // rate field, pre-filled with it, reads back exactly our rate.
+  const cross = inv / acc;
+  return Math.abs(cross) >= 0.01 ? +cross.toFixed(4) : +cross.toFixed(6);
+}
+
+/** A rate between two currencies as the module writes it: "1 AED = ₨76.1000
+ *  PKR" to the base, "1 USD = 1.3935 CAD" between two others (no symbol, as
+ *  Mahreen's 7c mockup has it). */
+export function pairRateText(from: string, to: string, rate: number): string {
+  if (isBaseCurrency(to)) return rateSentence(from, rate);
+  return `1 ${up(from)} = ${formatRate(rate)} ${up(to)}`;
+}
 
 /** Rule 7: the rate the bank's two figures make, base per one unit of the
  *  invoice's currency. Null until both are above zero. */
@@ -103,17 +170,19 @@ export function derivedRate(vendorReceives: number, bankTook: number): number | 
   return bankTook / vendorReceives;
 }
 
-/** Rule 7: "₨3,503,000.00 → £10,000.00 · 1 GBP = ₨350.3000 PKR". */
-export function bankConversionText(bankTook: number, vendorReceives: number, currency: string): string {
+/** Rules 7 and 8: "₨3,503,000.00 → £10,000.00 · 1 GBP = ₨350.3000 PKR", or
+ *  from a third currency "C$13,935.00 → $10,000.00 · 1 USD = 1.3935 CAD"
+ *  (`bankTook` in the account's currency). */
+export function bankConversionText(bankTook: number, vendorReceives: number, currency: string, accountCurrency: string = BASE_CURRENCY): string {
   const rate = derivedRate(vendorReceives, bankTook);
-  const head = `${formatMoney(bankTook, BASE_CURRENCY)} → ${formatMoney(vendorReceives, currency)}`;
-  return rate == null ? head : `${head} · ${rateSentence(currency, rate)}`;
+  const head = `${formatMoney(bankTook, accountCurrency)} → ${formatMoney(vendorReceives, currency)}`;
+  return rate == null ? head : `${head} · ${pairRateText(currency, accountCurrency, rate)}`;
 }
 
 /** How far a rate is from the day's, in percent (signed). */
 export const rateGapPct = (rate: number, dayRate: number) => (dayRate > 0 ? ((rate - dayRate) / dayRate) * 100 : 0);
 
-/** The mid-market rate on the payment date, what the bank's rate is compared with. */
+/** The daily market rate on the payment date, what the bank's rate is compared with. */
 export const dayRateOn = (currency: string, date: string) => (isBaseCurrency(currency) ? 1 : midRateOn(currency, date) ?? 1);
 
 /** Whether the bank's rate is further from the day's than the module's
@@ -198,7 +267,7 @@ export function realizedFxDescription(
     distinct.length === 1
       ? `Invoice rate ${rateSentence(currency, distinct[0].rate)}${distinct[0].rateDate ? ` (${formatRateDate(distinct[0].rateDate)})` : ''}`
       : `Invoice rates ${distinct.map((l) => `${l.invoiceNumber} ${rateSentence(currency, l.rate)}${l.rateDate ? ` (${formatRateDate(l.rateDate)})` : ''}`).join('; ')}`;
-  return `${booked} · paid at ${rateSentence(currency, paidRate)} (${formatRateDate(paidDate)}, ${converted ? 'bank conversion' : 'mid-market'})`;
+  return `${booked} · paid at ${rateSentence(currency, paidRate)} (${formatRateDate(paidDate)}, ${converted ? 'bank conversion' : 'daily market rate'})`;
 }
 
 export interface PaymentGlFxInput {
@@ -213,8 +282,13 @@ export interface PaymentGlFxInput {
   /** The pay-from account's GL ("1020 Corporate Checking") and its currency. */
   bankGl: string;
   accountCurrency: string;
-  /** From a base account: what the bank took, in base. */
+  /** From an account in another currency: what the bank took, in base
+   *  (from a third currency, the account's amount at the payment date's
+   *  rate of the account's currency). */
   bankAmount?: number;
+  /** From a third currency (rule 8): what the bank took, in the account's
+   *  currency. The bank line carries it at the day's rate of that currency. */
+  accountAmount?: number;
   /** The rate the cash went out at (derived from the bank, or the day's). */
   paymentRate: number;
   paymentDate: string;
@@ -241,8 +315,17 @@ export function buildPaymentGlFx(input: PaymentGlFxInput): PaymentGlFx {
   const { currency, lines, apAccount, credits = [], cash, bankGl, accountCurrency, paymentDate, description } = input;
   const base = isBaseCurrency(currency);
   const converted = convertsAtBank(accountCurrency, currency);
+  const third = isThirdCurrency(accountCurrency, currency);
   const paymentRate = base ? 1 : input.paymentRate;
-  const cost = base ? round2(cash) : converted && input.bankAmount != null && input.bankAmount > 0 ? round2(input.bankAmount) : toBase(cash, paymentRate);
+  // Rule 8: a third currency's amount, valued at the payment date's rate of
+  // the account's currency, unless the base figure came with it.
+  const accountDayRate = third ? dayRateOn(accountCurrency, paymentDate) : 1;
+  const thirdCost = third && input.accountAmount != null && input.accountAmount > 0 ? toBase(input.accountAmount, accountDayRate) : null;
+  const cost = base
+    ? round2(cash)
+    : converted && input.bankAmount != null && input.bankAmount > 0
+      ? round2(input.bankAmount)
+      : thirdCost ?? toBase(cash, paymentRate);
   const fx = base
     ? { carried: round2(lines.reduce((s, l) => s + l.amount, 0)), credit: round2(credits.reduce((s, c) => s + c.amount, 0)), cost, amount: 0 }
     : realizedFxOf(lines, credits, cost);
@@ -293,11 +376,16 @@ export function buildPaymentGlFx(input: PaymentGlFxInput): PaymentGlFx {
       accountName: b.name,
       description: base
         ? 'Cash out'
-        : converted
-          ? `Bank converts ${bankConversionText(cost, cash, currency)}`
-          : `Paid ${formatMoney(cash, currency)} from a ${up(accountCurrency)} account`,
+        : third && input.accountAmount != null
+          ? `Bank converts ${bankConversionText(input.accountAmount, cash, currency, accountCurrency)}`
+          : converted
+            ? `Bank converts ${bankConversionText(cost, cash, currency)}`
+            : `Paid ${formatMoney(cash, currency)} from a ${up(accountCurrency)} account`,
       credit: cost,
-      ...foreign(cash, paymentRate),
+      // A third currency's line is in the account's currency, at its day's rate.
+      ...(third && input.accountAmount != null
+        ? { currency: up(accountCurrency), foreignAmount: round2(input.accountAmount), rate: accountDayRate }
+        : foreign(cash, paymentRate)),
     });
   }
 

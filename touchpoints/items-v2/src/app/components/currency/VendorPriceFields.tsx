@@ -3,7 +3,7 @@ import { ArrowLeftRight, ArrowUpDown, RotateCcw } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { currencyDecimals, formatRate, formatRateDate, rateSentence } from '@/app/currency/money';
-import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, corporateRateOn, type RateType } from '@/app/currency/rates';
+import { RATES_READ_ON, RATE_PROVIDER, RATE_TYPE_LABEL, corporateRateOn, type RateType } from '@/app/currency/rates';
 import { priceFromBase, priceInBase, pricePrefix, type VendorRate } from '@/app/currency/vendorFx';
 import { CurrencyFlag, currencyChipLabel } from './CurrencyChip';
 import { linkProvider } from './ProviderLink';
@@ -13,12 +13,13 @@ import { linkProvider } from './ProviderLink';
  * 4.2 and 3.5 work: "Price per unit" has the base-currency box first
  * (₨ … PKR), then ⇄, then the vendor-currency box (€ … EUR). Typing in
  * either fills the other at the vendor's rate. Under the first selling
- * unit's price sit the Mid-market | Corporate switch and the rate it
- * converts at: "1 EUR = 304.8150 PKR · Open Exchange Rates, updated …".
+ * unit's price sit the Daily market rate | Corporate rate switch and the
+ * rate it converts at: "1 EUR = 304.8150 PKR · Open Exchange Rates, read on
+ * Nov 27, 2026" (a rate is read once a day; Eli's ruling, 26 Nov 2026).
  * The rate belongs to the vendor, so every selling unit converts at it; the
  * other units repeat it in one line.
  *
- * The rate is today's mid-market rate (read-only) or, where finance has set
+ * The rate is today's daily market rate (read-only) or, where finance has set
  * one for the currency, the corporate rate, which can be typed for one
  * vendor and reset to finance's. Switching keeps the vendor's quote and
  * restates the base price, since the vendor charges in its own currency.
@@ -31,7 +32,7 @@ const ADDON = 'inline-flex items-center justify-center min-w-9 px-1.5 text-[12px
 const INPUT = 'flex-1 min-w-0 px-2 text-[13px] tabular-nums outline-none bg-transparent';
 const CODE = 'inline-flex items-center pr-2.5 text-[11px] text-slate-400 shrink-0 tabular-nums';
 
-/** Mid-market violet and corporate amber, as on the PO and in Exchange Rates. */
+/** Daily market rate violet and corporate amber, as on the PO and in Exchange Rates. */
 const RATE_TONE = {
   mid: { ink: '#6D28D9', dot: '#7C3AED' },
   corporate: { ink: '#B45309', dot: '#B45309' },
@@ -54,11 +55,6 @@ function useIsWide(ref: React.RefObject<HTMLElement>, min: number) {
     return () => ro.disconnect();
   }, [ref, min]);
   return wide;
-}
-
-/** "Apr 10, 2026, 7:30 PM": when the provider's rates were last synced. */
-function syncedAt(iso: string): string {
-  return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 /** One selling unit's price: Base currency ⇄ Vendor currency. The vendor
@@ -174,7 +170,7 @@ export function VendorPriceFields({
   );
 }
 
-/** Mid-market | Corporate, as the Exchange Rates module names them, drawn
+/** Daily market rate | Corporate rate, as the Exchange Rates module names them, drawn
  *  frameless like Chart of Accounts' period presets (the chosen option is a
  *  light-blue pill). With `corporateDisabled` (the reason), Corporate shows
  *  but can't be picked and the reason rides a tooltip. */
@@ -230,9 +226,9 @@ function RateTypeToggle({
   );
 }
 
-/** The vendor's rate, under the first selling unit's price: the Mid-market |
- *  Corporate switch, then "1 EUR = 304.8150 PKR · Open Exchange Rates,
- *  updated Apr 10, 2026, 7:30 PM". The switch always shows for a foreign
+/** The vendor's rate, under the first selling unit's price: the Daily
+ *  market rate | Corporate rate switch, then "1 EUR = 304.8150 PKR · Open
+ *  Exchange Rates, read on Nov 27, 2026". The switch always shows for a foreign
  *  vendor; Corporate is disabled until finance sets a corporate rate for the
  *  currency. The corporate rate is finance's and read-only here (it's set in
  *  Currency Library & Exchange Rates); a rate typed for a vendor earlier
@@ -265,7 +261,7 @@ export function VendorRateCard({
   const tone = RATE_TONE[fx.rateType];
   const finance = corporateRateOn(fx.currency, fx.rateDate);
   // Corporate can be picked only where finance has set a corporate rate for
-  // the currency; without one the price stays on mid-market (vendorRate).
+  // the currency; without one the price stays on the daily market rate (vendorRate).
   const canSwitch = !!finance;
 
   // Where the rate comes from and when, after the rate itself.
@@ -273,7 +269,7 @@ export function VendorRateCard({
     ? fx.edited
       ? `Entered for this vendor${finance ? `. Finance's rate is ${formatRate(finance.rate)} ${BASE_CURRENCY}` : ''}`
       : `Corporate rate set by ${finance?.setBy ?? 'finance'}${finance ? `, in effect since ${formatRateDate(finance.effectiveDate)}` : ''}`
-    : `${RATE_PROVIDER}, updated ${syncedAt(LAST_SYNC)}`;
+    : `${RATE_PROVIDER}, read on ${formatRateDate(RATES_READ_ON)}`;
 
   return (
     <div className="mt-2 space-y-1">
@@ -335,7 +331,7 @@ export function VendorUnitRateNote({ fx }: { fx: VendorRate }) {
   return (
     <p className="mt-1.5 flex items-center gap-1.5 text-[10.5px] text-slate-400 tabular-nums" style={{ lineHeight: 1.45 }}>
       <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: RATE_TONE[fx.rateType].dot }} aria-hidden />
-      Converts at {rateSentence(fx.currency, fx.rate)} · {RATE_TYPE_LABEL[fx.rateType]}, the vendor's rate
+      Converts at the vendor's rate: {rateSentence(fx.currency, fx.rate)} · {RATE_TYPE_LABEL[fx.rateType]}
     </p>
   );
 }

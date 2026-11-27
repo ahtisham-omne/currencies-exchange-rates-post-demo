@@ -171,7 +171,7 @@ export function CountryCell({ country, countryFlag }: { country?: string; countr
    list (Currency Touchpoints Map, 24 Nov 2026). The partner keeps the limit in
    its own currency; a foreign one has the rate card on hover with that figure
    ("¥5,793,448 JPY") and the rate. `fx` is the vendor's rate on this item;
-   without it, today's mid-market rate. On the column's "Show values as: Vendor
+   without it, today's daily market rate. On the column's "Show values as: Vendor
    currency" (25 Nov 2026) it shows in the partner's currency, base on hover. */
 export function CreditLimitCell({ creditLimit, currency, fx }: { creditLimit?: number; currency?: string; fx?: VendorRate }) {
   if (creditLimit == null) return <span className="text-sm tabular-nums text-foreground">—</span>;

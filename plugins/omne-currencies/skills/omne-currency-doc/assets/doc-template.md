@@ -28,7 +28,7 @@ made it and when. Example:>
 | Base currency | The company's base currency (R1). <Anything module-specific, or "Nothing module-specific".> |
 | Party | <Vendor, Customer, Partner, Account, or None> |
 | Document currency | <Where it comes from, and whether it can change on the document.> |
-| Rate type | <Company default (mid-market), or chosen per document: Mid-market or Corporate.> |
+| Rate type | <Company default (daily market rate), or chosen per document: Daily market rate or Corporate rate.> |
 | Rate date | <Document date, order date, posting date, payment date, receiving date, or today.> |
 | Locks | <The event that locks the rate, or "Never: nothing is stamped".> |
 | Pay from / receive into | <The account rule (R18, R19), or "None".> |

@@ -47,7 +47,7 @@ export function paymentFx(p: PaymentFxFields): InvoiceFx {
     rate,
     rateType,
     rateDate,
-    source: p.bankAmount != null ? (p.rateEdited ? 'Worked out from the bank’s figures' : 'Estimated at the mid-market rate') : rateSourceLabel(rateType),
+    source: p.bankAmount != null ? (p.rateEdited ? 'The bank’s rate' : 'Estimated at the daily market rate') : rateSourceLabel(rateType),
     provisional: false,
     isBase: false,
     dateLabel: 'payment date',

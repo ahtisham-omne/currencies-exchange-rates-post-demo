@@ -259,8 +259,8 @@ function generateSOVersions(): SOVersionEntry[] {
 export function VersionHistoryModal({ soNumber, currentVersion, onClose, onRevert, so }: VersionHistoryModalProps) {
   const design = useDesignMoney();
   const { inBase } = useDocView();
-  /* Shown in base (the default) at each version's own rate, or in the
-     order's currency when the page is toggled to it. */
+  /* Shown in the order's currency (the default since 27 Nov 2026), or in
+     base at each version's own rate when the page is toggled to it. */
   const formatFor = (vNum: number) => (usd: number) => {
     if (!so || !inBase) return design.whole(usd);
     const r = versionRateFields(so, vNum);

@@ -118,7 +118,8 @@ export function formatRateDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
 }
 
-/** "25 Nov 2026", as the Compare rates hover writes its day. */
+/** "25 Nov 2026". The modules write dates with formatRateDate ("Nov 25, 2026");
+ *  this is for a document that asks for day-month-year. */
 export function formatDayMonthYear(iso: string | null | undefined): string {
   if (!iso) return '';
   const [y, m, day] = iso.slice(0, 10).split('-').map(Number);

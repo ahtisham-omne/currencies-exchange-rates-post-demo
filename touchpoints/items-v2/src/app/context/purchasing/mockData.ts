@@ -553,7 +553,7 @@ function seedQVsForItem(itemId: string): QualifiedVendor[] {
 
 /* The design prices every vendor in $ (USD), whatever its country. A vendor
    quotes in its partner's currency (spec 4.2): restate a seeded row's
-   amounts in it, at the last synced mid-market rate. Applied last, so no
+   amounts in it, at the last read daily market rate. Applied last, so no
    seed sequence changes. */
 function inVendorCurrency(qv: QualifiedVendor): QualifiedVendor {
   const currency = vendorCurrencyFor(qv.country || qv.location);

@@ -34,7 +34,7 @@ import { FIELD_RULES, FieldErrorText, FieldLaterHint, isMissing } from "@/app/co
 import { DocCurrencyProvider } from "@/app/components/currency/DocCurrency";
 import { isBaseCurrency } from "@/app/currency/currencies";
 import { convertOn, customerCurrency, localTodayIso, roundTo, todayFx, todayRate } from "@/app/currency/soFx";
-import { followsMarketPrice, marketPrice, type LinePriceSource } from "@/app/currency/itemPrices";
+import { customerGroupOf, followsMarketPrice, marketPrice, type LinePriceSource } from "@/app/currency/itemPrices";
 import { getPrimaryUomForProduct, getUomSetForProduct, multiplierWithinSet } from "@/app/data/uomSets";
 
 /* ═══ Typography — CSS variable tokens only ═══ */
@@ -525,7 +525,7 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
            keeps the multiple it was rescaled by. */
         const set = getUomSetForProduct(product);
         const perUnit = multiplierWithinSet(it.uom, set) / multiplierWithinSet(getPrimaryUomForProduct(product), set);
-        const price = marketPrice(product, orderCurrency, rate);
+        const price = marketPrice(product, orderCurrency, rate, { group: customerGroupOf(selectedCustomer?.name) });
         const unitPrice = roundTo(orderCurrency, price.unitPrice * perUnit);
         return { ...it, unitPrice, priceSource: price.priceSource, total: unitPrice * it.quantity * (1 - (it.discount || 0) / 100) };
       }
@@ -1233,13 +1233,14 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
              gutters on either side. */
           <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", flexDirection: "column" }}>
             {/* The new order is in the customer's currency (spec 4.3), at today's
-                rate. Shown in base, as the rest of Sales Orders is, with the
-                customer's amount on hover. */}
-            <DocCurrencyProvider currency={orderCurrency} fx={isBaseCurrency(orderCurrency) ? null : todayFx(orderCurrency)} rateDate={localTodayIso()} dateLabel="today" role="customer currency" view="base">
+                rate, and its lines are shown in it (27 Nov 2026, D1: order
+                lines open in the document's currency), base on hover. */}
+            <DocCurrencyProvider currency={orderCurrency} fx={isBaseCurrency(orderCurrency) ? null : todayFx(orderCurrency)} rateDate={localTodayIso()} dateLabel="today" role="customer currency" view="document">
               <CreateSOStep2
                 lineItems={selectedItems}
                 onLineItemsChange={setSelectedItems}
                 hasCustomer={!!selectedCustomer}
+                customerGroup={customerGroupOf(selectedCustomer?.name)}
               />
             </DocCurrencyProvider>
           </div>

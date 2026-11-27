@@ -18,6 +18,7 @@ import { Separator } from "./ui/separator";
 import { ColumnSelector } from "./ColumnSelector";
 import { FONT, typography as sharedStyles } from "./designTokens";
 import { type POFilterState } from "./POFilterBar";
+import type { MoneyFx } from "./currency/Money";
 import POFiltersModal, { countAllFilters } from "./POFiltersModal";
 /* OutdatedConfigsPill import removed — the compact row chip was
    dropped per the SO-V5 sync; outdated state now surfaces only on
@@ -53,6 +54,15 @@ export interface PurchaseOrder {
   pointOfContact: string;
   pointOfContactAbbr: string;
   quoteValue: number;
+  /** The PO's currency (the vendor's unless changed on the PO; 27 Nov 2026).
+   *  Optional: Purchase Requests reuse this row without amounts. */
+  currency?: string;
+  /** The PO's total, in `currency`. */
+  amount?: number;
+  /** The total in the base currency at the PO's own rate. */
+  baseAmount?: number;
+  /** The PO's rate, for the Amount hover; null on a base-currency PO. */
+  fx?: MoneyFx | null;
   location: string;
   locationAddress?: string;
   createdBy: string;
@@ -66,7 +76,8 @@ export interface PurchaseOrder {
 
 export type ColumnId =
   | "partnerLocation" | "status" | "orderedItems" | "pointOfContact"
-  | "location" | "createdBy" | "dueDeliveryDate" | "orderDate";
+  | "location" | "createdBy" | "dueDeliveryDate" | "orderDate"
+  | "amount" | "baseEquivalent";
 
 export interface ColumnDef {
   id: ColumnId;
@@ -800,6 +811,11 @@ export default function PODataTable({
     if (!sortCol || !sortDir) return filteredData;
     const sorted = [...filteredData];
     sorted.sort((a, b) => {
+      // The amounts sort as numbers (27 Nov 2026).
+      if (sortCol === "amount" || sortCol === "baseEquivalent") {
+        const num = (r: PurchaseOrder) => (sortCol === "amount" ? r.amount : r.baseAmount) ?? 0;
+        return sortDir === "asc" ? num(a) - num(b) : num(b) - num(a);
+      }
       let aVal = "", bVal = "";
       switch (sortCol) {
         case "partnerLocation": aVal = a.partnerLocation; bVal = b.partnerLocation; break;

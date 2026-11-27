@@ -8,7 +8,7 @@ import { computePOPricing, lineAdjustmentsToPO, type POAdjustment, type LineOneT
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { formatMoney, formatRate, rateSentence } from "@/app/currency/money";
 import { crossRate, localTodayIso, poFx, roundTo, stampPoRate, vendorCurrency } from "@/app/currency/poFx";
-import { midRateOn, rateOn, type RateType } from "@/app/currency/rates";
+import { RATE_TYPE_LABEL, midRateOn, rateOn, type RateType } from "@/app/currency/rates";
 import { getCompanyAccount, resolvePayFrom } from "@/app/currency/companyAccounts";
 
 export type POStatus = "Draft" | "Sent" | "Confirmed" | "Partially Received" | "Fully Received" | "Cancelled" | "Active with Cancellations" | "Fully Received with Cancellations";
@@ -641,11 +641,12 @@ export function buildVersionSnapshot(po: PurchaseOrderData): POVersionSnapshot {
 type PORateFields = Pick<PurchaseOrderData, "currency" | "exchangeRate" | "rateType" | "rateDate" | "rateEdited" | "settlementCurrency" | "payFromAccount">;
 
 /** The currency fields a PO carries, as `poFx` resolves them. "You pay" is
- *  its pay-from account (1010 unless set) and that account's currency. */
+ *  its pay-from account (the vendor's default unless set, else 1010) and
+ *  that account's currency. */
 export function poRateFields(po: Parameters<typeof poFx>[0]): PORateFields {
   const fx = poFx(po);
   const pay = po as Partial<PurchaseOrderData>;
-  const account = resolvePayFrom(fx.currency, pay.payFromAccount, pay.settlementCurrency);
+  const account = resolvePayFrom(fx.currency, pay.payFromAccount, pay.settlementCurrency, po.vendor?.name);
   return {
     currency: fx.currency,
     exchangeRate: fx.rate,
@@ -665,7 +666,12 @@ function restoreRateFields(po: PurchaseOrderData, snapshot: POVersionSnapshot): 
   po.rateType = snapshot.rateType;
   po.rateDate = snapshot.rateDate;
   po.rateEdited = snapshot.rateEdited;
-  const account = resolvePayFrom(snapshot.currency, snapshot.payFromAccount, snapshot.settlementCurrency);
+  const account = resolvePayFrom(
+    snapshot.currency,
+    snapshot.payFromAccount,
+    snapshot.settlementCurrency,
+    snapshot.vendor?.name || snapshot.vendorName || po.vendor.name,
+  );
   po.payFromAccount = account.id;
   po.settlementCurrency = account.currency;
 }
@@ -740,7 +746,7 @@ export function describeRateChange(before: PORateFields, after: PORateFields): s
   if (from !== to) {
     return isBaseCurrency(to) ? `${from} → ${to}` : `${from} → ${to} · ${rateSentence(to, after.exchangeRate ?? 1)}`;
   }
-  const label = after.rateType === "corporate" ? "Corporate" : "Mid-market";
+  const label = RATE_TYPE_LABEL[after.rateType === "corporate" ? "corporate" : "mid"];
   return `1 ${to} = ${formatRate(before.exchangeRate ?? 1)} → ${formatRate(after.exchangeRate ?? 1)} ${BASE_CURRENCY} · ${label}`;
 }
 
@@ -786,10 +792,10 @@ export function withPOCurrency(po: PurchaseOrderData, next: POCurrencyChoice): P
   out.rateType = next.rateType;
   out.rateDate = before.rateDate;
   out.rateEdited = next.rateType === "corporate" && !!next.rateEdited;
-  // Paid from an account in the base currency or the PO's own.
+  // Paid from the account chosen, else the PO's, else the vendor's default.
   const account = next.payFromAccount
-    ? resolvePayFrom(code, next.payFromAccount)
-    : resolvePayFrom(code, po.payFromAccount, po.settlementCurrency);
+    ? resolvePayFrom(code, next.payFromAccount, null, po.vendor.name)
+    : resolvePayFrom(code, po.payFromAccount, po.settlementCurrency, po.vendor.name);
   out.payFromAccount = account.id;
   out.settlementCurrency = account.currency;
   return applyComputedTotals(out);
@@ -2218,7 +2224,11 @@ export function duplicatePO(
   if (chosenVersion) reasonParts.push(`V${chosenVersion.version}`);
   if (opts.vendorLabel) reasonParts.push(`Vendor: ${opts.vendorLabel}`);
   if (rate.currency !== fromFx.currency) reasonParts.push(`Prices converted ${fromFx.currency} → ${rate.currency}`);
-  const payFrom = resolvePayFrom(rate.currency, source.payFromAccount, source.settlementCurrency);
+  // "You pay": the source's account for the same vendor; another vendor's
+  // PO starts from that vendor's default (27 Nov 2026).
+  const payFrom = opts.vendorOverride
+    ? resolvePayFrom(rate.currency, null, null, vendor.name)
+    : resolvePayFrom(rate.currency, source.payFromAccount, source.settlementCurrency, source.vendor.name);
 
   const po: PurchaseOrderData = {
     id,
@@ -2239,7 +2249,7 @@ export function duplicatePO(
     discountTotal: 0,
     total: 0,
     ...rate,
-    // "You pay": the source's account, when the new PO's currency allows it.
+    // "You pay": see payFrom above.
     payFromAccount: payFrom.id,
     settlementCurrency: payFrom.currency,
     adjustments: [],
@@ -2839,6 +2849,13 @@ function seedListingPOs(): void {
       po.settlementCurrency = "CAD";
     }
     applyComputedTotals(inVendorCurrency(po));
+    /* Demo (27 Nov 2026, Mahreen PO-4): po-4 is a draft being prepared now, so
+       its estimate is at today's rate, the same day as the direct USD to CAD
+       rate beside it ("Estimate at today's rate"), not its 2024 PO date's. */
+    if (id === "po-4") {
+      applyCurrentRate(po);
+      applyComputedTotals(po);
+    }
     purchaseOrders.set(id, initVersioning(po));
   }
 }

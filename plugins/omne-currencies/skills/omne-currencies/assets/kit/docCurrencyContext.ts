@@ -95,7 +95,7 @@ export function useDocOtherText(): (value: number) => string | null {
 export interface DocumentFxInput {
   /** The document's currency. */
   currency: string;
-  /** Mid-market unless the document (or the company default) says corporate. */
+  /** The daily market rate unless the document (or the company default) says corporate. */
   rateType?: RateType;
   /** The day the rate is for: the document date, posting date or payment date the BA's document names. */
   rateDate: string;
@@ -111,7 +111,7 @@ export interface DocumentFxInput {
 
 /**
  * A document's MoneyFx: its stamped rate, else the rate of its type on its
- * rate day (falling back to mid-market on a day with no corporate rate).
+ * rate day (falling back to the daily market rate on a day with no corporate rate).
  * Null for a base-currency document, which has nothing to convert.
  */
 export function documentFx(input: DocumentFxInput): MoneyFx | null {

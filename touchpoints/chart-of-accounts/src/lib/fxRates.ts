@@ -25,7 +25,10 @@ export type RateKind = 'mid' | 'corporate' | 'manual'
 /** How the company takes its rates (Currencies module setting). */
 export type RateSetting = 'mid-market' | 'corporate' | 'manual'
 
-export const RATE_KIND_LABEL: Record<RateKind, string> = { mid: 'Mid-market', corporate: 'Corporate', manual: 'Manual' }
+/* The two rate types by the names every module uses (Mahreen, 27 Nov 2026:
+   "Daily market rate" | "Corporate rate"). A label already ends in "rate", so a
+   call site never adds one. The stored setting stays 'mid-market'. */
+export const RATE_KIND_LABEL: Record<RateKind, string> = { mid: 'Daily market rate', corporate: 'Corporate rate', manual: 'Manual rate' }
 
 const DAY = 86_400_000
 const dayNum = (iso: string) => Math.floor(Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) / DAY)

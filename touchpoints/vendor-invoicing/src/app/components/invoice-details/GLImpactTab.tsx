@@ -336,7 +336,7 @@ export function GLImpactTab({
             {!fx.isBase && (
               <p className="text-[11px] text-slate-500 mt-0.5">
                 In {BASE_CURRENCY}, at {rateSentence(fx.currency, fx.rate)}{' '}
-                ({fx.provisional ? "today's mid-market rate; the payment date's rate applies" : `${RATE_TYPE_LABEL[fx.rateType].toLowerCase()}, ${formatRateDate(fx.rateDate)}`}).
+                ({fx.provisional ? "today's daily market rate; the payment date's rate applies" : `${RATE_TYPE_LABEL[fx.rateType].toLowerCase()}, ${formatRateDate(fx.rateDate)}`}).
                 Each line's {fx.currency} amount is under it.
                 {/* Received goods (Currency & Exchange Rates): the accrual
                     clears at what receiving booked and a prepayment at its

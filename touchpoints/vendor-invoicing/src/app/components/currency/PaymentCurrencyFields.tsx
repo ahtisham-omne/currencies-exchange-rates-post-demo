@@ -1,23 +1,19 @@
 import * as React from 'react';
-import { AlertCircle, AlertTriangle, ArrowRight, Info, Lock, RotateCcw } from 'lucide-react';
+import { ArrowRight, Info, Lock } from 'lucide-react';
 import { Label } from '@/app/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
-import { MoneyInput } from '@/app/components/payments/MoneyInput';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
-import { formatMoney, formatRateDate, moneyPrefix, rateSentence } from '@/app/currency/money';
-import { OTHER_CURRENCY_NOTE, derivedRate, rateGapPct } from '@/app/currency/paymentRules';
+import { formatMoney, formatRateDate, rateSentence } from '@/app/currency/money';
+import { OTHER_CURRENCY_NOTE, convertsAtBank, derivedRate, rateGapPct } from '@/app/currency/paymentRules';
 import { CurrencyFlag } from './CurrencyChip';
 
-/* ── Record a vendor payment: Vendor Receives and Bank Took ───────────
+/* ── Record a vendor payment: Vendor Receives ────────────────────────
  * Currency & Exchange Rates (currency/paymentRules.ts). The vendor always
  * receives the invoices' currency, so "Vendor Receives" is fixed. Which
- * account pays is the only choice: one in that currency (one amount, the
- * pounds paid, nothing converts) or one in the base currency (two amounts:
- * the pounds the vendor gets and the rupees the bank took; the rate is
- * worked out from them). The old Payment Currency switch and typed Exchange
- * Rate are gone, since a third currency is never offered (OTHER_CURRENCY_NOTE).
- * Same field recipe as the invoice form: 13px label with an ⓘ, a 40px
- * field, one 11px helper line. */
+ * account pays is the only choice; when the bank converts, the one rate
+ * entered is the bank's (27 Nov 2026: BankRateField, which replaced this
+ * file's "You Pay (PKR)" Bank Took field). Same field recipe as the invoice
+ * form: 13px label with an ⓘ, a 40px field, one 11px helper line. */
 
 const LABEL = 'text-xs sm:text-[13px] text-foreground flex items-center gap-1.5';
 const FIELD = 'mt-1 h-10 w-full rounded-lg text-sm px-3 flex items-center gap-2';
@@ -37,7 +33,7 @@ export function InfoTip({ children }: { children: React.ReactNode }) {
 }
 
 /** How the bank's rate stands against the module's allowed difference. */
-export type BankRateCheck = 'ok' | 'review' | 'blocked';
+export type { BankRateCheck } from './BankRateField';
 
 /** "Vendor Receives": the invoices' currency and the amount, locked. */
 export function VendorReceivesField({
@@ -53,11 +49,11 @@ export function VendorReceivesField({
   accountCurrency: string;
 }) {
   const cur = getCurrency(currency);
-  const converts = isBaseCurrency(accountCurrency) && !isBaseCurrency(currency);
+  const converts = convertsAtBank(accountCurrency, currency);
   const helper = isBaseCurrency(currency)
     ? `${BASE_CURRENCY} is the base currency, so nothing converts.`
     : converts
-      ? `Paid from a ${BASE_CURRENCY} account: the bank converts.`
+      ? `Paid from a ${accountCurrency} account: the bank converts.`
       : `Paid from a ${currency} account: nothing converts.`;
   return (
     <div>
@@ -86,101 +82,6 @@ export function VendorReceivesField({
         </TooltipContent>
       </Tooltip>
       <p className="text-[11px] text-slate-400 mt-1 truncate">{helper}</p>
-    </div>
-  );
-}
-
-/** "Bank Took (PKR)": from a base account, the rupees the bank took for the
- *  pounds the vendor gets. Starts at the payment date's mid-market rate
- *  until the bank's figure is entered. */
-export function BankTookField({
-  currency,
-  vendorReceives,
-  value,
-  entered,
-  onChange,
-  dayRate,
-  paymentDate,
-  check,
-  allowedPct,
-  label = 'Bank Took',
-}: {
-  currency: string;
-  vendorReceives: number;
-  /** The field's name: "You Pay" in Record Payment (Currency Touchpoints
-   *  Map, 24 Nov 2026: "You pay" is what the bank took), "Bank Took" elsewhere. */
-  label?: string;
-  /** In base: the entered figure, or the estimate. */
-  value: number;
-  /** The bank's figure was entered (not the estimate). */
-  entered: boolean;
-  /** A number sets the bank's figure; null goes back to the estimate. */
-  onChange: (n: number | null) => void;
-  /** Mid-market on the payment date. */
-  dayRate: number;
-  paymentDate: string;
-  check: BankRateCheck;
-  allowedPct: number;
-}) {
-  const rate = derivedRate(vendorReceives, value);
-  const gap = rate != null ? rateGapPct(rate, dayRate) : 0;
-  const day = formatRateDate(paymentDate);
-  const symbol = moneyPrefix(BASE_CURRENCY).trim();
-  const tone = check === 'blocked' ? '#EF4444' : check === 'review' ? '#B45309' : 'rgb(148 163 184)';
-  return (
-    <div>
-      <Label className={LABEL} style={{ fontWeight: 500 }}>
-        {label} ({BASE_CURRENCY})<span className="text-red-500">*</span>
-        <InfoTip>
-          What the bank took from the {BASE_CURRENCY} account for the {currency} the vendor gets, from the bank’s advice or statement.
-          The rate is worked out from the two figures, and the difference from each invoice’s rate posts to FX Gain or FX Loss.
-        </InfoTip>
-      </Label>
-      <div
-        className={`${FIELD} bg-white border ${
-          check === 'blocked'
-            ? 'border-red-400 ring-2 ring-red-100'
-            : check === 'review'
-              ? 'border-amber-300 focus-within:border-amber-400 focus-within:ring-1 focus-within:ring-amber-100'
-              : 'border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20'
-        }`}
-      >
-        <span className="text-slate-400 shrink-0">{symbol}</span>
-        <MoneyInput
-          value={value}
-          fluid
-          onValueChange={(n) => onChange(n)}
-          className="flex-1 min-w-0 bg-transparent outline-none tabular-nums text-foreground text-sm font-medium"
-        />
-        {entered && (
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            className="shrink-0 text-slate-400 hover:text-primary cursor-pointer"
-            title="Back to the estimate at the payment date’s mid-market rate"
-            aria-label="Back to the estimate"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-      <p className="text-[11px] mt-1 truncate flex items-center gap-1" style={{ color: tone }}>
-        {check === 'blocked' ? (
-          <>
-            <AlertCircle className="w-3 h-3 shrink-0" />
-            {Math.abs(gap).toFixed(2)}% from the {day} rate. Your role can’t record past {allowedPct}%.
-          </>
-        ) : check === 'review' ? (
-          <>
-            <AlertTriangle className="w-3 h-3 shrink-0" />
-            {Math.abs(gap).toFixed(2)}% from the {day} mid-market rate, past {allowedPct}%: needs review.
-          </>
-        ) : entered ? (
-          rate != null ? `${rateSentence(currency, rate)}, from the bank’s figures` : 'Enter what the bank took.'
-        ) : (
-          `At the ${day} mid-market rate. Enter what the bank took.`
-        )}
-      </p>
     </div>
   );
 }
@@ -237,10 +138,10 @@ export function BankConversionLine({
         <span
           className="inline-flex items-center px-1.5 py-px rounded border text-[10px] tabular-nums"
           style={{ fontWeight: 600, color: '#475569', backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
-          title={dayRate ? `Mid-market on ${formatRateDate(paymentDate)}: ${rateSentence(currency, dayRate)}` : undefined}
+          title={dayRate ? `Daily market rate on ${formatRateDate(paymentDate)}: ${rateSentence(currency, dayRate)}` : undefined}
         >
           {gap > 0 ? '+' : '−'}
-          {Math.abs(gap).toFixed(2)}% vs mid-market
+          {Math.abs(gap).toFixed(2)}% vs the daily market rate
         </span>
       )}
     </div>

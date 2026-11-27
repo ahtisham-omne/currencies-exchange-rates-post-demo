@@ -936,11 +936,15 @@ export function LineItemConfigModal({
       .reduce((s, adj) => s + (adj.amountType === '%' ? (baseSubtotal * adj.amount / 100) : adj.amount), 0);
   const discountCapHit = baseSubtotal > 0 && totalActiveDiscountAmount >= baseSubtotal;
 
-  const afterDiscounts = baseSubtotal - totalRulesDiscount + oneTimeTotal;
   const selectedProvider = SHIPMENT_PROVIDERS[formData.shipmentMethod as keyof typeof SHIPMENT_PROVIDERS]?.find(p => p.id === formData.shipmentProvider);
   // Shipping fee intentionally excluded from total — spec is not finalised yet.
   const shippingCost = 0;
-  const total = afterDiscounts;
+  /* The line's Total is qty × unit price (27 Nov 2026, D4): pricing rules
+     and one-time adjustments apply only in the Order summary, so they are
+     named under the Total, not added to it. (Until then the Total took them
+     in, and saving wrote them into the unit price, which moved the price
+     and counted them twice.) */
+  const total = baseSubtotal;
 
   const handleSave = () => {
     onSave({ ...item, ...formData, total });
@@ -3070,9 +3074,14 @@ export function LineItemConfigModal({
                         {(totalRulesDiscount !== 0 || oneTimeTotal !== 0 || lineFreight !== 0) && (
                           <div style={{ display: 'flex', alignItems: 'center' }}>
                             {[
-                              ...(totalRulesDiscount !== 0 ? [`Rules ${totalRulesDiscount > 0 ? '-' : '+'}${formatCurrency(Math.abs(totalRulesDiscount))}`] : []),
-                              ...(oneTimeTotal !== 0 ? [`Adj. ${oneTimeTotal > 0 ? '+' : '-'}${formatCurrency(Math.abs(oneTimeTotal))}`] : []),
                               ...(lineFreight !== 0 ? [`Freight +${formatCurrency(lineFreight)}`] : []),
+                              /* Rules and adjustments: in the Order summary, not in this Total (D4). */
+                              ...(totalRulesDiscount !== 0 || oneTimeTotal !== 0
+                                ? [`In the Order summary: ${[
+                                    ...(totalRulesDiscount !== 0 ? [`Rules ${totalRulesDiscount > 0 ? '-' : '+'}${formatCurrency(Math.abs(totalRulesDiscount))}`] : []),
+                                    ...(oneTimeTotal !== 0 ? [`Adj. ${oneTimeTotal > 0 ? '+' : '-'}${formatCurrency(Math.abs(oneTimeTotal))}`] : []),
+                                  ].join(' · ')}`]
+                                : []),
                             ].map((tag, i, arr) => (
                               <span key={i} style={{ fontSize: '11px', fontWeight: 500, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
                                 {tag}{i < arr.length - 1 && <span style={{ margin: '0 5px', color: '#D1D5DB' }}>·</span>}

@@ -148,7 +148,7 @@ export const EXCHANGE_RATE_PROFILE: EntityProfile = {
   childChangedLabel: "",
   longTextNoun: "note",
   fieldToChangedKey: {},
-  changedLabels: { description: "Notes", corporateRate: "Corporate rate", midMarketRate: "Mid-market rate" },
+  changedLabels: { description: "Notes", corporateRate: "Corporate rate", midMarketRate: "Daily market rate" },
   extraKinds: FX_KINDS,
 };
 

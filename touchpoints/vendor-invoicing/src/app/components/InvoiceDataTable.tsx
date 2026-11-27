@@ -40,7 +40,7 @@ import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/curre
 import { rateOn, toBase } from '@/app/currency/rates';
 import { localTodayIso } from '@/app/lib/dueBucket';
 import { formatCompactMoney, formatMoney } from '@/app/currency/money';
-import { invoiceFx, toInvoiceBase, todayFx, toTodayBase } from '@/app/currency/invoiceFx';
+import { invoiceBaseEquivalent, invoiceFx, toInvoiceBase, todayFx, toTodayBase } from '@/app/currency/invoiceFx';
 import { vendorCurrencyOf } from '@/app/currency/vendorCurrency';
 import { PaymentTermDetailsModal } from '@/app/components/PaymentTermDetailsModal';
 import {
@@ -1638,6 +1638,41 @@ export function TodayBaseCell({ value, currency, searchQuery }: { value: number;
 export const todayBaseText = (value: number, currency: string) =>
   `${isBaseCurrency(currency) ? '' : '≈ '}${formatMoney(toTodayBase(currency, value), BASE_CURRENCY)}`;
 
+/** Header tooltip for the invoice list's Base Equivalent (27 Nov 2026, 6a). */
+export const INVOICE_BASE_TOOLTIP =
+  "In your base currency. A posted invoice shows its fixed amount at its own rate. One not posted yet shows ≈ an estimate at today's rate.";
+
+/** An invoice's base equivalent (Mahreen, 27 Nov 2026, 6a): a posted
+ *  invoice's fixed base amount at its own rate, no ≈; an unposted one
+ *  (Pending Approval) "≈ ₨…" at today's rate; a base-currency invoice its
+ *  own amount, plain. Hover for the invoice's amount and the rate. The pay
+ *  queue's "Amount Due (PKR)" keeps TodayBaseCell. */
+export function InvoiceBaseCell({ invoice, searchQuery }: { invoice: Invoice; searchQuery?: string }) {
+  const code = (invoice.currency || BASE_CURRENCY).toUpperCase();
+  const { base, estimate } = invoiceBaseEquivalent(invoice, invoice.amount);
+  if (isBaseCurrency(code)) {
+    return <span className="tabular-nums text-foreground">{highlightAmount(formatMoney(base, BASE_CURRENCY), searchQuery)}</span>;
+  }
+  return (
+    <BaseMoney
+      value={invoice.amount}
+      currency={code}
+      fx={estimate ? todayFx(code) : invoiceFx(invoice)}
+      role="Invoice currency"
+      className={`${estimate ? 'text-slate-600' : 'text-foreground'} whitespace-nowrap`}
+    >
+      {estimate ? '≈ ' : ''}
+      {highlightAmount(formatMoney(base, BASE_CURRENCY), searchQuery)}
+    </BaseMoney>
+  );
+}
+
+/** The text the base equivalent cell prints, for the table search. */
+export const invoiceBaseText = (inv: Invoice) => {
+  const { base, estimate } = invoiceBaseEquivalent(inv, inv.amount);
+  return `${estimate ? '≈ ' : ''}${formatMoney(base, BASE_CURRENCY)}`;
+};
+
 export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
   {
     key: 'invoiceNumber',
@@ -1889,8 +1924,8 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     // converted (25 Nov 2026, Nophil item 8; the column's "Show values as"
     // choice is gone). The rate hover gives the base figure at the
     // invoice's rate. Rows sort and range-filter on the base currency at
-    // today's rate, the "Amount (PKR)" figure, so a ¥ total never outranks
-    // a $ one on its face value.
+    // today's rate, so a ¥ total never outranks a $ one on its face value.
+    // (Base Equivalent sorts on the figure it shows: fixed when posted.)
     getValue: (row) => toTodayBase(row.currency, row.amount),
     getSortValue: (row) => toTodayBase(row.currency, row.amount),
     searchText: (row) => `${row.amount} ${formatMoney(row.amount, row.currency)}`,
@@ -1900,20 +1935,23 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
       </Money>
     ),
   },
-  // The base-currency estimate beside the amount (25 Nov 2026, Nophil
-  // item 8): today's rate, marked ≈, visible by default, hideable.
+  // The base equivalent beside the amount (25 Nov 2026, Nophil item 8;
+  // 27 Nov 2026, Mahreen 6a): a posted invoice's fixed base amount, an
+  // unposted one's ≈ estimate at today's rate. Visible by default, hideable;
+  // the key stays, so saved layouts keep it. Sorts and filters on the
+  // figure it shows.
   {
     key: 'amountBase',
-    label: `Amount (${BASE_CURRENCY})`,
-    tooltip: TODAY_BASE_TOOLTIP,
-    minWidth: 130,
+    label: 'Base Equivalent',
+    tooltip: INVOICE_BASE_TOOLTIP,
+    minWidth: 140,
     defaultWidth: 170,
     sortable: true,
     filterType: 'range',
-    getValue: (row) => toTodayBase(row.currency, row.amount),
-    getSortValue: (row) => toTodayBase(row.currency, row.amount),
-    searchText: (row) => todayBaseText(row.amount, row.currency),
-    render: (row, { searchQuery }) => <TodayBaseCell value={row.amount} currency={row.currency} searchQuery={searchQuery} />,
+    getValue: (row) => invoiceBaseEquivalent(row, row.amount).base,
+    getSortValue: (row) => invoiceBaseEquivalent(row, row.amount).base,
+    searchText: (row) => invoiceBaseText(row),
+    render: (row, { searchQuery }) => <InvoiceBaseCell invoice={row} searchQuery={searchQuery} />,
   },
   {
     key: 'discount',
@@ -2202,6 +2240,9 @@ interface InvoiceDataTableProps {
   emptyState?: React.ReactNode;
   /** Table Empty & Error States Standard (11/3/26). */
   emptyConfig?: DataTableEmptyConfig;
+  /** A footer above the pagination bar, over every filtered row (the
+   *  invoice list's totals by currency, 27 Nov 2026). */
+  summary?: React.ReactNode;
 }
 
 /** Invoice-flavored DataTable wrapper. The only file that knows about
@@ -2237,6 +2278,7 @@ export function InvoiceDataTable({
   promoteRowAction,
   emptyState,
   emptyConfig,
+  summary,
   currencyViewScope = 'vendor-invoices',
 }: InvoiceDataTableProps) {
   const renderRowActions = useMemo(
@@ -2361,6 +2403,7 @@ export function InvoiceDataTable({
       onRecordsPerPageChange={onRecordsPerPageChange}
       emptyState={emptyState}
       emptyConfig={emptyConfig}
+      summary={summary}
       currencyViewScope={currencyViewScope}
     />
   );

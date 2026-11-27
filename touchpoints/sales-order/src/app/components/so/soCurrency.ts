@@ -4,7 +4,7 @@ import { formatRate, rateSentence } from "@/app/currency/money";
 import { rateOn, type RateType } from "@/app/currency/rates";
 import { crossRate, localTodayIso, roundTo, soFx, type SoFxFields } from "@/app/currency/soFx";
 import { getCompanyAccount, resolveReceiveAccount, type CompanyAccount } from "@/app/currency/companyAccounts";
-import { followsMarketPrice, repriceFromItem, type PricedItem } from "@/app/currency/itemPrices";
+import { customerGroupOf, followsMarketPrice, repriceFromItem, type PricedItem } from "@/app/currency/itemPrices";
 
 /** A choice made in the order's currency configuration. */
 export interface SOCurrencyChoice {
@@ -73,6 +73,8 @@ export function withSOCurrency(
   };
   if (code === before.currency) return { updates: rateFields, factor: 1 };
   const factor = crossRate(before.rate, rate);
+  // The customer's group picks among the item's prices (27 Nov 2026, Spec D).
+  const group = customerGroupOf(so.customer);
   const convert = (n: number) => roundTo(code, n * factor);
   return {
     factor,
@@ -83,7 +85,7 @@ export function withSOCurrency(
         const freight = typeof l.shipmentCost === "number" && { shipmentCost: convert(l.shipmentCost) };
         const item = followsMarketPrice(l.priceSource) ? findItem?.(l.itemCode) : undefined;
         if (!item) return { ...l, unitPrice: convert(l.unitPrice), ...freight };
-        return { ...l, ...repriceFromItem(l.unitPrice, item, before, { currency: code, rate }), ...freight };
+        return { ...l, ...repriceFromItem(l.unitPrice, item, { ...before, group }, { currency: code, rate, group }), ...freight };
       }),
       linkedTransactions: so.linkedTransactions.map((t) => (t.currency ? t : { ...t, currency: before.currency })),
     },
@@ -132,7 +134,7 @@ export function describeRateChange(before: SORateFields, after: SORateFields): s
  * rate"). An order keeps the rate stamped on it (its order date's) from
  * version to version. Applying the current rate restamps it with today's
  * rate of the same type (finance's corporate rate, when that's the type and
- * one is set; otherwise mid-market). Prices stay in the order's currency, so
+ * one is set; otherwise the daily market rate). Prices stay in the order's currency, so
  * what the customer pays is unchanged, apart from fixed pricing-rule amounts
  * (written in base, converted at the order's rate); what the order is worth
  * in base moves. */
@@ -145,7 +147,7 @@ export const todaysRateType = (choice: VersionRateChoice): RateType | null =>
   choice === "locked" ? null : choice === "current-corporate" ? "corporate" : "mid";
 
 /** Today's rate for an order, of `type` (the order's own by default).
- *  Corporate falls back to mid-market when no corporate rate is set. */
+ *  Corporate falls back to the daily market rate when no corporate rate is set. */
 export function currentRateFor(so: SoFxFields, type?: RateType): { exchangeRate: number; rateType: RateType; rateDate: string } {
   const fx = soFx(so);
   const today = localTodayIso();

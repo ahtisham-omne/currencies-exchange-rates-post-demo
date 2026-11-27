@@ -19,18 +19,20 @@ export interface MoneyFx {
   rateType: RateType;
   /** The day the rate is for. */
   rateDate: string;
-  /** "Open Exchange Rates", "Corporate rate", "Entered for this vendor". */
+  /** After the rate type: "Open Exchange Rates", "Set by …", "Entered for this vendor". */
   source: string;
 }
 
 /** The hover body: the currency, the amount in it, then a grey block with the
- *  base-currency figure and the rate it was converted at. */
+ *  base-currency figure and the rate it was converted at. `note` adds a last
+ *  line for one hover only (the qualified vendor price, 27 Nov 2026). */
 export function MoneyCard({
   value,
   currency,
   fx,
   dateLabel = 'today',
   role,
+  note,
 }: {
   value: number;
   currency: string;
@@ -39,6 +41,8 @@ export function MoneyCard({
   dateLabel?: string;
   /** "vendor currency", … */
   role?: string;
+  /** A line under the rate, e.g. "For reference only: the PO sets the rate it uses." */
+  note?: React.ReactNode;
 }) {
   const cur = getCurrency(currency);
   const day = `${formatRateDate(fx.rateDate)} (${dateLabel})`;
@@ -52,6 +56,7 @@ export function MoneyCard({
         <FxLine strong label={`In ${BASE_CURRENCY} (base)`} value={withCode(formatMoney(toBase(value, fx.rate), BASE_CURRENCY), BASE_CURRENCY)} />
         <FxNote>At {rateSentence(currency, fx.rate)} · {day}</FxNote>
         <FxRateType type={fx.rateType} label={RATE_TYPE_LABEL[fx.rateType]} source={fx.source} />
+        {note && <FxNote>{note}</FxNote>}
       </FxInset>
     </>
   );
@@ -69,6 +74,7 @@ export function Money({
   className = '',
   dateLabel,
   role = 'vendor currency',
+  note,
   children,
 }: {
   value: number;
@@ -77,6 +83,8 @@ export function Money({
   className?: string;
   dateLabel?: string;
   role?: string;
+  /** A last line on the hover (MoneyCard). */
+  note?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   const code = (currency || BASE_CURRENCY).toUpperCase();
@@ -84,7 +92,7 @@ export function Money({
   if (!fx || isBaseCurrency(code) || !value) {
     return <span className={`tabular-nums ${className}`}>{text}</span>;
   }
-  return <FxHover text={text} value={value} code={code} fx={fx} className={className} dateLabel={dateLabel} role={role} />;
+  return <FxHover text={text} value={value} code={code} fx={fx} className={className} dateLabel={dateLabel} role={role} note={note} />;
 }
 
 /**
@@ -100,6 +108,7 @@ export function BaseMoney({
   className = '',
   dateLabel,
   role = 'vendor currency',
+  note,
 }: {
   /** The amount in `currency`. */
   value: number;
@@ -108,6 +117,8 @@ export function BaseMoney({
   className?: string;
   dateLabel?: string;
   role?: string;
+  /** A last line on the hover (MoneyCard). */
+  note?: React.ReactNode;
 }) {
   const code = (currency || BASE_CURRENCY).toUpperCase();
   // No rate to convert at: the amount stays in its own currency, never relabelled as base.
@@ -116,7 +127,7 @@ export function BaseMoney({
   }
   const text = formatMoney(toBase(value, fx.rate), BASE_CURRENCY);
   if (!value) return <span className={`tabular-nums ${className}`}>{text}</span>;
-  return <FxHover text={text} value={value} code={code} fx={fx} className={className} dateLabel={dateLabel} role={role} />;
+  return <FxHover text={text} value={value} code={code} fx={fx} className={className} dateLabel={dateLabel} role={role} note={note} />;
 }
 
 /** The dotted-underline trigger and the rate card, for Money and BaseMoney. */
@@ -128,6 +139,7 @@ function FxHover({
   className,
   dateLabel,
   role,
+  note,
 }: {
   text: React.ReactNode;
   value: number;
@@ -136,6 +148,7 @@ function FxHover({
   className: string;
   dateLabel?: string;
   role?: string;
+  note?: React.ReactNode;
 }) {
   return (
     <HoverCard openDelay={200} closeDelay={80}>
@@ -155,7 +168,7 @@ function FxHover({
         arrowPadding={FX_ARROW_PADDING}
         onClick={(e) => e.stopPropagation()}
       >
-        <MoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} />
+        <MoneyCard value={value} currency={code} fx={fx} dateLabel={dateLabel} role={role} note={note} />
         <FxArrow />
       </HoverCardContent>
     </HoverCard>

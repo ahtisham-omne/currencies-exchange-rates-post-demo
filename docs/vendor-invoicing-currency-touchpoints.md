@@ -1,5 +1,7 @@
 # Vendor Invoicing: currency & exchange-rate touchpoints
 
+> **27 Nov 2026:** "Mid-market" is now the **daily market rate** everywhere (Eli's ruling, 26 Nov 2026: one rate per currency per day, read once a day from Open Exchange Rates and fixed for that date). This record uses the new name; the code keeps the identifier `mid`. Mahreen's design changes of the same day are in [currency-review-27-nov-plan.md](currency-review-27-nov-plan.md).
+
 Vendor Invoicing was redesigned. The new app comes from [`ahtisham-omne/vendor-invoicing-payments`](https://github.com/ahtisham-omne/vendor-invoicing-payments), at commit `9e28b7f`. This record does three things:
 
 1. Lists the currency touchpoints the earlier Vendor Invoicing touchpoint had (§1).
@@ -19,8 +21,8 @@ The earlier touchpoint came from `ahtisham-omne/currency-exchange-rate-vendor-in
 
 | Touchpoint | Where it was | What it did |
 |---|---|---|
-| Currency library | `data/currencyLibrary.ts` | 156 currencies, base PKR, mid-market and corporate snapshots (55 rates), conversion helpers, `flagCodeForCurrency` |
-| Rate context | `context/RateContext.tsx` | App-wide rate type. Its only writer was the config modal's global Mid-market/Corporate switch |
+| Currency library | `data/currencyLibrary.ts` | 156 currencies, base PKR, daily market rate and corporate snapshots (55 rates), conversion helpers, `flagCodeForCurrency` |
+| Rate context | `context/RateContext.tsx` | App-wide rate type. Its only writer was the config modal's global Daily market rate/Corporate switch |
 | Money cell + hover | `components/currency/VIMoneyCell.tsx`, `components/ui/CurrencyAmount.tsx` | Symbol prefix with a dotted underline. The hover showed the base equivalent, rate, rate type, source and lock date |
 | Base-currency KPIs | `components/currency/BaseCurrencyKPI.tsx`, used by `InvoiceListScreen.tsx` | Compact ₨ figures with a base-currency hover |
 | "Show values as" switch | `components/currency/AmountColumnHeaderMenu.tsx`, `AdvancedInvoiceTable.tsx` | Amount column header menu: Base / Vendor currency, defaulting to base |
@@ -46,8 +48,8 @@ Known problems in the earlier touchpoint, all fixed or made moot by the port:
 
 | Earlier touchpoint | In the redesign | Notes |
 |---|---|---|
-| Currency library + rate snapshots | `app/currency/currencies.ts`, `app/currency/rates.ts` | The currency list is copied, by script, from the Currency & Exchange Rates module's own library (`src/app/data/currencies.ts`): the same 156 currencies, names, symbols, decimals and flags. Rates are the module's own (`src/app/data/exchangeRates.ts`), and the mid-market history is generated with its seeds, so an invoice's rate matches the pair's Rate History. A day after the last sync takes the last synced rate. Corporate rates are effective from their date. |
-| `RateContext` (global rate type) | Rate type is **per invoice** (`Invoice.rateType`) | Mid-market is read-only and Corporate is editable on the invoice (spec 3.5). The default is the module's `DEFAULT_RATE_TYPE` (mid-market). There is no global switch. |
+| Currency library + rate snapshots | `app/currency/currencies.ts`, `app/currency/rates.ts` | The currency list is copied, by script, from the Currency & Exchange Rates module's own library (`src/app/data/currencies.ts`): the same 156 currencies, names, symbols, decimals and flags. Rates are the module's own (`src/app/data/exchangeRates.ts`), and the daily market rate history is generated with its seeds, so an invoice's rate matches the pair's Rate History. A day after the last sync takes the last synced rate. Corporate rates are effective from their date. |
+| `RateContext` (global rate type) | Rate type is **per invoice** (`Invoice.rateType`) | The daily market rate is read-only and Corporate is editable on the invoice (spec 3.5). The default is the module's `DEFAULT_RATE_TYPE` (daily market rate). There is no global switch. |
 | Money cell + hover (`VIMoneyCell` / `CurrencyAmount`) | `components/currency/Money.tsx` (`Money`, `MoneyCard`, `RateDetails`) | Kept: dotted underline on foreign amounts, and a hover with the base equivalent, rate, type and source. The hover now gives the **posting date**, not the invoice date. |
 | `BaseCurrencyKPI` | `InvoiceInsightsPanel.tsx` (base sums) + `components/currency/BaseCurrencyNote.tsx` | Each invoice is converted at its own rate before summing (audit item 1). The band is labelled "In PKR · base currency". |
 | "Show values as" switch | Dropped | The audit says the Amount column follows the row's Currency column (item 2), and the hover gives the base value. Sorting by Amount uses the base equivalent. |
@@ -70,7 +72,7 @@ Paths are under `touchpoints/vendor-invoicing/src/app/`.
 | 2 | Amount symbol follows the Currency column | `components/InvoiceDataTable.tsx` Amount, Amount Due and Discount columns; card view in `InvoiceListScreen.tsx`. These columns sort and range-filter on the PKR equivalent, and their header ⓘ says so. |
 | 3 | Currency column kept, Currency filter beside Vendor and Payment Terms | `InvoiceDataTable.tsx` currency column; `InvoiceListScreen.tsx` `MultiSelectFilter label="Currency"`. The Filters modal keeps its Currency section, with the same state. The modal's amount range is in base. |
 | 4 | Vendor picker reads the vendor's currency from the partner record | Vendors carry a real currency (`data/mockVendors.ts` → `currencyForVendorName`). `StandaloneVendorSelectionModal.tsx` and `VendorSelectionModalNested.tsx` show a currency pill, and their descriptions read it. The hard-coded "USD settlements" bio in `InvoiceDataTable.tsx` reads it too. |
-| 5 | Currency and Exchange Rate in Invoice Details | `components/CreateInvoiceScreen.tsx`: state (search "Currency & Exchange Rates (spec 4.4, 3.5)"), the row under Posting Date / Trigger Date, and validation (`rateMissing`). The fields are in `components/currency/InvoiceCurrencyFields.tsx`. The currency is locked to the PO's, else defaults to the vendor's and can be changed (full list). The rate is taken on the posting date: read-only on Mid-market, editable on Corporate (with reset). A pre-invoice's rate is "Set when paid". |
+| 5 | Currency and Exchange Rate in Invoice Details | `components/CreateInvoiceScreen.tsx`: state (search "Currency & Exchange Rates (spec 4.4, 3.5)"), the row under Posting Date / Trigger Date, and validation (`rateMissing`). The fields are in `components/currency/InvoiceCurrencyFields.tsx`. The currency is locked to the PO's, else defaults to the vendor's and can be changed (full list). The rate is taken on the posting date: read-only on the daily market rate, editable on Corporate (with reset). A pre-invoice's rate is "Set when paid". |
 | 6 | Line amounts in the invoice currency | `CreateInvoiceScreen.tsx`: standalone Amount, PO price per unit and line totals, charges, freight and the breakdown (`money()`, `moneySymbol`) |
 | 7 | Total Due in invoice currency with the base equivalent | `CreateInvoiceScreen.tsx` Total Due footer |
 | 8 | A/P posted in base at the invoice rate | `CreateInvoiceScreen.tsx` "Posts to A/P in PKR" under A/P Account. The GL Impact preview, the submit confirmation and the saved `glEntries` are all built through `currency/glFx.ts` (`glInBase`, `baseGlEntries`). The detail GL tab (`invoice-details/GLImpactTab.tsx`) posts in base with each line's invoice-currency amount beneath it, and so does the Cancel dialog's reversal preview (`InvoiceDetailScreen.tsx` → `InvoiceReasonDialog` `glCurrency`). |
@@ -82,7 +84,7 @@ Invoices also save their currency and rate when submitted, edited or resubmitted
 | File | What it holds |
 |---|---|
 | `app/currency/currencies.ts` | The Currency Library, `BASE_CURRENCY` (PKR) and lookups |
-| `app/currency/rates.ts` | Mid-market history and corporate rates (the module's data), `rateOn`, `toBase`, `RateType` |
+| `app/currency/rates.ts` | Daily market rate history and corporate rates (the module's data), `rateOn`, `toBase`, `RateType` |
 | `app/currency/money.ts` | `formatMoney`, `formatCompactMoney`, `formatRate`, `rateSentence`, `moneyPrefix`. A symbol shared by several currencies stays with one owner; the others print their code (MXN 1,200.00) |
 | `app/currency/invoiceFx.ts` | `invoiceFx` (an invoice's currency, rate and provisional flag), `toInvoiceBase`, `stampRate`, `poRateFx`, `currencyForVendorName` |
 | `app/currency/vendorCurrency.ts` | `vendorCurrencyOf`, the partner record's currency |
@@ -92,8 +94,8 @@ Invoices also save their currency and rate when submitted, edited or resubmitted
 Seed data, in `data/mockVendors.ts` and `data/mockInvoices.ts`:
 
 - Each vendor gets a currency: USD, PKR, EUR, GBP, AED, CNY or SAR. Superior Industries is EUR, Acme Industries USD and Ultra Corp GBP.
-- POs carry that currency and the mid-market rate on their PO date.
-- Invoices follow their vendor and carry the mid-market rate on their posting date. This is applied last, so no seed sequence changes.
+- POs carry that currency and the daily market rate on their PO date.
+- Invoices follow their vendor and carry the daily market rate on their posting date. This is applied last, so no seed sequence changes.
 
 ## 5. Running inside the shell
 
@@ -113,7 +115,7 @@ The audit's other modules come with this app and keep the design repo's behaviou
 
 - **Vendor Payments** (pp. 18–21): payment currency and rate, settlement currency, realised FX gain/loss, and KPIs in base. Invoices now carry real currencies, so those screens show what the audit describes: amounts with `$`, and "settles in EUR".
 - **Customer Invoicing and Customer Payments** (pp. 21+).
-- **The invoice importer** (`components/invoice-import/`) gives each imported invoice the mid-market rate on its posting date (`importEngine.ts`). The file's Exchange Rate column is still validated, as before, but not used: the importer was written when USD was the company currency, and the column doesn't say which way it is quoted. Its "required when not USD" rule is unchanged. A currency the Currency Library doesn't list now blocks the row.
+- **The invoice importer** (`components/invoice-import/`) gives each imported invoice the daily market rate on its posting date (`importEngine.ts`). The file's Exchange Rate column is still validated, as before, but not used: the importer was written when USD was the company currency, and the column doesn't say which way it is quoted. Its "required when not USD" rule is unchanged. A currency the Currency Library doesn't list now blocks the row.
 
 ## 7. Updating from the design repo
 
@@ -232,7 +234,7 @@ The dialog, modelled on `POCurrencyConfigDialog`, has these parts:
 
 - **Vendor bills**: the total with the currency picker. The currency is locked when it comes from the PO. Otherwise it can be changed, as on the form: the amounts are read in the new currency and nothing converts.
 - **Rate as of**: read-only, from the module default.
-- **Exchange rate**: the form's own `InvoiceExchangeRateField`, so the permission rules are the same. Mid-market is read-only. Corporate is editable only for a role with the permission, with a reset, an error past the ± limit, and the "vs PO" chip. Then the invoice-rate card.
+- **Exchange rate**: the form's own `InvoiceExchangeRateField`, so the permission rules are the same. The daily market rate is read-only. Corporate is editable only for a role with the permission, with a reset, an error past the ± limit, and the "vs PO" chip. Then the invoice-rate card.
 - **Received and prepaid**: one card per prepayment (locked when paid) and per receiving (its date's rate), then the FX Variance at invoice with the sentence behind it.
 - **You pay**: what A/P is booked at in PKR, the rest after any prepayment. It is shown, not chosen, because the payment currency is picked on the payment, so a settlement picker doesn't fit this module.
 - **Notes and buttons**: the amber "rate is locked" note, then Reset to default, Cancel and Save configuration. Save is disabled while the rate is missing or past the limit.
@@ -250,7 +252,7 @@ The constant `AP_ACCRUAL_ACCOUNT` names the `2100 AP Accrual` account that was a
 
 How each value is worked out:
 
-- **Receiving**: books the goods at the receiving day's rate, using the module's default type (mid-market) through `receivingRateOn`. Each receiving behind a line keeps its own date: `LineItem.receipts` on the form and `SavedInvoiceLineItem.receipts` (with the rate) on the record. The part a prepayment covers is booked at that prepayment's locked rate instead, and each prepayment keeps its own rate.
+- **Receiving**: books the goods at the receiving day's rate, using the module's default type (daily market rate) through `receivingRateOn`. Each receiving behind a line keeps its own date: `LineItem.receipts` on the form and `SavedInvoiceLineItem.receipts` (with the rate) on the record. The part a prepayment covers is booked at that prepayment's locked rate instead, and each prepayment keeps its own rate.
 - **Rate difference**: `fxVarianceOf` spreads the prepaid amount over the goods first. On the unpaid rest it compares the receiving value (each receiving at its rate) with the same amount at the invoice rate. `amount = rest at receiving − rest at invoice`. A positive amount is a gain: you owe less, so FX Variance is credited. A negative amount is a loss and debits it.
 - **Price difference**: `accrualSplit` works out `priceVarianceAmount = quantity × (invoice price − PO price)`, and `buildInvoiceGl` posts it to Purchase Price Variance at the invoice rate. This replaces the earlier Inventory correction, so stock keeps its receiving value. Quantity billed past the receipt still goes to 5205. Only a line with no receiving left on it still corrects Inventory.
 - **Prepayments**: an applied prepayment now credits Advance Payments, and A/P is credited with the unpaid rest only (`InvoiceGlInput.prepaymentApplied`). This matches the invoice's `outstandingBalance`. A prepayment that covers the whole invoice leaves no A/P line and no FX Variance. A prepayment larger than the goods value covers the charges at its locked rate as well.
@@ -277,7 +279,7 @@ Seeds created before this round have no receivings on their lines, so they show 
 
 ### 9.5 Seeded examples
 
-Ultra Corp bills in GBP. Each example is £10,000.00 of goods (1,000 bearings at £10.00), received on Oct 5 and invoiced on Oct 16. The module's mid-market history ends at the last sync (10 Apr 2026), and every later day takes that one rate (355.4200), so October 2026 would show no difference. The examples are therefore dated October 2025 and use the module's own rates for those days:
+Ultra Corp bills in GBP. Each example is £10,000.00 of goods (1,000 bearings at £10.00), received on Oct 5 and invoiced on Oct 16. The module's daily market rate history ends at the last sync (10 Apr 2026), and every later day takes that one rate (355.4200), so October 2026 would show no difference. The examples are therefore dated October 2025 and use the module's own rates for those days:
 
 - Oct 02, 2025: ₨344.9548 (the prepayment)
 - Oct 05, 2025: ₨344.1448 (receiving)
@@ -359,17 +361,17 @@ Record Payment is the exception (the user's payment-screen spec): it opens in th
 - **Payment Details**, after the vendor is chosen, for a foreign invoice:
   - Vendor Receives (locked: flag, code and the amount) beside Pay From (opens the picker).
   - From a PKR account, Bank Took (PKR) beside a read-only Exchange Rate.
-  - The bank line: "Bank converts ₨3,503,000.00 → £10,000.00 · 1 GBP = ₨350.3000 PKR", with how far it is from the payment date's mid-market rate.
+  - The bank line: "Bank converts ₨3,503,000.00 → £10,000.00 · 1 GBP = ₨350.3000 PKR", with how far it is from the payment date's daily market rate.
   - A PKR invoice shows none of this.
-- **Bank Took** starts at the payment date's mid-market estimate. Entering the bank's figure sets the rate, and a reset button returns to the estimate.
+- **Bank Took** starts at the payment date's daily market rate estimate. Entering the bank's figure sets the rate, and a reset button returns to the estimate.
 - **Invoices To Pay**: Amount Due is in the invoice's currency with PKR on hover. The FX columns are now A/P Carried, Paid in PKR and FX Gain/Loss.
-- **Sidebar**: the Payment card gains the CURRENCY summary: Vendor receives, Pay from, Bank took, bank rate against mid-market, A/P carried, FX Gain/Loss and View configuration. The summary footer reads Vendor Receives, then Bank Took (or In PKR), then FX Gain/Loss.
+- **Sidebar**: the Payment card gains the CURRENCY summary: Vendor receives, Pay from, Bank took, bank rate against daily market rate, A/P carried, FX Gain/Loss and View configuration. The summary footer reads Vendor Receives, then Bank Took (or In PKR), then FX Gain/Loss.
 - **Header**: the toggle and the Currency button sit before Full View.
 - **Currency Configuration** (editable) has these parts:
   - Vendor receives: fixed, with the reason and the note.
   - Pay from: the account in each allowed currency, then one greyed account per other currency, with the reason. The account the PO's You pay in asks for is marked.
   - Amounts: one, or two with Bank took editable.
-  - Rate: the bank conversion card and the payment date's mid-market rate card.
+  - Rate: the bank conversion card and the payment date's daily market rate card.
   - FX Gain/Loss at payment: A/P carried, credit, what paying cost, and the realized gain or loss.
   - Save writes the account and the bank's figure back to the form.
 - **Pay-from pickers**: every one lists all accounts and greys those that can't pay. That covers the single picker, the per-vendor picker and the bulk picker.
@@ -380,7 +382,7 @@ Record Payment is the exception (the user's payment-screen spec): it opens in th
 - **Header**: the toggle (key `payment:<id>`) and the Currency button sit before Full Screen.
 - **Amounts**: the Payment Summary hero, Applied/Unapplied and the Applied To amounts follow the view. In base they read at the payment's rate.
 - **Payment Summary**: ends with the CURRENCY card, Locked once posted.
-- **Payment Details**: the Exchange Rate reads "Bank conversion · from the bank's figures" or "Mid-market", with the date.
+- **Payment Details**: the Exchange Rate reads "Bank conversion · from the bank's figures" or "Daily market rate", with the date.
 - **GL Impact**: in PKR, each line with its GBP amount beneath, and the FX line describing both rates and dates. A seed without a saved journal gets one built by the same rule.
 - **Currency Configuration**: read-only (Locked).
 - **Reversal dialog**: a journal saved in base reverses in base (`invoice-details/ReversePaymentModal.tsx`).
@@ -403,7 +405,7 @@ Record Payment is the exception (the user's payment-screen spec): it opens in th
 
 - Dr Accounts Payable: each invoice's settled amount at its own rate (what A/P carried).
 - Cr Vendor Prepayments: credit drawn, at the rate each advance was paid.
-- Cr the bank: what the cash cost. From a PKR account that is the bank's figure; from an account in the invoice's currency it is the amount at the payment date's mid-market rate (nothing converts, but the ledger is kept in PKR).
+- Cr the bank: what the cash cost. From a PKR account that is the bank's figure; from an account in the invoice's currency it is the amount at the payment date's daily market rate (nothing converts, but the ledger is kept in PKR).
 - The rest goes to 7150 Realized FX Gain/Loss: a credit when paying cost less (a gain), a debit when it cost more (a loss). The description names both rates and dates, for example "Invoice rate 1 GBP = ₨340.6802 PKR (Oct 16, 2025) · paid at 1 GBP = ₨350.3000 PKR (Oct 24, 2025, bank conversion)".
 
 Each line keeps its GBP amount and rate. A PKR invoice converts nothing and posts no FX line. Applied prepayments were settled at invoice time (§9.4), so they are not revalued here.
@@ -412,7 +414,7 @@ Each line keeps its GBP amount and rate. A PKR invoice converts nothing and post
 
 The rate is no longer typed, so "Change the Exchange Rate on a Payment" now governs the bank's figures:
 
-- The bank's rate is compared with the payment date's mid-market rate, using the module's Allowed Difference percentage (Settings, Module Defaults, 1% by default).
+- The bank's rate is compared with the payment date's daily market rate, using the module's Allowed Difference percentage (Settings, Module Defaults, 1% by default).
 - Past it, a role with the permission gets an amber "needs review" and can still record.
 - A role without the permission gets a red error, and Record (or a run's Execute) is refused.
 - An estimate that hasn't been edited is never flagged.
@@ -426,18 +428,18 @@ All are Ultra Corp (GBP). The bearings were invoiced Oct 16, 2025 at 1 GBP = ₨
 |---|---|---|
 | INV-000217 (`inv-fx-variance-receiving`) | Open, £10,000.00, PO 9101 You pay in PKR | Record Payment starts from a PKR account (1010 · JPMorgan Operating: Ultra Corp's primary method is Wire · Wells Fargo, and no PKR account is at Wells Fargo). Enter ₨3,503,000.00: Bank converts ₨3,503,000.00 → £10,000.00 · 1 GBP = ₨350.3000 PKR, 1.44% under today's ₨355.4200, so it needs review. Loss ₨96,198.00 |
 | INV-000218 (`inv-fx-variance-prepaid`) | Open, £5,000.00 rest, PO 9102 You pay in GBP | Record Payment starts from 1060 · GBP Settlement, with one amount |
-| INV-000219 (`inv-fx-paid-base`) + PMT-000121 (`pmt-fx-demo-121`) | Paid Oct 24, 2025 from 1020 · Corporate Checking (PKR) by Wire | The bank took ₨3,503,000.00 for £10,000.00, so ₨350.3000 (mid-market that day ₨349.2371, +0.30%). Dr 2110 AP Trade 3,406,802.00 · Dr 7150 Realized FX Gain/Loss 96,198.00 · Cr 1020 Corporate Checking 3,503,000.00 |
+| INV-000219 (`inv-fx-paid-base`) + PMT-000121 (`pmt-fx-demo-121`) | Paid Oct 24, 2025 from 1020 · Corporate Checking (PKR) by Wire | The bank took ₨3,503,000.00 for £10,000.00, so ₨350.3000 (daily market rate that day ₨349.2371, +0.30%). Dr 2110 AP Trade 3,406,802.00 · Dr 7150 Realized FX Gain/Loss 96,198.00 · Cr 1020 Corporate Checking 3,503,000.00 |
 | INV-000220 (`inv-fx-paid-gbp`) + PMT-000122 (`pmt-fx-demo-122`) | £6,000.00, PO 9104 You pay in GBP, paid Nov 24, 2025 from 1060 · GBP Settlement | Nothing converts; valued at that day's ₨337.9177. Dr 2110 AP Trade 2,044,081.20 · Cr 1060 GBP Settlement 2,027,506.20 · Cr 7150 Realized FX Gain/Loss 16,575.00 |
 | PO 11091 (Ultra Corp, registry) | You pay in GBP | An invoice created from it carries `youPayIn: 'GBP'`. Every other PO pays in base |
 
-New invoice numbers now start at INV-000221. The paid examples stay out of the seeded payments' invoice pool, so no seed sequence changes. Seeded payments from a PKR account for a foreign vendor get a `bankAmount` at the payment date's mid-market rate (no spread), since the seeds have no bank statement.
+New invoice numbers now start at INV-000221. The paid examples stay out of the seeded payments' invoice pool, so no seed sequence changes. Seeded payments from a PKR account for a foreign vendor get a `bankAmount` at the payment date's daily market rate (no spread), since the seeds have no bank statement.
 
 `currency/__tests__/paymentRules.test.ts` checks the allowed accounts and the reason, the You pay in default, the worked-out rate and the bank line, the review threshold, the journals and their FX Gain/Loss (bank, GBP account, vendor credit, PKR), both seeded payments, and a run's payments and GL preview.
 
 ### 10.10 Open points
 
 - Rates read "1 GBP = ₨350.3000 PKR" (`rateSentence`, the Currencies way). The user's example has no trailing code.
-- A payment from an account in the invoice's currency still posts a gain or loss, because the ledger values the pounds at the payment date's mid-market rate. Whether a GBP account should carry its own historical rate is for finance.
+- A payment from an account in the invoice's currency still posts a gain or loss, because the ledger values the pounds at the payment date's daily market rate. Whether a GBP account should carry its own historical rate is for finance.
 - Bank Took starts as an estimate, and recording with the estimate is allowed (a scheduled payment has no bank figure yet).
 - In runs, vendor credit is valued at the payment's rate, because a draw doesn't carry its advance's rate.
 - Run Proposal and Execute amounts stay in the invoices' currency, since they are what the vendor gets. Only the run's display tables and totals moved to base.
@@ -452,8 +454,8 @@ Mahreen's Vendor Invoices changes.
 | 1 | Prepayment popup in PKR: the prepayment at the rate it was paid at; Selected Receivings and Due on This Invoice at today's rate, the rate a new invoice starts on. The paid-rate line stays. | `InvoiceCreationFlow.tsx` (`todayRateFor`, `prepaidInBase`) |
 | 2 | Create screen in PKR only: no Base Currency / Vendor Currency toggle, the Currency button reads "Currency · AED" (red when the rate needs attention), Total Due shows the PKR amount only. The sidebar's Currency card is gone from the create screen; the invoice page keeps it. | `CreateInvoiceScreen.tsx` (`formView` is always `'base'` for A/P), `CurrencyHeaderControls.tsx` (`toggle`, `showCode`, `alert`) |
 | 3 | No "Posts to A/P in PKR" box under A/P Account. | `CreateInvoiceScreen.tsx` |
-| 4 | Currency, Exchange Rate and Rate as of leave Invoice Details. A missing or over-limit rate blocks submit, marks the Currency button and opens Currency Configuration. The currency isn't locked to the PO's: changing it converts every PO price (to four places), charge, freight and standalone line at the rate day's mid-market cross rate (`convertCurrency`); receivings and prepayments are read in the new currency at the base values they were booked at (`poToInvoice`), and a prepayment remembers what it was paid in (`LockedPrepayment.paid`). | `CreateInvoiceScreen.tsx`, `currency/fxVariance.ts` |
-| 5 | Currency Configuration in her layout: "Applies to INV-000221 only. The vendor's default currency (AED) doesn't change."; Vendor invoices with a currency picker ("Defaults to the currency on PO-1003. Change it if the vendor invoiced in another currency."); Exchange rate with the Mid-market / Corporate switch and a card ("Mid-market · Open Exchange Rates", "1 AED = 75.8400 PKR · 1 PKR = 0.013186 AED", "Rate on …, the vendor invoice date · +10.33% vs PO"; a corporate rate reads "Corporate · Set by Ahtisham Ahmad · In effect since …"); Prepayment ("PRE-000002 −د.إ33,480.00 = −Rs2,539,123.20", paid at, deducted at that rate); You pay; FX difference at invoice; the amber note on when the rate locks. "Received and prepaid" and the Rate as of section are gone. The Locked tag shows only once the invoice has posted. A changed currency is previewed converted before it's saved. | `components/currency/InvoiceCurrencyConfig.tsx` (`InvoiceCurrencyConfigDialog`; `RateTypeToggle` and `PoRateCompare` now exported from `InvoiceCurrencyFields.tsx`) |
+| 4 | Currency, Exchange Rate and Rate as of leave Invoice Details. A missing or over-limit rate blocks submit, marks the Currency button and opens Currency Configuration. The currency isn't locked to the PO's: changing it converts every PO price (to four places), charge, freight and standalone line at the rate day's daily market rate cross rate (`convertCurrency`); receivings and prepayments are read in the new currency at the base values they were booked at (`poToInvoice`), and a prepayment remembers what it was paid in (`LockedPrepayment.paid`). | `CreateInvoiceScreen.tsx`, `currency/fxVariance.ts` |
+| 5 | Currency Configuration in her layout: "Applies to INV-000221 only. The vendor's default currency (AED) doesn't change."; Vendor invoices with a currency picker ("Defaults to the currency on PO-1003. Change it if the vendor invoiced in another currency."); Exchange rate with the Daily market rate / Corporate switch and a card ("Daily market rate · Open Exchange Rates", "1 AED = 75.8400 PKR · 1 PKR = 0.013186 AED", "Rate on …, the vendor invoice date · +10.33% vs PO"; a corporate rate reads "Corporate · Set by Ahtisham Ahmad · In effect since …"); Prepayment ("PRE-000002 −د.إ33,480.00 = −Rs2,539,123.20", paid at, deducted at that rate); You pay; FX difference at invoice; the amber note on when the rate locks. "Received and prepaid" and the Rate as of section are gone. The Locked tag shows only once the invoice has posted. A changed currency is previewed converted before it's saved. | `components/currency/InvoiceCurrencyConfig.tsx` (`InvoiceCurrencyConfigDialog`; `RateTypeToggle` and `PoRateCompare` now exported from `InvoiceCurrencyFields.tsx`) |
 
 The invoice summary card's corporate tooltip names who set the rate too, instead of "Finance's corporate rate".
 
@@ -511,7 +513,7 @@ Where the map differs from earlier rounds, the map wins:
 | R4 | Receiving to invoice FX variance in the configuration: "Received … · 1 USD = … PKR", then "Invoice posts/posted … · 1 USD = … PKR", then "FX variance · posts to FX Loss −₨…". The sign was already right in `fxVariance.ts`: paying more is −, paying less is +. | `components/currency/InvoiceCurrencyConfig.tsx` (FX variance section, `VarianceCard`, `varianceRatesText`) |
 | 1 | Invoices list: a currency tag after the vendor on foreign invoices, in the table and the card view. Amounts and KPIs were already in PKR. | `components/InvoiceDataTable.tsx` (`VendorCell` `currency`), `components/InvoiceListScreen.tsx` |
 | 2 | Create Vendor Invoice. The vendor's currency tag sits after the vendor pill. The Currency button no longer shows the code. A currency block sits above Total Due: Vendor invoiced, [Prepaid], You pay, [Base equivalent], [FX variance] and Rate · posting date. You pay in PKR equals Total Due. | `components/CreateInvoiceScreen.tsx` (header, `InvoiceCurrencyBlock` in the sidebar footer, `payFromAccountId`, `invoiceFxFields`) |
-| 3 | Invoice Currency Configuration. The subtitle reads "INV-000221 · from PO-1003". Sections: Vendor invoiced (amount and currency, with the existing conversion when the currency changes); Prepayment (kept); You pay (≈ PKR at the invoice rate, or the invoice-currency amount, with the account picker and a Base equivalent line); Rate (Mid-market / Corporate switch, the corporate input, the rate card "Nov 23, 2026 · posting date", the vs PO chip, and "[Unlocked] locks when the invoice posts"); FX variance. Buttons: Reset to default, Cancel and Apply. The amber lock note is gone, replaced by the lock line. | `components/currency/InvoiceCurrencyConfig.tsx` (`InvoiceCurrencyConfigDialog`) |
+| 3 | Invoice Currency Configuration. The subtitle reads "INV-000221 · from PO-1003". Sections: Vendor invoiced (amount and currency, with the existing conversion when the currency changes); Prepayment (kept); You pay (≈ PKR at the invoice rate, or the invoice-currency amount, with the account picker and a Base equivalent line); Rate (Daily market rate / Corporate switch, the corporate input, the rate card "Nov 23, 2026 · posting date", the vs PO chip, and "[Unlocked] locks when the invoice posts"); FX variance. Buttons: Reset to default, Cancel and Apply. The amber lock note is gone, replaced by the lock line. | `components/currency/InvoiceCurrencyConfig.tsx` (`InvoiceCurrencyConfigDialog`) |
 | 4 | Edit Invoice (and edit-and-resubmit). The tag, the Currency button and the invoice number show in the header. The invoice keeps its saved rate (`heldRate`). When the date the rate is taken on changes and the new date's rate differs, the prompt asks which rate to use. Cancel restores the date. The FX variance follows the rate applied. Changing the currency or rate type in the configuration replaces the kept rate, and so does "Use Nov 25's rate" there. On Create the rate simply follows the posting date, since a new invoice has no rate of its own yet. | `CreateInvoiceScreen.tsx` (`heldRate`, `onRateDateFieldChange`, `PostingDateRatePrompt`) |
 | 5 | Invoice page. The Base / Invoice Currency toggle is gone and the view is pinned to PKR. A currency tag sits after the vendor pill. The Invoice Summary (in PKR) ends with the currency block: Vendor invoiced, [Prepaid], You pay, [Base equivalent], FX variance (only with a receiving) and Rate. The block is Unlocked until posted, then Locked. "Invoice Total" reads "Total Due" when nothing reduces it. | `components/InvoiceDetailScreen.tsx`, `invoice-details/InvoiceDetailSidebar.tsx` (`InvoiceCurrencyBlock`) |
 | — | Edited invoices save `payFromAccount` and `youPayIn` | `App.tsx` (`mergeEditedInvoice`) |
@@ -521,10 +523,10 @@ Where the map differs from earlier rounds, the map wins:
 
 | # | Touchpoint | Where |
 |---|---|---|
-| 1 | Record Payment header: the vendor and its currency tag after the title, and the Currency button. A helper under Payment Date reads "Sets the rate: 1 USD = ₨… PKR, mid-market" ("Sets the estimate" from a base account). Invoices to Pay is in the invoice's currency. The right panel's Pay-From Account shows the account's currency. The picker lists only base or invoice-currency accounts. Bank Took on the form is labelled "You Pay (PKR)". | `components/payments/RecordPaymentFlow.tsx`, `payments/PayFromAccountModal.tsx`, `components/currency/PaymentCurrencyFields.tsx` (`label`) |
+| 1 | Record Payment header: the vendor and its currency tag after the title, and the Currency button. A helper under Payment Date reads "Sets the rate: 1 USD = ₨… PKR, daily market rate" ("Sets the estimate" from a base account). Invoices to Pay is in the invoice's currency. The right panel's Pay-From Account shows the account's currency. The picker lists only base or invoice-currency accounts. Bank Took on the form is labelled "You Pay (PKR)". | `components/payments/RecordPaymentFlow.tsx`, `payments/PayFromAccountModal.tsx`, `components/currency/PaymentCurrencyFields.tsx` (`label`) |
 | 1 | Currency block above Total Payment. From a base account it shows Vendor receives, You pay (what the bank took), FX variance and Rate · from the two amounts. From an invoice-currency account it shows Vendor receives, You pay, Base equivalent, FX variance and Rate · payment date. It is Unlocked. | `RecordPaymentFlow.tsx` (pinned footer), `components/currency/PaymentCurrencyConfig.tsx` (`PaymentCurrencyBlock`) |
 | 1 | The payment's default account is the invoices' own pay-from account when they all name one and it fits the method. Otherwise the earlier rule-5 logic applies. | `RecordPaymentFlow.tsx` (`payFromWantFor`, `deriveAccountId` `preferId`) |
-| 1 | Payment Currency Configuration. The subtitle reads "PMT-000301 · INV-000221". Sections: Pay from; Vendor receives ("USD · invoice currency"); You pay (the editable Bank took, or the same amount with its Base equivalent); Vendor credit (kept); Rate (the bank's rate "from the two amounts · date", or mid-market on the payment date, compared with mid-market, and "[Unlocked] locks when the payment posts"); FX variance ("invoice rate 279.5200 → 280.2200"). Buttons: Reset to default, Cancel and Apply. | `PaymentCurrencyConfig.tsx` (`PaymentCurrencyConfigDialog`) |
+| 1 | Payment Currency Configuration. The subtitle reads "PMT-000301 · INV-000221". Sections: Pay from; Vendor receives ("USD · invoice currency"); You pay (the editable Bank took, or the same amount with its Base equivalent); Vendor credit (kept); Rate (the bank's rate "from the two amounts · date", or daily market rate on the payment date, compared with daily market rate, and "[Unlocked] locks when the payment posts"); FX variance ("invoice rate 279.5200 → 280.2200"). Buttons: Reset to default, Cancel and Apply. | `PaymentCurrencyConfig.tsx` (`PaymentCurrencyConfigDialog`) |
 | 2 | Payment History: a currency tag after the vendor on foreign payments, in the table and the card view. Amounts were already in PKR with the hover. | `components/PaymentDataTable.tsx`, `components/PaymentsScreen.tsx` |
 | 3 | Payment page. The toggle is gone and the view is pinned to PKR. A tag sits after the vendor. The Payment Summary ends with the block: Vendor received, You paid, [Base equivalent], FX variance and Rate · payment date. It is Locked once posted. | `components/PaymentDetailScreen.tsx` |
 | — | Remittance advice: "Total Paid (GBP)" and "All amounts in Pound Sterling (GBP)." The "Currency: GBP, as invoiced" row stays. | `lib/remittanceAdvice.ts` |

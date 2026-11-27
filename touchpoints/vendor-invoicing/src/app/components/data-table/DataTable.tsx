@@ -284,6 +284,10 @@ interface DataTableProps<T> {
   /** Hide the pagination footer — for short, non-paged lists. Defaults to
    *  false (footer shown). */
   hidePagination?: boolean;
+  /** Optional summary footer, above the pagination bar (27 Nov 2026): the
+   *  caller passes what it says over every filtered row, not just the page
+   *  (the invoice list's totals by currency and in base). */
+  summary?: ReactNode;
   /** How the table fills horizontal space.
    *  - 'flex' (default): the column flagged `flex` absorbs all leftover
    *    width. Great for listings with one long text column, but that
@@ -338,6 +342,7 @@ export function DataTable<T>({
   searchRevealAfter,
   hideSelectionColumn = false,
   hidePagination = false,
+  summary,
   fillMode = 'flex',
   currencyViewScope = 'table',
 }: DataTableProps<T>) {
@@ -1482,6 +1487,13 @@ export function DataTable<T>({
           </TableBody>
         </Table>
       </div>
+
+      {/* Summary footer (27 Nov 2026): over the filtered rows, above the pager. */}
+      {summary != null && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4 px-4 py-2.5 border-t border-border bg-slate-50/60 text-[12px] shrink-0">
+          {summary}
+        </div>
+      )}
 
       {/* Pagination footer */}
       {!hidePagination && (

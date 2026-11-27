@@ -16,7 +16,7 @@ import { ProviderLink } from "./ProviderLink";
  * quote's currency, defaulted from the customer, is changed here, near the
  * totals. Choosing another currency opens a confirmation with the rate and
  * the new totals; confirming converts every line. The rate is taken on the
- * quote date: mid-market is read-only, corporate can be changed on the
+ * quote date: the daily market rate is read-only, corporate can be changed on the
  * quote. Both are fixed once the quote leaves Draft. Same row recipe as the
  * rest of Quote Summary: a 10/500 slate-400 label, 12/500 slate-700 values. */
 
@@ -128,7 +128,8 @@ export function CurrencyPicker({
   );
 }
 
-/** Mid-market | Corporate, as the Exchange Rates module names them. */
+/** Daily market rate | Corporate rate, as the Exchange Rates module names
+ *  them (27 Nov 2026). */
 export function RateTypeToggle({ value, onChange, corporateAvailable }: { value: RateType; onChange: (t: RateType) => void; corporateAvailable: boolean }) {
   return (
     <span className="ml-auto inline-flex items-center gap-0.5 rounded-lg border border-border bg-white p-0.5" role="radiogroup" aria-label="Rate type">
@@ -249,8 +250,9 @@ export function QuoteCurrencyFields({
           <p className="text-slate-400 flex items-center gap-1" style={LABEL}>
             Exchange rate
             <InfoTip>
-              {BASE_CURRENCY} per 1 {fx.currency}, taken on the quote date. A mid-market rate comes from {RATE_PROVIDER}
-              and is read-only; a corporate rate is set by finance and can be changed on the quote while it is a Draft.
+              {BASE_CURRENCY} per 1 {fx.currency}, taken on the quote date. A daily market rate is read once a day from{" "}
+              {RATE_PROVIDER}, fixed for that date, and read-only. A corporate rate is set by finance and can be changed
+              on the quote while it is a Draft.
             </InfoTip>
           </p>
           {!isBase && canEdit && <RateTypeToggle value={fx.rateType} onChange={switchType} corporateAvailable={corpQuote.rate != null} />}
@@ -301,7 +303,7 @@ export function QuoteCurrencyFields({
           {isBase
             ? `${BASE_CURRENCY} is the base currency, so the rate is 1`
             : !corporate
-              ? <>{RATE_TYPE_LABEL.mid} rate on {day} (quote date) · <ProviderLink /></>
+              ? <>{RATE_TYPE_LABEL.mid} on {day} (quote date) · <ProviderLink /></>
               : rateEdited
                 ? corpQuote.rate != null
                   ? `Changed on the quote from ${formatRate(corpQuote.rate)}, the corporate rate on ${day}`
@@ -418,7 +420,7 @@ export function QuoteCurrencyConfirmDialog({
               </span>
             </p>
             {wanted === "corporate" && type === "mid" && (
-              <p className="mt-1 text-[11px] text-amber-700">No corporate rate is set for {to}, so the mid-market rate is used.</p>
+              <p className="mt-1 text-[11px] text-amber-700">No corporate rate is set for {to}, so the daily market rate is used.</p>
             )}
           </div>
 
