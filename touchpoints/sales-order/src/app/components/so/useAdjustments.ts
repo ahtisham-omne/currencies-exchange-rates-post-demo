@@ -72,18 +72,47 @@ export interface AdjustmentsAPI {
 }
 
 /* Seed a couple of demo adjustments tied to real line ids so the summary
-   modal starts with meaningful coverage rather than an empty state. */
-function seedInitial(lines: SOLine[], restate: (usd: number) => number = (n) => n): Adjustment[] {
+   modal starts with meaningful coverage rather than an empty state.
+   Percentages since 25 Nov 2026: fixed amounts (about $5,750 net) were
+   nearly half the value of a small order (SO-000-000-009: +₨1.6M on
+   ₨3.4M), so the sample totals didn't read as real. A percentage keeps every
+   order's adjustments in proportion and in its own currency. `restate` is
+   kept for callers; percentages need no conversion. */
+export function seedInitial(lines: SOLine[], _restate: (usd: number) => number = (n) => n): Adjustment[] {
   const active = lines.filter((l) => !l.cancelled);
+  /* Nothing to adjust on an order whose every line is cancelled (25 Nov 2026). */
+  if (lines.length > 0 && active.length === 0) return [];
   const first = active[0]?.id;
   const third = active[2]?.id;
   const seed: Adjustment[] = [
-    { id: 'A003', label: 'Expedited Build Schedule', type: 'premium', amountType: '$', amount: restate(4500), scope: 'quote', isApplied: true },
-    { id: 'A004', label: 'Returning Customer Credit', type: 'discount', amountType: '$', amount: restate(2500), scope: 'quote', isApplied: true },
+    { id: 'A003', label: 'Expedited Build Schedule', type: 'premium', amountType: '%', amount: 3, scope: 'quote', isApplied: true },
+    { id: 'A004', label: 'Returning Customer Credit', type: 'discount', amountType: '%', amount: 2, scope: 'quote', isApplied: true },
   ];
-  if (first) seed.unshift({ id: 'A001', label: 'Chassis Delivery & Prep', type: 'premium', amountType: '$', amount: restate(2400), scope: 'item', appliedTo: [first], isApplied: true });
-  if (third) seed.splice(1, 0, { id: 'A002', label: 'Radio Programming & Encryption', type: 'premium', amountType: '$', amount: restate(1350), scope: 'item', appliedTo: [third], isApplied: true });
+  if (first) seed.unshift({ id: 'A001', label: 'Chassis Delivery & Prep', type: 'premium', amountType: '%', amount: 4, scope: 'item', appliedTo: [first], isApplied: true });
+  if (third) seed.splice(1, 0, { id: 'A002', label: 'Radio Programming & Encryption', type: 'premium', amountType: '%', amount: 2.5, scope: 'item', appliedTo: [third], isApplied: true });
   return seed;
+}
+
+/** The net of a set of adjustments on an order's lines (premiums −
+ *  discounts), worked out as the hook does: item scope on each listed line's
+ *  subtotal, order scope on the active lines' subtotal. For the listing,
+ *  which shows an order's total without opening it (summarizeSO, 25 Nov 2026). */
+export function adjustmentsNet(adjustments: Adjustment[], lines: SOLine[]): number {
+  const active = lines.filter((l) => !l.cancelled);
+  const orderBase = active.reduce((s, l) => s + l.orderedQty * l.unitPrice, 0);
+  let net = 0;
+  for (const adj of adjustments) {
+    if (!adj.isApplied) continue;
+    const sign = adj.type === "premium" ? 1 : -1;
+    if (adj.scope === "quote") {
+      net += sign * dollarImpact(adj, orderBase);
+      continue;
+    }
+    for (const line of active) {
+      if (adj.appliedTo?.includes(line.id)) net += sign * dollarImpact(adj, line.orderedQty * line.unitPrice);
+    }
+  }
+  return net;
 }
 
 export function useAdjustments(lines: SOLine[], options?: { skipSeed?: boolean; /** The demo seed is written in USD; this restates it in the SO's currency. */ restateSeed?: (usd: number) => number; /** Records that arrive with adjustments already on them (today: the legacy importer) open with these instead of the demo seed. */ seed?: Adjustment[] }): AdjustmentsAPI {

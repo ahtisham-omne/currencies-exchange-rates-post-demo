@@ -39,7 +39,7 @@ import {
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/ui/hover-card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/ui/tooltip';
 import { AGING_BUCKETS, OVERDUE_BUCKET_LABELS, localTodayIso, overdueDaysOf, overdueLabel } from '@/app/lib/dueBucket';
-import { VendorCell, highlightText, highlightAmount, renderType } from '@/app/components/InvoiceDataTable';
+import { VendorCell, highlightText, highlightAmount, renderType, TodayBaseCell, TODAY_BASE_TOOLTIP, todayBaseText } from '@/app/components/InvoiceDataTable';
 import { rowMatchesColumns } from '@/app/components/data-table/tableSearch';
 import { DateCalendar } from '@/app/components/ui/date-picker';
 import { DateRangePanel } from '@/app/components/data-table/DateRangePanel';
@@ -57,7 +57,7 @@ import { Money } from '@/app/components/currency/Money';
 import { CurrencyFlag } from '@/app/components/currency/CurrencyChip';
 import { BASE_CURRENCY, currencyLabel, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, moneyPrefix } from '@/app/currency/money';
-import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { invoiceFx, toInvoiceBase, toTodayBase } from '@/app/currency/invoiceFx';
 import { toBase } from '@/app/currency/rates';
 import { BaseTotal, CurrencyCell, amountsText, totalText } from './runMoney';
 
@@ -266,7 +266,9 @@ const DUE_PRESETS = [7, 14, 30, 60, 90] as const;
 // between scrolls horizontally.
 // Currency sits beside Amount Due (Currency & Exchange Rates): the flag
 // and code say what the figure next to it is in.
-const STEP1_COLUMN_ORDER = ['invoice', 'type', 'vendor', 'invoiceDate', 'dueDate', 'discount', 'currency', 'amount'];
+// Amount Due (PKR), the base-currency estimate at today's rate, sits before
+// them (25 Nov 2026, Nophil item 8): Amount Due stays the real amount.
+const STEP1_COLUMN_ORDER = ['invoice', 'type', 'vendor', 'invoiceDate', 'dueDate', 'discount', 'amountDueBase', 'currency', 'amount'];
 
 /** The type filter's fixed option order, the creation-flow taxonomy. */
 const TYPE_FAMILIES = ['Inventory Invoice', 'Pre-Invoice', 'Standalone Invoice'] as const;
@@ -336,6 +338,7 @@ export function RunSetupStage({
       case 'dueDate': return r.invoice.dueDate;
       case 'discount': return liveDiscountOf(r);
       case 'currency': return currencyOf(r);
+      case 'amountDueBase': return toTodayBase(currencyOf(r), r.invoice.outstandingBalance);
       // Sorted and range-filtered on the base equivalent (Currency &
       // Exchange Rates), so a ¥ balance never outranks a $ one on its face.
       case 'amount': return dueInBase(r);
@@ -483,6 +486,21 @@ export function RunSetupStage({
           </span>
         );
       },
+    },
+    // The base-currency estimate of what's due (25 Nov 2026, Nophil item 8):
+    // today's rate, marked ≈; hide it from the header menu.
+    {
+      key: 'amountDueBase',
+      label: `Amount Due (${BASE_CURRENCY})`,
+      tooltip: TODAY_BASE_TOOLTIP,
+      minWidth: 140,
+      defaultWidth: 180,
+      align: 'right',
+      sortable: true,
+      filterType: 'range',
+      getValue: (r) => toTodayBase(currencyOf(r), r.invoice.outstandingBalance),
+      searchText: (r) => todayBaseText(r.invoice.outstandingBalance, currencyOf(r)),
+      render: (r, { searchQuery }) => <TodayBaseCell value={r.invoice.outstandingBalance} currency={currencyOf(r)} searchQuery={searchQuery} />,
     },
     {
       key: 'currency',

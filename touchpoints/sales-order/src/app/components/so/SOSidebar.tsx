@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/app/components/ui/tooltip";
 import type { SalesOrder, SalesRep, SOStatus } from "./types";
-import { useSOStore, getImportedAdjustments, setImportedAdjustments } from "./store";
+import { useSOStore, getImportedAdjustments, setImportedAdjustments, findCatalogItem } from "./store";
 import { InvoiceSidebarSummary } from "./InvoicingTab";
 import { PricingRulesManageModal } from "./PricingRulesManageModal";
 import { ManageAdjustmentsModal, AddOrderLevelAdjustmentModal } from "./ManageAdjustmentsModal";
@@ -997,7 +997,12 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
      included tax, which surfaced as "$60k in listing vs $55k in
      sidebar" reports. */
   const soSummary = summarizeSO(so);
-  const subtotal = soSummary.subtotal + soSummary.tax;
+  /* Subtotal is the lines before tax (qty × unit price), and tax has its own
+     row since 25 Nov 2026 (Nophil review item 4): "Subtotal" used to include
+     the 8% tax, so the lines never added up to it. */
+  const subtotal = soSummary.subtotal;
+  const tax = soSummary.tax;
+  const activeLineCount = soSummary.lineItemCount;
   /* Pricing-rules amount + count come from the shared pricingAPI so
      the sidebar reads the same numbers the configurator + manage modal
      see on first paint. The previous `Math.round(subtotal * 0.085)`
@@ -1027,10 +1032,10 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
   /* Freight is pinned for later, so we don't add `resolvedShipmentTotal`
      to the grand total. The variable is still computed so the
      FreightBreakdownModal stays wired when the feature is re-enabled. */
-  /* Grand total = subtotal (with tax) − rules + adjustments + freight.
-     Falls back to the SO record's headline `total` when no live items
-     are present so the listing and sidebar show the same number. */
-  const grandTotal = subtotal - pricingRulesAmount + adjustmentsNet + soSummary.freight;
+  /* Grand total = subtotal − rules + adjustments + tax + freight. The
+     listing works out the same figure for the rules and adjustments the
+     order opens with (summarizeSO). */
+  const grandTotal = roundTo(soFx(so).currency, subtotal - pricingRulesAmount + adjustmentsNet + tax + soSummary.freight);
   void resolvedShipmentTotal;
   /* Pull the order-level shipment's ship-by + delivery dates into
      the timeline. When the user pins values via the Shipment modal
@@ -1229,7 +1234,7 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
      freight charge (withSOCurrency) and the fixed one-time adjustments,
      which live on the SO page. */
   const handleCurrencyChange = ({ next, subject }: SOCurrencyChange) => {
-    const { updates, factor } = withSOCurrency(so, next);
+    const { updates, factor } = withSOCurrency(so, next, findCatalogItem);
     const after = { ...so, ...updates };
     const afterFx = soFx(after);
     const beforeFields = soRateFields(so);
@@ -1269,7 +1274,7 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
      rule amounts (written in base) at the new rate (ruleAmountFactor), %
      rules and one-time adjustments scaling with the converted prices. */
   const totalsFor = (next: SOCurrencyChoice): SOCurrencyTotals => {
-    const { updates, factor } = withSOCurrency(so, next);
+    const { updates, factor } = withSOCurrency(so, next, findCatalogItem);
     const after = { ...so, ...updates } as SalesOrder;
     const s = summarizeSO(after);
     let rulesNet = 0;
@@ -1278,12 +1283,11 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
       for (const r of pricingAPI.state.attached) {
         activation.set(r.id, pricingAPI.state.deactivatedRuleIds.has(r.id) ? new Set() : (pricingAPI.state.activatedLineIdsByRule.get(r.id) ?? new Set()));
       }
-      rulesNet = computeLineBreakdowns(after.lines, pricingAPI.state.attached, activation, ruleAmountFactor(soFx(after)))
+      rulesNet = computeLineBreakdowns(after.lines.filter((l) => !l.cancelled), pricingAPI.state.attached, activation, ruleAmountFactor(soFx(after)))
         .reduce((t, b) => t + b.discountAmount - b.premiumAmount, 0);
     }
-    const sub = s.subtotal + s.tax;
     const adj = adjustmentsNet * factor;
-    return { subtotal: sub, adjustments: adj - rulesNet, freight: s.freight, total: sub - rulesNet + adj + s.freight };
+    return { subtotal: s.subtotal, adjustments: adj - rulesNet, tax: s.tax, freight: s.freight, total: s.subtotal - rulesNet + adj + s.tax + s.freight };
   };
 
   return (
@@ -1516,7 +1520,8 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
               <DocMoney value={grandTotal}>{fmtCurrency(grandTotal)}</DocMoney>
             </p>
             <p className="text-slate-500 mt-1 truncate" style={{ fontSize: 11, fontWeight: 400, fontFamily: "Inter, system-ui, sans-serif" }}>
-              {so.lines.length} item{so.lines.length !== 1 ? "s" : ""}
+              {/* Cancelled lines are out of the total, so out of the count. */}
+              {activeLineCount} item{activeLineCount !== 1 ? "s" : ""}
             </p>
           </div>
 
@@ -1556,7 +1561,7 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
                 const linkColor = pricingRulesNet > 0 ? "#7C3AED" : pricingRulesNet < 0 ? "var(--success)" : undefined;
                 return (
                   <SummaryInfoRow
-                    label={`${pricingRuleCount} rule${pricingRuleCount === 1 ? "" : "s"} · applied to ${so.lines.length} item${so.lines.length === 1 ? "" : "s"}`}
+                    label={`${pricingRuleCount} rule${pricingRuleCount === 1 ? "" : "s"} · applied to ${activeLineCount} item${activeLineCount === 1 ? "" : "s"}`}
                     onClick={() => setShowPricingRules(true)}
                     color={linkColor}
                   />
@@ -1621,6 +1626,15 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
                   Add order-level discount/premium
                 </button>
               ) : null}
+            </div>
+
+            {/* Tax (25 Nov 2026): the lines' tax, so Subtotal − rules ±
+                adjustments + tax is the Grand Total above. */}
+            <div className="flex items-center justify-between">
+              <p style={{ fontSize: 11, fontWeight: 500, color: "#64748B", fontFamily: "Inter, system-ui, sans-serif" }}>Tax</p>
+              <p className="tabular-nums" style={{ fontSize: 12, fontWeight: 500, color: "#475569", fontFamily: "Inter, system-ui, sans-serif" }}>
+                <DocMoney value={tax}>{tax > 0 ? "+" : ""}{fmtCurrency(tax)}</DocMoney>
+              </p>
             </div>
 
             {/* Freight Charges — feature paused (kept for re-enablement).
@@ -1776,6 +1790,7 @@ export function SOSidebar({ so, onOpenInvoicing, onMaterialEvent, pricingAPI, ad
       canEdit={!currencyLocked}
       totals={{
         subtotal,
+        tax,
         adjustments: adjustmentsNet - pricingRulesAmount,
         freight: soSummary.freight,
         total: grandTotal,

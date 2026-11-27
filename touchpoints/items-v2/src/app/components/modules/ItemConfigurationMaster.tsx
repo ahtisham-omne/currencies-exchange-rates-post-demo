@@ -23,6 +23,8 @@ import { ItemDefinitionSection } from './ItemDefinitionSection';
 import { StockLogisticsSection } from './StockLogisticsSection';
 import { ProcurementSection } from './ProcurementSection';
 import { SellingSection } from './SellingSection';
+import { toast } from 'sonner';
+import { invalidRegionalPrices, type RegionalPriceDraft } from '@/app/currency/regionalPrices';
 
 // Re-export types
 export interface AdvancedConfig {
@@ -81,6 +83,8 @@ export interface AdvancedConfig {
   specificPartners: string[];
   partnerRules?: Record<string, string[]>;
   pricing: Array<{ id: string; price: string; uom: string }>;
+  /** Optional unit price per market currency (25 Nov 2026). */
+  regionalPrices?: RegionalPriceDraft[];
 
   vendorScope?: 'all' | 'specific';
   specificVendors?: string[];
@@ -149,7 +153,15 @@ export default function ItemConfigurationMaster({
 
   const enterEdit = () => { setBaseline(config); setDraft(config); setEditMode(true); };
   const cancelEdit = () => { setEditMode(false); setDraft(config); };
-  const saveEdit = () => { onConfigChange(draft); setBaseline(draft); setEditMode(false); };
+  const saveEdit = () => {
+    // Regional prices must be above 0 (25 Nov 2026).
+    if (draft.sellingScope === 'all' && invalidRegionalPrices(draft.regionalPrices).length > 0) {
+      setActiveSectionId('fulfillment');
+      toast.error('Enter a regional price above 0, or remove the row.');
+      return;
+    }
+    onConfigChange(draft); setBaseline(draft); setEditMode(false);
+  };
 
   // All field writes route to the draft via writeDraft, which doubles as the
   // SECOND touch point into editing: on the detail page the section is read-only

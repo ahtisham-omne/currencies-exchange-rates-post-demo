@@ -101,7 +101,7 @@ import { SearchSelectPeople } from '@/app/components/SearchSelectPeople';
 import { rowMatchesColumns } from '@/app/components/data-table';
 import { useTableStates, type DataTableEmptyConfig } from '@/app/components/data-table/DataTable';
 import { TableEmptyState, CardSkeletonGrid, TableStaleBanner } from '@/app/components/ui/table-empty-state';
-import { InvoiceDataTable, INVOICE_COLUMNS, TYPE_CONFIG, statusDisplayLabel, invoiceStatusAxes, renderApprovalStatus, renderPaymentStatus, invoiceColumnValue, VendorCell, CreatedByCell, ACTION_ICONS } from '@/app/components/InvoiceDataTable';
+import { InvoiceDataTable, INVOICE_COLUMNS, TYPE_CONFIG, statusDisplayLabel, invoiceStatusAxes, renderApprovalStatus, renderPaymentStatus, invoiceColumnValue, invoiceColumnSortValue, VendorCell, CreatedByCell, ACTION_ICONS } from '@/app/components/InvoiceDataTable';
 import { MultiSelectFilter } from '@/app/components/data-table/MultiSelectFilter';
 import { formatUsDate, localTodayIso, overdueDaysOf, overdueLabel, isInvoiceOverdue, compareMostOverdue, MOST_OVERDUE_SORT_KEY } from '@/app/lib/dueBucket';
 import { discountIsLive, discountTermsFor, paymentTermsFor, invoiceTypeLabel } from '@/app/lib/runMath';
@@ -118,9 +118,9 @@ import {
   type InsightsRange,
 } from '@/app/components/InvoiceInsightsPanel';
 import { InsightsRangeMenu, INSIGHTS_RANGE_OPTIONS } from '@/app/components/InsightsRangeMenu';
-import { BaseMoney } from '@/app/components/currency/Money';
+import { Money } from '@/app/components/currency/Money';
 import { formatMoney, moneyPrefix } from '@/app/currency/money';
-import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { invoiceFx, toTodayBase } from '@/app/currency/invoiceFx';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { InsightsResetButton } from '@/app/components/InsightsResetButton';
 import { InsightsRefresh } from '@/app/components/InsightsRefresh';
@@ -183,6 +183,9 @@ const INVOICE_COLUMN_CATALOG: { key: string; label: string }[] = [
   { key: 'approvalStatus', label: 'Invoice Status' },
   { key: 'paymentStatus', label: 'Payment Status' },
   { key: 'amount', label: 'Amount' },
+  // The base-currency estimate beside the invoice's own amount, visible by
+  // default (25 Nov 2026, Nophil item 8).
+  { key: 'amountBase', label: `Amount (${BASE_CURRENCY})` },
   { key: 'discount', label: 'Discount' },
   // Linked Records sits after Amount (feedback 7/16/26).
   { key: 'linkedRecords', label: 'Linked Records' },
@@ -761,9 +764,10 @@ export function InvoiceListScreen({
     }
     if (filters.dueFrom && new Date(invoice.dueDate) < new Date(filters.dueFrom)) return false;
     if (filters.dueTo && new Date(invoice.dueDate) > new Date(filters.dueTo)) return false;
-    // Base currency (spec 4.4): one range across invoices in several currencies.
-    if (filters.amountMin !== '' && toInvoiceBase(invoice, invoice.amount) < Number(filters.amountMin)) return false;
-    if (filters.amountMax !== '' && toInvoiceBase(invoice, invoice.amount) > Number(filters.amountMax)) return false;
+    // Base currency (spec 4.4): one range across invoices in several
+    // currencies, at today's rate like the Amount (PKR) column (25 Nov 2026).
+    if (filters.amountMin !== '' && toTodayBase(invoice.currency, invoice.amount) < Number(filters.amountMin)) return false;
+    if (filters.amountMax !== '' && toTodayBase(invoice.currency, invoice.amount) > Number(filters.amountMax)) return false;
     if (filters.types.length > 0 && !filters.types.includes(invoice.type)) return false;
     if (filters.statuses.length > 0 && !filters.statuses.includes(invoice.status)) return false;
     if (filters.vendors.length > 0 && !filters.vendors.includes(invoice.vendor)) return false;
@@ -783,9 +787,11 @@ export function InvoiceListScreen({
   } else if (sortConfig) {
     const dir = sortConfig.direction === 'asc' ? 1 : -1;
     const key = sortConfig.key;
+    // The column's own sort key where it has one (25 Nov 2026): the
+    // amount columns sort on the base currency at today's rate.
     processedInvoices = [...processedInvoices].sort((a, b) => {
-      const av = (a as any)[key];
-      const bv = (b as any)[key];
+      const av = invoiceColumnSortValue(a, key) as any;
+      const bv = invoiceColumnSortValue(b, key) as any;
       if (av == null && bv == null) return 0;
       if (av == null) return -dir;
       if (bv == null) return dir;
@@ -2638,14 +2644,15 @@ export function InvoiceListScreen({
                           (user 10/1: the 700 read too dark against the
                           table's uniform 400 cells). */}
                       <p className={`${cardSize === 'small' ? 'text-[14px]' : 'text-[16px]'} text-foreground`} style={{ fontWeight: 500, lineHeight: 1.2 }}>
-                        {/* In the base currency at the invoice's rate, its own currency on hover. */}
-                        <BaseMoney value={invoice.amount} currency={invoice.currency} fx={invoiceFx(invoice)} role="Invoice currency" />
+                        {/* The invoice's own amount, in its currency (25 Nov
+                            2026, Nophil item 8); the base figure on hover. */}
+                        <Money value={invoice.amount} currency={invoice.currency} fx={invoiceFx(invoice)} />
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0 min-w-0">
                       {invoice.outstandingBalance > 0.004 && invoice.outstandingBalance < invoice.amount - 0.004 && (
                         <p className="text-[11px] text-slate-500" style={{ fontWeight: 400 }}>
-                          {formatMoney(toInvoiceBase(invoice, invoice.outstandingBalance), BASE_CURRENCY)} due
+                          {formatMoney(invoice.outstandingBalance, invoice.currency)} due
                         </p>
                       )}
                       {/* The table's created-by cell on EVERY size (user

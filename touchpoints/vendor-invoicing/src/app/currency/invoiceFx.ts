@@ -94,6 +94,41 @@ export function invoiceRateLocked(inv: FxFields & Pick<Invoice, 'status'>): bool
 /** An invoice amount (its total, balance, a line…) in the base currency. */
 export const toInvoiceBase = (inv: FxFields, amount: number) => toBase(amount, invoiceFx(inv).rate);
 
+/** Today's rate for a currency: Company Setup's rate type, mid-market when
+ *  there's none of that type (25 Nov 2026, Nophil item 8). The invoice
+ *  lists' "Amount (PKR)" estimate converts at it; an invoice's own amount
+ *  stays in its currency. */
+export function todayFx(currency: string): InvoiceFx {
+  const code = (currency || BASE_CURRENCY).toUpperCase();
+  const today = todayIso();
+  if (isBaseCurrency(code)) {
+    return { currency: code, rate: 1, rateType: DEFAULT_RATE_TYPE, rateDate: today, source: 'Base currency', provisional: false, isBase: true, dateLabel: 'today' };
+  }
+  const quote = rateOn(code, today, DEFAULT_RATE_TYPE);
+  const usable = quote.rate != null ? quote : rateOn(code, today, 'mid');
+  return {
+    currency: code,
+    rate: usable.rate ?? 1,
+    rateType: usable.type,
+    rateDate: today,
+    source: rateSourceLabel(usable.type),
+    provisional: false,
+    isBase: false,
+    dateLabel: 'today',
+  };
+}
+
+/** An amount in a currency, in the base currency at today's rate (an estimate). */
+export const toTodayBase = (currency: string, amount: number) => toBase(amount, todayFx(currency).rate);
+
+/** "≈ " for a base-currency total that converts any foreign amount, "" when
+ *  it's all in the base currency (25 Nov 2026, Nophil item 8): totals stay
+ *  in the base currency and say they're estimates, as a run's total does. */
+export function approxMark(currencies: Iterable<string | null | undefined>): string {
+  for (const c of currencies) if (!isBaseCurrency((c || BASE_CURRENCY).toUpperCase())) return '≈ ';
+  return '';
+}
+
 /** The rate fields to stamp on an invoice, taken on the given day (its
  *  posting date unless a basis says otherwise). */
 export function stampRate(

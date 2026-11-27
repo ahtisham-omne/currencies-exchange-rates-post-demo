@@ -2,7 +2,7 @@ import type { Invoice } from '@/app/data/mockInvoices';
 import { daysUntil as dueBucketDaysUntil } from '@/app/lib/dueBucket';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatMoney } from '@/app/currency/money';
-import { toInvoiceBase } from '@/app/currency/invoiceFx';
+import { approxMark, toInvoiceBase } from '@/app/currency/invoiceFx';
 
 // KPI catalogue for the Vendor Payments "Invoices to pay" tab. Mirrors the
 // payment insights shape (key/label/category/icon/subtitle/tooltip) so the
@@ -75,6 +75,9 @@ export const DEFAULT_READY_KPI_KEYS = [
 // its own rate before it is added up or compared.
 const money = (n: number) => formatMoney(n, BASE_CURRENCY);
 const due = (inv: Invoice) => toInvoiceBase(inv, inv.outstandingBalance);
+// A total across invoices reads "≈" when it converts any foreign one (25 Nov
+// 2026, Nophil item 8): an estimate, still in the base currency.
+const dueText = (rows: Invoice[]) => `${approxMark(rows.map((i) => i.currency))}${money(rows.reduce((s, i) => s + due(i), 0))}`;
 // The shared midnight-anchored day count (9/22/26 review response): the
 // old fractional Date.now() rounding read "Sep 21, due today" on Sep 20.
 const daysUntil = dueBucketDaysUntil;
@@ -95,21 +98,20 @@ export function computeReadyKpi(
   ready: Invoice[],
   _ctx: ReadyKpiContext,
 ): { value: string; sub: string } {
-  const sumDue = (rows: Invoice[]) => rows.reduce((s, i) => s + due(i), 0);
   switch (key) {
     case 'ready_to_pay':
-      return { value: String(ready.length), sub: `${money(sumDue(ready))} due` };
+      return { value: String(ready.length), sub: `${dueText(ready)} due` };
     case 'overdue': {
       const rows = ready.filter((i) => daysUntil(i.dueDate) < 0);
-      return { value: String(rows.length), sub: rows.length === 0 ? 'On Time' : `${money(sumDue(rows))} past due` };
+      return { value: String(rows.length), sub: rows.length === 0 ? 'On Time' : `${dueText(rows)} past due` };
     }
     case 'due_today': {
       const rows = ready.filter((i) => daysUntil(i.dueDate) === 0);
-      return { value: String(rows.length), sub: rows.length === 0 ? 'Nothing due today' : `${money(sumDue(rows))} due today` };
+      return { value: String(rows.length), sub: rows.length === 0 ? 'Nothing due today' : `${dueText(rows)} due today` };
     }
     case 'due_this_week': {
       const rows = ready.filter((i) => { const d = daysUntil(i.dueDate); return d >= 0 && d <= 7; });
-      return { value: String(rows.length), sub: `${money(sumDue(rows))} due soon` };
+      return { value: String(rows.length), sub: `${dueText(rows)} due soon` };
     }
     case 'oldest_invoice': {
       const overdue = ready.filter((i) => daysUntil(i.dueDate) < 0);
@@ -120,8 +122,10 @@ export function computeReadyKpi(
     }
     case 'largest_invoice': {
       if (ready.length === 0) return { value: '—', sub: 'Nothing payable' };
+      // Compared in the base currency, shown in its own (one invoice's
+      // amount is never converted, 25 Nov 2026, Nophil item 8).
       const top = ready.reduce((a, b) => (due(b) > due(a) ? b : a));
-      return { value: money(due(top)), sub: top.vendor };
+      return { value: formatMoney(top.outstandingBalance, top.currency), sub: top.vendor };
     }
     case 'next_due_date': {
       const upcoming = ready.filter((i) => daysUntil(i.dueDate) >= 0);

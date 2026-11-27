@@ -11,6 +11,7 @@ import { formatMoney, formatRate, formatRateDate } from "@/app/currency/money";
 import { crossRate, poFx, vendorCurrency } from "@/app/currency/poFx";
 import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
+import { CompareRatesHover } from "./CompareRatesHover";
 import { ProviderLink } from "./ProviderLink";
 
 /* ── Order Summary: Currency and Exchange Rate (spec 4.3, 4.2) ────────
@@ -227,6 +228,7 @@ export function POCurrencyFields({
             </InfoTip>
           </p>
           {!isBase && canEdit && <RateTypeToggle value={fx.rateType} onChange={switchType} corporateAvailable={corpQuote.rate != null} />}
+          {!isBase && <CompareRatesHover currency={fx.currency} date={fx.rateDate} selected={fx.rateType} />}
         </div>
         {isBase ? (
           <div className={LOCKED}>

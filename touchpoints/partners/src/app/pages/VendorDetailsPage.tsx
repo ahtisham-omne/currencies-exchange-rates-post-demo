@@ -363,10 +363,11 @@ export function VendorDetailsPage() {
   const vendor = getVendor(id!);
 
   // The partner's currency (its own, else its primary group's, spec 4.2) and
-  // whether this profile shows its amounts in it (the default) or in base.
+  // whether this profile shows its amounts in base (the default) or in it.
   const currencyInfoOf = usePartnerCurrencyInfo();
   const partnerCurrency = vendor ? currencyInfoOf(vendor) : null;
-  const [profileCurrencyView, setProfileCurrencyView] = useState<CurrencyView>("partner");
+  // Opens in the base currency so figures compare across partners (25 Nov review).
+  const [profileCurrencyView, setProfileCurrencyView] = useState<CurrencyView>("base");
   const profileCurrency = useMemo(
     () => ({ view: profileCurrencyView, partnerCurrency: partnerCurrency?.code ?? BASE_CURRENCY, streams: vendor?.currencyBreakdown }),
     [profileCurrencyView, partnerCurrency?.code, vendor?.currencyBreakdown],

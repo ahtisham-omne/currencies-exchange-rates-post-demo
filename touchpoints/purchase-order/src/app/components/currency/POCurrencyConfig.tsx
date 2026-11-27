@@ -8,14 +8,18 @@ import { isPORateLocked, withPOCurrency, type POCurrencyChoice, type PurchaseOrd
 import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
 import { DEFAULT_PAY_FROM, getCompanyAccount, payFromAccountsFor, resolvePayFrom } from "@/app/currency/companyAccounts";
 import { formatMoney, formatRate, formatRateDate } from "@/app/currency/money";
-import { poFx, vendorCurrency } from "@/app/currency/poFx";
+import { payFromCross, poFx, vendorCurrency } from "@/app/currency/poFx";
 import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { CurrencyFlag } from "./CurrencyChip";
-import { CurrencyBlock, LockChip, RateTypeChip, type CurrencyBlockRow } from "./CurrencyBlock";
+import { CurrencyBlock, LockChip, RateTypeChip, blockRateText, withCode, type CurrencyBlockRow } from "./CurrencyBlock";
+import { CompareRatesHover } from "./CompareRatesHover";
 import { linkProvider } from "./ProviderLink";
 import { CurrencyPicker, POCurrencyConfirmDialog, RateTypeToggle, type POCurrencyChange } from "./POCurrencyFields";
 
 export { RateTypeChip } from "./CurrencyBlock";
+
+/** Under an amount paid from an account in a third currency (Mahreen's copy, 25 Nov 2026). */
+export const PAY_FROM_ESTIMATE_NOTE = "Estimate at today's rate. Your bank uses its own rate when you pay.";
 
 /* ── The PO's currency: Order Summary block and Currency Configuration ──
  * Ported from the earlier Purchase Orders touchpoint (POSummaryRateBadge,
@@ -50,21 +54,33 @@ export function POCurrencySummary({ po, total, onViewConfig }: { po: PurchaseOrd
   const account = resolvePayFrom(fx.currency, po.payFromAccount, po.settlementCurrency);
   const locked = isPORateLocked(po);
   const base = toBase(total, fx.rate);
+  // Paid from an account in a third currency (25 Nov 2026): the estimate in
+  // that currency and the direct rate; the base currency only as the base
+  // equivalent.
+  const cross = payFromCross(fx, account.currency, total);
 
   // Currency information (25 Nov 2026): what the vendor receives, the
   // currency you pay in (the pay-from account's), the base equivalent and the
   // exchange rate with its type.
-  const rows: CurrencyBlockRow[] = [
-    { label: "Vendor receives", code: fx.currency, amount: total },
-    { label: "You pay in", code: account.currency, title: `From ${account.label}` },
-    { label: "Base equivalent", code: BASE_CURRENCY, amount: base },
-  ];
+  const rows: CurrencyBlockRow[] = cross
+    ? [
+        { label: "Vendor receives", code: fx.currency, amount: total },
+        { label: "You pay in", code: cross.account, amount: cross.amount, approx: true, title: `From ${account.label}` },
+        ...(fx.isBase ? [] : [{ label: "Base equivalent", code: BASE_CURRENCY, amount: base, approx: true }]),
+      ]
+    : [
+        { label: "Vendor receives", code: fx.currency, amount: total },
+        { label: "You pay in", code: account.currency, title: `From ${account.label}` },
+        { label: "Base equivalent", code: BASE_CURRENCY, amount: base },
+      ];
 
   return (
     <div className="border-t border-muted pt-3 mt-3">
       <CurrencyBlock
-        isBase={fx.isBase}
-        rateType={fx.rateType}
+        isBase={fx.isBase && !cross}
+        rateType={cross && fx.isBase ? undefined : fx.rateType}
+        rate={cross ? { code: cross.from, rate: cross.shown, to: cross.to } : { code: fx.currency, rate: fx.rate }}
+        note={cross ? PAY_FROM_ESTIMATE_NOTE : undefined}
         rateTypeTip={
           fx.rateType === "mid"
             ? `The mid-market rate on ${formatRateDate(fx.rateDate)}, the PO date · ${RATE_PROVIDER}`
@@ -74,7 +90,6 @@ export function POCurrencySummary({ po, total, onViewConfig }: { po: PurchaseOrd
         }
         lock={{ locked, title: poLockTitle(po, locked) }}
         rows={rows}
-        rate={{ code: fx.currency, rate: fx.rate }}
         footer={
           <div className="flex justify-end">
             <button
@@ -305,7 +320,9 @@ export function POCurrencyConfigDialog({
   const baseTotal = foreign ? toBase(vendorTotal, rate) : vendorTotal;
   // The pay-from account, while it is allowed for the drafted currency (else 1010).
   const account = resolvePayFrom(currency, accountId);
-  const payInBase = isBaseCurrency(account.currency);
+  // An account in neither the base nor the drafted currency: the direct rate
+  // and the estimate in the account's currency (25 Nov 2026).
+  const cross = payFromCross({ currency, rate, rateType: type, rateDate: fx.rateDate }, account.currency, vendorTotal);
 
   const dirty =
     currency !== fx.currency || account.id !== savedAccount || (foreign && (type !== fx.rateType || Math.abs(rate - fx.rate) > 1e-9));
@@ -398,6 +415,16 @@ export function POCurrencyConfigDialog({
 
             <Section label="You pay in">
               <PayFromPicker value={account.id} currency={currency} onPick={setAccountId} disabled={readOnly} />
+              {cross && (
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                  <p className="text-[12px] text-slate-700 tabular-nums leading-5" style={{ fontWeight: 500 }}>
+                    ≈ {withCode(cross.amount, cross.account)}
+                    <span className="text-slate-500" style={{ fontWeight: 400 }}> from {account.label}</span>
+                  </p>
+                  <p className="text-[12px] text-slate-500 tabular-nums leading-5">{blockRateText(cross.from, cross.shown, cross.to)}</p>
+                  <p className="mt-1 text-[10.5px] text-slate-400">{PAY_FROM_ESTIMATE_NOTE}</p>
+                </div>
+              )}
             </Section>
 
             <Section label="Base equivalent">
@@ -429,6 +456,7 @@ export function POCurrencyConfigDialog({
                       corporateAvailable={corpQuote.rate != null}
                     />
                   )}
+                  <CompareRatesHover currency={currency} date={fx.rateDate} selected={type} />
                 </div>
                 {type === "corporate" && !readOnly ? (
                   <div className="h-10 w-full rounded-lg px-3 flex items-center gap-1.5 text-[13px] bg-white border border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">

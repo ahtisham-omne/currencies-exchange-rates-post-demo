@@ -87,9 +87,9 @@ import { toast } from "sonner";
 import QuantityStepperInput from "./QuantityStepperInput";
 import ItemStatusChip from "./ItemStatusChip";
 import { computeCartVendorPricing } from "./poOrderPricing";
-import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
-import { CurrencyPill } from "./currency/CurrencyChip";
-import { CART_TAG_NOTE, CATALOG_TAG_NOTE, poPerVendorLine } from "./currency/cartCurrency";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { VendorCurrencyTag, vendorGroupAccent, vendorGroupHeaderClass } from "./currency/VendorCurrencyTag";
+import { poPerVendorLine } from "./currency/cartCurrency";
 import { formatMoney } from "@/app/currency/money";
 import { toBaseToday, todayFx, vendorCurrency } from "@/app/currency/poFx";
 import { BaseMoney } from "./currency/Money";
@@ -1271,11 +1271,11 @@ export default function ItemsCatalogueModal({
                             <div
                               key={group.vendor}
                               className="rounded-[var(--radius-lg)] border border-border overflow-hidden"
-                              style={{ backgroundColor: "hsl(var(--card))" }}
+                              style={{ backgroundColor: "hsl(var(--card))", ...vendorGroupAccent(group.currency) }}
                             >
                               {/* Vendor header */}
                               <div
-                                className="flex items-center gap-3 px-3.5 py-3 cursor-pointer select-none hover:bg-accent/40 transition-colors"
+                                className={`flex items-center gap-3 px-3.5 py-3 cursor-pointer select-none hover:bg-accent/40 transition-colors ${vendorGroupHeaderClass(group.currency)}`}
                                 style={{ borderBottom: isCollapsed ? "none" : "1px solid hsl(var(--border))" }}
                                 onClick={() => toggleVendor(group.vendor)}
                               >
@@ -1293,7 +1293,7 @@ export default function ItemsCatalogueModal({
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2">
                                     <span className="text-foreground truncate text-sm font-semibold leading-[20px]" style={{ fontFamily: FONT }}>{group.vendor}</span>
-                                    {!isBaseCurrency(group.currency) && <CurrencyPill code={group.currency} note={CART_TAG_NOTE} />}
+                                    <VendorCurrencyTag code={group.currency} />
                                     <span className="inline-flex items-center px-1.5 py-0 rounded-full shrink-0 bg-muted text-muted-foreground text-[10px] font-semibold leading-[16px]" style={{ fontFamily: FONT }}>
                                       {checkedCount}/{group.selectableCount} selected
                                     </span>
@@ -1503,7 +1503,7 @@ export default function ItemsCatalogueModal({
                                   <div className="flex-1 min-w-0">
                                     <span className="flex items-center gap-1.5 min-w-0">
                                       <span className="text-foreground truncate text-xs font-medium leading-[16px]" style={{ fontFamily: FONT }}>{g.vendor}</span>
-                                      {!isBaseCurrency(g.currency) && <CurrencyPill code={g.currency} note={CART_TAG_NOTE} />}
+                                      <VendorCurrencyTag code={g.currency} />
                                     </span>
                                     <span className="text-muted-foreground text-[11px] leading-[15px]" style={{ fontFamily: FONT }}>{g.checkedCount} of {g.selectableCount} selected</span>
                                   </div>
@@ -1919,9 +1919,7 @@ export default function ItemsCatalogueModal({
                                         </span>
                                       </span>
                                       {/* The vendor's currency tag (foreign vendors only). */}
-                                      {!isBaseCurrency(vendorCurrency(item.partnerLocation)) && (
-                                        <CurrencyPill code={vendorCurrency(item.partnerLocation)} note={CATALOG_TAG_NOTE} />
-                                      )}
+                                      <VendorCurrencyTag code={vendorCurrency(item.partnerLocation)} />
                                       <span className="text-muted-foreground" style={{ fontSize: "10px" }}>·</span>
                                     </>
                                   )}
@@ -2176,9 +2174,7 @@ export default function ItemsCatalogueModal({
                                         <span className="text-foreground truncate" style={{ fontSize: "12px", fontWeight: "var(--font-weight-medium)", lineHeight: "16px" }}>
                                           {vendorMatches ? highlightText(offer.vendorName, qVendor) : offer.vendorName}
                                         </span>
-                                        {!isBaseCurrency(vendorCurrency(offer.vendorName)) && (
-                                          <CurrencyPill code={vendorCurrency(offer.vendorName)} note={CATALOG_TAG_NOTE} />
-                                        )}
+                                        <VendorCurrencyTag code={vendorCurrency(offer.vendorName)} />
                                         {/* Priority label — always shown */}
                                         <span className="inline-flex items-center px-1 rounded-[var(--radius-sm)] shrink-0" style={{ backgroundColor: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))", fontSize: "8px", fontWeight: "var(--font-weight-medium)", lineHeight: "14px" }}>
                                           {offer.priority === "default" ? "Default" : (() => { const n = parseInt(offer.priority, 10); return n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`; })()}
@@ -2304,9 +2300,9 @@ export default function ItemsCatalogueModal({
                           const vendorMatches = qV && group.vendor.toLowerCase().includes(qV);
                           const abbr = VENDOR_ABBR_MAP[group.vendor] || group.vendor.split(/[\s(]+/).filter(Boolean).map(w => w[0]).join("").slice(0, 3).toUpperCase();
                           return (
-                            <div key={group.vendor} className="rounded-lg border border-border overflow-hidden shadow-sm" style={{ backgroundColor: "hsl(var(--card))" }}>
+                            <div key={group.vendor} className="rounded-lg border border-border overflow-hidden shadow-sm" style={{ backgroundColor: "hsl(var(--card))", ...vendorGroupAccent(vendorCurrency(group.vendor)) }}>
                               <div
-                                className="flex items-center gap-3 px-3.5 py-3 cursor-pointer select-none hover:bg-accent/40 transition-colors"
+                                className={`flex items-center gap-3 px-3.5 py-3 cursor-pointer select-none hover:bg-accent/40 transition-colors ${vendorGroupHeaderClass(vendorCurrency(group.vendor))}`}
                                 style={{ borderBottom: isGroupCollapsed ? "none" : "1px solid hsl(var(--border))" }}
                                 onClick={() => toggleGroupSection(group.vendor)}
                               >
@@ -2315,9 +2311,7 @@ export default function ItemsCatalogueModal({
                                   <span className="text-foreground min-w-0 truncate text-sm font-semibold leading-[18px]" style={{ fontFamily: FONT }}>
                                     {vendorMatches ? highlightSearchText(group.vendor, qV) : group.vendor}
                                   </span>
-                                  {!isBaseCurrency(vendorCurrency(group.vendor)) && (
-                                    <CurrencyPill code={vendorCurrency(group.vendor)} note={CATALOG_TAG_NOTE} />
-                                  )}
+                                  <VendorCurrencyTag code={vendorCurrency(group.vendor)} />
                                 </span>
                                 <span className="text-muted-foreground shrink-0" style={{ fontSize: "11px", fontWeight: "var(--font-weight-medium)", fontFamily: FONT }}>
                                   {group.items.length} item{group.items.length !== 1 ? "s" : ""}
@@ -2389,9 +2383,9 @@ export default function ItemsCatalogueModal({
                         const qC = filterContact.trim().toLowerCase();
                         const pocMatches = qC && group.pocName.toLowerCase().includes(qC);
                         return (
-                          <div key={groupKey} className="rounded-lg border border-border overflow-hidden shadow-sm" style={{ backgroundColor: "hsl(var(--card))" }}>
+                          <div key={groupKey} className="rounded-lg border border-border overflow-hidden shadow-sm" style={{ backgroundColor: "hsl(var(--card))", ...vendorGroupAccent(vendorCurrency(group.vendorName)) }}>
                             <div
-                              className="flex items-center gap-3 px-3.5 py-3 cursor-pointer select-none hover:bg-accent/40 transition-colors"
+                              className={`flex items-center gap-3 px-3.5 py-3 cursor-pointer select-none hover:bg-accent/40 transition-colors ${vendorGroupHeaderClass(vendorCurrency(group.vendorName))}`}
                               style={{ borderBottom: isGroupCollapsed ? "none" : "1px solid hsl(var(--border))" }}
                               onClick={() => toggleGroupSection(groupKey)}
                             >
@@ -2410,9 +2404,7 @@ export default function ItemsCatalogueModal({
                                   <span className="text-muted-foreground truncate text-[11px] leading-[15px]" style={{ fontFamily: FONT }}>
                                     {group.pocRole} · {group.vendorName}
                                   </span>
-                                  {!isBaseCurrency(vendorCurrency(group.vendorName)) && (
-                                    <CurrencyPill code={vendorCurrency(group.vendorName)} note={CATALOG_TAG_NOTE} />
-                                  )}
+                                  <VendorCurrencyTag code={vendorCurrency(group.vendorName)} />
                                 </span>
                               </div>
                               <span className="text-muted-foreground shrink-0" style={{ fontSize: "11px", fontWeight: "var(--font-weight-medium)", fontFamily: FONT }}>

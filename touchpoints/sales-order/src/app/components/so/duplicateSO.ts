@@ -1,5 +1,8 @@
 import type { SalesOrder, SOLine, SOStatus, SOVersion } from './types';
-import { convertOn, customerCurrency, localTodayIso } from '@/app/currency/soFx';
+import { convertOn, customerCurrency, localTodayIso, soFx, todayRate } from '@/app/currency/soFx';
+import { isBaseCurrency } from '@/app/currency/currencies';
+import { followsMarketPrice, repriceFromItem } from '@/app/currency/itemPrices';
+import { findCatalogItem } from './store';
 
 /* ════════════════════════════════════════════════════════════════════
    Shared duplicate-SO builder. Produces the `Partial<SalesOrder>`
@@ -95,10 +98,16 @@ export function buildDuplicateSOPayload(
      rate, as a new order does (createSO). */
   const currency = options.newCustomerId ? customerCurrency(customerName) : source.currency;
   const convert = (n: number) => convertOn(n, source.currency, currency, localTodayIso());
-  const lines = resetLines(source.lines).map((l) => currency === source.currency ? l : {
-    ...l,
-    unitPrice: convert(l.unitPrice),
-    ...(typeof l.shipmentCost === 'number' && { shipmentCost: convert(l.shipmentCost) }),
+  /* A line priced from the item takes the item's price in the new currency,
+     else its base price at today's rate (25 Nov 2026, Nophil review item 2). */
+  const sourceRate = soFx(source).rate;
+  const copyRate = isBaseCurrency(currency) ? 1 : todayRate(currency);
+  const lines = resetLines(source.lines).map((l) => {
+    if (currency === source.currency) return l;
+    const freight = typeof l.shipmentCost === 'number' && { shipmentCost: convert(l.shipmentCost) };
+    const item = followsMarketPrice(l.priceSource) ? findCatalogItem(l.itemCode) : undefined;
+    if (item) return { ...l, ...repriceFromItem(l.unitPrice, item, { currency: source.currency, rate: sourceRate }, { currency, rate: copyRate }), ...freight };
+    return { ...l, unitPrice: convert(l.unitPrice), ...freight };
   });
   const customerInitials = options.newCustomerId
     ? options.newCustomerName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()

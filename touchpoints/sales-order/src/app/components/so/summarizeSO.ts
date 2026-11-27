@@ -1,4 +1,8 @@
 import type { SalesOrder, SOPointOfContact, SalesRep, SOLine } from "./types";
+import { computeLineBreakdowns, getCustomerRules, lineIdsForRule } from "./pricingRulesData";
+import { adjustmentsNet, seedInitial, type Adjustment } from "./useAdjustments";
+import { getImportedAdjustments } from "./importedAdjustments";
+import { DESIGN_CURRENCY, convertOn, roundTo, ruleAmountFactor, soFx } from "@/app/currency/soFx";
 
 /* Canonical summary of a Sales Order — single source of truth for the
    SO listing rows, kanban cards, and the detail sidebar. Every surface
@@ -46,6 +50,26 @@ export interface SOSummary {
   grandTotal: number;
 }
 
+/** The pricing rules and one-time adjustments an order opens with on the
+ *  detail page (SODetail: usePricingRules, useAdjustments), in its currency.
+ *  rulesNet: discount − premium (positive takes off). */
+export function openingRulesAndAdjustments(so: SalesOrder, activeLines: SOLine[] = (so.lines ?? []).filter(l => !l.cancelled)) {
+  const fx = soFx(so);
+  const rules = getCustomerRules(so.customer ?? "");
+  const activation = new Map(rules.map(r => [r.id, new Set(lineIdsForRule(r, so.lines ?? []))]));
+  const rulesNet = computeLineBreakdowns(activeLines, rules, activation, ruleAmountFactor(fx))
+    .reduce((t, b) => t + b.discountAmount - b.premiumAmount, 0);
+  const imported = getImportedAdjustments(so.id) as Adjustment[] | undefined;
+  const adjustments: Adjustment[] = imported
+    ?? (so.createdViaUI ? [] : seedInitial(so.lines ?? [], (n) => convertOn(n, DESIGN_CURRENCY, fx.currency, fx.rateDate)));
+  return {
+    rulesNet,
+    rulesCount: rules.length,
+    adjustmentsNet: adjustmentsNet(adjustments, so.lines ?? []),
+    adjustmentsCount: adjustments.length,
+  };
+}
+
 export function summarizeSO(so: SalesOrder): SOSummary {
   const pocs = so.pocs ?? [];
   const primary = pocs.find(p => p.id === so.primaryPocId) || pocs.find(p => p.isPrimary) || pocs[0];
@@ -69,21 +93,27 @@ export function summarizeSO(so: SalesOrder): SOSummary {
     ? activeLines.reduce((s, l) => s + (l.shipmentCost ?? 0), 0)
     : (so.freightCost ?? 0);
 
-  /* Rules / adjustments aren't yet modeled on the SalesOrder record
-     itself (they live in usePricingRules / useAdjustments which are
-     instantiated by SODetail). We expose zero here so callers without
-     those APIs still get a working grand total; the detail page can
-     overlay live numbers from the APIs. */
-  const pricingRulesTotal = 0;
-  const pricingRulesCount = 0;
-  const adjustmentsTotal = 0;
-  const adjustmentsCount = 0;
+  /* Rules and one-time adjustments aren't on the SalesOrder record (they
+     live in usePricingRules / useAdjustments, which SODetail starts). They
+     used to count as zero here, so the listing's Order Value left out what
+     the detail page's Order Summary took off or added (SO-000-000-000:
+     ₨37,120,421 in the listing, ₨36,813,683 on the order). Since 25 Nov 2026
+     this works them out the way the detail page starts them: every customer
+     rule on every matching line, and the demo or imported adjustments. */
+  const opening = openingRulesAndAdjustments(so, activeLines);
+  const pricingRulesTotal = opening.rulesNet;
+  const pricingRulesCount = opening.rulesCount;
+  const adjustmentsTotal = opening.adjustmentsNet;
+  const adjustmentsCount = opening.adjustmentsCount;
 
   /* Prefer the line-driven computation when we have lines, otherwise
      trust `so.total` (the generator's pre-computed value, which
      already includes tax). */
-  const hasLines = activeLines.length > 0;
-  const computedGrand = subtotal + tax + freight + adjustmentsTotal - pricingRulesTotal;
+  /* Any lines at all: an order whose every line is cancelled is worth
+     nothing, rather than falling back to its stored total (25 Nov 2026). */
+  const hasLines = (so.lines ?? []).length > 0;
+  /* To the order currency's minor unit, as its invoices are (25 Nov 2026). */
+  const computedGrand = roundTo(soFx(so).currency, subtotal + tax + freight + adjustmentsTotal - pricingRulesTotal);
   const grandTotal = hasLines ? computedGrand : (so.total + freight);
 
   return {

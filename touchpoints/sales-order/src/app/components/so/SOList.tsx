@@ -3056,7 +3056,7 @@ export function SOList() {
           primaryPocId: payload.primaryPocId,
           salesRep: primaryRep?.name ?? "",
           salesReps: payload.salesReps,
-          lines: payload.lineItems.map(li => ({ id: "", itemCode: li.itemCode, itemName: li.itemName, itemType: li.itemType, warehouse: "Main Warehouse", orderedQty: li.qty, allocatedQty: 0, pickedQty: 0, shippedQty: 0, deliveredQty: 0, unitPrice: li.unitPrice, taxRate: 0.08, allocations: [], cancelled: false, cancelledQty: 0, readyToPick: false })),
+          lines: payload.lineItems.map(li => ({ id: "", itemCode: li.itemCode, itemName: li.itemName, itemType: li.itemType, warehouse: "Main Warehouse", orderedQty: li.qty, allocatedQty: 0, pickedQty: 0, shippedQty: 0, deliveredQty: 0, unitPrice: li.unitPrice, priceSource: li.priceSource, uom: li.uom, taxRate: 0.08, allocations: [], cancelled: false, cancelledQty: 0, readyToPick: false })),
         });
         /* Partner create toast: "<Entity> <name> created successfully". */
         toast.success(`Sales order ${so.soNumber} created successfully`, { duration: 5000 });

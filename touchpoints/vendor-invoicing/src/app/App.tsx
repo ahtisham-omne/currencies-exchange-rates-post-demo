@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { estimatedRateOf, needsBankRate, withBankRate } from '@/app/currency/paymentLedger';
 import { localTodayIso } from '@/app/lib/dueBucket';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Layout, type AppView } from '@/app/components/Layout';
@@ -522,13 +523,16 @@ export default function App() {
   // Mark as paid from the payment detail page — the listing's handler
   // verbatim: the scheduled payment flips to Paid, its planned
   // application posts, and the applied invoices settle now.
-  const handleMarkPaymentPaid = useCallback((paymentId: string) => {
+  // A payment the bank converted carries the rate the bank used (25 Nov
+  // 2026, Nophil item 9): saved on it, and its journal re-posted at it.
+  const handleMarkPaymentPaid = useCallback((paymentId: string, bankRate?: number) => {
     const target = payments.find((p) => p.id === paymentId && p.status === 'Scheduled');
     if (!target) return;
+    const settled = needsBankRate(target) ? withBankRate(target, bankRate ?? estimatedRateOf(target), invoices) : target;
     setPayments((prev) =>
       prev.map((p) =>
         p.id === paymentId
-          ? { ...p, status: 'Paid', wasScheduled: true, appliedAmount: (p.appliedInvoices ?? []).reduce((s, a) => s + a.amount, 0) }
+          ? { ...settled, status: 'Paid', wasScheduled: true, appliedAmount: (settled.appliedInvoices ?? []).reduce((s, a) => s + a.amount, 0) }
           : p,
       ),
     );

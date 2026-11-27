@@ -110,7 +110,9 @@ import { formatMoney } from '@/app/currency/money';
 import { BaseMoney } from '@/app/components/currency/Money';
 import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
-import { paymentFx, toPaymentBase } from '@/app/currency/paymentFx';
+import { paymentFx, settledCurrencyOf, toPaymentBase } from '@/app/currency/paymentFx';
+import { estimatedRateOf, needsBankRate, withBankRate } from '@/app/currency/paymentLedger';
+import { MarkPaidDialog } from '@/app/components/payments/MarkPaidDialog';
 import { BulkActionBar, type BulkAction } from '@/app/components/BulkActionBar';
 import { getBulkActions, isBulkEligible, type PaymentActionId } from '@/app/data/paymentActions';
 import {
@@ -353,15 +355,33 @@ export function PaymentsScreen({
   // Mark as paid — a scheduled payment completes: it flips to Paid, its
   // planned application posts, and the linked invoices settle NOW (this is
   // when Partially Paid / Paid in Full happens, not at scheduling, 7/16/26).
+  // A scheduled payment from an account in another currency (a PKR account
+  // paying USD) first asks for the rate the bank used (25 Nov 2026, Nophil
+  // item 9, MarkPaidDialog); every other one is marked paid straight away.
+  const [markPaidIds, setMarkPaidIds] = useState<string[] | null>(null);
   const handleMarkPaid = (ids: string[]) => {
     const targets = payments.filter((p) => ids.includes(p.id) && p.status === 'Scheduled');
     if (targets.length === 0) return;
+    if (module === 'vendor' && targets.some(needsBankRate)) {
+      setMarkPaidIds(targets.map((t) => t.id));
+      return;
+    }
+    applyMarkPaid(targets, {});
+  };
+  /** Marks the payments paid, each converting one at the bank's rate (its
+   *  currency's entry in `rates`, else its estimate, confirmed). */
+  const applyMarkPaid = (targets: Payment[], rates: Record<string, number>) => {
+    const settled = new Map(
+      targets.map((t) => [
+        t.id,
+        needsBankRate(t) ? withBankRate(t, rates[settledCurrencyOf(t)] ?? estimatedRateOf(t), invoices) : t,
+      ]),
+    );
     setPayments((prev) =>
-      prev.map((p) =>
-        targets.some((t) => t.id === p.id)
-          ? { ...p, status: 'Paid', appliedAmount: (p.appliedInvoices ?? []).reduce((s, a) => s + a.amount, 0) }
-          : p,
-      ),
+      prev.map((p) => {
+        const s = settled.get(p.id);
+        return s ? { ...s, status: 'Paid', appliedAmount: (s.appliedInvoices ?? []).reduce((sum, a) => sum + a.amount, 0) } : p;
+      }),
     );
     const allocations = targets.flatMap((p) =>
       (p.appliedInvoices ?? []).flatMap((a) => {
@@ -2030,6 +2050,16 @@ export function PaymentsScreen({
         activeKpis={activeKpiKeys}
         onToggleKpi={handleToggleKpi}
         payments={payments}
+      />
+      <MarkPaidDialog
+        open={markPaidIds != null}
+        onOpenChange={(o) => { if (!o) setMarkPaidIds(null); }}
+        payments={payments.filter((p) => markPaidIds?.includes(p.id) && p.status === 'Scheduled')}
+        onConfirm={(rates) => {
+          const targets = payments.filter((p) => markPaidIds?.includes(p.id) && p.status === 'Scheduled');
+          setMarkPaidIds(null);
+          applyMarkPaid(targets, rates);
+        }}
       />
       <PaymentReasonDialog
         open={reasonDialogOpen && reasonAction !== 'void' && reasonAction !== 'reverse'}

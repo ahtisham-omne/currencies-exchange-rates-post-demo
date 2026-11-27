@@ -66,7 +66,8 @@ import { BASE_CURRENCY, isBaseCurrency } from '@/app/currency/currencies';
 import { formatMoney, rateSentence } from '@/app/currency/money';
 import { RATE_TYPE_LABEL } from '@/app/currency/rates';
 import { paymentFx, paymentRateLocked, settledCurrencyOf } from '@/app/currency/paymentFx';
-import { paymentLedger, type PaymentLedger } from '@/app/currency/paymentLedger';
+import { needsBankRate, paymentLedger, type PaymentLedger } from '@/app/currency/paymentLedger';
+import { MarkPaidDialog } from '@/app/components/payments/MarkPaidDialog';
 import { CurrencyChip, CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { CurrencyHeaderControls } from '@/app/components/currency/CurrencyHeaderControls';
 import { DocCurrencyProvider, DocMoney } from '@/app/components/currency/DocCurrency';
@@ -216,8 +217,9 @@ export function PaymentDetailScreen({
   /** Void at App level (user 10/22/26), behind the invoice Cancel dialog. */
   onVoidPayment?: (paymentId: string, reason: string) => void;
   /** Mark as paid at App level: a scheduled payment completes, the
-   *  listing's action verbatim (applied invoices settle now). */
-  onMarkPaid?: (paymentId: string) => void;
+   *  listing's action verbatim (applied invoices settle now). A payment the
+   *  bank converts passes the rate the bank used (25 Nov 2026, Nophil item 9). */
+  onMarkPaid?: (paymentId: string, bankRate?: number) => void;
   /** Notes for this payment (user 10/22/26), the invoice Notes tab. */
   notes?: InvoiceNote[];
   onAddNote?: (text: string) => void;
@@ -226,6 +228,7 @@ export function PaymentDetailScreen({
 }) {
   const navigate = useNavigate();
   const [voidOpen, setVoidOpen] = useState(false);
+  const [markPaidOpen, setMarkPaidOpen] = useState(false);
   const isPrepay = payment.type === 'Prepayment';
   const bankCode = payment.bankAccount.split('-')[0];
   // The account as people know it ("1020 · Corporate Checking"); its id can carry an older name.
@@ -417,7 +420,10 @@ export function PaymentDetailScreen({
         }
         return;
       case 'markPaid':
-        if (onMarkPaid) onMarkPaid(payment.id);
+        // Converted at the bank (a PKR account paying USD): ask for the
+        // rate the bank used first (MarkPaidDialog). Else straight away.
+        if (onMarkPaid && needsBankRate(payment)) setMarkPaidOpen(true);
+        else if (onMarkPaid) onMarkPaid(payment.id);
         return;
       case 'void':
         // Confirms with the invoice Cancel dialog (user 10/22/26).
@@ -976,6 +982,19 @@ export function PaymentDetailScreen({
           credits={ledgerFx.credits}
           allowedPct={apSettings.allowedDifferencePct}
           canRecordPastAllowed={apPerms.canChangePaymentRate}
+        />
+      )}
+
+      {/* Mark as paid with the rate the bank used (25 Nov 2026, Nophil item 9). */}
+      {onMarkPaid && (
+        <MarkPaidDialog
+          open={markPaidOpen}
+          onOpenChange={setMarkPaidOpen}
+          payments={[payment]}
+          onConfirm={(rates) => {
+            setMarkPaidOpen(false);
+            onMarkPaid(payment.id, rates[settledCurrencyOf(payment)]);
+          }}
         />
       )}
 

@@ -138,6 +138,55 @@ export function roundTo(code: string, value: number): number {
 /** One unit of `from` in `to`, through base, at the two rates given. */
 export const crossRate = (fromRate: number, toRate: number) => (toRate > 0 ? fromRate / toRate : 1);
 
+/* ── Paying from an account in a third currency (25 Nov 2026) ─────────
+ * Nophil review item 7: a USD PO paid from 1075 · CAD Settlement moves money
+ * CAD to USD, so that is the one rate the buyer needs, not USD to PKR and CAD
+ * to PKR. It is an estimate at today's rate (the bank uses its own when it
+ * pays): today's base rates of the two currencies, of the PO's rate type
+ * (mid-market when finance has no corporate rate for one). Mixing the PO
+ * date's rate with another currency's history gave rates no bank would
+ * quote (1 USD = C$2.02 on an older PO). The base currency
+ * then shows only as the base equivalent. An account in the base currency or
+ * in the PO's own currency keeps the usual rows. */
+export interface PayFromCross {
+  /** The account's currency. */
+  account: string;
+  /** Account currency per 1 unit of the PO's currency. */
+  rate: number;
+  /** The PO total in the account's currency, rounded to its minor units. */
+  amount: number;
+  /** The rate sentence, written the way that reads best: "1 USD = C$1.3935 CAD",
+   *  or "1 CAD = ₨199.8700 PKR" for a base-currency PO (rather than 1 PKR = 0.0050). */
+  from: string;
+  to: string;
+  shown: number;
+}
+
+export function payFromCross(
+  doc: { currency: string; rate: number; rateType: RateType; rateDate: string },
+  accountCurrency: string,
+  total: number,
+): PayFromCross | null {
+  const code = doc.currency.toUpperCase();
+  const acct = accountCurrency.toUpperCase();
+  if (isBaseCurrency(acct) || acct === code) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const todayRate = (c: string) => rateOn(c, today, doc.rateType).rate ?? rateOn(c, today, 'mid').rate;
+  const docRate = isBaseCurrency(code) ? 1 : todayRate(code);
+  const acctRate = todayRate(acct);
+  if (!acctRate || acctRate <= 0 || !docRate || !(docRate > 0)) return null;
+  const rate = crossRate(docRate, acctRate);
+  const flip = rate < 0.1;
+  return {
+    account: acct,
+    rate,
+    amount: roundTo(acct, total * rate),
+    from: flip ? acct : code,
+    to: flip ? code : acct,
+    shown: flip ? 1 / rate : rate,
+  };
+}
+
 /* ── Pricing-rule amounts ─────────────────────────────────────────────
  * Pricing rules are in the base currency (Currency Touchpoints Map,
  * Partners 5–6, 24 Nov): a rule has no currency of its own; its flat

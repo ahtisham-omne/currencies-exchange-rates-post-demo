@@ -1793,11 +1793,11 @@ export function SODetail() {
                 }}
                 onDuplicateLine={(line) => {
                   if (requiresNewDraftFirst(so.status)) {
-                    setPendingVersionChange({ fieldLabel: "Duplicate Line Item", oldValue: line.itemCode, action: () => { store.addSOLine(so.id, { itemCode: line.itemCode, itemName: line.itemName, itemType: line.itemType, orderedQty: line.orderedQty, unitPrice: line.unitPrice, taxRate: line.taxRate }); toast.success(`Duplicated ${line.itemCode}`); } });
+                    setPendingVersionChange({ fieldLabel: "Duplicate Line Item", oldValue: line.itemCode, action: () => { store.addSOLine(so.id, { itemCode: line.itemCode, itemName: line.itemName, itemType: line.itemType, orderedQty: line.orderedQty, unitPrice: line.unitPrice, priceSource: line.priceSource, uom: line.uom, taxRate: line.taxRate }); toast.success(`Duplicated ${line.itemCode}`); } });
                     setAutoVersionField("Duplicate Line Item");
                     setShowAutoVersionConfirm(true);
                   } else {
-                    store.addSOLine(so.id, { itemCode: line.itemCode, itemName: line.itemName, itemType: line.itemType, orderedQty: line.orderedQty, unitPrice: line.unitPrice, taxRate: line.taxRate });
+                    store.addSOLine(so.id, { itemCode: line.itemCode, itemName: line.itemName, itemType: line.itemType, orderedQty: line.orderedQty, unitPrice: line.unitPrice, priceSource: line.priceSource, uom: line.uom, taxRate: line.taxRate });
                     toast.success(`Duplicated ${line.itemCode}`);
                   }
                 }}
@@ -1834,7 +1834,7 @@ export function SODetail() {
                   const scaledPpu = roundTo(so.currency, line.unitPrice * scale);
                   const fmt = pageMoney;
                   const apply = () => {
-                    store.updateSOLine(so.id, line.id, { uom: newUom, unitPrice: scaledPpu });
+                    store.updateSOLine(so.id, line.id, { uom: newUom, unitPrice: scaledPpu, priceSource: line.priceSource });
                     toast.success(`Unit changed to ${newUom} (PPU rescaled to ${fmt(scaledPpu)} / ${newUom})`);
                   };
                   if (requiresNewDraftFirst(so.status)) {

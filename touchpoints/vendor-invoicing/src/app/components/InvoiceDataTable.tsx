@@ -37,10 +37,10 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/app/components/
 import { BaseMoney, Money } from '@/app/components/currency/Money';
 import { CurrencyPill } from '@/app/components/currency/CurrencyChip';
 import { BASE_CURRENCY, getCurrency, isBaseCurrency } from '@/app/currency/currencies';
-import { rateOn } from '@/app/currency/rates';
+import { rateOn, toBase } from '@/app/currency/rates';
 import { localTodayIso } from '@/app/lib/dueBucket';
 import { formatCompactMoney, formatMoney } from '@/app/currency/money';
-import { invoiceFx, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { invoiceFx, toInvoiceBase, todayFx, toTodayBase } from '@/app/currency/invoiceFx';
 import { vendorCurrencyOf } from '@/app/currency/vendorCurrency';
 import { PaymentTermDetailsModal } from '@/app/components/PaymentTermDetailsModal';
 import {
@@ -1612,8 +1612,31 @@ function renderPaymentTerms(row: Invoice, searchQuery?: string): ReactNode {
 }
 
 /* ─── Column definitions ─── */
-/** Header tooltip for the money columns, true in either "Show values as". */
-const INVOICE_MONEY_TOOLTIP = `Base currency shows ${BASE_CURRENCY} at each invoice's own rate; Invoice currency shows the invoice's own amount (set it in this column's menu). Hover for the other figure. Sorting and filters use ${BASE_CURRENCY}.`;
+/** Header tooltip for an invoice's amount columns. */
+const INVOICE_MONEY_TOOLTIP = `The invoice's own amount, in its currency. Sorting and filters use ${BASE_CURRENCY} at today's rate.`;
+/** Header tooltip for the base-currency estimate beside it (Nophil item 8). */
+export const TODAY_BASE_TOOLTIP = "An estimate in your base currency at today's rate. The amount the invoice is paid at can differ.";
+
+/** An invoice amount in the base currency at today's rate, "≈ ₨…" (25 Nov
+ *  2026, Nophil item 8): an estimate beside the invoice's own amount, never
+ *  in place of it. A base-currency invoice shows the same amount, no ≈.
+ *  Hover for the invoice's amount and the rate. */
+export function TodayBaseCell({ value, currency, searchQuery }: { value: number; currency: string; searchQuery?: string }) {
+  const code = (currency || BASE_CURRENCY).toUpperCase();
+  if (isBaseCurrency(code)) {
+    return <span className="tabular-nums text-foreground">{highlightAmount(formatMoney(value, BASE_CURRENCY), searchQuery)}</span>;
+  }
+  const fx = todayFx(code);
+  return (
+    <BaseMoney value={value} currency={code} fx={fx} role="Invoice currency" className="text-slate-600 whitespace-nowrap">
+      ≈ {highlightAmount(formatMoney(toBase(value, fx.rate), BASE_CURRENCY), searchQuery)}
+    </BaseMoney>
+  );
+}
+
+/** The "≈ ₨…" text the estimate cell prints, for the table search. */
+export const todayBaseText = (value: number, currency: string) =>
+  `${isBaseCurrency(currency) ? '' : '≈ '}${formatMoney(toTodayBase(currency, value), BASE_CURRENCY)}`;
 
 export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
   {
@@ -1858,32 +1881,39 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     key: 'amount',
     label: 'Amount',
     tooltip: INVOICE_MONEY_TOOLTIP,
-    currencyViewLabel: 'Invoice currency',
     minWidth: 120,
     defaultWidth: 160,
     sortable: true,
     filterType: 'range',
-    // Currency & Exchange Rates (spec 4.4): every amount on the listing is in
-    // the base currency, at the row's own rate, with the invoice's own
-    // currency (the Currency column) and the rate on hover. Rows sort and
-    // range-filter on that same base amount, so a ¥ total never outranks a $
-    // one on its face value. Search matches either figure.
-    getValue: (row) => toInvoiceBase(row, row.amount),
-    getSortValue: (row) => toInvoiceBase(row, row.amount),
-    searchText: (row) =>
-      `${row.amount} ${formatMoney(row.amount, row.currency)} ${formatMoney(toInvoiceBase(row, row.amount), BASE_CURRENCY)}`,
-    // "Show values as" (header menu): Invoice currency prints the
-    // invoice's own amount with base on hover; sort/filter stay on base.
-    render: (row, { searchQuery, currencyView }) =>
-      currencyView === 'party' ? (
-        <Money value={row.amount} currency={row.currency} fx={invoiceFx(row)} className="text-foreground">
-          {highlightAmount(formatMoney(row.amount, row.currency), searchQuery)}
-        </Money>
-      ) : (
-        <BaseMoney value={row.amount} currency={row.currency} fx={invoiceFx(row)} role="Invoice currency" className="text-foreground">
-          {highlightAmount(formatMoney(toInvoiceBase(row, row.amount), BASE_CURRENCY), searchQuery)}
-        </BaseMoney>
-      ),
+    // An invoice's amount is always its own, in its currency, never
+    // converted (25 Nov 2026, Nophil item 8; the column's "Show values as"
+    // choice is gone). The rate hover gives the base figure at the
+    // invoice's rate. Rows sort and range-filter on the base currency at
+    // today's rate, the "Amount (PKR)" figure, so a ¥ total never outranks
+    // a $ one on its face value.
+    getValue: (row) => toTodayBase(row.currency, row.amount),
+    getSortValue: (row) => toTodayBase(row.currency, row.amount),
+    searchText: (row) => `${row.amount} ${formatMoney(row.amount, row.currency)}`,
+    render: (row, { searchQuery }) => (
+      <Money value={row.amount} currency={row.currency} fx={invoiceFx(row)} className="text-foreground">
+        {highlightAmount(formatMoney(row.amount, row.currency), searchQuery)}
+      </Money>
+    ),
+  },
+  // The base-currency estimate beside the amount (25 Nov 2026, Nophil
+  // item 8): today's rate, marked ≈, visible by default, hideable.
+  {
+    key: 'amountBase',
+    label: `Amount (${BASE_CURRENCY})`,
+    tooltip: TODAY_BASE_TOOLTIP,
+    minWidth: 130,
+    defaultWidth: 170,
+    sortable: true,
+    filterType: 'range',
+    getValue: (row) => toTodayBase(row.currency, row.amount),
+    getSortValue: (row) => toTodayBase(row.currency, row.amount),
+    searchText: (row) => todayBaseText(row.amount, row.currency),
+    render: (row, { searchQuery }) => <TodayBaseCell value={row.amount} currency={row.currency} searchQuery={searchQuery} />,
   },
   {
     key: 'discount',
@@ -1892,7 +1922,6 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     defaultWidth: 170,
     sortable: true,
     filterable: false,
-    currencyViewLabel: 'Invoice currency',
     getValue: (row) => {
       const terms = discountTermsFor(row);
       return terms && discountIsLive(terms) ? discountAmountOn(row.outstandingBalance, terms) : 0;
@@ -1903,12 +1932,12 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
       if (!terms || row.outstandingBalance <= 0) return '';
       if (!discountIsLive(terms)) return `${terms.percent}% Expired`;
       const d = discountAmountOn(row.outstandingBalance, terms);
-      return `${terms.percent}% · ${formatMoney(-toInvoiceBase(row, d), BASE_CURRENCY)} ${formatMoney(-d, row.currency)}`;
+      return `${terms.percent}% · ${formatMoney(-d, row.currency)}`;
     },
     // Early-pay discount from the invoice's PAYMENT TERM (8/28/26
     // evening), measured as of today on the listing; hover explains the
     // window with a worked example.
-    render: (row, { currencyView }) => {
+    render: (row) => {
       const terms = discountTermsFor(row);
       if (!terms || row.outstandingBalance <= 0) {
         return null;
@@ -1937,12 +1966,9 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] cursor-help whitespace-nowrap"
                 style={{ fontWeight: 600 }}
               >
-                {/* In base like the other money columns (or the
-                    invoice's own currency when the column is set to
-                    it); both figures are in the hover. */}
-                {terms.percent}% · {currencyView === 'party'
-                  ? formatMoney(-discount, row.currency)
-                  : formatMoney(-toInvoiceBase(row, discount), BASE_CURRENCY)}
+                {/* In the invoice's own currency, like its amount (25 Nov
+                    2026, Nophil item 8); the base figure is in the hover. */}
+                {terms.percent}% · {formatMoney(-discount, row.currency)}
               </span>
             </HoverCardTrigger>
             <HoverCardContent side="top" align="start" className="w-[280px] p-3 rounded-xl border border-border shadow-lg bg-white z-[300]">
@@ -1973,19 +1999,18 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
     defaultWidth: 160,
     sortable: true,
     tooltip: INVOICE_MONEY_TOOLTIP,
-    currencyViewLabel: 'Invoice currency',
     filterType: 'range',
-    // In base at the row's rate, sorted and range-filtered on it (as Amount).
-    getValue: (row) => toInvoiceBase(row, row.outstandingBalance),
-    getSortValue: (row) => toInvoiceBase(row, row.outstandingBalance),
+    // In the invoice's own currency: the real amount a payment must cover
+    // (25 Nov 2026, Nophil item 8). Sorted and range-filtered on the base
+    // currency at today's rate, as Amount.
+    getValue: (row) => toTodayBase(row.currency, row.outstandingBalance),
+    getSortValue: (row) => toTodayBase(row.currency, row.outstandingBalance),
     searchText: (row) =>
-      row.outstandingBalance
-        ? `${row.outstandingBalance} ${formatMoney(row.outstandingBalance, row.currency)} ${formatMoney(toInvoiceBase(row, row.outstandingBalance), BASE_CURRENCY)}`
-        : '',
+      row.outstandingBalance ? `${row.outstandingBalance} ${formatMoney(row.outstandingBalance, row.currency)}` : '',
     // Prepaid-origin note (9/2/26): an invoice that consumed a
     // prepayment at creation says so RIGHT WHERE its balance is read —
     // an inline violet wallet icon with the full math on hover.
-    render: (row, { searchQuery, currencyView }) => (
+    render: (row, { searchQuery }) => (
       <AmountWithPrepaidNote invoice={row}>
         <span
           className=""
@@ -1993,18 +2018,27 @@ export const INVOICE_COLUMNS: ColumnDef<Invoice>[] = [
           // heavier font for money columns, design feedback 7/13/26).
           style={{ fontWeight: 400, color: row.outstandingBalance > 0 ? palette.slate[900] : palette.slate[400] }}
         >
-          {currencyView === 'party' ? (
-            <Money value={row.outstandingBalance} currency={row.currency} fx={invoiceFx(row)}>
-              {highlightAmount(formatMoney(row.outstandingBalance, row.currency), searchQuery)}
-            </Money>
-          ) : (
-            <BaseMoney value={row.outstandingBalance} currency={row.currency} fx={invoiceFx(row)} role="Invoice currency">
-              {highlightAmount(formatMoney(toInvoiceBase(row, row.outstandingBalance), BASE_CURRENCY), searchQuery)}
-            </BaseMoney>
-          )}
+          <Money value={row.outstandingBalance} currency={row.currency} fx={invoiceFx(row)}>
+            {highlightAmount(formatMoney(row.outstandingBalance, row.currency), searchQuery)}
+          </Money>
         </span>
       </AmountWithPrepaidNote>
     ),
+  },
+  // The base-currency estimate of what's due (25 Nov 2026, Nophil item 8),
+  // beside Amount Due on the pay queue: today's rate, marked ≈.
+  {
+    key: 'amountDueBase',
+    label: `Amount Due (${BASE_CURRENCY})`,
+    tooltip: TODAY_BASE_TOOLTIP,
+    minWidth: 140,
+    defaultWidth: 180,
+    sortable: true,
+    filterType: 'range',
+    getValue: (row) => toTodayBase(row.currency, row.outstandingBalance),
+    getSortValue: (row) => toTodayBase(row.currency, row.outstandingBalance),
+    searchText: (row) => (row.outstandingBalance ? todayBaseText(row.outstandingBalance, row.currency) : ''),
+    render: (row, { searchQuery }) => <TodayBaseCell value={row.outstandingBalance} currency={row.currency} searchQuery={searchQuery} />,
   },
   {
     key: 'apAccount',
@@ -2111,6 +2145,16 @@ const INVOICE_COLUMN_BY_KEY = new Map(INVOICE_COLUMNS.map((c) => [c.key, c]));
 export function invoiceColumnValue(invoice: Invoice, columnKey: string): unknown {
   const col = INVOICE_COLUMN_BY_KEY.get(columnKey);
   return col ? col.getValue(invoice) : (invoice as unknown as Record<string, unknown>)[columnKey];
+}
+
+/** Sort value for an invoice column (25 Nov 2026): the column's own sort
+ *  key where it has one (the amount columns sort on the base currency at
+ *  today's rate; the "(PKR)" estimates have no raw field), else the raw
+ *  field, as the listings always sorted. */
+export function invoiceColumnSortValue(invoice: Invoice, columnKey: string): unknown {
+  const col = INVOICE_COLUMN_BY_KEY.get(columnKey);
+  if (col?.getSortValue) return col.getSortValue(invoice);
+  return (invoice as unknown as Record<string, unknown>)[columnKey];
 }
 
 interface InvoiceDataTableProps {

@@ -24,9 +24,9 @@ export const withCode = (n: number, code: string) => {
   return t.includes(code) ? t : `${t} ${code}`;
 };
 
-/** "1 USD = ₨278.5200 PKR" */
-export const blockRateText = (code: string, rate: number) =>
-  `1 ${code} = ${moneyPrefix(BASE_CURRENCY)}${formatRate(rate)} ${BASE_CURRENCY}`;
+/** "1 USD = ₨278.5200 PKR"; into another currency, "1 USD = C$1.3935 CAD". */
+export const blockRateText = (code: string, rate: number, to: string = BASE_CURRENCY) =>
+  `1 ${code} = ${moneyPrefix(to)}${formatRate(rate)} ${to}`;
 
 export function RateTypeChip({ type }: { type: RateType }) {
   return (
@@ -63,6 +63,8 @@ export interface CurrencyBlockRow {
   amount?: number;
   /** Shown on hover of the row, e.g. the pay-from account. */
   title?: string;
+  /** An estimate: written "≈ C$14,120.55 CAD". */
+  approx?: boolean;
 }
 
 /** "Pakistani Rupee (PKR)": a currency by name, as the block writes it. */
@@ -78,6 +80,7 @@ export function CurrencyBlock({
   lock,
   rows,
   rate,
+  note,
   footer,
   className = "",
 }: {
@@ -88,8 +91,11 @@ export function CurrencyBlock({
   /** Shown on a foreign-currency document. */
   lock?: { locked: boolean; title: string } | null;
   rows: CurrencyBlockRow[];
-  /** The Rate row: "1 USD = ₨278.5200 PKR", then " · <qualifier>". */
-  rate?: { code: string; rate: number; qualifier?: string } | null;
+  /** The Rate row: "1 USD = ₨278.5200 PKR", then " · <qualifier>". `to` is
+   *  the currency it converts into, the base currency unless given. */
+  rate?: { code: string; rate: number; to?: string; qualifier?: string } | null;
+  /** A muted line under the rows, e.g. that an amount is an estimate. */
+  note?: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
 }) {
@@ -117,7 +123,10 @@ export function CurrencyBlock({
               <p className="flex items-center gap-1.5 text-slate-700 tabular-nums text-right min-w-0" style={{ fontSize: 12, fontWeight: 500 }}>
                 {/* A flag on the document's amount and the account's currency; the base equivalent reads plainly. */}
                 {(r.amount === undefined || r.code.toUpperCase() !== BASE_CURRENCY) && <CurrencyFlag code={r.code} size={11} />}
-                <span className="truncate">{r.amount === undefined ? currencyNameWithCode(r.code) : withCode(r.amount, r.code)}</span>
+                <span className="truncate">
+                  {r.amount !== undefined && r.approx ? "≈ " : ""}
+                  {r.amount === undefined ? currencyNameWithCode(r.code) : withCode(r.amount, r.code)}
+                </span>
               </p>
             </div>
           ))}
@@ -126,7 +135,7 @@ export function CurrencyBlock({
               <p className="text-slate-400 shrink-0 pt-0.5" style={{ fontSize: 10, fontWeight: 500 }}>Exchange rate</p>
               <div className="flex flex-col items-end min-w-0">
               <p className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 text-slate-700 tabular-nums text-right" style={{ fontSize: 12, fontWeight: 500 }}>
-                <span className="whitespace-nowrap">{blockRateText(rate.code, rate.rate)}</span>
+                <span className="whitespace-nowrap">{blockRateText(rate.code, rate.rate, rate.to)}</span>
                 {rateType &&
                   (rateTypeTip ? (
                     <Tooltip delayDuration={200}>
@@ -147,6 +156,7 @@ export function CurrencyBlock({
               </div>
             </div>
           )}
+          {note && <p className="text-slate-400 leading-snug" style={{ fontSize: 10.5 }}>{note}</p>}
         </>
       )}
 

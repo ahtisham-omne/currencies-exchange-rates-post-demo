@@ -71,7 +71,11 @@ function QtyStepper({ value, onChange, min = 1, max, ariaLabel = "Quantity" }: {
     </div>
   );
 }
-import { useSOStore, CATALOG as STORE_CATALOG } from "./store";
+import { useSOStore, CATALOG as CORE_CATALOG, EXTRA_CATALOG } from "./store";
+/* Both lists (25 Nov 2026): a line made from one of the create dialog's
+   extra items used to drop off the order when this dialog saved, since it
+   rewrites every line from the pending list and only knew the core list. */
+const STORE_CATALOG = [...CORE_CATALOG, ...EXTRA_CATALOG];
 import { ItemTypeBadge, DuplicateBadge } from "./StatusBadge";
 import { InactiveItemPill } from "../shared/InactiveItemPill";
 import { isItemInactive } from "../shared/inactiveItems";
@@ -107,6 +111,8 @@ interface PendingItem {
    *  so pre-existing lines don't get mis-labelled as duplicates of
    *  themselves just because their itemCode lives in `so.lines`. */
   wasInitial?: boolean;
+  /** Where the unit price came from (currency/itemPrices.ts, 25 Nov 2026). */
+  priceSource?: LinePriceSource;
 }
 
 /* UoM data layer — central `data/uomSets` module is the source of
@@ -124,6 +130,8 @@ import { useDocMoney } from "@/app/components/currency/docCurrencyContext";
 import { DocMoney } from "@/app/components/currency/DocCurrency";
 import { soFx } from "@/app/currency/soFx";
 import { restateDesign } from "./soMoney";
+import { marketPrice, type LinePriceSource } from "@/app/currency/itemPrices";
+import { EstimatePriceIcon } from "@/app/components/currency/EstimatePriceIcon";
 const PENDING_UOM_OPTIONS = UOM_SETS.discrete;
 type UomOption = ImportedUomOption;
 
@@ -302,10 +310,22 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
      and shown in the page's (base by default, the other one on hover). */
   const formatCurrency = useDocMoney();
   const fx = so ? soFx(so) : null;
-  const CATALOG = useMemo(
-    () => (fx ? STORE_CATALOG.map((c) => ({ ...c, unitPrice: restateDesign(c.unitPrice, fx.currency, fx.rateDate) })) : STORE_CATALOG),
-    [fx?.currency, fx?.rateDate], // eslint-disable-line react-hooks/exhaustive-deps
-  );
+  /* Since 25 Nov 2026 (Nophil review item 2) a line takes the item's price
+     in the order's currency, or its base price converted at the order's
+     rate, marked as an estimate. A base-currency order is priced as before. */
+  const priced = useMemo(() => {
+    const sources = new Map<string, LinePriceSource>();
+    const items = fx
+      ? STORE_CATALOG.map((c) => {
+          const p = marketPrice(c, fx.currency, fx.rate, restateDesign(c.unitPrice, fx.currency, fx.rateDate));
+          sources.set(c.code, p.priceSource);
+          return { ...c, unitPrice: p.unitPrice };
+        })
+      : STORE_CATALOG;
+    return { items, sources };
+  }, [fx?.currency, fx?.rate, fx?.rateDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  const CATALOG = priced.items;
+  const isEstimate = (code: string) => priced.sources.get(code) === "estimate";
 
   /* Item peek modal — opens when the user taps any catalog or
      selected-card thumbnail. Same chrome as SOLineGrid. */
@@ -344,6 +364,7 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
           : catalogItem,
         qty: l.orderedQty,
         uom: l.uom,
+        priceSource: l.priceSource,
         /* Mark this row as part of the initial seed so the duplicate
            badge knows it pre-existed on the SO and doesn't render
            "Duplicate of #N where N is itself" for every pending
@@ -474,11 +495,11 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
       const lastIdx = pending.map(p => p.item.code).lastIndexOf(item.code);
       setPending(prev => {
         const updated = [...prev];
-        updated.splice(lastIdx + 1, 0, { instanceId: newId, item, qty: 1, uom: primaryName });
+        updated.splice(lastIdx + 1, 0, { instanceId: newId, item, qty: 1, uom: primaryName, priceSource: priced.sources.get(item.code) });
         return updated;
       });
     } else {
-      setPending(prev => [...prev, { instanceId: newId, item, qty: 1, uom: primaryName }]);
+      setPending(prev => [...prev, { instanceId: newId, item, qty: 1, uom: primaryName, priceSource: priced.sources.get(item.code) }]);
     }
     /* Fresh line adds only fire the newly-added flash. Stacking a
        qty-bump on the same element causes the two class timers to
@@ -559,7 +580,7 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
     const sourceIndex = pending.findIndex(p => p.instanceId === instanceId);
     setPending(prev => {
       const updated = [...prev];
-      updated.splice(sourceIndex + 1, 0, { instanceId: newId, item: source.item, qty: source.qty });
+      updated.splice(sourceIndex + 1, 0, { instanceId: newId, item: source.item, qty: source.qty, uom: source.uom, priceSource: source.priceSource });
       return updated;
     });
     flashHighlight(newId);
@@ -581,6 +602,8 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
       itemType: p.item.type,
       orderedQty: p.qty,
       unitPrice: p.item.unitPrice,
+      ...(p.uom && { uom: p.uom }),
+      ...(p.priceSource && { priceSource: p.priceSource }),
       taxRate: 0.08,
     }));
     toast.success(`Updated order with ${pending.length} item(s)`);
@@ -878,6 +901,9 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
                               {sidebarWidth === "narrow" && <ItemTypeBadge type={item.type} />}
                             </div>
                             <div className="text-right shrink-0">
+                              {isEstimate(item.code) && (
+                                <span className="inline-flex align-middle" style={{ marginRight: 4 }}><EstimatePriceIcon currency={fx?.currency ?? ""} rateDate={fx?.rateDate} /></span>
+                              )}
                               <DocMoney value={item.unitPrice} style={{ fontSize: "var(--text-caption)", fontWeight: "var(--font-weight-semibold)", color: "var(--foreground)" }} />
                               <span style={{ fontSize: 11, color: "var(--muted-foreground)", marginLeft: 4 }}>/ {findUomById(getPrimaryUomForProduct(item))?.name || 'EA'}</span>
                             </div>
@@ -1230,7 +1256,8 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
                                     primaryUomId={itemPrimary}
                                   />
                                   <div className="flex-1 text-right min-w-0">
-                                    <div className="truncate" style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
+                                    <div className="truncate flex items-center justify-end gap-1" style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
+                                      {p.priceSource === "estimate" && <EstimatePriceIcon currency={fx?.currency ?? ""} rateDate={fx?.rateDate} />}
                                       <DocMoney value={p.qty * p.item.unitPrice} />
                                     </div>
                                     <div className="truncate" style={{ fontSize: 11, fontWeight: 400, color: "var(--muted-foreground)" }}>
@@ -1338,7 +1365,13 @@ export function AddLineItemDialog({ soId, onClose }: Props) {
               onClose={() => setConfigPendingId(null)}
               onSave={({ orderedQty, unitPrice }) => {
                 setPending(prev => prev.map((item) => item.instanceId === configPendingId
-                  ? { ...item, qty: orderedQty, item: { ...item.item, unitPrice } }
+                  ? {
+                      ...item,
+                      qty: orderedQty,
+                      item: { ...item.item, unitPrice },
+                      /* Typed by hand: the rep's price, no longer an estimate. */
+                      priceSource: Math.abs(unitPrice - item.item.unitPrice) > 0.004 ? "manual" as const : item.priceSource,
+                    }
                   : item));
                 setConfigPendingId(null);
               }}

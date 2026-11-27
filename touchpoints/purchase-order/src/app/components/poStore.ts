@@ -2831,6 +2831,13 @@ function seedListingPOs(): void {
         { id: "A-seed-2", label: "Expedited handling", type: "premium", amountType: "$", amount: 85, scope: "item", appliedTo: [lineItems[1].id], isApplied: true },
       ];
     }
+    /* Demo (25 Nov 2026): Draft 395-9826 (po-4, Tesla, USD) is paid from
+       1075 · CAD Settlement, so the Order Summary's currency block and the
+       currency configuration show the direct USD to CAD rate. */
+    if (id === "po-4") {
+      po.payFromAccount = "1075-CAD Settlement";
+      po.settlementCurrency = "CAD";
+    }
     applyComputedTotals(inVendorCurrency(po));
     purchaseOrders.set(id, initVersioning(po));
   }

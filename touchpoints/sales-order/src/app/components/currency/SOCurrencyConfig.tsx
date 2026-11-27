@@ -10,6 +10,7 @@ import { crossRate, customerCurrency, roundTo, soFx } from "@/app/currency/soFx"
 import { LAST_SYNC, RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@/app/currency/rates";
 import { DEFAULT_ACCOUNT_ID, getCompanyAccount, isEligibleAccount } from "@/app/currency/companyAccounts";
 import { CurrencyFlag } from "./CurrencyChip";
+import { CompareRatesHover } from "./CompareRatesHover";
 import { linkProvider } from "./ProviderLink";
 import {
   AccountPicker,
@@ -433,6 +434,9 @@ export function SOCurrencyConfigDialog({
                       corporateAvailable={corpQuote.rate != null}
                     />
                   )}
+                  {/* Compare rates (Nophil review item 3, 25 Nov 2026): both
+                      rates for the pair on the order's rate date. Read-only. */}
+                  <CompareRatesHover currency={currency} date={fx.rateDate} selected={type} />
                 </div>
                 {type === "corporate" && !readOnly ? (
                   <div className="h-10 w-full rounded-lg px-3 flex items-center gap-1.5 text-[13px] bg-white border border-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">

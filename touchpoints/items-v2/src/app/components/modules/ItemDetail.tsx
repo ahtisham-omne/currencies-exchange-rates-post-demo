@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ItemOverviewTab } from './itemDetail/ItemOverviewTab';
 import { baseCompact, baseMoney } from '@/app/currency/itemMoney';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
-import { 
+import { fromRegionalDrafts, toRegionalDrafts } from '@/app/currency/regionalPrices';
+import {
   ArrowLeft, 
   ArrowRight,
   Edit, 
@@ -1991,8 +1992,18 @@ export function ItemDetail({ item: initialItem, onBack, onEdit, scrollContainerR
       inventoryType: initialItem?.inventoryControlType === 'Serialized' ? 'Asset' : 'Stock',
       controlType: initialItem?.inventoryControlType === 'Serialized' ? 'Serialized' : 'Non-serialized',
       acquisitionMethod: initialItem?.acquisitionMethod ? [initialItem.acquisitionMethod === 'Purchase' ? 'Purchased' : 'Manufactured'] : DEFAULT_CONFIG.acquisitionMethod,
-      pricing: [{ price: initialItem?.price?.toFixed(2) || '0.00', uom: initialItem?.unit || 'Each', id: '1' }]
+      // 25 Nov 2026: the item's own base prices when it has them, then its
+      // optional regional prices, shown together in Selling.
+      pricing: initialItem?.pricing?.length
+          ? initialItem.pricing.map((p) => ({ ...p }))
+          : [{ price: initialItem?.price?.toFixed(2) || '0.00', uom: initialItem?.unit || 'Each', id: '1' }],
+      regionalPrices: toRegionalDrafts(initialItem?.regionalPrices),
   }));
+
+  // The Edit modal saves regional prices to the item; keep Selling in step.
+  useEffect(() => {
+      setConfig(prev => ({ ...prev, regionalPrices: toRegionalDrafts(initialItem?.regionalPrices) }));
+  }, [initialItem?.regionalPrices]);
 
   
   const getFileIcon = (type: string) => {
@@ -2511,7 +2522,13 @@ export function ItemDetail({ item: initialItem, onBack, onEdit, scrollContainerR
           <TabsContent value="configurations" className="focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300 h-[calc(100dvh-250px)] min-h-[800px] max-h-[1100px] border border-border rounded-xl bg-background overflow-hidden shadow-sm">
                <ItemConfigurationMaster
                    config={config}
-                   onConfigChange={(updates) => setConfig({ ...config, ...updates })}
+                   onConfigChange={(updates) => {
+                       setConfig({ ...config, ...updates });
+                       // Regional prices are saved to the item (25 Nov 2026).
+                       if ('regionalPrices' in updates && item && updateItem) {
+                           updateItem(item.id, { regionalPrices: fromRegionalDrafts(updates.regionalPrices) });
+                       }
+                   }}
                    item={item}
                    partners={MOCK_PARTNERS}
                    users={MOCK_USERS}

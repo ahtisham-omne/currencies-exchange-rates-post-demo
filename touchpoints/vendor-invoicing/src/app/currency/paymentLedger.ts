@@ -1,17 +1,20 @@
 import type { Invoice } from '@/app/data/mockInvoices';
 import { PAY_FROM_ACCOUNTS, type PayFromAccount, type Payment } from '@/app/data/mockPayments';
-import { DEFAULT_PREPAYMENT_ASSET_ACCOUNT } from '@/app/data/glAccounts';
-import { buildPaymentGlEntries, type GlEntryLine } from '@/app/lib/glPosting';
+import { DEFAULT_PREPAYMENT_ASSET_ACCOUNT, FX_GAIN_LOSS_ACCOUNT } from '@/app/data/glAccounts';
+import { buildPaymentGlEntries, splitAccount, type GlEntryLine } from '@/app/lib/glPosting';
+import { gainLossOf } from './fxVariance';
 import { BASE_CURRENCY, isBaseCurrency } from './currencies';
 import { invoiceFx } from './invoiceFx';
 import { bookedRateOf, settledCurrencyOf } from './paymentFx';
 import {
+  bankConversionText,
   buildPaymentGlFx,
   convertsAtBank,
   costInBase,
   dayRateOn,
   glAtRate,
   paymentRateOf,
+  realizedFxDescription,
   realizedFxFromGl,
   youPayInOfAll,
   type CreditUsed,
@@ -140,4 +143,65 @@ export function paymentLedger(p: Payment, invoices: Invoice[], payments: Payment
     credits,
     youPayIn: settled.length ? youPayIn : BASE_CURRENCY,
   };
+}
+
+/* ── Mark as paid: the rate the bank used (25 Nov 2026, Nophil item 9) ──
+ * A scheduled payment from an account in another currency (a PKR account
+ * paying a USD invoice) carries an estimated rate: the payment date's rate
+ * of the company's rate type when it was scheduled. Marking it paid asks for
+ * the rate the bank actually used, pre-filled with that estimate. That rate
+ * is a settlement fact, not a rate override, so it is asked whichever rate
+ * type the company uses. Saved on the payment, it becomes the payment's
+ * rate: the bank's figure is the amount at it, and the realized FX Gain/Loss
+ * moves by the difference from the estimate. */
+
+/** The pay-from account's currency differs from what the vendor receives,
+ *  so the bank converts and the rate is only an estimate until it's paid. */
+export function needsBankRate(p: Payment): boolean {
+  if (p.status !== 'Scheduled') return false;
+  const currency = settledCurrencyOf(p);
+  const accountCurrency = PAY_FROM_ACCOUNTS.find((a) => a.id === p.bankAccount)?.currency ?? BASE_CURRENCY;
+  return accountCurrency.toUpperCase() !== currency && convertsAtBank(accountCurrency, currency);
+}
+
+/** The rate a scheduled payment was estimated at, base per one unit. */
+export const estimatedRateOf = (p: Payment) => paymentRateOf(p);
+
+/** What a scheduled payment was estimated to cost in the account's currency. */
+export const estimatedCostOf = (p: Payment) => costInBase(p);
+
+/** The payment, settled at the rate the bank used: the rate and the bank's
+ *  figure saved on it, and a saved journal re-posted at them (the bank line
+ *  at what it cost, the rest to Realized FX Gain/Loss). */
+export function withBankRate(p: Payment, rate: number, invoices: Invoice[]): Payment {
+  if (!needsBankRate(p) || !(rate > 0)) return p;
+  const currency = settledCurrencyOf(p);
+  const cost = toBase(p.amount, rate);
+  const next: Payment = { ...p, exchangeRate: rate, bankAmount: cost, rateEdited: true, rateDate: p.paymentDate };
+  // A seed without a journal is built from the rule when it's read
+  // (paymentLedger), so the bank's figure is all it needs.
+  if (!p.glEntries?.some((e) => e.currency)) return next;
+  const account = PAY_FROM_ACCOUNTS.find((a) => a.id === p.bankAccount);
+  const bankCode = account ? splitAccount(account.creditGl).code : null;
+  const fxCode = splitAccount(FX_GAIN_LOSS_ACCOUNT).code;
+  const entries: GlEntryLine[] = p.glEntries
+    .filter((e) => e.accountCode !== fxCode)
+    .map((e) =>
+      e.accountCode === bankCode && e.credit != null
+        ? { ...e, credit: cost, rate, description: `Bank converts ${bankConversionText(cost, p.amount, currency)}` }
+        : e,
+    );
+  const total = (side: 'debit' | 'credit') => round2(entries.reduce((s, e) => s + (e[side] ?? 0), 0));
+  const rest = round2(total('debit') - total('credit'));
+  const kind = gainLossOf(rest);
+  if (kind !== 'none') {
+    const g = splitAccount(FX_GAIN_LOSS_ACCOUNT);
+    entries.push({
+      accountCode: g.code,
+      accountName: g.name,
+      description: realizedFxDescription(currency, paymentLedger(p, invoices).lines, rate, p.paymentDate, true),
+      ...(kind === 'gain' ? { credit: Math.abs(rest) } : { debit: Math.abs(rest) }),
+    });
+  }
+  return { ...next, glEntries: entries };
 }

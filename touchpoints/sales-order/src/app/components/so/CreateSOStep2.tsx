@@ -73,7 +73,8 @@ function QtyStepper({ value, onChange, min = 1, max, ariaLabel = 'Quantity' }: {
   );
 }
 import { toast } from 'sonner';
-import { CATALOG, useSOStore } from './store';
+import { CATALOG, EXTRA_CATALOG, useSOStore } from './store';
+import type { CatalogItem } from './types';
 import { ATPTooltip } from './ATPTooltip';
 import { ItemTypeBadge, DuplicateBadge } from './StatusBadge';
 import { isItemInactive } from '../shared/inactiveItems';
@@ -96,10 +97,11 @@ import { getLineItemImage } from './lineItemImage';
    never appeared. Dedupe by code with first-occurrence wins so the
    catalog has exactly one card per SKU. */
 export const EXTENDED_CATALOG = (() => {
-  const merged = [
+  const merged: CatalogItem[] = [
     ...CATALOG,
-    { code: "000-100-004", name: "Express 3500 cutaway with 159\" WB, 6.6L V8 Duramax turbo-diesel, heavy-duty Allison 1000 6-speed automatic, ambulance prep package with dual batteries, 220A alternator, engine exhaust brake, and prewired harness for body-builder upfit including rear HVAC, lighting circuits, and OBD-II telematics tap", description: "Pre-wired for ambulance conversion", type: "Serialized" as const, unitPrice: 44100, category: "Base Vehicles", inStock: 57 },
-    { code: "000-100-005", name: "F-550 4x4 crew cab, 84\" CA, 7.3L V8 gas engine, 19,500 GVWR, PTO-ready with live-drive provision, ideal for rescue/utility body mounting, includes factory upfitter switches, auxiliary fuse panel, heavy-duty tow package with integrated brake controller, and chassis-mounted outrigger brackets for aerial or crane operations", description: "Heavy-duty rescue utility platform", type: "Serialized" as const, unitPrice: 58900, category: "Base Vehicles", inStock: 68 },
+    /* 000-100-004 and -005 live in the store since 25 Nov 2026 (EXTRA_CATALOG),
+       under the same $1,500 price cap as the rest. */
+    ...EXTRA_CATALOG,
     { code: "001-100-010", name: "Whelen Cencom Carbide siren controller, 200W dual-tone capable, four hardwired light outputs with separate flash patterns, programmable park-kill, manual override switch, includes mounting bracket and 12-pin Deutsch connector harness for clean install in an ambulance dash cluster", description: "Carbide siren + light controller with park-kill", type: "Non-Serialized" as const, unitPrice: 925, category: "Audio", inStock: 42 },
     { code: "001-100-022", name: "Federal Signal Pathfinder dual-color LED beacon, surface-mount with low-profile aerodynamic housing, dual-color red/white split with synchronized flash patterns, SAE J845 Class 1, 12-24V universal input, 5-year warranty for fleet rooftop installations", description: "Dual-color LED beacon, SAE J845 Class 1", type: "Non-Serialized" as const, unitPrice: 415, category: "Lighting", inStock: 78 },
     { code: "001-100-070", name: "Knaack 60\" job-site weatherproof storage box for spare oxygen cylinders, locks for security, mounted to the cabinet rail, ventilation grilles for safe storage of compressed gas in the patient compartment of an ambulance, MIL-STD-810 rated against vibration and shock", description: "Weatherproof O2 cylinder storage", type: "Non-Serialized" as const, unitPrice: 685, category: "Storage", inStock: 36 },
@@ -125,6 +127,10 @@ export interface SOLineItem {
   discount: number;
   total: number;
   uom?: string;
+  /** Where the unit price came from (currency/itemPrices.ts): the item's
+   *  price in the order's currency, the base price converted at today's
+   *  rate (an estimate), the base price, or typed by hand. */
+  priceSource?: LinePriceSource;
 }
 
 export interface Step2Props {
@@ -147,8 +153,8 @@ import {
 } from '../../data/uomSets';
 import { useDocCurrency, useDocMoney, useDocOtherText } from "@/app/components/currency/docCurrencyContext";
 import { DocMoney } from "@/app/components/currency/DocCurrency";
-import { localTodayIso } from "@/app/currency/soFx";
-import { restateDesign } from "./soMoney";
+import { marketPrice, type LinePriceSource } from "@/app/currency/itemPrices";
+import { EstimatePriceIcon } from "@/app/components/currency/EstimatePriceIcon";
 const UNITS_OF_MEASURE = UOM_SETS.discrete;
 type UomOption = ImportedUomOption;
 
@@ -322,13 +328,17 @@ function QtyUomCapsule({
 export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Step2Props) {
   const { inventory } = useSOStore();
   /* The order will be in the customer's currency (CreateSOModal provides
-     it): catalog list prices, written in USD, are added in it at today's
-     mid-market rate, the rate the new order takes, and shown in base with
-     the customer's amount on hover. */
+     it), at today's mid-market rate, the rate the new order takes. A line
+     takes the item's price in that currency, or its base price converted
+     at that rate, marked as an estimate (25 Nov 2026, Nophil review item 2;
+     currency/itemPrices.ts). Shown in base with the customer's amount on
+     hover. */
   const formatCurrency = useDocMoney();
   const otherText = useDocOtherText();
-  const { currency } = useDocCurrency();
-  const listPrice = useCallback((usd: number) => restateDesign(usd, currency, localTodayIso()), [currency]);
+  const { currency, fx, rateDate } = useDocCurrency();
+  const orderRate = fx?.rate ?? 1;
+  const priceOf = useCallback((product: CatalogItem) => marketPrice(product, currency, orderRate), [currency, orderRate]);
+  const listPrice = useCallback((product: CatalogItem) => priceOf(product).unitPrice, [priceOf]);
 
   /* Item peek modal — opens when the user taps any catalog or
      selected-card thumbnail. Same chrome as the SO details picker. */
@@ -342,7 +352,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
       uom: findUomById(getPrimaryUomForProduct(product))?.name || 'EA',
       onHand: product.inStock,
       metrics: [
-        { label: 'Unit Price', value: formatCurrency(listPrice(product.unitPrice)), caption: 'Unit Price' },
+        { label: 'Unit Price', value: formatCurrency(listPrice(product)), caption: 'Unit Price' },
         ...(typeof product.inStock === 'number'
           ? [{ label: 'In Stock', value: `${product.inStock.toLocaleString()} ${findUomById(getPrimaryUomForProduct(product))?.name || 'EA'}`, caption: 'In Stock' }]
           : []),
@@ -420,10 +430,11 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
        the right unit immediately (Liter for liquids, Foot for length,
        EA for the discrete majority). */
     const primaryUom = findUomById(getPrimaryUomForProduct(product));
+    const price = priceOf(product);
     const newItem: SOLineItem = {
       id: newId, productId: product.code, name: product.name, description: product.description,
-      quantity: 1, unitPrice: listPrice(product.unitPrice), discount: 0, total: listPrice(product.unitPrice),
-      uom: primaryUom?.name || 'EA',
+      quantity: 1, unitPrice: price.unitPrice, discount: 0, total: price.unitPrice,
+      uom: primaryUom?.name || 'EA', priceSource: price.priceSource,
     };
 
     const lastIndex = lineItems.map(i => i.productId).lastIndexOf(product.code);
@@ -459,7 +470,7 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
       const el = cardRefsMap.current.get(newId);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
-  }, [lineItems, onLineItemsChange, listPrice]);
+  }, [lineItems, onLineItemsChange, priceOf]);
 
   const handleAddQuantityToExisting = useCallback((product: typeof EXTENDED_CATALOG[0]) => {
     if (isItemInactive(product.code)) return;
@@ -874,7 +885,10 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                           )}
                         </div>
                         <div className="text-right shrink-0">
-                          <DocMoney value={listPrice(product.unitPrice)} style={{ fontSize: 'var(--text-caption)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }} />
+                          {priceOf(product).priceSource === 'estimate' && (
+                            <span className="inline-flex align-middle" style={{ marginRight: 4 }}><EstimatePriceIcon currency={currency} rateDate={rateDate} /></span>
+                          )}
+                          <DocMoney value={listPrice(product)} style={{ fontSize: 'var(--text-caption)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--foreground)' }} />
                           <span style={{ fontSize: 'var(--text-micro)', color: 'var(--foreground)', opacity: 0.4, marginLeft: 4 }}>/ {findUomById(getPrimaryUomForProduct(product))?.name || 'EA'}</span>
                         </div>
                       </div>
@@ -1232,7 +1246,13 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
                             clear AA contrast (~4.5:1) instead of the prior
                             opacity-0.4 ghost. Matches the Quote card. */}
                         <label style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 500 }}>Quantity</label>
-                        <label style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 500 }}>Item Total</label>
+                        <label className="inline-flex items-center gap-1" style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 500 }}>
+                          {/* Estimated price (25 Nov 2026): the item has no price in the
+                              order's currency. Beside the label, since the amount fills
+                              the narrow card. */}
+                          {item.priceSource === 'estimate' && <EstimatePriceIcon currency={currency} rateDate={rateDate} />}
+                          Item Total
+                        </label>
                       </div>
                       <div className="flex items-center gap-2">
                         {/* Combined qty + uom capsule — same chrome as
@@ -1400,7 +1420,14 @@ export function CreateSOStep2({ lineItems, onLineItemsChange, hasCustomer }: Ste
             onClose={() => setConfigItemId(null)}
             onSave={({ orderedQty, unitPrice }) => {
               onLineItemsChange(lineItems.map((item) => item.id === configItemId
-                ? { ...item, quantity: orderedQty, unitPrice, total: orderedQty * unitPrice * (1 - item.discount / 100) }
+                ? {
+                    ...item,
+                    quantity: orderedQty,
+                    unitPrice,
+                    total: orderedQty * unitPrice * (1 - item.discount / 100),
+                    /* A price typed by hand is the rep's: no longer an estimate. */
+                    priceSource: Math.abs(unitPrice - item.unitPrice) > 0.004 ? 'manual' as const : item.priceSource,
+                  }
                 : item));
               setConfigItemId(null);
             }}

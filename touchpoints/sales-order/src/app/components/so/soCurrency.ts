@@ -4,6 +4,7 @@ import { formatRate, rateSentence } from "@/app/currency/money";
 import { rateOn, type RateType } from "@/app/currency/rates";
 import { crossRate, localTodayIso, roundTo, soFx, type SoFxFields } from "@/app/currency/soFx";
 import { getCompanyAccount, resolveReceiveAccount, type CompanyAccount } from "@/app/currency/companyAccounts";
+import { followsMarketPrice, repriceFromItem, type PricedItem } from "@/app/currency/itemPrices";
 
 /** A choice made in the order's currency configuration. */
 export interface SOCurrencyChoice {
@@ -40,8 +41,19 @@ export function soReceiveAccount(so: SoFxFields & { settlementCurrency?: string;
  * worth in base. Flat one-time adjustments live on the SO page and are
  * converted there with `factor`. "You receive" is an account in any
  * currency (25 Nov 2026): a currency change keeps it.
+ * Market prices (25 Nov 2026, Nophil review item 2): a line priced from the
+ * item (`priceSource` regional, estimate or base) is priced again in the new
+ * currency: the item's own price there, else its base price at the new rate
+ * (an estimate). A line on another unit keeps the multiple it was rescaled
+ * by. A price typed by hand, or one from a quote or an import, converts at
+ * the cross rate as before. `findItem` looks the item up by code; without
+ * it every line converts.
  */
-export function withSOCurrency(so: SalesOrder, next: SOCurrencyChoice): { updates: Partial<SalesOrder>; factor: number } {
+export function withSOCurrency(
+  so: SalesOrder,
+  next: SOCurrencyChoice,
+  findItem?: (code: string) => PricedItem | undefined,
+): { updates: Partial<SalesOrder>; factor: number } {
   const before = soFx(so);
   const code = next.currency.toUpperCase();
   const rate = isBaseCurrency(code) ? 1 : next.exchangeRate;
@@ -67,11 +79,12 @@ export function withSOCurrency(so: SalesOrder, next: SOCurrencyChoice): { update
     updates: {
       ...rateFields,
       ...(typeof so.freightCost === "number" && { freightCost: convert(so.freightCost) }),
-      lines: so.lines.map((l) => ({
-        ...l,
-        unitPrice: convert(l.unitPrice),
-        ...(typeof l.shipmentCost === "number" && { shipmentCost: convert(l.shipmentCost) }),
-      })),
+      lines: so.lines.map((l) => {
+        const freight = typeof l.shipmentCost === "number" && { shipmentCost: convert(l.shipmentCost) };
+        const item = followsMarketPrice(l.priceSource) ? findItem?.(l.itemCode) : undefined;
+        if (!item) return { ...l, unitPrice: convert(l.unitPrice), ...freight };
+        return { ...l, ...repriceFromItem(l.unitPrice, item, before, { currency: code, rate }), ...freight };
+      }),
       linkedTransactions: so.linkedTransactions.map((t) => (t.currency ? t : { ...t, currency: before.currency })),
     },
   };

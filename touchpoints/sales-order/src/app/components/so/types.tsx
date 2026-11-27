@@ -1,4 +1,5 @@
 import type { RateType } from "@/app/currency/rates";
+import type { LinePriceSource, RegionalPrice } from "@/app/currency/itemPrices";
 
 // ===== SO Types =====
 export type SOStatus =
@@ -79,6 +80,12 @@ export interface SOLine {
   shippedQty: number;
   deliveredQty: number;
   unitPrice: number;
+  /** Where the unit price came from (itemPrices.ts, 25 Nov 2026): the
+   *  item's price in the order's currency, the base price converted at the
+   *  order's rate (an estimate), the base price, or typed by hand. Absent on
+   *  lines priced elsewhere (a quote, an import, an older line): those keep
+   *  their price and convert like any amount. */
+  priceSource?: LinePriceSource;
   /** Unit of measure code — matches `UOM_OPTIONS.code` in `SOLineGrid`.
    *  Defaults to "EA". When the user changes the unit on a line, PPU
    *  rescales by the conversion factor (so EA→BOX with multiplier 12
@@ -563,6 +570,9 @@ export interface CatalogItem {
   unitPrice: number;
   category: string;
   inStock: number;
+  /** The item's own prices in market currencies (25 Nov 2026), next to its
+   *  base price: one per currency, never the base currency. */
+  regionalPrices?: RegionalPrice[];
   /** True for items the user has ordered recently (across SOs). Used
    *  by the no-search state of the line-item pickers to surface the
    *  customer's familiar SKUs without forcing them to search. The

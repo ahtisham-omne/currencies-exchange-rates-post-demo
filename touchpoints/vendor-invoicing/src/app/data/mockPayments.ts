@@ -713,6 +713,9 @@ function paymentFxDemo(opts: {
   bankAmount?: number;
   method: string;
   reference: string;
+  /** Scheduled, not paid yet: recorded this day, at the payment date's rate
+   *  as an estimate (25 Nov 2026, Nophil item 9). */
+  scheduledOn?: string;
 }): Payment | null {
   const inv = mockInvoices.find((i) => i.invoiceNumber === opts.invoiceNumber);
   const account = PAY_FROM_ACCOUNTS.find((a) => a.id === opts.bankAccount);
@@ -726,6 +729,12 @@ function paymentFxDemo(opts: {
     exchangeRate: stampPaymentRate(inv.currency, opts.paymentDate).exchangeRate,
   };
   const rate = paymentRateOf(base);
+  const scheduled = !!opts.scheduledOn;
+  // From a base account the estimate is the amount at that rate; the bank's
+  // own figure comes when it's marked paid.
+  const estimatedBank = scheduled && isBaseCurrency(account.currency) && !isBaseCurrency(inv.currency) && opts.bankAmount == null
+    ? toBase(amount, rate)
+    : undefined;
   const gl = buildPaymentGlFx({
     currency: inv.currency,
     lines: [{ invoiceNumber: inv.invoiceNumber, amount, rate: inv.exchangeRate ?? 1, rateDate: inv.rateDate, apAccount: inv.apAccount }],
@@ -744,26 +753,28 @@ function paymentFxDemo(opts: {
     type: 'Payment',
     vendor: inv.vendor,
     paymentDate: opts.paymentDate,
-    createdDate: opts.paymentDate,
+    createdDate: opts.scheduledOn ?? opts.paymentDate,
     paymentMethod: opts.method,
     bankAccount: account.id,
     apAccount: inv.apAccount,
     amount,
     appliedInvoices: [{ invoiceNumber: inv.invoiceNumber, amount }],
-    appliedAmount: amount,
+    // A scheduled payment applies nothing until it's paid.
+    appliedAmount: scheduled ? 0 : amount,
     unappliedAmount: 0,
     currency: inv.currency,
     ...(opts.bankAmount != null ? { bankAmount: opts.bankAmount, rateEdited: true } : {}),
+    ...(estimatedBank != null ? { bankAmount: estimatedBank } : {}),
     exchangeRate: rate,
     rateType: 'mid',
     rateDate: opts.paymentDate,
     reference: opts.reference,
     memo: `Payment for ${inv.invoiceNumber}`,
     printMemo: inv.invoiceNumber,
-    status: 'Paid',
-    wasScheduled: false,
+    status: scheduled ? 'Scheduled' : 'Paid',
+    wasScheduled: scheduled,
     createdBy: 'Ahtisham Ahmad',
-    updatedDate: opts.paymentDate,
+    updatedDate: opts.scheduledOn ?? opts.paymentDate,
     updatedBy: 'Ahtisham Ahmad',
     perInvoiceSplit: [{ invoiceNumber: inv.invoiceNumber, cash: amount, credit: 0 }],
     glEntries: gl.entries,
@@ -775,7 +786,18 @@ export const PAYMENT_FX_DEMO: Payment[] = [
   paymentFxDemo({ n: 122, invoiceNumber: 'INV-000220', paymentDate: '2025-11-24', bankAccount: '1060-GBP Settlement', method: 'Wire', reference: 'WIRE-771220' }),
 ].filter((p): p is Payment => p !== null);
 
+/* ── Mark as paid asks for the bank's rate (25 Nov 2026, Nophil item 9) ──
+ *   PMT-000123 pays Acme Corp's INV-000221, $10,000.00, from 1010 JPMorgan
+ *     Operating (PKR) on Nov 28, 2026. Scheduled on Nov 20 at the mid-market
+ *     rate, ₨278.5200, so the bank is estimated to take ₨2,785,200.00. Mark
+ *     as paid asks for the rate the bank used; at ₨281.2500 it took
+ *     ₨2,812,500.00, ₨27,300.00 more than the estimate: an FX Loss. */
+export const SCHEDULED_FX_DEMO: Payment[] = [
+  paymentFxDemo({ n: 123, invoiceNumber: 'INV-000221', paymentDate: '2026-11-28', scheduledOn: '2026-11-20', bankAccount: '1010-Operating', method: 'Wire', reference: 'WIRE-771221' }),
+].filter((p): p is Payment => p !== null);
+
 export const mockPayments = [
   ...withPaymentCurrency(seedFirstVendorPrepayments(anchorPrepaymentsToPreInvoices(generatePayments(100)))),
   ...PAYMENT_FX_DEMO,
+  ...SCHEDULED_FX_DEMO,
 ];

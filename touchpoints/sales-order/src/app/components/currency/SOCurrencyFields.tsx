@@ -12,6 +12,8 @@ import { RATE_PROVIDER, RATE_TYPE_LABEL, rateOn, toBase, type RateType } from "@
 import { eligibleAccounts, getCompanyAccount } from "@/app/currency/companyAccounts";
 import { CurrencyFlag } from "./CurrencyChip";
 import { ProviderLink } from "./ProviderLink";
+import { CompareRatesHover } from "./CompareRatesHover";
+import { followsMarketPrice } from "@/app/currency/itemPrices";
 
 /* ── Order Summary: Currency and Exchange Rate (spec 4.3) ─────────────
  * Same pattern as Purchase Orders. The SO's currency, from the quote or
@@ -238,6 +240,8 @@ export interface SOCurrencyTotals {
   subtotal: number;
   /** Rules and one-time adjustments, signed (+ premium, − discount). */
   adjustments: number;
+  /** The lines' tax (its own row since 25 Nov 2026; Subtotal is before tax). */
+  tax?: number;
   freight: number;
   total: number;
 }
@@ -330,6 +334,7 @@ export function SOCurrencyFields({
             </InfoTip>
           </p>
           {!isBase && canEdit && <RateTypeToggle value={fx.rateType} onChange={switchType} corporateAvailable={corpQuote.rate != null} />}
+          {!isBase && canEdit && <CompareRatesHover currency={fx.currency} date={fx.rateDate} selected={fx.rateType} />}
         </div>
         {isBase ? (
           <div className={LOCKED}>
@@ -435,12 +440,18 @@ export function SOCurrencyConfirmDialog({
   const before = totals;
   const now = totalsFor
     ? totalsFor(next)
-    : { subtotal: conv(totals.subtotal), adjustments: conv(totals.adjustments), freight: conv(totals.freight), total: conv(totals.total) };
+    : { subtotal: conv(totals.subtotal), adjustments: conv(totals.adjustments), tax: conv(totals.tax ?? 0), freight: conv(totals.freight), total: conv(totals.total) };
   const lines = so.lines.filter((l) => !l.cancelled).length;
+  /* Lines priced from the item take its price in the new currency again
+     (withSOCurrency, 25 Nov 2026); the rest convert. */
+  const market = so.lines.filter((l) => !l.cancelled && followsMarketPrice(l.priceSource)).length;
+  const others = lines - market;
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
   const toName = getCurrency(to)?.name ?? to;
   const rows: [string, number, number][] = [
     ["Subtotal", before.subtotal, now.subtotal],
     ["Discounts & premiums", before.adjustments, now.adjustments],
+    ...(before.tax ? ([["Tax", before.tax, now.tax ?? 0]] as [string, number, number][]) : []),
     ...(before.freight ? ([["Freight", before.freight, now.freight]] as [string, number, number][]) : []),
     ["Total", before.total, now.total],
   ];
@@ -462,8 +473,22 @@ export function SOCurrencyConfirmDialog({
                 Change this order to {toName} ({to})?
               </DialogTitle>
               <DialogDescription className="text-slate-500" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                All {lines} line price{lines === 1 ? "" : "s"} on {so.soNumber} are converted from {from.currency} to {to} at the
-                rates on the order date, {formatRateDate(from.rateDate)}.
+                {market === 0 ? (
+                  <>
+                    All {lines} line price{lines === 1 ? "" : "s"} on {so.soNumber} are converted from {from.currency} to {to} at the
+                    rates on the order date, {formatRateDate(from.rateDate)}.
+                  </>
+                ) : isBaseCurrency(to) ? (
+                  <>
+                    {plural(market, "line takes", "lines take")} the item's base price.
+                    {others > 0 && <> The other {plural(others, "price converts", "prices convert")} from {from.currency} at the rates on the order date, {formatRateDate(from.rateDate)}.</>}
+                  </>
+                ) : (
+                  <>
+                    {plural(market, "line takes", "lines take")} the item's {to} price, or its base price converted at the new rate where it has none.
+                    {others > 0 && <> The other {plural(others, "price", "prices")}, typed by hand or from a quote, convert from {from.currency} at the rates on the order date, {formatRateDate(from.rateDate)}.</>}
+                  </>
+                )}
               </DialogDescription>
             </div>
           </div>

@@ -8,7 +8,10 @@ import type {
   SORejectionReason,
 } from "./types";
 import { ARCHIVABLE_STATES } from "./types";
-import { DESIGN_CURRENCY, convertOn, customerCurrency, localTodayIso, stampSoRate } from "@/app/currency/soFx";
+import { DESIGN_CURRENCY, convertOn, customerCurrency, localTodayIso, roundTo, soFx, stampSoRate } from "@/app/currency/soFx";
+import { isBaseCurrency } from "@/app/currency/currencies";
+import { marketPrice } from "@/app/currency/itemPrices";
+import { summarizeSO } from "./summarizeSO";
 import { resolveReceiveAccount } from "@/app/currency/companyAccounts";
 import { formatWhole } from "./soMoney";
 import { describeRateChange, soRateFields, stampVersionRate, todaysRateType, versionRateFields, withCurrentRate, type VersionRateChoice } from "./soCurrency";
@@ -62,13 +65,19 @@ export const CATALOG: CatalogItem[] = [
      across past SOs — surfaced by both pickers' no-search state, capped
      at 6 in the UI. Without a tagged set the empty state used to slice
      the whole catalogue, mixing in items the customer has never bought. */
+  /* `regionalPrices` (25 Nov 2026, Nophil review item 2): the item's own
+     price in a market currency. The lightbar is the flagship (USD 1,199,
+     EUR 1,509); a few items have a USD price, the stretcher a GBP one and
+     the AED a dirham one; the rest have none, so an order in another
+     currency takes their base price converted at its rate, as an estimate
+     (currency/itemPrices.ts). */
   { code: "000-100-001", name: "Cutaway cab-chassis with 178\" wheelbase, 10,360 GVWR, 3.5L EcoBoost V6 turbocharged engine with 10-speed automatic transmission, factory ambulance prep package includes heavy-duty alternator (240A), auxiliary idle control, and reinforced rear frame section for modular body mounting", description: "Heavy-duty ambulance chassis", type: "Serialized", unitPrice: 42500, category: "Base Vehicles", inStock: 3, isRecentlyOrdered: true },
   { code: "000-100-002", name: "E-450 stripped chassis, 176\" WB, 7.3L V8 gas engine, dual rear wheels, 16,000 GVWR, heavy-duty front and rear stabilizer bars, ambulance prep with reinforced frame rails, upgraded 210A alternator, engine block heater, and transmission PTO provision for hydraulic equipment", description: "Ambulance prep with reinforced frame", type: "Serialized", unitPrice: 48200, category: "Base Vehicles", inStock: 117, isRecentlyOrdered: true },
   { code: "000-100-003", name: "ProMaster 3500 extended 159\" WB, high-roof body, front-wheel drive, 3.6L Pentastar V6 with 9-speed automatic, ambulance chassis package includes upgraded suspension with load-leveling rear air springs, heavy-duty brakes, and dual battery system with smart isolator relay", description: "3.6L Pentastar ambulance chassis", type: "Serialized", unitPrice: 39800, category: "Base Vehicles", inStock: 64 },
-  { code: "000-100-026", name: "54\" full-size LED lightbar with 16 independently addressable modules in red/white split pattern for ambulance application, integrated alley lights and takedown floods, 62 programmable flash patterns with traffic advisor mode, low-profile aerodynamic housing with UV-stabilized polycarbonate lens, conformal-coated electronics rated IP67", description: "Integrated alley/takedown lights, programmable flash patterns", type: "Non-Serialized", unitPrice: 3250, category: "Lighting", inStock: 156, isRecentlyOrdered: true },
-  { code: "000-100-041", name: "200-watt electronic siren amplifier with integrated PA system, includes wail, yelp, phaser, and hi-lo tone selections with configurable priority override, radio rebroadcast input for simultaneous PA and radio operation, backlit tactile controls with night-mode dimming, meets SAE J1849 and KKK-A-1822F specifications", description: "Radio rebroadcast input, backlit controls", type: "Non-Serialized", unitPrice: 685, category: "Audio", inStock: 89, isRecentlyOrdered: true },
+  { code: "000-100-026", name: "54\" full-size LED lightbar with 16 independently addressable modules in red/white split pattern for ambulance application, integrated alley lights and takedown floods, 62 programmable flash patterns with traffic advisor mode, low-profile aerodynamic housing with UV-stabilized polycarbonate lens, conformal-coated electronics rated IP67", description: "Integrated alley/takedown lights, programmable flash patterns", type: "Non-Serialized", unitPrice: 3250, category: "Lighting", inStock: 156, regionalPrices: [{ currency: "USD", unitPrice: 1199 }, { currency: "EUR", unitPrice: 1509 }], isRecentlyOrdered: true },
+  { code: "000-100-041", name: "200-watt electronic siren amplifier with integrated PA system, includes wail, yelp, phaser, and hi-lo tone selections with configurable priority override, radio rebroadcast input for simultaneous PA and radio operation, backlit tactile controls with night-mode dimming, meets SAE J1849 and KKK-A-1822F specifications", description: "Radio rebroadcast input, backlit controls", type: "Non-Serialized", unitPrice: 685, category: "Audio", inStock: 89, regionalPrices: [{ currency: "USD", unitPrice: 649 }], isRecentlyOrdered: true },
   { code: "000-100-049", name: "Multi-band P25 Phase II digital mobile radio covering VHF (136-174 MHz), UHF (380-512 MHz), 700 MHz, and 800 MHz bands with TDMA technology, AES-256 and DES-OFB encryption, integrated GPS receiver with location reporting, Bluetooth 5.0, Over-The-Air Programming (OTAP) ready, built-in IP packet data modem for AVL and messaging", description: "AES 256 encryption, GPS, Bluetooth, OTAP ready", type: "Serialized", unitPrice: 7850, category: "Communications", inStock: 45, isRecentlyOrdered: true },
-  { code: "000-100-059", name: "Powered hydraulic stretcher with 700 lb patient capacity, battery-operated lift mechanism with proportional hydraulic control, auto-loading base with isokinetic lowering system, compatible with Power-LOAD cot fastener, Fowler/Trendelenburg positioning, retractable head section, IV pole mount, integrated CPR platform, antimicrobial powder-coated aluminum frame with stainless steel components", description: "Auto-loading with isokinetic lowering, Power-LOAD compatible", type: "Serialized", unitPrice: 18500, category: "Patient Care", inStock: 23, isRecentlyOrdered: true },
+  { code: "000-100-059", name: "Powered hydraulic stretcher with 700 lb patient capacity, battery-operated lift mechanism with proportional hydraulic control, auto-loading base with isokinetic lowering system, compatible with Power-LOAD cot fastener, Fowler/Trendelenburg positioning, retractable head section, IV pole mount, integrated CPR platform, antimicrobial powder-coated aluminum frame with stainless steel components", description: "Auto-loading with isokinetic lowering, Power-LOAD compatible", type: "Serialized", unitPrice: 18500, category: "Patient Care", inStock: 23, regionalPrices: [{ currency: "USD", unitPrice: 1395 }, { currency: "GBP", unitPrice: 1090 }], isRecentlyOrdered: true },
   { code: "000-100-079", name: "Automatic shoreline power inlet with auto-eject on engine start, 20A/125V marine-grade weatherproof connector with corrosion-resistant stainless steel housing, includes integrated GFCI protection, LED status indicator for shore power connection state, and auto-transfer relay that switches between shore and inverter power sources without interrupting patient compartment equipment", description: "Weatherproof marine-grade connector", type: "Lot Non-Serialized", unitPrice: 1250, category: "Electrical", inStock: 200 },
   { code: "000-100-171", name: "Complete body preparation, prime, paint, and graphics installation labor package including surface prep with DA sanding and chemical etching, high-build epoxy primer with moisture barrier, base coat/clear coat in Imron polyurethane with UV protection, full agency decal/stripe/Chevron graphics per customer-supplied artwork and NFPA 1901 retroreflective markings", description: "Complete vehicle finishing service", type: "Non-Serialized", unitPrice: 5200, category: "Services", inStock: 999, isRecentlyOrdered: true },
   { code: "000-100-175", name: "8-hour on-site operator training session covering all installed vehicle systems including chassis operation, emergency lighting and siren controls, HVAC and climate management, electrical distribution panels, patient compartment equipment orientation, radio programming basics, Power-LOAD stretcher loading/unloading procedures with hands-on practicals and written competency assessment", description: "Patient compartment equipment orientation", type: "Non-Serialized", unitPrice: 1500, category: "Services", inStock: 999 },
@@ -77,12 +86,12 @@ export const CATALOG: CatalogItem[] = [
   // batches by lot for recall / expiration management. Inventory below
   // carries both `lots` and `serialNumbers` so the allocation modal can
   // pick a specific lot AND specific serial.
-  { code: "000-100-195", name: "Field-ready AED with traceable smart battery. Unique per-unit serial number for asset/warranty tracking AND lot-numbered battery cells for recall + expiration management. FDA Class III, CE marked, 8-year shelf life, biphasic 200J defibrillator with metronome-guided CPR coaching.", description: "Serial-tracked AED with lot-controlled battery cells", type: "Lot Serialized", unitPrice: 2150, category: "Patient Care", inStock: 60 },
+  { code: "000-100-195", name: "Field-ready AED with traceable smart battery. Unique per-unit serial number for asset/warranty tracking AND lot-numbered battery cells for recall + expiration management. FDA Class III, CE marked, 8-year shelf life, biphasic 200J defibrillator with metronome-guided CPR coaching.", description: "Serial-tracked AED with lot-controlled battery cells", type: "Lot Serialized", unitPrice: 2150, category: "Patient Care", inStock: 60, regionalPrices: [{ currency: "USD", unitPrice: 1375 }, { currency: "AED", unitPrice: 5050 }] },
   /* Genuine liquid-set items — names spell out a container size
      (Gallon / Drum) so the data layer's strict heuristic routes
      them to the liquid UoM set (Liter / Gallon / Drum). The
      capsule dropdown renders the "Primary" pill on Liter. */
-  { code: "000-100-220", name: "DEF Fluid - 2.5 Gallon Jug. Diesel exhaust fluid, API certified, 32.5% urea solution, meets ISO 22241, for SCR-equipped vehicles. Sold per liter.", description: "DEF, 2.5-gallon jug", type: "Lot Non-Serialized", unitPrice: 18, category: "Consumables", inStock: 240, isRecentlyOrdered: true },
+  { code: "000-100-220", name: "DEF Fluid - 2.5 Gallon Jug. Diesel exhaust fluid, API certified, 32.5% urea solution, meets ISO 22241, for SCR-equipped vehicles. Sold per liter.", description: "DEF, 2.5-gallon jug", type: "Lot Non-Serialized", unitPrice: 18, category: "Consumables", inStock: 240, regionalPrices: [{ currency: "USD", unitPrice: 17.5 }], isRecentlyOrdered: true },
   { code: "000-100-221", name: "Hydraulic Fluid AW-46 - 5 Gallon Pail. Premium anti-wear hydraulic fluid, AW-46 viscosity, zinc-based additive package, suitable for stretcher systems. Sold per liter.", description: "AW-46 hydraulic fluid, 5-gallon pail", type: "Lot Non-Serialized", unitPrice: 45, category: "Consumables", inStock: 90 },
   { code: "000-100-222", name: "Long-Life Coolant 50/50 - 1 Gallon Bottle. OAT extended-life engine coolant pre-mixed 50/50 with deionised water, meets ASTM D3306. Sold per liter.", description: "OAT coolant, 1-gallon bottle", type: "Lot Non-Serialized", unitPrice: 22, category: "Consumables", inStock: 180 },
   { code: "000-100-223", name: "Synthetic Motor Oil 15W-40 - 55 Gallon Drum. CK-4 synthetic blend diesel engine oil 15W-40, API CK-4 / SN, meets Cummins CES 20086. Sold per liter.", description: "15W-40 diesel oil, 55-gallon drum", type: "Lot Non-Serialized", unitPrice: 1450, category: "Consumables", inStock: 14 },
@@ -208,6 +217,21 @@ const LONG_LINE_SPECS: Record<string, string> = {
 
 const CATALOG_PRICE_CAP = 1500;
 CATALOG.forEach(item => { if (item.unitPrice > CATALOG_PRICE_CAP) item.unitPrice = CATALOG_PRICE_CAP; });
+
+/* Two items only the create dialog's catalogue offers (CreateSOStep2's
+   EXTENDED_CATALOG). Kept here since 25 Nov 2026 so the cap above applies
+   to them too: they listed at $44,100 and $58,900, so one unit of the
+   F-550 made a $58,900 line on an order whose other items stop at $1,500
+   (Nophil review item 4). */
+export const EXTRA_CATALOG: CatalogItem[] = [
+  { code: "000-100-004", name: "Express 3500 cutaway with 159\" WB, 6.6L V8 Duramax turbo-diesel, heavy-duty Allison 1000 6-speed automatic, ambulance prep package with dual batteries, 220A alternator, engine exhaust brake, and prewired harness for body-builder upfit including rear HVAC, lighting circuits, and OBD-II telematics tap", description: "Pre-wired for ambulance conversion", type: "Serialized", unitPrice: 44100, category: "Base Vehicles", inStock: 57 },
+  { code: "000-100-005", name: "F-550 4x4 crew cab, 84\" CA, 7.3L V8 gas engine, 19,500 GVWR, PTO-ready with live-drive provision, ideal for rescue/utility body mounting, includes factory upfitter switches, auxiliary fuse panel, heavy-duty tow package with integrated brake controller, and chassis-mounted outrigger brackets for aerial or crane operations", description: "Heavy-duty rescue utility platform", type: "Serialized", unitPrice: 58900, category: "Base Vehicles", inStock: 68 },
+];
+EXTRA_CATALOG.forEach(item => { if (item.unitPrice > CATALOG_PRICE_CAP) item.unitPrice = CATALOG_PRICE_CAP; });
+
+/** A catalogue item by code, from either list. */
+export const findCatalogItem = (code: string): CatalogItem | undefined =>
+  CATALOG.find(c => c.code === code) ?? EXTRA_CATALOG.find(c => c.code === code);
 
 // ===== Mock Inventory =====
 const initialInventory: WarehouseInventory[] = [
@@ -756,55 +780,84 @@ function buildShipmentsForSOs(sos: SalesOrder[]): { shipments: Shipment[]; refs:
   return { shipments, refs };
 }
 
-function generateLinkedTransactions(index: number, _soId: string, total: number, soNumber: string, reps: string[], status: SOStatus): LinkedTransaction[] {
+/* Seeded sales reps; the first is the signed-in user (see generateMockSOs). */
+const SEED_REPS = ["Yahya Naveed", "Sarah Lindquist", "Michael Tran", "Emily Rios", "David Kowalski", "Jessica Mbeki", "Robert Navarro", "Amanda Chen", "James Hatfield"];
+
+/* ── A seeded order's linked documents (25 Nov 2026, Nophil review item 4) ──
+   Made after the order is in its own currency and priced, from its Grand
+   Total (summarizeSO: lines, rules and adjustments it opens with, tax), so
+   the documents agree with the listing's Order Value and the Order Summary:
+    - the quote only when the order came from one, under that quote number;
+    - invoices only once something has shipped (the sidebar's rule): a
+      Shipped order is invoiced in full (50% deposit + the balance), a
+      Partially Shipped one for what shipped;
+    - every payment pays an invoice that exists, and a fully paid order's
+      payments plus any credit memo come to exactly what was invoiced.
+   Amounts are rounded to the currency's minor unit; the balance takes the
+   remainder, so the parts add up to the cent. Until then invoices and
+   payments were fractions of the lines with tax, cancelled lines included,
+   rounded in USD before the restatement, on Pending Review and Cancelled
+   orders too, and payments could point at invoices that didn't exist. */
+function generateLinkedTransactions(index: number, so: SalesOrder, grand: number): LinkedTransaction[] {
+  const reps = SEED_REPS;
+  const code = so.currency || DESIGN_CURRENCY;
+  const r = (n: number) => roundTo(code, n);
+  const soNumber = so.soNumber;
+  const status: SOStatus = so.status === "Archived" ? (so.previousStatus || "Shipped") : so.status;
   const rep = reps[index % reps.length];
   const ri = rep.split(" ").map(w => w[0]).join("");
+  const r2 = reps[(index + 1) % reps.length];
+  const r2i = r2.split(" ").map(w => w[0]).join("");
+  const r3 = reps[(index + 2) % reps.length];
+  const r3i = r3.split(" ").map(w => w[0]).join("");
   const txns: LinkedTransaction[] = [];
 
+  /* What has shipped, as a share of the order (lines before rules and tax). */
+  const active = so.lines.filter(l => !l.cancelled);
+  const ordered = active.reduce((s, l) => s + l.orderedQty * l.unitPrice, 0);
+  const shippedShare = ordered > 0 ? active.reduce((s, l) => s + l.shippedQty * l.unitPrice, 0) / ordered : 0;
+  const shippedValue = status === "Shipped" ? grand : r(grand * shippedShare);
+
   /* ── Source Documents ── */
-  if (index % 3 === 0 || index % 2 === 0) {
-    txns.push({ id: `LT-${index}-q`, type: "Quote", number: `Q-2026-${String(index).padStart(4, "0")}`, description: `EMS Fleet (Phase ${1 + (index % 3)})`, date: `02/${String(5 + (index % 20)).padStart(2, "0")}/2026`, status: "Converted", amount: total, createdBy: rep, createdByInitials: ri });
+  if (so.sourceQuoteRef) {
+    txns.push({ id: `LT-${index}-q`, type: "Quote", number: so.sourceQuoteRef, description: `EMS Fleet (Phase ${1 + (index % 3)})`, date: `02/${String(5 + (index % 20)).padStart(2, "0")}/2026`, status: "Converted", amount: grand, createdBy: rep, createdByInitials: ri });
   }
   if (index % 4 === 0) {
     txns.push({ id: `LT-${index}-ct`, type: "Contract", number: `CTR-2026-${String(index + 20).padStart(4, "0")}`, description: "Master Supply Agreement — Annual", date: `01/${String(10 + (index % 18)).padStart(2, "0")}/2026`, status: "Active", amount: 0, createdBy: rep, createdByInitials: ri });
   }
 
   /* ── Fulfillment Transactions ── */
-  if (status !== "Draft" && status !== "Cleared") {
-    const r3 = reps[(index + 2) % reps.length];
-    const r3i = r3.split(" ").map(w => w[0]).join("");
-    txns.push({ id: `LT-${index}-pk`, type: "Pick Ticket", number: `PKT-2026-${String(index * 2 + 10).padStart(4, "0")}`, description: "Warehouse Pick — Chassis Components", date: `02/${String(10 + (index % 15)).padStart(2, "0")}/2026`, status: ["Partially Shipped"].includes(status) ? "In Progress" : "Completed", amount: 0, createdBy: r3, createdByInitials: r3i, reference: `via ${soNumber}` });
-  }
-   if (["Shipped", "Partially Shipped"].includes(status)) {
-    const r3 = reps[(index + 2) % reps.length];
-    const r3i = r3.split(" ").map(w => w[0]).join("");
-    txns.push({ id: `LT-${index}-sh`, type: "Shipment", number: `SHP-2026-${String(index * 2 + 34).padStart(4, "0")}`, description: "Chassis & Modules Shipment", date: `02/${String(12 + (index % 15)).padStart(2, "0")}/2026`, status: status === "Partially Shipped" ? "Shipped" : "Shipped", amount: Math.round(total * 0.65), createdBy: r3, createdByInitials: r3i, reference: `via ${soNumber}` });
+  if (["Partially Shipped", "Shipped"].includes(status)) {
+    txns.push({ id: `LT-${index}-pk`, type: "Pick Ticket", number: `PKT-2026-${String(index * 2 + 10).padStart(4, "0")}`, description: "Warehouse Pick — Chassis Components", date: `02/${String(10 + (index % 15)).padStart(2, "0")}/2026`, status: status === "Partially Shipped" ? "In Progress" : "Completed", amount: 0, createdBy: r3, createdByInitials: r3i, reference: `via ${soNumber}` });
+    txns.push({ id: `LT-${index}-sh`, type: "Shipment", number: `SHP-2026-${String(index * 2 + 34).padStart(4, "0")}`, description: "Chassis & Modules Shipment", date: `02/${String(12 + (index % 15)).padStart(2, "0")}/2026`, status: "Shipped", amount: shippedValue, createdBy: r3, createdByInitials: r3i, reference: `via ${soNumber}` });
   }
   if (status === "Shipped") {
-    const r3 = reps[(index + 2) % reps.length];
-    const r3i = r3.split(" ").map(w => w[0]).join("");
     txns.push({ id: `LT-${index}-dc`, type: "Delivery Confirmation", number: `DLV-2026-${String(index + 50).padStart(4, "0")}`, description: "Final Delivery — Customer Site", date: `02/${String(18 + (index % 8)).padStart(2, "0")}/2026`, status: "Delivered", amount: 0, createdBy: r3, createdByInitials: r3i, reference: `via SHP-2026-${String(index * 2 + 34).padStart(4, "0")}` });
   }
 
   /* ── Financial Transactions ── */
-  if (status !== "Draft" && index % 2 === 0) {
-    const r2 = reps[(index + 1) % reps.length];
-    const r2i = r2.split(" ").map(w => w[0]).join("");
-    txns.push({ id: `LT-${index}-inv1`, type: "Invoice", number: `INV-2026-${String(index * 3).padStart(4, "0")}`, description: "Phase 1 Deposit (50%)", date: `02/${String(11 + (index % 15)).padStart(2, "0")}/2026`, status: "Invoiced", amount: Math.round(total * 0.5), createdBy: r2, createdByInitials: r2i, reference: `via ${soNumber}` });
-  }
-  if (status !== "Draft" && index % 4 === 0) {
-    const r2 = reps[(index + 1) % reps.length];
-    const r2i = r2.split(" ").map(w => w[0]).join("");
-    txns.push({ id: `LT-${index}-inv2`, type: "Invoice", number: `INV-2026-${String(index * 3 + 1).padStart(4, "0")}`, description: "Phase 1 Final Balance", date: `02/${String(16 + (index % 10)).padStart(2, "0")}/2026`, status: "Draft", amount: Math.round(total * 0.5), createdBy: r2, createdByInitials: r2i, reference: `via ${soNumber}` });
-  }
-  if (index % 5 === 0 && status !== "Draft") {
-    txns.push({ id: `LT-${index}-pmt`, type: "Payment Receipt", number: `PMT-2026-${String(index + 78).padStart(4, "0")}`, description: "Wire Transfer — Phase 1 Deposit", date: `02/${String(13 + (index % 14)).padStart(2, "0")}/2026`, status: "Paid", amount: Math.round(total * 0.5), createdBy: rep, createdByInitials: ri, reference: `via INV-2026-${String(index * 3).padStart(4, "0")}` });
-  }
-  if (index % 3 === 0 && status !== "Draft") {
-    txns.push({ id: `LT-${index}-pmt2`, type: "Payment Receipt", number: `PMT-2026-${String(index + 95).padStart(4, "0")}`, description: "ACH Payment — Partial Balance", date: `02/${String(19 + (index % 7)).padStart(2, "0")}/2026`, status: "Partially Paid", amount: Math.round(total * 0.25), createdBy: rep, createdByInitials: ri, reference: `via INV-2026-${String(index * 3 + 1).padStart(4, "0")}` });
-  }
-  if (index % 7 === 0 && status !== "Draft") {
-    txns.push({ id: `LT-${index}-cm`, type: "Credit Memo", number: `CM-2026-${String(index + 12).padStart(4, "0")}`, description: "Pricing Adjustment — Volume Discount", date: `02/${String(14 + (index % 13)).padStart(2, "0")}/2026`, status: "Issued", amount: Math.round(total * 0.02), createdBy: rep, createdByInitials: ri, reference: `via ${soNumber}` });
+  const inv1No = `INV-2026-${String(index * 3).padStart(4, "0")}`;
+  const inv2No = `INV-2026-${String(index * 3 + 1).padStart(4, "0")}`;
+  if (status === "Shipped") {
+    const deposit = r(grand * 0.5);
+    const balance = r(grand - deposit);
+    const credit = index % 7 === 0 ? r(grand * 0.02) : 0;
+    txns.push({ id: `LT-${index}-inv1`, type: "Invoice", number: inv1No, description: "Phase 1 Deposit (50%)", date: `02/${String(11 + (index % 15)).padStart(2, "0")}/2026`, status: "Paid", amount: deposit, createdBy: r2, createdByInitials: r2i, reference: `via ${soNumber}` });
+    txns.push({ id: `LT-${index}-inv2`, type: "Invoice", number: inv2No, description: "Final Balance", date: `02/${String(16 + (index % 10)).padStart(2, "0")}/2026`, status: index % 2 === 0 ? "Paid" : "Invoiced", amount: balance, createdBy: r2, createdByInitials: r2i, reference: `via ${soNumber}` });
+    txns.push({ id: `LT-${index}-pmt`, type: "Payment Receipt", number: `PMT-2026-${String(index + 78).padStart(4, "0")}`, description: "Wire Transfer — Phase 1 Deposit", date: `02/${String(13 + (index % 14)).padStart(2, "0")}/2026`, status: "Paid", amount: deposit, createdBy: rep, createdByInitials: ri, reference: `via ${inv1No}` });
+    if (credit > 0) {
+      txns.push({ id: `LT-${index}-cm`, type: "Credit Memo", number: `CM-2026-${String(index + 12).padStart(4, "0")}`, description: "Pricing Adjustment — Volume Discount", date: `02/${String(14 + (index % 13)).padStart(2, "0")}/2026`, status: "Issued", amount: credit, createdBy: rep, createdByInitials: ri, reference: `via ${inv2No}` });
+    }
+    if (index % 2 === 0) {
+      txns.push({ id: `LT-${index}-pmt2`, type: "Payment Receipt", number: `PMT-2026-${String(index + 95).padStart(4, "0")}`, description: "ACH Payment — Final Balance", date: `02/${String(19 + (index % 7)).padStart(2, "0")}/2026`, status: "Paid", amount: r(balance - credit), createdBy: rep, createdByInitials: ri, reference: `via ${inv2No}` });
+    } else if (index % 3 === 0) {
+      txns.push({ id: `LT-${index}-pmt2`, type: "Payment Receipt", number: `PMT-2026-${String(index + 95).padStart(4, "0")}`, description: "ACH Payment — Partial Balance", date: `02/${String(19 + (index % 7)).padStart(2, "0")}/2026`, status: "Partially Paid", amount: r(balance * 0.5), createdBy: rep, createdByInitials: ri, reference: `via ${inv2No}` });
+    }
+  } else if (status === "Partially Shipped" && shippedValue > 0) {
+    txns.push({ id: `LT-${index}-inv1`, type: "Invoice", number: inv1No, description: "Shipped Lines", date: `02/${String(11 + (index % 15)).padStart(2, "0")}/2026`, status: index % 2 === 0 ? "Paid" : "Invoiced", amount: shippedValue, createdBy: r2, createdByInitials: r2i, reference: `via ${soNumber}` });
+    if (index % 2 === 0) {
+      txns.push({ id: `LT-${index}-pmt`, type: "Payment Receipt", number: `PMT-2026-${String(index + 78).padStart(4, "0")}`, description: "Wire Transfer — Shipped Lines", date: `02/${String(13 + (index % 14)).padStart(2, "0")}/2026`, status: "Paid", amount: shippedValue, createdBy: rep, createdByInitials: ri, reference: `via ${inv1No}` });
+    }
   }
   return txns;
 }
@@ -1136,7 +1189,7 @@ function generateMockSOs(): SalesOrder[] {
      as primary, and the additionalSalesReps shuffle naturally picks
      them up in other rows. Without this seed Me mode in the listing
      would return zero records. */
-  const reps = ["Yahya Naveed", "Sarah Lindquist", "Michael Tran", "Emily Rios", "David Kowalski", "Jessica Mbeki", "Robert Navarro", "Amanda Chen", "James Hatfield"];
+  const reps = SEED_REPS;
   const freightMethods = ["FOB Origin", "FOB Destination", "CIF", "FCA", "EXW", "DAP"];
   const tagPool = ["fleet-build", "government", "rush", "grant-funded", "multi-year", "demo-unit", "trade-in", "warranty-ext", "custom-paint", "remote-area"];
   const addresses = [
@@ -1482,7 +1535,8 @@ function generateMockSOs(): SalesOrder[] {
       shipmentIds: shipmentRefs[soId] || [],
       activityLog,
       inventoryMovements,
-      linkedTransactions: generateLinkedTransactions(i, soId, total, `SO-000-000-${String(i).padStart(3, "0")}`, reps, status),
+      /* Made once the order is in its currency and priced (withSeededAmounts). */
+      linkedTransactions: [],
       attachments: generateAttachments(i, soId, lines),
       pickRecords,
       salesRep: reps[i % reps.length],
@@ -1645,6 +1699,46 @@ function inCustomerCurrency(so: SalesOrder): SalesOrder {
   };
 }
 
+/** Market prices on the seeded orders (25 Nov 2026, Nophil review item 2):
+ *  an order made directly (not from a quote) in a foreign currency prices
+ *  each line from the item, as the create dialog now does: the item's price
+ *  in the order's currency, else its base price at the order's rate (an
+ *  estimate). The bariatric duplicate line carries a hand-set price. Orders
+ *  from a quote keep the quote's prices; base-currency orders are unchanged. */
+function withMarketPrices(so: SalesOrder): SalesOrder {
+  if (so.sourceQuoteRef) return so;
+  const fx = soFx(so);
+  if (isBaseCurrency(fx.currency)) return so;
+  return {
+    ...so,
+    lines: so.lines.map((l) => {
+      if (l.id.endsWith("-dup")) return { ...l, priceSource: "manual" as const };
+      const item = findCatalogItem(l.itemCode);
+      if (!item) return l;
+      const p = marketPrice(item, fx.currency, fx.rate);
+      return { ...l, unitPrice: p.unitPrice, priceSource: p.priceSource };
+    }),
+  };
+}
+
+/** A seeded order's figures from its lines, once it is in its currency and
+ *  priced (25 Nov 2026, Nophil review item 4): `total` is the Grand Total
+ *  the listing and the Order Summary show (summarizeSO), the description
+ *  quotes it, and the linked quote, invoices, payments and credit memos are
+ *  made from it (generateLinkedTransactions). */
+function withSeededAmounts(so: SalesOrder): SalesOrder {
+  if (so.soNumber === EMPTY_CUSTOMER_SO_NUMBER) return so;
+  const code = so.currency || DESIGN_CURRENCY;
+  const grand = roundTo(code, summarizeSO(so).grandTotal);
+  const index = Number(so.soNumber.slice(-3)) || 0;
+  return {
+    ...so,
+    total: grand,
+    description: so.description.replace(/totalling \S+?\.(?=\s)/, `totalling ${formatWhole(grand, code)}.`),
+    linkedTransactions: generateLinkedTransactions(index, so, grand),
+  };
+}
+
 function initializeMockData(): { sos: SalesOrder[]; shipments: Shipment[] } {
   const rawSOs = generateMockSOs();
   applyEmptyCustomerDemo(rawSOs);
@@ -1684,7 +1778,7 @@ function initializeMockData(): { sos: SalesOrder[]; shipments: Shipment[] } {
     sos.splice(2, 0, hero);
   }
 
-  return { sos: sos.map(inCustomerCurrency), shipments };
+  return { sos: sos.map(inCustomerCurrency).map(withMarketPrices).map(withSeededAmounts), shipments };
 }
 
 const _initData = initializeMockData();
@@ -1925,21 +2019,8 @@ function buildSalesOrder(partial: Partial<SalesOrder> & SOFromQuoteFields): Sale
 }
 
 
-/* ── One-time adjustments on imported orders ──
-   An order brought in from a legacy file can arrive with discounts and
-   premiums already on it, at order level and at line level. They are not
-   part of the `SalesOrder` record (the module keeps adjustments in its own
-   `useAdjustments` layer), so they wait here until the detail page opens
-   and seeds that layer from them. */
-const importedAdjustments: Map<string, unknown[]> = new Map();
-
-export function setImportedAdjustments(soId: string, adjustments: unknown[]): void {
-  if (adjustments.length > 0) importedAdjustments.set(soId, adjustments);
-}
-
-export function getImportedAdjustments(soId: string): unknown[] | undefined {
-  return importedAdjustments.get(soId);
-}
+/* One-time adjustments on imported orders: importedAdjustments.ts. */
+export { getImportedAdjustments, setImportedAdjustments } from "./importedAdjustments";
 
 export function SOStoreProvider({ children }: { children: ReactNode }) {
   /* Quotes converted in the Quotes app are orders from the first render
@@ -2566,6 +2647,7 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
         shippedQty: 0,
         deliveredQty: 0,
         unitPrice: line.unitPrice || 0,
+        ...(line.priceSource && { priceSource: line.priceSource }),
         uom: line.uom || "EA",
         taxRate: line.taxRate || 0.08,
         allocations: [],
@@ -2593,7 +2675,12 @@ export function SOStoreProvider({ children }: { children: ReactNode }) {
         if (updates.orderedQty !== undefined && updates.orderedQty < l.shippedQty) {
           return l;
         }
-        return { ...l, ...updates };
+        /* A unit price typed by hand is the rep's (25 Nov 2026): it is no
+           longer the item's price or an estimate, and a currency change
+           converts it like any amount. A caller that rescales the price
+           itself (a unit change) passes the line's priceSource along. */
+        const typedPrice = updates.unitPrice !== undefined && !("priceSource" in updates) && Math.abs(updates.unitPrice - l.unitPrice) > 0.004;
+        return { ...l, ...updates, ...(typedPrice && { priceSource: "manual" as const }) };
       });
       const updated = { ...so, lines: updatedLines };
       /* SO total = sum(line subtotal × (1 + tax)) + per-line freight

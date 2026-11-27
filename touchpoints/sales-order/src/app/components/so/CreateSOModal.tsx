@@ -33,7 +33,9 @@ import { SAMPLE_EMPTY_CUSTOMER, getCustomerDefaults } from "@/app/components/sha
 import { FIELD_RULES, FieldErrorText, FieldLaterHint, isMissing } from "@/app/components/shared/fieldRequirements";
 import { DocCurrencyProvider } from "@/app/components/currency/DocCurrency";
 import { isBaseCurrency } from "@/app/currency/currencies";
-import { convertOn, customerCurrency, localTodayIso, todayFx } from "@/app/currency/soFx";
+import { convertOn, customerCurrency, localTodayIso, roundTo, todayFx, todayRate } from "@/app/currency/soFx";
+import { followsMarketPrice, marketPrice, type LinePriceSource } from "@/app/currency/itemPrices";
+import { getPrimaryUomForProduct, getUomSetForProduct, multiplierWithinSet } from "@/app/data/uomSets";
 
 /* ═══ Typography — CSS variable tokens only ═══ */
 const font: React.CSSProperties = {};
@@ -463,7 +465,7 @@ export interface SOCreationPayload {
    *  SO so the detail sidebar shows the assignment instead of
    *  defaulting to "Current User". */
   salesReps: { name: string; primary: boolean }[];
-  lineItems: { catalogCode: string; itemCode: string; itemName: string; itemType: "Serialized" | "Non-Serialized" | "Lot Serialized" | "Lot Non-Serialized"; unitPrice: number; qty: number }[];
+  lineItems: { catalogCode: string; itemCode: string; itemName: string; itemType: "Serialized" | "Non-Serialized" | "Lot Serialized" | "Lot Non-Serialized"; unitPrice: number; qty: number; priceSource?: LinePriceSource; uom?: string }[];
 }
 
 interface CreateSOModalProps {
@@ -504,7 +506,10 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
   const [tagInput, setTagInput] = useState("");
   const [selectedItems, setSelectedItems] = useState<SOLineItem[]>([]);
   /* Lines picked before the customer changed move into the new customer's
-     currency at today's rate. */
+     currency. Since 25 Nov 2026 (Nophil review item 2) a line priced from
+     the item takes the item's price in that currency again, or its base
+     price at today's rate (an estimate); a price typed by hand converts at
+     today's rate, as every line did before. */
   const orderCurrency = customerCurrency(selectedCustomer?.name);
   const pricedIn = useRef(orderCurrency);
   useEffect(() => {
@@ -512,7 +517,18 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
     pricedIn.current = orderCurrency;
     if (from === orderCurrency) return;
     const day = localTodayIso();
+    const rate = isBaseCurrency(orderCurrency) ? 1 : todayRate(orderCurrency);
     setSelectedItems((items) => items.map((it) => {
+      const product = EXTENDED_CATALOG.find((c) => c.code === it.productId);
+      if (product && followsMarketPrice(it.priceSource)) {
+        /* The item's price is for its primary unit; a line on another unit
+           keeps the multiple it was rescaled by. */
+        const set = getUomSetForProduct(product);
+        const perUnit = multiplierWithinSet(it.uom, set) / multiplierWithinSet(getPrimaryUomForProduct(product), set);
+        const price = marketPrice(product, orderCurrency, rate);
+        const unitPrice = roundTo(orderCurrency, price.unitPrice * perUnit);
+        return { ...it, unitPrice, priceSource: price.priceSource, total: unitPrice * it.quantity * (1 - (it.discount || 0) / 100) };
+      }
       const unitPrice = convertOn(it.unitPrice, from, orderCurrency, day);
       return { ...it, unitPrice, total: unitPrice * it.quantity * (1 - (it.discount || 0) / 100) };
     }));
@@ -643,6 +659,9 @@ export function CreateSOModal({ open, onClose, onContinue }: CreateSOModalProps)
           itemType: (cat?.type || "Non-Serialized") as "Serialized" | "Non-Serialized" | "Lot Serialized" | "Lot Non-Serialized",
           unitPrice: si.unitPrice,
           qty: si.quantity,
+          priceSource: si.priceSource,
+          /* The unit picked here; the price is per this unit. */
+          uom: si.uom,
         };
       }),
     };

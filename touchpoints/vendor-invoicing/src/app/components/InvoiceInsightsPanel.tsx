@@ -26,7 +26,7 @@ import {
 import type { Invoice } from '@/app/data/mockInvoices';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatCompactMoney } from '@/app/currency/money';
-import { toInvoiceBase } from '@/app/currency/invoiceFx';
+import { approxMark, toInvoiceBase } from '@/app/currency/invoiceFx';
 import { palette } from '@/styles/tokens';
 import { highlightText } from '@/app/components/InvoiceDataTable';
 
@@ -252,6 +252,9 @@ const fmtMoney = (n: number) => formatCompactMoney(n, BASE_CURRENCY);
 
 const sum = (rows: Invoice[]) => rows.reduce((s, r) => s + toInvoiceBase(r, r.amount), 0);
 const outstanding = (rows: Invoice[]) => rows.reduce((s, r) => s + toInvoiceBase(r, r.outstandingBalance), 0);
+// "≈" on a total that converts any foreign invoice (25 Nov 2026, Nophil
+// item 8): it stays in the base currency, marked as an estimate.
+const approx = (rows: Invoice[]) => approxMark(rows.map((r) => r.currency));
 // Singular when there's exactly one (copy audit: "1 invoices" read wrong).
 const fmtCount = (n: number, noun = 'invoices') =>
   `${n} ${n === 1 ? (noun.endsWith('s') ? noun.slice(0, -1) : noun) : noun}`;
@@ -276,7 +279,7 @@ export function computeInvoiceKpi(
       const d = buildDelta(value, sum(invoicesPrevious), true);
       return {
         value: fmtCount(invoicesInRange.length),
-        sub: `${fmtMoney(value)} invoiced`,
+        sub: `${approx(invoicesInRange)}${fmtMoney(value)} invoiced`,
         delta: d ? { ...d, tone: 'neutral' } : undefined,
       };
     }
@@ -285,7 +288,7 @@ export function computeInvoiceKpi(
       const rows = allInvoices.filter((i) => i.status === 'Pending Approval');
       return {
         value: fmtCount(rows.length),
-        sub: rows.length === 0 ? undefined : `${fmtMoney(sum(rows))} awaiting`,
+        sub: rows.length === 0 ? undefined : `${approx(rows)}${fmtMoney(sum(rows))} awaiting`,
       };
     }
     // 'approved_unpaid' removed (user 10/4): Vendor Payments' Ready to
@@ -295,7 +298,7 @@ export function computeInvoiceKpi(
       const prev = invoicesPrevious.filter((i) => i.status === 'Paid in Full');
       return {
         value: fmtCount(rows.length),
-        sub: rows.length === 0 ? undefined : fmtMoney(sum(rows)),
+        sub: rows.length === 0 ? undefined : `${approx(rows)}${fmtMoney(sum(rows))}`,
         delta: buildDelta(sum(rows), sum(prev), true),
       };
     }
@@ -305,7 +308,7 @@ export function computeInvoiceKpi(
       const rows = allInvoices.filter((i) => i.status === 'Exception');
       return {
         value: fmtCount(rows.length),
-        sub: rows.length === 0 ? 'No exceptions' : `${fmtMoney(sum(rows))} at risk`,
+        sub: rows.length === 0 ? 'No exceptions' : `${approx(rows)}${fmtMoney(sum(rows))} at risk`,
       };
     }
     case 'overdue': {
@@ -318,7 +321,7 @@ export function computeInvoiceKpi(
       // money-led 9/22 copy spec): every KPI card wears the same shape.
       return {
         value: fmtCount(rows.length),
-        sub: rows.length === 0 ? 'On Time' : `${fmtMoney(outstanding(rows))} past due`,
+        sub: rows.length === 0 ? 'On Time' : `${approx(rows)}${fmtMoney(outstanding(rows))} past due`,
       };
     }
     case 'payment_hold': {
@@ -328,7 +331,7 @@ export function computeInvoiceKpi(
       const rows = allInvoices.filter((i) => i.is_payment_held && !i.isArchived && i.status !== 'Cancelled');
       return {
         value: fmtCount(rows.length),
-        sub: rows.length === 0 ? undefined : `${fmtMoney(sum(rows))} held`,
+        sub: rows.length === 0 ? undefined : `${approx(rows)}${fmtMoney(sum(rows))} held`,
       };
     }
     case 'total_outstanding': {
@@ -344,7 +347,7 @@ export function computeInvoiceKpi(
       // money-led 9/22 copy spec).
       return {
         value: fmtCount(rows.length),
-        sub: `${fmtMoney(outstanding(rows))} outstanding`,
+        sub: `${approx(rows)}${fmtMoney(outstanding(rows))} outstanding`,
       };
     }
     case 'top_vendor': {
@@ -352,13 +355,14 @@ export function computeInvoiceKpi(
       for (const inv of invoicesInRange) {
         byVendor.set(inv.vendor, (byVendor.get(inv.vendor) ?? 0) + toInvoiceBase(inv, inv.amount));
       }
+      const vendorRows = (name: string) => invoicesInRange.filter((i) => i.vendor === name);
       let top: { name: string; total: number } | null = null;
       byVendor.forEach((total, name) => {
         if (!top || total > top.total) top = { name, total };
       });
       if (!top) return { value: '—', sub: 'No invoices' };
       const t = top as { name: string; total: number };
-      return { value: t.name, sub: `${fmtMoney(t.total)} in the selected period` };
+      return { value: t.name, sub: `${approx(vendorRows(t.name))}${fmtMoney(t.total)} in the selected period` };
     }
     default:
       return { value: '—', sub: '' };

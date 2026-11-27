@@ -21,6 +21,7 @@ import { Button } from "./ui/Button";
 import { itemListPrice } from "./soMoney";
 import { useDocCurrency, useDocMoney, useDocOtherText, useDocView } from "@/app/components/currency/docCurrencyContext";
 import { DocMoney } from "@/app/components/currency/DocCurrency";
+import { EstimatePriceIcon } from "@/app/components/currency/EstimatePriceIcon";
 import { formatAmount, moneyPrefix } from "@/app/currency/money";
 import { roundTo } from "@/app/currency/soFx";
 import { getLineItemImage } from "./lineItemImage";
@@ -434,6 +435,7 @@ function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds
   isNewlyAdded?: boolean;
 }) {
   const formatCurrencyValue = useDocMoney();
+  const docCurrency = useDocCurrency();
   const isExp = expandedRows.has(line.id);
   const isCan = line.cancelled;
   const isSel = selectedLineIds.has(line.id);
@@ -669,7 +671,7 @@ function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds
       </td>
       {/* PPU column after QTY */}
       <td className="li-fig" data-label="Price per unit" style={{ padding: "8px 12px", verticalAlign: "top" }} onClick={e => e.stopPropagation()}>
-        <div className="flex justify-start">
+        <div className="flex justify-start items-center gap-1" style={{ minHeight: showEditAffordance && onUpdateLine ? 30 : undefined }}>
           <PriceCapsule
             price={line.unitPrice}
             unit={line.uom || "EA"}
@@ -679,6 +681,10 @@ function LineRow({ line, idx, isEditable, isDraft, expandedRows, selectedLineIds
             requiresVersionFirst={requiresVersionFirst}
             onRequestVersionConfirm={(newPrice, applyCb) => onRequestPriceVersionConfirm?.(line.id, newPrice, applyCb)}
           />
+          {/* 25 Nov 2026 (Nophil review item 2): the item has no price in the
+              order's currency, so the line took the base price at the order's
+              rate. Gone once the price is typed by hand. */}
+          {line.priceSource === "estimate" && !isCan && <EstimatePriceIcon currency={docCurrency.currency} rateDate={docCurrency.fx?.rateDate ?? docCurrency.rateDate} />}
         </div>
       </td>
       <td className="li-fig li-end" data-label="Total" style={{ padding: "10px 8px", verticalAlign: "top", textAlign: "right", maxWidth: 0 }}>

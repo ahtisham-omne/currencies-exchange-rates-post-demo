@@ -16,7 +16,7 @@ import {
   DialogDescription,
 } from '@/app/components/ui/dialog';
 import type { Invoice } from '@/app/data/mockInvoices';
-import { InvoiceDataTable, INVOICE_COLUMNS, invoiceStatusAxes, invoiceColumnValue } from '@/app/components/InvoiceDataTable';
+import { InvoiceDataTable, INVOICE_COLUMNS, invoiceStatusAxes, invoiceColumnValue, invoiceColumnSortValue } from '@/app/components/InvoiceDataTable';
 import { rowMatchesColumns } from '@/app/components/data-table';
 import {
   applyInvoiceColumnFilters,
@@ -43,7 +43,8 @@ import {
 } from '@/app/data/readyKpis';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { formatMoney, moneyPrefix } from '@/app/currency/money';
-import { toInvoiceBase } from '@/app/currency/invoiceFx';
+import { approxMark, toInvoiceBase } from '@/app/currency/invoiceFx';
+import { totalText } from '@/app/components/payments/run/runMoney';
 
 // "Invoices to pay" shows ONLY approved invoices awaiting payment
 // (rev 7/16/26): approval already happened at invoice level, so this
@@ -82,6 +83,9 @@ const READY_COLUMN_CATALOG: { key: string; label: string }[] = [
   // Step 1 order, so the pay queue reads the same as the run pool.
   { key: 'discount', label: 'Discount' },
   { key: 'outstandingBalance', label: 'Amount Due' },
+  // The base-currency estimate of what's due, beside the real amount due
+  // (25 Nov 2026, Nophil item 8). Visible by default.
+  { key: 'amountDueBase', label: `Amount Due (${BASE_CURRENCY})` },
   { key: 'apAccount', label: 'A/P Account' },
   { key: 'description', label: 'Description' },
   { key: 'updatedBy', label: 'Last Updated By' },
@@ -331,6 +335,7 @@ export function ReadyToPayTable({
   const apAccountQuickCounts: Record<string, number> = {};
   let discountQuickCount = 0;
   let discountQuickSavings = 0;
+  const discountQuickCurrencies: string[] = [];
   readyInvoices.forEach((inv) => {
     const group = READY_TYPE_GROUPS.find((g) => g.values.includes(inv.type));
     if (group) typeQuickCounts[group.id] = (typeQuickCounts[group.id] ?? 0) + 1;
@@ -348,6 +353,7 @@ export function ReadyToPayTable({
     if (discountIsLive(dTerms) && dTerms) {
       discountQuickCount += 1;
       discountQuickSavings += toInvoiceBase(inv, discountAmountOn(inv.outstandingBalance, dTerms));
+      discountQuickCurrencies.push(inv.currency);
     }
   });
   const vendorQuickOptions = Object.keys(vendorQuickCounts).sort();
@@ -478,8 +484,10 @@ export function ReadyToPayTable({
       return discountIsLive(dTerms) && dTerms ? discountAmountOn(inv.outstandingBalance, dTerms) : 0;
     };
     processed = [...processed].sort((a, b) => {
-      const av = key === 'discount' ? liveDiscountOf(a) : (a as any)[key];
-      const bv = key === 'discount' ? liveDiscountOf(b) : (b as any)[key];
+      // The column's own sort key where it has one (25 Nov 2026): the
+      // amount columns sort on the base currency at today's rate.
+      const av = key === 'discount' ? liveDiscountOf(a) : (invoiceColumnSortValue(a, key) as any);
+      const bv = key === 'discount' ? liveDiscountOf(b) : (invoiceColumnSortValue(b, key) as any);
       if (av == null && bv == null) return 0;
       if (av == null) return -dir;
       if (bv == null) return dir;
@@ -495,9 +503,12 @@ export function ReadyToPayTable({
   // Selection context feeds the "Selected" KPI + the pay-run CTA.
   const selectedInvoices = readyInvoices.filter((i) => selectedIds.includes(i.id));
   const selectedDue = selectedInvoices.reduce((s, i) => s + toInvoiceBase(i, i.outstandingBalance), 0);
-  // The bulk bar reads in the base currency, each invoice at its own rate,
-  // like the rest of the list (Currency & Exchange Rates).
-  const selectedDueText = money(selectedDue);
+  // The bulk bar reads the real amount when the selection is in one
+  // currency, else "≈" the base total, each invoice at its own rate (25 Nov
+  // 2026, Nophil item 8: what a payment covers is never converted).
+  const selectedDueText = totalText(
+    selectedInvoices.map((i) => ({ currency: i.currency, amount: i.outstandingBalance, base: toInvoiceBase(i, i.outstandingBalance) })),
+  );
   const readyCtx = { selectedCount: selectedIds.length, selectedDue };
 
   // Active KPI cards for the insights grid (customizable via the drawer).
@@ -841,7 +852,7 @@ export function ReadyToPayTable({
                       }`}
                       style={{ fontWeight: 500 }}
                     >
-                      Discount Available · {money(Math.round(discountQuickSavings * 100) / 100)}
+                      Discount Available · {approxMark(discountQuickCurrencies)}{money(Math.round(discountQuickSavings * 100) / 100)}
                       <span className="text-[10px] rounded-full px-1.5 py-px" style={{ backgroundColor: on ? 'hsl(var(--primary) / 0.12)' : 'hsl(var(--muted))', color: on ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))', fontWeight: 600 }}>
                         {discountQuickCount}
                       </span>

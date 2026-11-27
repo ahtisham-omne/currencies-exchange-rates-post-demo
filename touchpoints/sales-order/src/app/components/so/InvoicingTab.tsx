@@ -15,6 +15,7 @@ import { ComingSoonBanner } from "@/app/components/shared/ComingSoonBanner";
 import { EmptyPlaceholder } from "@/app/components/shared/EmptyPlaceholder";
 import type { SalesOrder } from "./types";
 import { DocMoney } from "@/app/components/currency/DocCurrency";
+import { txInOrderCurrency } from "./soMoney";
 
 /* ═══ Invoice types ═══ */
 export type InvoiceStatus = "Paid" | "Pending" | "Overdue" | "Draft" | "Partially Paid" | "Voided";
@@ -1568,14 +1569,19 @@ function _InvoicingTabLegacy({ so }: { so: SalesOrder }) {
  * Compact invoice summary for the sidebar — horizontal stacked bar with paid/pending breakdown.
  */
 export function InvoiceSidebarSummary({ so, onOpenInvoicing }: { so: SalesOrder; onOpenInvoicing?: () => void }) {
-  /* Same rule as the Invoicing tab: an order made here (or converted from a
-     quote) and one not yet released has no invoices, so no sample ones. */
-  const preInvoice = so.createdViaUI || ['Draft', 'Pending Review', 'Cleared'].includes(so.status);
-  const invoices = preInvoice ? [] : generateMockInvoices(so);
-  const totalInvoiced = invoices.reduce((s, inv) => s + inv.amount, 0);
-  const totalPaid = invoices.reduce((s, inv) => s + inv.paidAmount, 0);
-  const totalPending = totalInvoiced - totalPaid;
-  const overdueCount = invoices.filter(inv => inv.status === "Overdue").length;
+  /* The order's own invoices, payments and credit memos (Linked
+     Transactions), in its currency (25 Nov 2026, Nophil review item 4).
+     The card used to make up six sample invoices from the lines before tax
+     (116% of them, cancelled lines included), so Invoiced came out above
+     the Grand Total and disagreed with the listing's Invoiced Amount and
+     Payments Made columns, which read the linked documents. */
+  const docs = so.linkedTransactions ?? [];
+  const sum = (type: string) => docs.filter(t => t.type === type).reduce((s, t) => s + txInOrderCurrency(t, so), 0);
+  const totalInvoiced = sum("Invoice");
+  const totalPaid = sum("Payment Receipt");
+  const totalCredited = sum("Credit Memo");
+  const totalPending = Math.max(0, totalInvoiced - totalPaid - totalCredited);
+  const overdueCount = docs.filter(t => t.type === "Invoice" && t.status === "Overdue").length;
 
   if (totalInvoiced === 0) return null;
 
@@ -1605,6 +1611,14 @@ export function InvoiceSidebarSummary({ so, onOpenInvoicing }: { so: SalesOrder;
           <DocMoney value={totalPaid} />
         </p>
       </div>
+      {totalCredited > 0 && (
+        <div className="flex items-center justify-between">
+          <p style={{ fontSize: 11, fontWeight: 500, color: "#64748B", fontFamily: "Inter, system-ui, sans-serif" }}>Credited</p>
+          <p className="tabular-nums" style={{ fontSize: 12, fontWeight: 500, color: "#475569", fontFamily: "Inter, system-ui, sans-serif" }}>
+            <DocMoney value={totalCredited} />
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <p style={{ fontSize: 11, fontWeight: 500, color: "#64748B", fontFamily: "Inter, system-ui, sans-serif" }}>Outstanding (Balance)</p>
         <p

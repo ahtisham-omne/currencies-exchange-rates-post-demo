@@ -118,8 +118,12 @@ export function usePricingRules(
     [lines, state.attached, effectiveActivationByRule, flatFactor],
   );
   const soSubtotal = useMemo(() => computeSOSubtotal(breakdowns), [breakdowns]);
-  const totalDiscount = useMemo(() => breakdowns.reduce((s, b) => s + b.discountAmount, 0), [breakdowns]);
-  const totalPremium = useMemo(() => breakdowns.reduce((s, b) => s + b.premiumAmount, 0), [breakdowns]);
+  /* A cancelled line is out of the order's subtotal, so its rule impact is
+     out of the totals too (25 Nov 2026: a Partially Cancelled order's rules
+     still discounted the cancelled lines, so its summary didn't add up). */
+  const cancelledIds = useMemo(() => new Set(lines.filter((l) => l.cancelled).map((l) => l.id)), [lines]);
+  const totalDiscount = useMemo(() => breakdowns.reduce((s, b) => s + (cancelledIds.has(b.lineId) ? 0 : b.discountAmount), 0), [breakdowns, cancelledIds]);
+  const totalPremium = useMemo(() => breakdowns.reduce((s, b) => s + (cancelledIds.has(b.lineId) ? 0 : b.premiumAmount), 0), [breakdowns, cancelledIds]);
   const activeRuleCount = useMemo(
     () => state.attached.filter((r) => !state.deactivatedRuleIds.has(r.id)).length,
     [state.attached, state.deactivatedRuleIds],

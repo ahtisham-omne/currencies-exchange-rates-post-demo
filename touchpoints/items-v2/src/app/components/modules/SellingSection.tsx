@@ -16,6 +16,13 @@ import {
 import { RadioOption } from './configAtoms';
 import { BASE_CURRENCY } from '@/app/currency/currencies';
 import { basePrefix } from '@/app/currency/itemMoney';
+import { currencyDecimals, formatMoney, moneyPrefix, rateSentence } from '@/app/currency/money';
+import {
+  nextRegionalCurrency, regionalBaseEquivalent, regionalPriceInvalid, regionalRateToday,
+  type RegionalPriceDraft,
+} from '@/app/currency/regionalPrices';
+import { CurrencyPicker } from '../currency/CurrencyPicker';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ConfigCard, ConfigSelect, UOMS } from './CreateItemModal';
 import { SelectCustomersModal } from './SelectCustomersModal';
 import { AVAILABLE_VENDORS } from '../../context/purchasing/mockData';
@@ -173,6 +180,13 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
             <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748B', fontFamily: FONT }}>
               Base price, in {BASE_CURRENCY}.
             </p>
+
+            {/* Regional prices (Nophil review item 1, 25 Nov 2026): optional
+                prices per market currency, below the base price. */}
+            <RegionalPrices
+              rows={config.regionalPrices || []}
+              onChange={(next) => onConfigChange('regionalPrices', next as any)}
+            />
           </div>
         </ConfigCard>
       )}
@@ -184,6 +198,120 @@ export function SellingSection({ config, onConfigChange, togglePartner, updatePa
         existingIds={specificPartners}
         onSubmit={addCustomers}
       />
+    </div>
+  );
+}
+
+/* ── RegionalPrices — the item's optional unit price per market currency
+   (25 Nov 2026). Rows: currency (flag + code; not the base currency or one
+   already used), the price in that currency, its base equivalent at today's
+   mid-market rate, remove. The price must be above 0. ── */
+function RegionalPrices({ rows, onChange }: { rows: RegionalPriceDraft[]; onChange: (next: RegionalPriceDraft[]) => void }) {
+  // A row left blank shows its error once the field has been left.
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+  const used = rows.map((r) => r.currency);
+  const next = nextRegionalCurrency(used);
+
+  const add = () => {
+    if (next) onChange([...rows, { currency: next, unitPrice: '' }]);
+  };
+  const update = (idx: number, patch: Partial<RegionalPriceDraft>) =>
+    onChange(rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const remove = (idx: number) => onChange(rows.filter((_, i) => i !== idx));
+
+  return (
+    <div className="flex flex-col gap-3" style={{ borderTop: '1px solid #EEF2F6', paddingTop: 14, marginTop: 2 }}>
+      <div className="flex flex-col gap-1">
+        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.8px', textTransform: 'uppercase', color: '#9CA3AF', fontFamily: FONT }}>Regional prices</span>
+        <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748B', fontFamily: FONT }}>
+          Set a price for a market's currency. Without one, orders convert the base price at the day's rate.
+        </p>
+      </div>
+
+      {rows.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {rows.map((row, idx) => {
+            const amount = Number(row.unitPrice);
+            const invalid = regionalPriceInvalid(row);
+            const showError = invalid && (row.unitPrice !== '' || touched.has(row.currency));
+            const base = !invalid ? regionalBaseEquivalent(row.currency, amount) : null;
+            const rate = regionalRateToday(row.currency);
+            const decimals = currencyDecimals(row.currency);
+            return (
+              <div key={row.currency} className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <div className="shrink-0" style={{ width: 120 }}>
+                    <CurrencyPicker
+                      value={row.currency}
+                      onPick={(code) => update(idx, { currency: code })}
+                      exclude={[BASE_CURRENCY, ...used]}
+                      ariaLabel="Market currency"
+                    />
+                  </div>
+                  <div
+                    className={`flex items-center flex-1 min-w-0 bg-white border rounded-lg px-3 ${showError ? 'border-[#FCA5A5]' : 'border-border'}`}
+                    style={{ height: 40 }}
+                  >
+                    <span style={{ fontSize: 13, color: '#94A3B8', fontFamily: FONT, marginRight: 6 }}>{moneyPrefix(row.currency).trim()}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step={decimals ? (1 / 10 ** decimals).toString() : '1'}
+                      value={row.unitPrice}
+                      onChange={(e) => update(idx, { unitPrice: e.target.value })}
+                      onBlur={() => setTouched((prev) => new Set(prev).add(row.currency))}
+                      className="flex-1 min-w-0 bg-transparent outline-none"
+                      style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", color: '#0F172A' }}
+                      placeholder={decimals ? (0).toFixed(decimals) : '0'}
+                      aria-label={`Price in ${row.currency}`}
+                      aria-invalid={showError}
+                    />
+                    {base != null && rate != null && (
+                      <Tooltip delayDuration={250}>
+                        <TooltipTrigger asChild>
+                          <span className="shrink-0 tabular-nums cursor-default" style={{ fontSize: 11, color: '#94A3B8', fontFamily: FONT, marginLeft: 6 }}>
+                            ≈ {formatMoney(base, BASE_CURRENCY)} {BASE_CURRENCY}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          At today's mid-market rate, {rateSentence(row.currency, rate)}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => remove(idx)}
+                    className="flex items-center justify-center text-slate-400 hover:text-destructive hover:bg-[#FEF2F2] rounded-md transition-colors shrink-0"
+                    style={{ width: 32, height: 40 }}
+                    aria-label={`Remove ${row.currency} price`}
+                  >
+                    <Trash2 style={{ width: 14, height: 14 }} />
+                  </button>
+                </div>
+                {showError && (
+                  <span style={{ fontSize: 11, color: '#B91C1C', fontFamily: FONT, paddingLeft: 128 }}>
+                    Enter a price above 0.
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {next && (
+        <div>
+          <button
+            type="button"
+            onClick={add}
+            className="inline-flex items-center gap-1.5 px-3 hover:bg-[#EDF4FF] transition-colors"
+            style={{ height: 32, borderRadius: 8, border: '1px solid #BFDBFE', fontSize: 12, fontWeight: 500, fontFamily: FONT, color: '#0A77FF', background: '#F8FBFF' }}
+          >
+            <Plus style={{ width: 13, height: 13 }} /> Add regional price
+          </button>
+        </div>
+      )}
     </div>
   );
 }

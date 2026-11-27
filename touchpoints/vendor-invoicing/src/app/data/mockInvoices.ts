@@ -29,7 +29,7 @@ const auditRand = mulberry32(0x0A0D17);
  *  record's identity — it lives in vendorInvoiceNumber. Each call
  *  reserves the next number; an abandoned create leaves a gap, exactly
  *  like a real ERP sequence. */
-let systemInvoiceSeq = 221; // INV-000217 to INV-000220 are the FX Variance and FX Gain/Loss seeds
+let systemInvoiceSeq = 222; // INV-000217 to INV-000220 are the FX Variance and FX Gain/Loss seeds; INV-000221 the scheduled USD payment's (25 Nov 2026)
 export function nextSystemInvoiceNumber(): string {
   return formatInvoiceId(systemInvoiceSeq++);
 }
@@ -1101,8 +1101,13 @@ function fxDemoInvoice(opts: {
   /** Paid in full on this day (the FX Gain/Loss examples). */
   paidOn?: string;
   description?: string;
+  /** Another vendor, currency and dates than Ultra Corp's GBP bearings
+   *  (the scheduled USD payment's invoice, 25 Nov 2026). */
+  demo?: Pick<typeof FX_DEMO, 'vendor' | 'currency' | 'receivedOn' | 'invoicedOn' | 'apAccount'>;
+  dueDate?: string;
 }): Invoice {
-  const { currency, receivedOn, invoicedOn } = FX_DEMO;
+  const demo = opts.demo ?? FX_DEMO;
+  const { currency, receivedOn, invoicedOn } = demo;
   const invoiceRate = midRateOn(currency, invoicedOn) ?? 1;
   const receivedRate = receivingRateOn(currency, receivedOn);
   const qty = opts.qty ?? 1000;
@@ -1130,7 +1135,7 @@ function fxDemoInvoice(opts: {
     freightGlAccount: '5020 Freight Inbound',
     additionalChargesTotal: 0,
     additionalChargeGlAccount: '6000 General & Admin',
-    apAccount: FX_DEMO.apAccount,
+    apAccount: demo.apAccount,
     total,
     sliceAdjustedTotal: total,
     sliceFraction: 1,
@@ -1148,7 +1153,7 @@ function fxDemoInvoice(opts: {
     id: opts.id,
     invoiceNumber: opts.invoiceNumber,
     type: 'Receiving-based',
-    vendor: FX_DEMO.vendor,
+    vendor: demo.vendor,
     vendorInvoiceNumber: opts.vendorInvoiceNumber,
     reference: opts.poNumber,
     date: invoicedOn,
@@ -1156,7 +1161,7 @@ function fxDemoInvoice(opts: {
     createdDate: invoicedOn,
     // The prepaid one is on a 50/50 split: half at order confirmation (the
     // pre-invoice), half 15 days after receiving (this invoice).
-    dueDate: opts.prepayment ? '2025-10-20' : '2025-11-15',
+    dueDate: opts.dueDate ?? (opts.prepayment ? '2025-10-20' : '2025-11-15'),
     triggerDate: opts.prepayment ? receivedOn : invoicedOn,
     triggerEvent: opts.prepayment ? 'Receiving' : 'Invoice Date',
     amount: total,
@@ -1167,7 +1172,7 @@ function fxDemoInvoice(opts: {
     rateDate: invoicedOn,
     rateBasis: 'postingDate', // posted on the vendor invoice date, so the same rate
     ...(opts.youPayIn ? { youPayIn: opts.youPayIn } : {}),
-    apAccount: FX_DEMO.apAccount,
+    apAccount: demo.apAccount,
     description: opts.description ?? (opts.prepayment
       ? 'Bearings for the conveyor line, half prepaid on order. FX Variance example: the prepaid half keeps the rate it was paid at.'
       : 'Bearings for the conveyor line, received Oct 5 and invoiced Oct 16. FX Variance example: no prepayment.'),
@@ -1238,6 +1243,21 @@ function generateFxVarianceDemo(): Invoice[] {
       youPayIn: FX_DEMO.currency,
       paidOn: '2025-11-24',
       description: 'Bearings for the conveyor line, paid Nov 24 from the GBP account. FX Gain/Loss example: nothing converted, A/P cleared at that day’s rate.',
+    }),
+    // Mark as paid asks for the bank's rate (25 Nov 2026, Nophil item 9):
+    // Acme Corp's USD invoice, $10,000.00 at the mid-market rate. PMT-000123
+    // (SCHEDULED_FX_DEMO in data/mockPayments.ts) is scheduled to pay it on
+    // Nov 28, 2026 from 1010 JPMorgan Operating, a PKR account, so the bank
+    // converts and the rate is an estimate until it's marked paid.
+    fxDemoInvoice({
+      id: 'inv-fx-scheduled-usd',
+      invoiceNumber: 'INV-000221',
+      vendorInvoiceNumber: 'ACME-US-5102',
+      poNumber: '9105',
+      grnNumber: 'REC-2026-9105',
+      demo: { vendor: 'Acme Corp', currency: 'USD', receivedOn: '2026-11-03', invoicedOn: '2026-11-05', apAccount: '2110-AP-Trade' },
+      dueDate: '2026-12-05',
+      description: 'Bearings for the packing line, received Nov 3 and invoiced Nov 5. Payment scheduled for Nov 28 from a PKR account.',
     }),
     // The 50% prepayment, paid Oct 2 at that day's rate (locked), and
     // reconciled into INV-000218 when the goods were invoiced.

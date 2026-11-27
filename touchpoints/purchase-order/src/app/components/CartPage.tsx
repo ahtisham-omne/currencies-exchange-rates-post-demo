@@ -63,9 +63,9 @@ import QuantityStepperInput from "./QuantityStepperInput";
 import ItemStatusChip from "./ItemStatusChip";
 import { lineOneTimeNet } from "./poOrderPricing";
 import { BaseMoney, Money } from "./currency/Money";
-import { BASE_CURRENCY, isBaseCurrency } from "@/app/currency/currencies";
-import { CurrencyPill } from "./currency/CurrencyChip";
-import { CART_TAG_NOTE, poPerVendorLine } from "./currency/cartCurrency";
+import { BASE_CURRENCY } from "@/app/currency/currencies";
+import { VendorCurrencyTag, vendorGroupAccent, vendorGroupHeaderBg } from "./currency/VendorCurrencyTag";
+import { poPerVendorLine } from "./currency/cartCurrency";
 import { formatMoney } from "@/app/currency/money";
 import { poFx, ruleAmountFactorToday, toBaseToday, todayFx, vendorCurrency, type PoFx } from "@/app/currency/poFx";
 
@@ -897,6 +897,7 @@ export default function CartPage() {
                         border: `1px solid ${C.border}`,
                         boxShadow:
                           "0 1px 3px 0 rgba(0,0,0,0.04), 0 1px 2px -1px rgba(0,0,0,0.03)",
+                        ...vendorGroupAccent(group.currency),
                       }}
                     >
                       {/* Vendor header — Partners-aligned. Checkbox + 36×36 Building2
@@ -905,10 +906,10 @@ export default function CartPage() {
                           filled-primary CTA. */}
                       <div
                         className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none transition-colors"
-                        style={{ borderBottom: isCollapsed ? "none" : `1px solid ${C.divider}` }}
+                        style={{ borderBottom: isCollapsed ? "none" : `1px solid ${C.divider}`, backgroundColor: vendorGroupHeaderBg(group.currency) }}
                         onClick={() => toggleVendor(group.vendor)}
                         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#FAFBFD")}
-                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = vendorGroupHeaderBg(group.currency) ?? "transparent")}
                       >
                         {/* Select-all checkbox */}
                         <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -949,7 +950,7 @@ export default function CartPage() {
                             >
                               {group.vendor}
                             </span>
-                            {!isBaseCurrency(group.currency) && <CurrencyPill code={group.currency} note={CART_TAG_NOTE} />}
+                            <VendorCurrencyTag code={group.currency} />
                             <span
                               className="inline-flex items-center rounded-md border shrink-0 tabular-nums"
                               style={{
@@ -1141,7 +1142,7 @@ export default function CartPage() {
                               <span className="truncate" style={{ fontSize: 12, fontWeight: 500, color: C.text700, fontFamily: FONT, lineHeight: 1.4 }}>
                                 {g.vendor}
                               </span>
-                              {!isBaseCurrency(g.currency) && <CurrencyPill code={g.currency} note={CART_TAG_NOTE} />}
+                              <VendorCurrencyTag code={g.currency} />
                             </span>
                             <span className="tabular-nums" style={{ fontSize: 11, fontWeight: 400, color: C.text500, fontFamily: FONT, lineHeight: 1.4 }}>
                               {g.checkedCount} of {g.selectableCount} selected
